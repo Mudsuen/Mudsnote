@@ -26,7 +26,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         setupStatusItem()
-        registerHotKeyIfNeeded()
+        registerHotKeysIfNeeded()
 
         if launchArguments.contains("--quick-capture") {
             DispatchQueue.main.async { [weak self] in

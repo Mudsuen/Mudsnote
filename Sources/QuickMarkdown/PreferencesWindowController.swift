@@ -15,8 +15,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         action: nil
     )
     private let opacityValueLabel = NSTextField(labelWithString: "")
-    private let hotKeyField = NSTextField(string: "")
-    private let onSave: (URL, [URL], Double, HotKeySpec) -> Void
+    private let quickCaptureHotKeyField = NSTextField(string: "")
+    private let floatingHotKeyField = NSTextField(string: "")
+    private let saveShortcutField = NSTextField(string: "")
+    private let onSave: (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
     private let onPreviewOpacity: (Double) -> Void
     private let initialOpacity: Double
 
@@ -27,15 +29,19 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private weak var backdropView: GradientBackdropView?
     private weak var directorySurfaceView: NSView?
     private weak var opacitySurfaceView: NSView?
-    private weak var hotKeySurfaceView: NSView?
+    private weak var quickCaptureHotKeySurfaceView: NSView?
+    private weak var floatingHotKeySurfaceView: NSView?
+    private weak var saveShortcutSurfaceView: NSView?
 
     init(
         currentDirectory: URL,
         availableDirectories: [URL],
         currentOpacity: Double,
-        currentHotKey: String,
+        currentQuickCaptureHotKey: String,
+        currentFloatingHotKey: String,
+        currentSaveShortcut: String,
         onPreviewOpacity: @escaping (Double) -> Void,
-        onSave: @escaping (URL, [URL], Double, HotKeySpec) -> Void
+        onSave: @escaping (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
     ) {
         let normalizedCurrentDirectory = currentDirectory.standardizedFileURL
         var normalizedDirectories = Array(Set(availableDirectories.map(\.standardizedFileURL))).sorted {
@@ -52,7 +58,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         self.onSave = onSave
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 460),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -67,7 +73,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        buildUI(currentOpacity: currentOpacity, currentHotKey: currentHotKey)
+        buildUI(
+            currentOpacity: currentOpacity,
+            currentQuickCaptureHotKey: currentQuickCaptureHotKey,
+            currentFloatingHotKey: currentFloatingHotKey,
+            currentSaveShortcut: currentSaveShortcut
+        )
         refreshDirectoryControls()
     }
 
@@ -76,7 +87,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func buildUI(currentOpacity: Double, currentHotKey: String) {
+    private func buildUI(
+        currentOpacity: Double,
+        currentQuickCaptureHotKey: String,
+        currentFloatingHotKey: String,
+        currentSaveShortcut: String
+    ) {
         guard let contentView = window?.contentView else { return }
 
         let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentOpacity)
