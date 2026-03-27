@@ -138,6 +138,24 @@ struct QuickMarkdownCoreTests {
     }
 
     @Test
+    func floatingShortcutAndFrameSettingsPersist() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        #expect(store.floatingNoteHotKeyString == "option+r")
+        #expect(store.saveShortcutString == "command+return")
+        #expect(store.floatingNoteWindowFrame == nil)
+
+        store.floatingNoteHotKeyString = "option+shift+r"
+        store.saveShortcutString = "command+enter"
+        store.floatingNoteWindowFrame = StoredWindowFrame(x: 120, y: 160, width: 400, height: 280)
+
+        #expect(store.floatingNoteHotKeyString == "option+shift+r")
+        #expect(store.saveShortcutString == "command+enter")
+        #expect(store.floatingNoteWindowFrame == StoredWindowFrame(x: 120, y: 160, width: 400, height: 280))
+    }
+
+    @Test
     func markdownEditorDocumentParsesHeadingContent() {
         let document = MarkdownEditorDocument.parse(editorText: "# Inbox\n\n- [ ] follow up\nsecond line")
         #expect(document.title == "Inbox")
