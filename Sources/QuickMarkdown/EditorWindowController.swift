@@ -380,7 +380,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = false
         scrollView.scrollerStyle = .overlay
-        scrollView.scrollerInsets = .zero
+        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         scrollView.documentView = editorTextView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         let slimScroller = SlimScroller()
