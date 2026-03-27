@@ -266,8 +266,8 @@ final class QuickEntryPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
-    private let sideResizeHandleWidth: CGFloat = 12
-    private let bottomResizeHandleWidth: CGFloat = 12
+    private let sideResizeHandleWidth: CGFloat = 10
+    private let bottomResizeHandleWidth: CGFloat = 6
     private let topResizeHandleWidth: CGFloat = 4
 
     init(size: NSSize) {
@@ -287,7 +287,7 @@ final class QuickEntryPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isMovableByWindowBackground = false
-        minSize = NSSize(width: 330, height: 260)
+        minSize = NSSize(width: 300, height: 260)
         let rootContentView = HitCatchingView(panel: self, frame: NSRect(origin: .zero, size: size))
         rootContentView.wantsLayer = true
         rootContentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -375,10 +375,30 @@ final class QuickEntryPanel: NSPanel {
 
     fileprivate func installCursorRects(in view: NSView) {
         let bounds = view.bounds
-        view.addCursorRect(NSRect(x: 0, y: 0, width: sideResizeHandleWidth, height: bounds.height), cursor: .resizeLeftRight)
-        view.addCursorRect(NSRect(x: bounds.width - sideResizeHandleWidth, y: 0, width: sideResizeHandleWidth, height: bounds.height), cursor: .resizeLeftRight)
-        view.addCursorRect(NSRect(x: 0, y: 0, width: bounds.width, height: bottomResizeHandleWidth), cursor: .resizeUpDown)
-        view.addCursorRect(NSRect(x: 0, y: bounds.height - topResizeHandleWidth, width: bounds.width, height: topResizeHandleWidth), cursor: .resizeUpDown)
+        let sideHeight = max(bounds.height - bottomResizeHandleWidth - topResizeHandleWidth, 0)
+        let horizontalWidth = max(bounds.width - (sideResizeHandleWidth * 2), 0)
+
+        if sideHeight > 0 {
+            view.addCursorRect(
+                NSRect(x: 0, y: bottomResizeHandleWidth, width: sideResizeHandleWidth, height: sideHeight),
+                cursor: .resizeLeftRight
+            )
+            view.addCursorRect(
+                NSRect(x: bounds.width - sideResizeHandleWidth, y: bottomResizeHandleWidth, width: sideResizeHandleWidth, height: sideHeight),
+                cursor: .resizeLeftRight
+            )
+        }
+
+        if horizontalWidth > 0 {
+            view.addCursorRect(
+                NSRect(x: sideResizeHandleWidth, y: 0, width: horizontalWidth, height: bottomResizeHandleWidth),
+                cursor: .resizeUpDown
+            )
+            view.addCursorRect(
+                NSRect(x: sideResizeHandleWidth, y: bounds.height - topResizeHandleWidth, width: horizontalWidth, height: topResizeHandleWidth),
+                cursor: .resizeUpDown
+            )
+        }
     }
 
     private func performManualResize(from initialEvent: NSEvent, edges: ResizeEdge) {

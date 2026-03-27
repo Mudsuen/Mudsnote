@@ -99,11 +99,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let onRequestSearch: () -> Void
-    private let toolbarButtonWidth: CGFloat = 30
+    private let toolbarButtonWidth: CGFloat = 24
     private let toolbarButtonHeight: CGFloat = 24
-    private let toolbarButtonSpacing: CGFloat = 1
-    private let footerGapToSave: CGFloat = 2
-    private let saveButtonWidth: CGFloat = 45
+    private let toolbarButtonSpacing: CGFloat = 0
+    private let footerGapToSave: CGFloat = 1
+    private let saveButtonWidth: CGFloat = 40
 
     private let editorTextView = MarkdownTextView(frame: .zero)
     private let statusLabel = NSTextField(labelWithString: "")
@@ -404,7 +404,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let toolbarStack = NSStackView()
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
-        toolbarStack.spacing = 1
+        toolbarStack.spacing = toolbarButtonSpacing
         toolbarStack.translatesAutoresizingMaskIntoConstraints = false
         toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
         toolbarStack.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -1451,8 +1451,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
 
         if let symbolName = action.symbolName {
+            let pointSize: CGFloat = action == .checklist ? 14.5 : 13
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: action.toolTip)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
+                .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))
             button.imagePosition = .imageOnly
         }
 
