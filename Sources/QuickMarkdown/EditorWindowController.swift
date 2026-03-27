@@ -164,7 +164,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch
 
-        let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
+        let window = QuickEntryPanel(size: NSSize(width: 432, height: 334))
         window.isReleasedWhenClosed = false
         if let windowLevel {
             window.level = windowLevel
@@ -337,12 +337,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         contentView.addSubview(backdrop)
-        pin(backdrop, to: contentView, insets: .init(top: 8, left: 8, bottom: 8, right: 8))
+        pin(backdrop, to: contentView, insets: .init(top: 18, left: 18, bottom: 18, right: 18))
         backdropView = backdrop
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 6))
+        pin(shellContent, to: backdrop, insets: .init(top: 8, left: 10, bottom: 0, right: 4))
         shellContentView = shellContent
 
         let topDragBar = NSView()
@@ -400,6 +400,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
         toolbarStack.spacing = 1
+        toolbarStack.translatesAutoresizingMaskIntoConstraints = false
         toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
         toolbarStack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -412,7 +413,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             toolbarStack.addArrangedSubview(button)
         }
 
-        let footerViews: [NSView]
+        let footerBar = NSView()
+        footerBar.translatesAutoresizingMaskIntoConstraints = false
+        footerBar.setContentHuggingPriority(.required, for: .horizontal)
+        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
+        shellContent.addSubview(footerBar)
+
         if showsSaveButton {
             let saveButton = HoverToolbarButton(frame: .zero)
             saveButton.title = "Save"
@@ -425,29 +431,34 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.imageHugsTitle = true
             saveButton.controlSize = .small
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
+            saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
-            saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
+            saveButton.widthAnchor.constraint(equalToConstant: 43).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
-            footerViews = [toolbarStack, saveButton]
+            footerBar.addSubview(toolbarStack)
+            footerBar.addSubview(saveButton)
+            NSLayoutConstraint.activate([
+                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 2),
+                saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+                saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor)
+            ])
         } else {
             self.saveButton = nil
-            footerViews = [toolbarStack]
+            footerBar.addSubview(toolbarStack)
+            NSLayoutConstraint.activate([
+                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+                toolbarStack.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor)
+            ])
         }
-
-        let footerBar = NSStackView(views: footerViews)
-        footerBar.orientation = .horizontal
-        footerBar.alignment = .centerY
-        footerBar.spacing = showsSaveButton ? 4 : 0
-        footerBar.translatesAutoresizingMaskIntoConstraints = false
-        footerBar.setContentHuggingPriority(.required, for: .horizontal)
-        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
         shellContent.addSubview(scrollView)
         shellContent.addSubview(divider)
-        shellContent.addSubview(footerBar)
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
@@ -468,8 +479,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
             divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
-            footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor, constant: 8),
-            footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
+            footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor),
+            footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor),
             footerBar.centerXAnchor.constraint(equalTo: shellContent.centerXAnchor),
             footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
             footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 20 : 16),

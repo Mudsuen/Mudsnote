@@ -266,7 +266,7 @@ final class QuickEntryPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
-    private let resizeHandleWidth: CGFloat = 14
+    private let resizeHandleWidth: CGFloat = 26
 
     init(size: NSSize) {
         super.init(
@@ -285,7 +285,7 @@ final class QuickEntryPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
-        minSize = NSSize(width: 360, height: 260)
+        minSize = NSSize(width: 380, height: 280)
 
         let rootContentView = HitCatchingView(frame: NSRect(origin: .zero, size: size))
         rootContentView.wantsLayer = true
