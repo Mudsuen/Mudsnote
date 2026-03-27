@@ -410,23 +410,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             toolbarStack.addArrangedSubview(button)
         }
 
-        let saveButton = HoverToolbarButton(frame: .zero)
-        saveButton.title = "Save"
-        saveButton.target = self
-        saveButton.action = #selector(savePressed)
-        saveButton.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        saveButton.image?.isTemplate = true
-        saveButton.imagePosition = .imageLeading
-        saveButton.imageHugsTitle = true
-        saveButton.controlSize = .small
-        saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
-        saveButton.setContentHuggingPriority(.required, for: .horizontal)
-        saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
-        saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        self.saveButton = saveButton
+        let footerViews: [NSView]
+        if showsSaveButton {
+            let saveButton = HoverToolbarButton(frame: .zero)
+            saveButton.title = "Save"
+            saveButton.target = self
+            saveButton.action = #selector(savePressed)
+            saveButton.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+            saveButton.image?.isTemplate = true
+            saveButton.imagePosition = .imageLeading
+            saveButton.imageHugsTitle = true
+            saveButton.controlSize = .small
+            saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
+            saveButton.setContentHuggingPriority(.required, for: .horizontal)
+            saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
+            saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            self.saveButton = saveButton
+            footerViews = [toolbarStack, NSView(), saveButton]
+        } else {
+            self.saveButton = nil
+            footerViews = [toolbarStack]
+        }
 
-        let footerBar = NSStackView(views: [toolbarStack, NSView(), saveButton])
+        let footerBar = NSStackView(views: footerViews)
         footerBar.orientation = .horizontal
         footerBar.alignment = .centerY
         footerBar.spacing = 2
@@ -442,7 +449,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
-            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: -8),
+            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -8 : -4),
 
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
@@ -458,11 +465,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -1),
 
             footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 10),
-            footerBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
+            footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
             footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor, constant: -1),
-            footerBar.heightAnchor.constraint(equalToConstant: 24),
+            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 24 : 20),
 
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 214)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 220)
         ])
 
         refreshChrome()
@@ -751,6 +758,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     private func handleShortcutEvent(_ event: NSEvent) -> Bool {
+        if let saveShortcut, saveShortcut.matches(event) {
+            savePressed()
+            return true
+        }
+
         if isSuggestionVisible {
             switch event.keyCode {
             case 125:
