@@ -190,7 +190,7 @@ final class SlimScroller: NSScroller {
     }
 
     override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {
-        let trackRect = bounds.insetBy(dx: 1, dy: 0)
+        let trackRect = slotRect
         NSColor.white.withAlphaComponent(0.08).setFill()
         NSBezierPath(roundedRect: trackRect, xRadius: 4, yRadius: 4).fill()
     }
@@ -198,7 +198,7 @@ final class SlimScroller: NSScroller {
     override func drawKnob() {
         var knobRect = rect(for: .knob)
         guard !knobRect.isEmpty else { return }
-        knobRect = knobRect.insetBy(dx: 1, dy: 1)
+        knobRect = knobRect.insetBy(dx: 0, dy: 1)
         NSColor.white.withAlphaComponent(0.34).setFill()
         NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3).fill()
     }
@@ -369,20 +369,6 @@ final class QuickEntryPanel: NSPanel {
         case ([.command], 0): return #selector(NSResponder.selectAll(_:)) // a
         case ([.command], 6): return #selector(UndoManager.undo) // z
         case ([.command, .shift], 6): return #selector(UndoManager.redo) // shift+z
-        case ([.command], 123): return #selector(NSResponder.moveToBeginningOfLine(_:)) // cmd-left
-        case ([.command], 124): return #selector(NSResponder.moveToEndOfLine(_:)) // cmd-right
-        case ([.command], 126): return #selector(NSResponder.moveToBeginningOfDocument(_:)) // cmd-up
-        case ([.command], 125): return #selector(NSResponder.moveToEndOfDocument(_:)) // cmd-down
-        case ([.command, .shift], 123): return #selector(NSResponder.moveToBeginningOfLineAndModifySelection(_:)) // cmd-shift-left
-        case ([.command, .shift], 124): return #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)) // cmd-shift-right
-        case ([.command, .shift], 126): return #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)) // cmd-shift-up
-        case ([.command, .shift], 125): return #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)) // cmd-shift-down
-        case ([.option], 123): return #selector(NSResponder.moveWordLeft(_:)) // option-left
-        case ([.option], 124): return #selector(NSResponder.moveWordRight(_:)) // option-right
-        case ([.option, .shift], 123): return #selector(NSResponder.moveWordLeftAndModifySelection(_:)) // option-shift-left
-        case ([.option, .shift], 124): return #selector(NSResponder.moveWordRightAndModifySelection(_:)) // option-shift-right
-        case ([.command], 51): return #selector(NSResponder.deleteToBeginningOfLine(_:)) // cmd-delete
-        case ([.option], 51): return #selector(NSResponder.deleteWordBackward(_:)) // option-delete
         default: return nil
         }
     }
