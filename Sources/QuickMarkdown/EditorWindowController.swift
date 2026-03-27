@@ -99,6 +99,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let onRequestSearch: () -> Void
+    private let toolbarButtonWidth: CGFloat = 30
+    private let toolbarButtonHeight: CGFloat = 24
+    private let toolbarButtonSpacing: CGFloat = 1
+    private let footerGapToSave: CGFloat = 2
+    private let saveButtonWidth: CGFloat = 45
 
     private let editorTextView = MarkdownTextView(frame: .zero)
     private let statusLabel = NSTextField(labelWithString: "")
@@ -345,7 +350,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 0))
         shellContentView = shellContent
 
-        let topDragBar = NSView()
+        let topDragBar = DragHandleView()
         topDragBar.translatesAutoresizingMaskIntoConstraints = false
 
         editorTextView.commandDelegate = self
@@ -412,6 +417,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             toolbarButtonsByAction[action] = button
             toolbarStack.addArrangedSubview(button)
         }
+        let toolbarWidth = (CGFloat(ToolbarAction.allCases.count) * toolbarButtonWidth)
+            + (CGFloat(max(ToolbarAction.allCases.count - 1, 0)) * toolbarButtonSpacing)
+        toolbarStack.widthAnchor.constraint(equalToConstant: toolbarWidth).isActive = true
 
         let footerBar = NSView()
         footerBar.translatesAutoresizingMaskIntoConstraints = false
@@ -433,18 +441,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
             saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
-            saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
-            saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            saveButton.widthAnchor.constraint(equalToConstant: saveButtonWidth).isActive = true
+            saveButton.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
             self.saveButton = saveButton
             footerBar.addSubview(toolbarStack)
             footerBar.addSubview(saveButton)
             NSLayoutConstraint.activate([
                 toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
                 toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 2),
+                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: footerGapToSave),
                 saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
                 saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 47)
+                footerBar.widthAnchor.constraint(equalToConstant: toolbarWidth + footerGapToSave + saveButtonWidth)
             ])
         } else {
             self.saveButton = nil
@@ -453,7 +461,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
                 toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
                 toolbarStack.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
                 toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor)
+                footerBar.widthAnchor.constraint(equalToConstant: toolbarWidth)
             ])
         }
 
@@ -485,9 +493,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
             footerBar.centerXAnchor.constraint(equalTo: shellContent.centerXAnchor),
             footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
-            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 20 : 16),
+            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 24 : 24),
 
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 218 : 224)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 216)
         ])
 
         refreshChrome()
@@ -1439,8 +1447,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.controlSize = .small
         button.font = .systemFont(ofSize: 12, weight: .semibold)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        button.widthAnchor.constraint(equalToConstant: toolbarButtonWidth).isActive = true
+        button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
 
         if let symbolName = action.symbolName {
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: action.toolTip)?
