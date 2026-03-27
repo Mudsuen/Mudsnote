@@ -162,6 +162,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Split settings into quick-capture hotkey, floating-note hotkey, and save shortcut; added a second floating-note controller with its own draft/frame memory and reused the existing editor layout without the save button.
 - Lesson: As soon as one compact tool gains multiple entry points, treat global shortcuts, in-editor shortcuts, and window modes as separate configuration layers instead of overloading a single hotkey field.
 
+### 30. Unified global hotkey registration + wider resize hit band
+- Problem: After splitting into two global hotkeys, the original quick-capture shortcut became unreliable, and resize only worked in a very thin strip at the window edge.
+- Fix: Switched to one hotkey manager that registers both hotkeys under separate ids, and inset the visible card inside the borderless window so the transparent frame edge gives a wider practical resize target.
+- Lesson: Borderless utility windows behave more predictably when global hotkeys share one dispatch path, and resize usability often comes from the invisible frame geometry rather than the visible border itself.
+
 ## Maintenance Rule
 
 For every future QuickMarkdown fix:
