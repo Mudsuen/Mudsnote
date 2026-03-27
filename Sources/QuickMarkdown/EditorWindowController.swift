@@ -826,7 +826,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     private func performStandardEditCommand(_ selector: Selector) -> Bool {
-        guard let textResponder = window?.firstResponder as? NSText else { return false }
+        let textResponder: NSText = editorTextView
 
         switch selector {
         case #selector(NSText.copy(_:)):
@@ -855,8 +855,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
              #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)),
              #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)),
              #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)),
-             #selector(NSResponder.deleteToBeginningOfLine(_:)):
-            (textResponder as? NSTextView)?.doCommand(by: selector)
+             #selector(NSResponder.moveWordLeft(_:)),
+             #selector(NSResponder.moveWordRight(_:)),
+             #selector(NSResponder.moveWordLeftAndModifySelection(_:)),
+             #selector(NSResponder.moveWordRightAndModifySelection(_:)),
+             #selector(NSResponder.deleteToBeginningOfLine(_:)),
+             #selector(NSResponder.deleteWordBackward(_:)):
+            editorTextView.doCommand(by: selector)
             return true
         default:
             break
