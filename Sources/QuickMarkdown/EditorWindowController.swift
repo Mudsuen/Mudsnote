@@ -434,7 +434,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
             saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
-            saveButton.widthAnchor.constraint(equalToConstant: 36).isActive = true
+            saveButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
             footerBar.addSubview(toolbarStack)
@@ -445,7 +445,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
                 saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 1),
                 saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
                 saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 37)
+                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 41)
             ])
         } else {
             self.saveButton = nil
