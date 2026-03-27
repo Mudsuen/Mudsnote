@@ -176,6 +176,7 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 For every future QuickMarkdown fix:
 
+0. This confirmation rule applies to entries added after 2026-03-27; earlier historical entries were recorded before the rule was introduced.
 1. Add a new numbered iteration.
 2. Only record an issue as experience after the user explicitly confirms it is fixed, or after the user chooses to move on and you clearly note that the fix is being treated as implicitly accepted.
 3. Record the visible problem, the concrete fix, and the lesson.
