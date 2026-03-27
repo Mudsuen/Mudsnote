@@ -99,11 +99,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let onRequestSearch: () -> Void
-    private let toolbarButtonWidth: CGFloat = 24
-    private let toolbarButtonHeight: CGFloat = 24
+    private let toolbarButtonWidth: CGFloat = 22
+    private let toolbarButtonHeight: CGFloat = 26
     private let toolbarButtonSpacing: CGFloat = 0
     private let footerGapToSave: CGFloat = 1
-    private let saveButtonWidth: CGFloat = 40
+    private let saveButtonWidth: CGFloat = 39
 
     private let editorTextView = MarkdownTextView(frame: .zero)
     private let statusLabel = NSTextField(labelWithString: "")
@@ -439,6 +439,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.imageHugsTitle = true
             saveButton.controlSize = .small
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
+            saveButton.preferredSize = NSSize(width: saveButtonWidth, height: toolbarButtonHeight)
             saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
             saveButton.widthAnchor.constraint(equalToConstant: saveButtonWidth).isActive = true
@@ -493,7 +494,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
             footerBar.centerXAnchor.constraint(equalTo: shellContent.centerXAnchor),
             footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
-            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 24 : 24),
+            footerBar.heightAnchor.constraint(equalToConstant: toolbarButtonHeight),
 
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 216)
         ])
@@ -1446,6 +1447,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.toolTip = action.toolTip
         button.controlSize = .small
         button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.preferredSize = NSSize(width: toolbarButtonWidth, height: toolbarButtonHeight)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: toolbarButtonWidth).isActive = true
         button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true

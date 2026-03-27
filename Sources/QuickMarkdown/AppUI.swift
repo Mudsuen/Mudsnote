@@ -122,6 +122,9 @@ func styleAccentButton(_ button: NSButton) {
 final class HoverToolbarButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
     private(set) var isHovered = false
+    var preferredSize: NSSize? {
+        didSet { invalidateIntrinsicContentSize() }
+    }
     var isActive = false { didSet { updateAppearance() } }
     var isWindowFocused = true { didSet { updateAppearance() } }
 
@@ -137,6 +140,10 @@ final class HoverToolbarButton: NSButton {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        preferredSize ?? super.intrinsicContentSize
     }
 
     override func updateTrackingAreas() {
