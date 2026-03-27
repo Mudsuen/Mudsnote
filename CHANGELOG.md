@@ -177,5 +177,6 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 For every future QuickMarkdown fix:
 
 1. Add a new numbered iteration.
-2. Record the visible problem, the concrete fix, and the lesson.
-3. If the issue remains partially unresolved, add it to the open-issue section instead of hiding it.
+2. Only record an issue as experience after the user explicitly confirms it is fixed, or after the user chooses to move on and you clearly note that the fix is being treated as implicitly accepted.
+3. Record the visible problem, the concrete fix, and the lesson.
+4. If the issue remains partially unresolved, add it to the open-issue section instead of hiding it.

@@ -337,12 +337,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         contentView.addSubview(backdrop)
-        pin(backdrop, to: contentView, insets: .init(top: 4, left: 4, bottom: 4, right: 4))
+        pin(backdrop, to: contentView, insets: .init(top: 8, left: 8, bottom: 8, right: 8))
         backdropView = backdrop
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 4))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 6))
         shellContentView = shellContent
 
         let topDragBar = NSView()
@@ -400,6 +400,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
         toolbarStack.spacing = 1
+        toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
+        toolbarStack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         toolbarButtons.removeAll()
         toolbarButtonsByAction.removeAll()
@@ -436,8 +438,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let footerBar = NSStackView(views: footerViews)
         footerBar.orientation = .horizontal
         footerBar.alignment = .centerY
-        footerBar.spacing = showsSaveButton ? 6 : 0
+        footerBar.spacing = showsSaveButton ? 4 : 0
         footerBar.translatesAutoresizingMaskIntoConstraints = false
+        footerBar.setContentHuggingPriority(.required, for: .horizontal)
+        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
