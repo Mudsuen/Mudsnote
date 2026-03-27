@@ -818,7 +818,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             return true
         }
 
-        if modifiers.contains(.command) {
+        if modifiers.intersection([.command, .option]).isEmpty == false {
+            window?.makeFirstResponder(editorTextView)
+            editorTextView.keyDown(with: event)
             return true
         }
 
@@ -846,22 +848,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             return true
         case #selector(UndoManager.redo):
             textResponder.undoManager?.redo()
-            return true
-        case #selector(NSResponder.moveToBeginningOfLine(_:)),
-             #selector(NSResponder.moveToEndOfLine(_:)),
-             #selector(NSResponder.moveToBeginningOfDocument(_:)),
-             #selector(NSResponder.moveToEndOfDocument(_:)),
-             #selector(NSResponder.moveToBeginningOfLineAndModifySelection(_:)),
-             #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)),
-             #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)),
-             #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)),
-             #selector(NSResponder.moveWordLeft(_:)),
-             #selector(NSResponder.moveWordRight(_:)),
-             #selector(NSResponder.moveWordLeftAndModifySelection(_:)),
-             #selector(NSResponder.moveWordRightAndModifySelection(_:)),
-             #selector(NSResponder.deleteToBeginningOfLine(_:)),
-             #selector(NSResponder.deleteWordBackward(_:)):
-            editorTextView.doCommand(by: selector)
             return true
         default:
             break
