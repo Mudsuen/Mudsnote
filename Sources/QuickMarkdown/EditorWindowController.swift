@@ -337,12 +337,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         contentView.addSubview(backdrop)
-        pin(backdrop, to: contentView, insets: .init(top: 8, left: 8, bottom: 8, right: 8))
+        pin(backdrop, to: contentView)
         backdropView = backdrop
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 8, left: 8, bottom: 0, right: 2))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 0))
         shellContentView = shellContent
 
         let topDragBar = NSView()
@@ -400,9 +400,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
         toolbarStack.spacing = 1
-        toolbarStack.translatesAutoresizingMaskIntoConstraints = false
-        toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
-        toolbarStack.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         toolbarButtons.removeAll()
         toolbarButtonsByAction.removeAll()
@@ -430,7 +427,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
-            footerViews = [toolbarStack, saveButton]
+            footerViews = [toolbarStack, NSView(), saveButton]
         } else {
             self.saveButton = nil
             footerViews = [toolbarStack]
@@ -439,10 +436,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let footerBar = NSStackView(views: footerViews)
         footerBar.orientation = .horizontal
         footerBar.alignment = .centerY
-        footerBar.spacing = showsSaveButton ? 4 : 0
+        footerBar.spacing = 2
         footerBar.translatesAutoresizingMaskIntoConstraints = false
-        footerBar.setContentHuggingPriority(.required, for: .horizontal)
-        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
@@ -454,7 +449,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
-            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
+            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -8 : -4),
 
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
@@ -465,17 +460,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
             topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
 
-            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-            divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
+            divider.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
+            divider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
+            divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -1),
 
-            footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor),
-            footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor),
-            footerBar.centerXAnchor.constraint(equalTo: shellContent.centerXAnchor),
-            footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
-            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 20 : 16),
+            footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 10),
+            footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
+            footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor, constant: -1),
+            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 24 : 20),
 
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 218 : 224)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 220)
         ])
 
         refreshChrome()
@@ -1491,15 +1485,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private func savePressed() {
         let markdown = serializedMarkdown()
         let document = MarkdownEditorDocument.parse(editorText: markdown, tags: mergedDocumentTags(from: markdown))
-        let shouldKeepWindowOpenAfterSave = !showsSaveButton
 
         if document.title.isEmpty && document.body.isEmpty {
             noteStore.deleteDraft(id: currentDraftID)
-            if shouldKeepWindowOpenAfterSave {
-                statusLabel.stringValue = "Empty"
-            } else {
-                window?.close()
-            }
+            window?.close()
             return
         }
 
@@ -1529,13 +1518,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             noteStore.deleteDraft(id: previousDraftID)
             noteStore.deleteDraft(id: currentDraftID)
             isDirty = false
-            statusLabel.stringValue = "Saved"
             onSave(savedURL)
-            if shouldKeepWindowOpenAfterSave {
-                persistDraft(force: true)
-            } else {
-                window?.close()
-            }
+            window?.close()
         } catch {
             presentErrorAlert(message: "Failed to save note", details: error.localizedDescription)
         }

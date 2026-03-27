@@ -162,22 +162,10 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Split settings into quick-capture hotkey, floating-note hotkey, and save shortcut; added a second floating-note controller with its own draft/frame memory and reused the existing editor layout without the save button.
 - Lesson: As soon as one compact tool gains multiple entry points, treat global shortcuts, in-editor shortcuts, and window modes as separate configuration layers instead of overloading a single hotkey field.
 
-### 30. Unified global hotkey registration + wider resize hit band
-- Problem: After splitting into two global hotkeys, the original quick-capture shortcut became unreliable, and resize only worked in a very thin strip at the window edge.
-- Fix: Switched to one hotkey manager that registers both hotkeys under separate ids, and inset the visible card inside the borderless window so the transparent frame edge gives a wider practical resize target.
-- Lesson: Borderless utility windows behave more predictably when global hotkeys share one dispatch path, and resize usability often comes from the invisible frame geometry rather than the visible border itself.
-
-### 31. Sticky-note save behavior + compact footer width
-- Problem: Floating notes still behaved too much like transient capture windows, and the footer region kept spanning wider than the actual icon row.
-- Fix: Kept floating-note saves from closing the window, made the root transparent edge explicitly capture hits, and changed the footer/divider to hug the actual toolbar content width instead of stretching across the full shell.
-- Lesson: Once a window becomes a “sticky” surface, save semantics and chrome spacing should follow that mental model rather than the transient capture model.
-
 ## Maintenance Rule
 
 For every future QuickMarkdown fix:
 
-0. This confirmation rule applies to entries added after 2026-03-27; earlier historical entries were recorded before the rule was introduced.
 1. Add a new numbered iteration.
-2. Only record an issue as experience after the user explicitly confirms it is fixed, or after the user chooses to move on and you clearly note that the fix is being treated as implicitly accepted.
-3. Record the visible problem, the concrete fix, and the lesson.
-4. If the issue remains partially unresolved, add it to the open-issue section instead of hiding it.
+2. Record the visible problem, the concrete fix, and the lesson.
+3. If the issue remains partially unresolved, add it to the open-issue section instead of hiding it.

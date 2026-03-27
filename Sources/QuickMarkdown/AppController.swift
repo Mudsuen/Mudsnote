@@ -5,7 +5,8 @@ import QuickMarkdownCore
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
     private let noteStore = NoteStore()
-    private let hotKeyManager = GlobalHotKeyManager()
+    private let quickCaptureHotKeyManager = GlobalHotKeyManager(id: 1)
+    private let floatingNoteHotKeyManager = GlobalHotKeyManager(id: 2)
     private let launchArguments = Set(CommandLine.arguments.dropFirst())
 
     private var statusItem: NSStatusItem?
@@ -114,14 +115,14 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func registerHotKeysIfNeeded() {
         guard let quickCaptureSpec = HotKeySpec.parse(noteStore.hotKeyString) else { return }
-        let quickCaptureRegistered = hotKeyManager.register(quickCaptureSpec, id: 1) { [weak self] in
+        let quickCaptureRegistered = quickCaptureHotKeyManager.register(quickCaptureSpec) { [weak self] in
             Task { @MainActor in
                 self?.showQuickCapture()
             }
         }
 
         guard let floatingSpec = HotKeySpec.parse(noteStore.floatingNoteHotKeyString) else { return }
-        let floatingRegistered = hotKeyManager.register(floatingSpec, id: 2) { [weak self] in
+        let floatingRegistered = floatingNoteHotKeyManager.register(floatingSpec) { [weak self] in
             Task { @MainActor in
                 self?.showFloatingNote()
             }
