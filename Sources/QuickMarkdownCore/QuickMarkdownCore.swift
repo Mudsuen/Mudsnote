@@ -166,6 +166,8 @@ public final class NoteStore: @unchecked Sendable {
 
     private enum DefaultsKey {
         static let hotKey = "quickmarkdown.hotkey"
+        static let floatingHotKey = "quickmarkdown.floatingHotKey"
+        static let saveShortcut = "quickmarkdown.saveShortcut"
         static let notesDirectory = "quickmarkdown.notesDirectory"
         static let extraDirectories = "quickmarkdown.extraDirectories"
         static let panelOpacity = "quickmarkdown.panelOpacity"
@@ -174,6 +176,10 @@ public final class NoteStore: @unchecked Sendable {
         static let quickCaptureFrameY = "quickmarkdown.quickCaptureFrameY"
         static let quickCaptureFrameWidth = "quickmarkdown.quickCaptureFrameWidth"
         static let quickCaptureFrameHeight = "quickmarkdown.quickCaptureFrameHeight"
+        static let floatingFrameX = "quickmarkdown.floatingFrameX"
+        static let floatingFrameY = "quickmarkdown.floatingFrameY"
+        static let floatingFrameWidth = "quickmarkdown.floatingFrameWidth"
+        static let floatingFrameHeight = "quickmarkdown.floatingFrameHeight"
     }
 
     private let defaults: UserDefaults
@@ -208,6 +214,24 @@ public final class NoteStore: @unchecked Sendable {
         }
         set {
             defaults.set(newValue, forKey: DefaultsKey.hotKey)
+        }
+    }
+
+    public var floatingNoteHotKeyString: String {
+        get {
+            defaults.string(forKey: DefaultsKey.floatingHotKey) ?? "option+r"
+        }
+        set {
+            defaults.set(newValue, forKey: DefaultsKey.floatingHotKey)
+        }
+    }
+
+    public var saveShortcutString: String {
+        get {
+            defaults.string(forKey: DefaultsKey.saveShortcut) ?? "command+return"
+        }
+        set {
+            defaults.set(newValue, forKey: DefaultsKey.saveShortcut)
         }
     }
 
@@ -253,6 +277,37 @@ public final class NoteStore: @unchecked Sendable {
             defaults.set(newValue.y, forKey: DefaultsKey.quickCaptureFrameY)
             defaults.set(newValue.width, forKey: DefaultsKey.quickCaptureFrameWidth)
             defaults.set(newValue.height, forKey: DefaultsKey.quickCaptureFrameHeight)
+        }
+    }
+
+    public var floatingNoteWindowFrame: StoredWindowFrame? {
+        get {
+            guard defaults.object(forKey: DefaultsKey.floatingFrameX) != nil,
+                  defaults.object(forKey: DefaultsKey.floatingFrameY) != nil,
+                  defaults.object(forKey: DefaultsKey.floatingFrameWidth) != nil,
+                  defaults.object(forKey: DefaultsKey.floatingFrameHeight) != nil else {
+                return nil
+            }
+
+            let x = defaults.double(forKey: DefaultsKey.floatingFrameX)
+            let y = defaults.double(forKey: DefaultsKey.floatingFrameY)
+            let width = defaults.double(forKey: DefaultsKey.floatingFrameWidth)
+            let height = defaults.double(forKey: DefaultsKey.floatingFrameHeight)
+            return StoredWindowFrame(x: x, y: y, width: width, height: height)
+        }
+        set {
+            guard let newValue else {
+                defaults.removeObject(forKey: DefaultsKey.floatingFrameX)
+                defaults.removeObject(forKey: DefaultsKey.floatingFrameY)
+                defaults.removeObject(forKey: DefaultsKey.floatingFrameWidth)
+                defaults.removeObject(forKey: DefaultsKey.floatingFrameHeight)
+                return
+            }
+
+            defaults.set(newValue.x, forKey: DefaultsKey.floatingFrameX)
+            defaults.set(newValue.y, forKey: DefaultsKey.floatingFrameY)
+            defaults.set(newValue.width, forKey: DefaultsKey.floatingFrameWidth)
+            defaults.set(newValue.height, forKey: DefaultsKey.floatingFrameHeight)
         }
     }
 

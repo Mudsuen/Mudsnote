@@ -37,6 +37,11 @@ struct HotKeySpec {
         return HotKeySpec(keyCode: keyCode, modifiers: modifiers, displayString: raw)
     }
 
+    func matches(_ event: NSEvent) -> Bool {
+        let eventModifiers = UInt32(event.modifierFlags.intersection(.deviceIndependentFlagsMask).carbonHotKeyModifiers)
+        return UInt32(event.keyCode) == keyCode && eventModifiers == modifiers
+    }
+
     private static func keyCodeForToken(_ token: String) -> UInt32? {
         let keyMap: [String: UInt32] = [
             "a": UInt32(kVK_ANSI_A), "b": UInt32(kVK_ANSI_B), "c": UInt32(kVK_ANSI_C),
@@ -52,7 +57,9 @@ struct HotKeySpec {
             "3": UInt32(kVK_ANSI_3), "4": UInt32(kVK_ANSI_4), "5": UInt32(kVK_ANSI_5),
             "6": UInt32(kVK_ANSI_6), "7": UInt32(kVK_ANSI_7), "8": UInt32(kVK_ANSI_8),
             "9": UInt32(kVK_ANSI_9),
-            "space": UInt32(kVK_Space)
+            "space": UInt32(kVK_Space),
+            "return": UInt32(kVK_Return),
+            "enter": UInt32(kVK_Return)
         ]
         return keyMap[token]
     }
@@ -61,8 +68,12 @@ struct HotKeySpec {
 final class GlobalHotKeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
-    private let hotKeyID = EventHotKeyID(signature: OSType(0x514d444b), id: 1)
+    private let hotKeyID: EventHotKeyID
     private var handler: (() -> Void)?
+
+    init(id: UInt32) {
+        hotKeyID = EventHotKeyID(signature: OSType(0x514d444b), id: id)
+    }
 
     func register(_ spec: HotKeySpec, handler: @escaping () -> Void) -> Bool {
         unregister()
@@ -142,5 +153,16 @@ final class GlobalHotKeyManager {
 
     deinit {
         unregister()
+    }
+}
+
+private extension NSEvent.ModifierFlags {
+    var carbonHotKeyModifiers: Int {
+        var result = 0
+        if contains(.command) { result |= cmdKey }
+        if contains(.option) { result |= optionKey }
+        if contains(.shift) { result |= shiftKey }
+        if contains(.control) { result |= controlKey }
+        return result
     }
 }
