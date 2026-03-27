@@ -347,7 +347,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 8))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 2))
         shellContentView = shellContent
 
         let topDragBar = DragHandleView()
