@@ -379,11 +379,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = false
-        scrollView.scrollerStyle = .legacy
+        scrollView.scrollerStyle = .overlay
+        scrollView.scrollerInsets = .zero
         scrollView.documentView = editorTextView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         let slimScroller = SlimScroller()
-        slimScroller.scrollerStyle = .legacy
+        slimScroller.scrollerStyle = .overlay
         slimScroller.controlSize = .small
         slimScroller.knobStyle = .light
         scrollView.verticalScroller = slimScroller
