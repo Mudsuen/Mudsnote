@@ -399,7 +399,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let toolbarStack = NSStackView()
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
-        toolbarStack.distribution = .fill
         toolbarStack.spacing = 1
         toolbarStack.translatesAutoresizingMaskIntoConstraints = false
         toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
@@ -414,12 +413,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             toolbarStack.addArrangedSubview(button)
         }
 
-        let footerBar = NSView()
-        footerBar.translatesAutoresizingMaskIntoConstraints = false
-        footerBar.setContentHuggingPriority(.required, for: .horizontal)
-        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
-        shellContent.addSubview(footerBar)
-
+        let footerViews: [NSView]
         if showsSaveButton {
             let saveButton = HoverToolbarButton(frame: .zero)
             saveButton.title = "Save"
@@ -432,36 +426,29 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.imageHugsTitle = true
             saveButton.controlSize = .small
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
-            saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
             saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
-            footerBar.addSubview(toolbarStack)
-            footerBar.addSubview(saveButton)
-            NSLayoutConstraint.activate([
-                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 2),
-                saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-                saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 47)
-            ])
+            footerViews = [toolbarStack, saveButton]
         } else {
             self.saveButton = nil
-            footerBar.addSubview(toolbarStack)
-            NSLayoutConstraint.activate([
-                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-                toolbarStack.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor)
-            ])
+            footerViews = [toolbarStack]
         }
+
+        let footerBar = NSStackView(views: footerViews)
+        footerBar.orientation = .horizontal
+        footerBar.alignment = .centerY
+        footerBar.spacing = showsSaveButton ? 4 : 0
+        footerBar.translatesAutoresizingMaskIntoConstraints = false
+        footerBar.setContentHuggingPriority(.required, for: .horizontal)
+        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
         shellContent.addSubview(scrollView)
         shellContent.addSubview(divider)
+        shellContent.addSubview(footerBar)
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
@@ -478,8 +465,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
             topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
 
-            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 8),
-            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -8),
+            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
             divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
             footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor),
