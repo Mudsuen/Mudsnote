@@ -266,9 +266,9 @@ final class QuickEntryPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
-    private let sideResizeHandleWidth: CGFloat = 20
-    private let bottomResizeHandleWidth: CGFloat = 20
-    private let topResizeHandleWidth: CGFloat = 6
+    private let sideResizeHandleWidth: CGFloat = 12
+    private let bottomResizeHandleWidth: CGFloat = 12
+    private let topResizeHandleWidth: CGFloat = 4
 
     init(size: NSSize) {
         super.init(
@@ -288,8 +288,6 @@ final class QuickEntryPanel: NSPanel {
         hidesOnDeactivate = false
         isMovableByWindowBackground = false
         minSize = NSSize(width: 330, height: 260)
-        acceptsMouseMovedEvents = true
-
         let rootContentView = HitCatchingView(panel: self, frame: NSRect(origin: .zero, size: size))
         rootContentView.wantsLayer = true
         rootContentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -340,15 +338,6 @@ final class QuickEntryPanel: NSPanel {
         super.sendEvent(event)
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        updateCursor(for: event.locationInWindow)
-        super.mouseMoved(with: event)
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        updateCursor(for: event.locationInWindow)
-    }
-
     private func standardEditSelector(for event: NSEvent) -> Selector? {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
@@ -390,18 +379,6 @@ final class QuickEntryPanel: NSPanel {
         view.addCursorRect(NSRect(x: bounds.width - sideResizeHandleWidth, y: 0, width: sideResizeHandleWidth, height: bounds.height), cursor: .resizeLeftRight)
         view.addCursorRect(NSRect(x: 0, y: 0, width: bounds.width, height: bottomResizeHandleWidth), cursor: .resizeUpDown)
         view.addCursorRect(NSRect(x: 0, y: bounds.height - topResizeHandleWidth, width: bounds.width, height: topResizeHandleWidth), cursor: .resizeUpDown)
-    }
-
-    private func updateCursor(for location: NSPoint) {
-        guard let contentView else { return }
-        let edges = resizeEdges(at: location, in: contentView.bounds)
-        if edges.contains(.left) || edges.contains(.right) {
-            NSCursor.resizeLeftRight.set()
-        } else if edges.contains(.top) || edges.contains(.bottom) {
-            NSCursor.resizeUpDown.set()
-        } else {
-            NSCursor.arrow.set()
-        }
     }
 
     private func performManualResize(from initialEvent: NSEvent, edges: ResizeEdge) {
