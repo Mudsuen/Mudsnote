@@ -347,7 +347,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 0))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 8))
         shellContentView = shellContent
 
         let topDragBar = DragHandleView()
@@ -473,7 +473,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -3),
+            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
             scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
@@ -1453,7 +1453,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
 
         if let symbolName = action.symbolName {
-            let pointSize: CGFloat = action == .checklist ? 13.8 : 13
+            let pointSize: CGFloat = 13
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: action.toolTip)?
                 .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))
             button.imagePosition = .imageOnly
