@@ -413,7 +413,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             toolbarStack.addArrangedSubview(button)
         }
 
-        let footerBar: NSStackView
+        let footerBar = NSView()
+        footerBar.translatesAutoresizingMaskIntoConstraints = false
+        footerBar.setContentHuggingPriority(.required, for: .horizontal)
+        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
+        shellContent.addSubview(footerBar)
+
         if showsSaveButton {
             let saveButton = HoverToolbarButton(frame: .zero)
             saveButton.title = "Save"
@@ -431,19 +436,26 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.widthAnchor.constraint(equalToConstant: 43).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
-            footerBar = NSStackView(views: [toolbarStack, saveButton])
+            footerBar.addSubview(toolbarStack)
+            footerBar.addSubview(saveButton)
+            NSLayoutConstraint.activate([
+                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 2),
+                saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+                saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 45)
+            ])
         } else {
             self.saveButton = nil
-            footerBar = NSStackView(views: [toolbarStack])
+            footerBar.addSubview(toolbarStack)
+            NSLayoutConstraint.activate([
+                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+                toolbarStack.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor)
+            ])
         }
-        footerBar.orientation = .horizontal
-        footerBar.alignment = .centerY
-        footerBar.distribution = .fill
-        footerBar.spacing = showsSaveButton ? 2 : 0
-        footerBar.translatesAutoresizingMaskIntoConstraints = false
-        footerBar.setContentHuggingPriority(.required, for: .horizontal)
-        footerBar.setContentCompressionResistancePriority(.required, for: .horizontal)
-        shellContent.addSubview(footerBar)
 
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
