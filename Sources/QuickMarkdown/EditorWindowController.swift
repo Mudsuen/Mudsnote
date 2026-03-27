@@ -1440,7 +1440,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.controlSize = .small
         button.font = .systemFont(ofSize: 12, weight: .semibold)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
         button.heightAnchor.constraint(equalToConstant: 24).isActive = true
 
         if let symbolName = action.symbolName {
