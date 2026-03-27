@@ -67,18 +67,14 @@ struct HotKeySpec {
 }
 
 final class GlobalHotKeyManager {
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandlerRef: EventHandlerRef?
-    private let hotKeyID: EventHotKeyID
-    private var handler: (() -> Void)?
+    private let signature = OSType(0x514d444b)
+    private var handlers: [UInt32: () -> Void] = [:]
 
-    init(id: UInt32) {
-        hotKeyID = EventHotKeyID(signature: OSType(0x514d444b), id: id)
-    }
-
-    func register(_ spec: HotKeySpec, handler: @escaping () -> Void) -> Bool {
-        unregister()
-        self.handler = handler
+    func register(_ spec: HotKeySpec, id: UInt32, handler: @escaping () -> Void) -> Bool {
+        unregister(id: id)
+        handlers[id] = handler
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -101,26 +97,32 @@ final class GlobalHotKeyManager {
             )
 
             guard status == noErr,
-                  hotKeyID.signature == manager.hotKeyID.signature,
-                  hotKeyID.id == manager.hotKeyID.id else {
+                  hotKeyID.signature == manager.signature else {
                 return noErr
             }
 
-            manager.handler?()
+            manager.handlers[hotKeyID.id]?()
             return noErr
         }
 
-        let installStatus = InstallEventHandler(
-            GetApplicationEventTarget(),
-            callback,
-            1,
-            &eventType,
-            UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
-            &eventHandlerRef
-        )
+        if eventHandlerRef == nil {
+            let installStatus = InstallEventHandler(
+                GetApplicationEventTarget(),
+                callback,
+                1,
+                &eventType,
+                UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+                &eventHandlerRef
+            )
 
-        guard installStatus == noErr else { return false }
+            guard installStatus == noErr else {
+                handlers[id] = nil
+                return false
+            }
+        }
 
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
+        var hotKeyRef: EventHotKeyRef?
         let registerStatus = RegisterEventHotKey(
             spec.keyCode,
             spec.modifiers,
@@ -131,29 +133,42 @@ final class GlobalHotKeyManager {
         )
 
         if registerStatus != noErr {
-            unregister()
+            handlers[id] = nil
+            if handlers.isEmpty, let eventHandlerRef {
+                RemoveEventHandler(eventHandlerRef)
+                self.eventHandlerRef = nil
+            }
             return false
         }
 
+        if let hotKeyRef {
+            hotKeyRefs[id] = hotKeyRef
+        }
         return true
     }
 
-    func unregister() {
-        handler = nil
+    func unregister(id: UInt32) {
+        handlers[id] = nil
 
-        if let hotKeyRef {
+        if let hotKeyRef = hotKeyRefs[id] {
             UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
+            hotKeyRefs[id] = nil
         }
 
-        if let eventHandlerRef {
+        if handlers.isEmpty, let eventHandlerRef {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
     }
 
+    func unregisterAll() {
+        let ids = Array(hotKeyRefs.keys)
+        ids.forEach(unregister(id:))
+        handlers.removeAll()
+    }
+
     deinit {
-        unregister()
+        unregisterAll()
     }
 }
 
