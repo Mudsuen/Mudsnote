@@ -119,8 +119,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private var inlineSuggestionContext: InlineSuggestionContext?
     private weak var backdropView: GradientBackdropView?
     private weak var shellContentView: NSView?
-    private let remembersPosition: Bool
     private let initialWindowFrame: NSRect?
+    private let draftIDOverride: String?
+    private let saveShortcut: HotKeySpec?
+    private let showsSaveButton: Bool
+    private let remembersWindowFrame: ((NSRect) -> Void)?
     private var hasPresentedWindow = false
     private var didCloseWindow = false
 
@@ -139,7 +142,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         panelOpacity: Double,
         fileURL: URL?,
         initialWindowFrame: NSRect? = nil,
-        remembersPosition: Bool = false,
+        draftIDOverride: String? = nil,
+        saveShortcut: HotKeySpec? = nil,
+        showsSaveButton: Bool = true,
+        windowLevel: NSWindow.Level? = nil,
+        remembersWindowFrame: ((NSRect) -> Void)? = nil,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void,
         onRequestSearch: @escaping () -> Void
@@ -148,7 +155,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.currentPanelOpacity = panelOpacity
         self.fileURL = fileURL
         self.initialWindowFrame = initialWindowFrame
-        self.remembersPosition = remembersPosition
+        self.draftIDOverride = draftIDOverride
+        self.saveShortcut = saveShortcut
+        self.showsSaveButton = showsSaveButton
+        self.remembersWindowFrame = remembersWindowFrame
         self.selectedDirectoryURL = fileURL?.deletingLastPathComponent() ?? noteStore.notesDirectory
         self.onSave = onSave
         self.onClose = onClose
@@ -156,6 +166,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
         window.isReleasedWhenClosed = false
+        if let windowLevel {
+            window.level = windowLevel
+        }
 
         super.init(window: window)
         window.delegate = self
@@ -215,13 +228,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     func rememberCurrentWindowFrame() {
-        guard remembersPosition, let frame = window?.frame else { return }
-        noteStore.quickCaptureWindowFrame = StoredWindowFrame(
-            x: frame.origin.x,
-            y: frame.origin.y,
-            width: frame.size.width,
-            height: frame.size.height
-        )
+        guard let frame = window?.frame else { return }
+        remembersWindowFrame?(frame)
     }
 
     func hideWindowForToggle() {
@@ -315,6 +323,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     private var currentDraftID: String {
+        if let draftIDOverride {
+            return draftIDOverride
+        }
         if let fileURL {
             return "edit-" + sha256Hex(fileURL.path)
         }
