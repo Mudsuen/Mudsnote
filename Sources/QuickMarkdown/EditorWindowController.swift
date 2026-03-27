@@ -847,6 +847,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         case Selector(("redo:")):
             textResponder.undoManager?.redo()
             return true
+        case Selector(("moveToBeginningOfLine:")),
+             Selector(("moveToEndOfLine:")),
+             Selector(("moveToBeginningOfDocument:")),
+             Selector(("moveToEndOfDocument:")),
+             Selector(("moveToBeginningOfLineAndModifySelection:")),
+             Selector(("moveToEndOfLineAndModifySelection:")),
+             Selector(("moveToBeginningOfDocumentAndModifySelection:")),
+             Selector(("moveToEndOfDocumentAndModifySelection:")),
+             Selector(("deleteToBeginningOfLine:")):
+            (textResponder as? NSTextView)?.doCommand(by: selector)
+            return true
         default:
             break
         }
