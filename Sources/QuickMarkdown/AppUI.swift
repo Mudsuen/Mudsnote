@@ -252,11 +252,21 @@ protocol WindowOpacityAdjusting: AnyObject {
 
 @MainActor
 final class QuickEntryPanel: NSPanel {
+    private struct ResizeEdge: OptionSet {
+        let rawValue: Int
+
+        static let left = ResizeEdge(rawValue: 1 << 0)
+        static let right = ResizeEdge(rawValue: 1 << 1)
+        static let bottom = ResizeEdge(rawValue: 1 << 2)
+        static let top = ResizeEdge(rawValue: 1 << 3)
+    }
+
     var onCommandS: (() -> Void)?
     var onCommandF: (() -> Void)?
     var onEscape: (() -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
+    private let resizeHandleWidth: CGFloat = 20
 
     init(size: NSSize) {
         super.init(
@@ -275,12 +285,12 @@ final class QuickEntryPanel: NSPanel {
         hasShadow = false
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
-        minSize = NSSize(width: 360, height: 260)
+        minSize = NSSize(width: 330, height: 260)
 
-        let rootContentView = NSView(frame: NSRect(origin: .zero, size: size))
+        let rootContentView = HitCatchingView(frame: NSRect(origin: .zero, size: size))
         rootContentView.wantsLayer = true
         rootContentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
-        rootContentView.layer?.backgroundColor = NSColor.clear.cgColor
+        rootContentView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.001).cgColor
         rootContentView.layer?.cornerRadius = 14
         rootContentView.layer?.masksToBounds = true
         contentView = rootContentView
@@ -290,6 +300,10 @@ final class QuickEntryPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, handleManualResizeIfNeeded(with: event) {
+            return
+        }
+
         guard event.type == .keyDown else {
             super.sendEvent(event)
             return
@@ -335,6 +349,82 @@ final class QuickEntryPanel: NSPanel {
         case ([.command, .shift], 6): return Selector(("redo:")) // shift+z
         default: return nil
         }
+    }
+
+    private func handleManualResizeIfNeeded(with event: NSEvent) -> Bool {
+        guard styleMask.contains(.resizable),
+              let contentView else { return false }
+
+        let location = event.locationInWindow
+        let resizeEdges = resizeEdges(at: location, in: contentView.bounds)
+        guard !resizeEdges.isEmpty else { return false }
+
+        performManualResize(from: event, edges: resizeEdges)
+        return true
+    }
+
+    private func resizeEdges(at point: NSPoint, in bounds: NSRect) -> ResizeEdge {
+        var edges: ResizeEdge = []
+        if point.x <= resizeHandleWidth { edges.insert(.left) }
+        if point.x >= bounds.width - resizeHandleWidth { edges.insert(.right) }
+        if point.y <= resizeHandleWidth { edges.insert(.bottom) }
+        if point.y >= bounds.height - resizeHandleWidth { edges.insert(.top) }
+        return edges
+    }
+
+    private func performManualResize(from initialEvent: NSEvent, edges: ResizeEdge) {
+        let initialFrame = frame
+        let initialMouseLocation = NSEvent.mouseLocation
+
+        while let nextEvent = nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            if nextEvent.type == .leftMouseUp {
+                break
+            }
+
+            let currentMouseLocation = NSEvent.mouseLocation
+            let deltaX = currentMouseLocation.x - initialMouseLocation.x
+            let deltaY = currentMouseLocation.y - initialMouseLocation.y
+            var nextFrame = initialFrame
+
+            if edges.contains(.left) {
+                nextFrame.origin.x += deltaX
+                nextFrame.size.width -= deltaX
+            }
+            if edges.contains(.right) {
+                nextFrame.size.width += deltaX
+            }
+            if edges.contains(.bottom) {
+                nextFrame.origin.y += deltaY
+                nextFrame.size.height -= deltaY
+            }
+            if edges.contains(.top) {
+                nextFrame.size.height += deltaY
+            }
+
+            if nextFrame.size.width < minSize.width {
+                if edges.contains(.left) {
+                    nextFrame.origin.x = initialFrame.maxX - minSize.width
+                }
+                nextFrame.size.width = minSize.width
+            }
+
+            if nextFrame.size.height < minSize.height {
+                if edges.contains(.bottom) {
+                    nextFrame.origin.y = initialFrame.maxY - minSize.height
+                }
+                nextFrame.size.height = minSize.height
+            }
+
+            setFrame(nextFrame, display: true)
+        }
+    }
+}
+
+@MainActor
+private final class HitCatchingView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point) else { return nil }
+        return super.hitTest(point) ?? self
     }
 }
 
