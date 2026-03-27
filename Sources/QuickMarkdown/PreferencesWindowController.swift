@@ -175,25 +175,65 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         )
         opacitySurfaceView = opacitySurface
 
-        let hotKeyLabel = NSTextField(labelWithString: "Global shortcut")
-        hotKeyLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        hotKeyLabel.textColor = NSColor.white.withAlphaComponent(0.58)
+        let quickCaptureHotKeyLabel = NSTextField(labelWithString: "Quick capture shortcut")
+        quickCaptureHotKeyLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        quickCaptureHotKeyLabel.textColor = NSColor.white.withAlphaComponent(0.58)
 
-        hotKeyField.stringValue = currentHotKey
-        hotKeyField.placeholderString = "option+shift+n"
-        hotKeyField.font = .systemFont(ofSize: 18, weight: .semibold)
-        hotKeyField.isBordered = false
-        hotKeyField.drawsBackground = false
-        hotKeyField.textColor = .white
+        quickCaptureHotKeyField.stringValue = currentQuickCaptureHotKey
+        quickCaptureHotKeyField.placeholderString = "option+shift+n"
+        quickCaptureHotKeyField.font = .systemFont(ofSize: 16, weight: .semibold)
+        quickCaptureHotKeyField.isBordered = false
+        quickCaptureHotKeyField.drawsBackground = false
+        quickCaptureHotKeyField.textColor = .white
 
-        let hotKeySurface = makeModernSurface(
-            content: insetted(hotKeyField, padding: .init(top: 10, left: 12, bottom: 10, right: 12)),
+        let quickCaptureHotKeySurface = makeModernSurface(
+            content: insetted(quickCaptureHotKeyField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
             cornerRadius: 16,
             tintColor: NSColor.systemBlue.withAlphaComponent(0.14),
             alpha: primarySurfaceAlpha(for: currentOpacity),
             material: .menu
         )
-        hotKeySurfaceView = hotKeySurface
+        quickCaptureHotKeySurfaceView = quickCaptureHotKeySurface
+
+        let floatingHotKeyLabel = NSTextField(labelWithString: "Floating note shortcut")
+        floatingHotKeyLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        floatingHotKeyLabel.textColor = NSColor.white.withAlphaComponent(0.58)
+
+        floatingHotKeyField.stringValue = currentFloatingHotKey
+        floatingHotKeyField.placeholderString = "option+r"
+        floatingHotKeyField.font = .systemFont(ofSize: 16, weight: .semibold)
+        floatingHotKeyField.isBordered = false
+        floatingHotKeyField.drawsBackground = false
+        floatingHotKeyField.textColor = .white
+
+        let floatingHotKeySurface = makeModernSurface(
+            content: insetted(floatingHotKeyField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
+            cornerRadius: 16,
+            tintColor: NSColor.systemBlue.withAlphaComponent(0.14),
+            alpha: primarySurfaceAlpha(for: currentOpacity),
+            material: .menu
+        )
+        floatingHotKeySurfaceView = floatingHotKeySurface
+
+        let saveShortcutLabel = NSTextField(labelWithString: "Save shortcut")
+        saveShortcutLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        saveShortcutLabel.textColor = NSColor.white.withAlphaComponent(0.58)
+
+        saveShortcutField.stringValue = currentSaveShortcut
+        saveShortcutField.placeholderString = "command+return"
+        saveShortcutField.font = .systemFont(ofSize: 16, weight: .semibold)
+        saveShortcutField.isBordered = false
+        saveShortcutField.drawsBackground = false
+        saveShortcutField.textColor = .white
+
+        let saveShortcutSurface = makeModernSurface(
+            content: insetted(saveShortcutField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
+            cornerRadius: 16,
+            tintColor: NSColor.systemBlue.withAlphaComponent(0.14),
+            alpha: primarySurfaceAlpha(for: currentOpacity),
+            material: .menu
+        )
+        saveShortcutSurfaceView = saveShortcutSurface
 
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
         styleSecondaryButton(cancelButton)
@@ -207,7 +247,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         footer.orientation = .horizontal
         footer.spacing = 10
 
-        for view in [badge, title, folderLabel, directorySurface, directoryActions, folderHelp, opacityLabel, opacitySurface, hotKeyLabel, hotKeySurface, footer] {
+        for view in [
+            badge, title, folderLabel, directorySurface, directoryActions, folderHelp,
+            opacityLabel, opacitySurface,
+            quickCaptureHotKeyLabel, quickCaptureHotKeySurface,
+            floatingHotKeyLabel, floatingHotKeySurface,
+            saveShortcutLabel, saveShortcutSurface,
+            footer
+        ] {
             view.translatesAutoresizingMaskIntoConstraints = false
             shellContent.addSubview(view)
         }
@@ -242,16 +289,30 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             opacitySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
             opacitySurface.topAnchor.constraint(equalTo: opacityLabel.bottomAnchor, constant: 8),
 
-            hotKeyLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            hotKeyLabel.topAnchor.constraint(equalTo: opacitySurface.bottomAnchor, constant: 14),
+            quickCaptureHotKeyLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            quickCaptureHotKeyLabel.topAnchor.constraint(equalTo: opacitySurface.bottomAnchor, constant: 14),
 
-            hotKeySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            hotKeySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            hotKeySurface.topAnchor.constraint(equalTo: hotKeyLabel.bottomAnchor, constant: 8),
+            quickCaptureHotKeySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            quickCaptureHotKeySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
+            quickCaptureHotKeySurface.topAnchor.constraint(equalTo: quickCaptureHotKeyLabel.bottomAnchor, constant: 8),
+
+            floatingHotKeyLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            floatingHotKeyLabel.topAnchor.constraint(equalTo: quickCaptureHotKeySurface.bottomAnchor, constant: 12),
+
+            floatingHotKeySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            floatingHotKeySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
+            floatingHotKeySurface.topAnchor.constraint(equalTo: floatingHotKeyLabel.bottomAnchor, constant: 8),
+
+            saveShortcutLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            saveShortcutLabel.topAnchor.constraint(equalTo: floatingHotKeySurface.bottomAnchor, constant: 12),
+
+            saveShortcutSurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
+            saveShortcutSurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
+            saveShortcutSurface.topAnchor.constraint(equalTo: saveShortcutLabel.bottomAnchor, constant: 8),
 
             footer.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
             footer.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            footer.topAnchor.constraint(greaterThanOrEqualTo: hotKeySurface.bottomAnchor, constant: 18),
+            footer.topAnchor.constraint(greaterThanOrEqualTo: saveShortcutSurface.bottomAnchor, constant: 18),
             footer.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor, constant: -18)
         ])
 
@@ -325,19 +386,23 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     @objc
     private func savePressed() {
-        let hotKeyRaw = hotKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let quickCaptureHotKeyRaw = quickCaptureHotKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let floatingHotKeyRaw = floatingHotKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let saveShortcutRaw = saveShortcutField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let spec = HotKeySpec.parse(hotKeyRaw) else {
+        guard let quickCaptureSpec = HotKeySpec.parse(quickCaptureHotKeyRaw),
+              let floatingSpec = HotKeySpec.parse(floatingHotKeyRaw),
+              let saveShortcutSpec = HotKeySpec.parse(saveShortcutRaw) else {
             let alert = NSAlert()
             alert.alertStyle = .warning
-            alert.messageText = "Invalid hotkey"
-            alert.informativeText = "Use a format like option+shift+n."
+            alert.messageText = "Invalid shortcut"
+            alert.informativeText = "Use formats like option+shift+n, option+r, or command+return."
             alert.runModal()
             return
         }
 
         didSavePreferences = true
-        onSave(selectedDirectory, managedDirectories, opacitySlider.doubleValue, spec)
+        onSave(selectedDirectory, managedDirectories, opacitySlider.doubleValue, quickCaptureSpec, floatingSpec, saveShortcutSpec)
         window?.close()
     }
 
@@ -353,6 +418,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         backdropView?.updatePanelOpacity(opacity)
         directorySurfaceView?.alphaValue = secondarySurfaceAlpha(for: opacity)
         opacitySurfaceView?.alphaValue = secondarySurfaceAlpha(for: opacity)
-        hotKeySurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
+        quickCaptureHotKeySurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
+        floatingHotKeySurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
+        saveShortcutSurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
     }
 }
