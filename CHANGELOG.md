@@ -167,6 +167,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Switched to one hotkey manager that registers both hotkeys under separate ids, and inset the visible card inside the borderless window so the transparent frame edge gives a wider practical resize target.
 - Lesson: Borderless utility windows behave more predictably when global hotkeys share one dispatch path, and resize usability often comes from the invisible frame geometry rather than the visible border itself.
 
+### 31. Sticky-note save behavior + compact footer width
+- Problem: Floating notes still behaved too much like transient capture windows, and the footer region kept spanning wider than the actual icon row.
+- Fix: Kept floating-note saves from closing the window, made the root transparent edge explicitly capture hits, and changed the footer/divider to hug the actual toolbar content width instead of stretching across the full shell.
+- Lesson: Once a window becomes a “sticky” surface, save semantics and chrome spacing should follow that mental model rather than the transient capture model.
+
 ## Maintenance Rule
 
 For every future QuickMarkdown fix:
