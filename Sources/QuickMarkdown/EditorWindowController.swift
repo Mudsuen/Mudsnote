@@ -841,10 +841,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         case #selector(NSResponder.selectAll(_:)):
             textResponder.selectAll(self)
             return true
-        case #selector(NSUndoManager.undo):
+        case #selector(UndoManager.undo):
             textResponder.undoManager?.undo()
             return true
-        case #selector(NSUndoManager.redo):
+        case #selector(UndoManager.redo):
             textResponder.undoManager?.redo()
             return true
         case #selector(NSResponder.moveToBeginningOfLine(_:)),
