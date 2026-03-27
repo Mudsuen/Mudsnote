@@ -353,17 +353,17 @@ final class QuickEntryPanel: NSPanel {
         case ([.command], 7): return #selector(NSText.cut(_:)) // x
         case ([.command], 9): return #selector(NSText.paste(_:)) // v
         case ([.command], 0): return #selector(NSResponder.selectAll(_:)) // a
-        case ([.command], 6): return Selector(("undo:")) // z
-        case ([.command, .shift], 6): return Selector(("redo:")) // shift+z
-        case ([.command], 123): return Selector(("moveToBeginningOfLine:")) // cmd-left
-        case ([.command], 124): return Selector(("moveToEndOfLine:")) // cmd-right
-        case ([.command], 126): return Selector(("moveToBeginningOfDocument:")) // cmd-up
-        case ([.command], 125): return Selector(("moveToEndOfDocument:")) // cmd-down
-        case ([.command, .shift], 123): return Selector(("moveToBeginningOfLineAndModifySelection:")) // cmd-shift-left
-        case ([.command, .shift], 124): return Selector(("moveToEndOfLineAndModifySelection:")) // cmd-shift-right
-        case ([.command, .shift], 126): return Selector(("moveToBeginningOfDocumentAndModifySelection:")) // cmd-shift-up
-        case ([.command, .shift], 125): return Selector(("moveToEndOfDocumentAndModifySelection:")) // cmd-shift-down
-        case ([.command], 51): return Selector(("deleteToBeginningOfLine:")) // cmd-delete
+        case ([.command], 6): return #selector(UndoManager.undo) // z
+        case ([.command, .shift], 6): return #selector(UndoManager.redo) // shift+z
+        case ([.command], 123): return #selector(NSResponder.moveToBeginningOfLine(_:)) // cmd-left
+        case ([.command], 124): return #selector(NSResponder.moveToEndOfLine(_:)) // cmd-right
+        case ([.command], 126): return #selector(NSResponder.moveToBeginningOfDocument(_:)) // cmd-up
+        case ([.command], 125): return #selector(NSResponder.moveToEndOfDocument(_:)) // cmd-down
+        case ([.command, .shift], 123): return #selector(NSResponder.moveToBeginningOfLineAndModifySelection(_:)) // cmd-shift-left
+        case ([.command, .shift], 124): return #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)) // cmd-shift-right
+        case ([.command, .shift], 126): return #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)) // cmd-shift-up
+        case ([.command, .shift], 125): return #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)) // cmd-shift-down
+        case ([.command], 51): return #selector(NSResponder.deleteToBeginningOfLine(_:)) // cmd-delete
         default: return nil
         }
     }

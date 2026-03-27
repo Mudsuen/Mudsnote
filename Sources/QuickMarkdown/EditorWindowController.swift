@@ -841,21 +841,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         case #selector(NSResponder.selectAll(_:)):
             textResponder.selectAll(self)
             return true
-        case Selector(("undo:")):
+        case #selector(NSUndoManager.undo):
             textResponder.undoManager?.undo()
             return true
-        case Selector(("redo:")):
+        case #selector(NSUndoManager.redo):
             textResponder.undoManager?.redo()
             return true
-        case Selector(("moveToBeginningOfLine:")),
-             Selector(("moveToEndOfLine:")),
-             Selector(("moveToBeginningOfDocument:")),
-             Selector(("moveToEndOfDocument:")),
-             Selector(("moveToBeginningOfLineAndModifySelection:")),
-             Selector(("moveToEndOfLineAndModifySelection:")),
-             Selector(("moveToBeginningOfDocumentAndModifySelection:")),
-             Selector(("moveToEndOfDocumentAndModifySelection:")),
-             Selector(("deleteToBeginningOfLine:")):
+        case #selector(NSResponder.moveToBeginningOfLine(_:)),
+             #selector(NSResponder.moveToEndOfLine(_:)),
+             #selector(NSResponder.moveToBeginningOfDocument(_:)),
+             #selector(NSResponder.moveToEndOfDocument(_:)),
+             #selector(NSResponder.moveToBeginningOfLineAndModifySelection(_:)),
+             #selector(NSResponder.moveToEndOfLineAndModifySelection(_:)),
+             #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)),
+             #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)),
+             #selector(NSResponder.deleteToBeginningOfLine(_:)):
             (textResponder as? NSTextView)?.doCommand(by: selector)
             return true
         default:
