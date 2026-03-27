@@ -399,6 +399,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let toolbarStack = NSStackView()
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
+        toolbarStack.distribution = .fill
         toolbarStack.spacing = 1
         toolbarStack.translatesAutoresizingMaskIntoConstraints = false
         toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
