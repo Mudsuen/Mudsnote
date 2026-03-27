@@ -99,7 +99,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let onRequestSearch: () -> Void
-    private let toolbarButtonWidth: CGFloat = 22
+    private let toolbarButtonWidth: CGFloat = 30
     private let toolbarButtonHeight: CGFloat = 26
     private let toolbarButtonSpacing: CGFloat = 0
     private let footerGapToSave: CGFloat = 1
@@ -473,7 +473,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -3),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
             scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
@@ -1453,7 +1453,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
 
         if let symbolName = action.symbolName {
-            let pointSize: CGFloat = action == .checklist ? 14.5 : 13
+            let pointSize: CGFloat = action == .checklist ? 13.8 : 13
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: action.toolTip)?
                 .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))
             button.imagePosition = .imageOnly

@@ -273,7 +273,7 @@ final class QuickEntryPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
-    private let sideResizeHandleWidth: CGFloat = 10
+    private let sideResizeHandleWidth: CGFloat = 8
     private let bottomResizeHandleWidth: CGFloat = 6
     private let topResizeHandleWidth: CGFloat = 4
 
