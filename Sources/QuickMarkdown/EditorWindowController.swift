@@ -427,7 +427,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
-            footerViews = [toolbarStack, NSView(), saveButton]
+            footerViews = [toolbarStack, saveButton]
         } else {
             self.saveButton = nil
             footerViews = [toolbarStack]
@@ -436,7 +436,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let footerBar = NSStackView(views: footerViews)
         footerBar.orientation = .horizontal
         footerBar.alignment = .centerY
-        footerBar.spacing = 2
+        footerBar.spacing = showsSaveButton ? 6 : 0
         footerBar.translatesAutoresizingMaskIntoConstraints = false
 
         shellContent.addSubview(topDragBar)
@@ -460,12 +460,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
             topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
 
-            divider.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
-            divider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
+            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
             divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
-            footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 10),
+            footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor, constant: 8),
             footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
+            footerBar.centerXAnchor.constraint(equalTo: shellContent.centerXAnchor),
             footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
             footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 20 : 16),
 
@@ -1485,10 +1486,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private func savePressed() {
         let markdown = serializedMarkdown()
         let document = MarkdownEditorDocument.parse(editorText: markdown, tags: mergedDocumentTags(from: markdown))
+        let shouldKeepWindowOpenAfterSave = !showsSaveButton
 
         if document.title.isEmpty && document.body.isEmpty {
             noteStore.deleteDraft(id: currentDraftID)
-            window?.close()
+            if shouldKeepWindowOpenAfterSave {
+                statusLabel.stringValue = "Empty"
+            } else {
+                window?.close()
+            }
             return
         }
 
@@ -1518,8 +1524,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             noteStore.deleteDraft(id: previousDraftID)
             noteStore.deleteDraft(id: currentDraftID)
             isDirty = false
+            statusLabel.stringValue = "Saved"
             onSave(savedURL)
-            window?.close()
+            if shouldKeepWindowOpenAfterSave {
+                persistDraft(force: true)
+            } else {
+                window?.close()
+            }
         } catch {
             presentErrorAlert(message: "Failed to save note", details: error.localizedDescription)
         }

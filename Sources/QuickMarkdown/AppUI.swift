@@ -277,10 +277,10 @@ final class QuickEntryPanel: NSPanel {
         isMovableByWindowBackground = true
         minSize = NSSize(width: 360, height: 260)
 
-        let rootContentView = NSView(frame: NSRect(origin: .zero, size: size))
+        let rootContentView = HitCatchingView(frame: NSRect(origin: .zero, size: size))
         rootContentView.wantsLayer = true
         rootContentView.layerContentsRedrawPolicy = .onSetNeedsDisplay
-        rootContentView.layer?.backgroundColor = NSColor.clear.cgColor
+        rootContentView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.001).cgColor
         rootContentView.layer?.cornerRadius = 14
         rootContentView.layer?.masksToBounds = true
         contentView = rootContentView
@@ -335,6 +335,14 @@ final class QuickEntryPanel: NSPanel {
         case ([.command, .shift], 6): return Selector(("redo:")) // shift+z
         default: return nil
         }
+    }
+}
+
+@MainActor
+private final class HitCatchingView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point) else { return nil }
+        return super.hitTest(point) ?? self
     }
 }
 
