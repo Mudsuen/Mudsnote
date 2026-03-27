@@ -400,7 +400,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         toolbarStack.orientation = .horizontal
         toolbarStack.alignment = .centerY
         toolbarStack.distribution = .fill
-        toolbarStack.spacing = 0
+        toolbarStack.spacing = 1
         toolbarStack.translatesAutoresizingMaskIntoConstraints = false
         toolbarStack.setContentHuggingPriority(.required, for: .horizontal)
         toolbarStack.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -434,7 +434,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             saveButton.font = .systemFont(ofSize: 11, weight: .semibold)
             saveButton.translatesAutoresizingMaskIntoConstraints = false
             saveButton.setContentHuggingPriority(.required, for: .horizontal)
-            saveButton.widthAnchor.constraint(equalToConstant: 46).isActive = true
+            saveButton.widthAnchor.constraint(equalToConstant: 45).isActive = true
             saveButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
             self.saveButton = saveButton
             footerBar.addSubview(toolbarStack)
@@ -442,7 +442,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             NSLayoutConstraint.activate([
                 toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
                 toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 1),
+                saveButton.leadingAnchor.constraint(equalTo: toolbarStack.trailingAnchor, constant: 2),
                 saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
                 saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
                 footerBar.widthAnchor.constraint(equalTo: toolbarStack.widthAnchor, constant: 47)
@@ -478,8 +478,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
             topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
 
-            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: 8),
+            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -8),
             divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
             footerBar.leadingAnchor.constraint(greaterThanOrEqualTo: shellContent.leadingAnchor),
