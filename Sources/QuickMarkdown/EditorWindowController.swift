@@ -337,12 +337,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         contentView.addSubview(backdrop)
-        pin(backdrop, to: contentView)
+        pin(backdrop, to: contentView, insets: .init(top: 4, left: 4, bottom: 4, right: 4))
         backdropView = backdrop
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 0))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 4))
         shellContentView = shellContent
 
         let topDragBar = NSView()
@@ -449,7 +449,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
-            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -8 : -4),
+            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
@@ -462,14 +462,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
             divider.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             divider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
-            divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -1),
+            divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
 
             footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 10),
             footerBar.trailingAnchor.constraint(lessThanOrEqualTo: shellContent.trailingAnchor, constant: -8),
-            footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor, constant: -1),
-            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 24 : 20),
+            footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
+            footerBar.heightAnchor.constraint(equalToConstant: showsSaveButton ? 20 : 16),
 
-            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 220)
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 218 : 224)
         ])
 
         refreshChrome()
