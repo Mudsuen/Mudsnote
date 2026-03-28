@@ -603,7 +603,17 @@ private final class HitCatchingView: NSView {
 
 @MainActor
 final class DragHandleView: NSView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     override func mouseDown(with event: NSEvent) {
+        if let window {
+            NSApp.activate(ignoringOtherApps: true)
+            if !window.isKeyWindow {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
         window?.performDrag(with: event)
     }
 }
