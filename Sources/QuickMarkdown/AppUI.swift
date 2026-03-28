@@ -219,16 +219,6 @@ final class ScrollIndicatorOverlay: NSView {
         wantsLayer = true
         layer = CALayer()
         layer?.masksToBounds = false
-        let disabledActions: [String: Any] = [
-            "bounds": NSNull(),
-            "position": NSNull(),
-            "frame": NSNull(),
-            "hidden": NSNull(),
-            "cornerRadius": NSNull()
-        ]
-        layer?.actions = disabledActions
-        trackLayer.actions = disabledActions
-        knobLayer.actions = disabledActions
         trackLayer.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
         knobLayer.backgroundColor = NSColor.white.withAlphaComponent(0.34).cgColor
         layer?.addSublayer(trackLayer)
