@@ -304,7 +304,7 @@ final class ScrollIndicatorOverlay: NSView {
     }
 
     private func jumpKnob(to y: CGFloat) {
-        scroll(toKnobOriginY: y - (knobLayer.frame.height / 2))
+        scroll(toKnobOriginY: y - (knobRect.height / 2))
     }
 
     private func scroll(toKnobOriginY proposedOriginY: CGFloat) {
