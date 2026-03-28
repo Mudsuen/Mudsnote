@@ -124,6 +124,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     private var inlineSuggestionContext: InlineSuggestionContext?
     private weak var backdropView: GradientBackdropView?
     private weak var shellContentView: NSView?
+    private weak var overlayScrollIndicator: ScrollIndicatorOverlay?
     private let initialWindowFrame: NSRect?
     private let draftIDOverride: String?
     private let saveShortcut: HotKeySpec?
@@ -377,17 +378,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = false
-        scrollView.scrollerStyle = .overlay
-        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
         scrollView.documentView = editorTextView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        let slimScroller = SlimScroller()
-        slimScroller.scrollerStyle = .overlay
-        slimScroller.controlSize = .small
-        slimScroller.knobStyle = .light
-        scrollView.verticalScroller = slimScroller
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        editorTextView.postsFrameChangedNotifications = true
+
+        let overlayScrollIndicator = ScrollIndicatorOverlay()
+        overlayScrollIndicator.translatesAutoresizingMaskIntoConstraints = false
+        overlayScrollIndicator.attach(to: scrollView)
+        self.overlayScrollIndicator = overlayScrollIndicator
 
         let divider = NSBox()
         divider.boxType = .separator
@@ -470,13 +471,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         shellContent.addSubview(topDragBar)
         shellContent.addSubview(topDivider)
         shellContent.addSubview(scrollView)
+        shellContent.addSubview(overlayScrollIndicator)
         shellContent.addSubview(divider)
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -1),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
             scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
+
+            overlayScrollIndicator.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
+            overlayScrollIndicator.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            overlayScrollIndicator.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            overlayScrollIndicator.widthAnchor.constraint(equalToConstant: 8),
 
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
@@ -530,6 +537,30 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
                 }
             }
         )
+        if let contentView = editorTextView.enclosingScrollView?.contentView {
+            observers.append(
+                center.addObserver(
+                    forName: NSView.boundsDidChangeNotification,
+                    object: contentView,
+                    queue: nil
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.overlayScrollIndicator?.updateIndicator()
+                    }
+                }
+            )
+        }
+        observers.append(
+            center.addObserver(
+                forName: NSView.frameDidChangeNotification,
+                object: editorTextView,
+                queue: nil
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.overlayScrollIndicator?.updateIndicator()
+                }
+            }
+        )
         observers.append(
             center.addObserver(
                 forName: NSTextView.didChangeSelectionNotification,
@@ -578,6 +609,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         }
 
         refreshChrome()
+        overlayScrollIndicator?.updateIndicator()
         updateTypingAttributesFromInsertionPoint()
         updateToolbarSelectionState()
         updateInlineSuggestions()
