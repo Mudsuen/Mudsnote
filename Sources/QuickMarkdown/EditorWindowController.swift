@@ -348,7 +348,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         let shellContent = NSView()
         backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 0))
+        pin(shellContent, to: backdrop, insets: .init(top: 10, left: 12, bottom: 0, right: 2))
         shellContentView = shellContent
 
         let topDragBar = DragHandleView()
@@ -476,7 +476,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -1),
             scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
             scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
@@ -486,7 +486,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             overlayScrollIndicator.widthAnchor.constraint(equalToConstant: 8),
 
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
-            topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -6),
+            topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
             topDragBar.topAnchor.constraint(equalTo: shellContent.topAnchor),
             topDragBar.heightAnchor.constraint(equalToConstant: 15),
 

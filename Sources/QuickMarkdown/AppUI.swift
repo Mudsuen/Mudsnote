@@ -207,7 +207,8 @@ final class SlimScroller: NSScroller {
 @MainActor
 final class ScrollIndicatorOverlay: NSView {
     private weak var scrollView: NSScrollView?
-    private var knobRect: CGRect = .zero
+    private let trackLayer = CALayer()
+    private let knobLayer = CALayer()
     private var dragOffsetY: CGFloat = 0
     private var isDraggingKnob = false
 
@@ -218,6 +219,10 @@ final class ScrollIndicatorOverlay: NSView {
         wantsLayer = true
         layer = CALayer()
         layer?.masksToBounds = false
+        trackLayer.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        knobLayer.backgroundColor = NSColor.white.withAlphaComponent(0.34).cgColor
+        layer?.addSublayer(trackLayer)
+        layer?.addSublayer(knobLayer)
     }
 
     @available(*, unavailable)
@@ -228,21 +233,6 @@ final class ScrollIndicatorOverlay: NSView {
     override func layout() {
         super.layout()
         updateIndicator()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        guard !isHidden else { return }
-
-        let trackPath = NSBezierPath(roundedRect: bounds, xRadius: bounds.width / 2, yRadius: bounds.width / 2)
-        NSColor.white.withAlphaComponent(0.08).setFill()
-        trackPath.fill()
-
-        guard !knobRect.isEmpty else { return }
-        let knobPath = NSBezierPath(roundedRect: knobRect, xRadius: bounds.width / 2, yRadius: bounds.width / 2)
-        NSColor.white.withAlphaComponent(0.34).setFill()
-        knobPath.fill()
     }
 
     func attach(to scrollView: NSScrollView) {
@@ -266,31 +256,30 @@ final class ScrollIndicatorOverlay: NSView {
         let needsScroll = documentHeight > (visibleHeight + 1)
         isHidden = !needsScroll
 
-        guard needsScroll else {
-            knobRect = .zero
-            needsDisplay = true
-            return
-        }
+        guard needsScroll else { return }
+
+        trackLayer.frame = bounds
+        trackLayer.cornerRadius = bounds.width / 2
 
         let knobHeight = max((visibleHeight / documentHeight) * bounds.height, 40)
         let availableTravel = max(bounds.height - knobHeight, 0)
         let maxOffset = max(documentHeight - visibleHeight, 1)
         let progress = min(max(visibleRect.minY / maxOffset, 0), 1)
-        knobRect = CGRect(x: 0, y: progress * availableTravel, width: bounds.width, height: knobHeight)
-        needsDisplay = true
+        knobLayer.frame = CGRect(x: 0, y: progress * availableTravel, width: bounds.width, height: knobHeight)
+        knobLayer.cornerRadius = bounds.width / 2
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if knobRect.contains(point) {
+        if knobLayer.frame.contains(point) {
             isDraggingKnob = true
-            dragOffsetY = point.y - knobRect.minY
+            dragOffsetY = point.y - knobLayer.frame.minY
             return
         }
 
         jumpKnob(to: point.y)
         isDraggingKnob = true
-        dragOffsetY = knobRect.height / 2
+        dragOffsetY = knobLayer.frame.height / 2
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -304,13 +293,13 @@ final class ScrollIndicatorOverlay: NSView {
     }
 
     private func jumpKnob(to y: CGFloat) {
-        scroll(toKnobOriginY: y - (knobRect.height / 2))
+        scroll(toKnobOriginY: y - (knobLayer.frame.height / 2))
     }
 
     private func scroll(toKnobOriginY proposedOriginY: CGFloat) {
         guard let scrollView, let documentView = scrollView.documentView else { return }
 
-        let knobHeight = knobRect.height
+        let knobHeight = knobLayer.frame.height
         let availableTravel = max(bounds.height - knobHeight, 0)
         let knobOriginY = min(max(proposedOriginY, 0), availableTravel)
         let maxOffset = max(documentView.bounds.height - scrollView.contentView.documentVisibleRect.height, 0)
