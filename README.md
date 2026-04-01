@@ -1,29 +1,58 @@
 # QuickMarkdown
 
-Minimal macOS prototype for fast Markdown capture:
+QuickMarkdown is a compact macOS quick-capture app for Markdown notes.
+
+It is designed for fast idea capture:
+
+- Global hotkey to show or hide a floating capture window
+- Native macOS floating panels for quick capture and pinned notes
+- Plain Markdown file storage
+- Rich-text editing with Markdown round-trip serialization
+- Inline tags, slash commands, autosave drafts, and recent note reopening
+
+## Features
 
 - Menu bar app
-- Global hotkey to open a capture window
-- Save notes as plain `.md` files
-- Reopen recent notes for editing
-- Configure the notes folder and shortcut
+- Quick capture window
+- Floating note window
+- Global shortcuts
+- Local Markdown files
+- Draft autosave and restore
+- Inline tag suggestions
+- Slash commands
+- Search and reopen recent notes
 
-Build:
+## Requirements
+
+- macOS 13 or later
+- Xcode 16 / Swift 6 toolchain
+
+## Build
 
 ```bash
-cd tools/QuickMarkdown
 swift build
 ```
 
-Package as an app bundle:
+## Run Tests
 
 ```bash
-cd tools/QuickMarkdown
+swift test
+```
+
+## Package As an App
+
+```bash
 ./scripts/package_app.sh
 ```
 
-The packaged app is written to `tools/QuickMarkdown/dist/QuickMarkdown.app`.
+The packaged app bundle is written to `dist/QuickMarkdown.app`.
 
-Change log:
+## Project Status
 
-- See `tools/QuickMarkdown/CHANGELOG.md` for iteration history, known issues, and lessons learned.
+This project is under active development.
+
+See [CHANGELOG.md](CHANGELOG.md) for iteration history and known issues.
+
+## License
+
+QuickMarkdown is released under the [MIT License](LICENSE).
