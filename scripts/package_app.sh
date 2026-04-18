@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/dist/build"
-APP_DIR="${ROOT_DIR}/dist/QuickMarkdown.app"
+APP_DIR="${ROOT_DIR}/dist/Mudsnote.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 
@@ -18,8 +18,8 @@ swift build -c release --scratch-path "${BUILD_DIR}"
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}"
 
-cp "${BUILD_DIR}/arm64-apple-macosx/release/quickmarkdown" "${MACOS_DIR}/QuickMarkdown"
-chmod +x "${MACOS_DIR}/QuickMarkdown"
+cp "${BUILD_DIR}/arm64-apple-macosx/release/mudsnote" "${MACOS_DIR}/Mudsnote"
+chmod +x "${MACOS_DIR}/Mudsnote"
 
 cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,15 +29,15 @@ cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>QuickMarkdown</string>
+    <string>Mudsnote</string>
     <key>CFBundleExecutable</key>
-    <string>QuickMarkdown</string>
+    <string>Mudsnote</string>
     <key>CFBundleIdentifier</key>
-    <string>local.codex.quickmarkdown</string>
+    <string>local.codex.mudsnote</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>QuickMarkdown</string>
+    <string>Mudsnote</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

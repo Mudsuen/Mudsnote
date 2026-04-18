@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import QuickMarkdownCore
+import MudsnoteCore
 
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate, WindowOpacityAdjusting, MarkdownTextViewCommands {

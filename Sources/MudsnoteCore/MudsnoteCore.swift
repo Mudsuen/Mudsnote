@@ -165,21 +165,21 @@ public final class NoteStore: @unchecked Sendable {
     public static let defaultPanelOpacity = 0.78
 
     private enum DefaultsKey {
-        static let hotKey = "quickmarkdown.hotkey"
-        static let floatingHotKey = "quickmarkdown.floatingHotKey"
-        static let saveShortcut = "quickmarkdown.saveShortcut"
-        static let notesDirectory = "quickmarkdown.notesDirectory"
-        static let extraDirectories = "quickmarkdown.extraDirectories"
-        static let panelOpacity = "quickmarkdown.panelOpacity"
-        static let recentFiles = "quickmarkdown.recentFiles"
-        static let quickCaptureFrameX = "quickmarkdown.quickCaptureFrameX"
-        static let quickCaptureFrameY = "quickmarkdown.quickCaptureFrameY"
-        static let quickCaptureFrameWidth = "quickmarkdown.quickCaptureFrameWidth"
-        static let quickCaptureFrameHeight = "quickmarkdown.quickCaptureFrameHeight"
-        static let floatingFrameX = "quickmarkdown.floatingFrameX"
-        static let floatingFrameY = "quickmarkdown.floatingFrameY"
-        static let floatingFrameWidth = "quickmarkdown.floatingFrameWidth"
-        static let floatingFrameHeight = "quickmarkdown.floatingFrameHeight"
+        static let hotKey = "mudsnote.hotkey"
+        static let floatingHotKey = "mudsnote.floatingHotKey"
+        static let saveShortcut = "mudsnote.saveShortcut"
+        static let notesDirectory = "mudsnote.notesDirectory"
+        static let extraDirectories = "mudsnote.extraDirectories"
+        static let panelOpacity = "mudsnote.panelOpacity"
+        static let recentFiles = "mudsnote.recentFiles"
+        static let quickCaptureFrameX = "mudsnote.quickCaptureFrameX"
+        static let quickCaptureFrameY = "mudsnote.quickCaptureFrameY"
+        static let quickCaptureFrameWidth = "mudsnote.quickCaptureFrameWidth"
+        static let quickCaptureFrameHeight = "mudsnote.quickCaptureFrameHeight"
+        static let floatingFrameX = "mudsnote.floatingFrameX"
+        static let floatingFrameY = "mudsnote.floatingFrameY"
+        static let floatingFrameWidth = "mudsnote.floatingFrameWidth"
+        static let floatingFrameHeight = "mudsnote.floatingFrameHeight"
     }
 
     private let defaults: UserDefaults
@@ -505,13 +505,13 @@ public final class NoteStore: @unchecked Sendable {
     public static func defaultNotesDirectory(fileManager: FileManager = .default) -> URL {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents", isDirectory: true)
-        return documents.appendingPathComponent("QuickMarkdown", isDirectory: true)
+        return documents.appendingPathComponent("Mudsnote", isDirectory: true)
     }
 
     public static func defaultAppSupportDirectory(fileManager: FileManager = .default) -> URL {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
-        return appSupport.appendingPathComponent("QuickMarkdown", isDirectory: true)
+        return appSupport.appendingPathComponent("Mudsnote", isDirectory: true)
     }
 
     private func draftsDirectory() -> URL {

@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import QuickMarkdown
+@testable import Mudsnote
 
 struct MarkdownRichEditorTests {
     private let theme = MarkdownEditorTheme(

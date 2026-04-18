@@ -1,6 +1,6 @@
-# QuickMarkdown
+# Mudsnote
 
-QuickMarkdown is a compact macOS quick-capture app for Markdown notes.
+Mudsnote is a compact macOS quick-capture app for Markdown notes.
 
 It is designed for fast idea capture:
 
@@ -45,7 +45,7 @@ swift test
 ./scripts/package_app.sh
 ```
 
-The packaged app bundle is written to `dist/QuickMarkdown.app`.
+The packaged app bundle is written to `dist/Mudsnote.app`.
 
 ## Project Status
 
@@ -55,4 +55,4 @@ See [CHANGELOG.md](CHANGELOG.md) for iteration history and known issues.
 
 ## License
 
-QuickMarkdown is released under the [MIT License](LICENSE).
+Mudsnote is released under the [MIT License](LICENSE).

@@ -1,4 +1,4 @@
-# QuickMarkdown Changelog
+# Mudsnote Changelog
 
 This file tracks user-visible iterations for the current prototype.
 For each iteration, keep three parts:
@@ -164,7 +164,7 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Maintenance Rule
 
-For every future QuickMarkdown fix:
+For every future Mudsnote fix:
 
 1. Add a new numbered iteration.
 2. Record the visible problem, the concrete fix, and the lesson.

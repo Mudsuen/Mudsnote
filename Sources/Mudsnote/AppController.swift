@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import QuickMarkdownCore
+import MudsnoteCore
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
@@ -53,8 +53,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "note.text.badge.plus", accessibilityDescription: "QuickMarkdown")
-            button.toolTip = "QuickMarkdown"
+            button.image = NSImage(systemSymbolName: "note.text.badge.plus", accessibilityDescription: "Mudsnote")
+            button.toolTip = "Mudsnote"
         }
         statusItem = item
         rebuildMenu()
@@ -105,7 +105,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit QuickMarkdown", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Mudsnote", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 

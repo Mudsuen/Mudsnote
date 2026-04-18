@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-@testable import QuickMarkdownCore
+@testable import MudsnoteCore
 
-struct QuickMarkdownCoreTests {
+struct MudsnoteCoreTests {
     @Test
     func saveUpdateAndRecentFilesWork() throws {
         let harness = try TestHarness()
@@ -185,10 +185,10 @@ private struct TestHarness {
 
     init() throws {
         let fm = FileManager.default
-        root = fm.temporaryDirectory.appendingPathComponent("quickmarkdown-tests-\(UUID().uuidString)", isDirectory: true)
+        root = fm.temporaryDirectory.appendingPathComponent("mudsnote-tests-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let suiteName = "quickmarkdown.tests.\(UUID().uuidString)"
+        let suiteName = "mudsnote.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
 

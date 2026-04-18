@@ -1,7 +1,7 @@
 import AppKit
 import CryptoKit
 import QuartzCore
-import QuickMarkdownCore
+import MudsnoteCore
 
 @MainActor
 func displayPath(_ url: URL) -> String {

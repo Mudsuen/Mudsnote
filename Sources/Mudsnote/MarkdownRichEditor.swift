@@ -1,12 +1,12 @@
 import AppKit
 import Foundation
-import QuickMarkdownCore
+import MudsnoteCore
 
 extension NSAttributedString.Key {
-    static let qmParagraphKind = NSAttributedString.Key("QuickMarkdownParagraphKind")
-    static let qmCode = NSAttributedString.Key("QuickMarkdownCode")
-    static let qmLinkURL = NSAttributedString.Key("QuickMarkdownLinkURL")
-    static let qmTag = NSAttributedString.Key("QuickMarkdownTag")
+    static let qmParagraphKind = NSAttributedString.Key("MudsnoteParagraphKind")
+    static let qmCode = NSAttributedString.Key("MudsnoteCode")
+    static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
+    static let qmTag = NSAttributedString.Key("MudsnoteTag")
 }
 
 enum MarkdownParagraphKind: Equatable {

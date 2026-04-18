@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import QuickMarkdownCore
+import MudsnoteCore
 
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
@@ -108,7 +108,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         badge.font = .systemFont(ofSize: 11, weight: .bold)
         badge.textColor = NSColor.white.withAlphaComponent(0.72)
 
-        let title = NSTextField(labelWithString: "QuickMarkdown Setup")
+        let title = NSTextField(labelWithString: "Mudsnote Setup")
         title.font = .systemFont(ofSize: 24, weight: .bold)
         title.textColor = .white
 

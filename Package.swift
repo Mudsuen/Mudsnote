@@ -2,33 +2,33 @@
 import PackageDescription
 
 let package = Package(
-    name: "QuickMarkdown",
+    name: "Mudsnote",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .library(name: "QuickMarkdownCore", targets: ["QuickMarkdownCore"]),
-        .executable(name: "quickmarkdown", targets: ["QuickMarkdown"])
+        .library(name: "MudsnoteCore", targets: ["MudsnoteCore"]),
+        .executable(name: "mudsnote", targets: ["Mudsnote"])
     ],
     targets: [
         .target(
-            name: "QuickMarkdownCore",
-            path: "Sources/QuickMarkdownCore"
+            name: "MudsnoteCore",
+            path: "Sources/MudsnoteCore"
         ),
         .executableTarget(
-            name: "QuickMarkdown",
-            dependencies: ["QuickMarkdownCore"],
-            path: "Sources/QuickMarkdown"
+            name: "Mudsnote",
+            dependencies: ["MudsnoteCore"],
+            path: "Sources/Mudsnote"
         ),
         .testTarget(
-            name: "QuickMarkdownCoreTests",
-            dependencies: ["QuickMarkdownCore"],
-            path: "Tests/QuickMarkdownCoreTests"
+            name: "MudsnoteCoreTests",
+            dependencies: ["MudsnoteCore"],
+            path: "Tests/MudsnoteCoreTests"
         ),
         .testTarget(
-            name: "QuickMarkdownAppTests",
-            dependencies: ["QuickMarkdown", "QuickMarkdownCore"],
-            path: "Tests/QuickMarkdownAppTests"
+            name: "MudsnoteAppTests",
+            dependencies: ["Mudsnote", "MudsnoteCore"],
+            path: "Tests/MudsnoteAppTests"
         )
     ]
 )
