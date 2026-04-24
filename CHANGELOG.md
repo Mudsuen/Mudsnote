@@ -1,4 +1,4 @@
-# QuickMarkdown Changelog
+# Mudsnote Changelog
 
 This file tracks user-visible iterations for the current prototype.
 For each iteration, keep three parts:
@@ -162,9 +162,15 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Split settings into quick-capture hotkey, floating-note hotkey, and save shortcut; added a second floating-note controller with its own draft/frame memory and reused the existing editor layout without the save button.
 - Lesson: As soon as one compact tool gains multiple entry points, treat global shortcuts, in-editor shortcuts, and window modes as separate configuration layers instead of overloading a single hotkey field.
 
+### 30. Structural refactor — god objects split into focused files
+
+- Problem: Three source files had grown into large god objects that were hard to navigate and modify safely: `MudsnoteCore.swift` (841 lines, all persistence mixed together), `AppUI.swift` (981 lines, unrelated chrome helpers sharing a file), and `EditorWindowController.swift` (2106 lines, every editor concern in one class). Making a targeted change in any one required reading hundreds of lines of unrelated code.
+- Fix: Split each god object into focused files without changing any behavior or public API. `MudsnoteCore.swift` became six files (`Models`, `NoteStore`, `NoteStore+Settings`, `NoteStore+Migration`, `NoteStore+Drafts`, `NoteStore+Notes`, `NoteStore+Search`). `AppUI.swift` became eight files under `Chrome/` (`Helpers`, `Palette`, `OpacityMath`, `Surfaces`, `Buttons`, `Scrolling`, `Panels`, `DragHosts`). `EditorWindowController.swift` became seven files via Swift extensions (`+UI`, `+TextHelpers`, `+Draft`, `+Formatting`, `+TagsAndSuggestions`, `+Save`, `+Appearance`). All 21 tests pass and the packaged app quick-capture/save flow was confirmed.
+- Lesson: Splitting a large Swift class into per-responsibility extension files (one extension per file) is a zero-risk refactor if you change `private` to `internal` on cross-file members — the module boundary still prevents external access, and the tests verify nothing changed.
+
 ## Maintenance Rule
 
-For every future QuickMarkdown fix:
+For every future Mudsnote fix:
 
 1. Add a new numbered iteration.
 2. Record the visible problem, the concrete fix, and the lesson.
