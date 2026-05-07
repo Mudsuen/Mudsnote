@@ -863,6 +863,11 @@ enum MarkdownRichTextCodec {
             if source[index...].hasPrefix("`"),
                let end = source[source.index(after: index)...].range(of: "`") {
                 let content = String(source[source.index(after: index)..<end.lowerBound])
+                guard !content.isEmpty else {
+                    output.append(attributed(String(source[index]), base: baseAttributes))
+                    index = source.index(after: index)
+                    continue
+                }
                 output.append(attributed(content, base: baseAttributes, extra: [.font: theme.codeFont, .qmCode: true, .foregroundColor: theme.accentColor]))
                 index = end.upperBound
                 continue

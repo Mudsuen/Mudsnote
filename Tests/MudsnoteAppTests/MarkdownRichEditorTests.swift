@@ -91,6 +91,15 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecKeepsEmptyBacktickPairVisibleWhileTyping() {
+        let rendered = MarkdownRichTextCodec.renderLine("``", theme: theme)
+
+        #expect(rendered.string == "``")
+        #expect(rendered.attribute(.qmCode, at: 0, effectiveRange: nil) == nil)
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == "``")
+    }
+
+    @Test
     func quickCaptureDocumentStateSeparatesTitleAndBody() {
         let state = QuickCaptureDocumentState(
             title: "  Weekly Review  ",
