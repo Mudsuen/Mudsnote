@@ -44,6 +44,7 @@ func styleToolbarButton(_ button: NSButton) {
 final class HoverToolbarButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
     private(set) var isHovered = false
+    var onMouseDown: (() -> Void)?
     var imageOffsetY: CGFloat = 0 {
         didSet {
             (cell as? OffsetImageButtonCell)?.imageOffsetY = imageOffsetY
@@ -106,6 +107,11 @@ final class HoverToolbarButton: NSButton {
         updateAppearance()
     }
 
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
+        super.mouseDown(with: event)
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
@@ -116,27 +122,19 @@ final class HoverToolbarButton: NSButton {
         layer?.cornerCurve = .continuous
         let foregroundColor: NSColor
         let highlightColor: NSColor
-        let borderColor: NSColor
-        let borderWidth: CGFloat
         if isActive {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.92 : 0.72)
-            borderColor = NSColor.separatorColor.withAlphaComponent(isHovered ? 0.78 : 0.36)
-            borderWidth = 1
+            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.96 : 0.76)
         } else if isHovered {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.72 : 0.56)
-            borderColor = NSColor.separatorColor.withAlphaComponent(isWindowFocused ? 0.64 : 0.48)
-            borderWidth = 1
+            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.84 : 0.64)
         } else {
             foregroundColor = isWindowFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
             highlightColor = panelSubtleFillColor().withAlphaComponent(isWindowFocused ? 0.86 : 0.64)
-            borderColor = NSColor.clear
-            borderWidth = 0
         }
         layer?.backgroundColor = (isActive || isHovered) ? highlightColor.cgColor : NSColor.clear.cgColor
-        layer?.borderWidth = borderWidth
-        layer?.borderColor = borderColor.cgColor
+        layer?.borderWidth = 0
+        layer?.borderColor = NSColor.clear.cgColor
         alphaValue = isWindowFocused ? 1.0 : 0.92
         contentTintColor = foregroundColor
         if !title.isEmpty {

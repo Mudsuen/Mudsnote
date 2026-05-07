@@ -149,7 +149,8 @@ struct MarkdownRichEditorTests {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true
 
-        #expect(button.layer?.borderWidth == 1)
+        #expect(button.layer?.borderWidth == 0)
+        #expect(button.layer?.backgroundColor != NSColor.clear.cgColor)
         #expect(button.contentTintColor == panelPrimaryTextColor())
     }
 

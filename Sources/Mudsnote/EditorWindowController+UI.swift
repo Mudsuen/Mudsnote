@@ -471,6 +471,9 @@ extension EditorWindowController {
         button.title = action.title ?? ""
         button.target = self
         button.action = #selector(toolbarButtonPressed(_:))
+        button.onMouseDown = { [weak self] in
+            self?.focusEditorForToolbarAction()
+        }
         button.tag = action.rawValue
         button.toolTip = action.toolTip
         button.controlSize = .small

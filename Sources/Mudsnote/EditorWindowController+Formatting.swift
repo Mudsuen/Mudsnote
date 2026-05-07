@@ -315,7 +315,7 @@ extension EditorWindowController {
         }
     }
 
-    private func focusEditorForToolbarAction() {
+    func focusEditorForToolbarAction() {
         let selection = editorTextView.selectedRange()
         window?.makeFirstResponder(editorTextView)
 
