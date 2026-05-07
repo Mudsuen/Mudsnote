@@ -138,7 +138,7 @@ extension EditorWindowController {
     // MARK: - Inline font traits
 
     func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
-        let selection = editorTextView.selectedRange()
+        let selection = formattingSelection()
 
         if selection.length == 0 {
             var typing = editorTextView.typingAttributes
@@ -185,7 +185,7 @@ extension EditorWindowController {
     }
 
     private func applyAttribute(_ attributes: [NSAttributedString.Key: Any], removing keys: [NSAttributedString.Key] = []) {
-        let selection = editorTextView.selectedRange()
+        let selection = formattingSelection()
         guard selection.length > 0, let storage = editorTextView.textStorage else { return }
         suppressTextDidChange = true
         storage.beginEditing()
@@ -197,7 +197,7 @@ extension EditorWindowController {
     }
 
     private func toggleIntAttribute(_ key: NSAttributedString.Key, enabledValue: Int) {
-        let selection = editorTextView.selectedRange()
+        let selection = formattingSelection()
 
         if selection.length == 0 {
             var typing = editorTextView.typingAttributes
@@ -280,6 +280,7 @@ extension EditorWindowController {
     @objc func toolbarButtonPressed(_ sender: NSButton) {
         guard let action = ToolbarAction(rawValue: sender.tag) else { return }
         focusEditorForToolbarAction()
+        defer { activeToolbarActionSelection = nil }
         switch action {
         case .heading: toggleParagraphKind(.heading(level: 1))
         case .bold: toggleInlineFontTrait(.boldFontMask)
@@ -324,6 +325,7 @@ extension EditorWindowController {
 
     func focusEditorForToolbarAction() {
         let selection = toolbarActionSelection()
+        activeToolbarActionSelection = selection
         window?.makeFirstResponder(editorTextView)
 
         if let storage = editorTextView.textStorage {
@@ -331,6 +333,20 @@ extension EditorWindowController {
             let length = min(selection.length, max(storage.length - location, 0))
             editorTextView.setSelectedRange(NSRange(location: location, length: length))
         }
+    }
+
+    private func formattingSelection() -> NSRange {
+        guard
+            let selection = activeToolbarActionSelection,
+            let storage = editorTextView.textStorage,
+            selection.length > 0,
+            NSMaxRange(selection) <= storage.length
+        else {
+            return editorTextView.selectedRange()
+        }
+
+        editorTextView.setSelectedRange(selection)
+        return selection
     }
 
     private func toolbarActionSelection() -> NSRange {
