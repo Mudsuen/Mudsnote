@@ -272,6 +272,7 @@ extension EditorWindowController {
 
     @objc func toolbarButtonPressed(_ sender: NSButton) {
         guard let action = ToolbarAction(rawValue: sender.tag) else { return }
+        focusEditorForToolbarAction()
         switch action {
         case .heading: toggleParagraphKind(.heading(level: 1))
         case .bold: toggleInlineFontTrait(.boldFontMask)
@@ -282,6 +283,8 @@ extension EditorWindowController {
         case .orderedList: toggleParagraphKind(.ordered(index: 1))
         case .bulletList: toggleParagraphKind(.bullet)
         }
+        updateToolbarSelectionState()
+        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
     }
 
     @objc func quickCaptureActionPressed(_ sender: NSButton) {
@@ -309,6 +312,17 @@ extension EditorWindowController {
             return true
         default:
             return false
+        }
+    }
+
+    private func focusEditorForToolbarAction() {
+        let selection = editorTextView.selectedRange()
+        window?.makeFirstResponder(editorTextView)
+
+        if let storage = editorTextView.textStorage {
+            let location = min(selection.location, storage.length)
+            let length = min(selection.length, max(storage.length - location, 0))
+            editorTextView.setSelectedRange(NSRange(location: location, length: length))
         }
     }
 

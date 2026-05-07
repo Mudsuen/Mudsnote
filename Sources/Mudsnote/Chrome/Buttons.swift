@@ -113,21 +113,30 @@ final class HoverToolbarButton: NSButton {
 
     private func updateAppearance() {
         layer?.cornerRadius = 7
+        layer?.cornerCurve = .continuous
         let foregroundColor: NSColor
         let highlightColor: NSColor
+        let borderColor: NSColor
+        let borderWidth: CGFloat
         if isActive {
-            foregroundColor = .white
-            highlightColor = panelAccentColor().withAlphaComponent(isWindowFocused ? 0.90 : 0.72)
+            foregroundColor = panelPrimaryTextColor()
+            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.92 : 0.72)
+            borderColor = NSColor.separatorColor.withAlphaComponent(isHovered ? 0.78 : 0.36)
+            borderWidth = 1
         } else if isHovered {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.62 : 0.48)
+            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.72 : 0.56)
+            borderColor = NSColor.separatorColor.withAlphaComponent(isWindowFocused ? 0.64 : 0.48)
+            borderWidth = 1
         } else {
             foregroundColor = isWindowFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
             highlightColor = panelSubtleFillColor().withAlphaComponent(isWindowFocused ? 0.86 : 0.64)
+            borderColor = NSColor.clear
+            borderWidth = 0
         }
         layer?.backgroundColor = (isActive || isHovered) ? highlightColor.cgColor : NSColor.clear.cgColor
-        layer?.borderWidth = 0
-        layer?.borderColor = NSColor.clear.cgColor
+        layer?.borderWidth = borderWidth
+        layer?.borderColor = borderColor.cgColor
         alphaValue = isWindowFocused ? 1.0 : 0.92
         contentTintColor = foregroundColor
         if !title.isEmpty {

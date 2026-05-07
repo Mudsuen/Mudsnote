@@ -1,4 +1,5 @@
 import AppKit
+import MudsnoteCore
 import Testing
 @testable import Mudsnote
 
@@ -128,6 +129,32 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func floatingToolbarButtonAppliesInlineTypingFormat() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+
+        controller.toolbarButtonPressed(boldButton)
+
+        let font = try #require(controller.editorTextView.typingAttributes[.font] as? NSFont)
+        #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+        #expect(controller.toolbarButtonsByAction[.bold]?.isActive == true)
+    }
+
+    @MainActor
+    @Test
+    func activeToolbarButtonUsesNeutralHighlight() {
+        let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
+        button.isActive = true
+
+        #expect(button.layer?.borderWidth == 1)
+        #expect(button.contentTintColor == panelPrimaryTextColor())
+    }
+
+    @MainActor
+    @Test
     func movableBackgroundViewReturnsSelfForEmptyHitAreas() {
         let view = WindowMoveBackgroundView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
         let point = NSPoint(x: 24, y: 20)
@@ -179,5 +206,49 @@ struct MarkdownRichEditorTests {
         textView.unmarkText()
 
         #expect(callbackCount >= 2)
+    }
+
+    private struct EditorControllerHarness {
+        let root: URL
+        let suiteName: String
+        let defaults: UserDefaults
+        let controller: EditorWindowController
+
+        @MainActor
+        func tearDown() {
+            controller.close()
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
+    private func makeEditorControllerHarness(
+        draftID: String,
+        showsSaveButton: Bool
+    ) throws -> EditorControllerHarness {
+        let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-app-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+
+        let controller = EditorWindowController(
+            noteStore: store,
+            panelOpacity: NoteStore.defaultPanelOpacity,
+            fileURL: nil,
+            draftIDOverride: draftID,
+            showsSaveButton: showsSaveButton,
+            onSave: { _ in },
+            onClose: {},
+            onRequestSearch: {}
+        )
+
+        return EditorControllerHarness(root: root, suiteName: suiteName, defaults: defaults, controller: controller)
     }
 }
