@@ -69,11 +69,11 @@ final class QuickEntryPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
+            onLeftMouseDownPreflight?(event)
             if !isKeyWindow {
                 NSApp.activate(ignoringOtherApps: true)
                 makeKeyAndOrderFront(nil)
             }
-            onLeftMouseDownPreflight?(event)
             if beginManualResizeIfNeeded(with: event) {
                 return
             }

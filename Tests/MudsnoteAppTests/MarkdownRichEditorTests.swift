@@ -202,6 +202,37 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func panelPreflightPreservesSelectionBeforeToolbarClickCollapsesIt() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let panel = try #require(controller.window as? QuickEntryPanel)
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        panel.onLeftMouseDownPreflight?(event)
+        controller.editorTextView.setSelectedRange(NSRange(location: 13, length: 0))
+        boldButton.mouseDown(with: event)
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let formattedFont = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: formattedFont).contains(.boldFontMask))
+    }
+
+    @MainActor
+    @Test
     func toolbarMouseDownTogglesSelectedTextAcrossRepeatedClicks() throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }

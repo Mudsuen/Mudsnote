@@ -227,7 +227,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         window.onCommandS = { [weak self] in self?.savePressed() }
         window.onCommandF = { [weak self] in self?.searchPressed() }
         window.onEscape = { [weak self] in self?.cancelPressed() }
-        window.onLeftMouseDownPreflight = { [weak self] event in self?.preflightQuickCaptureTitleClick(with: event) }
+        window.onLeftMouseDownPreflight = { [weak self] event in
+            self?.rememberEditorSelectionForToolbarActions()
+            self?.preflightQuickCaptureTitleClick(with: event)
+        }
         window.onStandardEditCommand = { [weak self] selector in self?.performStandardEditCommand(selector) ?? false }
         window.onEditorCommand = { [weak self] event in self?.handleShortcutEvent(event) ?? false }
 

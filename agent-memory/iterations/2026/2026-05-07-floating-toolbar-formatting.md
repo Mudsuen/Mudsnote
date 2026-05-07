@@ -22,6 +22,7 @@ Optimize the floating note bottom toolbar:
 - Follow-up: made standard toolbar buttons dispatch their action directly on `mouseDown`, changed the fill highlight to white, and replaced the checklist symbol with `checkmark.square`.
 - Third follow-up: cached the last non-empty editor selection and restored it for toolbar actions so selected text remains the formatting target even if the click collapses selection.
 - Fourth follow-up: froze the toolbar action selection for the whole action so repeated clicks use the same explicit target range instead of re-reading transient editor selection mid-action.
+- Fifth follow-up: moved mouse-down preflight before panel focus changes and capture the editor selection there, so inline format buttons keep the selected text even when the click itself collapses selection before the button action runs.
 
 ## Verification
 
@@ -37,6 +38,8 @@ Optimize the floating note bottom toolbar:
   - Third follow-up rerun: `./scripts/package_app.sh`
   - Fourth follow-up rerun: `swift test`
   - Fourth follow-up rerun: `./scripts/package_app.sh`
+  - Fifth follow-up rerun: `swift test`
+  - Fifth follow-up rerun: `./scripts/package_app.sh`
 - App/page/package actually opened: `/Applications/Mudsnote.app`
 - Result: tests passed; packaged app built and launched; floating hotkey command executed while the packaged process stayed running.
 - Not verified: manual visual inspection of the floating panel toolbar in-app; accessibility did not expose a useful window name for this LSUIElement app in the command smoke.
