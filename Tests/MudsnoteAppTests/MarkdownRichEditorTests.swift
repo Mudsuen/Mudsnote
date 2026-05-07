@@ -145,7 +145,32 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func activeToolbarButtonUsesNeutralHighlight() {
+    func floatingToolbarMouseDownImmediatelyAppliesFormatting() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        boldButton.mouseDown(with: event)
+
+        let font = try #require(controller.editorTextView.typingAttributes[.font] as? NSFont)
+        #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    }
+
+    @MainActor
+    @Test
+    func activeToolbarButtonUsesWhiteFillHighlight() {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true
 

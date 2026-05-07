@@ -19,6 +19,7 @@ Optimize the floating note bottom toolbar:
 - Made standard/floating toolbar button presses restore the editor as first responder before applying the formatting action, while preserving the current selection.
 - Added regression coverage for floating toolbar inline-format clicks and neutral active-button styling.
 - Follow-up: moved editor focus restoration earlier into toolbar button `mouseDown`, and changed active/hover treatment to full gray fill instead of border emphasis.
+- Follow-up: made standard toolbar buttons dispatch their action directly on `mouseDown`, changed the fill highlight to white, and replaced the checklist symbol with `checkmark.square`.
 
 ## Verification
 
@@ -28,6 +29,8 @@ Optimize the floating note bottom toolbar:
   - `osascript -e 'tell application "System Events" to keystroke "r" using option down'`
   - Follow-up rerun: `swift test`
   - Follow-up rerun: `./scripts/package_app.sh`
+  - Second follow-up rerun: `swift test`
+  - Second follow-up rerun: `./scripts/package_app.sh`
 - App/page/package actually opened: `/Applications/Mudsnote.app`
 - Result: tests passed; packaged app built and launched; floating hotkey command executed while the packaged process stayed running.
 - Not verified: manual visual inspection of the floating panel toolbar in-app; accessibility did not expose a useful window name for this LSUIElement app in the command smoke.
@@ -35,6 +38,7 @@ Optimize the floating note bottom toolbar:
 ## Decisions
 
 - Bottom toolbar selected state should remain neutral gray, not app accent blue, and should use full-button fill rather than an outer border.
+- After user feedback, active/hover feedback should be white fill, not gray fill.
 - Toolbar formatting actions should re-focus the editor before applying changes so clicks and keyboard formatting share the same target.
 
 ## Next

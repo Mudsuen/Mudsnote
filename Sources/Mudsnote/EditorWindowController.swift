@@ -62,7 +62,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var symbolName: String? {
             switch self {
-            case .checklist: return "checklist"
+            case .checklist: return "checkmark.square"
             case .orderedList: return "list.number"
             case .bulletList: return "list.bullet"
             default: return nil
@@ -101,7 +101,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         var symbolName: String {
             switch self {
             case .tag: return "tag"
-            case .checklist: return "checklist"
+            case .checklist: return "checkmark.square"
             case .orderedList: return "list.number"
             case .bulletList: return "list.bullet"
             }

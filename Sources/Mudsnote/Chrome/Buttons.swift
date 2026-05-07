@@ -45,6 +45,7 @@ final class HoverToolbarButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
     private(set) var isHovered = false
     var onMouseDown: (() -> Void)?
+    var performsActionOnMouseDown = false
     var imageOffsetY: CGFloat = 0 {
         didSet {
             (cell as? OffsetImageButtonCell)?.imageOffsetY = imageOffsetY
@@ -109,6 +110,12 @@ final class HoverToolbarButton: NSButton {
 
     override func mouseDown(with event: NSEvent) {
         onMouseDown?()
+        if performsActionOnMouseDown {
+            if let action {
+                NSApp.sendAction(action, to: target, from: self)
+            }
+            return
+        }
         super.mouseDown(with: event)
     }
 
@@ -124,10 +131,10 @@ final class HoverToolbarButton: NSButton {
         let highlightColor: NSColor
         if isActive {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.96 : 0.76)
+            highlightColor = NSColor.white.withAlphaComponent(isWindowFocused ? 0.28 : 0.20)
         } else if isHovered {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.84 : 0.64)
+            highlightColor = NSColor.white.withAlphaComponent(isWindowFocused ? 0.20 : 0.14)
         } else {
             foregroundColor = isWindowFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
             highlightColor = panelSubtleFillColor().withAlphaComponent(isWindowFocused ? 0.86 : 0.64)
