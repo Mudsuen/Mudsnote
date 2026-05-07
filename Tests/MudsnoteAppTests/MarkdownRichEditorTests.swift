@@ -170,6 +170,38 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func toolbarMouseDownFormatsPreviouslySelectedTextAfterSelectionCollapse() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        controller.rememberEditorSelectionForToolbarActions()
+        controller.editorTextView.setSelectedRange(NSRange(location: 13, length: 0))
+
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        boldButton.mouseDown(with: event)
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let formattedFont = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        let untouchedFont = try #require(storage.attribute(.font, at: 9, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: formattedFont).contains(.boldFontMask))
+        #expect(!NSFontManager.shared.traits(of: untouchedFont).contains(.boldFontMask))
+    }
+
+    @MainActor
+    @Test
     func activeToolbarButtonUsesWhiteFillHighlight() {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true

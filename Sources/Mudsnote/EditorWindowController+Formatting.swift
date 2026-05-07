@@ -254,6 +254,13 @@ extension EditorWindowController {
         quickCaptureButtonsByAction[action]?.isActive = active
     }
 
+    func rememberEditorSelectionForToolbarActions() {
+        let selection = editorTextView.selectedRange()
+        guard selection.length > 0, let storage = editorTextView.textStorage else { return }
+        guard NSMaxRange(selection) <= storage.length else { return }
+        lastEditorSelectionForToolbarAction = selection
+    }
+
     // MARK: - Keyboard shortcuts
 
     func handleEditorShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
@@ -316,7 +323,7 @@ extension EditorWindowController {
     }
 
     func focusEditorForToolbarAction() {
-        let selection = editorTextView.selectedRange()
+        let selection = toolbarActionSelection()
         window?.makeFirstResponder(editorTextView)
 
         if let storage = editorTextView.textStorage {
@@ -324,6 +331,24 @@ extension EditorWindowController {
             let length = min(selection.length, max(storage.length - location, 0))
             editorTextView.setSelectedRange(NSRange(location: location, length: length))
         }
+    }
+
+    private func toolbarActionSelection() -> NSRange {
+        let selection = editorTextView.selectedRange()
+        if selection.length > 0 {
+            return selection
+        }
+
+        guard
+            let cached = lastEditorSelectionForToolbarAction,
+            let storage = editorTextView.textStorage,
+            cached.length > 0,
+            NSMaxRange(cached) <= storage.length
+        else {
+            return selection
+        }
+
+        return cached
     }
 
     private func joinRenderedLines(_ lines: [NSAttributedString]) -> NSAttributedString {

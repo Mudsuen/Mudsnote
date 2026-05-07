@@ -162,6 +162,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var suppressTextDidChange = false
     var currentPanelOpacity: Double
     var activeTags: [String] = []
+    var lastEditorSelectionForToolbarAction: NSRange?
     let suggestionController = SuggestionPopoverController()
     var inlineSuggestionContext: InlineSuggestionContext?
     weak var backdropView: GradientBackdropView?

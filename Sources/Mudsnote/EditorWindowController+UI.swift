@@ -550,6 +550,7 @@ extension EditorWindowController {
         observers.append(
             center.addObserver(forName: NSTextView.didChangeSelectionNotification, object: editorTextView, queue: nil) { [weak self] _ in
                 Task { @MainActor [weak self] in
+                    self?.rememberEditorSelectionForToolbarActions()
                     self?.updateTypingAttributesFromInsertionPoint()
                     self?.updateToolbarSelectionState()
                     self?.updateInlineSuggestions()
