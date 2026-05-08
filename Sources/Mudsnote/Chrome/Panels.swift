@@ -4,7 +4,7 @@ import Carbon.HIToolbox
 /// `QuickEntryPanel` is the borderless floating-panel workhorse behind quick
 /// capture, floating note, and search. It adds manual edge-resize, keyboard
 /// routing for the editor (via `onEditorCommand`/`onStandardEditCommand`), and
-/// a handful of app-level shortcuts (Cmd-S, Cmd-F, Escape).
+/// a handful of app-level shortcuts (Cmd-F, Cmd-Comma, Escape).
 ///
 /// `HitCatchingView` lives beside the panel so that `installCursorRects` can
 /// stay `fileprivate` — cursor-rect setup is a tight coupling between panel
@@ -20,7 +20,6 @@ final class QuickEntryPanel: NSPanel {
         static let top = ResizeEdge(rawValue: 1 << 3)
     }
 
-    var onCommandS: (() -> Void)?
     var onCommandF: (() -> Void)?
     var onCommandComma: (() -> Void)?
     var onEscape: (() -> Void)?
@@ -98,11 +97,6 @@ final class QuickEntryPanel: NSPanel {
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-        if modifiers == [.command], event.keyCode == 1 {
-            onCommandS?()
-            return
-        }
 
         if modifiers == [.command], event.keyCode == 3 {
             onCommandF?()

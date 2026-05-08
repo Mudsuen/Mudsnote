@@ -162,6 +162,67 @@ struct MarkdownRichEditorTests {
         #expect(spec.modifiers == UInt32(optionKey))
     }
 
+    @MainActor
+    @Test
+    func floatingNoteDoesNotSaveOnCommandSAndUsesConfiguredSaveShortcut() throws {
+        var savedURLs: [URL] = []
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            saveShortcut: HotKeySpec.parse("command+return"),
+            onSave: { savedURLs.append($0) }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let panel = try #require(controller.window as? QuickEntryPanel)
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "Floating title\nbody",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+
+        panel.sendEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_S), modifiers: [.command], characters: "s", windowNumber: panel.windowNumber))
+        #expect(savedURLs.isEmpty)
+
+        panel.sendEvent(try keyEvent(keyCode: UInt16(kVK_Return), modifiers: [.command], characters: "\r", windowNumber: panel.windowNumber))
+        #expect(savedURLs.count == 1)
+    }
+
+    @MainActor
+    @Test
+    func formattingKeyboardShortcutsApplyExpectedStylesAndParagraphKinds() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "selected text",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+
+        #expect(controller.handleShortcutEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")))
+        #expect(controller.handleShortcutEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_I), modifiers: [.command], characters: "i")))
+        #expect(controller.handleShortcutEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_U), modifiers: [.command], characters: "u")))
+        #expect(controller.handleShortcutEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_X), modifiers: [.command, .shift], characters: "X")))
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let font = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        let traits = NSFontManager.shared.traits(of: font)
+        #expect(traits.contains(.boldFontMask))
+        #expect(traits.contains(.italicFontMask))
+        #expect((storage.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
+        #expect((storage.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
+
+        let headingKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_1), modifiers: [.command, .option], characters: "1"), controller: controller)
+        let orderedKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_7), modifiers: [.command, .shift], characters: "&"), controller: controller)
+        let bulletKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_8), modifiers: [.command, .shift], characters: "*"), controller: controller)
+        let checklistKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_9), modifiers: [.command, .shift], characters: "("), controller: controller)
+
+        #expect(headingKind.isHeading)
+        #expect(orderedKind.isOrderedList)
+        #expect(bulletKind.isBulletList)
+        #expect(checklistKind.isChecklist)
+    }
+
     @Test
     func clampedPanelFrameMovesOffscreenFrameIntoVisibleArea() {
         let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -490,7 +551,9 @@ struct MarkdownRichEditorTests {
 
     private func makeEditorControllerHarness(
         draftID: String,
-        showsSaveButton: Bool
+        showsSaveButton: Bool,
+        saveShortcut: HotKeySpec? = nil,
+        onSave: @escaping (URL) -> Void = { _ in }
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -503,19 +566,75 @@ struct MarkdownRichEditorTests {
             legacyDefaults: nil,
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
 
         let controller = EditorWindowController(
             noteStore: store,
             panelOpacity: NoteStore.defaultPanelOpacity,
             fileURL: nil,
             draftIDOverride: draftID,
+            saveShortcut: saveShortcut,
             showsSaveButton: showsSaveButton,
-            onSave: { _ in },
+            onSave: onSave,
             onClose: {},
             onRequestSearch: {},
             onRequestPreferences: {}
         )
 
         return EditorControllerHarness(root: root, suiteName: suiteName, defaults: defaults, controller: controller)
+    }
+
+    private func keyEvent(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags,
+        characters: String,
+        windowNumber: Int = 0
+    ) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters.lowercased(),
+            isARepeat: false,
+            keyCode: keyCode
+        ))
+    }
+
+    private func paragraphKind(after event: NSEvent, controller: EditorWindowController) throws -> MarkdownParagraphKind {
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "item",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 4))
+        #expect(controller.handleShortcutEvent(event))
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        return MarkdownRichTextCodec.paragraphKind(at: NSRange(location: 0, length: storage.length), in: storage)
+    }
+}
+
+private extension MarkdownParagraphKind {
+    var isHeading: Bool {
+        if case .heading = self { return true }
+        return false
+    }
+
+    var isOrderedList: Bool {
+        if case .ordered = self { return true }
+        return false
+    }
+
+    var isBulletList: Bool {
+        if case .bullet = self { return true }
+        return false
+    }
+
+    var isChecklist: Bool {
+        if case .checklist = self { return true }
+        return false
     }
 }

@@ -227,7 +227,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         super.init(window: window)
         window.delegate = self
-        window.onCommandS = { [weak self] in self?.savePressed() }
         window.onCommandF = { [weak self] in self?.searchPressed() }
         window.onCommandComma = { [weak self] in self?.onRequestPreferences() }
         window.onEscape = { [weak self] in self?.cancelPressed() }

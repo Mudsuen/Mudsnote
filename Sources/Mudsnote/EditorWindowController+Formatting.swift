@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 private struct FormattingUndoSnapshot {
     let content: NSAttributedString
@@ -295,12 +296,14 @@ extension EditorWindowController {
 
     func handleEditorShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
         switch (modifiers, keyCode) {
-        case ([.command], 11): toggleInlineFontTrait(.boldFontMask); return true // b
-        case ([.command], 34): toggleInlineFontTrait(.italicFontMask); return true // i
-        case ([.command, .option], 18): toggleParagraphKind(.heading(level: 1)); return true // 1
-        case ([.command, .shift], 26): toggleParagraphKind(.ordered(index: 1)); return true // 7
-        case ([.command, .shift], 28): toggleParagraphKind(.bullet); return true // 8
-        case ([.command, .shift], 25): toggleParagraphKind(.checklist(checked: false)); return true // 9
+        case ([.command], UInt16(kVK_ANSI_B)): toggleInlineFontTrait(.boldFontMask); return true
+        case ([.command], UInt16(kVK_ANSI_I)): toggleInlineFontTrait(.italicFontMask); return true
+        case ([.command], UInt16(kVK_ANSI_U)): applyUnderline(); return true
+        case ([.command, .shift], UInt16(kVK_ANSI_X)): applyStrikethrough(); return true
+        case ([.command, .option], UInt16(kVK_ANSI_1)): toggleParagraphKind(.heading(level: 1)); return true
+        case ([.command, .shift], UInt16(kVK_ANSI_7)): toggleParagraphKind(.ordered(index: 1)); return true
+        case ([.command, .shift], UInt16(kVK_ANSI_8)): toggleParagraphKind(.bullet); return true
+        case ([.command, .shift], UInt16(kVK_ANSI_9)): toggleParagraphKind(.checklist(checked: false)); return true
         default: return false
         }
     }
