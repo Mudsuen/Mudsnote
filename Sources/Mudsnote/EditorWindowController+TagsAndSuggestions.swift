@@ -184,7 +184,9 @@ extension EditorWindowController {
     func applySlashCommand(_ command: SlashCommand, replacementRange: NSRange) {
         replaceText(in: replacementRange, with: "")
         switch command {
-        case .heading: toggleParagraphKind(.heading(level: 1))
+        case .heading1: toggleParagraphKind(.heading(level: 1))
+        case .heading2: toggleParagraphKind(.heading(level: 2))
+        case .heading3: toggleParagraphKind(.heading(level: 3))
         case .checklist: toggleParagraphKind(.checklist(checked: false))
         case .bulletList: toggleParagraphKind(.bullet)
         case .orderedList: toggleParagraphKind(.ordered(index: 1))

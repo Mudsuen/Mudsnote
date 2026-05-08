@@ -9,6 +9,8 @@ extension NSAttributedString.Key {
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
 }
 
+let markdownItalicObliqueness: CGFloat = 0.16
+
 enum MarkdownParagraphKind: Equatable {
     case paragraph
     case heading(level: Int)
@@ -741,7 +743,8 @@ enum MarkdownRichTextCodec {
             let traits = NSFontManager.shared.traits(of: font)
             let baseTraits = NSFontManager.shared.traits(of: baseFont)
             let isBold = traits.contains(.boldFontMask) && !baseTraits.contains(.boldFontMask)
-            let isItalic = traits.contains(.italicFontMask) && !baseTraits.contains(.italicFontMask)
+            let isItalic = (traits.contains(.italicFontMask) && !baseTraits.contains(.italicFontMask))
+                || isObliqued(attributes[.obliqueness])
 
             if isBold && isItalic {
                 wrapped = "***\(wrapped)***"
@@ -772,7 +775,7 @@ enum MarkdownRichTextCodec {
             return .checklist(checked: checkedRaw == "x")
         }
 
-        if firstMatch(#"^\s*[-*+]\s*(.*)$"#, in: line) != nil {
+        if firstMatch(#"^\s*[-*+]\s+(.*)$"#, in: line) != nil {
             return .bullet
         }
 
@@ -808,7 +811,7 @@ enum MarkdownRichTextCodec {
         case .heading:
             return capture(#"^(#{1,6})\s+(.+)$"#, in: line, group: 2) ?? line
         case .bullet:
-            return capture(#"^\s*[-*+]\s*(.*)$"#, in: line, group: 1) ?? line
+            return capture(#"^\s*[-*+]\s+(.*)$"#, in: line, group: 1) ?? line
         case .ordered:
             return capture(#"^\s*\d+\.\s*(.*)$"#, in: line, group: 1) ?? line
         case .checklist:
@@ -838,7 +841,10 @@ enum MarkdownRichTextCodec {
             if source[index...].hasPrefix("*"),
                let end = source[source.index(after: index)...].range(of: "*") {
                 let content = String(source[source.index(after: index)..<end.lowerBound])
-                output.append(attributed(content, base: baseAttributes, extra: [.font: theme.italicFont]))
+                output.append(attributed(content, base: baseAttributes, extra: [
+                    .font: theme.italicFont,
+                    .obliqueness: markdownItalicObliqueness
+                ]))
                 index = end.upperBound
                 continue
             }
@@ -913,6 +919,19 @@ enum MarkdownRichTextCodec {
 
     private static func attributed(_ string: String, base: [NSAttributedString.Key: Any], extra: [NSAttributedString.Key: Any] = [:]) -> NSAttributedString {
         NSAttributedString(string: string, attributes: base.merging(extra) { _, new in new })
+    }
+
+    private static func isObliqued(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber {
+            return abs(number.doubleValue) > 0.001
+        }
+        if let value = value as? CGFloat {
+            return abs(value) > 0.001
+        }
+        if let value = value as? Double {
+            return abs(value) > 0.001
+        }
+        return false
     }
 
     private static func firstMatch(_ pattern: String, in line: String) -> NSTextCheckingResult? {

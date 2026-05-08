@@ -8,11 +8,13 @@ import MudsnoteCore
 final class EditorWindowController: NSWindowController, NSWindowDelegate, WindowOpacityAdjusting, MarkdownTextViewCommands, NSTextViewDelegate {
 
     enum SlashCommand: CaseIterable {
-        case heading, checklist, bulletList, orderedList, divider
+        case heading1, heading2, heading3, checklist, bulletList, orderedList, divider
 
         var title: String {
             switch self {
-            case .heading: return "Heading 1"
+            case .heading1: return "Heading 1"
+            case .heading2: return "Heading 2"
+            case .heading3: return "Heading 3"
             case .checklist: return "To-do List"
             case .bulletList: return "Bulleted List"
             case .orderedList: return "Numbered List"
@@ -22,7 +24,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var subtitle: String {
             switch self {
-            case .heading: return "Turn this line into a heading"
+            case .heading1, .heading2, .heading3: return "Turn this line into a heading"
             case .checklist: return "Start a checklist item"
             case .bulletList: return "Start a bullet item"
             case .orderedList: return "Start a numbered item"
@@ -32,7 +34,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var symbolName: String {
             switch self {
-            case .heading: return "textformat.size"
+            case .heading1, .heading2, .heading3: return "textformat.size"
             case .checklist: return "checklist"
             case .bulletList: return "list.bullet"
             case .orderedList: return "list.number"
@@ -47,11 +49,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     enum ToolbarAction: Int, CaseIterable {
-        case heading, bold, italic, strikethrough, underline, checklist, orderedList, bulletList
+        case heading1, heading2, heading3, bold, italic, strikethrough, underline, checklist, orderedList, bulletList
 
         var title: String? {
             switch self {
-            case .heading: return "H"
+            case .heading1: return "H1"
+            case .heading2: return "H2"
+            case .heading3: return "H3"
             case .bold: return "B"
             case .italic: return "I"
             case .strikethrough: return "S"
@@ -71,7 +75,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var toolTip: String {
             switch self {
-            case .heading: return "Heading"
+            case .heading1: return "Heading 1"
+            case .heading2: return "Heading 2"
+            case .heading3: return "Heading 3"
             case .bold: return "Bold"
             case .italic: return "Italic"
             case .strikethrough: return "Strikethrough"

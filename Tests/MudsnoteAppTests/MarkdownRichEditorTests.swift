@@ -33,6 +33,25 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecRoundTripsHeadingLevelsAndChineseItalic() {
+        let markdown = """
+        # Heading 1
+        ## Heading 2
+        ### Heading 3
+        *中文斜体*
+        """
+
+        let attributed = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let chineseRange = (attributed.string as NSString).range(of: "中文斜体")
+        let obliqueness = attributed.attribute(.obliqueness, at: chineseRange.location, effectiveRange: nil) as? NSNumber
+        let serialized = MarkdownRichTextCodec.serialize(attributed, theme: theme)
+
+        #expect(chineseRange.location != NSNotFound)
+        #expect((obliqueness?.doubleValue ?? 0) > 0)
+        #expect(serialized == markdown)
+    }
+
+    @Test
     func richCodecRemovesMarkdownMarkersFromVisibleText() {
         let markdown = """
         # Heading
@@ -212,15 +231,39 @@ struct MarkdownRichEditorTests {
         #expect((storage.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
         #expect((storage.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
 
-        let headingKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_1), modifiers: [.command, .option], characters: "1"), controller: controller)
+        let heading1Kind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_1), modifiers: [.command, .option], characters: "1"), controller: controller)
+        let heading2Kind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_2), modifiers: [.command, .option], characters: "2"), controller: controller)
+        let heading3Kind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_3), modifiers: [.command, .option], characters: "3"), controller: controller)
         let orderedKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_7), modifiers: [.command, .shift], characters: "&"), controller: controller)
         let bulletKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_8), modifiers: [.command, .shift], characters: "*"), controller: controller)
         let checklistKind = try paragraphKind(after: keyEvent(keyCode: UInt16(kVK_ANSI_9), modifiers: [.command, .shift], characters: "("), controller: controller)
 
-        #expect(headingKind.isHeading)
+        #expect(heading1Kind.headingLevel == 1)
+        #expect(heading2Kind.headingLevel == 2)
+        #expect(heading3Kind.headingLevel == 3)
         #expect(orderedKind.isOrderedList)
         #expect(bulletKind.isBulletList)
         #expect(checklistKind.isChecklist)
+    }
+
+    @MainActor
+    @Test
+    func italicShortcutAppliesObliquenessForChineseText() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "中文斜体",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 4))
+
+        #expect(controller.handleShortcutEvent(try keyEvent(keyCode: UInt16(kVK_ANSI_I), modifiers: [.command], characters: "i")))
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let obliqueness = storage.attribute(.obliqueness, at: 0, effectiveRange: nil) as? NSNumber
+        #expect((obliqueness?.doubleValue ?? 0) > 0)
+        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "*中文斜体*")
     }
 
     @Test
@@ -406,6 +449,39 @@ struct MarkdownRichEditorTests {
         let traits = NSFontManager.shared.traits(of: font)
         #expect(traits.contains(.boldFontMask))
         #expect(traits.contains(.italicFontMask))
+    }
+
+    @MainActor
+    @Test
+    func toolbarHeadingButtonsSwitchBetweenLevels() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let heading1Button = try #require(controller.toolbarButtonsByAction[.heading1])
+        let heading2Button = try #require(controller.toolbarButtonsByAction[.heading2])
+        let heading3Button = try #require(controller.toolbarButtonsByAction[.heading3])
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        heading1Button.mouseDown(with: event)
+        heading2Button.mouseDown(with: event)
+        heading3Button.mouseDown(with: event)
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let kind = MarkdownRichTextCodec.paragraphKind(at: NSRange(location: 0, length: storage.length), in: storage)
+        #expect(kind.headingLevel == 3)
+        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "### selected text")
     }
 
     @MainActor
@@ -618,9 +694,9 @@ struct MarkdownRichEditorTests {
 }
 
 private extension MarkdownParagraphKind {
-    var isHeading: Bool {
-        if case .heading = self { return true }
-        return false
+    var headingLevel: Int? {
+        if case .heading(let level) = self { return level }
+        return nil
     }
 
     var isOrderedList: Bool {

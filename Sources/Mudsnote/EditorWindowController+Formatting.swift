@@ -152,6 +152,11 @@ extension EditorWindowController {
     // MARK: - Inline font traits
 
     func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
+        if trait.contains(.italicFontMask) {
+            toggleItalicFormatting()
+            return
+        }
+
         let selection = formattingSelection()
 
         if selection.length == 0 {
@@ -181,6 +186,53 @@ extension EditorWindowController {
         editorTextView.setSelectedRange(selection)
         rememberEditorSelectionForToolbarActions()
         registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: trait.undoActionName)
+        userDidEdit()
+    }
+
+    private func toggleItalicFormatting() {
+        let selection = formattingSelection()
+
+        if selection.length == 0 {
+            var typing = editorTextView.typingAttributes
+            let currentFont = (typing[.font] as? NSFont) ?? theme.bodyFont
+            if isItalicActive(font: currentFont, obliqueness: typing[.obliqueness]) {
+                typing[.font] = NSFontManager.shared.convert(currentFont, toNotHaveTrait: .italicFontMask)
+                typing.removeValue(forKey: .obliqueness)
+            } else {
+                typing[.font] = NSFontManager.shared.convert(currentFont, toHaveTrait: .italicFontMask)
+                typing[.obliqueness] = markdownItalicObliqueness
+            }
+            editorTextView.typingAttributes = typing
+            return
+        }
+
+        guard let storage = editorTextView.textStorage else { return }
+        let undoSnapshot = formattingUndoSnapshot()
+        suppressTextDidChange = true
+        storage.beginEditing()
+        var location = selection.location
+
+        while location < NSMaxRange(selection) {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            let attributes = storage.attributes(at: location, effectiveRange: &effectiveRange)
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            let clippedRange = NSIntersectionRange(selection, effectiveRange)
+
+            if isItalicActive(font: font, obliqueness: attributes[.obliqueness]) {
+                storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask), range: clippedRange)
+                storage.removeAttribute(.obliqueness, range: clippedRange)
+            } else {
+                storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask), range: clippedRange)
+                storage.addAttribute(.obliqueness, value: markdownItalicObliqueness, range: clippedRange)
+            }
+            location = NSMaxRange(clippedRange)
+        }
+
+        storage.endEditing()
+        suppressTextDidChange = false
+        editorTextView.setSelectedRange(selection)
+        rememberEditorSelectionForToolbarActions()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Italic")
         userDidEdit()
     }
 
@@ -270,9 +322,11 @@ extension EditorWindowController {
         let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
         let traits = NSFontManager.shared.traits(of: font)
 
-        setToolbarActionState(.heading, active: { if case .heading = paragraphKind { return true }; return false }())
+        setToolbarActionState(.heading1, active: { if case .heading(let level) = paragraphKind { return level == 1 }; return false }())
+        setToolbarActionState(.heading2, active: { if case .heading(let level) = paragraphKind { return level == 2 }; return false }())
+        setToolbarActionState(.heading3, active: { if case .heading(let level) = paragraphKind { return level == 3 }; return false }())
         setToolbarActionState(.bold, active: traits.contains(.boldFontMask))
-        setToolbarActionState(.italic, active: traits.contains(.italicFontMask))
+        setToolbarActionState(.italic, active: isItalicActive(font: font, obliqueness: attributes[.obliqueness]))
         setToolbarActionState(.underline, active: ((attributes[.underlineStyle] as? Int) ?? 0) != 0)
         setToolbarActionState(.strikethrough, active: ((attributes[.strikethroughStyle] as? Int) ?? 0) != 0)
         setToolbarActionState(.bulletList, active: { if case .bullet = paragraphKind { return true }; return false }())
@@ -301,6 +355,8 @@ extension EditorWindowController {
         case ([.command], UInt16(kVK_ANSI_U)): applyUnderline(); return true
         case ([.command, .shift], UInt16(kVK_ANSI_X)): applyStrikethrough(); return true
         case ([.command, .option], UInt16(kVK_ANSI_1)): toggleParagraphKind(.heading(level: 1)); return true
+        case ([.command, .option], UInt16(kVK_ANSI_2)): toggleParagraphKind(.heading(level: 2)); return true
+        case ([.command, .option], UInt16(kVK_ANSI_3)): toggleParagraphKind(.heading(level: 3)); return true
         case ([.command, .shift], UInt16(kVK_ANSI_7)): toggleParagraphKind(.ordered(index: 1)); return true
         case ([.command, .shift], UInt16(kVK_ANSI_8)): toggleParagraphKind(.bullet); return true
         case ([.command, .shift], UInt16(kVK_ANSI_9)): toggleParagraphKind(.checklist(checked: false)); return true
@@ -318,7 +374,9 @@ extension EditorWindowController {
             activeToolbarActionSelection = nil
         }
         switch action {
-        case .heading: toggleParagraphKind(.heading(level: 1))
+        case .heading1: toggleParagraphKind(.heading(level: 1))
+        case .heading2: toggleParagraphKind(.heading(level: 2))
+        case .heading3: toggleParagraphKind(.heading(level: 3))
         case .bold: toggleInlineFontTrait(.boldFontMask)
         case .italic: toggleInlineFontTrait(.italicFontMask)
         case .strikethrough: applyStrikethrough()
@@ -352,7 +410,9 @@ extension EditorWindowController {
 
     private func sameParagraphCategory(_ lhs: MarkdownParagraphKind, _ rhs: MarkdownParagraphKind) -> Bool {
         switch (lhs, rhs) {
-        case (.heading, .heading), (.bullet, .bullet), (.ordered, .ordered), (.checklist, .checklist), (.paragraph, .paragraph):
+        case (.heading(let lhsLevel), .heading(let rhsLevel)):
+            return lhsLevel == rhsLevel
+        case (.bullet, .bullet), (.ordered, .ordered), (.checklist, .checklist), (.paragraph, .paragraph):
             return true
         default:
             return false
@@ -417,6 +477,22 @@ extension EditorWindowController {
     private func combinedRange(of ranges: [NSRange]) -> NSRange {
         guard let first = ranges.first, let last = ranges.last else { return NSRange(location: 0, length: 0) }
         return NSRange(location: first.location, length: NSMaxRange(last) - first.location)
+    }
+
+    private func isItalicActive(font: NSFont, obliqueness: Any?) -> Bool {
+        if NSFontManager.shared.traits(of: font).contains(.italicFontMask) {
+            return true
+        }
+        if let number = obliqueness as? NSNumber {
+            return abs(number.doubleValue) > 0.001
+        }
+        if let value = obliqueness as? CGFloat {
+            return abs(value) > 0.001
+        }
+        if let value = obliqueness as? Double {
+            return abs(value) > 0.001
+        }
+        return false
     }
 
     private func formattingUndoSnapshot() -> FormattingUndoSnapshot? {
