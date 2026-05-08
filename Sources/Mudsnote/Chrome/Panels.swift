@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// `QuickEntryPanel` is the borderless floating-panel workhorse behind quick
 /// capture, floating note, and search. It adds manual edge-resize, keyboard
@@ -21,6 +22,7 @@ final class QuickEntryPanel: NSPanel {
 
     var onCommandS: (() -> Void)?
     var onCommandF: (() -> Void)?
+    var onCommandComma: (() -> Void)?
     var onEscape: (() -> Void)?
     var onLeftMouseDownPreflight: ((NSEvent) -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
@@ -104,6 +106,11 @@ final class QuickEntryPanel: NSPanel {
 
         if modifiers == [.command], event.keyCode == 3 {
             onCommandF?()
+            return
+        }
+
+        if modifiers == [.command], event.keyCode == UInt16(kVK_ANSI_Comma) {
+            onCommandComma?()
             return
         }
 

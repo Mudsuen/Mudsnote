@@ -44,6 +44,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self?.showPreferences()
             }
         }
+
+        if launchArguments.contains("--floating-note") {
+            DispatchQueue.main.async { [weak self] in
+                self?.showFloatingNote()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -114,18 +120,28 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func registerHotKeysIfNeeded() {
-        guard let quickCaptureSpec = HotKeySpec.parse(noteStore.hotKeyString) else { return }
-        let quickCaptureRegistered = hotKeyManager.register(quickCaptureSpec, id: 1) { [weak self] in
-            Task { @MainActor in
-                self?.showQuickCapture()
+        let quickCaptureRegistered: Bool
+        if let quickCaptureSpec = HotKeySpec.parse(noteStore.hotKeyString) {
+            quickCaptureRegistered = hotKeyManager.register(quickCaptureSpec, id: 1) { [weak self] in
+                Task { @MainActor in
+                    self?.showQuickCapture()
+                }
             }
+        } else {
+            hotKeyManager.unregister(id: 1)
+            quickCaptureRegistered = false
         }
 
-        guard let floatingSpec = HotKeySpec.parse(noteStore.floatingNoteHotKeyString) else { return }
-        let floatingRegistered = hotKeyManager.register(floatingSpec, id: 2) { [weak self] in
-            Task { @MainActor in
-                self?.showFloatingNote()
+        let floatingRegistered: Bool
+        if let floatingSpec = HotKeySpec.parse(noteStore.floatingNoteHotKeyString) {
+            floatingRegistered = hotKeyManager.register(floatingSpec, id: 2) { [weak self] in
+                Task { @MainActor in
+                    self?.showFloatingNote()
+                }
             }
+        } else {
+            hotKeyManager.unregister(id: 2)
+            floatingRegistered = false
         }
 
         if !quickCaptureRegistered || !floatingRegistered {
@@ -325,6 +341,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             },
             onRequestSearch: { [weak self] in
                 self?.showSearchWindow()
+            },
+            onRequestPreferences: { [weak self] in
+                self?.showPreferences()
             }
         )
     }
@@ -355,18 +374,29 @@ final class AppController: NSObject, NSApplicationDelegate {
             },
             onRequestSearch: { [weak self] in
                 self?.showSearchWindow()
+            },
+            onRequestPreferences: { [weak self] in
+                self?.showPreferences()
             }
         )
     }
 
     private func storedQuickCaptureFrame() -> NSRect? {
         guard let frame = noteStore.quickCaptureWindowFrame else { return nil }
-        return NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+        return clampedPanelFrame(
+            NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
+            fallbackSize: NSSize(width: 412, height: 314),
+            visibleFrames: NSScreen.screens.map(\.visibleFrame)
+        )
     }
 
     private func storedFloatingNoteFrame() -> NSRect? {
         guard let frame = noteStore.floatingNoteWindowFrame else { return nil }
-        return NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+        return clampedPanelFrame(
+            NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
+            fallbackSize: NSSize(width: 412, height: 314),
+            visibleFrames: NSScreen.screens.map(\.visibleFrame)
+        )
     }
 
     private func cleanupClosedWindows() {
@@ -407,4 +437,53 @@ final class AppController: NSObject, NSApplicationDelegate {
         alert.informativeText = details
         alert.runModal()
     }
+}
+
+func clampedPanelFrame(
+    _ frame: NSRect,
+    fallbackSize: NSSize,
+    visibleFrames: [NSRect],
+    padding: CGFloat = 12
+) -> NSRect {
+    guard let targetVisibleFrame = nearestVisibleFrame(to: frame, in: visibleFrames) else {
+        return frame
+    }
+
+    let maxWidth = max(targetVisibleFrame.width - (padding * 2), 1)
+    let maxHeight = max(targetVisibleFrame.height - (padding * 2), 1)
+    let proposedWidth = frame.width > 0 ? frame.width : fallbackSize.width
+    let proposedHeight = frame.height > 0 ? frame.height : fallbackSize.height
+    let width = min(proposedWidth, maxWidth)
+    let height = min(proposedHeight, maxHeight)
+    let minX = targetVisibleFrame.minX + padding
+    let maxX = targetVisibleFrame.maxX - padding - width
+    let minY = targetVisibleFrame.minY + padding
+    let maxY = targetVisibleFrame.maxY - padding - height
+
+    return NSRect(
+        x: min(max(frame.origin.x, minX), maxX),
+        y: min(max(frame.origin.y, minY), maxY),
+        width: width,
+        height: height
+    )
+}
+
+private func nearestVisibleFrame(to frame: NSRect, in visibleFrames: [NSRect]) -> NSRect? {
+    guard !visibleFrames.isEmpty else { return nil }
+    let center = NSPoint(x: frame.midX, y: frame.midY)
+    if let containing = visibleFrames.first(where: { $0.contains(center) }) {
+        return containing
+    }
+
+    return visibleFrames.min { lhs, rhs in
+        squaredDistance(from: center, to: lhs) < squaredDistance(from: center, to: rhs)
+    }
+}
+
+private func squaredDistance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+    let clampedX = min(max(point.x, rect.minX), rect.maxX)
+    let clampedY = min(max(point.y, rect.minY), rect.maxY)
+    let dx = point.x - clampedX
+    let dy = point.y - clampedY
+    return (dx * dx) + (dy * dy)
 }

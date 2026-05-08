@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import MudsnoteCore
 import Testing
 @testable import Mudsnote
@@ -125,6 +126,56 @@ struct MarkdownRichEditorTests {
         #expect(QuickCaptureDocumentState.containsTag("beta", in: removed))
         #expect(QuickCaptureDocumentState.containsTag("gamma", in: added))
         #expect(added.contains("#gamma"))
+    }
+
+    @MainActor
+    @Test
+    func quickEntryPanelRoutesCommandCommaToPreferences() throws {
+        let panel = QuickEntryPanel(size: NSSize(width: 320, height: 260))
+        var didRequestPreferences = false
+        panel.onCommandComma = {
+            didRequestPreferences = true
+        }
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: ",",
+            charactersIgnoringModifiers: ",",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_Comma)
+        ))
+
+        panel.sendEvent(event)
+
+        #expect(didRequestPreferences)
+    }
+
+    @Test
+    func optionRFloatingHotKeyParses() throws {
+        let spec = try #require(HotKeySpec.parse("option+r"))
+
+        #expect(spec.keyCode == UInt32(kVK_ANSI_R))
+        #expect(spec.modifiers == UInt32(optionKey))
+    }
+
+    @Test
+    func clampedPanelFrameMovesOffscreenFrameIntoVisibleArea() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let offscreen = NSRect(x: 35, y: -288, width: 322, height: 416)
+
+        let clamped = clampedPanelFrame(
+            offscreen,
+            fallbackSize: NSSize(width: 412, height: 314),
+            visibleFrames: [visible]
+        )
+
+        #expect(clamped.origin.y >= visible.minY)
+        #expect(visible.contains(NSPoint(x: clamped.midX, y: clamped.midY)))
+        #expect(clamped.size == offscreen.size)
     }
 
     @MainActor
@@ -366,7 +417,8 @@ struct MarkdownRichEditorTests {
             showsSaveButton: showsSaveButton,
             onSave: { _ in },
             onClose: {},
-            onRequestSearch: {}
+            onRequestSearch: {},
+            onRequestPreferences: {}
         )
 
         return EditorControllerHarness(root: root, suiteName: suiteName, defaults: defaults, controller: controller)

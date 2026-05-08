@@ -174,6 +174,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let saveShortcut: HotKeySpec?
     let showsSaveButton: Bool
     let remembersWindowFrame: ((NSRect) -> Void)?
+    let onRequestPreferences: () -> Void
     var hasPresentedWindow = false
     var didCloseWindow = false
 
@@ -201,7 +202,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         remembersWindowFrame: ((NSRect) -> Void)? = nil,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void,
-        onRequestSearch: @escaping () -> Void
+        onRequestSearch: @escaping () -> Void,
+        onRequestPreferences: @escaping () -> Void
     ) {
         self.noteStore = noteStore
         self.currentPanelOpacity = panelOpacity
@@ -215,6 +217,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onSave = onSave
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch
+        self.onRequestPreferences = onRequestPreferences
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
         window.isReleasedWhenClosed = false
@@ -226,6 +229,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         window.delegate = self
         window.onCommandS = { [weak self] in self?.savePressed() }
         window.onCommandF = { [weak self] in self?.searchPressed() }
+        window.onCommandComma = { [weak self] in self?.onRequestPreferences() }
         window.onEscape = { [weak self] in self?.cancelPressed() }
         window.onLeftMouseDownPreflight = { [weak self] event in
             self?.rememberEditorSelectionForToolbarActions()
