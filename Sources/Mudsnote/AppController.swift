@@ -250,6 +250,10 @@ final class AppController: NSObject, NSApplicationDelegate {
             currentSaveShortcut: noteStore.saveShortcutString,
             onPreviewOpacity: { [weak self] opacity in
                 self?.updateOpenWindowOpacity(opacity)
+            },
+            onResetWindowFrames: { [weak self] in
+                self?.noteStore.quickCaptureWindowFrame = nil
+                self?.noteStore.floatingNoteWindowFrame = nil
             }
         ) { [weak self] directory, directories, opacity, quickCaptureHotKey, floatingHotKey, saveShortcut in
             self?.applyPreferences(
@@ -263,7 +267,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         preferencesWindowController = controller
-        controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
         NSApp.activate(ignoringOtherApps: true)
         controller.showWindow(self)
         controller.window?.makeKeyAndOrderFront(self)

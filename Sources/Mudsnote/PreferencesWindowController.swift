@@ -5,8 +5,9 @@ import MudsnoteCore
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let defaultDirectoryPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let addDirectoryButton = NSButton(title: "Add Folder", target: nil, action: nil)
+    private let addDirectoryButton = NSButton(title: "Add...", target: nil, action: nil)
     private let removeDirectoryButton = NSButton(title: "Remove", target: nil, action: nil)
+    private let revealDirectoryButton = NSButton(title: "Reveal in Finder", target: nil, action: nil)
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -15,23 +16,21 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         action: nil
     )
     private let opacityValueLabel = NSTextField(labelWithString: "")
+    private let resetOpacityButton = NSButton(title: "Reset Opacity", target: nil, action: nil)
+    private let resetWindowPositionsButton = NSButton(title: "Reset Window Positions", target: nil, action: nil)
     private let quickCaptureHotKeyField = NSTextField(string: "")
     private let floatingHotKeyField = NSTextField(string: "")
     private let saveShortcutField = NSTextField(string: "")
-    private let onSave: (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
+    private let resetShortcutsButton = NSButton(title: "Restore Defaults", target: nil, action: nil)
+
     private let onPreviewOpacity: (Double) -> Void
+    private let onResetWindowFrames: () -> Void
+    private let onSave: (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
     private let initialOpacity: Double
 
     private var selectedDirectory: URL
     private var managedDirectories: [URL]
     private var didSavePreferences = false
-    private var currentPanelOpacity: Double
-    private weak var backdropView: GradientBackdropView?
-    private weak var directorySurfaceView: NSView?
-    private weak var opacitySurfaceView: NSView?
-    private weak var quickCaptureHotKeySurfaceView: NSView?
-    private weak var floatingHotKeySurfaceView: NSView?
-    private weak var saveShortcutSurfaceView: NSView?
 
     init(
         currentDirectory: URL,
@@ -41,6 +40,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         currentFloatingHotKey: String,
         currentSaveShortcut: String,
         onPreviewOpacity: @escaping (Double) -> Void,
+        onResetWindowFrames: @escaping () -> Void,
         onSave: @escaping (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
     ) {
         let normalizedCurrentDirectory = currentDirectory.standardizedFileURL
@@ -50,29 +50,31 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         if !normalizedDirectories.contains(where: { $0.path == normalizedCurrentDirectory.path }) {
             normalizedDirectories.insert(normalizedCurrentDirectory, at: 0)
         }
+
         self.selectedDirectory = normalizedCurrentDirectory
         self.managedDirectories = normalizedDirectories
         self.initialOpacity = currentOpacity
-        self.currentPanelOpacity = currentOpacity
         self.onPreviewOpacity = onPreviewOpacity
+        self.onResetWindowFrames = onResetWindowFrames
         self.onSave = onSave
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 460),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.center()
         window.isReleasedWhenClosed = false
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
+        window.title = "\(MudsnoteBrand.appName) Settings"
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.backgroundColor = .windowBackgroundColor
+        window.isOpaque = true
 
         super.init(window: window)
         window.delegate = self
+
         buildUI(
             currentOpacity: currentOpacity,
             currentQuickCaptureHotKey: currentQuickCaptureHotKey,
@@ -95,228 +97,226 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     ) {
         guard let contentView = window?.contentView else { return }
 
-        let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentOpacity)
-        contentView.addSubview(backdrop)
-        pin(backdrop, to: contentView)
-        backdropView = backdrop
-
-        let shellContent = NSView()
-        backdrop.addSubview(shellContent)
-        pin(shellContent, to: backdrop, insets: .init(top: 14, left: 14, bottom: 14, right: 14))
-
-        let badge = NSTextField(labelWithString: "PREFERENCES")
-        badge.font = .systemFont(ofSize: 11, weight: .bold)
-        badge.textColor = panelSecondaryTextColor()
-
-        let title = NSTextField(labelWithString: "\(MudsnoteBrand.appName) Setup")
-        title.font = .systemFont(ofSize: 24, weight: .bold)
-        title.textColor = panelPrimaryTextColor()
-
-        let folderLabel = NSTextField(labelWithString: "Managed folders")
-        folderLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        folderLabel.textColor = panelSecondaryTextColor()
-
         defaultDirectoryPopUp.target = self
         defaultDirectoryPopUp.action = #selector(defaultDirectoryChanged(_:))
         defaultDirectoryPopUp.controlSize = .regular
-
-        let directorySurface = makeModernSurface(
-            content: insetted(defaultDirectoryPopUp, padding: .init(top: 8, left: 8, bottom: 8, right: 8)),
-            cornerRadius: 16,
-            tintColor: panelSeparatorColor(alpha: 0.46),
-            alpha: secondarySurfaceAlpha(for: currentOpacity),
-            material: .menu
-        )
-        directorySurfaceView = directorySurface
+        defaultDirectoryPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
         addDirectoryButton.target = self
         addDirectoryButton.action = #selector(addFolderPressed)
-        styleSecondaryButton(addDirectoryButton)
-        addDirectoryButton.controlSize = .regular
-
         removeDirectoryButton.target = self
         removeDirectoryButton.action = #selector(removeFolderPressed)
-        styleSecondaryButton(removeDirectoryButton)
-        removeDirectoryButton.controlSize = .regular
+        revealDirectoryButton.target = self
+        revealDirectoryButton.action = #selector(revealFolderPressed)
 
-        let directoryActions = NSStackView(views: [addDirectoryButton, removeDirectoryButton, NSView()])
-        directoryActions.orientation = .horizontal
-        directoryActions.spacing = 8
-
-        let folderHelp = NSTextField(
-            wrappingLabelWithString: "Add folders here and they will appear in the quick capture dropdown. The selected folder here is the default save location."
-        )
-        folderHelp.font = .systemFont(ofSize: 12)
-        folderHelp.textColor = panelTertiaryTextColor()
-
-        let opacityLabel = NSTextField(labelWithString: "Window opacity")
-        opacityLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        opacityLabel.textColor = panelSecondaryTextColor()
-
-        opacitySlider.doubleValue = currentOpacity
+        opacitySlider.doubleValue = clampedOpacity(currentOpacity)
         opacitySlider.target = self
         opacitySlider.action = #selector(opacityChanged(_:))
-
-        opacityValueLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        opacityValueLabel.textColor = panelSecondaryTextColor()
+        opacityValueLabel.alignment = .right
+        opacityValueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        opacityValueLabel.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        resetOpacityButton.target = self
+        resetOpacityButton.action = #selector(resetOpacityPressed)
+        resetWindowPositionsButton.target = self
+        resetWindowPositionsButton.action = #selector(resetWindowPositionsPressed)
         refreshOpacityLabel()
 
-        let opacityRow = NSStackView(views: [opacitySlider, opacityValueLabel])
-        opacityRow.orientation = .horizontal
-        opacityRow.spacing = 12
-        opacityValueLabel.setContentHuggingPriority(.required, for: .horizontal)
+        configureShortcutField(quickCaptureHotKeyField, value: currentQuickCaptureHotKey, placeholder: "option+shift+n")
+        configureShortcutField(floatingHotKeyField, value: currentFloatingHotKey, placeholder: "option+r")
+        configureShortcutField(saveShortcutField, value: currentSaveShortcut, placeholder: "command+return")
+        resetShortcutsButton.target = self
+        resetShortcutsButton.action = #selector(resetShortcutsPressed)
 
-        let opacitySurface = makeModernSurface(
-            content: insetted(opacityRow, padding: .init(top: 8, left: 10, bottom: 8, right: 10)),
-            cornerRadius: 16,
-            tintColor: panelSeparatorColor(alpha: 0.46),
-            alpha: secondarySurfaceAlpha(for: currentOpacity),
-            material: .menu
-        )
-        opacitySurfaceView = opacitySurface
-
-        let quickCaptureHotKeyLabel = NSTextField(labelWithString: "Quick capture shortcut")
-        quickCaptureHotKeyLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        quickCaptureHotKeyLabel.textColor = panelSecondaryTextColor()
-
-        quickCaptureHotKeyField.stringValue = currentQuickCaptureHotKey
-        quickCaptureHotKeyField.placeholderString = "option+shift+n"
-        quickCaptureHotKeyField.font = .systemFont(ofSize: 16, weight: .semibold)
-        quickCaptureHotKeyField.isBordered = false
-        quickCaptureHotKeyField.drawsBackground = false
-        quickCaptureHotKeyField.textColor = panelPrimaryTextColor()
-
-        let quickCaptureHotKeySurface = makeModernSurface(
-            content: insetted(quickCaptureHotKeyField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
-            cornerRadius: 16,
-            tintColor: panelAccentColor().withAlphaComponent(0.18),
-            alpha: primarySurfaceAlpha(for: currentOpacity),
-            material: .menu
-        )
-        quickCaptureHotKeySurfaceView = quickCaptureHotKeySurface
-
-        let floatingHotKeyLabel = NSTextField(labelWithString: "Floating note shortcut")
-        floatingHotKeyLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        floatingHotKeyLabel.textColor = panelSecondaryTextColor()
-
-        floatingHotKeyField.stringValue = currentFloatingHotKey
-        floatingHotKeyField.placeholderString = "option+r"
-        floatingHotKeyField.font = .systemFont(ofSize: 16, weight: .semibold)
-        floatingHotKeyField.isBordered = false
-        floatingHotKeyField.drawsBackground = false
-        floatingHotKeyField.textColor = panelPrimaryTextColor()
-
-        let floatingHotKeySurface = makeModernSurface(
-            content: insetted(floatingHotKeyField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
-            cornerRadius: 16,
-            tintColor: panelAccentColor().withAlphaComponent(0.18),
-            alpha: primarySurfaceAlpha(for: currentOpacity),
-            material: .menu
-        )
-        floatingHotKeySurfaceView = floatingHotKeySurface
-
-        let saveShortcutLabel = NSTextField(labelWithString: "Save shortcut")
-        saveShortcutLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        saveShortcutLabel.textColor = panelSecondaryTextColor()
-
-        saveShortcutField.stringValue = currentSaveShortcut
-        saveShortcutField.placeholderString = "command+return"
-        saveShortcutField.font = .systemFont(ofSize: 16, weight: .semibold)
-        saveShortcutField.isBordered = false
-        saveShortcutField.drawsBackground = false
-        saveShortcutField.textColor = panelPrimaryTextColor()
-
-        let saveShortcutSurface = makeModernSurface(
-            content: insetted(saveShortcutField, padding: .init(top: 8, left: 12, bottom: 8, right: 12)),
-            cornerRadius: 16,
-            tintColor: panelAccentColor().withAlphaComponent(0.18),
-            alpha: primarySurfaceAlpha(for: currentOpacity),
-            material: .menu
-        )
-        saveShortcutSurfaceView = saveShortcutSurface
+        let tabView = NSTabView()
+        tabView.tabViewType = .topTabsBezelBorder
+        tabView.translatesAutoresizingMaskIntoConstraints = false
+        tabView.addTabViewItem(tabItem(label: "General", view: makeGeneralPane()))
+        tabView.addTabViewItem(tabItem(label: "Shortcuts", view: makeShortcutsPane()))
+        tabView.addTabViewItem(tabItem(label: "Appearance", view: makeAppearancePane()))
 
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
-        styleSecondaryButton(cancelButton)
+        cancelButton.keyEquivalent = "\u{1b}"
 
-        let saveButton = NSButton(title: "Save Preferences", target: self, action: #selector(savePressed))
-        saveButton.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-        saveButton.imagePosition = .imageLeading
-        styleAccentButton(saveButton)
+        let saveButton = NSButton(title: "Save", target: self, action: #selector(savePressed))
+        saveButton.keyEquivalent = "\r"
 
         let footer = NSStackView(views: [NSView(), cancelButton, saveButton])
         footer.orientation = .horizontal
-        footer.spacing = 10
+        footer.alignment = .centerY
+        footer.spacing = 8
+        footer.translatesAutoresizingMaskIntoConstraints = false
 
-        for view in [
-            badge, title, folderLabel, directorySurface, directoryActions, folderHelp,
-            opacityLabel, opacitySurface,
-            quickCaptureHotKeyLabel, quickCaptureHotKeySurface,
-            floatingHotKeyLabel, floatingHotKeySurface,
-            saveShortcutLabel, saveShortcutSurface,
-            footer
-        ] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            shellContent.addSubview(view)
-        }
+        contentView.addSubview(tabView)
+        contentView.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            badge.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            badge.topAnchor.constraint(equalTo: shellContent.topAnchor, constant: 18),
+            tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            tabView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+            tabView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -14),
 
-            title.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            title.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            title.topAnchor.constraint(equalTo: badge.bottomAnchor, constant: 6),
-
-            folderLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            folderLabel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 14),
-
-            directorySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            directorySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            directorySurface.topAnchor.constraint(equalTo: folderLabel.bottomAnchor, constant: 8),
-
-            directoryActions.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            directoryActions.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            directoryActions.topAnchor.constraint(equalTo: directorySurface.bottomAnchor, constant: 8),
-
-            folderHelp.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            folderHelp.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            folderHelp.topAnchor.constraint(equalTo: directoryActions.bottomAnchor, constant: 10),
-
-            opacityLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            opacityLabel.topAnchor.constraint(equalTo: folderHelp.bottomAnchor, constant: 14),
-
-            opacitySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            opacitySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            opacitySurface.topAnchor.constraint(equalTo: opacityLabel.bottomAnchor, constant: 8),
-
-            quickCaptureHotKeyLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            quickCaptureHotKeyLabel.topAnchor.constraint(equalTo: opacitySurface.bottomAnchor, constant: 14),
-
-            quickCaptureHotKeySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            quickCaptureHotKeySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            quickCaptureHotKeySurface.topAnchor.constraint(equalTo: quickCaptureHotKeyLabel.bottomAnchor, constant: 8),
-
-            floatingHotKeyLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            floatingHotKeyLabel.topAnchor.constraint(equalTo: quickCaptureHotKeySurface.bottomAnchor, constant: 12),
-
-            floatingHotKeySurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            floatingHotKeySurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            floatingHotKeySurface.topAnchor.constraint(equalTo: floatingHotKeyLabel.bottomAnchor, constant: 8),
-
-            saveShortcutLabel.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            saveShortcutLabel.topAnchor.constraint(equalTo: floatingHotKeySurface.bottomAnchor, constant: 12),
-
-            saveShortcutSurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            saveShortcutSurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            saveShortcutSurface.topAnchor.constraint(equalTo: saveShortcutLabel.bottomAnchor, constant: 8),
-
-            footer.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
-            footer.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            footer.topAnchor.constraint(greaterThanOrEqualTo: saveShortcutSurface.bottomAnchor, constant: 18),
-            footer.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor, constant: -18)
+            footer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
+            footer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            footer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16)
         ])
+    }
 
-        updatePanelOpacity(currentOpacity)
+    private func makeGeneralPane() -> NSView {
+        let actions = NSStackView(views: [addDirectoryButton, removeDirectoryButton, revealDirectoryButton, NSView()])
+        actions.orientation = .horizontal
+        actions.alignment = .centerY
+        actions.spacing = 8
+
+        return contentPane(views: [
+            sectionTitle("Notes"),
+            preferenceRow(
+                label: "Default folder:",
+                control: defaultDirectoryPopUp,
+                help: "New notes save here by default. Additional managed folders stay available from quick capture."
+            ),
+            preferenceRow(label: "Managed folders:", control: actions),
+            sectionDivider(),
+            sectionTitle("Planned settings area"),
+            bodyText("Keep folder selection, capture behavior, shortcuts, and window appearance separate so future options can be added without crowding one long panel.")
+        ])
+    }
+
+    private func makeShortcutsPane() -> NSView {
+        return contentPane(views: [
+            sectionTitle("Keyboard Shortcuts"),
+            preferenceRow(
+                label: "Quick capture:",
+                control: quickCaptureHotKeyField,
+                help: "Opens the quick note window from anywhere."
+            ),
+            preferenceRow(
+                label: "Floating note:",
+                control: floatingHotKeyField,
+                help: "Shows or raises the persistent floating note window."
+            ),
+            preferenceRow(
+                label: "Save note:",
+                control: saveShortcutField,
+                help: "Saves the current note while editing."
+            ),
+            preferenceRow(label: "", control: resetShortcutsButton)
+        ])
+    }
+
+    private func makeAppearancePane() -> NSView {
+        let opacityControl = NSStackView(views: [opacitySlider, opacityValueLabel])
+        opacityControl.orientation = .horizontal
+        opacityControl.alignment = .centerY
+        opacityControl.spacing = 10
+        opacitySlider.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+
+        return contentPane(views: [
+            sectionTitle("Windows"),
+            preferenceRow(
+                label: "Panel opacity:",
+                control: opacityControl,
+                help: "Applies to the quick capture and floating note panels while leaving Settings fully opaque."
+            ),
+            preferenceRow(label: "", control: resetOpacityButton),
+            preferenceRow(
+                label: "Window memory:",
+                control: resetWindowPositionsButton,
+                help: "Use this when a quick capture or floating note window reopens in an awkward or off-screen position."
+            )
+        ])
+    }
+
+    private func tabItem(label: String, view: NSView) -> NSTabViewItem {
+        let item = NSTabViewItem(identifier: label)
+        item.label = label
+        item.view = view
+        return item
+    }
+
+    private func contentPane(views: [NSView]) -> NSView {
+        let pane = NSView()
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        pane.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: pane.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: pane.topAnchor, constant: 26),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: pane.bottomAnchor, constant: -26)
+        ])
+        return pane
+    }
+
+    private func sectionTitle(_ title: String) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .labelColor
+        return label
+    }
+
+    private func bodyText(_ value: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: value)
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 3
+        return label
+    }
+
+    private func sectionDivider() -> NSBox {
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.widthAnchor.constraint(equalToConstant: 600).isActive = true
+        return divider
+    }
+
+    private func preferenceRow(label title: String, control: NSView, help: String? = nil) -> NSView {
+        let container = NSStackView()
+        container.orientation = .vertical
+        container.alignment = .leading
+        container.spacing = 4
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.alignment = .right
+        titleLabel.font = .systemFont(ofSize: 13)
+        titleLabel.textColor = .labelColor
+        titleLabel.widthAnchor.constraint(equalToConstant: 140).isActive = true
+
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let row = NSStackView(views: [titleLabel, control])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.widthAnchor.constraint(equalToConstant: 600).isActive = true
+        container.addArrangedSubview(row)
+
+        if let help {
+            let spacer = NSView()
+            spacer.widthAnchor.constraint(equalToConstant: 150).isActive = true
+            let helpLabel = bodyText(help)
+            helpLabel.widthAnchor.constraint(equalToConstant: 450).isActive = true
+
+            let helpRow = NSStackView(views: [spacer, helpLabel])
+            helpRow.orientation = .horizontal
+            helpRow.alignment = .top
+            helpRow.spacing = 0
+            container.addArrangedSubview(helpRow)
+        }
+
+        return container
+    }
+
+    private func configureShortcutField(_ field: NSTextField, value: String, placeholder: String) {
+        field.stringValue = value
+        field.placeholderString = placeholder
+        field.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        field.controlSize = .regular
+        field.widthAnchor.constraint(equalToConstant: 260).isActive = true
     }
 
     private func refreshDirectoryControls() {
@@ -328,6 +328,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         }
 
         removeDirectoryButton.isEnabled = managedDirectories.count > 1
+        revealDirectoryButton.isEnabled = true
+
         for (index, url) in managedDirectories.enumerated() {
             defaultDirectoryPopUp.item(at: index)?.toolTip = displayPath(url)
         }
@@ -340,7 +342,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private func directoryLabel(for url: URL) -> String {
         let folder = url.lastPathComponent.isEmpty ? "Folder" : url.lastPathComponent
         let parent = url.deletingLastPathComponent().lastPathComponent
-        return parent.isEmpty ? folder : "\(folder) · \(parent)"
+        return parent.isEmpty ? folder : "\(folder) - \(parent)"
     }
 
     @objc
@@ -373,14 +375,42 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc
+    private func revealFolderPressed() {
+        NSWorkspace.shared.activateFileViewerSelecting([selectedDirectory])
+    }
+
+    @objc
+    private func resetOpacityPressed() {
+        opacitySlider.doubleValue = NoteStore.defaultPanelOpacity
+        refreshOpacityLabel()
+        onPreviewOpacity(opacitySlider.doubleValue)
+    }
+
+    @objc
+    private func resetWindowPositionsPressed() {
+        onResetWindowFrames()
+        resetWindowPositionsButton.title = "Window Positions Reset"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.resetWindowPositionsButton.title = "Reset Window Positions"
+        }
+    }
+
+    @objc
+    private func resetShortcutsPressed() {
+        quickCaptureHotKeyField.stringValue = "option+shift+n"
+        floatingHotKeyField.stringValue = "option+r"
+        saveShortcutField.stringValue = "command+return"
+    }
+
+    @objc
     private func cancelPressed() {
         window?.close()
     }
 
     @objc
     private func opacityChanged(_ sender: NSSlider) {
+        sender.doubleValue = clampedOpacity(sender.doubleValue)
         refreshOpacityLabel()
-        updatePanelOpacity(sender.doubleValue)
         onPreviewOpacity(sender.doubleValue)
     }
 
@@ -413,13 +443,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func updatePanelOpacity(_ opacity: Double) {
-        currentPanelOpacity = opacity
-        window?.alphaValue = windowAlphaValue(for: opacity)
-        backdropView?.updatePanelOpacity(opacity)
-        directorySurfaceView?.alphaValue = secondarySurfaceAlpha(for: opacity)
-        opacitySurfaceView?.alphaValue = secondarySurfaceAlpha(for: opacity)
-        quickCaptureHotKeySurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
-        floatingHotKeySurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
-        saveShortcutSurfaceView?.alphaValue = primarySurfaceAlpha(for: opacity)
+        opacitySlider.doubleValue = clampedOpacity(opacity)
+        refreshOpacityLabel()
+    }
+
+    private func clampedOpacity(_ opacity: Double) -> Double {
+        min(max(opacity, NoteStore.minimumPanelOpacity), NoteStore.maximumPanelOpacity)
     }
 }

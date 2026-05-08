@@ -1,5 +1,10 @@
 import AppKit
 
+private struct FormattingUndoSnapshot {
+    let content: NSAttributedString
+    let selection: NSRange
+}
+
 extension EditorWindowController {
 
     // MARK: - Paragraph kind
@@ -37,6 +42,7 @@ extension EditorWindowController {
     func toggleParagraphKind(_ target: MarkdownParagraphKind) {
         guard let storage = editorTextView.textStorage else { return }
 
+        let undoSnapshot = formattingUndoSnapshot()
         let ranges = selectedLineRanges()
         var renderedLines: [NSAttributedString] = []
         let currentKinds = ranges.map { MarkdownRichTextCodec.paragraphKind(at: $0, in: storage) }
@@ -71,11 +77,13 @@ extension EditorWindowController {
         editorTextView.setSelectedRange(NSRange(location: selectionLocation, length: 0))
         scrollSelectionToVisible()
         updateTypingAttributesFromInsertionPoint()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: target.undoActionName)
         userDidEdit()
     }
 
     func convertCurrentLineToParagraph() {
         guard let storage = editorTextView.textStorage else { return }
+        let undoSnapshot = formattingUndoSnapshot()
         let lineRange = visibleLineRangeForSelection()
         let replacement = MarkdownRichTextCodec.renderLine("", theme: theme)
 
@@ -85,11 +93,13 @@ extension EditorWindowController {
         editorTextView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
         scrollSelectionToVisible()
         updateTypingAttributesFromInsertionPoint()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Paragraph")
         userDidEdit()
     }
 
     func insertStructuredLine(kind: MarkdownParagraphKind, inlineMarkdown: String) {
         guard let storage = editorTextView.textStorage else { return }
+        let undoSnapshot = formattingUndoSnapshot()
         let selection = editorTextView.selectedRange()
         let markdownLine = MarkdownRichTextCodec.markdownLine(for: kind, inlineContent: inlineMarkdown)
         let renderedLine = MarkdownRichTextCodec.renderLine(markdownLine, theme: theme)
@@ -104,6 +114,7 @@ extension EditorWindowController {
         editorTextView.setSelectedRange(NSRange(location: cursorLocation, length: 0))
         scrollSelectionToVisible()
         updateTypingAttributesFromInsertionPoint()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: kind.undoActionName)
         userDidEdit()
     }
 
@@ -127,10 +138,12 @@ extension EditorWindowController {
             theme: theme
         )
 
+        let undoSnapshot = formattingUndoSnapshot()
         suppressTextDidChange = true
         storage.replaceCharacters(in: visibleRange, with: replacement)
         suppressTextDidChange = false
         editorTextView.setSelectedRange(NSRange(location: min(visibleRange.location + replacement.length, storage.length), length: 0))
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Checklist")
         userDidEdit()
         return true
     }
@@ -149,6 +162,7 @@ extension EditorWindowController {
         }
 
         guard let storage = editorTextView.textStorage else { return }
+        let undoSnapshot = formattingUndoSnapshot()
         suppressTextDidChange = true
         storage.beginEditing()
         var location = selection.location
@@ -163,6 +177,9 @@ extension EditorWindowController {
 
         storage.endEditing()
         suppressTextDidChange = false
+        editorTextView.setSelectedRange(selection)
+        rememberEditorSelectionForToolbarActions()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: trait.undoActionName)
         userDidEdit()
     }
 
@@ -184,15 +201,23 @@ extension EditorWindowController {
         toggleIntAttribute(.underlineStyle, enabledValue: NSUnderlineStyle.single.rawValue)
     }
 
-    private func applyAttribute(_ attributes: [NSAttributedString.Key: Any], removing keys: [NSAttributedString.Key] = []) {
+    private func applyAttribute(
+        _ attributes: [NSAttributedString.Key: Any],
+        removing keys: [NSAttributedString.Key] = [],
+        actionName: String = "Format"
+    ) {
         let selection = formattingSelection()
         guard selection.length > 0, let storage = editorTextView.textStorage else { return }
+        let undoSnapshot = formattingUndoSnapshot()
         suppressTextDidChange = true
         storage.beginEditing()
         keys.forEach { storage.removeAttribute($0, range: selection) }
         storage.addAttributes(attributes, range: selection)
         storage.endEditing()
         suppressTextDidChange = false
+        editorTextView.setSelectedRange(selection)
+        rememberEditorSelectionForToolbarActions()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: actionName)
         userDidEdit()
     }
 
@@ -210,7 +235,12 @@ extension EditorWindowController {
         guard let storage = editorTextView.textStorage else { return }
         let enabled = (storage.attribute(key, at: selection.location, effectiveRange: nil) as? Int) == enabledValue
 
-        if enabled { applyAttribute([:], removing: [key]) } else { applyAttribute([key: enabledValue]) }
+        let actionName = key == .underlineStyle ? "Underline" : "Strikethrough"
+        if enabled {
+            applyAttribute([:], removing: [key], actionName: actionName)
+        } else {
+            applyAttribute([key: enabledValue], actionName: actionName)
+        }
     }
 
     // MARK: - Toolbar state
@@ -280,7 +310,10 @@ extension EditorWindowController {
     @objc func toolbarButtonPressed(_ sender: NSButton) {
         guard let action = ToolbarAction(rawValue: sender.tag) else { return }
         focusEditorForToolbarAction()
-        defer { activeToolbarActionSelection = nil }
+        defer {
+            rememberEditorSelectionForToolbarActions()
+            activeToolbarActionSelection = nil
+        }
         switch action {
         case .heading: toggleParagraphKind(.heading(level: 1))
         case .bold: toggleInlineFontTrait(.boldFontMask)
@@ -381,5 +414,76 @@ extension EditorWindowController {
     private func combinedRange(of ranges: [NSRange]) -> NSRange {
         guard let first = ranges.first, let last = ranges.last else { return NSRange(location: 0, length: 0) }
         return NSRange(location: first.location, length: NSMaxRange(last) - first.location)
+    }
+
+    private func formattingUndoSnapshot() -> FormattingUndoSnapshot? {
+        guard let storage = editorTextView.textStorage else { return nil }
+        return FormattingUndoSnapshot(
+            content: NSAttributedString(attributedString: storage),
+            selection: editorTextView.selectedRange()
+        )
+    }
+
+    private func registerFormattingUndoIfNeeded(before: FormattingUndoSnapshot?, actionName: String) {
+        guard let before,
+              let after = formattingUndoSnapshot(),
+              !before.content.isEqual(to: after.content),
+              let undoManager = editorTextView.undoManager else {
+            return
+        }
+
+        undoManager.registerUndo(withTarget: self) { target in
+            target.restoreFormattingSnapshot(before, inverseSnapshot: after, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func restoreFormattingSnapshot(
+        _ snapshot: FormattingUndoSnapshot,
+        inverseSnapshot: FormattingUndoSnapshot,
+        actionName: String
+    ) {
+        editorTextView.undoManager?.registerUndo(withTarget: self) { target in
+            target.restoreFormattingSnapshot(inverseSnapshot, inverseSnapshot: snapshot, actionName: actionName)
+        }
+        editorTextView.undoManager?.setActionName(actionName)
+        applyFormattingSnapshot(snapshot)
+    }
+
+    private func applyFormattingSnapshot(_ snapshot: FormattingUndoSnapshot) {
+        guard let storage = editorTextView.textStorage else { return }
+
+        suppressTextDidChange = true
+        storage.setAttributedString(snapshot.content)
+        suppressTextDidChange = false
+
+        let location = min(snapshot.selection.location, storage.length)
+        let length = min(snapshot.selection.length, max(storage.length - location, 0))
+        editorTextView.setSelectedRange(NSRange(location: location, length: length))
+        scrollSelectionToVisible()
+        updateTypingAttributesFromInsertionPoint()
+        updateToolbarSelectionState()
+        rememberEditorSelectionForToolbarActions()
+        userDidEdit()
+    }
+}
+
+private extension MarkdownParagraphKind {
+    var undoActionName: String {
+        switch self {
+        case .paragraph: return "Paragraph"
+        case .heading: return "Heading"
+        case .bullet: return "Bulleted List"
+        case .ordered: return "Numbered List"
+        case .checklist: return "Checklist"
+        }
+    }
+}
+
+private extension NSFontTraitMask {
+    var undoActionName: String {
+        if contains(.boldFontMask) { return "Bold" }
+        if contains(.italicFontMask) { return "Italic" }
+        return "Format"
     }
 }

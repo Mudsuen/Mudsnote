@@ -315,6 +315,101 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func toolbarMouseDownAppliesDifferentFormatsToCachedSelection() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+        let italicButton = try #require(controller.toolbarButtonsByAction[.italic])
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        controller.rememberEditorSelectionForToolbarActions()
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        boldButton.mouseDown(with: event)
+        controller.editorTextView.setSelectedRange(NSRange(location: 13, length: 0))
+        italicButton.mouseDown(with: event)
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let font = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        let traits = NSFontManager.shared.traits(of: font)
+        #expect(traits.contains(.boldFontMask))
+        #expect(traits.contains(.italicFontMask))
+    }
+
+    @MainActor
+    @Test
+    func toolbarInlineFormattingCanBeUndone() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        controller.editorTextView.undoManager?.removeAllActions()
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 10, y: 10),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        boldButton.mouseDown(with: event)
+        controller.editorTextView.undoManager?.undo()
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let font = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        #expect(!NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 0, length: 8))
+    }
+
+    @MainActor
+    @Test
+    func preferencesWindowUsesStandardMacSettingsChrome() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-preferences-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let controller = PreferencesWindowController(
+            currentDirectory: root,
+            availableDirectories: [root],
+            currentOpacity: NoteStore.defaultPanelOpacity,
+            currentQuickCaptureHotKey: "option+shift+n",
+            currentFloatingHotKey: "option+r",
+            currentSaveShortcut: "command+return",
+            onPreviewOpacity: { _ in },
+            onResetWindowFrames: {},
+            onSave: { _, _, _, _, _, _ in }
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(window.title == "Mudsnote Settings")
+        #expect(window.styleMask.contains(.titled))
+        #expect(!window.styleMask.contains(.fullSizeContentView))
+        #expect(window.isOpaque)
+        #expect(window.backgroundColor == .windowBackgroundColor)
+        #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
     func activeToolbarButtonUsesWhiteFillHighlight() {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true
