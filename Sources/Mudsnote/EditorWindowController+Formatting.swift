@@ -322,9 +322,7 @@ extension EditorWindowController {
         let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
         let traits = NSFontManager.shared.traits(of: font)
 
-        setToolbarActionState(.heading1, active: { if case .heading(let level) = paragraphKind { return level == 1 }; return false }())
-        setToolbarActionState(.heading2, active: { if case .heading(let level) = paragraphKind { return level == 2 }; return false }())
-        setToolbarActionState(.heading3, active: { if case .heading(let level) = paragraphKind { return level == 3 }; return false }())
+        setToolbarActionState(.heading, active: { if case .heading = paragraphKind { return true }; return false }())
         setToolbarActionState(.bold, active: traits.contains(.boldFontMask))
         setToolbarActionState(.italic, active: isItalicActive(font: font, obliqueness: attributes[.obliqueness]))
         setToolbarActionState(.underline, active: ((attributes[.underlineStyle] as? Int) ?? 0) != 0)
@@ -374,9 +372,7 @@ extension EditorWindowController {
             activeToolbarActionSelection = nil
         }
         switch action {
-        case .heading1: toggleParagraphKind(.heading(level: 1))
-        case .heading2: toggleParagraphKind(.heading(level: 2))
-        case .heading3: toggleParagraphKind(.heading(level: 3))
+        case .heading: toggleParagraphKind(.heading(level: 1))
         case .bold: toggleInlineFontTrait(.boldFontMask)
         case .italic: toggleInlineFontTrait(.italicFontMask)
         case .strikethrough: applyStrikethrough()

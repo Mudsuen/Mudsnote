@@ -453,13 +453,11 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func toolbarHeadingButtonsSwitchBetweenLevels() throws {
+    func toolbarKeepsSingleHeadingButtonForHeadingOne() throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
-        let heading1Button = try #require(controller.toolbarButtonsByAction[.heading1])
-        let heading2Button = try #require(controller.toolbarButtonsByAction[.heading2])
-        let heading3Button = try #require(controller.toolbarButtonsByAction[.heading3])
+        let headingButton = try #require(controller.toolbarButtonsByAction[.heading])
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(string: "selected text", attributes: controller.theme.baseAttributes(for: .paragraph)))
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
         let event = try #require(NSEvent.mouseEvent(
@@ -474,14 +472,13 @@ struct MarkdownRichEditorTests {
             pressure: 1
         ))
 
-        heading1Button.mouseDown(with: event)
-        heading2Button.mouseDown(with: event)
-        heading3Button.mouseDown(with: event)
+        headingButton.mouseDown(with: event)
 
         let storage = try #require(controller.editorTextView.textStorage)
         let kind = MarkdownRichTextCodec.paragraphKind(at: NSRange(location: 0, length: storage.length), in: storage)
-        #expect(kind.headingLevel == 3)
-        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "### selected text")
+        #expect(kind.headingLevel == 1)
+        #expect(controller.toolbarButtonsByAction.count == 8)
+        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "# selected text")
     }
 
     @MainActor

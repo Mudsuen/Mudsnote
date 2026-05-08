@@ -49,13 +49,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     enum ToolbarAction: Int, CaseIterable {
-        case heading1, heading2, heading3, bold, italic, strikethrough, underline, checklist, orderedList, bulletList
+        case heading, bold, italic, strikethrough, underline, checklist, orderedList, bulletList
 
         var title: String? {
             switch self {
-            case .heading1: return "H1"
-            case .heading2: return "H2"
-            case .heading3: return "H3"
+            case .heading: return "H"
             case .bold: return "B"
             case .italic: return "I"
             case .strikethrough: return "S"
@@ -75,9 +73,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var toolTip: String {
             switch self {
-            case .heading1: return "Heading 1"
-            case .heading2: return "Heading 2"
-            case .heading3: return "Heading 3"
+            case .heading: return "Heading 1"
             case .bold: return "Bold"
             case .italic: return "Italic"
             case .strikethrough: return "Strikethrough"
