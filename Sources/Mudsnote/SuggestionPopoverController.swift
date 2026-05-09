@@ -72,8 +72,8 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         view.wantsLayer = true
         view.layer?.cornerRadius = 6
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
-        view.layer?.borderWidth = 1
-        view.layer?.borderColor = panelSeparatorColor(alpha: 0.64).cgColor
+        view.layer?.borderWidth = 0
+        view.layer?.borderColor = NSColor.clear.cgColor
 
         let column = NSTableColumn(identifier: .init("suggestion"))
         tableView.addTableColumn(column)
