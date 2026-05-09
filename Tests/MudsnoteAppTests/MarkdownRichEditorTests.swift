@@ -557,7 +557,7 @@ struct MarkdownRichEditorTests {
         ])
 
         #expect(controller.preferredContentSize.width == 156)
-        #expect(controller.preferredContentSize.height == 148)
+        #expect(controller.preferredContentSize.height == 124)
     }
 
     @MainActor

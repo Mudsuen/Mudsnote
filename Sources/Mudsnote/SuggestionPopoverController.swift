@@ -8,18 +8,32 @@ struct SuggestionItem: Equatable {
 
 @MainActor
 final class SuggestionRowView: NSTableCellView {
+    private let selectionView = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        wantsLayer = true
-        layer?.cornerRadius = 5
+        selectionView.wantsLayer = true
+        selectionView.layer?.cornerRadius = 5
+        selectionView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(selectionView)
 
         titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = panelPrimaryTextColor()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
-        pin(titleLabel, to: self, insets: .init(top: 4, left: 8, bottom: 4, right: 8))
+
+        NSLayoutConstraint.activate([
+            selectionView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            selectionView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            selectionView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            selectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+
+            titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: selectionView.trailingAnchor, constant: -8),
+            titleLabel.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1)
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -29,11 +43,11 @@ final class SuggestionRowView: NSTableCellView {
     func configure(item: SuggestionItem, selected: Bool) {
         titleLabel.stringValue = item.title
 
-        layer?.backgroundColor = selected
+        selectionView.layer?.backgroundColor = selected
             ? panelAccentColor().withAlphaComponent(0.18).cgColor
             : NSColor.clear.cgColor
-        layer?.borderWidth = selected ? 1 : 0
-        layer?.borderColor = panelSeparatorColor(alpha: 0.42).cgColor
+        selectionView.layer?.borderWidth = selected ? 1 : 0
+        selectionView.layer?.borderColor = panelSeparatorColor(alpha: 0.42).cgColor
     }
 }
 
@@ -41,9 +55,9 @@ final class SuggestionRowView: NSTableCellView {
 final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, NSTableViewDataSource {
     private enum Metrics {
         static let width: CGFloat = 156
-        static let rowHeight: CGFloat = 28
-        static let outerInset: CGFloat = 4
-        static let maxHeight: CGFloat = 148
+        static let rowHeight: CGFloat = 24
+        static let outerInset: CGFloat = 2
+        static let maxHeight: CGFloat = 124
     }
 
     var onSelect: ((Int) -> Void)?
@@ -56,7 +70,7 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.maxHeight))
         view.wantsLayer = true
-        view.layer?.cornerRadius = 7
+        view.layer?.cornerRadius = 6
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
         view.layer?.borderWidth = 1
         view.layer?.borderColor = panelSeparatorColor(alpha: 0.64).cgColor
