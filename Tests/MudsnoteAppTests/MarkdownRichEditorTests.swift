@@ -544,6 +544,24 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func slashSuggestionPopoverUsesCompactMenuSizing() {
+        let controller = SuggestionPopoverController()
+        controller.loadViewIfNeeded()
+
+        controller.updateItems([
+            SuggestionItem(title: "Heading 1", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "Heading 2", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "Heading 3", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "To-do List", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "Bulleted List", subtitle: nil, symbolName: nil)
+        ])
+
+        #expect(controller.preferredContentSize.width == 156)
+        #expect(controller.preferredContentSize.height == 148)
+    }
+
+    @MainActor
+    @Test
     func activeToolbarButtonUsesWhiteFillHighlight() {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true

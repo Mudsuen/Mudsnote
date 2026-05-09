@@ -14,12 +14,12 @@ final class SuggestionRowView: NSTableCellView {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = 5
 
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = panelPrimaryTextColor()
         addSubview(titleLabel)
-        pin(titleLabel, to: self, insets: .init(top: 7, left: 10, bottom: 7, right: 10))
+        pin(titleLabel, to: self, insets: .init(top: 4, left: 8, bottom: 4, right: 8))
     }
 
     required init?(coder: NSCoder) {
@@ -39,6 +39,13 @@ final class SuggestionRowView: NSTableCellView {
 
 @MainActor
 final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, NSTableViewDataSource {
+    private enum Metrics {
+        static let width: CGFloat = 156
+        static let rowHeight: CGFloat = 28
+        static let outerInset: CGFloat = 4
+        static let maxHeight: CGFloat = 148
+    }
+
     var onSelect: ((Int) -> Void)?
 
     private let scrollView = NSScrollView()
@@ -47,9 +54,9 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
     private(set) var selectedIndex = 0
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 180))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.maxHeight))
         view.wantsLayer = true
-        view.layer?.cornerRadius = 8
+        view.layer?.cornerRadius = 7
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
         view.layer?.borderWidth = 1
         view.layer?.borderColor = panelSeparatorColor(alpha: 0.64).cgColor
@@ -57,7 +64,7 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         let column = NSTableColumn(identifier: .init("suggestion"))
         tableView.addTableColumn(column)
         tableView.headerView = nil
-        tableView.rowHeight = 36
+        tableView.rowHeight = Metrics.rowHeight
         tableView.intercellSpacing = .zero
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .none
@@ -76,7 +83,12 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         scrollView.documentView = tableView
 
         view.addSubview(scrollView)
-        pin(scrollView, to: view, insets: .init(top: 4, left: 4, bottom: 4, right: 4))
+        pin(scrollView, to: view, insets: .init(
+            top: Metrics.outerInset,
+            left: Metrics.outerInset,
+            bottom: Metrics.outerInset,
+            right: Metrics.outerInset
+        ))
     }
 
     func updateItems(_ items: [SuggestionItem]) {
@@ -84,7 +96,13 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         selectedIndex = min(selectedIndex, max(items.count - 1, 0))
         tableView.reloadData()
         selectRow(at: selectedIndex)
-        preferredContentSize = NSSize(width: 180, height: min(CGFloat(max(items.count, 1)) * 36 + 8, 188))
+        preferredContentSize = NSSize(
+            width: Metrics.width,
+            height: min(
+                CGFloat(max(items.count, 1)) * Metrics.rowHeight + (Metrics.outerInset * 2),
+                Metrics.maxHeight
+            )
+        )
     }
 
     func moveSelection(delta: Int) {
