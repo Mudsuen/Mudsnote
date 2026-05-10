@@ -11,6 +11,8 @@ final class SuggestionRowView: NSTableCellView {
     private let selectionView = NSView()
     private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
+    private var titleIconLeadingConstraint: NSLayoutConstraint?
+    private var titleDirectLeadingConstraint: NSLayoutConstraint?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -30,6 +32,9 @@ final class SuggestionRowView: NSTableCellView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
+        titleIconLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6)
+        titleDirectLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 6)
+
         NSLayoutConstraint.activate([
             selectionView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             selectionView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
@@ -41,10 +46,10 @@ final class SuggestionRowView: NSTableCellView {
             iconView.widthAnchor.constraint(equalToConstant: 15),
             iconView.heightAnchor.constraint(equalToConstant: 15),
 
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
             titleLabel.trailingAnchor.constraint(equalTo: selectionView.trailingAnchor, constant: -6),
             titleLabel.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1)
         ])
+        titleDirectLeadingConstraint?.isActive = true
     }
 
     required init?(coder: NSCoder) {
@@ -57,6 +62,8 @@ final class SuggestionRowView: NSTableCellView {
             NSImage(systemSymbolName: $0, accessibilityDescription: item.title)
         }
         iconView.isHidden = item.symbolName == nil
+        titleIconLeadingConstraint?.isActive = item.symbolName != nil
+        titleDirectLeadingConstraint?.isActive = item.symbolName == nil
 
         selectionView.layer?.backgroundColor = selected
             ? NSColor(calibratedWhite: 0.18, alpha: 1).cgColor
@@ -70,29 +77,37 @@ final class SuggestionRowView: NSTableCellView {
 @MainActor
 final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, NSTableViewDataSource {
     private enum Metrics {
-        static let width: CGFloat = 156
         static let rowHeight: CGFloat = 24
         static let outerInset: CGFloat = 0
         static let maxHeight: CGFloat = 120
+        static let selectionInset: CGFloat = 2
+        static let iconLeading: CGFloat = 5
+        static let iconWidth: CGFloat = 15
+        static let iconTitleGap: CGFloat = 6
+        static let titleLeading: CGFloat = 6
+        static let titleTrailing: CGFloat = 6
+        static let fallbackWidth: CGFloat = 64
+        static let maxWidth: CGFloat = 180
+        static func titleFont() -> NSFont { .systemFont(ofSize: 12, weight: .semibold) }
     }
 
     var onSelect: ((Int) -> Void)?
 
     private let scrollView = NSScrollView()
     private let tableView = NSTableView()
+    private let suggestionColumn = NSTableColumn(identifier: .init("suggestion"))
     private var items: [SuggestionItem] = []
     private(set) var selectedIndex = 0
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.maxHeight))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.fallbackWidth, height: Metrics.maxHeight))
         view.wantsLayer = true
         view.layer?.cornerRadius = 8
         view.layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
         view.layer?.borderWidth = 0
         view.layer?.borderColor = NSColor.clear.cgColor
 
-        let column = NSTableColumn(identifier: .init("suggestion"))
-        tableView.addTableColumn(column)
+        tableView.addTableColumn(suggestionColumn)
         tableView.headerView = nil
         tableView.rowHeight = Metrics.rowHeight
         tableView.intercellSpacing = .zero
@@ -126,13 +141,27 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         selectedIndex = min(selectedIndex, max(items.count - 1, 0))
         tableView.reloadData()
         selectRow(at: selectedIndex)
+        let width = preferredWidth(for: items)
+        suggestionColumn.width = width
         preferredContentSize = NSSize(
-            width: Metrics.width,
+            width: width,
             height: min(
                 CGFloat(max(items.count, 1)) * Metrics.rowHeight + (Metrics.outerInset * 2),
                 Metrics.maxHeight
             )
         )
+    }
+
+    private func preferredWidth(for items: [SuggestionItem]) -> CGFloat {
+        let maxTitleWidth = items
+            .map { ceil(($0.title as NSString).size(withAttributes: [.font: Metrics.titleFont()]).width) }
+            .max() ?? 0
+        let leadingSpace = items.contains { $0.symbolName != nil }
+            ? Metrics.iconLeading + Metrics.iconWidth + Metrics.iconTitleGap
+            : Metrics.titleLeading
+        let horizontalPadding = (Metrics.selectionInset * 2) + leadingSpace + Metrics.titleTrailing
+        let contentWidth = maxTitleWidth + horizontalPadding
+        return min(max(ceil(contentWidth), Metrics.fallbackWidth), Metrics.maxWidth)
     }
 
     func moveSelection(delta: Int) {

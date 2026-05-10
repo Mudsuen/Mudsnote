@@ -556,7 +556,8 @@ struct MarkdownRichEditorTests {
             SuggestionItem(title: "Bulleted List", subtitle: nil, symbolName: nil)
         ])
 
-        #expect(controller.preferredContentSize.width == 156)
+        #expect(controller.preferredContentSize.width < 96)
+        #expect(controller.preferredContentSize.width >= 64)
         #expect(controller.preferredContentSize.height == 120)
         #expect(controller.view.layer?.borderWidth == 0)
         #expect(controller.view.layer?.backgroundColor != NSColor.clear.cgColor)
