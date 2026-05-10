@@ -9,6 +9,7 @@ struct SuggestionItem: Equatable {
 @MainActor
 final class SuggestionRowView: NSTableCellView {
     private let selectionView = NSView()
+    private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
@@ -18,6 +19,11 @@ final class SuggestionRowView: NSTableCellView {
         selectionView.layer?.cornerRadius = 5
         selectionView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(selectionView)
+
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        iconView.contentTintColor = panelSecondaryTextColor()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconView)
 
         titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.textColor = panelPrimaryTextColor()
@@ -30,7 +36,12 @@ final class SuggestionRowView: NSTableCellView {
             selectionView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             selectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 8),
+            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 8),
+            iconView.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1),
+            iconView.widthAnchor.constraint(equalToConstant: 15),
+            iconView.heightAnchor.constraint(equalToConstant: 15),
+
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
             titleLabel.trailingAnchor.constraint(equalTo: selectionView.trailingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1)
         ])
@@ -42,12 +53,17 @@ final class SuggestionRowView: NSTableCellView {
 
     func configure(item: SuggestionItem, selected: Bool) {
         titleLabel.stringValue = item.title
+        iconView.image = item.symbolName.flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: item.title)
+        }
+        iconView.isHidden = item.symbolName == nil
 
         selectionView.layer?.backgroundColor = selected
-            ? panelAccentColor().withAlphaComponent(0.18).cgColor
+            ? NSColor.white.withAlphaComponent(0.10).cgColor
             : NSColor.clear.cgColor
         selectionView.layer?.borderWidth = selected ? 1 : 0
-        selectionView.layer?.borderColor = panelSeparatorColor(alpha: 0.42).cgColor
+        selectionView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        iconView.contentTintColor = selected ? panelPrimaryTextColor() : panelSecondaryTextColor()
     }
 }
 
@@ -70,8 +86,8 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.maxHeight))
         view.wantsLayer = true
-        view.layer?.cornerRadius = 6
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+        view.layer?.cornerRadius = 8
+        view.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.44).cgColor
         view.layer?.borderWidth = 0
         view.layer?.borderColor = NSColor.clear.cgColor
 
