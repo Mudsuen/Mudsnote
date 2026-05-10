@@ -572,6 +572,26 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func inlineSuggestionPopoverIsHostedAtWindowContentLevel() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let contentView = try #require(controller.window?.contentView)
+
+        #expect(controller.suggestionController.view.superview === contentView)
+
+        controller.editorTextView.string = "/"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.updateInlineSuggestions()
+
+        #expect(controller.suggestionController.view.superview === contentView)
+        #expect(!controller.suggestionController.view.isHidden)
+        #expect(controller.suggestionController.view.frame.minX >= 4)
+        #expect(controller.suggestionController.view.frame.maxX <= contentView.bounds.maxX - 4)
+    }
+
+    @MainActor
+    @Test
     func activeToolbarButtonUsesWhiteFillHighlight() {
         let button = HoverToolbarButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
         button.isActive = true

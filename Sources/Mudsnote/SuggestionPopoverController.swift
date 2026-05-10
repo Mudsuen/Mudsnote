@@ -32,16 +32,16 @@ final class SuggestionRowView: NSTableCellView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
-        titleIconLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 5)
-        titleDirectLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 4)
+        titleIconLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4)
+        titleDirectLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 3)
 
         NSLayoutConstraint.activate([
-            selectionView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1),
-            selectionView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
+            selectionView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            selectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
             selectionView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             selectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 4),
+            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 3),
             iconView.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1),
             iconView.widthAnchor.constraint(equalToConstant: 15),
             iconView.heightAnchor.constraint(equalToConstant: 15),
@@ -80,11 +80,11 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         static let rowHeight: CGFloat = 24
         static let outerInset: CGFloat = 0
         static let maxHeight: CGFloat = 120
-        static let selectionInset: CGFloat = 1
-        static let iconLeading: CGFloat = 4
+        static let selectionInset: CGFloat = 0
+        static let iconLeading: CGFloat = 3
         static let iconWidth: CGFloat = 15
-        static let iconTitleGap: CGFloat = 5
-        static let titleLeading: CGFloat = 4
+        static let iconTitleGap: CGFloat = 4
+        static let titleLeading: CGFloat = 3
         static let titleTrailing: CGFloat = 6
         static let fallbackWidth: CGFloat = 64
         static let maxWidth: CGFloat = 180

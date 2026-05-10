@@ -103,7 +103,7 @@ extension EditorWindowController {
         let suggestionView = suggestionController.view
         suggestionView.isHidden = true
         suggestionView.translatesAutoresizingMaskIntoConstraints = true
-        shellContent.addSubview(suggestionView)
+        contentView.addSubview(suggestionView, positioned: .above, relativeTo: nil)
     }
 
     // MARK: - Standard editor UI

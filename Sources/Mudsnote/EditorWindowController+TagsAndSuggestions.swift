@@ -151,10 +151,14 @@ extension EditorWindowController {
     }
 
     func positionSuggestionView(for context: InlineSuggestionContext) {
-        guard let host = shellContentView else { return }
+        guard let host = window?.contentView else { return }
 
         let anchorRect = editorTextView.convert(caretRectInWindow(for: editorTextView), to: host)
         let size = suggestionController.preferredContentSize
+        let suggestionView = suggestionController.view
+        if suggestionView.superview !== host {
+            host.addSubview(suggestionView, positioned: .above, relativeTo: nil)
+        }
         var origin = NSPoint(x: anchorRect.maxX + 4, y: anchorRect.maxY - size.height + 14)
 
         switch context {
@@ -169,8 +173,8 @@ extension EditorWindowController {
         origin.x = min(max(origin.x, 4), max(host.bounds.width - size.width - 4, 4))
         origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
 
-        suggestionController.view.frame = NSRect(origin: origin, size: size)
-        suggestionController.view.isHidden = false
+        suggestionView.frame = NSRect(origin: origin, size: size)
+        suggestionView.isHidden = false
     }
 
     // MARK: - Tag / slash application
