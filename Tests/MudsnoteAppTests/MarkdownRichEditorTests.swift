@@ -557,7 +557,7 @@ struct MarkdownRichEditorTests {
         ])
 
         #expect(controller.preferredContentSize.width == 156)
-        #expect(controller.preferredContentSize.height == 124)
+        #expect(controller.preferredContentSize.height == 120)
         #expect(controller.view.layer?.borderWidth == 0)
         #expect(controller.view.layer?.backgroundColor != NSColor.clear.cgColor)
     }

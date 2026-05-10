@@ -36,13 +36,13 @@ final class SuggestionRowView: NSTableCellView {
             selectionView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             selectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 8),
+            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 5),
             iconView.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1),
             iconView.widthAnchor.constraint(equalToConstant: 15),
             iconView.heightAnchor.constraint(equalToConstant: 15),
 
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: selectionView.trailingAnchor, constant: -8),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6),
+            titleLabel.trailingAnchor.constraint(equalTo: selectionView.trailingAnchor, constant: -6),
             titleLabel.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1)
         ])
     }
@@ -59,10 +59,10 @@ final class SuggestionRowView: NSTableCellView {
         iconView.isHidden = item.symbolName == nil
 
         selectionView.layer?.backgroundColor = selected
-            ? NSColor.white.withAlphaComponent(0.10).cgColor
+            ? NSColor(calibratedWhite: 0.18, alpha: 1).cgColor
             : NSColor.clear.cgColor
         selectionView.layer?.borderWidth = selected ? 1 : 0
-        selectionView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        selectionView.layer?.borderColor = NSColor(calibratedWhite: 0.28, alpha: 1).cgColor
         iconView.contentTintColor = selected ? panelPrimaryTextColor() : panelSecondaryTextColor()
     }
 }
@@ -72,8 +72,8 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
     private enum Metrics {
         static let width: CGFloat = 156
         static let rowHeight: CGFloat = 24
-        static let outerInset: CGFloat = 2
-        static let maxHeight: CGFloat = 124
+        static let outerInset: CGFloat = 0
+        static let maxHeight: CGFloat = 120
     }
 
     var onSelect: ((Int) -> Void)?
@@ -87,7 +87,7 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.maxHeight))
         view.wantsLayer = true
         view.layer?.cornerRadius = 8
-        view.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.44).cgColor
+        view.layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
         view.layer?.borderWidth = 0
         view.layer?.borderColor = NSColor.clear.cgColor
 
