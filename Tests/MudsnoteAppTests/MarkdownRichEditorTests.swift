@@ -544,7 +544,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func slashSuggestionPopoverUsesCompactMenuSizing() {
+    func slashSuggestionPopoverUsesCompactMenuSizing() throws {
         let controller = SuggestionPopoverController()
         controller.loadViewIfNeeded()
 
@@ -553,14 +553,21 @@ struct MarkdownRichEditorTests {
             SuggestionItem(title: "Heading 2", subtitle: nil, symbolName: nil),
             SuggestionItem(title: "Heading 3", subtitle: nil, symbolName: nil),
             SuggestionItem(title: "To-do List", subtitle: nil, symbolName: nil),
-            SuggestionItem(title: "Bulleted List", subtitle: nil, symbolName: nil)
+            SuggestionItem(title: "Bulleted List", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "Numbered List", subtitle: nil, symbolName: nil),
+            SuggestionItem(title: "Divider", subtitle: nil, symbolName: nil)
         ])
 
-        #expect(controller.preferredContentSize.width < 96)
-        #expect(controller.preferredContentSize.width >= 64)
+        #expect(controller.preferredContentSize.width < 112)
+        #expect(controller.preferredContentSize.width >= 104)
         #expect(controller.preferredContentSize.height == 120)
         #expect(controller.view.layer?.borderWidth == 0)
         #expect(controller.view.layer?.backgroundColor != NSColor.clear.cgColor)
+
+        let scrollView = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)
+        let tableView = try #require(scrollView.documentView as? NSTableView)
+        let column = try #require(tableView.tableColumns.first)
+        #expect(controller.preferredContentSize.width - column.width == 10)
     }
 
     @MainActor

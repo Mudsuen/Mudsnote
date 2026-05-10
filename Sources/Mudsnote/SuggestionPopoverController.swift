@@ -32,16 +32,16 @@ final class SuggestionRowView: NSTableCellView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
-        titleIconLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 6)
-        titleDirectLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 6)
+        titleIconLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 5)
+        titleDirectLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 4)
 
         NSLayoutConstraint.activate([
-            selectionView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
-            selectionView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            selectionView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1),
+            selectionView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
             selectionView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             selectionView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 5),
+            iconView.leadingAnchor.constraint(equalTo: selectionView.leadingAnchor, constant: 4),
             iconView.centerYAnchor.constraint(equalTo: selectionView.centerYAnchor, constant: -1),
             iconView.widthAnchor.constraint(equalToConstant: 15),
             iconView.heightAnchor.constraint(equalToConstant: 15),
@@ -80,14 +80,15 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         static let rowHeight: CGFloat = 24
         static let outerInset: CGFloat = 0
         static let maxHeight: CGFloat = 120
-        static let selectionInset: CGFloat = 2
-        static let iconLeading: CGFloat = 5
+        static let selectionInset: CGFloat = 1
+        static let iconLeading: CGFloat = 4
         static let iconWidth: CGFloat = 15
-        static let iconTitleGap: CGFloat = 6
-        static let titleLeading: CGFloat = 6
+        static let iconTitleGap: CGFloat = 5
+        static let titleLeading: CGFloat = 4
         static let titleTrailing: CGFloat = 6
         static let fallbackWidth: CGFloat = 64
         static let maxWidth: CGFloat = 180
+        static let scrollerGutter: CGFloat = 10
         static func titleFont() -> NSFont { .systemFont(ofSize: 12, weight: .semibold) }
     }
 
@@ -111,6 +112,7 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         tableView.headerView = nil
         tableView.rowHeight = Metrics.rowHeight
         tableView.intercellSpacing = .zero
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .none
         tableView.focusRingType = .none
@@ -141,8 +143,14 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         selectedIndex = min(selectedIndex, max(items.count - 1, 0))
         tableView.reloadData()
         selectRow(at: selectedIndex)
-        let width = preferredWidth(for: items)
-        suggestionColumn.width = width
+        let contentWidth = preferredContentWidth(for: items)
+        let needsScroller = CGFloat(items.count) * Metrics.rowHeight > Metrics.maxHeight
+        let width = contentWidth + (needsScroller ? Metrics.scrollerGutter : 0)
+        suggestionColumn.width = contentWidth
+        tableView.frame.size = NSSize(
+            width: contentWidth,
+            height: CGFloat(items.count) * Metrics.rowHeight
+        )
         preferredContentSize = NSSize(
             width: width,
             height: min(
@@ -152,7 +160,7 @@ final class SuggestionPopoverController: NSViewController, NSTableViewDelegate, 
         )
     }
 
-    private func preferredWidth(for items: [SuggestionItem]) -> CGFloat {
+    private func preferredContentWidth(for items: [SuggestionItem]) -> CGFloat {
         let maxTitleWidth = items
             .map { ceil(($0.title as NSString).size(withAttributes: [.font: Metrics.titleFont()]).width) }
             .max() ?? 0
