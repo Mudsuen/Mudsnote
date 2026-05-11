@@ -90,6 +90,28 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(orderedRendered, theme: theme) == "1. ")
     }
 
+    @MainActor
+    @Test
+    func deletingChecklistPrefixResetsLineToParagraph() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let rendered = MarkdownRichTextCodec.renderLine("- [ ] task", theme: controller.theme)
+        controller.editorTextView.textStorage?.setAttributedString(rendered)
+        controller.editorTextView.textStorage?.deleteCharacters(in: NSRange(location: 0, length: 1))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        controller.userDidEdit()
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let lineRange = NSRange(location: 0, length: storage.length)
+        #expect(storage.string == "task")
+        #expect(storage.attribute(.attachment, at: 0, effectiveRange: nil) == nil)
+        #expect(MarkdownRichTextCodec.paragraphKind(at: lineRange, in: storage) == .paragraph)
+        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "task")
+        #expect(controller.toolbarButtonsByAction[.checklist]?.isActive == false)
+    }
+
     @Test
     func richCodecInterpretsBareBulletPrefixAsSoonAsSpaceIsTyped() {
         #expect(MarkdownRichTextCodec.shouldInterpretMarkdown(in: "- "))

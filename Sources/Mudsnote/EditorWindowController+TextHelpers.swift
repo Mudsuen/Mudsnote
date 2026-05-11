@@ -5,7 +5,9 @@ extension EditorWindowController {
 
     func userDidEdit() {
         guard !suppressTextDidChange else { return }
-        interpretTypedMarkdownIfNeeded()
+        if !normalizeCurrentLineAfterListPrefixEdit() {
+            interpretTypedMarkdownIfNeeded()
+        }
         updateTypingAttributesFromInsertionPoint()
         updateToolbarSelectionState()
         updateInlineSuggestions()
@@ -35,6 +37,46 @@ extension EditorWindowController {
         storage.replaceCharacters(in: currentLineRange, with: rendered)
         suppressTextDidChange = false
         editorTextView.setSelectedRange(newSelection)
+    }
+
+    func normalizeCurrentLineAfterListPrefixEdit() -> Bool {
+        guard let storage = editorTextView.textStorage else { return false }
+
+        let lineRange = visibleLineRangeForSelection()
+        guard MarkdownRichTextCodec.needsParagraphResetAfterListPrefixEdit(range: lineRange, in: storage) else {
+            return false
+        }
+        let storedKind = MarkdownRichTextCodec.storedParagraphKind(at: lineRange, in: storage) ?? .paragraph
+        let contentRange = MarkdownRichTextCodec.paragraphContentRangeAfterListPrefixEdit(
+            for: lineRange,
+            in: storage,
+            storedKind: storedKind
+        )
+        let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+            range: contentRange,
+            in: storage,
+            paragraphKind: .paragraph,
+            theme: theme
+        )
+        let replacement = MarkdownRichTextCodec.renderLine(
+            MarkdownRichTextCodec.markdownLine(for: .paragraph, inlineContent: inlineMarkdown),
+            theme: theme
+        )
+
+        let selection = editorTextView.selectedRange()
+        let removedPrefixLength = max(contentRange.location - lineRange.location, 0)
+        let selectionStartOffset = max(selection.location - lineRange.location - removedPrefixLength, 0)
+        let selectionEndOffset = max(NSMaxRange(selection) - lineRange.location - removedPrefixLength, 0)
+        let newSelection = NSRange(
+            location: lineRange.location + min(selectionStartOffset, replacement.length),
+            length: max(min(selectionEndOffset, replacement.length) - min(selectionStartOffset, replacement.length), 0)
+        )
+
+        suppressTextDidChange = true
+        storage.replaceCharacters(in: lineRange, with: replacement)
+        suppressTextDidChange = false
+        editorTextView.setSelectedRange(newSelection)
+        return true
     }
 
     func updateTypingAttributesFromInsertionPoint() {

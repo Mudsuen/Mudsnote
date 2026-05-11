@@ -168,6 +168,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Split each god object into focused files without changing any behavior or public API. `MudsnoteCore.swift` became six files (`Models`, `NoteStore`, `NoteStore+Settings`, `NoteStore+Migration`, `NoteStore+Drafts`, `NoteStore+Notes`, `NoteStore+Search`). `AppUI.swift` became eight files under `Chrome/` (`Helpers`, `Palette`, `OpacityMath`, `Surfaces`, `Buttons`, `Scrolling`, `Panels`, `DragHosts`). `EditorWindowController.swift` became seven files via Swift extensions (`+UI`, `+TextHelpers`, `+Draft`, `+Formatting`, `+TagsAndSuggestions`, `+Save`, `+Appearance`). All 21 tests pass and the packaged app quick-capture/save flow was confirmed.
 - Lesson: Splitting a large Swift class into per-responsibility extension files (one extension per file) is a zero-risk refactor if you change `private` to `internal` on cross-file members — the module boundary still prevents external access, and the tests verify nothing changed.
 
+### 31. List prefix deletion resets paragraph state
+
+- Problem: Deleting the visible checkbox/list marker could leave the line internally marked as checklist/list, so toolbar state and Markdown serialization still treated it as a task item.
+- Fix: Validate that list prefixes are still visibly intact before trusting stored paragraph attributes, and normalize a damaged list-prefix line back to a plain paragraph during editing.
+- Lesson: Rich-text structural state must be invalidated when the visible structural marker is deleted; otherwise display, toolbar state, and saved Markdown drift apart.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

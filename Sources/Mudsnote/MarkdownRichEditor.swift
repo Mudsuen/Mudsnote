@@ -593,13 +593,25 @@ enum MarkdownRichTextCodec {
             return .paragraph
         }
 
-        if let encoded = attributedString.attribute(.qmParagraphKind, at: range.location, effectiveRange: nil),
-           let kind = MarkdownParagraphKind.decode(encoded) {
+        if let kind = storedParagraphKind(at: range, in: attributedString) {
+            if kind.isListKind, !visibleListPrefixIsComplete(for: kind, in: range, attributedString: attributedString) {
+                let visibleText = (attributedString.string as NSString).substring(with: range)
+                return inferredParagraphKind(fromVisibleText: visibleText)
+            }
             return kind
         }
 
         let visibleText = (attributedString.string as NSString).substring(with: range)
         return inferredParagraphKind(fromVisibleText: visibleText)
+    }
+
+    static func storedParagraphKind(at range: NSRange, in attributedString: NSAttributedString) -> MarkdownParagraphKind? {
+        guard range.length > 0 else { return nil }
+        guard range.location >= 0, range.location < attributedString.length else { return nil }
+        guard let encoded = attributedString.attribute(.qmParagraphKind, at: range.location, effectiveRange: nil) else {
+            return nil
+        }
+        return MarkdownParagraphKind.decode(encoded)
     }
 
     static func applyParagraphKind(_ kind: MarkdownParagraphKind, to range: NSRange, in textStorage: NSTextStorage, theme: MarkdownEditorTheme) {
@@ -951,6 +963,7 @@ enum MarkdownRichTextCodec {
         case .paragraph, .heading:
             return 0
         case .bullet, .checklist:
+            guard visibleListPrefixIsComplete(for: kind, in: range, attributedString: attributedString) else { return 0 }
             return min(kind.prefixLength, lineText.utf16.count)
         case .ordered:
             if let match = firstMatch(#"^\d+\.\s"#, in: lineText) {
@@ -1062,6 +1075,83 @@ enum MarkdownRichTextCodec {
     private static func rangeAfterVisiblePrefix(for range: NSRange, in attributedString: NSAttributedString, kind: MarkdownParagraphKind) -> NSRange {
         let prefixLength = visiblePrefixLength(for: range, in: attributedString, kind: kind)
         return NSRange(location: range.location + prefixLength, length: max(range.length - prefixLength, 0))
+    }
+
+    static func needsParagraphResetAfterListPrefixEdit(range: NSRange, in attributedString: NSAttributedString) -> Bool {
+        guard let kind = storedParagraphKind(at: range, in: attributedString), kind.isListKind else { return false }
+        return !visibleListPrefixIsComplete(for: kind, in: range, attributedString: attributedString)
+    }
+
+    static func paragraphContentRangeAfterListPrefixEdit(
+        for range: NSRange,
+        in attributedString: NSAttributedString,
+        storedKind: MarkdownParagraphKind
+    ) -> NSRange {
+        guard range.length > 0 else { return range }
+        guard storedKind.usesAttachmentPrefix else { return range }
+
+        let nsString = attributedString.string as NSString
+        let upperBound = NSMaxRange(range)
+        var contentLocation = range.location
+
+        if contentLocation < upperBound {
+            let firstCharacter = nsString.substring(with: NSRange(location: contentLocation, length: 1))
+            let hasAttachment = attributedString.attribute(.attachment, at: contentLocation, effectiveRange: nil) as? NSTextAttachment != nil
+            if hasAttachment || firstCharacter == "\u{FFFC}" {
+                contentLocation += 1
+            }
+        }
+
+        if contentLocation < upperBound,
+           nsString.substring(with: NSRange(location: contentLocation, length: 1)) == " " {
+            contentLocation += 1
+        }
+
+        return NSRange(location: contentLocation, length: max(upperBound - contentLocation, 0))
+    }
+
+    private static func visibleListPrefixIsComplete(
+        for kind: MarkdownParagraphKind,
+        in range: NSRange,
+        attributedString: NSAttributedString
+    ) -> Bool {
+        guard kind.isListKind else { return true }
+        guard range.length > 0 else { return false }
+
+        let nsString = attributedString.string as NSString
+
+        switch kind {
+        case .bullet, .checklist:
+            guard range.length >= 2 else { return false }
+            let hasAttachment = attributedString.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment != nil
+            guard hasAttachment else { return false }
+            return nsString.substring(with: NSRange(location: range.location + 1, length: 1)) == " "
+        case .ordered:
+            let lineText = nsString.substring(with: range)
+            return firstMatch(#"^\d+\.\s"#, in: lineText) != nil
+        default:
+            return true
+        }
+    }
+}
+
+private extension MarkdownParagraphKind {
+    var isListKind: Bool {
+        switch self {
+        case .bullet, .ordered, .checklist:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var usesAttachmentPrefix: Bool {
+        switch self {
+        case .bullet, .checklist:
+            return true
+        default:
+            return false
+        }
     }
 }
 
