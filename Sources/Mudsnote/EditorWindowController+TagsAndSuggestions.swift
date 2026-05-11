@@ -165,8 +165,12 @@ extension EditorWindowController {
         case .tags:
             origin.x = anchorRect.maxX + 4
             origin.y = anchorRect.maxY - size.height + 12
-        case .slash:
-            origin.x = anchorRect.minX
+        case .slash(_, let replacementRange, _):
+            let tokenStartRect = editorTextView.convert(
+                caretRectInWindow(for: editorTextView, at: replacementRange.location),
+                to: host
+            )
+            origin.x = tokenStartRect.minX
             origin.y = anchorRect.minY - size.height - 6
         }
 

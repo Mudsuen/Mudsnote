@@ -565,9 +565,9 @@ struct MarkdownRichEditorTests {
         #expect(controller.view.layer?.backgroundColor != NSColor.clear.cgColor)
 
         let scrollView = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)
-        let tableView = try #require(scrollView.documentView as? NSTableView)
-        let column = try #require(tableView.tableColumns.first)
-        #expect(controller.preferredContentSize.width - column.width == 10)
+        let listView = try #require(scrollView.documentView as? SuggestionListView)
+        #expect(listView.frame.width == controller.contentWidth)
+        #expect(controller.preferredContentSize.width - controller.contentWidth == 10)
     }
 
     @MainActor
@@ -580,14 +580,29 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.suggestionController.view.superview === contentView)
 
-        controller.editorTextView.string = "/"
-        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.editorTextView.string = "/heading"
+        controller.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
         controller.updateInlineSuggestions()
 
         #expect(controller.suggestionController.view.superview === contentView)
         #expect(!controller.suggestionController.view.isHidden)
         #expect(controller.suggestionController.view.frame.minX >= 4)
         #expect(controller.suggestionController.view.frame.maxX <= contentView.bounds.maxX - 4)
+
+        let tokenStartRect = controller.editorTextView.convert(
+            caretRectInWindow(for: controller.editorTextView, at: 0),
+            to: contentView
+        )
+        let caretRect = controller.editorTextView.convert(
+            caretRectInWindow(for: controller.editorTextView),
+            to: contentView
+        )
+        let expectedX = min(
+            max(tokenStartRect.minX, 4),
+            max(contentView.bounds.width - controller.suggestionController.view.frame.width - 4, 4)
+        )
+        #expect(abs(controller.suggestionController.view.frame.minX - expectedX) < 1)
+        #expect(controller.suggestionController.view.frame.minX < caretRect.minX)
     }
 
     @MainActor
