@@ -173,7 +173,6 @@ final class SuggestionPopoverController: NSViewController {
         static let titleTrailing: CGFloat = 7
         static let fallbackWidth: CGFloat = 64
         static let maxWidth: CGFloat = 180
-        static let scrollerGutter: CGFloat = 10
         static func titleFont() -> NSFont { .systemFont(ofSize: 12, weight: .semibold) }
     }
 
@@ -211,9 +210,8 @@ final class SuggestionPopoverController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = false
-        scrollView.autohidesScrollers = false
+        scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .legacy
-        scrollView.verticalScroller = SlimScroller()
         scrollView.documentView = listView
 
         view.addSubview(scrollView)
@@ -229,12 +227,10 @@ final class SuggestionPopoverController: NSViewController {
         self.items = items
         selectedIndex = min(selectedIndex, max(items.count - 1, 0))
         contentWidth = preferredContentWidth(for: items)
-        let needsScroller = CGFloat(items.count) * Metrics.rowHeight > Metrics.maxHeight
-        let width = contentWidth + (needsScroller ? Metrics.scrollerGutter : 0)
-        scrollView.hasVerticalScroller = needsScroller
+        scrollView.hasVerticalScroller = false
         listView.update(items: items, selectedIndex: selectedIndex, width: contentWidth)
         preferredContentSize = NSSize(
-            width: width,
+            width: contentWidth,
             height: min(
                 CGFloat(max(items.count, 1)) * Metrics.rowHeight + (Metrics.outerInset * 2),
                 Metrics.maxHeight

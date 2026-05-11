@@ -558,8 +558,8 @@ struct MarkdownRichEditorTests {
             SuggestionItem(title: "Divider", subtitle: nil, symbolName: nil)
         ])
 
-        #expect(controller.preferredContentSize.width < 112)
-        #expect(controller.preferredContentSize.width >= 104)
+        #expect(controller.preferredContentSize.width < 102)
+        #expect(controller.preferredContentSize.width >= 96)
         #expect(controller.preferredContentSize.height == 120)
         #expect(controller.view.layer?.borderWidth == 0)
         #expect(controller.view.layer?.backgroundColor != NSColor.clear.cgColor)
@@ -567,7 +567,8 @@ struct MarkdownRichEditorTests {
         let scrollView = try #require(controller.view.subviews.compactMap { $0 as? NSScrollView }.first)
         let listView = try #require(scrollView.documentView as? SuggestionListView)
         #expect(listView.frame.width == controller.contentWidth)
-        #expect(controller.preferredContentSize.width - controller.contentWidth == 10)
+        #expect(controller.preferredContentSize.width == controller.contentWidth)
+        #expect(!scrollView.hasVerticalScroller)
     }
 
     @MainActor
