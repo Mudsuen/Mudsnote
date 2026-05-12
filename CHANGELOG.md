@@ -180,6 +180,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Moved Settings to a macOS preference-toolbar layout, added real controls for Finder reveal after save, floating-note window level, and editor spell checking, reused an already-open Settings window, kept Settings fully opaque during opacity preview, and rejected duplicate shortcut assignments before saving.
 - Lesson: A Settings page should only expose controls backed by real behavior; window-level preferences also need immediate propagation to already-open panels.
 
+### 33. Shortcut recording and Chinese UI
+
+- Problem: Shortcut settings still required typing strings like `option+r`, which is fragile and unlike macOS shortcut preferences; the visible app UI also still mixed English labels with Chinese usage.
+- Fix: Added recorder-style shortcut controls that capture real key events and display macOS shortcut symbols, normalized captured shortcuts back into the existing persisted format, and switched the main menu, Settings, search, editor chrome, slash commands, alerts, and status labels to Chinese.
+- Lesson: Shortcut configuration should capture keyboard events before window key equivalents can consume them; UI language should be changed across the user-visible flow in one pass instead of per-panel.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

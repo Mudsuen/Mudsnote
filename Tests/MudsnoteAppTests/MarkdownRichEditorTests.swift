@@ -201,6 +201,48 @@ struct MarkdownRichEditorTests {
 
         #expect(spec.keyCode == UInt32(kVK_ANSI_R))
         #expect(spec.modifiers == UInt32(optionKey))
+        #expect(spec.displayString == "option+r")
+        #expect(spec.userVisibleString == "⌥R")
+    }
+
+    @Test
+    func hotKeySpecRecognizesRecordedEvents() throws {
+        let floatingEvent = try keyEvent(keyCode: UInt16(kVK_ANSI_R), modifiers: [.option], characters: "r")
+        let floatingSpec = try #require(HotKeySpec.from(event: floatingEvent))
+        #expect(floatingSpec.displayString == "option+r")
+        #expect(floatingSpec.userVisibleString == "⌥R")
+
+        let saveEvent = try keyEvent(keyCode: UInt16(kVK_Return), modifiers: [.command], characters: "\r")
+        let saveSpec = try #require(HotKeySpec.from(event: saveEvent))
+        #expect(saveSpec.displayString == "command+return")
+        #expect(saveSpec.userVisibleString == "⌘↩")
+    }
+
+    @MainActor
+    @Test
+    func shortcutRecorderCapturesKeyEquivalentStyleShortcut() throws {
+        let recorder = ShortcutRecorderButton(shortcutString: "option+r")
+        let mouseEvent = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        recorder.mouseDown(with: mouseEvent)
+
+        #expect(recorder.isRecording)
+
+        let event = try keyEvent(keyCode: UInt16(kVK_Return), modifiers: [.command], characters: "\r")
+        recorder.recordShortcutEvent(event)
+
+        #expect(!recorder.isRecording)
+        #expect(recorder.shortcutString == "command+return")
+        #expect(recorder.title == "⌘↩")
     }
 
     @MainActor
@@ -559,7 +601,7 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
-        #expect(window.title == "Mudsnote Settings")
+        #expect(window.title == "Mudsnote 设置")
         #expect(window.styleMask.contains(.titled))
         #expect(!window.styleMask.contains(.fullSizeContentView))
         #expect(window.isOpaque)

@@ -285,7 +285,7 @@ extension EditorWindowController {
         titlePlaceholderOverlay.translatesAutoresizingMaskIntoConstraints = false
         titleHost.addSubview(titlePlaceholderOverlay)
 
-        let titlePlaceholderLabel = NSTextField(labelWithString: "New Note")
+        let titlePlaceholderLabel = NSTextField(labelWithString: "新笔记")
         titlePlaceholderLabel.translatesAutoresizingMaskIntoConstraints = false
         titlePlaceholderLabel.font = .systemFont(ofSize: 18, weight: .semibold)
         titlePlaceholderLabel.textColor = panelTertiaryTextColor()
@@ -296,7 +296,7 @@ extension EditorWindowController {
         bodyPlaceholderOverlay.translatesAutoresizingMaskIntoConstraints = false
         bodyContainer.addSubview(bodyPlaceholderOverlay)
 
-        let bodyLabel = NSTextField(labelWithString: "Notes")
+        let bodyLabel = NSTextField(labelWithString: "正文")
         bodyLabel.translatesAutoresizingMaskIntoConstraints = false
         bodyLabel.font = .systemFont(ofSize: 15, weight: .regular)
         bodyLabel.textColor = panelTertiaryTextColor()
@@ -353,7 +353,7 @@ extension EditorWindowController {
 
         let cancelButton = FocusAwareSecondaryButton(frame: .zero)
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
-        cancelButton.title = "Cancel"
+        cancelButton.title = "取消"
         cancelButton.target = self
         cancelButton.action = #selector(cancelPressed)
         cancelButton.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -454,7 +454,7 @@ extension EditorWindowController {
 
     func makePrimarySaveButton() -> FocusAwareAccentButton {
         let saveButton = FocusAwareAccentButton(frame: .zero)
-        saveButton.title = "Save"
+        saveButton.title = "保存"
         saveButton.target = self
         saveButton.action = #selector(savePressed)
         saveButton.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)?
@@ -576,7 +576,7 @@ extension EditorWindowController {
                 body = note.body
                 isDirty = false
             } catch {
-                presentErrorAlert(message: "Failed to load note", details: error.localizedDescription)
+                presentErrorAlert(message: "无法加载笔记", details: error.localizedDescription)
             }
         }
 
@@ -586,9 +586,9 @@ extension EditorWindowController {
             applyInitialContent(title: draft.title, body: draft.body)
             selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
             isDirty = true
-            statusLabel.stringValue = "Restored"
+            statusLabel.stringValue = "已恢复"
         } else {
-            statusLabel.stringValue = fileURL == nil ? "Markdown" : "Editing"
+            statusLabel.stringValue = fileURL == nil ? "Markdown" : "编辑中"
         }
 
         refreshChrome()
@@ -637,7 +637,7 @@ extension EditorWindowController {
         if let tagButton = quickCaptureTagButton {
             tagButton.isActive = !state.tags.isEmpty
             tagButton.toolTip = state.tags.isEmpty
-                ? "Choose known tags or insert # into the note"
+                ? "选择已有标签，或在正文中插入 #"
                 : state.tags.map { "#\($0)" }.joined(separator: ", ")
         }
 
@@ -650,7 +650,7 @@ extension EditorWindowController {
     func quickCaptureDestinationTitle() -> String {
         let standardizedSelected = selectedDirectoryURL.standardizedFileURL
         let standardizedRoot = noteStore.notesDirectory.standardizedFileURL
-        if standardizedSelected == standardizedRoot { return "Inbox" }
+        if standardizedSelected == standardizedRoot { return "收件箱" }
         return standardizedSelected.lastPathComponent
     }
 

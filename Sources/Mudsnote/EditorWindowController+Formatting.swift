@@ -94,7 +94,7 @@ extension EditorWindowController {
         editorTextView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
         scrollSelectionToVisible()
         updateTypingAttributesFromInsertionPoint()
-        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Paragraph")
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "段落")
         userDidEdit()
     }
 
@@ -144,7 +144,7 @@ extension EditorWindowController {
         storage.replaceCharacters(in: visibleRange, with: replacement)
         suppressTextDidChange = false
         editorTextView.setSelectedRange(NSRange(location: min(visibleRange.location + replacement.length, storage.length), length: 0))
-        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Checklist")
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "待办列表")
         userDidEdit()
         return true
     }
@@ -232,7 +232,7 @@ extension EditorWindowController {
         suppressTextDidChange = false
         editorTextView.setSelectedRange(selection)
         rememberEditorSelectionForToolbarActions()
-        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "Italic")
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "斜体")
         userDidEdit()
     }
 
@@ -257,7 +257,7 @@ extension EditorWindowController {
     private func applyAttribute(
         _ attributes: [NSAttributedString.Key: Any],
         removing keys: [NSAttributedString.Key] = [],
-        actionName: String = "Format"
+        actionName: String = "格式"
     ) {
         let selection = formattingSelection()
         guard selection.length > 0, let storage = editorTextView.textStorage else { return }
@@ -288,7 +288,7 @@ extension EditorWindowController {
         guard let storage = editorTextView.textStorage else { return }
         let enabled = (storage.attribute(key, at: selection.location, effectiveRange: nil) as? Int) == enabledValue
 
-        let actionName = key == .underlineStyle ? "Underline" : "Strikethrough"
+        let actionName = key == .underlineStyle ? "下划线" : "删除线"
         if enabled {
             applyAttribute([:], removing: [key], actionName: actionName)
         } else {
@@ -546,19 +546,19 @@ extension EditorWindowController {
 private extension MarkdownParagraphKind {
     var undoActionName: String {
         switch self {
-        case .paragraph: return "Paragraph"
-        case .heading: return "Heading"
-        case .bullet: return "Bulleted List"
-        case .ordered: return "Numbered List"
-        case .checklist: return "Checklist"
+        case .paragraph: return "段落"
+        case .heading: return "标题"
+        case .bullet: return "项目符号列表"
+        case .ordered: return "编号列表"
+        case .checklist: return "待办列表"
         }
     }
 }
 
 private extension NSFontTraitMask {
     var undoActionName: String {
-        if contains(.boldFontMask) { return "Bold" }
-        if contains(.italicFontMask) { return "Italic" }
-        return "Format"
+        if contains(.boldFontMask) { return "加粗" }
+        if contains(.italicFontMask) { return "斜体" }
+        return "格式"
     }
 }

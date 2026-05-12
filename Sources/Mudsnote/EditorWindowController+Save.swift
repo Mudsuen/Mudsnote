@@ -42,7 +42,7 @@ extension EditorWindowController {
             onSave(savedURL)
             window?.close()
         } catch {
-            presentErrorAlert(message: "Failed to save note", details: error.localizedDescription)
+            presentErrorAlert(message: "无法保存笔记", details: error.localizedDescription)
         }
     }
 

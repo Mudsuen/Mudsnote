@@ -128,7 +128,10 @@ extension EditorWindowController {
                 length: token.trimmingCharacters(in: .whitespaces).utf16.count
             )
             let commands = SlashCommand.allCases.filter {
-                query.isEmpty || $0.title.lowercased().contains(query) || $0.subtitle.lowercased().contains(query)
+                query.isEmpty ||
+                    $0.title.lowercased().contains(query) ||
+                    $0.subtitle.lowercased().contains(query) ||
+                    $0.searchAliases.contains { $0.lowercased().contains(query) }
             }
             return commands.isEmpty ? nil : .slash(query: String(query), replacementRange: replacementRange, items: commands)
         }
@@ -233,14 +236,14 @@ extension EditorWindowController {
     func showQuickCaptureTagMenu(from sender: NSButton) {
         let menu = NSMenu()
 
-        let insertHashItem = NSMenuItem(title: "Insert # in Notes", action: #selector(insertInlineHashMarkerFromMenu(_:)), keyEquivalent: "")
+        let insertHashItem = NSMenuItem(title: "插入 # 到正文", action: #selector(insertInlineHashMarkerFromMenu(_:)), keyEquivalent: "")
         insertHashItem.target = self
         menu.addItem(insertHashItem)
 
         let knownTags = noteStore.knownTags(limit: 12)
         if knownTags.isEmpty {
             menu.addItem(.separator())
-            let emptyItem = NSMenuItem(title: "No saved tags yet", action: nil, keyEquivalent: "")
+            let emptyItem = NSMenuItem(title: "暂无已保存标签", action: nil, keyEquivalent: "")
             emptyItem.isEnabled = false
             menu.addItem(emptyItem)
         } else {

@@ -18,7 +18,7 @@ func chooseDirectory(startingAt directory: URL?) -> URL? {
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
     panel.canCreateDirectories = true
-    panel.prompt = "Choose"
+    panel.prompt = "选择"
     panel.directoryURL = directory
 
     guard panel.runModal() == .OK else { return nil }

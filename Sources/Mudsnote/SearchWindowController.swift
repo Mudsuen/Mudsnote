@@ -99,15 +99,15 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         backdrop.addSubview(shellContent)
         pin(shellContent, to: backdrop, insets: .init(top: 20, left: 22, bottom: 20, right: 22))
 
-        let badge = NSTextField(labelWithString: "SEARCH")
+        let badge = NSTextField(labelWithString: "搜索")
         badge.font = .systemFont(ofSize: 11, weight: .bold)
         badge.textColor = panelSecondaryTextColor()
 
-        let title = NSTextField(labelWithString: "Search Markdown Notes")
+        let title = NSTextField(labelWithString: "搜索 Markdown 笔记")
         title.font = .systemFont(ofSize: 26, weight: .bold)
         title.textColor = panelPrimaryTextColor()
 
-        searchField.placeholderString = "Search title or body"
+        searchField.placeholderString = "搜索标题或正文"
         searchField.font = .systemFont(ofSize: 18)
         searchField.target = self
         searchField.action = #selector(openSelectedResult)
@@ -148,7 +148,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         )
         resultSurfaceView = resultSurface
 
-        let closeButton = NSButton(title: "Close", target: self, action: #selector(closePressed))
+        let closeButton = NSButton(title: "关闭", target: self, action: #selector(closePressed))
         closeButton.keyEquivalent = "\u{1b}"
         styleSecondaryButton(closeButton)
 
@@ -244,11 +244,11 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         }
 
         if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            infoLabel.stringValue = results.isEmpty ? "No recent notes yet" : "\(results.count) recent notes"
+            infoLabel.stringValue = results.isEmpty ? "暂无最近笔记" : "\(results.count) 条最近笔记"
         } else {
             infoLabel.stringValue = results.isEmpty
-                ? "No matches in \(noteStore.knownSearchRoots().count) folders"
-                : "\(results.count) matches in \(noteStore.knownSearchRoots().count) folders"
+                ? "\(noteStore.knownSearchRoots().count) 个文件夹中无匹配"
+                : "\(results.count) 条匹配，来自 \(noteStore.knownSearchRoots().count) 个文件夹"
         }
     }
 

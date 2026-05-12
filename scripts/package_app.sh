@@ -33,7 +33,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
+    <string>zh-Hans</string>
     <key>CFBundleDisplayName</key>
     <string>Mudsnote</string>
     <key>CFBundleExecutable</key>

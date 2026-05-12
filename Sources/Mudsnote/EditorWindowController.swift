@@ -12,23 +12,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var title: String {
             switch self {
-            case .heading1: return "Heading 1"
-            case .heading2: return "Heading 2"
-            case .heading3: return "Heading 3"
-            case .checklist: return "To-do List"
-            case .bulletList: return "Bulleted List"
-            case .orderedList: return "Numbered List"
-            case .divider: return "Divider"
+            case .heading1: return "一级标题"
+            case .heading2: return "二级标题"
+            case .heading3: return "三级标题"
+            case .checklist: return "待办列表"
+            case .bulletList: return "项目符号列表"
+            case .orderedList: return "编号列表"
+            case .divider: return "分割线"
             }
         }
 
         var subtitle: String {
             switch self {
-            case .heading1, .heading2, .heading3: return "Turn this line into a heading"
-            case .checklist: return "Start a checklist item"
-            case .bulletList: return "Start a bullet item"
-            case .orderedList: return "Start a numbered item"
-            case .divider: return "Insert a divider marker"
+            case .heading1, .heading2, .heading3: return "将当前行改为标题"
+            case .checklist: return "开始一个待办项"
+            case .bulletList: return "开始一个项目符号项"
+            case .orderedList: return "开始一个编号项"
+            case .divider: return "插入分割线"
+            }
+        }
+
+        var searchAliases: [String] {
+            switch self {
+            case .heading1: return ["heading 1", "h1", "一级标题"]
+            case .heading2: return ["heading 2", "h2", "二级标题"]
+            case .heading3: return ["heading 3", "h3", "三级标题"]
+            case .checklist: return ["todo", "to-do", "checklist", "待办", "清单"]
+            case .bulletList: return ["bullet", "bulleted", "list", "项目符号"]
+            case .orderedList: return ["numbered", "ordered", "number", "编号"]
+            case .divider: return ["divider", "line", "分割线"]
             }
         }
 
@@ -73,14 +85,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var toolTip: String {
             switch self {
-            case .heading: return "Heading 1"
-            case .bold: return "Bold"
-            case .italic: return "Italic"
-            case .strikethrough: return "Strikethrough"
-            case .underline: return "Underline"
-            case .checklist: return "Checklist"
-            case .orderedList: return "Numbered list"
-            case .bulletList: return "Bulleted list"
+            case .heading: return "一级标题"
+            case .bold: return "加粗"
+            case .italic: return "斜体"
+            case .strikethrough: return "删除线"
+            case .underline: return "下划线"
+            case .checklist: return "待办列表"
+            case .orderedList: return "编号列表"
+            case .bulletList: return "项目符号列表"
             }
         }
 
@@ -93,10 +105,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var buttonTitle: String {
             switch self {
-            case .tag: return "Tags"
-            case .checklist: return "Checklist"
-            case .orderedList: return "Numbered"
-            case .bulletList: return "Bullets"
+            case .tag: return "标签"
+            case .checklist: return "待办"
+            case .orderedList: return "编号"
+            case .bulletList: return "项目符号"
             }
         }
 
@@ -111,10 +123,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         var toolTip: String {
             switch self {
-            case .tag: return "Insert tag"
-            case .checklist: return "Checklist"
-            case .orderedList: return "Numbered list"
-            case .bulletList: return "Bulleted list"
+            case .tag: return "插入标签"
+            case .checklist: return "待办列表"
+            case .orderedList: return "编号列表"
+            case .bulletList: return "项目符号列表"
             }
         }
 

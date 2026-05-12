@@ -21,7 +21,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         do {
             try noteStore.ensureNotesDirectory()
         } catch {
-            presentErrorAlert(message: "Failed to prepare notes directory", details: error.localizedDescription)
+            presentErrorAlert(message: "无法准备笔记文件夹", details: error.localizedDescription)
         }
 
         setupStatusItem()
@@ -70,23 +70,23 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let newNote = NSMenuItem(title: "Quick Capture", action: #selector(showQuickCapture), keyEquivalent: "n")
+        let newNote = NSMenuItem(title: "快速笔记", action: #selector(showQuickCapture), keyEquivalent: "n")
         newNote.target = self
         menu.addItem(newNote)
 
-        let floatingNote = NSMenuItem(title: "Floating Note", action: #selector(showFloatingNote), keyEquivalent: "r")
+        let floatingNote = NSMenuItem(title: "悬浮笔记", action: #selector(showFloatingNote), keyEquivalent: "r")
         floatingNote.target = self
         menu.addItem(floatingNote)
 
-        let searchNotes = NSMenuItem(title: "Search Notes...", action: #selector(showSearchWindow), keyEquivalent: "f")
+        let searchNotes = NSMenuItem(title: "搜索笔记...", action: #selector(showSearchWindow), keyEquivalent: "f")
         searchNotes.target = self
         menu.addItem(searchNotes)
 
-        let openFolder = NSMenuItem(title: "Open Default Notes Folder", action: #selector(openNotesFolder), keyEquivalent: "o")
+        let openFolder = NSMenuItem(title: "打开默认笔记文件夹", action: #selector(openNotesFolder), keyEquivalent: "o")
         openFolder.target = self
         menu.addItem(openFolder)
 
-        let preferences = NSMenuItem(title: "Settings...", action: #selector(showPreferences), keyEquivalent: ",")
+        let preferences = NSMenuItem(title: "设置...", action: #selector(showPreferences), keyEquivalent: ",")
         preferences.target = self
         menu.addItem(preferences)
 
@@ -94,11 +94,11 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         let recent = noteStore.listRecentFiles()
         if recent.isEmpty {
-            let empty = NSMenuItem(title: "No recent notes yet", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: "暂无最近笔记", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
-            let header = NSMenuItem(title: "Recent Notes", action: nil, keyEquivalent: "")
+            let header = NSMenuItem(title: "最近笔记", action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
 
@@ -112,7 +112,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit \(MudsnoteBrand.appName)", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "退出 \(MudsnoteBrand.appName)", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
@@ -145,7 +145,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         if !quickCaptureRegistered || !floatingRegistered {
-            presentErrorAlert(message: "Hotkey registration failed", details: "Try different shortcuts in Settings.")
+            presentErrorAlert(message: "快捷键注册失败", details: "请在设置中录入其他快捷键。")
         }
     }
 
@@ -291,7 +291,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         do {
             try noteStore.ensureNotesDirectory()
         } catch {
-            presentErrorAlert(message: "Failed to prepare notes directory", details: error.localizedDescription)
+            presentErrorAlert(message: "无法准备笔记文件夹", details: error.localizedDescription)
         }
 
         registerHotKeysIfNeeded()

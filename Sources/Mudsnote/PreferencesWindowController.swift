@@ -26,10 +26,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         var identifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier("mudsnote.settings.\(rawValue)") }
         var label: String {
             switch self {
-            case .general: return "General"
-            case .editor: return "Editor"
-            case .shortcuts: return "Shortcuts"
-            case .appearance: return "Appearance"
+            case .general: return "通用"
+            case .editor: return "编辑"
+            case .shortcuts: return "快捷键"
+            case .appearance: return "外观"
             }
         }
 
@@ -47,12 +47,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     private let tabView = NSTabView()
     private let defaultDirectoryPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let addDirectoryButton = NSButton(title: "Add...", target: nil, action: nil)
-    private let removeDirectoryButton = NSButton(title: "Remove", target: nil, action: nil)
-    private let revealDirectoryButton = NSButton(title: "Reveal in Finder", target: nil, action: nil)
-    private let revealSavedNoteButton = NSButton(checkboxWithTitle: "Reveal saved notes in Finder", target: nil, action: nil)
-    private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "Keep floating note above other windows", target: nil, action: nil)
-    private let spellCheckingButton = NSButton(checkboxWithTitle: "Check spelling while typing", target: nil, action: nil)
+    private let addDirectoryButton = NSButton(title: "添加...", target: nil, action: nil)
+    private let removeDirectoryButton = NSButton(title: "移除", target: nil, action: nil)
+    private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
+    private let revealSavedNoteButton = NSButton(checkboxWithTitle: "保存后在 Finder 中显示笔记", target: nil, action: nil)
+    private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
+    private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -61,12 +61,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         action: nil
     )
     private let opacityValueLabel = NSTextField(labelWithString: "")
-    private let resetOpacityButton = NSButton(title: "Reset Opacity", target: nil, action: nil)
-    private let resetWindowPositionsButton = NSButton(title: "Reset Window Positions", target: nil, action: nil)
-    private let quickCaptureHotKeyField = NSTextField(string: "")
-    private let floatingHotKeyField = NSTextField(string: "")
-    private let saveShortcutField = NSTextField(string: "")
-    private let resetShortcutsButton = NSButton(title: "Restore Defaults", target: nil, action: nil)
+    private let resetOpacityButton = NSButton(title: "重置透明度", target: nil, action: nil)
+    private let resetWindowPositionsButton = NSButton(title: "重置窗口位置", target: nil, action: nil)
+    private let quickCaptureHotKeyRecorder = ShortcutRecorderButton()
+    private let floatingHotKeyRecorder = ShortcutRecorderButton()
+    private let saveShortcutRecorder = ShortcutRecorderButton()
+    private let resetShortcutsButton = NSButton(title: "恢复默认值", target: nil, action: nil)
 
     private let onPreviewOpacity: (Double) -> Void
     private let onResetWindowFrames: () -> Void
@@ -106,7 +106,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         self.onResetWindowFrames = onResetWindowFrames
         self.onSave = onSave
 
-        let window = NSWindow(
+        let window = ShortcutRecordingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
             styleMask: [.titled, .closable],
             backing: .buffered,
@@ -114,7 +114,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         )
         window.center()
         window.isReleasedWhenClosed = false
-        window.title = "\(MudsnoteBrand.appName) Settings"
+        window.title = "\(MudsnoteBrand.appName) 设置"
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.toolbarStyle = .preference
@@ -231,9 +231,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         resetWindowPositionsButton.action = #selector(resetWindowPositionsPressed)
         refreshOpacityLabel()
 
-        configureShortcutField(quickCaptureHotKeyField, value: currentQuickCaptureHotKey, placeholder: "option+shift+n")
-        configureShortcutField(floatingHotKeyField, value: currentFloatingHotKey, placeholder: "option+r")
-        configureShortcutField(saveShortcutField, value: currentSaveShortcut, placeholder: "command+return")
+        configureShortcutRecorder(quickCaptureHotKeyRecorder, value: currentQuickCaptureHotKey)
+        configureShortcutRecorder(floatingHotKeyRecorder, value: currentFloatingHotKey)
+        configureShortcutRecorder(saveShortcutRecorder, value: currentSaveShortcut)
         resetShortcutsButton.target = self
         resetShortcutsButton.action = #selector(resetShortcutsPressed)
 
@@ -245,10 +245,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         tabView.addTabViewItem(tabItem(pane: .appearance, view: makeAppearancePane()))
         tabView.selectTabViewItem(withIdentifier: SettingsPane.general.rawValue)
 
-        let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
+        let cancelButton = NSButton(title: "取消", target: self, action: #selector(cancelPressed))
         cancelButton.keyEquivalent = "\u{1b}"
 
-        let saveButton = NSButton(title: "Save", target: self, action: #selector(savePressed))
+        let saveButton = NSButton(title: "保存", target: self, action: #selector(savePressed))
         saveButton.keyEquivalent = "\r"
 
         let footer = NSStackView(views: [NSView(), cancelButton, saveButton])
@@ -279,51 +279,51 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         actions.spacing = 8
 
         return contentPane(views: [
-            sectionTitle("Notes"),
+            sectionTitle("笔记"),
             preferenceRow(
-                label: "Default folder:",
+                label: "默认文件夹:",
                 control: defaultDirectoryPopUp,
-                help: "New notes save here by default. Additional managed folders stay available from quick capture."
+                help: "新笔记默认保存到这里。其他托管文件夹仍可在快速笔记中选择。"
             ),
-            preferenceRow(label: "Managed folders:", control: actions),
+            preferenceRow(label: "托管文件夹:", control: actions),
             sectionDivider(),
-            sectionTitle("Save Behavior"),
+            sectionTitle("保存行为"),
             preferenceRow(
                 label: "",
                 control: revealSavedNoteButton,
-                help: "When enabled, Finder selects the note after a successful manual save."
+                help: "开启后，手动保存成功时会在 Finder 中选中新笔记。"
             )
         ])
     }
 
     private func makeEditorPane() -> NSView {
         return contentPane(views: [
-            sectionTitle("Editing"),
+            sectionTitle("编辑"),
             preferenceRow(
                 label: "",
                 control: spellCheckingButton,
-                help: "Applies to the note body editor in quick capture, floating note, and note windows."
+                help: "作用于快速笔记、悬浮笔记和普通笔记窗口的正文编辑器。"
             )
         ])
     }
 
     private func makeShortcutsPane() -> NSView {
         return contentPane(views: [
-            sectionTitle("Keyboard Shortcuts"),
+            sectionTitle("键盘快捷键"),
             preferenceRow(
-                label: "Quick capture:",
-                control: quickCaptureHotKeyField,
-                help: "Opens the quick note window from anywhere."
+                label: "快速笔记:",
+                control: quickCaptureHotKeyRecorder,
+                help: "点击后按下组合键，用于从任意位置打开快速笔记窗口。"
             ),
             preferenceRow(
-                label: "Floating note:",
-                control: floatingHotKeyField,
-                help: "Shows or raises the persistent floating note window."
+                label: "悬浮笔记:",
+                control: floatingHotKeyRecorder,
+                help: "点击后按下组合键，用于显示或唤起常驻悬浮笔记窗口。"
             ),
             preferenceRow(
-                label: "Save note:",
-                control: saveShortcutField,
-                help: "Saves the current note while editing."
+                label: "保存笔记:",
+                control: saveShortcutRecorder,
+                help: "点击后按下组合键，用于编辑时保存当前笔记。"
             ),
             preferenceRow(label: "", control: resetShortcutsButton)
         ])
@@ -337,22 +337,22 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         opacitySlider.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
 
         return contentPane(views: [
-            sectionTitle("Windows"),
+            sectionTitle("窗口"),
             preferenceRow(
-                label: "Panel opacity:",
+                label: "面板透明度:",
                 control: opacityControl,
-                help: "Applies to the quick capture and floating note panels while leaving Settings fully opaque."
+                help: "作用于快速笔记和悬浮笔记面板，设置窗口始终保持不透明。"
             ),
             preferenceRow(label: "", control: resetOpacityButton),
             preferenceRow(
                 label: "",
                 control: floatingNoteStaysOnTopButton,
-                help: "When disabled, the floating note behaves like a normal window instead of staying above other apps."
+                help: "关闭后，悬浮笔记会像普通窗口一样，不再覆盖其他应用。"
             ),
             preferenceRow(
-                label: "Window memory:",
+                label: "窗口位置:",
                 control: resetWindowPositionsButton,
-                help: "Use this when a quick capture or floating note window reopens in an awkward or off-screen position."
+                help: "当快速笔记或悬浮笔记重新打开到异常位置或屏幕外时使用。"
             )
         ])
     }
@@ -442,12 +442,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         return container
     }
 
-    private func configureShortcutField(_ field: NSTextField, value: String, placeholder: String) {
-        field.stringValue = value
-        field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        field.controlSize = .regular
-        field.widthAnchor.constraint(equalToConstant: 260).isActive = true
+    private func configureShortcutRecorder(_ recorder: ShortcutRecorderButton, value: String) {
+        recorder.setShortcutString(value)
     }
 
     private func refreshDirectoryControls() {
@@ -471,7 +467,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func directoryLabel(for url: URL) -> String {
-        let folder = url.lastPathComponent.isEmpty ? "Folder" : url.lastPathComponent
+        let folder = url.lastPathComponent.isEmpty ? "文件夹" : url.lastPathComponent
         let parent = url.deletingLastPathComponent().lastPathComponent
         return parent.isEmpty ? folder : "\(folder) - \(parent)"
     }
@@ -520,17 +516,17 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     @objc
     private func resetWindowPositionsPressed() {
         onResetWindowFrames()
-        resetWindowPositionsButton.title = "Window Positions Reset"
+        resetWindowPositionsButton.title = "窗口位置已重置"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.resetWindowPositionsButton.title = "Reset Window Positions"
+            self?.resetWindowPositionsButton.title = "重置窗口位置"
         }
     }
 
     @objc
     private func resetShortcutsPressed() {
-        quickCaptureHotKeyField.stringValue = "option+shift+n"
-        floatingHotKeyField.stringValue = "option+r"
-        saveShortcutField.stringValue = "command+return"
+        quickCaptureHotKeyRecorder.setShortcutString("option+shift+n")
+        floatingHotKeyRecorder.setShortcutString("option+r")
+        saveShortcutRecorder.setShortcutString("command+return")
     }
 
     @objc
@@ -547,26 +543,22 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     @objc
     private func savePressed() {
-        let quickCaptureHotKeyRaw = quickCaptureHotKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let floatingHotKeyRaw = floatingHotKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let saveShortcutRaw = saveShortcutField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let quickCaptureSpec = HotKeySpec.parse(quickCaptureHotKeyRaw),
-              let floatingSpec = HotKeySpec.parse(floatingHotKeyRaw),
-              let saveShortcutSpec = HotKeySpec.parse(saveShortcutRaw) else {
+        guard let quickCaptureSpec = quickCaptureHotKeyRecorder.shortcutSpec,
+              let floatingSpec = floatingHotKeyRecorder.shortcutSpec,
+              let saveShortcutSpec = saveShortcutRecorder.shortcutSpec else {
             presentValidationAlert(
-                message: "Invalid shortcut",
-                details: "Use formats like option+shift+n, option+r, or command+return."
+                message: "快捷键无效",
+                details: "请点击快捷键控件，然后按下包含 Command、Option 或 Control 的组合键。"
             )
             return
         }
 
         if let duplicateMessage = duplicateShortcutMessage([
-            ("Quick capture", quickCaptureSpec),
-            ("Floating note", floatingSpec),
-            ("Save note", saveShortcutSpec)
+            ("快速笔记", quickCaptureSpec),
+            ("悬浮笔记", floatingSpec),
+            ("保存笔记", saveShortcutSpec)
         ]) {
-            presentValidationAlert(message: "Duplicate shortcut", details: duplicateMessage)
+            presentValidationAlert(message: "快捷键重复", details: duplicateMessage)
             return
         }
 
@@ -588,7 +580,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private func duplicateShortcutMessage(_ shortcuts: [(label: String, spec: HotKeySpec)]) -> String? {
         for lhsIndex in shortcuts.indices {
             for rhsIndex in shortcuts.index(after: lhsIndex)..<shortcuts.endIndex where shortcuts[lhsIndex].spec == shortcuts[rhsIndex].spec {
-                return "\(shortcuts[lhsIndex].label) and \(shortcuts[rhsIndex].label) use the same shortcut. Choose separate shortcuts so the app can route them reliably."
+                return "\(shortcuts[lhsIndex].label) 和 \(shortcuts[rhsIndex].label) 使用了同一个快捷键。请为它们录入不同的组合键。"
             }
         }
         return nil
