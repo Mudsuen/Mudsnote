@@ -156,6 +156,24 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func behaviorSettingsDefaultOnAndPersist() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        #expect(store.revealSavedNoteInFinder)
+        #expect(store.floatingNoteStaysOnTop)
+        #expect(store.spellCheckingEnabled)
+
+        store.revealSavedNoteInFinder = false
+        store.floatingNoteStaysOnTop = false
+        store.spellCheckingEnabled = false
+
+        #expect(!store.revealSavedNoteInFinder)
+        #expect(!store.floatingNoteStaysOnTop)
+        #expect(!store.spellCheckingEnabled)
+    }
+
+    @Test
     func markdownEditorDocumentParsesHeadingContent() {
         let document = MarkdownEditorDocument.parse(editorText: "# Inbox\n\n- [ ] follow up\nsecond line")
         #expect(document.title == "Inbox")

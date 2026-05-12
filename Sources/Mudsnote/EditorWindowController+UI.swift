@@ -37,7 +37,7 @@ extension EditorWindowController {
         editorTextView.isAutomaticQuoteSubstitutionEnabled = false
         editorTextView.isAutomaticDashSubstitutionEnabled = false
         editorTextView.isAutomaticTextReplacementEnabled = false
-        editorTextView.isContinuousSpellCheckingEnabled = true
+        editorTextView.isContinuousSpellCheckingEnabled = noteStore.spellCheckingEnabled
         editorTextView.allowsUndo = true
         editorTextView.font = theme.bodyFont
         editorTextView.backgroundColor = .clear
@@ -104,6 +104,10 @@ extension EditorWindowController {
         suggestionView.isHidden = true
         suggestionView.translatesAutoresizingMaskIntoConstraints = true
         contentView.addSubview(suggestionView, positioned: .above, relativeTo: nil)
+    }
+
+    func updateEditorPreferences(spellCheckingEnabled: Bool) {
+        editorTextView.isContinuousSpellCheckingEnabled = spellCheckingEnabled
     }
 
     // MARK: - Standard editor UI

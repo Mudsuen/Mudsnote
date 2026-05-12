@@ -549,9 +549,12 @@ struct MarkdownRichEditorTests {
             currentQuickCaptureHotKey: "option+shift+n",
             currentFloatingHotKey: "option+r",
             currentSaveShortcut: "command+return",
+            revealSavedNoteInFinder: true,
+            floatingNoteStaysOnTop: true,
+            spellCheckingEnabled: true,
             onPreviewOpacity: { _ in },
             onResetWindowFrames: {},
-            onSave: { _, _, _, _, _, _ in }
+            onSave: { _ in }
         )
         defer { controller.close() }
 
@@ -562,6 +565,26 @@ struct MarkdownRichEditorTests {
         #expect(window.isOpaque)
         #expect(window.backgroundColor == .windowBackgroundColor)
         #expect(window.alphaValue == 1)
+        #expect(window.toolbarStyle == .preference)
+        #expect(window.toolbar?.selectedItemIdentifier?.rawValue == "mudsnote.settings.general")
+
+        controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
+        #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func editorDisablesSpellCheckingFromPreference() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.spellCheckingEnabled = false
+            }
+        )
+        defer { harness.tearDown() }
+
+        #expect(!harness.controller.editorTextView.isContinuousSpellCheckingEnabled)
     }
 
     @MainActor
@@ -712,6 +735,7 @@ struct MarkdownRichEditorTests {
         draftID: String,
         showsSaveButton: Bool,
         saveShortcut: HotKeySpec? = nil,
+        configureStore: (NoteStore) -> Void = { _ in },
         onSave: @escaping (URL) -> Void = { _ in }
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
@@ -726,6 +750,7 @@ struct MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        configureStore(store)
 
         let controller = EditorWindowController(
             noteStore: store,

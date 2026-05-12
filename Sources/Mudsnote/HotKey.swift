@@ -2,10 +2,14 @@ import AppKit
 import Carbon.HIToolbox
 import Foundation
 
-struct HotKeySpec {
+struct HotKeySpec: Equatable {
     let keyCode: UInt32
     let modifiers: UInt32
     let displayString: String
+
+    static func == (lhs: HotKeySpec, rhs: HotKeySpec) -> Bool {
+        lhs.keyCode == rhs.keyCode && lhs.modifiers == rhs.modifiers
+    }
 
     static func parse(_ raw: String) -> HotKeySpec? {
         let parts = raw

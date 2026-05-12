@@ -42,6 +42,21 @@ extension NoteStore {
         }
     }
 
+    public var revealSavedNoteInFinder: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.revealSavedNoteInFinder) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.revealSavedNoteInFinder) }
+    }
+
+    public var floatingNoteStaysOnTop: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.floatingNoteStaysOnTop) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.floatingNoteStaysOnTop) }
+    }
+
+    public var spellCheckingEnabled: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.spellCheckingEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.spellCheckingEnabled) }
+    }
+
     public var quickCaptureWindowFrame: StoredWindowFrame? {
         get {
             readStoredFrame(

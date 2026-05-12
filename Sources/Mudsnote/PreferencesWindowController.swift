@@ -3,11 +3,56 @@ import Foundation
 import MudsnoteCore
 
 @MainActor
-final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
+struct PreferencesSettings {
+    let directory: URL
+    let directories: [URL]
+    let opacity: Double
+    let quickCaptureHotKey: HotKeySpec
+    let floatingHotKey: HotKeySpec
+    let saveShortcut: HotKeySpec
+    let revealSavedNoteInFinder: Bool
+    let floatingNoteStaysOnTop: Bool
+    let spellCheckingEnabled: Bool
+}
+
+@MainActor
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+    private enum SettingsPane: String, CaseIterable {
+        case general
+        case editor
+        case shortcuts
+        case appearance
+
+        var identifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier("mudsnote.settings.\(rawValue)") }
+        var label: String {
+            switch self {
+            case .general: return "General"
+            case .editor: return "Editor"
+            case .shortcuts: return "Shortcuts"
+            case .appearance: return "Appearance"
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .general: return "folder"
+            case .editor: return "text.cursor"
+            case .shortcuts: return "keyboard"
+            case .appearance: return "slider.horizontal.3"
+            }
+        }
+    }
+
+    private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.settings.toolbar")
+
+    private let tabView = NSTabView()
     private let defaultDirectoryPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let addDirectoryButton = NSButton(title: "Add...", target: nil, action: nil)
     private let removeDirectoryButton = NSButton(title: "Remove", target: nil, action: nil)
     private let revealDirectoryButton = NSButton(title: "Reveal in Finder", target: nil, action: nil)
+    private let revealSavedNoteButton = NSButton(checkboxWithTitle: "Reveal saved notes in Finder", target: nil, action: nil)
+    private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "Keep floating note above other windows", target: nil, action: nil)
+    private let spellCheckingButton = NSButton(checkboxWithTitle: "Check spelling while typing", target: nil, action: nil)
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -25,7 +70,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     private let onPreviewOpacity: (Double) -> Void
     private let onResetWindowFrames: () -> Void
-    private let onSave: (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
+    private let onSave: (PreferencesSettings) -> Void
     private let initialOpacity: Double
 
     private var selectedDirectory: URL
@@ -39,9 +84,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         currentQuickCaptureHotKey: String,
         currentFloatingHotKey: String,
         currentSaveShortcut: String,
+        revealSavedNoteInFinder: Bool,
+        floatingNoteStaysOnTop: Bool,
+        spellCheckingEnabled: Bool,
         onPreviewOpacity: @escaping (Double) -> Void,
         onResetWindowFrames: @escaping () -> Void,
-        onSave: @escaping (URL, [URL], Double, HotKeySpec, HotKeySpec, HotKeySpec) -> Void
+        onSave: @escaping (PreferencesSettings) -> Void
     ) {
         let normalizedCurrentDirectory = currentDirectory.standardizedFileURL
         var normalizedDirectories = Array(Set(availableDirectories.map(\.standardizedFileURL))).sorted {
@@ -69,17 +117,22 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window.title = "\(MudsnoteBrand.appName) Settings"
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
+        window.toolbarStyle = .preference
         window.backgroundColor = .windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
         window.delegate = self
+        configureToolbar()
 
         buildUI(
             currentOpacity: currentOpacity,
             currentQuickCaptureHotKey: currentQuickCaptureHotKey,
             currentFloatingHotKey: currentFloatingHotKey,
-            currentSaveShortcut: currentSaveShortcut
+            currentSaveShortcut: currentSaveShortcut,
+            revealSavedNoteInFinder: revealSavedNoteInFinder,
+            floatingNoteStaysOnTop: floatingNoteStaysOnTop,
+            spellCheckingEnabled: spellCheckingEnabled
         )
         refreshDirectoryControls()
     }
@@ -89,11 +142,65 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
+    private func configureToolbar() {
+        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconAndLabel
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.selectedItemIdentifier = SettingsPane.general.identifier
+        window?.toolbar = toolbar
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.identifier)
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.identifier)
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.identifier)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let pane = SettingsPane.allCases.first(where: { $0.identifier == itemIdentifier }) else {
+            return nil
+        }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = pane.label
+        item.paletteLabel = pane.label
+        item.toolTip = pane.label
+        item.image = NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: pane.label)
+        item.target = self
+        item.action = #selector(toolbarPaneSelected(_:))
+        return item
+    }
+
+    @objc
+    private func toolbarPaneSelected(_ sender: NSToolbarItem) {
+        guard let pane = SettingsPane.allCases.first(where: { $0.identifier == sender.itemIdentifier }) else {
+            return
+        }
+
+        tabView.selectTabViewItem(withIdentifier: pane.rawValue)
+        window?.toolbar?.selectedItemIdentifier = pane.identifier
+    }
+
     private func buildUI(
         currentOpacity: Double,
         currentQuickCaptureHotKey: String,
         currentFloatingHotKey: String,
-        currentSaveShortcut: String
+        currentSaveShortcut: String,
+        revealSavedNoteInFinder: Bool,
+        floatingNoteStaysOnTop: Bool,
+        spellCheckingEnabled: Bool
     ) {
         guard let contentView = window?.contentView else { return }
 
@@ -108,6 +215,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         removeDirectoryButton.action = #selector(removeFolderPressed)
         revealDirectoryButton.target = self
         revealDirectoryButton.action = #selector(revealFolderPressed)
+        revealSavedNoteButton.state = revealSavedNoteInFinder ? .on : .off
+        floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
+        spellCheckingButton.state = spellCheckingEnabled ? .on : .off
 
         opacitySlider.doubleValue = clampedOpacity(currentOpacity)
         opacitySlider.target = self
@@ -127,12 +237,13 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         resetShortcutsButton.target = self
         resetShortcutsButton.action = #selector(resetShortcutsPressed)
 
-        let tabView = NSTabView()
-        tabView.tabViewType = .topTabsBezelBorder
         tabView.translatesAutoresizingMaskIntoConstraints = false
-        tabView.addTabViewItem(tabItem(label: "General", view: makeGeneralPane()))
-        tabView.addTabViewItem(tabItem(label: "Shortcuts", view: makeShortcutsPane()))
-        tabView.addTabViewItem(tabItem(label: "Appearance", view: makeAppearancePane()))
+        tabView.tabViewType = .noTabsNoBorder
+        tabView.addTabViewItem(tabItem(pane: .general, view: makeGeneralPane()))
+        tabView.addTabViewItem(tabItem(pane: .editor, view: makeEditorPane()))
+        tabView.addTabViewItem(tabItem(pane: .shortcuts, view: makeShortcutsPane()))
+        tabView.addTabViewItem(tabItem(pane: .appearance, view: makeAppearancePane()))
+        tabView.selectTabViewItem(withIdentifier: SettingsPane.general.rawValue)
 
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
         cancelButton.keyEquivalent = "\u{1b}"
@@ -150,9 +261,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         contentView.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
-            tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            tabView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
+            tabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            tabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            tabView.topAnchor.constraint(equalTo: contentView.topAnchor),
             tabView.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -14),
 
             footer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
@@ -176,8 +287,23 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             ),
             preferenceRow(label: "Managed folders:", control: actions),
             sectionDivider(),
-            sectionTitle("Planned settings area"),
-            bodyText("Keep folder selection, capture behavior, shortcuts, and window appearance separate so future options can be added without crowding one long panel.")
+            sectionTitle("Save Behavior"),
+            preferenceRow(
+                label: "",
+                control: revealSavedNoteButton,
+                help: "When enabled, Finder selects the note after a successful manual save."
+            )
+        ])
+    }
+
+    private func makeEditorPane() -> NSView {
+        return contentPane(views: [
+            sectionTitle("Editing"),
+            preferenceRow(
+                label: "",
+                control: spellCheckingButton,
+                help: "Applies to the note body editor in quick capture, floating note, and note windows."
+            )
         ])
     }
 
@@ -219,6 +345,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             ),
             preferenceRow(label: "", control: resetOpacityButton),
             preferenceRow(
+                label: "",
+                control: floatingNoteStaysOnTopButton,
+                help: "When disabled, the floating note behaves like a normal window instead of staying above other apps."
+            ),
+            preferenceRow(
                 label: "Window memory:",
                 control: resetWindowPositionsButton,
                 help: "Use this when a quick capture or floating note window reopens in an awkward or off-screen position."
@@ -226,9 +357,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         ])
     }
 
-    private func tabItem(label: String, view: NSView) -> NSTabViewItem {
-        let item = NSTabViewItem(identifier: label)
-        item.label = label
+    private func tabItem(pane: SettingsPane, view: NSView) -> NSTabViewItem {
+        let item = NSTabViewItem(identifier: pane.rawValue)
+        item.label = pane.label
         item.view = view
         return item
     }
@@ -423,17 +554,52 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         guard let quickCaptureSpec = HotKeySpec.parse(quickCaptureHotKeyRaw),
               let floatingSpec = HotKeySpec.parse(floatingHotKeyRaw),
               let saveShortcutSpec = HotKeySpec.parse(saveShortcutRaw) else {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Invalid shortcut"
-            alert.informativeText = "Use formats like option+shift+n, option+r, or command+return."
-            alert.runModal()
+            presentValidationAlert(
+                message: "Invalid shortcut",
+                details: "Use formats like option+shift+n, option+r, or command+return."
+            )
+            return
+        }
+
+        if let duplicateMessage = duplicateShortcutMessage([
+            ("Quick capture", quickCaptureSpec),
+            ("Floating note", floatingSpec),
+            ("Save note", saveShortcutSpec)
+        ]) {
+            presentValidationAlert(message: "Duplicate shortcut", details: duplicateMessage)
             return
         }
 
         didSavePreferences = true
-        onSave(selectedDirectory, managedDirectories, opacitySlider.doubleValue, quickCaptureSpec, floatingSpec, saveShortcutSpec)
+        onSave(PreferencesSettings(
+            directory: selectedDirectory,
+            directories: managedDirectories,
+            opacity: opacitySlider.doubleValue,
+            quickCaptureHotKey: quickCaptureSpec,
+            floatingHotKey: floatingSpec,
+            saveShortcut: saveShortcutSpec,
+            revealSavedNoteInFinder: revealSavedNoteButton.state == .on,
+            floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
+            spellCheckingEnabled: spellCheckingButton.state == .on
+        ))
         window?.close()
+    }
+
+    private func duplicateShortcutMessage(_ shortcuts: [(label: String, spec: HotKeySpec)]) -> String? {
+        for lhsIndex in shortcuts.indices {
+            for rhsIndex in shortcuts.index(after: lhsIndex)..<shortcuts.endIndex where shortcuts[lhsIndex].spec == shortcuts[rhsIndex].spec {
+                return "\(shortcuts[lhsIndex].label) and \(shortcuts[rhsIndex].label) use the same shortcut. Choose separate shortcuts so the app can route them reliably."
+            }
+        }
+        return nil
+    }
+
+    private func presentValidationAlert(message: String, details: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = details
+        alert.runModal()
     }
 
     func windowWillClose(_ notification: Notification) {

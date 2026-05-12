@@ -86,7 +86,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         openFolder.target = self
         menu.addItem(openFolder)
 
-        let preferences = NSMenuItem(title: "Preferences...", action: #selector(showPreferences), keyEquivalent: ",")
+        let preferences = NSMenuItem(title: "Settings...", action: #selector(showPreferences), keyEquivalent: ",")
         preferences.target = self
         menu.addItem(preferences)
 
@@ -145,7 +145,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         if !quickCaptureRegistered || !floatingRegistered {
-            presentErrorAlert(message: "Hotkey registration failed", details: "Try different shortcuts in Preferences.")
+            presentErrorAlert(message: "Hotkey registration failed", details: "Try different shortcuts in Settings.")
         }
     }
 
@@ -241,6 +241,16 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc
     private func showPreferences() {
+        cleanupClosedWindows()
+
+        if let controller = preferencesWindowController, controller.window?.isVisible == true {
+            NSApp.activate(ignoringOtherApps: true)
+            controller.showWindow(self)
+            controller.window?.makeKeyAndOrderFront(self)
+            return
+        }
+
+        preferencesWindowController = nil
         let controller = PreferencesWindowController(
             currentDirectory: noteStore.notesDirectory,
             availableDirectories: noteStore.preferredDirectories,
@@ -248,6 +258,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             currentQuickCaptureHotKey: noteStore.hotKeyString,
             currentFloatingHotKey: noteStore.floatingNoteHotKeyString,
             currentSaveShortcut: noteStore.saveShortcutString,
+            revealSavedNoteInFinder: noteStore.revealSavedNoteInFinder,
+            floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
+            spellCheckingEnabled: noteStore.spellCheckingEnabled,
             onPreviewOpacity: { [weak self] opacity in
                 self?.updateOpenWindowOpacity(opacity)
             },
@@ -255,15 +268,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self?.noteStore.quickCaptureWindowFrame = nil
                 self?.noteStore.floatingNoteWindowFrame = nil
             }
-        ) { [weak self] directory, directories, opacity, quickCaptureHotKey, floatingHotKey, saveShortcut in
-            self?.applyPreferences(
-                directory: directory,
-                directories: directories,
-                opacity: opacity,
-                quickCaptureHotKey: quickCaptureHotKey,
-                floatingHotKey: floatingHotKey,
-                saveShortcut: saveShortcut
-            )
+        ) { [weak self] settings in
+            self?.applyPreferences(settings)
         }
 
         preferencesWindowController = controller
@@ -272,19 +278,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         controller.window?.makeKeyAndOrderFront(self)
     }
 
-    private func applyPreferences(
-        directory: URL,
-        directories: [URL],
-        opacity: Double,
-        quickCaptureHotKey: HotKeySpec,
-        floatingHotKey: HotKeySpec,
-        saveShortcut: HotKeySpec
-    ) {
-        noteStore.configurePreferredDirectories(directories, defaultDirectory: directory)
-        noteStore.panelOpacity = opacity
-        noteStore.hotKeyString = quickCaptureHotKey.displayString
-        noteStore.floatingNoteHotKeyString = floatingHotKey.displayString
-        noteStore.saveShortcutString = saveShortcut.displayString
+    private func applyPreferences(_ settings: PreferencesSettings) {
+        noteStore.configurePreferredDirectories(settings.directories, defaultDirectory: settings.directory)
+        noteStore.panelOpacity = settings.opacity
+        noteStore.hotKeyString = settings.quickCaptureHotKey.displayString
+        noteStore.floatingNoteHotKeyString = settings.floatingHotKey.displayString
+        noteStore.saveShortcutString = settings.saveShortcut.displayString
+        noteStore.revealSavedNoteInFinder = settings.revealSavedNoteInFinder
+        noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
+        noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
 
         do {
             try noteStore.ensureNotesDirectory()
@@ -294,7 +296,9 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         registerHotKeysIfNeeded()
         rebuildMenu()
-        updateOpenWindowOpacity(opacity)
+        updateOpenWindowOpacity(settings.opacity)
+        updateOpenEditorPreferences()
+        updateFloatingNoteLevel()
     }
 
     private func updateOpenWindowOpacity(_ opacity: Double) {
@@ -309,14 +313,26 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         searchWindowController?.window?.alphaValue = alpha
         searchWindowController?.updatePanelOpacity(opacity)
-        preferencesWindowController?.window?.alphaValue = alpha
         preferencesWindowController?.updatePanelOpacity(opacity)
     }
 
     private func didSaveNote(at url: URL) {
         rebuildMenu()
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        if noteStore.revealSavedNoteInFinder {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
         cleanupClosedWindows()
+    }
+
+    private func updateOpenEditorPreferences() {
+        let spellCheckingEnabled = noteStore.spellCheckingEnabled
+        quickCaptureController?.updateEditorPreferences(spellCheckingEnabled: spellCheckingEnabled)
+        floatingNoteController?.updateEditorPreferences(spellCheckingEnabled: spellCheckingEnabled)
+        editorControllers.values.forEach { $0.updateEditorPreferences(spellCheckingEnabled: spellCheckingEnabled) }
+    }
+
+    private func updateFloatingNoteLevel() {
+        floatingNoteController?.window?.level = noteStore.floatingNoteStaysOnTop ? .statusBar : .normal
     }
 
     private func makeEditorWindowController(fileURL: URL?, remembersQuickCapturePosition: Bool = false) -> EditorWindowController {
@@ -360,7 +376,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             draftIDOverride: "floating-note",
             saveShortcut: HotKeySpec.parse(noteStore.saveShortcutString),
             showsSaveButton: false,
-            windowLevel: .statusBar,
+            windowLevel: noteStore.floatingNoteStaysOnTop ? .statusBar : .normal,
             remembersWindowFrame: { [weak self] frame in
                 self?.noteStore.floatingNoteWindowFrame = StoredWindowFrame(
                     x: frame.origin.x,

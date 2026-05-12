@@ -174,6 +174,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Validate that list prefixes are still visibly intact before trusting stored paragraph attributes, and normalize a damaged list-prefix line back to a plain paragraph during editing.
 - Lesson: Rich-text structural state must be invalidated when the visible structural marker is deleted; otherwise display, toolbar state, and saved Markdown drift apart.
 
+### 32. Standard Settings and behavior preferences
+
+- Problem: Settings still used an older tab chrome with a placeholder planning section, and review found behavior bugs around repeated Settings opens, opacity preview affecting Settings, and ambiguous duplicate shortcuts.
+- Fix: Moved Settings to a macOS preference-toolbar layout, added real controls for Finder reveal after save, floating-note window level, and editor spell checking, reused an already-open Settings window, kept Settings fully opaque during opacity preview, and rejected duplicate shortcut assignments before saving.
+- Lesson: A Settings page should only expose controls backed by real behavior; window-level preferences also need immediate propagation to already-open panels.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
