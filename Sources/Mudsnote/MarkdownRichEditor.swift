@@ -135,6 +135,7 @@ protocol MarkdownTextViewCommands: AnyObject {
 final class MarkdownTextView: NSTextView {
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
+    var configureContextMenu: ((NSMenu) -> Void)?
 
     private func updateHoverCursor(with event: NSEvent) {
         guard let layoutManager, let textContainer else {
@@ -212,6 +213,12 @@ final class MarkdownTextView: NSTextView {
         }
 
         insertText(string, replacementRange: selectedRange())
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        configureContextMenu?(menu)
+        return menu
     }
 
     override func mouseDown(with event: NSEvent) {

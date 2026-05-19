@@ -163,14 +163,55 @@ struct MudsnoteCoreTests {
         #expect(store.revealSavedNoteInFinder)
         #expect(store.floatingNoteStaysOnTop)
         #expect(store.spellCheckingEnabled)
+        #expect(!store.aiEnabled)
+        #expect(store.aiOllamaBaseURLString == "http://localhost:11434")
+        #expect(store.aiOllamaModel == "llama3.2")
 
         store.revealSavedNoteInFinder = false
         store.floatingNoteStaysOnTop = false
         store.spellCheckingEnabled = false
+        store.aiEnabled = true
+        store.aiOllamaBaseURLString = "http://127.0.0.1:11434"
+        store.aiOllamaModel = "qwen2.5"
 
         #expect(!store.revealSavedNoteInFinder)
         #expect(!store.floatingNoteStaysOnTop)
         #expect(!store.spellCheckingEnabled)
+        #expect(store.aiEnabled)
+        #expect(store.aiOllamaBaseURLString == "http://127.0.0.1:11434")
+        #expect(store.aiOllamaModel == "qwen2.5")
+    }
+
+    @Test
+    func aiPromptBuilderKeepsSelectionScopeExplicit() throws {
+        let request = AIRequest(
+            actionID: .fix,
+            noteTitle: "Private Plan",
+            inputMarkdown: "Fix **this** #tag",
+            scope: .selection
+        )
+
+        let prompt = try AIPromptBuilder.prompt(for: request)
+
+        #expect(prompt.contains("Input scope: selected Markdown only."))
+        #expect(prompt.contains("Do not change meaning, structure, links, code spans, hashtags, or task markers."))
+        #expect(prompt.contains("Fix **this** #tag"))
+    }
+
+    @Test
+    func aiPromptBuilderUsesMarkdownTasksForTodos() throws {
+        let request = AIRequest(
+            actionID: .todos,
+            noteTitle: nil,
+            inputMarkdown: "Donald should package the app and update the README.",
+            scope: .wholeNote
+        )
+
+        let prompt = try AIPromptBuilder.prompt(for: request)
+
+        #expect(prompt.contains("Input scope: current note only."))
+        #expect(prompt.contains("Return only Markdown task items using \"- [ ]\"."))
+        #expect(prompt.contains("Do not invent tasks."))
     }
 
     @Test

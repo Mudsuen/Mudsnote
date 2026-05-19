@@ -57,6 +57,21 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.spellCheckingEnabled) }
     }
 
+    public var aiEnabled: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.aiEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiEnabled) }
+    }
+
+    public var aiOllamaBaseURLString: String {
+        get { defaults.string(forKey: NoteStoreDefaultsKey.aiOllamaBaseURL) ?? "http://localhost:11434" }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiOllamaBaseURL) }
+    }
+
+    public var aiOllamaModel: String {
+        get { defaults.string(forKey: NoteStoreDefaultsKey.aiOllamaModel) ?? "llama3.2" }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiOllamaModel) }
+    }
+
     public var quickCaptureWindowFrame: StoredWindowFrame? {
         get {
             readStoredFrame(

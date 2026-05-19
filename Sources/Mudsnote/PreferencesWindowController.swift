@@ -13,6 +13,9 @@ struct PreferencesSettings {
     let revealSavedNoteInFinder: Bool
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
+    let aiEnabled: Bool
+    let aiOllamaBaseURL: String
+    let aiOllamaModel: String
 }
 
 @MainActor
@@ -20,6 +23,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private enum SettingsPane: String, CaseIterable {
         case general
         case editor
+        case ai
         case shortcuts
         case appearance
 
@@ -28,6 +32,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             switch self {
             case .general: return "通用"
             case .editor: return "编辑"
+            case .ai: return "AI"
             case .shortcuts: return "快捷键"
             case .appearance: return "外观"
             }
@@ -37,6 +42,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             switch self {
             case .general: return "folder"
             case .editor: return "text.cursor"
+            case .ai: return "sparkles"
             case .shortcuts: return "keyboard"
             case .appearance: return "slider.horizontal.3"
             }
@@ -53,6 +59,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let revealSavedNoteButton = NSButton(checkboxWithTitle: "保存后在 Finder 中显示笔记", target: nil, action: nil)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
+    private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
+    private let aiOllamaBaseURLField = NSTextField(string: "")
+    private let aiOllamaModelField = NSTextField(string: "")
+    private let aiTestConnectionButton = NSButton(title: "测试连接", target: nil, action: nil)
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -87,6 +97,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         revealSavedNoteInFinder: Bool,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
+        aiEnabled: Bool,
+        aiOllamaBaseURL: String,
+        aiOllamaModel: String,
         onPreviewOpacity: @escaping (Double) -> Void,
         onResetWindowFrames: @escaping () -> Void,
         onSave: @escaping (PreferencesSettings) -> Void
@@ -132,7 +145,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             currentSaveShortcut: currentSaveShortcut,
             revealSavedNoteInFinder: revealSavedNoteInFinder,
             floatingNoteStaysOnTop: floatingNoteStaysOnTop,
-            spellCheckingEnabled: spellCheckingEnabled
+            spellCheckingEnabled: spellCheckingEnabled,
+            aiEnabled: aiEnabled,
+            aiOllamaBaseURL: aiOllamaBaseURL,
+            aiOllamaModel: aiOllamaModel
         )
         refreshDirectoryControls()
     }
@@ -200,7 +216,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         revealSavedNoteInFinder: Bool,
         floatingNoteStaysOnTop: Bool,
-        spellCheckingEnabled: Bool
+        spellCheckingEnabled: Bool,
+        aiEnabled: Bool,
+        aiOllamaBaseURL: String,
+        aiOllamaModel: String
     ) {
         guard let contentView = window?.contentView else { return }
 
@@ -218,6 +237,15 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         revealSavedNoteButton.state = revealSavedNoteInFinder ? .on : .off
         floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
         spellCheckingButton.state = spellCheckingEnabled ? .on : .off
+        aiEnabledButton.state = aiEnabled ? .on : .off
+        aiOllamaBaseURLField.stringValue = aiOllamaBaseURL
+        aiOllamaBaseURLField.placeholderString = "http://localhost:11434"
+        aiOllamaBaseURLField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+        aiOllamaModelField.stringValue = aiOllamaModel
+        aiOllamaModelField.placeholderString = "llama3.2"
+        aiOllamaModelField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        aiTestConnectionButton.target = self
+        aiTestConnectionButton.action = #selector(testAIConnectionPressed)
 
         opacitySlider.doubleValue = clampedOpacity(currentOpacity)
         opacitySlider.target = self
@@ -241,6 +269,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         tabView.tabViewType = .noTabsNoBorder
         tabView.addTabViewItem(tabItem(pane: .general, view: makeGeneralPane()))
         tabView.addTabViewItem(tabItem(pane: .editor, view: makeEditorPane()))
+        tabView.addTabViewItem(tabItem(pane: .ai, view: makeAIPane()))
         tabView.addTabViewItem(tabItem(pane: .shortcuts, view: makeShortcutsPane()))
         tabView.addTabViewItem(tabItem(pane: .appearance, view: makeAppearancePane()))
         tabView.selectTabViewItem(withIdentifier: SettingsPane.general.rawValue)
@@ -303,6 +332,40 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "",
                 control: spellCheckingButton,
                 help: "作用于快速笔记、悬浮笔记和普通笔记窗口的正文编辑器。"
+            )
+        ])
+    }
+
+    private func makeAIPane() -> NSView {
+        let provider = NSTextField(labelWithString: "本地 Ollama")
+        provider.font = .systemFont(ofSize: 13, weight: .medium)
+
+        let modelStack = NSStackView(views: [aiOllamaModelField, aiTestConnectionButton, NSView()])
+        modelStack.orientation = .horizontal
+        modelStack.alignment = .centerY
+        modelStack.spacing = 8
+
+        return contentPane(views: [
+            sectionTitle("AI"),
+            preferenceRow(
+                label: "",
+                control: aiEnabledButton,
+                help: "AI 默认关闭；只会在你通过右键菜单或斜杠命令明确调用时发送当前文本。"
+            ),
+            preferenceRow(
+                label: "提供方:",
+                control: provider,
+                help: "本轮只接入本地 Ollama，避免默认上传笔记内容。"
+            ),
+            preferenceRow(
+                label: "Base URL:",
+                control: aiOllamaBaseURLField,
+                help: "默认连接本机 Ollama 服务。"
+            ),
+            preferenceRow(
+                label: "模型:",
+                control: modelStack,
+                help: "例如 llama3.2、qwen2.5、mistral。"
             )
         ])
     }
@@ -572,9 +635,41 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             saveShortcut: saveShortcutSpec,
             revealSavedNoteInFinder: revealSavedNoteButton.state == .on,
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
-            spellCheckingEnabled: spellCheckingButton.state == .on
+            spellCheckingEnabled: spellCheckingButton.state == .on,
+            aiEnabled: aiEnabledButton.state == .on,
+            aiOllamaBaseURL: aiOllamaBaseURLField.stringValue,
+            aiOllamaModel: aiOllamaModelField.stringValue
         ))
         window?.close()
+    }
+
+    @objc
+    private func testAIConnectionPressed() {
+        let baseURLString = aiOllamaBaseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = aiOllamaModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let baseURL = URL(string: baseURLString), !model.isEmpty else {
+            presentValidationAlert(message: "AI 配置无效", details: "请填写 Ollama Base URL 和模型名称。")
+            return
+        }
+
+        aiTestConnectionButton.isEnabled = false
+        aiTestConnectionButton.title = "测试中..."
+        Task {
+            let provider = OllamaAIProvider(baseURL: baseURL, model: model)
+            do {
+                try await provider.testConnection()
+                await MainActor.run {
+                    aiTestConnectionButton.title = "连接正常"
+                    aiTestConnectionButton.isEnabled = true
+                }
+            } catch {
+                await MainActor.run {
+                    aiTestConnectionButton.title = "测试连接"
+                    aiTestConnectionButton.isEnabled = true
+                    presentValidationAlert(message: "无法连接 Ollama", details: error.localizedDescription)
+                }
+            }
+        }
     }
 
     private func duplicateShortcutMessage(_ shortcuts: [(label: String, spec: HotKeySpec)]) -> String? {

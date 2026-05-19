@@ -186,6 +186,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added recorder-style shortcut controls that capture real key events and display macOS shortcut symbols, normalized captured shortcuts back into the existing persisted format, and switched the main menu, Settings, search, editor chrome, slash commands, alerts, and status labels to Chinese.
 - Lesson: Shortcut configuration should capture keyboard events before window key equivalents can consume them; UI language should be changed across the user-visible flow in one pass instead of per-panel.
 
+### 34. Local AI command layer
+
+- Problem: The project needed AI capability without turning a fast Markdown capture app into a bulky chat workspace.
+- Fix: Added an opt-in local Ollama AI provider, Settings controls, editor context-menu actions, and `/summarize`, `/fix`, `/todos` slash commands with preview-before-apply behavior.
+- Lesson: AI fits Mudsnote best as explicit, small-scope Markdown transformations with visible privacy boundaries and no background note indexing.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

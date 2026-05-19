@@ -27,6 +27,9 @@ extension EditorWindowController {
 
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
+        editorTextView.configureContextMenu = { [weak self] menu in
+            self?.configureAIContextMenu(menu)
+        }
         editorTextView.onTextInputStateChanged = { [weak self] in
             self?.refreshChrome()
         }

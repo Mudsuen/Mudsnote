@@ -594,6 +594,9 @@ struct MarkdownRichEditorTests {
             revealSavedNoteInFinder: true,
             floatingNoteStaysOnTop: true,
             spellCheckingEnabled: true,
+            aiEnabled: false,
+            aiOllamaBaseURL: "http://localhost:11434",
+            aiOllamaModel: "llama3.2",
             onPreviewOpacity: { _ in },
             onResetWindowFrames: {},
             onSave: { _ in }
@@ -602,12 +605,12 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         #expect(window.title == "Mudsnote 设置")
-        #expect(window.styleMask.contains(.titled))
-        #expect(!window.styleMask.contains(.fullSizeContentView))
+        #expect(window.styleMask.contains(NSWindow.StyleMask.titled))
+        #expect(!window.styleMask.contains(NSWindow.StyleMask.fullSizeContentView))
         #expect(window.isOpaque)
-        #expect(window.backgroundColor == .windowBackgroundColor)
+        #expect(window.backgroundColor == NSColor.windowBackgroundColor)
         #expect(window.alphaValue == 1)
-        #expect(window.toolbarStyle == .preference)
+        #expect(window.toolbarStyle == NSWindow.ToolbarStyle.preference)
         #expect(window.toolbar?.selectedItemIdentifier?.rawValue == "mudsnote.settings.general")
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)

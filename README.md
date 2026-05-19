@@ -13,12 +13,25 @@ files instead of being locked into an app-specific database.
 - Recent-note reopening and editing
 - Configurable save shortcut, floating note shortcut, opacity, and note folders
 - Standard macOS settings window
+- Optional local AI commands for Markdown summarizing, grammar fixes, and task extraction
 
 ## Project Status
 
 Mudsnote is actively maintained as a non-commercial open-source project. The
 current focus is a compact, reliable macOS note capture experience with simple
 Markdown interoperability.
+
+## AI Features
+
+AI is disabled by default and is designed as an explicit Markdown command layer,
+not a chat workspace. When enabled, Mudsnote can use a local Ollama provider for:
+
+- right-click AI actions in the editor
+- `/summarize`, `/fix`, and `/todos` slash commands
+- preview-before-apply insertion, replacement, or copy behavior
+
+Mudsnote sends only the selected text, current paragraph, or active note needed
+for the command you invoke. See `PRIVACY.md` for the data-flow boundary.
 
 ## Build
 

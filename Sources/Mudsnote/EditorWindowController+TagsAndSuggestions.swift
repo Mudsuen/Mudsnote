@@ -204,6 +204,9 @@ extension EditorWindowController {
         case .divider:
             insertTextAtSelection("---")
             userDidEdit()
+        case .aiSummarize, .aiFix, .aiTodos:
+            guard let actionID = command.aiActionID else { return }
+            runAIAction(actionID)
         }
     }
 

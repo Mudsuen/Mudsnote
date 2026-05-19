@@ -261,6 +261,9 @@ final class AppController: NSObject, NSApplicationDelegate {
             revealSavedNoteInFinder: noteStore.revealSavedNoteInFinder,
             floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
+            aiEnabled: noteStore.aiEnabled,
+            aiOllamaBaseURL: noteStore.aiOllamaBaseURLString,
+            aiOllamaModel: noteStore.aiOllamaModel,
             onPreviewOpacity: { [weak self] opacity in
                 self?.updateOpenWindowOpacity(opacity)
             },
@@ -287,6 +290,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         noteStore.revealSavedNoteInFinder = settings.revealSavedNoteInFinder
         noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
+        noteStore.aiEnabled = settings.aiEnabled
+        noteStore.aiOllamaBaseURLString = settings.aiOllamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteStore.aiOllamaModel = settings.aiOllamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             try noteStore.ensureNotesDirectory()
