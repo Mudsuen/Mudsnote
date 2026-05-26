@@ -179,6 +179,7 @@ final class TitleEditorProxyView: NSView {
 @MainActor
 final class HoverRevealTitlebarView: WindowMoveBackgroundView {
     private var trackingAreaRef: NSTrackingArea?
+    private let verticalHoverTolerance: CGFloat = 8
     var onHoverChanged: ((Bool) -> Void)?
 
     override func updateTrackingAreas() {
@@ -187,8 +188,8 @@ final class HoverRevealTitlebarView: WindowMoveBackgroundView {
             removeTrackingArea(trackingAreaRef)
         }
         let tracking = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            rect: bounds.insetBy(dx: 0, dy: -verticalHoverTolerance),
+            options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved],
             owner: self,
             userInfo: nil
         )
@@ -200,8 +201,13 @@ final class HoverRevealTitlebarView: WindowMoveBackgroundView {
         onHoverChanged?(true)
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
     override func mouseExited(with event: NSEvent) {
-        onHoverChanged?(false)
+        let point = convert(event.locationInWindow, from: nil)
+        onHoverChanged?(bounds.insetBy(dx: 0, dy: -verticalHoverTolerance).contains(point))
     }
 }
 

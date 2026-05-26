@@ -723,7 +723,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.floatingNoteTitleLabel?.stringValue == MudsnoteBrand.appName)
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == false)
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
-        #expect(controller.floatingNoteTitlebarChromeViews.contains { $0 is NSButton })
+        #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 0 })
 
         controller.setFloatingNoteTitlebarChromeVisible(true)

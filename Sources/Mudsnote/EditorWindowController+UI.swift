@@ -177,17 +177,6 @@ extension EditorWindowController {
                     self?.setFloatingNoteTitlebarChromeVisible(isHovered)
                 }
             }
-            if let closeButton = NSWindow.standardWindowButton(.closeButton, for: [.titled, .closable]) {
-                closeButton.translatesAutoresizingMaskIntoConstraints = false
-                closeButton.target = self
-                closeButton.action = #selector(cancelPressed)
-                topDragBar.addSubview(closeButton)
-                floatingNoteTitlebarChromeViews.append(closeButton)
-                NSLayoutConstraint.activate([
-                    closeButton.leadingAnchor.constraint(equalTo: topDragBar.leadingAnchor, constant: 11),
-                    closeButton.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor)
-                ])
-            }
             [
                 makeFloatingHeaderButton(symbolName: "command", toolTip: "设置", action: #selector(floatingPreferencesPressed(_:))),
                 makeFloatingHeaderButton(symbolName: "list.bullet.rectangle", toolTip: "搜索笔记", action: #selector(searchPressed)),
@@ -279,7 +268,7 @@ extension EditorWindowController {
 
                 floatingTitleLabel.centerXAnchor.constraint(equalTo: topDragBar.centerXAnchor),
                 floatingTitleLabel.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
-                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 36),
+                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 12),
                 floatingTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: floatingHeaderActions.leadingAnchor, constant: -10),
 
                 floatingHeaderActions.trailingAnchor.constraint(equalTo: topDragBar.trailingAnchor, constant: -4),
