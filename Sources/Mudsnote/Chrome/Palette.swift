@@ -2,10 +2,7 @@ import AppKit
 
 @MainActor
 func panelAccentColor() -> NSColor {
-    if #available(macOS 10.14, *) {
-        return .controlAccentColor
-    }
-    return .systemBlue
+    .controlAccentColor
 }
 
 @MainActor

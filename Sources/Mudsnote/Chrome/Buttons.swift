@@ -17,9 +17,7 @@ func styleAccentButton(_ button: NSButton) {
     button.controlSize = .regular
     button.contentTintColor = .white
     button.imageHugsTitle = true
-    if #available(macOS 13.0, *) {
-        button.bezelColor = panelAccentColor()
-    }
+    button.bezelColor = panelAccentColor()
 }
 
 @MainActor
@@ -28,9 +26,7 @@ func styleSecondaryButton(_ button: NSButton) {
     button.controlSize = .regular
     button.contentTintColor = panelPrimaryTextColor()
     button.imageHugsTitle = true
-    if #available(macOS 13.0, *) {
-        button.bezelColor = NSColor.controlBackgroundColor.withAlphaComponent(0.9)
-    }
+    button.bezelColor = NSColor.controlBackgroundColor.withAlphaComponent(0.9)
 }
 
 @MainActor
