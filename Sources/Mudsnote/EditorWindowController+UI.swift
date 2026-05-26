@@ -91,6 +91,8 @@ extension EditorWindowController {
         quickCaptureTitlePlaceholderLabel = nil
         quickCapturePlaceholderBodyLabel = nil
         quickCaptureTagButton = nil
+        floatingNoteTitleLabel = nil
+        floatingNotePlaceholderLabel = nil
 
         if isQuickCaptureMode {
             buildQuickCaptureUI(in: shellContent, backdrop: backdrop, scrollView: scrollView, overlayScrollIndicator: overlayScrollIndicator)
@@ -122,7 +124,7 @@ extension EditorWindowController {
         overlayScrollIndicator: ScrollIndicatorOverlay,
         toolbarStack: NSStackView
     ) {
-        let topDragBar = DragHandleView()
+        let topDragBar = isFloatingNoteMode ? WindowMoveBackgroundView() : DragHandleView()
         topDragBar.translatesAutoresizingMaskIntoConstraints = false
 
         let divider = NSBox()
@@ -150,6 +152,33 @@ extension EditorWindowController {
         footerBar.translatesAutoresizingMaskIntoConstraints = false
         shellContent.addSubview(footerBar)
 
+        let floatingHeaderActions = NSStackView()
+        floatingHeaderActions.orientation = .horizontal
+        floatingHeaderActions.alignment = .centerY
+        floatingHeaderActions.spacing = 6
+        floatingHeaderActions.translatesAutoresizingMaskIntoConstraints = false
+
+        let floatingTitleLabel = NSTextField(labelWithString: MudsnoteBrand.appName)
+        floatingTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        floatingTitleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        floatingTitleLabel.textColor = panelSecondaryTextColor()
+        floatingTitleLabel.alignment = .center
+        floatingTitleLabel.lineBreakMode = .byTruncatingTail
+        floatingNoteTitleLabel = floatingTitleLabel
+
+        if isFloatingNoteMode {
+            topDragBar.addSubview(floatingTitleLabel)
+            topDragBar.addSubview(floatingHeaderActions)
+            [
+                makeFloatingHeaderButton(symbolName: "command", toolTip: "设置", action: #selector(floatingPreferencesPressed(_:))),
+                makeFloatingHeaderButton(symbolName: "list.bullet.rectangle", toolTip: "搜索笔记", action: #selector(searchPressed)),
+                makeFloatingHeaderButton(symbolName: "plus", toolTip: "保存为笔记", action: #selector(savePressed))
+            ].forEach {
+                toolbarButtons.append($0)
+                floatingHeaderActions.addArrangedSubview($0)
+            }
+        }
+
         if showsSaveButton {
             let saveButton = makePrimarySaveButton()
             let saveButtonWidth = ceil(saveButton.intrinsicContentSize.width) + 6
@@ -174,15 +203,29 @@ extension EditorWindowController {
             ])
         }
 
+        let floatingPlaceholderOverlay = PassthroughOverlayView()
+        floatingPlaceholderOverlay.translatesAutoresizingMaskIntoConstraints = false
+
+        let floatingPlaceholderLabel = NSTextField(labelWithString: "写点什么")
+        floatingPlaceholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        floatingPlaceholderLabel.font = .systemFont(ofSize: 14, weight: .regular)
+        floatingPlaceholderLabel.textColor = panelTertiaryTextColor()
+        floatingPlaceholderOverlay.addSubview(floatingPlaceholderLabel)
+        floatingNotePlaceholderLabel = floatingPlaceholderLabel
+
         shellContent.addSubview(topDragBar)
-        shellContent.addSubview(topDivider)
+        if !isFloatingNoteMode {
+            shellContent.addSubview(topDivider)
+        }
         shellContent.addSubview(scrollView)
+        if isFloatingNoteMode {
+            shellContent.addSubview(floatingPlaceholderOverlay)
+        }
         backdrop.addSubview(overlayScrollIndicator)
         shellContent.addSubview(divider)
 
-        NSLayoutConstraint.activate([
+        var constraints: [NSLayoutConstraint] = [
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
             scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
             overlayScrollIndicator.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -2),
@@ -194,11 +237,7 @@ extension EditorWindowController {
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
             topDragBar.topAnchor.constraint(equalTo: shellContent.topAnchor),
-            topDragBar.heightAnchor.constraint(equalToConstant: 15),
-
-            topDivider.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
-            topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
-            topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
+            topDragBar.heightAnchor.constraint(equalToConstant: isFloatingNoteMode ? 28 : 15),
 
             divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
@@ -210,7 +249,40 @@ extension EditorWindowController {
             footerBar.heightAnchor.constraint(equalToConstant: toolbarButtonHeight),
 
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 216)
-        ])
+        ]
+
+        if isFloatingNoteMode {
+            constraints.append(contentsOf: [
+                scrollView.topAnchor.constraint(equalTo: topDragBar.bottomAnchor, constant: 2),
+
+                floatingTitleLabel.centerXAnchor.constraint(equalTo: topDragBar.centerXAnchor),
+                floatingTitleLabel.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor, constant: -1),
+                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 58),
+                floatingTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: floatingHeaderActions.leadingAnchor, constant: -10),
+
+                floatingHeaderActions.trailingAnchor.constraint(equalTo: topDragBar.trailingAnchor, constant: -4),
+                floatingHeaderActions.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
+                floatingHeaderActions.heightAnchor.constraint(equalToConstant: 24),
+
+                floatingPlaceholderOverlay.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+                floatingPlaceholderOverlay.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+                floatingPlaceholderOverlay.topAnchor.constraint(equalTo: scrollView.topAnchor),
+                floatingPlaceholderOverlay.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+
+                floatingPlaceholderLabel.leadingAnchor.constraint(equalTo: floatingPlaceholderOverlay.leadingAnchor, constant: 4),
+                floatingPlaceholderLabel.topAnchor.constraint(equalTo: floatingPlaceholderOverlay.topAnchor, constant: 8)
+            ])
+        } else {
+            constraints.append(contentsOf: [
+                scrollView.topAnchor.constraint(equalTo: topDivider.bottomAnchor, constant: 4),
+
+                topDivider.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
+                topDivider.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -2),
+                topDivider.topAnchor.constraint(equalTo: topDragBar.bottomAnchor)
+            ])
+        }
+
+        NSLayoutConstraint.activate(constraints)
     }
 
     // MARK: - Quick capture UI
@@ -517,6 +589,26 @@ extension EditorWindowController {
         return button
     }
 
+    func makeFloatingHeaderButton(symbolName: String, toolTip: String, action: Selector) -> HoverToolbarButton {
+        let button = HoverToolbarButton(frame: .zero)
+        button.target = self
+        button.action = action
+        button.toolTip = toolTip
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: toolTip)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.preferredSize = NSSize(width: 24, height: 24)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        return button
+    }
+
+    @objc func floatingPreferencesPressed(_ sender: Any?) {
+        onRequestPreferences()
+    }
+
     // MARK: - Observer and content setup
 
     func configureSuggestionPopover() {
@@ -621,7 +713,18 @@ extension EditorWindowController {
 
     func refreshChrome() {
         refreshTrackedTags()
+        refreshFloatingNoteChrome()
         refreshQuickCaptureChrome()
+    }
+
+    func refreshFloatingNoteChrome() {
+        guard isFloatingNoteMode else { return }
+
+        let document = currentDocument()
+        let visibleTitle = document.title.isEmpty ? MudsnoteBrand.appName : document.title
+        floatingNoteTitleLabel?.stringValue = visibleTitle
+        floatingNoteTitleLabel?.toolTip = visibleTitle
+        floatingNotePlaceholderLabel?.isHidden = !document.title.isEmpty || !document.body.isEmpty || editorTextView.hasMarkedText()
     }
 
     func refreshQuickCaptureChrome() {

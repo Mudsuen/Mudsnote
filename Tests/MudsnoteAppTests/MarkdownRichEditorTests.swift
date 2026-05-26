@@ -4,6 +4,12 @@ import MudsnoteCore
 import Testing
 @testable import Mudsnote
 
+private extension NSView {
+    var allSubviews: [NSView] {
+        subviews + subviews.flatMap(\.allSubviews)
+    }
+}
+
 @MainActor
 struct MarkdownRichEditorTests {
     private let theme = MarkdownEditorTheme(
@@ -705,6 +711,24 @@ struct MarkdownRichEditorTests {
         #expect(button.layer?.borderWidth == 0)
         #expect(button.layer?.backgroundColor != NSColor.clear.cgColor)
         #expect(button.contentTintColor == panelPrimaryTextColor())
+    }
+
+    @MainActor
+    @Test
+    func floatingNoteUsesHeaderChromeAndEmptyBodyPlaceholder() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        #expect(controller.floatingNoteTitleLabel?.stringValue == MudsnoteBrand.appName)
+        #expect(controller.floatingNotePlaceholderLabel?.isHidden == false)
+        #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
+
+        controller.editorTextView.string = "qqq\nbody"
+        controller.userDidEdit()
+
+        #expect(controller.floatingNoteTitleLabel?.stringValue == "qqq")
+        #expect(controller.floatingNotePlaceholderLabel?.isHidden == true)
     }
 
     @MainActor

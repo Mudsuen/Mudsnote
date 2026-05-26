@@ -186,6 +186,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     weak var quickCaptureTitlePlaceholderLabel: NSTextField?
     weak var quickCapturePlaceholderBodyLabel: NSTextField?
     weak var quickCaptureTagButton: HoverToolbarButton?
+    weak var floatingNoteTitleLabel: NSTextField?
+    weak var floatingNotePlaceholderLabel: NSTextField?
 
     var fileURL: URL?
     var selectedDirectoryURL: URL
@@ -359,6 +361,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     var isQuickCaptureMode: Bool {
         draftIDOverride == "quick-capture" && fileURL == nil
+    }
+
+    var isFloatingNoteMode: Bool {
+        draftIDOverride == "floating-note" && fileURL == nil
     }
 
     // MARK: - Window delegate
