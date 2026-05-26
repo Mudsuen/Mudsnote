@@ -1,10 +1,10 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "Mudsnote",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v26)
     ],
     products: [
         .library(name: "MudsnoteCore", targets: ["MudsnoteCore"]),
@@ -30,5 +30,6 @@ let package = Package(
             dependencies: ["Mudsnote", "MudsnoteCore"],
             path: "Tests/MudsnoteAppTests"
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
