@@ -91,7 +91,6 @@ extension EditorWindowController {
         quickCaptureTitlePlaceholderLabel = nil
         quickCapturePlaceholderBodyLabel = nil
         quickCaptureTagButton = nil
-        floatingNoteTitleLabel = nil
         floatingNotePlaceholderLabel = nil
         floatingNoteTitlebarView = nil
         floatingNoteTitlebarChromeViews.removeAll()
@@ -161,16 +160,7 @@ extension EditorWindowController {
         floatingHeaderActions.spacing = 6
         floatingHeaderActions.translatesAutoresizingMaskIntoConstraints = false
 
-        let floatingTitleLabel = NSTextField(labelWithString: MudsnoteBrand.appName)
-        floatingTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        floatingTitleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-        floatingTitleLabel.textColor = panelSecondaryTextColor()
-        floatingTitleLabel.alignment = .center
-        floatingTitleLabel.lineBreakMode = .byTruncatingTail
-        floatingNoteTitleLabel = floatingTitleLabel
-
         if isFloatingNoteMode {
-            topDragBar.addSubview(floatingTitleLabel)
             topDragBar.addSubview(floatingHeaderActions)
             if let revealTitlebar = topDragBar as? HoverRevealTitlebarView {
                 revealTitlebar.onHoverChanged = { [weak self] isHovered in
@@ -185,7 +175,6 @@ extension EditorWindowController {
                 toolbarButtons.append($0)
                 floatingHeaderActions.addArrangedSubview($0)
             }
-            floatingNoteTitlebarChromeViews.append(floatingTitleLabel)
             floatingNoteTitlebarChromeViews.append(floatingHeaderActions)
             setFloatingNoteTitlebarChromeVisible(false)
         }
@@ -265,11 +254,6 @@ extension EditorWindowController {
         if isFloatingNoteMode {
             constraints.append(contentsOf: [
                 scrollView.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
-
-                floatingTitleLabel.centerXAnchor.constraint(equalTo: topDragBar.centerXAnchor),
-                floatingTitleLabel.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
-                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 12),
-                floatingTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: floatingHeaderActions.leadingAnchor, constant: -10),
 
                 floatingHeaderActions.trailingAnchor.constraint(equalTo: topDragBar.trailingAnchor, constant: -4),
                 floatingHeaderActions.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
@@ -738,9 +722,6 @@ extension EditorWindowController {
         guard isFloatingNoteMode else { return }
 
         let document = currentDocument()
-        let visibleTitle = document.title.isEmpty ? MudsnoteBrand.appName : document.title
-        floatingNoteTitleLabel?.stringValue = visibleTitle
-        floatingNoteTitleLabel?.toolTip = visibleTitle
         floatingNotePlaceholderLabel?.isHidden = !document.title.isEmpty || !document.body.isEmpty || editorTextView.hasMarkedText()
     }
 

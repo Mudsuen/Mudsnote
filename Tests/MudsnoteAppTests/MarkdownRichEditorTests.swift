@@ -720,10 +720,10 @@ struct MarkdownRichEditorTests {
         defer { harness.tearDown() }
         let controller = harness.controller
 
-        #expect(controller.floatingNoteTitleLabel?.stringValue == MudsnoteBrand.appName)
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == false)
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
+        #expect(controller.floatingNoteTitlebarChromeViews.count == 1)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 0 })
 
         controller.setFloatingNoteTitlebarChromeVisible(true)
@@ -733,7 +733,6 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.string = "qqq\nbody"
         controller.userDidEdit()
 
-        #expect(controller.floatingNoteTitleLabel?.stringValue == "qqq")
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == true)
     }
 
