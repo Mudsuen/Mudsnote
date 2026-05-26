@@ -15,6 +15,7 @@ Add more content to the Mudsnote floating note forehead/header and content area 
 - Replaced the floating-note-only short drag handle with a header bar that shows the current note title and right-side icon actions for settings, search, and saving.
 - Added an empty-body placeholder for the floating note content area.
 - Kept the floating note header at a compact 28 pt height to match the feel of a standard macOS titlebar.
+- Refined the header to 22 pt, used a standard AppKit close button only, and made the titlebar chrome appear only while hovering the top area.
 - Kept quick capture and normal saved-note editor chrome unchanged.
 - Added a regression test for the floating note header, placeholder, and removal of the short handle.
 

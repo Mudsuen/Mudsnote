@@ -177,6 +177,35 @@ final class TitleEditorProxyView: NSView {
 }
 
 @MainActor
+final class HoverRevealTitlebarView: WindowMoveBackgroundView {
+    private var trackingAreaRef: NSTrackingArea?
+    var onHoverChanged: ((Bool) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let tracking = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+        trackingAreaRef = tracking
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
+    }
+}
+
+@MainActor
 final class DragHandleView: WindowMoveBackgroundView {
     private let handleLayer = CALayer()
 

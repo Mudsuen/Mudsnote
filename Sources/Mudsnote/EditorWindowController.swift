@@ -188,6 +188,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     weak var quickCaptureTagButton: HoverToolbarButton?
     weak var floatingNoteTitleLabel: NSTextField?
     weak var floatingNotePlaceholderLabel: NSTextField?
+    weak var floatingNoteTitlebarView: NSView?
+    var floatingNoteTitlebarChromeViews: [NSView] = []
 
     var fileURL: URL?
     var selectedDirectoryURL: URL

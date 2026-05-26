@@ -93,6 +93,8 @@ extension EditorWindowController {
         quickCaptureTagButton = nil
         floatingNoteTitleLabel = nil
         floatingNotePlaceholderLabel = nil
+        floatingNoteTitlebarView = nil
+        floatingNoteTitlebarChromeViews.removeAll()
 
         if isQuickCaptureMode {
             buildQuickCaptureUI(in: shellContent, backdrop: backdrop, scrollView: scrollView, overlayScrollIndicator: overlayScrollIndicator)
@@ -124,8 +126,9 @@ extension EditorWindowController {
         overlayScrollIndicator: ScrollIndicatorOverlay,
         toolbarStack: NSStackView
     ) {
-        let topDragBar = isFloatingNoteMode ? WindowMoveBackgroundView() : DragHandleView()
+        let topDragBar: WindowMoveBackgroundView = isFloatingNoteMode ? HoverRevealTitlebarView() : DragHandleView()
         topDragBar.translatesAutoresizingMaskIntoConstraints = false
+        floatingNoteTitlebarView = isFloatingNoteMode ? topDragBar : nil
 
         let divider = NSBox()
         divider.boxType = .separator
@@ -169,6 +172,22 @@ extension EditorWindowController {
         if isFloatingNoteMode {
             topDragBar.addSubview(floatingTitleLabel)
             topDragBar.addSubview(floatingHeaderActions)
+            if let revealTitlebar = topDragBar as? HoverRevealTitlebarView {
+                revealTitlebar.onHoverChanged = { [weak self] isHovered in
+                    self?.setFloatingNoteTitlebarChromeVisible(isHovered)
+                }
+            }
+            if let closeButton = NSWindow.standardWindowButton(.closeButton, for: [.titled, .closable]) {
+                closeButton.translatesAutoresizingMaskIntoConstraints = false
+                closeButton.target = self
+                closeButton.action = #selector(cancelPressed)
+                topDragBar.addSubview(closeButton)
+                floatingNoteTitlebarChromeViews.append(closeButton)
+                NSLayoutConstraint.activate([
+                    closeButton.leadingAnchor.constraint(equalTo: topDragBar.leadingAnchor, constant: 11),
+                    closeButton.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor)
+                ])
+            }
             [
                 makeFloatingHeaderButton(symbolName: "command", toolTip: "设置", action: #selector(floatingPreferencesPressed(_:))),
                 makeFloatingHeaderButton(symbolName: "list.bullet.rectangle", toolTip: "搜索笔记", action: #selector(searchPressed)),
@@ -177,6 +196,9 @@ extension EditorWindowController {
                 toolbarButtons.append($0)
                 floatingHeaderActions.addArrangedSubview($0)
             }
+            floatingNoteTitlebarChromeViews.append(floatingTitleLabel)
+            floatingNoteTitlebarChromeViews.append(floatingHeaderActions)
+            setFloatingNoteTitlebarChromeVisible(false)
         }
 
         if showsSaveButton {
@@ -237,7 +259,7 @@ extension EditorWindowController {
             topDragBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 2),
             topDragBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -8),
             topDragBar.topAnchor.constraint(equalTo: shellContent.topAnchor),
-            topDragBar.heightAnchor.constraint(equalToConstant: isFloatingNoteMode ? 28 : 15),
+            topDragBar.heightAnchor.constraint(equalToConstant: isFloatingNoteMode ? 22 : 15),
 
             divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
@@ -253,11 +275,11 @@ extension EditorWindowController {
 
         if isFloatingNoteMode {
             constraints.append(contentsOf: [
-                scrollView.topAnchor.constraint(equalTo: topDragBar.bottomAnchor, constant: 2),
+                scrollView.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
 
                 floatingTitleLabel.centerXAnchor.constraint(equalTo: topDragBar.centerXAnchor),
-                floatingTitleLabel.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor, constant: -1),
-                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 58),
+                floatingTitleLabel.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
+                floatingTitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: topDragBar.leadingAnchor, constant: 36),
                 floatingTitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: floatingHeaderActions.leadingAnchor, constant: -10),
 
                 floatingHeaderActions.trailingAnchor.constraint(equalTo: topDragBar.trailingAnchor, constant: -4),
@@ -607,6 +629,12 @@ extension EditorWindowController {
 
     @objc func floatingPreferencesPressed(_ sender: Any?) {
         onRequestPreferences()
+    }
+
+    func setFloatingNoteTitlebarChromeVisible(_ isVisible: Bool) {
+        floatingNoteTitlebarChromeViews.forEach { view in
+            view.alphaValue = isVisible ? 1 : 0
+        }
     }
 
     // MARK: - Observer and content setup
