@@ -30,6 +30,7 @@
 		12234E9A5EF047D1ADB5F2CD /* MudsnoteCompanionWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 230C88C96F6142B1B6262AFC /* MudsnoteCompanionWidgetBundle.swift */; };
 		67EE42D2D69B47DCA0323D62 /* QuickCaptureWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF93F767020491CAC9AAF7F /* QuickCaptureWidget.swift */; };
 		F6AE932DD4F742368DDBC04F /* MudsnoteCompanionWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1E250D728D6484790D74691 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +84,7 @@
 		41B7FF6FD8F74113B8A31644 /* SettingsRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/SettingsRulesView.swift; sourceTree = "<group>"; };
 		F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/MudsnoteAppIntents.swift; sourceTree = "<group>"; };
 		1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/ShareExtensionReference.swift; sourceTree = "<group>"; };
+		A1E250D728D6484790D74691 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MudsnoteCompanion/Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +148,7 @@
 				41B7FF6FD8F74113B8A31644 /* SettingsRulesView.swift */,
 				F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */,
 				1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */,
+				A1E250D728D6484790D74691 /* Assets.xcassets */,
 			);
 			name = MudsnoteCompanion;
 			sourceTree = "<group>";
@@ -240,6 +243,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -418,9 +422,11 @@
 		C062A2AE87BE475E961C5CC0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = 3JA29GL46S;
+					DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -446,9 +452,11 @@
 		03D012A1AC4249F199E69BA5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = 3JA29GL46S;
+					DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MudsnoteCompanion/Info.plist;
@@ -473,10 +481,11 @@
 		38F68F1A707F42EA9E89AE2D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_DEBUG_DYLIB = NO;
+					APPLICATION_EXTENSION_API_ONLY = YES;
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = 3JA29GL46S;
+					ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MudsnoteCompanionWidget/Info.plist;
@@ -502,10 +511,11 @@
 		519A363DDA634CACA1C7323E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_PREVIEWS = YES;
+					APPLICATION_EXTENSION_API_ONLY = YES;
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_TEAM = 3JA29GL46S;
+					ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MudsnoteCompanionWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

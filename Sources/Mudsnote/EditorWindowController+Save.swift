@@ -17,9 +17,9 @@ extension EditorWindowController {
             let previousDraftID = currentDraftID
             let savedURL: URL
 
-            if let fileURL {
+            if let existingURL = activeFloatingNoteURL ?? fileURL {
                 savedURL = try noteStore.updateNote(
-                    at: fileURL,
+                    at: existingURL,
                     title: document.title,
                     body: document.body,
                     tags: document.tags,
@@ -35,6 +35,10 @@ extension EditorWindowController {
             }
 
             fileURL = savedURL
+            if isFloatingNoteMode {
+                activeFloatingNoteURL = savedURL
+                fileURL = nil
+            }
             selectedDirectoryURL = savedURL.deletingLastPathComponent()
             noteStore.deleteDraft(id: previousDraftID)
             noteStore.deleteDraft(id: currentDraftID)
@@ -51,7 +55,67 @@ extension EditorWindowController {
     }
 
     @objc func searchPressed() {
+        if isFloatingNoteMode {
+            showFloatingNoteBrowser(relativeTo: floatingNoteBrowseButton)
+            return
+        }
         onRequestSearch()
+    }
+
+    func loadFloatingNote(at url: URL) {
+        guard isFloatingNoteMode else { return }
+        persistDraft(force: true)
+        suppressAutosave = true
+        defer { suppressAutosave = false }
+
+        do {
+            let note = try noteStore.loadNote(at: url)
+            activeFloatingNoteURL = url
+            selectedDirectoryURL = url.deletingLastPathComponent()
+            applyInitialContent(title: note.title, body: note.body)
+
+            if let draft = noteStore.loadDraft(id: currentDraftID), draft.sourcePath == url.path {
+                applyBodyMarkdown(MarkdownEditorDocument(title: draft.title, body: draft.body).editorText)
+                selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
+                isDirty = true
+                statusLabel.stringValue = "已恢复"
+            } else {
+                isDirty = false
+                statusLabel.stringValue = "编辑中"
+            }
+
+            suppressAutosave = false
+            refreshChrome()
+            overlayScrollIndicator?.updateIndicator()
+            updateTypingAttributesFromInsertionPoint()
+            updateToolbarSelectionState()
+            updateInlineSuggestions()
+            window?.makeFirstResponder(editorTextView)
+            editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
+        } catch {
+            presentErrorAlert(message: "无法加载笔记", details: error.localizedDescription)
+        }
+    }
+
+    func showFloatingNoteBrowser(relativeTo anchorView: NSView?) {
+        guard isFloatingNoteMode else { return }
+
+        let controller: FloatingNoteBrowserController
+        if let existing = floatingNoteBrowserController {
+            controller = existing
+        } else {
+            controller = FloatingNoteBrowserController(
+                noteStore: noteStore,
+                selectedURL: activeFloatingNoteURL,
+                onSelect: { [weak self] url in
+                    self?.loadFloatingNote(at: url)
+                }
+            )
+            floatingNoteBrowserController = controller
+        }
+
+        controller.selectedURL = activeFloatingNoteURL
+        controller.show(relativeTo: anchorView, parentWindow: window)
     }
 
     @objc func quickCaptureDirectoryPressed() {

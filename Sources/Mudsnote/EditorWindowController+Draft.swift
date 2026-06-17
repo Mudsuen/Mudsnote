@@ -23,13 +23,13 @@ extension EditorWindowController {
 
         if document.title.isEmpty && document.body.isEmpty {
             noteStore.deleteDraft(id: currentDraftID)
-            statusLabel.stringValue = fileURL == nil ? "Markdown" : "编辑中"
+            statusLabel.stringValue = fileURL == nil && activeFloatingNoteURL == nil ? "Markdown" : "编辑中"
             return
         }
 
         let snapshot = DraftSnapshot(
             id: currentDraftID,
-            sourcePath: fileURL?.path,
+            sourcePath: activeFloatingNoteURL?.path ?? fileURL?.path,
             selectedDirectoryPath: selectedDirectoryURL.path,
             title: document.title,
             body: document.body,

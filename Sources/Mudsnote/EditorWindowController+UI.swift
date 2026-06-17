@@ -93,6 +93,7 @@ extension EditorWindowController {
         quickCaptureTagButton = nil
         floatingNotePlaceholderLabel = nil
         floatingNoteTitlebarView = nil
+        floatingNoteBrowseButton = nil
         floatingNoteTitlebarChromeViews.removeAll()
 
         if isQuickCaptureMode {
@@ -167,14 +168,14 @@ extension EditorWindowController {
                     self?.setFloatingNoteTitlebarChromeVisible(isHovered)
                 }
             }
-            [
-                makeFloatingHeaderButton(symbolName: "command", toolTip: "设置", action: #selector(floatingPreferencesPressed(_:))),
-                makeFloatingHeaderButton(symbolName: "list.bullet.rectangle", toolTip: "搜索笔记", action: #selector(searchPressed)),
-                makeFloatingHeaderButton(symbolName: "plus", toolTip: "保存为笔记", action: #selector(savePressed))
-            ].forEach {
-                toolbarButtons.append($0)
-                floatingHeaderActions.addArrangedSubview($0)
-            }
+            let browseButton = makeFloatingHeaderButton(
+                symbolName: "rectangle.stack",
+                toolTip: "浏览笔记",
+                action: #selector(floatingBrowseNotesPressed(_:))
+            )
+            floatingNoteBrowseButton = browseButton
+            toolbarButtons.append(browseButton)
+            floatingHeaderActions.addArrangedSubview(browseButton)
             floatingNoteTitlebarChromeViews.append(floatingHeaderActions)
             setFloatingNoteTitlebarChromeVisible(false)
         }
@@ -602,6 +603,10 @@ extension EditorWindowController {
 
     @objc func floatingPreferencesPressed(_ sender: Any?) {
         onRequestPreferences()
+    }
+
+    @objc func floatingBrowseNotesPressed(_ sender: Any?) {
+        showFloatingNoteBrowser(relativeTo: sender as? NSView)
     }
 
     func setFloatingNoteTitlebarChromeVisible(_ isVisible: Bool) {

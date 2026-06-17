@@ -1,4 +1,9 @@
 .DS_Store
 .build/
 .swiftpm/
+build/
 dist/
+*.xcuserdata/
+**/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint

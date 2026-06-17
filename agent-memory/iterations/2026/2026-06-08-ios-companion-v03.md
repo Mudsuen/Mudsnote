@@ -170,3 +170,20 @@ Verification:
 Remaining checks:
 
 - Real-device checks are still needed for microphone permission, speech transcription quality, and widget gallery appearance.
+
+## 2026-06-14 real-device signing and smoke script
+
+- Added the real Xcode signing team `3JA29GL46S` to the iOS app and widget targets. The certificate label still contains `95L8JU9A4K`, but `xcodebuild` uses `3JA29GL46S` for account/team provisioning.
+- Added `scripts/device_smoke.sh` to build, install, and launch MudsnoteCompanion on the connected iPhone using a local `build/DeviceDerivedData` path.
+- Updated `.gitignore` for local Xcode/device build artifacts.
+
+Verification:
+
+- `xcodebuild -project iOS/MudsnoteCompanion.xcodeproj -scheme MudsnoteCompanion -configuration Debug -destination 'id=00008150-001C204022E2401C' -allowProvisioningUpdates -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM=3JA29GL46S build` passed.
+- Xcode generated development provisioning profiles for `app.mudsnote.companion` and `app.mudsnote.companion.widget`.
+- `xcrun devicectl device install app --device 00008150-001C204022E2401C .../MudsnoteCompanion.app` installed the app on MudsPhone.
+- `./scripts/device_smoke.sh` passed end-to-end: build, install, and launch on MudsPhone.
+
+Remaining checks:
+
+- UI interaction beyond successful launch, widget gallery appearance, microphone permission, and speech transcription still need manual or XCUITest follow-up on device.

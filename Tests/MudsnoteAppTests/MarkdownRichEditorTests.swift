@@ -725,6 +725,9 @@ struct MarkdownRichEditorTests {
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
         #expect(controller.floatingNoteTitlebarChromeViews.count == 1)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 0 })
+        let headerStack = try #require(controller.floatingNoteTitlebarChromeViews.first as? NSStackView)
+        #expect(headerStack.arrangedSubviews.count == 1)
+        #expect(controller.floatingNoteBrowseButton?.toolTip == "浏览笔记")
 
         controller.setFloatingNoteTitlebarChromeVisible(true)
 
@@ -734,6 +737,36 @@ struct MarkdownRichEditorTests {
         controller.userDidEdit()
 
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == true)
+    }
+
+    @MainActor
+    @Test
+    func floatingNoteCanSwitchToExistingNoteAndSaveBackToIt() throws {
+        var savedURL: URL?
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            onSave: { savedURL = $0 }
+        )
+        defer { harness.tearDown() }
+
+        try harness.store.ensureNotesDirectory()
+        let noteURL = try harness.store.saveNewNote(title: "Existing", body: "Original body", in: harness.store.notesDirectory)
+
+        harness.controller.loadFloatingNote(at: noteURL)
+
+        #expect(harness.controller.activeFloatingNoteURL == noteURL)
+        #expect(harness.controller.currentDocument().title == "Existing")
+        #expect(harness.controller.currentDocument().body == "Original body")
+
+        let updated = MarkdownRichTextCodec.render(markdown: "# Existing\n\nUpdated body", theme: harness.controller.theme)
+        harness.controller.editorTextView.textStorage?.setAttributedString(updated)
+        harness.controller.savePressed()
+
+        let loaded = try harness.store.loadNote(at: noteURL)
+        #expect(loaded.title == "Existing")
+        #expect(loaded.body == "Updated body")
+        #expect(savedURL == noteURL)
     }
 
     @MainActor
@@ -795,6 +828,7 @@ struct MarkdownRichEditorTests {
         let root: URL
         let suiteName: String
         let defaults: UserDefaults
+        let store: NoteStore
         let controller: EditorWindowController
 
         @MainActor
@@ -839,7 +873,7 @@ struct MarkdownRichEditorTests {
             onRequestPreferences: {}
         )
 
-        return EditorControllerHarness(root: root, suiteName: suiteName, defaults: defaults, controller: controller)
+        return EditorControllerHarness(root: root, suiteName: suiteName, defaults: defaults, store: store, controller: controller)
     }
 
     private func keyEvent(

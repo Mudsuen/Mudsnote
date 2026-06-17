@@ -188,7 +188,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     weak var quickCaptureTagButton: HoverToolbarButton?
     weak var floatingNotePlaceholderLabel: NSTextField?
     weak var floatingNoteTitlebarView: NSView?
+    weak var floatingNoteBrowseButton: HoverToolbarButton?
     var floatingNoteTitlebarChromeViews: [NSView] = []
+    var activeFloatingNoteURL: URL?
+    var floatingNoteBrowserController: FloatingNoteBrowserController?
 
     var fileURL: URL?
     var selectedDirectoryURL: URL
@@ -355,6 +358,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     // MARK: - Computed
 
     var currentDraftID: String {
+        if isFloatingNoteMode, let activeFloatingNoteURL {
+            return "floating-edit-" + sha256Hex(activeFloatingNoteURL.path)
+        }
         if let draftIDOverride { return draftIDOverride }
         if let fileURL { return "edit-" + sha256Hex(fileURL.path) }
         return "quick-capture"
