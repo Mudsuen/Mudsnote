@@ -724,10 +724,11 @@ struct MarkdownRichEditorTests {
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
         #expect(controller.floatingNoteTitlebarChromeViews.count == 1)
-        #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 0 })
+        #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 1 })
         let headerStack = try #require(controller.floatingNoteTitlebarChromeViews.first as? NSStackView)
         #expect(headerStack.arrangedSubviews.count == 1)
         #expect(controller.floatingNoteBrowseButton?.toolTip == "浏览笔记")
+        #expect(controller.floatingNoteBrowseButton?.performsActionOnMouseDown == true)
 
         controller.setFloatingNoteTitlebarChromeVisible(true)
 
@@ -767,6 +768,21 @@ struct MarkdownRichEditorTests {
         #expect(loaded.title == "Existing")
         #expect(loaded.body == "Updated body")
         #expect(savedURL == noteURL)
+    }
+
+    @MainActor
+    @Test
+    func floatingBrowseButtonOpensBrowserPanel() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        controller.showWindowAndFocus()
+        controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
+
+        let browser = try #require(controller.floatingNoteBrowserController)
+        #expect(browser.window?.isVisible == true)
+        #expect(browser.window?.canBecomeKey == true)
     }
 
     @MainActor

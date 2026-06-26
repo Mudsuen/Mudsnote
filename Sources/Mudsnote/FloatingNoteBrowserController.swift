@@ -61,6 +61,12 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
 }
 
 @MainActor
+final class FloatingNoteBrowserPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+@MainActor
 final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private let noteStore: NoteStore
     private let onSelect: (URL) -> Void
@@ -78,7 +84,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         self.selectedURL = selectedURL
         self.onSelect = onSelect
 
-        let panel = NSPanel(
+        let panel = FloatingNoteBrowserPanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 294),
             styleMask: [.borderless],
             backing: .buffered,
@@ -114,14 +120,19 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             let anchorRect = anchorView.convert(anchorView.bounds, to: nil)
             let origin = parentWindow.convertPoint(toScreen: NSPoint(x: anchorRect.maxX - window.frame.width, y: anchorRect.minY - window.frame.height - 8))
             window.setFrameOrigin(origin)
-            parentWindow.addChildWindow(window, ordered: .above)
+            if window.parent !== parentWindow {
+                parentWindow.addChildWindow(window, ordered: .above)
+            }
         } else if let parentWindow {
             let parentFrame = parentWindow.frame
             window.setFrameOrigin(NSPoint(x: parentFrame.maxX - window.frame.width - 12, y: parentFrame.maxY - window.frame.height - 30))
-            parentWindow.addChildWindow(window, ordered: .above)
+            if window.parent !== parentWindow {
+                parentWindow.addChildWindow(window, ordered: .above)
+            }
         }
 
-        showWindow(nil)
+        window.orderFrontRegardless()
+        window.makeKey()
         searchField.selectText(nil)
     }
 

@@ -18,6 +18,7 @@ Make the Mudsnote floating note support selecting among multiple notes through a
 - Added `activeFloatingNoteURL` so the floating note keeps its window mode while editing an existing file.
 - Updated floating-note save and draft metadata so saving a selected note updates the existing file.
 - Added app tests for the one-button header and switching/saving an existing note.
+- Follow-up click fix: kept the browse button visible, made the browser panel key-capable and explicitly front-ordered, then changed the browse button to fire on mouse-down so borderless-panel mouse-up loss cannot make clicks appear inert.
 
 ## Verification
 
@@ -25,8 +26,11 @@ Make the Mudsnote floating note support selecting among multiple notes through a
   - `swift test`
   - `./scripts/package_app.sh`
   - `open -n /Applications/Mudsnote.app --args --floating-note`
+- Follow-up commands run:
+  - `swift test`
+  - `./scripts/package_app.sh`
 - App/page/package actually opened: `/Applications/Mudsnote.app`
-- Result: 54 tests passed, package installed successfully, packaged floating-note smoke opened.
+- Result: 55 tests passed, package installed successfully, packaged floating-note smoke opened, and the app process was restarted from the installed bundle.
 - Not verified: manual click-through of the hover-revealed browse popup in the live app.
 
 ## Decisions

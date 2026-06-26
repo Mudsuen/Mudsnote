@@ -163,21 +163,17 @@ extension EditorWindowController {
 
         if isFloatingNoteMode {
             topDragBar.addSubview(floatingHeaderActions)
-            if let revealTitlebar = topDragBar as? HoverRevealTitlebarView {
-                revealTitlebar.onHoverChanged = { [weak self] isHovered in
-                    self?.setFloatingNoteTitlebarChromeVisible(isHovered)
-                }
-            }
             let browseButton = makeFloatingHeaderButton(
                 symbolName: "rectangle.stack",
                 toolTip: "浏览笔记",
                 action: #selector(floatingBrowseNotesPressed(_:))
             )
+            browseButton.performsActionOnMouseDown = true
             floatingNoteBrowseButton = browseButton
             toolbarButtons.append(browseButton)
             floatingHeaderActions.addArrangedSubview(browseButton)
             floatingNoteTitlebarChromeViews.append(floatingHeaderActions)
-            setFloatingNoteTitlebarChromeVisible(false)
+            setFloatingNoteTitlebarChromeVisible(true)
         }
 
         if showsSaveButton {
