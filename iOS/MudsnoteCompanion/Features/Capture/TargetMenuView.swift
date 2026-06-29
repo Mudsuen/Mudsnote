@@ -29,8 +29,35 @@ struct TargetMenuView: View {
                 }
             }
         } label: {
-            Image(systemName: "folder")
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                Text(appModel.draft.target.compactLabel)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(MudsnoteColors.text)
+            .padding(.horizontal, 12)
+            .frame(height: 42)
+            .frame(maxWidth: 104)
+            .background(MudsnoteColors.card, in: Capsule())
+            .overlay {
+                Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+            }
         }
-        .buttonStyle(IconCircleButtonStyle())
+        .buttonStyle(.plain)
+        .accessibilityLabel("保存目标 \(appModel.draft.target.compactLabel)")
+    }
+}
+
+private extension CaptureTarget {
+    var compactLabel: String {
+        switch self {
+        case .inbox:
+            return "Inbox"
+        case .daily:
+            return "Daily"
+        case .recent(let path):
+            return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        }
     }
 }

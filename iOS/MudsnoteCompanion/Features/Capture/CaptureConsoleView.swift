@@ -3,7 +3,6 @@ import SwiftUI
 
 struct CaptureConsoleView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(\.dismiss) private var dismiss
     @FocusState private var isBodyFocused: Bool
     @State private var selectedRoute: CaptureRoute
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -23,7 +22,7 @@ struct CaptureConsoleView: View {
 
             formatToolbar
 
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 routeButton(.text, icon: "text.alignleft")
 
                 Button {
@@ -49,13 +48,15 @@ struct CaptureConsoleView: View {
                 Spacer()
 
                 Button {
-                    appModel.sendDraft()
-                    dismiss()
+                    appModel.sendDraft(continueCapturing: true)
+                    selectedRoute = .text
+                    selectedPhotoItem = nil
+                    isBodyFocused = true
                 } label: {
-                    Image(systemName: "arrow.up")
+                    Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
                 }
                 .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
-                .disabled(!appModel.draft.canSend)
+                .disabled(!appModel.draft.canSend || appModel.isSendingDraft)
                 .accessibilityLabel("Save memo")
             }
         }
@@ -69,6 +70,13 @@ struct CaptureConsoleView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     isPhotoPickerPresented = true
                 }
+            }
+        }
+        .onChange(of: appModel.captureRoute) { _, route in
+            selectedRoute = route
+            isBodyFocused = route != .image
+            if route == .image {
+                isPhotoPickerPresented = true
             }
         }
         .onChange(of: selectedPhotoItem) { _, item in

@@ -30,6 +30,41 @@ extension NoteStore {
             .map(\.key)
     }
 
+    public func listNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
+        let searchRoots = roots ?? knownSearchRoots()
+        var seenPaths = Set<String>()
+        var notes: [NoteSearchResult] = []
+
+        for root in searchRoots {
+            for fileURL in markdownFiles(in: root) {
+                let standardizedPath = fileURL.standardizedFileURL.path
+                guard seenPaths.insert(standardizedPath).inserted,
+                      let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
+                      let modifiedAt = attrs[.modificationDate] as? Date else {
+                    continue
+                }
+
+                let note = (try? loadNote(at: fileURL)) ?? (
+                    title: fileURL.deletingPathExtension().lastPathComponent,
+                    body: "",
+                    tags: []
+                )
+                notes.append(NoteSearchResult(
+                    url: fileURL,
+                    title: note.title,
+                    snippet: firstMeaningfulLine(from: note.body) ?? "",
+                    modifiedAt: modifiedAt,
+                    tags: note.tags
+                ))
+            }
+        }
+
+        return notes
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     public func searchNotes(query: String, limit: Int = 30, roots: [URL]? = nil) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {

@@ -46,6 +46,29 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func listNotesReturnsAllKnownMarkdownFilesByModifiedDate() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        let oldURL = try store.saveNewNote(title: "Older", body: "first", in: notesDirectory)
+        let newURL = try store.saveNewNote(title: "Newer", body: "second", tags: ["work"], in: projectDirectory)
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_700_000_200)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: oldURL.path)
+        try FileManager.default.setAttributes([.modificationDate: newDate], ofItemAtPath: newURL.path)
+
+        let notes = store.listNotes(limit: 10)
+
+        #expect(Array(notes.map(\.title).prefix(2)) == ["Newer", "Older"])
+        #expect(notes.first?.tags == ["work"])
+        #expect(notes.first?.snippet == "second")
+    }
+
+    @Test
     func tagsRoundTripAndKnownTagsAreCollected() throws {
         let harness = try TestHarness()
         let store = harness.store

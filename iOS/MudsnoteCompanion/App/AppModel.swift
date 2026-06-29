@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     @Published var draft = CaptureDraft()
     @Published var captureRoute: CaptureRoute = .text
     @Published var isCapturePresented = false
+    @Published var isSendingDraft = false
     @Published var statusToast: StatusToast?
     @Published var query = ""
     @Published var syncStatus: SyncStatus = .idle
@@ -86,14 +87,20 @@ final class AppModel: ObservableObject {
         openSystemCapture(route)
     }
 
-    func sendDraft() {
-        guard draft.canSend else { return }
+    func sendDraft(continueCapturing: Bool = true) {
+        guard draft.canSend, !isSendingDraft else { return }
+        let nextTarget = draft.target
+        isSendingDraft = true
         Task {
+            defer { isSendingDraft = false }
             do {
                 try await appendCurrentDraft()
-                draft = CaptureDraft(target: draft.target)
-                isCapturePresented = false
-                statusToast = .saved("Saved")
+                draft = CaptureDraft(target: nextTarget)
+                captureRoute = .text
+                if !continueCapturing {
+                    isCapturePresented = false
+                }
+                statusToast = .saved(continueCapturing ? "Saved. Ready for next" : "Saved")
                 await refreshInbox()
             } catch {
                 syncStatus = .pending

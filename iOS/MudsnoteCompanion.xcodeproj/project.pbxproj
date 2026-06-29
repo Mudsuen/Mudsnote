@@ -31,9 +31,17 @@
 		67EE42D2D69B47DCA0323D62 /* QuickCaptureWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF93F767020491CAC9AAF7F /* QuickCaptureWidget.swift */; };
 		F6AE932DD4F742368DDBC04F /* MudsnoteCompanionWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1E250D728D6484790D74691 /* Assets.xcassets */; };
+		A10000000000000000000001 /* MudsnoteCompanionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* MudsnoteCompanionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		A10000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 396D4DE4F5EC406CA591B3BA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 32DC356C0D9E4A94A977B96B;
+			remoteInfo = MudsnoteCompanion;
+		};
 		6CC3345B9375495E94CC004E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 396D4DE4F5EC406CA591B3BA /* Project object */;
@@ -60,8 +68,10 @@
 /* Begin PBXFileReference section */
 		544C01C4630F41D6BA966C0F /* MudsnoteCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MudsnoteCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MudsnoteCompanionWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000004 /* MudsnoteCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MudsnoteCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DC39EAC6ECA443EAA75D1AAC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = MudsnoteCompanion/Info.plist; sourceTree = "<group>"; };
 		534C5FA232B2476C95A5F896 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000002 /* MudsnoteCompanionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanionTests/MudsnoteCompanionTests.swift; sourceTree = "<group>"; };
 		B281677F4F1A49248075689A /* MudsnoteCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/MudsnoteCompanionApp.swift; sourceTree = "<group>"; };
 		230C88C96F6142B1B6262AFC /* MudsnoteCompanionWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanionWidgetBundle.swift; sourceTree = "<group>"; };
 		9DF93F767020491CAC9AAF7F /* QuickCaptureWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureWidget.swift; sourceTree = "<group>"; };
@@ -102,6 +112,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -110,8 +127,17 @@
 			children = (
 				8487784FC7F84F59B833A785 /* MudsnoteCompanion */,
 				12C606D4B69C4E55AD711A94 /* MudsnoteCompanionWidget */,
+				A10000000000000000000006 /* MudsnoteCompanionTests */,
 				BB021710C229422095254580 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000006 /* MudsnoteCompanionTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000002 /* MudsnoteCompanionTests.swift */,
+			);
+			name = MudsnoteCompanionTests;
 			sourceTree = "<group>";
 		};
 		12C606D4B69C4E55AD711A94 /* MudsnoteCompanionWidget */ = {
@@ -158,6 +184,7 @@
 			children = (
 				544C01C4630F41D6BA966C0F /* MudsnoteCompanion.app */,
 				260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */,
+				A10000000000000000000004 /* MudsnoteCompanionTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -201,6 +228,24 @@
 			productReference = 260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A10000000000000000000007 /* MudsnoteCompanionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000008 /* Build configuration list for PBXNativeTarget "MudsnoteCompanionTests" */;
+			buildPhases = (
+				A10000000000000000000009 /* Sources */,
+				A10000000000000000000005 /* Frameworks */,
+				A1000000000000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1000000000000000000000B /* PBXTargetDependency */,
+			);
+			name = MudsnoteCompanionTests;
+			productName = MudsnoteCompanionTests;
+			productReference = A10000000000000000000004 /* MudsnoteCompanionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -216,6 +261,10 @@
 					};
 					D5F31F2750CD4BB488597A00 = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					A10000000000000000000007 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 32DC356C0D9E4A94A977B96B;
 					};
 				};
 			};
@@ -234,6 +283,7 @@
 			targets = (
 				32DC356C0D9E4A94A977B96B /* MudsnoteCompanion */,
 				D5F31F2750CD4BB488597A00 /* MudsnoteCompanionWidget */,
+				A10000000000000000000007 /* MudsnoteCompanionTests */,
 			);
 		};
 /* End PBXProject section */
@@ -248,6 +298,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BCED3074B1684E918D124F1C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000000A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -293,9 +350,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* MudsnoteCompanionTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		A1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 32DC356C0D9E4A94A977B96B /* MudsnoteCompanion */;
+			targetProxy = A10000000000000000000003 /* PBXContainerItemProxy */;
+		};
 		C19504165AE34B47AC61AEEF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = D5F31F2750CD4BB488597A00 /* MudsnoteCompanionWidget */;
@@ -537,6 +607,55 @@
 			};
 			name = Release;
 		};
+		A1000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3JA29GL46S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = app.mudsnote.companion.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MudsnoteCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MudsnoteCompanion";
+			};
+			name = Debug;
+		};
+		A1000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3JA29GL46S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = app.mudsnote.companion.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MudsnoteCompanion.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MudsnoteCompanion";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -563,6 +682,15 @@
 			buildConfigurations = (
 				38F68F1A707F42EA9E89AE2D /* Debug */,
 				519A363DDA634CACA1C7323E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000008 /* Build configuration list for PBXNativeTarget "MudsnoteCompanionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000000C /* Debug */,
+				A1000000000000000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

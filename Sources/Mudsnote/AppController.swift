@@ -12,6 +12,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var quickCaptureController: EditorWindowController?
     private var floatingNoteController: EditorWindowController?
     private var editorControllers: [String: EditorWindowController] = [:]
+    private var libraryWindowController: LibraryWindowController?
     private var searchWindowController: SearchWindowController?
     private var preferencesWindowController: PreferencesWindowController?
 
@@ -36,6 +37,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         if launchArguments.contains("--search") {
             DispatchQueue.main.async { [weak self] in
                 self?.showSearchWindow()
+            }
+        }
+
+        if launchArguments.contains("--library") {
+            DispatchQueue.main.async { [weak self] in
+                self?.showLibraryWindow()
             }
         }
 
@@ -77,6 +84,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let floatingNote = NSMenuItem(title: "悬浮笔记", action: #selector(showFloatingNote), keyEquivalent: "r")
         floatingNote.target = self
         menu.addItem(floatingNote)
+
+        let library = NSMenuItem(title: "笔记库", action: #selector(showLibraryWindow), keyEquivalent: "l")
+        library.target = self
+        menu.addItem(library)
 
         let searchNotes = NSMenuItem(title: "搜索笔记...", action: #selector(showSearchWindow), keyEquivalent: "f")
         searchNotes.target = self
@@ -229,6 +240,32 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc
+    private func showLibraryWindow() {
+        cleanupClosedWindows()
+
+        if let controller = libraryWindowController, controller.window?.isVisible == true {
+            controller.showWindowAndFocus()
+            return
+        }
+
+        let controller = LibraryWindowController(
+            noteStore: noteStore,
+            onOpenInSeparateWindow: { [weak self] url in
+                self?.openEditor(for: url)
+            },
+            onSave: { [weak self] url in
+                self?.didSaveNote(at: url)
+            },
+            onClose: { [weak self] in
+                self?.cleanupClosedWindows()
+            }
+        )
+
+        libraryWindowController = controller
+        controller.showWindowAndFocus()
+    }
+
+    @objc
     private func openRecentNote(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }
         openEditor(for: URL(fileURLWithPath: path))
@@ -317,6 +354,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             controller.window?.alphaValue = alpha
             controller.updatePanelOpacity(opacity)
         }
+        libraryWindowController?.updatePanelOpacity(opacity)
         searchWindowController?.window?.alphaValue = alpha
         searchWindowController?.updatePanelOpacity(opacity)
         preferencesWindowController?.updatePanelOpacity(opacity)
@@ -440,6 +478,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         editorControllers = editorControllers.filter { $0.value.window?.isVisible == true }
+
+        if libraryWindowController?.window?.isVisible != true {
+            libraryWindowController = nil
+        }
 
         if searchWindowController?.window?.isVisible != true {
             searchWindowController = nil

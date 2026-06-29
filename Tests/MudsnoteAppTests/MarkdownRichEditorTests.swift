@@ -584,6 +584,47 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowUsesNotesLikeSplitAndLoadsFirstNote() throws {
+        let suiteName = "mudsnote.library-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(window.title == "Mudsnote 笔记")
+        #expect(window.styleMask.contains(.resizable))
+        #expect(controller.tableView.numberOfRows == 1)
+        #expect(controller.titleField.stringValue == "Library Seed")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
+
+        controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
+        #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
     func preferencesWindowUsesStandardMacSettingsChrome() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-preferences-tests-\(UUID().uuidString)", isDirectory: true)

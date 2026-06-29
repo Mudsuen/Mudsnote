@@ -43,4 +43,21 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(blocks.first?.dateText, "2026-06-07 14:35")
         XCTAssertEqual(blocks.last?.tags, ["#闪念"])
     }
+
+    func testCaptureTargetRelativePaths() {
+        let date = Date(timeIntervalSince1970: 1_717_747_920)
+
+        XCTAssertEqual(CaptureTarget.inbox.relativePath(now: date), "Inbox.md")
+        XCTAssertEqual(CaptureTarget.daily(date).relativePath(now: date), "Daily/2024-06-07.md")
+        XCTAssertEqual(CaptureTarget.recent("Projects/Launch.md").relativePath(now: date), "Projects/Launch.md")
+    }
+
+    func testAttachmentOnlyDraftCanSend() {
+        let draft = CaptureDraft(
+            body: "",
+            attachments: [.image(data: Data([0x01, 0x02]), preferredExtension: "jpg")]
+        )
+
+        XCTAssertTrue(draft.canSend)
+    }
 }

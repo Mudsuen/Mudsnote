@@ -21,6 +21,20 @@
                ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A10000000000000000000007"
+               BuildableName = "MudsnoteCompanionTests.xctest"
+               BlueprintName = "MudsnoteCompanionTests"
+               ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -29,7 +43,27 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A10000000000000000000007"
+               BuildableName = "MudsnoteCompanionTests.xctest"
+               BlueprintName = "MudsnoteCompanionTests"
+               ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "32DC356C0D9E4A94A977B96B"
+            BuildableName = "MudsnoteCompanion.app"
+            BlueprintName = "MudsnoteCompanion"
+            ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

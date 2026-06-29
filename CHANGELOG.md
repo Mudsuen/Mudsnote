@@ -192,6 +192,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added an opt-in local Ollama AI provider, Settings controls, editor context-menu actions, and `/summarize`, `/fix`, `/todos` slash commands with preview-before-apply behavior.
 - Lesson: AI fits Mudsnote best as explicit, small-scope Markdown transformations with visible privacy boundaries and no background note indexing.
 
+### 35. Lightweight Notes-style library window
+
+- Problem: Mudsnote could capture and search notes, but it did not yet have a lightweight desktop surface for browsing and continuing existing Markdown notes in one place.
+- Fix: Added a `笔记库` menu item and `--library` launch mode that open a standard split-view notes window with a source-list sidebar, search, title field, rich Markdown editor, save action, and separate-window handoff. Added a `NoteStore.listNotes` API for all known Markdown files without changing the existing recent-first search behavior.
+- Lesson: The Notes-like desktop path should stay separate from quick capture; the main window handles review and continuation while quick capture remains the fastest entry point.
+
+### 36. Continuous iOS quick capture
+
+- Problem: The iOS quick-capture sheet saved a memo and immediately dismissed, which made repeated mobile capture slower than the target workflow.
+- Fix: Changed iOS draft sending to keep the capture sheet open by default, clear the saved draft, preserve the selected target, reset the route to text, and disable duplicate sends while a write is in flight. Reworked the target menu into a compact visible target pill so the current destination is visible without opening the menu.
+- Lesson: The mobile app should optimize for consecutive capture bursts; target choice should be visible and persistent, while editing depth stays on the desktop side.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
