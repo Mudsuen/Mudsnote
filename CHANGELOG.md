@@ -204,6 +204,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Changed iOS draft sending to keep the capture sheet open by default, clear the saved draft, preserve the selected target, reset the route to text, and disable duplicate sends while a write is in flight. Reworked the target menu into a compact visible target pill so the current destination is visible without opening the menu.
 - Lesson: The mobile app should optimize for consecutive capture bursts; target choice should be visible and persistent, while editing depth stays on the desktop side.
 
+### 37. Modern icon and three-column library
+
+- Problem: The iOS companion still used an older icon style, and the macOS library window needed another step toward the familiar Notes source list + note list + editor workflow.
+- Fix: Added a reproducible modern iOS icon generator and regenerated the companion icon set. Reworked the macOS library into a three-column split view with library scopes, recent notes, Inbox, tag filters, search, note list, and the existing Markdown editor. Hardened the real-device smoke script to preflight Developer Disk Image availability and give a clear unlock prompt.
+- Lesson: Keep the phone surface optimized for capture and make desktop browsing richer through lightweight structure first: source filters, stable panes, and direct editing before heavier indexing.
+
+### 38. Default launch opens the library
+
+- Problem: Double-clicking Mudsnote could leave the user in the menu bar or floating-note path instead of opening the new Notes-like main interface.
+- Fix: Changed ordinary no-argument launches and app reopen events to show the `笔记库` window by default, while preserving explicit `--quick-capture`, `--floating-note`, `--search`, `--preferences`, and `--library` launch modes.
+- Lesson: Once a desktop app gains a real main workspace, direct launch should reveal that workspace; quick capture remains an explicit fast entry point, not the default app identity.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

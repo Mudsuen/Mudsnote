@@ -7,6 +7,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let noteStore = NoteStore()
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments = Set(CommandLine.arguments.dropFirst())
+    static let explicitLaunchWindowArguments: Set<String> = [
+        "--quick-capture",
+        "--search",
+        "--library",
+        "--preferences",
+        "--floating-note"
+    ]
 
     private var statusItem: NSStatusItem?
     private var quickCaptureController: EditorWindowController?
@@ -40,7 +47,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
 
-        if launchArguments.contains("--library") {
+        if Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) {
             DispatchQueue.main.async { [weak self] in
                 self?.showLibraryWindow()
             }
@@ -61,6 +68,15 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showLibraryWindow()
+        return true
+    }
+
+    static func shouldOpenLibraryOnLaunch(arguments: Set<String>) -> Bool {
+        arguments.contains("--library") || arguments.isDisjoint(with: explicitLaunchWindowArguments)
     }
 
     private func setupStatusItem() {

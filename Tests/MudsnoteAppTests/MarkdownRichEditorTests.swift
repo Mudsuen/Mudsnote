@@ -615,12 +615,29 @@ struct MarkdownRichEditorTests {
         let window = try #require(controller.window)
         #expect(window.title == "Mudsnote 笔记")
         #expect(window.styleMask.contains(.resizable))
+        let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
+        #expect(splitView.arrangedSubviews.count == 3)
         #expect(controller.tableView.numberOfRows == 1)
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
+        let tagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "#library" })
+        tagButton.performClick(nil)
+        #expect(controller.tableView.numberOfRows == 1)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func defaultLaunchOpensLibraryUnlessAnotherSurfaceIsRequested() {
+        #expect(AppController.shouldOpenLibraryOnLaunch(arguments: []))
+        #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["--library"]))
+        #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["-psn_0_12345"]))
+        #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--quick-capture"]))
+        #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--floating-note"]))
+        #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--search"]))
+        #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--preferences"]))
     }
 
     @MainActor

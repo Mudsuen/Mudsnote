@@ -2,6 +2,39 @@ import AppKit
 import Foundation
 import MudsnoteCore
 
+private enum LibraryScope: Equatable {
+    case all
+    case recent
+    case inbox
+    case tag(String)
+
+    var buttonTitle: String {
+        switch self {
+        case .all:
+            return "所有笔记"
+        case .recent:
+            return "最近"
+        case .inbox:
+            return "Inbox"
+        case .tag(let tag):
+            return "#\(tag)"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .all:
+            return "folder"
+        case .recent:
+            return "clock"
+        case .inbox:
+            return "tray"
+        case .tag:
+            return "number"
+        }
+    }
+}
+
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
@@ -66,6 +99,9 @@ final class LibraryWindowController: NSWindowController,
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
+    private var selectedScope: LibraryScope = .all
+    private var sourceButtons: [NSButton] = []
+    private var sourceTagNames: [String] = []
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -95,7 +131,7 @@ final class LibraryWindowController: NSWindowController,
             defer: false
         )
         window.title = "\(MudsnoteBrand.appName) 笔记"
-        window.minSize = NSSize(width: 860, height: 540)
+        window.minSize = NSSize(width: 980, height: 560)
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
 
@@ -143,22 +179,71 @@ final class LibraryWindowController: NSWindowController,
         contentView.addSubview(splitView)
         pin(splitView, to: contentView)
 
+        let sourceList = buildSourceList()
         let sidebar = buildSidebar()
         let editor = buildEditor()
+        splitView.addArrangedSubview(sourceList)
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(editor)
-        sidebar.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        sourceList.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        sidebar.widthAnchor.constraint(equalToConstant: 320).isActive = true
+    }
+
+    private func buildSourceList() -> NSView {
+        let sourceList = NSVisualEffectView()
+        sourceList.material = .sidebar
+        sourceList.blendingMode = .withinWindow
+        sourceList.state = .active
+        sourceList.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = NSTextField(labelWithString: "资料库")
+        title.font = .systemFont(ofSize: 22, weight: .bold)
+        title.textColor = panelPrimaryTextColor()
+
+        let primaryStack = NSStackView()
+        primaryStack.orientation = .vertical
+        primaryStack.spacing = 4
+
+        sourceButtons.removeAll()
+        for scope in [LibraryScope.all, .recent, .inbox] {
+            let button = makeScopeButton(scope, tag: sourceButtons.count)
+            sourceButtons.append(button)
+            primaryStack.addArrangedSubview(button)
+        }
+
+        sourceTagNames = noteStore.knownTags(limit: 12)
+        let tagHeader = NSTextField(labelWithString: "标签")
+        tagHeader.font = .systemFont(ofSize: 11, weight: .bold)
+        tagHeader.textColor = panelTertiaryTextColor()
+
+        let tagStack = NSStackView()
+        tagStack.orientation = .vertical
+        tagStack.spacing = 4
+        for (index, tag) in sourceTagNames.enumerated() {
+            let button = makeScopeButton(.tag(tag), tag: 100 + index)
+            sourceButtons.append(button)
+            tagStack.addArrangedSubview(button)
+        }
+
+        let stack = NSStackView(views: [title, primaryStack, tagHeader, tagStack, NSView()])
+        stack.orientation = .vertical
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 22, left: 14, bottom: 14, right: 12)
+        sourceList.addSubview(stack)
+        pin(stack, to: sourceList)
+        refreshSourceSelection()
+
+        return sourceList
     }
 
     private func buildSidebar() -> NSView {
-        let sidebar = NSVisualEffectView()
-        sidebar.material = .sidebar
-        sidebar.blendingMode = .withinWindow
-        sidebar.state = .active
+        let sidebar = NSView()
+        sidebar.wantsLayer = true
+        sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         let title = NSTextField(labelWithString: "笔记")
-        title.font = .systemFont(ofSize: 22, weight: .bold)
+        title.font = .systemFont(ofSize: 18, weight: .bold)
         title.textColor = panelPrimaryTextColor()
 
         let newButton = makeIconButton(symbolName: "square.and.pencil", toolTip: "新建笔记", action: #selector(newNotePressed))
@@ -311,11 +396,38 @@ final class LibraryWindowController: NSWindowController,
         return button
     }
 
+    private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
+        let button = NSButton(title: scope.buttonTitle, target: self, action: #selector(scopeButtonPressed(_:)))
+        button.tag = tag
+        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: scope.buttonTitle)
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.alignment = .left
+        button.isBordered = false
+        button.bezelStyle = .shadowlessSquare
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.contentTintColor = panelSecondaryTextColor()
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 7
+        button.layer?.cornerCurve = .continuous
+        button.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return button
+    }
+
+    private func refreshSourceSelection() {
+        for button in sourceButtons {
+            let isSelected = scope(for: button) == selectedScope
+            button.layer?.backgroundColor = isSelected
+                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                : NSColor.clear.cgColor
+            button.contentTintColor = isSelected ? panelAccentColor() : panelSecondaryTextColor()
+        }
+    }
+
     private func reloadNotes(selecting preferredURL: URL? = nil, loadFirstIfNeeded: Bool) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        notes = query.isEmpty
-            ? noteStore.listNotes(limit: 240)
-            : noteStore.searchNotes(query: query, limit: 240)
+        let scopedNotes = notesForSelectedScope(limit: 240)
+        notes = query.isEmpty ? scopedNotes : filteredNotes(scopedNotes, query: query)
 
         suppressSelectionChanges = true
         tableView.reloadData()
@@ -337,6 +449,49 @@ final class LibraryWindowController: NSWindowController,
         } else if selectedURL == nil {
             updateEmptyState()
         }
+        refreshSourceSelection()
+    }
+
+    private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {
+        switch selectedScope {
+        case .all:
+            return noteStore.listNotes(limit: limit)
+        case .recent:
+            return noteStore.listRecentFiles(limit: min(limit, 80)).map { note in
+                let loaded = try? noteStore.loadNote(at: note.url)
+                return NoteSearchResult(
+                    url: note.url,
+                    title: note.title,
+                    snippet: loaded.map { firstMeaningfulLine(from: $0.body) ?? "" } ?? "",
+                    modifiedAt: note.modifiedAt,
+                    tags: loaded?.tags ?? []
+                )
+            }
+        case .inbox:
+            return noteStore.listNotes(limit: limit).filter { note in
+                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+                    || note.title.localizedCaseInsensitiveContains("Inbox")
+            }
+        case .tag(let tag):
+            return noteStore.listNotes(limit: limit).filter { note in
+                note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+            }
+        }
+    }
+
+    private func filteredNotes(_ notes: [NoteSearchResult], query: String) -> [NoteSearchResult] {
+        notes.filter { note in
+            note.title.localizedCaseInsensitiveContains(query)
+                || note.snippet.localizedCaseInsensitiveContains(query)
+                || displayPath(note.url).localizedCaseInsensitiveContains(query)
+                || note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    private func firstMeaningfulLine(from body: String) -> String? {
+        body.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -385,6 +540,34 @@ final class LibraryWindowController: NSWindowController,
 
     func textDidChange(_ notification: Notification) {
         markDirty()
+    }
+
+    @objc
+    private func scopeButtonPressed(_ sender: NSButton) {
+        do {
+            try saveCurrentNoteIfNeeded()
+            selectedScope = scope(for: sender)
+            reloadNotes(loadFirstIfNeeded: true)
+        } catch {
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+        }
+    }
+
+    private func scope(for button: NSButton) -> LibraryScope {
+        switch button.tag {
+        case 0:
+            return .all
+        case 1:
+            return .recent
+        case 2:
+            return .inbox
+        case 100...:
+            let index = button.tag - 100
+            guard sourceTagNames.indices.contains(index) else { return .all }
+            return .tag(sourceTagNames[index])
+        default:
+            return .all
+        }
     }
 
     @objc
