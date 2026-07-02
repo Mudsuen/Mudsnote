@@ -336,6 +336,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight centered note-list empty label that appears for no search results, empty normal scopes, and an empty Recently Deleted scope. The state is driven by the already loaded `listRows`, so it does not add filesystem scanning or indexing work. Added regression coverage for normal hidden state, no-result search, and empty trash after permanent delete.
 - Lesson: Edge-state parity should be explicit but cheap; list feedback can be UI-only when the current row model already knows whether the scope is empty.
 
+### 59. Note-list width fill
+
+- Problem: In the packaged macOS app, the middle note list could render as a narrow table pinned to the right side of its column, leaving large blank space and placing the scrollbar over note text.
+- Fix: Added a small `LibraryNoteScrollView` that keeps the table document view left-aligned and width-filled, made the sidebar stack explicitly fill the note-list header and list container, and disabled conflicting automatic table-column resizing. Added regression coverage for the document view origin and single-column width contract.
+- Lesson: AppKit scroll/table views need an explicit width contract inside stack views; visual parity depends on verifying the packaged window, not only source-level constraints.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

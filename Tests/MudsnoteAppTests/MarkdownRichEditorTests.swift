@@ -698,6 +698,29 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryNoteScrollViewFitsSingleColumnToVisibleWidth() {
+        let tableView = LibraryNoteTableView()
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
+        column.width = 248
+        column.minWidth = 220
+        column.resizingMask = .userResizingMask
+        tableView.addTableColumn(column)
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
+        let scrollView = LibraryNoteScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 300))
+        scrollView.documentView = tableView
+        scrollView.contentView.bounds = NSRect(x: 0, y: 0, width: 340, height: 300)
+        tableView.frame = NSRect(x: 92, y: 0, width: 248, height: 300)
+
+        scrollView.layout()
+
+        let visibleWidth = scrollView.frame.width
+        #expect(tableView.frame.origin.x == 0)
+        #expect(tableView.frame.width >= visibleWidth)
+        #expect(column.width == visibleWidth)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowEditorToolbarInsertsRichMarkdownTools() throws {
         let suiteName = "mudsnote.library-editor-tools-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

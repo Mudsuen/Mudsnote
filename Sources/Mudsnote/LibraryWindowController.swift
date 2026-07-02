@@ -240,6 +240,26 @@ final class LibraryNoteTableView: NSTableView {
 }
 
 @MainActor
+final class LibraryNoteScrollView: NSScrollView {
+    override func layout() {
+        let targetWidth = max(220, frame.width)
+        super.layout()
+        guard let tableView = documentView as? LibraryNoteTableView else { return }
+
+        var frame = tableView.frame
+        if abs(frame.origin.x) > 0.5 || abs(frame.width - targetWidth) > 0.5 {
+            frame.origin.x = 0
+            frame.size.width = targetWidth
+            tableView.frame = frame
+        }
+        if let column = tableView.tableColumns.first,
+           abs(column.width - targetWidth) > 0.5 {
+            column.width = targetWidth
+        }
+    }
+}
+
+@MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
     NSToolbarDelegate,
@@ -463,6 +483,8 @@ final class LibraryWindowController: NSWindowController,
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
         column.width = 248
+        column.minWidth = 220
+        column.resizingMask = .userResizingMask
         tableView.addTableColumn(column)
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
         tableView.headerView = nil
@@ -470,6 +492,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
         tableView.style = .plain
+        tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.selectionHighlightStyle = .regular
         tableView.delegate = self
         tableView.dataSource = self
@@ -480,10 +503,12 @@ final class LibraryWindowController: NSWindowController,
         }
         tableView.menu = makeNoteContextMenu()
 
-        let scrollView = NSScrollView()
+        let scrollView = LibraryNoteScrollView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
         scrollView.contentView.drawsBackground = false
         scrollView.contentView.backgroundColor = .clear
         scrollView.documentView = tableView
@@ -497,6 +522,7 @@ final class LibraryWindowController: NSWindowController,
         noteListEmptyLabel.isHidden = true
 
         let listContainer = NSView()
+        listContainer.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListContainer")
         listContainer.addSubview(scrollView)
         listContainer.addSubview(noteListEmptyLabel)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -513,10 +539,13 @@ final class LibraryWindowController: NSWindowController,
 
         let stack = NSStackView(views: [header, listContainer])
         stack.orientation = .vertical
+        stack.alignment = .width
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
         sidebar.addSubview(stack)
         pin(stack, to: sidebar)
+        header.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         return sidebar
     }
