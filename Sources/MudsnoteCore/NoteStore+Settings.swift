@@ -151,6 +151,34 @@ extension NoteStore {
         configurePreferredDirectories(preferredDirectories + [directory], defaultDirectory: notesDirectory)
     }
 
+    public func replacePreferredDirectory(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let normalizedNew = newDirectory.standardizedFileURL
+        let defaultDirectory = notesDirectory.standardizedFileURL.path == oldPath ? normalizedNew : notesDirectory
+        let updatedDirectories = preferredDirectories.map { directory in
+            let path = directory.standardizedFileURL.path
+            if path == oldPath {
+                return normalizedNew
+            }
+            if path.hasPrefix(oldPath + "/") {
+                return URL(fileURLWithPath: normalizedNew.path + String(path.dropFirst(oldPath.count)), isDirectory: true)
+                    .standardizedFileURL
+            }
+            return directory
+        }
+        configurePreferredDirectories(updatedDirectories, defaultDirectory: defaultDirectory)
+    }
+
+    public func removePreferredDirectory(_ directory: URL) {
+        let directoryPath = directory.standardizedFileURL.path
+        guard notesDirectory.standardizedFileURL.path != directoryPath else { return }
+        let updatedDirectories = preferredDirectories.filter {
+            let path = $0.standardizedFileURL.path
+            return path != directoryPath && !path.hasPrefix(directoryPath + "/")
+        }
+        configurePreferredDirectories(updatedDirectories, defaultDirectory: notesDirectory)
+    }
+
     func storedExtraDirectories() -> [URL] {
         ((defaults.array(forKey: NoteStoreDefaultsKey.extraDirectories) as? [String]) ?? [])
             .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }

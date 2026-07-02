@@ -620,6 +620,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
@@ -650,6 +651,83 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowCreatesMovesRenamesAndDeletesFolders() throws {
+        let suiteName = "mudsnote.library-folder-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-folder-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let projectsFolder = try store.createFolder(named: "Projects")
+        let archiveFolder = try store.createFolder(named: "Archive")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let projectsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Projects"
+        })
+        projectsButton.performClick(nil)
+
+        let newItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
+        })
+        let saveItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.save"
+        })
+        #expect(NSApp.sendAction(try #require(newItem.action), to: newItem.target, from: newItem))
+        controller.titleField.stringValue = "Folder Seed"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "Folder body",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        #expect(NSApp.sendAction(try #require(saveItem.action), to: saveItem.target, from: saveItem))
+
+        let savedInProjects = try #require(store.listNotes(limit: 10, roots: [projectsFolder]).first)
+        #expect(savedInProjects.title == "Folder Seed")
+
+        let movedURL = try controller.moveSelectedNoteForLibrary(to: archiveFolder)
+        #expect(movedURL.deletingLastPathComponent().standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
+        #expect(store.listNotes(limit: 10, roots: [projectsFolder]).isEmpty)
+        #expect(store.listNotes(limit: 10, roots: [archiveFolder]).first?.title == "Folder Seed")
+
+        let renamedArchive = try controller.renameSelectedFolderForLibrary(to: "Renamed Archive")
+        #expect(FileManager.default.fileExists(atPath: renamedArchive.path))
+        #expect(!FileManager.default.fileExists(atPath: archiveFolder.path))
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Renamed Archive"
+        } == true)
+
+        try controller.deleteSelectedFolderForLibrary()
+        #expect(!FileManager.default.fileExists(atPath: renamedArchive.path))
+        #expect(store.listTrashedNotes(limit: 10).first?.title == "Folder Seed")
+        let trashCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-3"
+        })
+        #expect(trashCount.stringValue == "1")
     }
 
     @MainActor

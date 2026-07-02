@@ -183,6 +183,50 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func folderLifecycleCreatesMovesRenamesAndTrashesMarkdownNotes() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+
+        let projectFolder = try store.createFolder(named: "Project")
+        #expect(FileManager.default.fileExists(atPath: projectFolder.path))
+        #expect(store.preferredDirectories.contains {
+            $0.standardizedFileURL.path == projectFolder.standardizedFileURL.path
+        })
+
+        let noteURL = try store.saveNewNote(title: "Move Me", body: "folder body")
+        let movedURL = try store.moveNote(at: noteURL, to: projectFolder)
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(FileManager.default.fileExists(atPath: movedURL.path))
+        #expect(movedURL.deletingLastPathComponent().standardizedFileURL.path == projectFolder.standardizedFileURL.path)
+        #expect(store.listRecentFiles(limit: 1).first?.url.standardizedFileURL.path == movedURL.standardizedFileURL.path)
+
+        let renamedFolder = try store.renamePreferredDirectory(projectFolder, to: "Renamed")
+        let renamedNoteURL = renamedFolder.appendingPathComponent(movedURL.lastPathComponent)
+        #expect(!FileManager.default.fileExists(atPath: movedURL.path))
+        #expect(FileManager.default.fileExists(atPath: renamedNoteURL.path))
+        #expect(store.preferredDirectories.contains {
+            $0.standardizedFileURL.path == renamedFolder.standardizedFileURL.path
+        })
+        #expect(!store.preferredDirectories.contains {
+            $0.standardizedFileURL.path == projectFolder.standardizedFileURL.path
+        })
+        #expect(store.listRecentFiles(limit: 1).first?.url.standardizedFileURL.path == renamedNoteURL.standardizedFileURL.path)
+
+        let trashedFolder = try store.trashFolder(at: renamedFolder)
+        #expect(!FileManager.default.fileExists(atPath: renamedFolder.path))
+        #expect(FileManager.default.fileExists(atPath: trashedFolder.path))
+        #expect(!store.preferredDirectories.contains {
+            $0.standardizedFileURL.path == renamedFolder.standardizedFileURL.path
+        })
+        let trashedNotes = store.listTrashedNotes(limit: 10)
+        #expect(trashedNotes.first?.title == "Move Me")
+        #expect(trashedNotes.first?.snippet == "folder body")
+    }
+
+    @Test
     func panelOpacityPersistsWithinBounds() throws {
         let harness = try TestHarness()
         let store = harness.store

@@ -76,6 +76,77 @@ extension NoteStore {
         return desiredURL
     }
 
+    public func createFolder(named name: String, in parentDirectory: URL? = nil) throws -> URL {
+        let parent = (parentDirectory ?? notesDirectory).standardizedFileURL
+        try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+        let folderName = sanitizedFolderName(from: name)
+        let folderURL = uniqueFolderURL(directory: parent, folderName: folderName)
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        addPreferredDirectory(folderURL)
+        return folderURL
+    }
+
+    public func renamePreferredDirectory(_ directory: URL, to name: String) throws -> URL {
+        let oldDirectory = directory.standardizedFileURL
+        let folderName = sanitizedFolderName(from: name)
+        let newDirectory = uniqueFolderURL(
+            directory: oldDirectory.deletingLastPathComponent(),
+            folderName: folderName,
+            excluding: oldDirectory
+        )
+        if oldDirectory != newDirectory {
+            try fileManager.moveItem(at: oldDirectory, to: newDirectory)
+            replaceRecentPathPrefix(oldDirectory, with: newDirectory)
+        }
+        replacePreferredDirectory(oldDirectory, with: newDirectory)
+        return newDirectory
+    }
+
+    public func moveNote(at url: URL, to directory: URL) throws -> URL {
+        let sourceURL = url.standardizedFileURL
+        let targetDirectory = directory.standardizedFileURL
+        try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
+        if sourceURL.deletingLastPathComponent().standardizedFileURL == targetDirectory {
+            rememberRecentFile(sourceURL)
+            return sourceURL
+        }
+        let movedURL = uniqueURLPreservingExtension(
+            directory: targetDirectory,
+            filenameStem: sourceURL.deletingPathExtension().lastPathComponent,
+            pathExtension: sourceURL.pathExtension.isEmpty ? "md" : sourceURL.pathExtension
+        )
+        try fileManager.moveItem(at: sourceURL, to: movedURL)
+        rememberRecentFile(movedURL, replacing: sourceURL)
+        return movedURL
+    }
+
+    public func trashFolder(at directory: URL) throws -> URL {
+        let originalDirectory = directory.standardizedFileURL
+        let folderTrashRoot = trashDirectory().appendingPathComponent("Folders", isDirectory: true)
+        try fileManager.createDirectory(at: folderTrashRoot, withIntermediateDirectories: true)
+        let trashedDirectory = uniqueFolderURL(
+            directory: folderTrashRoot,
+            folderName: originalDirectory.lastPathComponent.isEmpty ? "Folder" : originalDirectory.lastPathComponent
+        )
+        try fileManager.moveItem(at: originalDirectory, to: trashedDirectory)
+
+        let deletionDate = Date()
+        var metadata = storedTrashedNotesMetadata()
+        let originalFiles = markdownFiles(in: trashedDirectory)
+        for trashedFile in originalFiles {
+            let relativePath = relativePath(from: trashedDirectory, to: trashedFile)
+            let originalFile = originalDirectory.appendingPathComponent(relativePath)
+            metadata[metadataKey(for: trashedFile)] = TrashedNoteMetadata(
+                originalPath: originalFile.standardizedFileURL.path,
+                deletedAt: deletionDate
+            )
+        }
+        storeTrashedNotesMetadata(metadata)
+        removePreferredDirectory(originalDirectory)
+        forgetRecentPathPrefix(originalDirectory)
+        return trashedDirectory
+    }
+
     public func trashDirectory() -> URL {
         appSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
     }
@@ -294,6 +365,26 @@ extension NoteStore {
         return candidate
     }
 
+    private func uniqueFolderURL(directory: URL, folderName: String, excluding existingURL: URL? = nil) -> URL {
+        var candidate = directory.appendingPathComponent(folderName, isDirectory: true)
+        var counter = 2
+
+        while fileManager.fileExists(atPath: candidate.path) && candidate != existingURL {
+            candidate = directory.appendingPathComponent("\(folderName) \(counter)", isDirectory: true)
+            counter += 1
+        }
+
+        return candidate
+    }
+
+    private func sanitizedFolderName(from name: String) -> String {
+        let cleaned = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return cleaned.isEmpty ? "新建文件夹" : cleaned
+    }
+
     private func filenameStem(for title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = "note-" + Self.filenameTimestamp.string(from: Date())
@@ -346,6 +437,48 @@ extension NoteStore {
         var metadata = storedRecentMetadata()
         metadata.removeValue(forKey: url.path)
         defaults.set(metadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
+    }
+
+    private func forgetRecentPathPrefix(_ oldDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        var items = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
+        items.removeAll { path in
+            path == oldPath || path.hasPrefix(oldPath + "/")
+        }
+        defaults.set(items, forKey: NoteStoreDefaultsKey.recentFiles)
+
+        var metadata = storedRecentMetadata()
+        metadata = metadata.filter { path, _ in
+            path != oldPath && !path.hasPrefix(oldPath + "/")
+        }
+        defaults.set(metadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
+    }
+
+    private func replaceRecentPathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let newPath = newDirectory.standardizedFileURL.path
+        let items = ((defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []).map { path in
+            if path == oldPath {
+                return newPath
+            }
+            if path.hasPrefix(oldPath + "/") {
+                return newPath + String(path.dropFirst(oldPath.count))
+            }
+            return path
+        }
+        defaults.set(items, forKey: NoteStoreDefaultsKey.recentFiles)
+
+        var updatedMetadata: [String: TimeInterval] = [:]
+        for (path, timestamp) in storedRecentMetadata() {
+            if path == oldPath {
+                updatedMetadata[newPath] = timestamp
+            } else if path.hasPrefix(oldPath + "/") {
+                updatedMetadata[newPath + String(path.dropFirst(oldPath.count))] = timestamp
+            } else {
+                updatedMetadata[path] = timestamp
+            }
+        }
+        defaults.set(updatedMetadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
     }
 
     private func storedRecentMetadata() -> [String: TimeInterval] {
@@ -402,6 +535,15 @@ extension NoteStore {
 
     private func metadataKey(for url: URL) -> String {
         url.standardizedFileURL.path
+    }
+
+    private func relativePath(from root: URL, to fileURL: URL) -> String {
+        let rootPath = root.standardizedFileURL.path
+        let filePath = fileURL.standardizedFileURL.path
+        guard filePath.hasPrefix(rootPath + "/") else {
+            return fileURL.lastPathComponent
+        }
+        return String(filePath.dropFirst(rootPath.count + 1))
     }
 
     private static let datePrefix: DateFormatter = {

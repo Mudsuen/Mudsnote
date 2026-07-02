@@ -252,6 +252,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Updated `scripts/device_smoke.sh` to detect paired-but-unavailable iPhones, print the CoreDevice list, Xcode version, and iPhoneOS SDK version, and point the user toward matching DeviceSupport/DDI before retrying.
 - Lesson: Real-device verification should distinguish connection, trust, lock, and SDK/DDI compatibility failures; otherwise the next action is unclear.
 
+### 45. Folder management and note moves
+
+- Problem: The Notes-like library could show folder rows, but daily Apple Notes workflows still required Finder for creating folders, moving notes, renaming folders, and deleting folders.
+- Fix: Added local folder creation, folder rename, note move, and folder delete-to-Trash APIs; wired the library window so new notes save into the selected folder, notes can move between folders, and folder rows expose rename/delete actions. Added core and app regression tests for the full folder lifecycle.
+- Lesson: A Notes replacement needs in-app information architecture controls; showing filesystem directories is only useful once the app can manage them without leaving the three-pane workflow.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

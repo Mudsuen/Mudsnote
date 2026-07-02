@@ -55,6 +55,20 @@ private enum LibraryNoteListRow {
     }
 }
 
+private enum LibraryActionError: LocalizedError {
+    case noFolderSelected
+    case noNoteSelected
+
+    var errorDescription: String? {
+        switch self {
+        case .noFolderSelected:
+            return "没有选中文件夹"
+        case .noNoteSelected:
+            return "没有选中笔记"
+        }
+    }
+}
+
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
@@ -161,6 +175,7 @@ final class LibraryWindowController: NSWindowController,
     private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
+    private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
     private static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
     private static let deleteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.delete")
     private static let restoreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.restore")
@@ -344,6 +359,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedInSeparateWindow)
+        tableView.menu = makeNoteContextMenu()
 
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
@@ -449,6 +465,7 @@ final class LibraryWindowController: NSWindowController,
             Self.newNoteToolbarItemIdentifier,
             .flexibleSpace,
             Self.openSeparateToolbarItemIdentifier,
+            Self.moveToolbarItemIdentifier,
             Self.saveToolbarItemIdentifier,
             Self.deleteToolbarItemIdentifier,
             Self.restoreToolbarItemIdentifier,
@@ -494,6 +511,13 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "rectangle.on.rectangle",
                 action: #selector(openSelectedInSeparateWindow)
             )
+        case Self.moveToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "移动到文件夹",
+                symbolName: "folder",
+                action: #selector(moveSelectedNotePressed(_:))
+            )
         case Self.saveToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -538,6 +562,8 @@ final class LibraryWindowController: NSWindowController,
         switch item.itemIdentifier {
         case Self.openSeparateToolbarItemIdentifier:
             return selectedURL != nil
+        case Self.moveToolbarItemIdentifier:
+            return selectedURL != nil && selectedScope != .trash && !sourceFolderURLs.isEmpty
         case Self.saveToolbarItemIdentifier:
             return selectedScope != .trash
         case Self.deleteToolbarItemIdentifier:
@@ -615,6 +641,7 @@ final class LibraryWindowController: NSWindowController,
         for (index, tag) in sourceTagNames.enumerated() {
             sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
         }
+        tableView.menu = makeNoteContextMenu()
     }
 
     private func removeArrangedSubviews(from stack: NSStackView) {
@@ -631,6 +658,11 @@ final class LibraryWindowController: NSWindowController,
         row.widthAnchor.constraint(equalToConstant: 194).isActive = true
 
         let button = makeScopeButton(scope, tag: tag)
+        if case .folder(let folderURL) = scope {
+            let menu = makeFolderContextMenu(for: folderURL)
+            row.menu = menu
+            button.menu = menu
+        }
         let overlay = PassthroughOverlayView()
         let countLabel = NSTextField(labelWithString: "")
         countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
@@ -977,11 +1009,18 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func addFolderPressed() {
-        guard let directory = chooseDirectory(startingAt: noteStore.notesDirectory)?.standardizedFileURL else { return }
-        noteStore.addPreferredDirectory(directory)
-        selectedScope = .folder(directory)
-        rebuildSourceRows(includeTags: false)
-        reloadNotes(loadFirstIfNeeded: true)
+        guard let folderName = promptForText(
+            title: "新建文件夹",
+            message: "输入文件夹名称。",
+            placeholder: "新建文件夹",
+            defaultValue: "新建文件夹"
+        ) else { return }
+
+        do {
+            _ = try createLibraryFolder(named: folderName)
+        } catch {
+            presentErrorAlert(message: "无法新建文件夹", details: error.localizedDescription)
+        }
     }
 
     @objc
@@ -1034,6 +1073,29 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
+    private func moveSelectedNotePressed(_ sender: Any?) {
+        let menu = makeMoveNoteMenu()
+        guard !menu.items.isEmpty else { return }
+
+        if let item = sender as? NSToolbarItem,
+           let view = item.view {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
+        } else if let contentView = window?.contentView {
+            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
+        }
+    }
+
+    @objc
+    private func moveNoteMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL else { return }
+        do {
+            _ = try moveSelectedNoteForLibrary(to: directory)
+        } catch {
+            presentErrorAlert(message: "移动失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
     private func deleteSelectedNotePressed() {
         guard let url = selectedURL else { return }
         do {
@@ -1048,6 +1110,40 @@ final class LibraryWindowController: NSWindowController,
             reloadNotes(loadFirstIfNeeded: true)
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func renameFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL,
+              let folderName = promptForText(
+                title: "重命名文件夹",
+                message: "输入新的文件夹名称。",
+                placeholder: "文件夹名称",
+                defaultValue: directory.lastPathComponent
+              ) else { return }
+
+        do {
+            selectedScope = .folder(directory)
+            _ = try renameSelectedFolderForLibrary(to: folderName)
+        } catch {
+            presentErrorAlert(message: "无法重命名文件夹", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func deleteFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL,
+              confirmDestructiveAction(
+                title: "删除文件夹？",
+                message: "文件夹中的 Markdown 笔记会移动到最近删除。"
+              ) else { return }
+
+        do {
+            selectedScope = .folder(directory)
+            try deleteSelectedFolderForLibrary()
+        } catch {
+            presentErrorAlert(message: "无法删除文件夹", details: error.localizedDescription)
         }
     }
 
@@ -1127,7 +1223,12 @@ final class LibraryWindowController: NSWindowController,
         if let selectedURL {
             savedURL = try noteStore.updateNote(at: selectedURL, title: title, body: body, tags: selectedTags)
         } else {
-            savedURL = try noteStore.saveNewNote(title: title, body: body, tags: selectedTags)
+            savedURL = try noteStore.saveNewNote(
+                title: title,
+                body: body,
+                tags: selectedTags,
+                in: targetDirectoryForNewNote()
+            )
         }
 
         selectedURL = savedURL
@@ -1137,6 +1238,59 @@ final class LibraryWindowController: NSWindowController,
         updateEmptyState()
         updateToolbarActionState()
         return savedURL
+    }
+
+    @discardableResult
+    func createLibraryFolder(named name: String) throws -> URL {
+        let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
+        selectedScope = .folder(folderURL)
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
+        return folderURL
+    }
+
+    @discardableResult
+    func renameSelectedFolderForLibrary(to name: String) throws -> URL {
+        guard case .folder(let folderURL) = selectedScope else {
+            throw LibraryActionError.noFolderSelected
+        }
+
+        let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
+        selectedScope = .folder(renamedURL)
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
+        return renamedURL
+    }
+
+    func deleteSelectedFolderForLibrary() throws {
+        guard case .folder(let folderURL) = selectedScope else {
+            throw LibraryActionError.noFolderSelected
+        }
+
+        _ = try noteStore.trashFolder(at: folderURL)
+        selectedScope = .all
+        clearCurrentDocumentAfterRemoval()
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
+    }
+
+    @discardableResult
+    func moveSelectedNoteForLibrary(to directory: URL) throws -> URL {
+        try saveCurrentNoteIfNeeded()
+        guard selectedScope != .trash else {
+            throw LibraryActionError.noNoteSelected
+        }
+        guard let selectedURL else {
+            throw LibraryActionError.noNoteSelected
+        }
+
+        let targetDirectory = directory.standardizedFileURL
+        let movedURL = try noteStore.moveNote(at: selectedURL, to: targetDirectory)
+        self.selectedURL = movedURL
+        selectedScope = .folder(targetDirectory)
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
+        return movedURL
     }
 
     private func clearCurrentDocumentAfterRemoval() {
@@ -1151,6 +1305,20 @@ final class LibraryWindowController: NSWindowController,
     private func setEditorEditable(_ isEditable: Bool) {
         titleField.isEditable = isEditable
         editorTextView.isEditable = isEditable
+    }
+
+    private func targetDirectoryForNewNote() -> URL {
+        if case .folder(let folderURL) = selectedScope {
+            return folderURL
+        }
+        return noteStore.notesDirectory
+    }
+
+    private func targetDirectoryForNewFolder() -> URL {
+        if case .folder(let folderURL) = selectedScope {
+            return folderURL
+        }
+        return noteStore.notesDirectory
     }
 
     private func updateEmptyState() {
@@ -1208,6 +1376,77 @@ final class LibraryWindowController: NSWindowController,
             }
         }
         window?.toolbar?.validateVisibleItems()
+    }
+
+    private func makeFolderContextMenu(for folderURL: URL) -> NSMenu {
+        let menu = NSMenu()
+
+        let renameItem = NSMenuItem(title: "重命名文件夹", action: #selector(renameFolderMenuItemPressed(_:)), keyEquivalent: "")
+        renameItem.target = self
+        renameItem.representedObject = folderURL
+        menu.addItem(renameItem)
+
+        let deleteItem = NSMenuItem(title: "删除文件夹", action: #selector(deleteFolderMenuItemPressed(_:)), keyEquivalent: "")
+        deleteItem.target = self
+        deleteItem.representedObject = folderURL
+        deleteItem.isEnabled = folderURL.standardizedFileURL.path != noteStore.notesDirectory.standardizedFileURL.path
+        menu.addItem(deleteItem)
+
+        return menu
+    }
+
+    private func makeNoteContextMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
+        moveItem.submenu = makeMoveNoteMenu()
+        menu.addItem(moveItem)
+        menu.addItem(.separator())
+
+        let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+        deleteItem.target = self
+        menu.addItem(deleteItem)
+
+        return menu
+    }
+
+    private func makeMoveNoteMenu() -> NSMenu {
+        let menu = NSMenu()
+        for folderURL in sourceFolderURLs {
+            let item = NSMenuItem(title: folderURL.lastPathComponent, action: #selector(moveNoteMenuItemPressed(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = folderURL
+            item.isEnabled = true
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    private func promptForText(title: String, message: String, placeholder: String, defaultValue: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+
+        let field = NSTextField(string: defaultValue)
+        field.placeholderString = placeholder
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 28)
+        alert.accessoryView = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func confirmDestructiveAction(title: String, message: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func presentErrorAlert(message: String, details: String) {
