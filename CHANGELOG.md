@@ -408,6 +408,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Kept search-field focus while Up/Down selects the previous or next visible note result, with no-selection Down starting at the first result and no-selection Up starting at the last. Return preserves and loads the selected result. Expanded regression coverage for continuous stepping.
 - Lesson: Search parity is not only retrieval quality; keyboard search should let users scan result candidates before committing to the editor.
 
+### 71. Source-list density polish
+
+- Problem: The Notes-like library shell still had a slightly loose source list: group labels, row height, count text, and selected-row radius did not yet match Apple Notes' compact sidebar feel.
+- Fix: Tightened source-list stack spacing, reduced source row height, softened selected-row corner radius, reduced group/count typography, and added layout contract coverage for the source row and count label.
+- Lesson: Apple Notes parity needs the left source list to carry hierarchy through density and typography, not only through folders and counts.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

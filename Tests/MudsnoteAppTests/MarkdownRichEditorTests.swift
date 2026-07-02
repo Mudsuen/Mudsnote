@@ -680,6 +680,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
         })
         #expect(libraryGroup.stringValue == "Mudsnote")
+        #expect(libraryGroup.font?.pointSize == 11)
         let noteListTitle = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListTitle"
         })
@@ -727,6 +728,13 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCount.stringValue == "1")
+        #expect(allCount.font?.pointSize == 12)
+        let allSourceRow = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibrarySourceRow-0"
+        })
+        #expect(allSourceRow.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == 28
+        })
         let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"
         })

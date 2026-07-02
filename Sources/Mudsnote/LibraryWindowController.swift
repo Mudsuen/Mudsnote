@@ -992,13 +992,13 @@ final class LibraryWindowController: NSWindowController,
     private func configureSourceStack(_ stack: NSStackView) {
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 4
+        stack.spacing = 2
     }
 
     private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
         let label = NSTextField(labelWithString: title)
         label.identifier = NSUserInterfaceItemIdentifier(identifier)
-        label.font = .systemFont(ofSize: 12, weight: .bold)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
         label.textColor = panelTertiaryTextColor()
         label.alignment = .left
         label.lineBreakMode = .byTruncatingTail
@@ -1211,8 +1211,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeScopeRow(_ scope: LibraryScope, tag: Int, folderRow: LibraryFolderRow? = nil) -> NSView {
         let row = NSView()
+        row.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(tag)")
         row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        row.heightAnchor.constraint(equalToConstant: 28).isActive = true
         row.widthAnchor.constraint(equalToConstant: 194).isActive = true
 
         let button = makeScopeButton(scope, tag: tag)
@@ -1224,7 +1225,7 @@ final class LibraryWindowController: NSWindowController,
         let overlay = PassthroughOverlayView()
         let countLabel = NSTextField(labelWithString: "")
         countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
-        countLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        countLabel.font = .systemFont(ofSize: 12, weight: .medium)
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
         let depth = folderRow?.depth ?? 0
@@ -1302,7 +1303,7 @@ final class LibraryWindowController: NSWindowController,
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.contentTintColor = panelSecondaryTextColor()
         button.wantsLayer = true
-        button.layer?.cornerRadius = 7
+        button.layer?.cornerRadius = 6
         button.layer?.cornerCurve = .continuous
         return button
     }

@@ -21,6 +21,7 @@ Not in scope unless explicitly requested:
 - Apple account integration
 - collaboration/sharing through Apple services
 - direct reading or writing of Apple Notes private databases
+- iOS real-device installation or validation for this macOS Notes-parity goal
 
 ## Definition Of Done
 
@@ -55,6 +56,7 @@ The goal is reached only when all of these are true:
 - The app stays usable with plain Markdown files outside the app.
 - Regression tests cover the main workflows.
 - `swift test`, `./scripts/package_app.sh`, and installed-app smoke verification pass.
+- Verification is macOS-only unless a separate iOS goal is explicitly created.
 - Visual QA uses side-by-side comparison against the Apple Notes screenshot, not screenshot-only inspection.
 
 ## Parity Scorecard
@@ -224,7 +226,7 @@ Exit criteria: these features improve local Markdown workflow without making the
 
 - Toolbar has editing tools, a Markdown export/share affordance, a more-actions menu, and context-aware disabled states, but still needs side-by-side visual tuning and richer export destinations.
 - Titlebar and list headers are closer to Notes, but still need side-by-side spacing, source-list hierarchy, and exact toolbar balance tuning.
-- Source list has compact group labels, counts, launch-safe root folder rows, deferred full folder loading, tag rows after shell visibility, and session-local disclosure controls, but still needs more exact Apple Notes spacing and empty/loading state polish.
+- Source list has compact group labels, tighter Notes-like row density, counts, launch-safe root folder rows, deferred full folder loading, tag rows after shell visibility, and session-local disclosure controls, but still needs side-by-side spacing checks and empty/loading state polish.
 - Note-list rows show bounded body previews, a darker Notes-like column, width-filled selection/list layout, compact attachment indicators, local image thumbnails, tighter row density, shell-first direct-open hydration, basic keyboard open/delete actions, and empty/no-result/trash feedback, but still need broader keyboard navigation polish and side-by-side spacing tuning.
 - Editor now uses a centered date-only header for loaded notes, debounced autosave, lighter save-progress copy, and tighter Notes-like title/body vertical rhythm, but still needs side-by-side visual tuning.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, note-list image thumbnails and in-editor previews for local image references, and selected-source Markdown export, but still lacks full rich table editing and broader non-image attachment previews.
