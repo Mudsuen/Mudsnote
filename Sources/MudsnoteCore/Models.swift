@@ -18,13 +18,22 @@ public struct NoteSearchResult: Equatable, Sendable {
     public let snippet: String
     public let modifiedAt: Date
     public let tags: [String]
+    public let hasAttachments: Bool
 
-    public init(url: URL, title: String, snippet: String, modifiedAt: Date, tags: [String] = []) {
+    public init(
+        url: URL,
+        title: String,
+        snippet: String,
+        modifiedAt: Date,
+        tags: [String] = [],
+        hasAttachments: Bool = false
+    ) {
         self.url = url
         self.title = title
         self.snippet = snippet
         self.modifiedAt = modifiedAt
         self.tags = tags
+        self.hasAttachments = hasAttachments
     }
 }
 
@@ -134,6 +143,15 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         return MarkdownEditorDocument(title: title, body: body, tags: normalizedTags(tags))
+    }
+
+    public static func containsAttachmentReference(in body: String) -> Bool {
+        let loweredBody = body.lowercased()
+        return loweredBody.contains("](attachments/")
+            || loweredBody.contains("](./attachments/")
+            || loweredBody.contains("](../attachments/")
+            || loweredBody.contains("](/attachments/")
+            || loweredBody.contains("![") && loweredBody.contains("(attachments/")
     }
 
     public static func normalizedTags(_ tags: [String]) -> [String] {

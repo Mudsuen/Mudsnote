@@ -318,6 +318,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Changed the library editor status line to show only the formatted note date for loaded notes, moved the label into a dedicated centered date row, and kept dirty/new-note status text for transient editing states. Added regression coverage for the editor status identifier, center alignment, date-only text, and absence of folder separators.
 - Lesson: Apple Notes parity depends on small information hierarchy decisions: folder context belongs in the note list/source list, while the editor header should stay focused on the note timestamp.
 
+### 56. Note-list attachment indicator
+
+- Problem: Library notes could insert and save Markdown attachment links, but the Notes-like middle list had no compact signal that a note contained an attachment.
+- Fix: Added a lightweight `hasAttachments` flag to `NoteSearchResult`, populated it from already loaded Markdown bodies in list/search/trash/recent paths, and rendered a small SF Symbol paperclip beside the note-list metadata. The empty-search path now loads each recent note once instead of separately reading body and tags.
+- Lesson: Attachment parity should reuse existing bounded hydration and search reads; list affordances should not bring back launch-time full-file scans.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

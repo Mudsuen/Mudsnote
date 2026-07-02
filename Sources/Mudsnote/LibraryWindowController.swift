@@ -139,6 +139,7 @@ final class LibraryNoteCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
     let metaLabel = NSTextField(labelWithString: "")
+    let attachmentImageView = NSImageView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -161,16 +162,30 @@ final class LibraryNoteCellView: NSTableCellView {
         metaLabel.alignment = .left
         metaLabel.textColor = panelTertiaryTextColor()
 
-        let stack = NSStackView(views: [titleLabel, snippetLabel, metaLabel])
+        attachmentImageView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteAttachmentIndicator")
+        attachmentImageView.image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "有附件")
+        attachmentImageView.contentTintColor = panelTertiaryTextColor()
+        attachmentImageView.imageScaling = .scaleProportionallyDown
+        attachmentImageView.isHidden = true
+
+        let metaRow = NSStackView(views: [attachmentImageView, metaLabel])
+        metaRow.orientation = .horizontal
+        metaRow.alignment = .centerY
+        metaRow.spacing = 4
+
+        let stack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
         addSubview(stack)
         pin(stack, to: self)
-        for label in [titleLabel, snippetLabel, metaLabel] {
+        for label in [titleLabel, snippetLabel] {
             label.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20).isActive = true
         }
+        metaRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20).isActive = true
+        attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
     }
 
     @available(*, unavailable)
@@ -1285,7 +1300,8 @@ final class LibraryWindowController: NSWindowController,
                 title: loaded?.title ?? note.title,
                 snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
                 modifiedAt: note.modifiedAt,
-                tags: loaded?.tags ?? []
+                tags: loaded?.tags ?? [],
+                hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false
             )
         }
     }
@@ -1312,7 +1328,8 @@ final class LibraryWindowController: NSWindowController,
                 title: loaded.title,
                 snippet: matchingLine ?? firstMeaningfulLine(from: loaded.body) ?? "",
                 modifiedAt: note.modifiedAt,
-                tags: loaded.tags
+                tags: loaded.tags,
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body)
             )
         }
     }
@@ -1419,6 +1436,7 @@ final class LibraryWindowController: NSWindowController,
             baseColor: panelSecondaryTextColor(),
             query: query
         )
+        cell.attachmentImageView.isHidden = !note.hasAttachments
         cell.metaLabel.stringValue = metadataText(for: note)
         return cell
     }

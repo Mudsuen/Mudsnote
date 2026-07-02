@@ -168,7 +168,8 @@ extension NoteStore {
                 title: note.title,
                 snippet: firstMeaningfulStoredLine(from: note.body) ?? "",
                 modifiedAt: modifiedAt,
-                tags: note.tags
+                tags: note.tags,
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
             ))
         }
 

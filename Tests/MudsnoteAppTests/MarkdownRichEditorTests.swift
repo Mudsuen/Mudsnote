@@ -669,6 +669,8 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
+        #expect(firstNoteCell.attachmentImageView.identifier?.rawValue == "LibraryNoteAttachmentIndicator")
+        #expect(firstNoteCell.attachmentImageView.isHidden)
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(controller.statusLabel.identifier?.rawValue == "LibraryEditorStatusLabel")
         #expect(controller.statusLabel.alignment == .center)
@@ -756,6 +758,9 @@ struct MarkdownRichEditorTests {
         #expect(saved.body.contains("[Muds](https://muds.top)"))
         #expect(saved.body.contains("[source file](Attachments/"))
         #expect(saved.body.contains("source%20file.pdf"))
+        let attachmentCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        #expect(!attachmentCell.attachmentImageView.isHidden)
+        #expect(controller.noteListSearchResultsForLibrary().first?.hasAttachments == true)
     }
 
     @MainActor

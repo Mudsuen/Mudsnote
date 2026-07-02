@@ -54,7 +54,8 @@ extension NoteStore {
                     title: note.title,
                     snippet: firstMeaningfulLine(from: note.body) ?? "",
                     modifiedAt: modifiedAt,
-                    tags: note.tags
+                    tags: note.tags,
+                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
                 ))
             }
         }
@@ -69,9 +70,15 @@ extension NoteStore {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
             return listRecentFiles(limit: limit).map { note in
-                let snippet = (try? loadNote(at: note.url).body).flatMap(firstMeaningfulLine(from:)) ?? ""
-                let tags = (try? loadNote(at: note.url).tags) ?? []
-                return NoteSearchResult(url: note.url, title: note.title, snippet: snippet, modifiedAt: note.modifiedAt, tags: tags)
+                let loaded = try? loadNote(at: note.url)
+                return NoteSearchResult(
+                    url: note.url,
+                    title: loaded?.title ?? note.title,
+                    snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
+                    modifiedAt: note.modifiedAt,
+                    tags: loaded?.tags ?? [],
+                    hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false
+                )
             }
         }
 
@@ -132,7 +139,8 @@ extension NoteStore {
                 title: note.title,
                 snippet: snippet,
                 modifiedAt: modifiedAt,
-                tags: note.tags
+                tags: note.tags,
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
             ),
             score: titleScore + bodyScore + tagScore
         )
