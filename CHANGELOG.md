@@ -306,6 +306,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added chevron disclosure buttons for folders with children, default-expanded local folder trees, in-memory collapse state, and selection fallback to the parent folder when collapsing the currently selected child. Expanded the nested-folder regression test to cover collapse and re-expand behavior.
 - Lesson: Folder disclosure state can stay lightweight and session-local first; the key parity behavior is visible hierarchy control without changing Markdown storage.
 
+### 54. Deferred source folders and tags
+
+- Problem: The active goal no longer includes iOS real-device validation, and the macOS Notes-like window still had two launch-path risks: tag rows were intentionally absent from the first sidebar shell, while real preferred folders could block direct launch during synchronous directory scans.
+- Fix: Kept the first library shell lightweight by rendering root folders immediately, loading the full folder tree off the main launch path, and loading tag source rows after the window is visible. Folder disclosure and folder-management actions still refresh the current tree synchronously when the user asks for that structure. Tag rows now display as a single `#` symbol plus the bare tag name in the sidebar while preserving `#tag` in list titles and metadata. Added regression tests for deferred tags, explicit folder-tree loading, search scopes, and nested disclosure behavior.
+- Lesson: Apple Notes parity should be shell-first: the three-pane window must appear on direct open before optional indexing, tag discovery, or deeper filesystem traversal can run.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

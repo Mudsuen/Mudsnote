@@ -785,6 +785,7 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
         let scopeControl = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSegmentedControl }.first {
             $0.identifier?.rawValue == "LibrarySearchScopeControl"
         })
@@ -829,6 +830,57 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowLoadsTagRowsAfterShellIsVisible() throws {
+        let suiteName = "mudsnote.library-tag-source-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-tag-source-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Tagged Seed", body: "tag body", tags: ["library"])
+        _ = try store.saveNewNote(title: "Plain Seed", body: "plain body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "library"
+        } == false)
+
+        controller.loadSourceTagsForLibrary()
+
+        let tagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "library"
+        })
+        let tagCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-100"
+        })
+        #expect(tagCount.stringValue == "1")
+
+        tagButton.performClick(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "#library")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Tagged Seed"])
+    }
+
+    @MainActor
+    @Test
     func libraryWindowShowsNestedFoldersInSourceList() throws {
         let suiteName = "mudsnote.library-nested-folder-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -861,6 +913,19 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Projects"
+        } == true)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == false)
+
+        let initialProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
+        })
+        initialProjectsDisclosure.performClick(nil)
+
         let clientButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Client"
         })
@@ -928,6 +993,7 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
         let projectsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Projects"
         })

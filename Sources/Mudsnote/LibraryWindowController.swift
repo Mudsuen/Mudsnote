@@ -21,14 +21,19 @@ private enum LibraryScope: Equatable {
         case .folder(let url):
             return url.lastPathComponent.isEmpty ? "Notes" : url.lastPathComponent
         case .tag(let tag):
-            return "#\(tag)"
+            return libraryBareTag(tag)
         case .trash:
             return "最近删除"
         }
     }
 
     var listTitle: String {
-        buttonTitle
+        switch self {
+        case .tag(let tag):
+            return libraryDisplayTag(tag)
+        default:
+            return buttonTitle
+        }
     }
 
     var symbolName: String {
@@ -59,10 +64,25 @@ private enum LibraryNoteListRow {
     }
 }
 
-private struct LibraryFolderRow: Equatable {
+private struct LibraryFolderRow: Equatable, Sendable {
     let url: URL
     let depth: Int
     let hasChildren: Bool
+}
+
+private func libraryDisplayTag(_ tag: String) -> String {
+    let trimmed = libraryBareTag(tag)
+    guard !trimmed.isEmpty else { return "#" }
+    return "#\(trimmed)"
+}
+
+private func libraryBareTag(_ tag: String) -> String {
+    var trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+    while trimmed.hasPrefix("#") {
+        trimmed.removeFirst()
+        trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return trimmed
 }
 
 private enum LibraryActionError: LocalizedError {
@@ -235,6 +255,10 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFolderRows: [LibraryFolderRow] = []
     private var sourceTagNames: [String] = []
     private var collapsedFolderPaths = Set<String>()
+    private var expandedFolderPaths = Set<String>()
+    private var sourceFoldersLoaded = false
+    private var sourceFoldersLoading = false
+    private var sourceTagsLoaded = false
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -300,6 +324,8 @@ final class LibraryWindowController: NSWindowController,
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
         }
+        scheduleDeferredSourceFolderLoad()
+        scheduleDeferredSourceTagLoad()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -345,7 +371,8 @@ final class LibraryWindowController: NSWindowController,
         let folderHeader = makeSourceGroupLabel("文件夹", identifier: "LibrarySourceGroup-Folders")
         let tagHeader = makeSourceGroupLabel("标签", identifier: "LibrarySourceGroup-Tags")
 
-        rebuildSourceRows(includeTags: false)
+        sourceFolderRows = rootFolderRowsForSourceList()
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
 
         let stack = NSStackView(views: [
             libraryHeader,
@@ -810,7 +837,6 @@ final class LibraryWindowController: NSWindowController,
             sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
-        sourceFolderRows = folderRowsForSourceList()
         for (index, folderRow) in sourceFolderRows.enumerated() {
             sourceFolderStack.addArrangedSubview(makeScopeRow(
                 .folder(folderRow.url),
@@ -826,6 +852,48 @@ final class LibraryWindowController: NSWindowController,
         tableView.menu = makeNoteContextMenu()
     }
 
+    private func scheduleDeferredSourceFolderLoad() {
+        guard !sourceFoldersLoaded, !sourceFoldersLoading else { return }
+        sourceFoldersLoading = true
+        let preferredDirectories = noteStore.preferredDirectories
+        let collapsedPaths = collapsedFolderPaths
+        let expandedPaths = expandedFolderPaths
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let rows = Self.folderRowsForSourceList(
+                from: preferredDirectories,
+                collapsedFolderPaths: collapsedPaths,
+                expandedFolderPaths: expandedPaths
+            )
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.sourceFoldersLoaded = true
+                self.sourceFoldersLoading = false
+                self.sourceFolderRows = rows
+                self.rebuildSourceRows(includeTags: self.sourceTagsLoaded)
+                self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: false)
+            }
+        }
+    }
+
+    func loadSourceFoldersForLibrary() {
+        reloadSourceFolderRowsForCurrentState()
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+    }
+
+    private func scheduleDeferredSourceTagLoad() {
+        guard !sourceTagsLoaded else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.loadSourceTagsForLibrary()
+        }
+    }
+
+    func loadSourceTagsForLibrary() {
+        guard !sourceTagsLoaded else { return }
+        sourceTagsLoaded = true
+        rebuildSourceRows(includeTags: true)
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+    }
+
     private func removeArrangedSubviews(from stack: NSStackView) {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
@@ -833,19 +901,56 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func reloadSourceFolderRowsForCurrentState() {
+        sourceFoldersLoaded = true
+        sourceFoldersLoading = false
+        sourceFolderRows = folderRowsForSourceList()
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+    }
+
+    private func rootFolderRowsForSourceList() -> [LibraryFolderRow] {
+        Self.rootFolderRowsForSourceList(from: noteStore.preferredDirectories)
+    }
+
     private func folderRowsForSourceList() -> [LibraryFolderRow] {
-        let preferredRoots = rootPreferredDirectories(from: noteStore.preferredDirectories)
+        Self.folderRowsForSourceList(
+            from: noteStore.preferredDirectories,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
+    }
+
+    nonisolated private static func rootFolderRowsForSourceList(from directories: [URL]) -> [LibraryFolderRow] {
+        rootPreferredDirectories(from: directories).map {
+            LibraryFolderRow(url: $0, depth: 0, hasChildren: false)
+        }
+    }
+
+    nonisolated private static func folderRowsForSourceList(
+        from directories: [URL],
+        collapsedFolderPaths: Set<String>,
+        expandedFolderPaths: Set<String>
+    ) -> [LibraryFolderRow] {
+        let preferredRoots = rootPreferredDirectories(from: directories)
         var seenPaths = Set<String>()
         var rows: [LibraryFolderRow] = []
 
         for root in preferredRoots {
-            appendFolderRows(root, depth: 0, maxDepth: 3, seenPaths: &seenPaths, rows: &rows)
+            appendFolderRows(
+                root,
+                depth: 0,
+                maxDepth: 3,
+                collapsedFolderPaths: collapsedFolderPaths,
+                expandedFolderPaths: expandedFolderPaths,
+                seenPaths: &seenPaths,
+                rows: &rows
+            )
         }
 
         return rows
     }
 
-    private func rootPreferredDirectories(from directories: [URL]) -> [URL] {
+    nonisolated private static func rootPreferredDirectories(from directories: [URL]) -> [URL] {
         let standardized = directories.map(\.standardizedFileURL)
         return standardized.filter { candidate in
             !standardized.contains { other in
@@ -854,10 +959,12 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func appendFolderRows(
+    nonisolated private static func appendFolderRows(
         _ folderURL: URL,
         depth: Int,
         maxDepth: Int,
+        collapsedFolderPaths: Set<String>,
+        expandedFolderPaths: Set<String>,
         seenPaths: inout Set<String>,
         rows: inout [LibraryFolderRow]
     ) {
@@ -865,14 +972,48 @@ final class LibraryWindowController: NSWindowController,
         guard seenPaths.insert(standardized.path).inserted else { return }
         let children = childFolderURLs(of: standardized)
         rows.append(LibraryFolderRow(url: standardized, depth: depth, hasChildren: !children.isEmpty))
-        guard depth < maxDepth, !collapsedFolderPaths.contains(standardized.path) else { return }
+        guard depth < maxDepth, isSourceFolderExpanded(
+            path: standardized.path,
+            depth: depth,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        ) else { return }
 
         for child in children {
-            appendFolderRows(child, depth: depth + 1, maxDepth: maxDepth, seenPaths: &seenPaths, rows: &rows)
+            appendFolderRows(
+                child,
+                depth: depth + 1,
+                maxDepth: maxDepth,
+                collapsedFolderPaths: collapsedFolderPaths,
+                expandedFolderPaths: expandedFolderPaths,
+                seenPaths: &seenPaths,
+                rows: &rows
+            )
         }
     }
 
-    private func childFolderURLs(of folderURL: URL) -> [URL] {
+    private func isSourceFolderExpanded(path: String, depth: Int) -> Bool {
+        Self.isSourceFolderExpanded(
+            path: path,
+            depth: depth,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
+    }
+
+    nonisolated private static func isSourceFolderExpanded(
+        path: String,
+        depth: Int,
+        collapsedFolderPaths: Set<String>,
+        expandedFolderPaths: Set<String>
+    ) -> Bool {
+        if depth == 0 {
+            return !collapsedFolderPaths.contains(path)
+        }
+        return expandedFolderPaths.contains(path)
+    }
+
+    nonisolated private static func childFolderURLs(of folderURL: URL) -> [URL] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isHiddenKey]
         let children = (try? FileManager.default.contentsOfDirectory(
             at: folderURL,
@@ -954,7 +1095,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeFolderDisclosureButton(for folderRow: LibraryFolderRow, tag: Int) -> NSButton? {
         guard folderRow.hasChildren else { return nil }
-        let isCollapsed = collapsedFolderPaths.contains(folderRow.url.standardizedFileURL.path)
+        let isCollapsed = !isSourceFolderExpanded(path: folderRow.url.standardizedFileURL.path, depth: folderRow.depth)
         let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
         let button = NSButton(
             image: NSImage(systemSymbolName: symbolName, accessibilityDescription: "展开或折叠文件夹") ?? NSImage(),
@@ -1001,6 +1142,7 @@ final class LibraryWindowController: NSWindowController,
     private func refreshSourceCounts() {
         let recentNotes = recentNoteResults(limit: 10_000, hydratePreview: false)
         let recentCount = noteStore.listRecentFiles(limit: 80).count
+        let taggedNotes = sourceTagNames.isEmpty ? [] : noteStore.listNotes(limit: 10_000)
 
         for button in sourceButtons {
             let count: Int
@@ -1023,7 +1165,7 @@ final class LibraryWindowController: NSWindowController,
                     return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
                 }.count
             case .tag(let tag):
-                count = recentNotes.filter { note in
+                count = taggedNotes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
                 }.count
             }
@@ -1379,20 +1521,28 @@ final class LibraryWindowController: NSWindowController,
         guard sourceFolderRows.indices.contains(index) else { return }
         let folderURL = sourceFolderRows[index].url.standardizedFileURL
         let folderPath = folderURL.path
+        let isExpanded = isSourceFolderExpanded(path: folderPath, depth: sourceFolderRows[index].depth)
 
-        if collapsedFolderPaths.contains(folderPath) {
-            collapsedFolderPaths.remove(folderPath)
-        } else {
-            collapsedFolderPaths.insert(folderPath)
+        if isExpanded {
+            if sourceFolderRows[index].depth == 0 {
+                collapsedFolderPaths.insert(folderPath)
+            } else {
+                expandedFolderPaths.remove(folderPath)
+            }
+            expandedFolderPaths = expandedFolderPaths.filter { !$0.hasPrefix(folderPath + "/") }
             if case .folder(let selectedFolderURL) = selectedScope {
                 let selectedPath = selectedFolderURL.standardizedFileURL.path
                 if selectedPath.hasPrefix(folderPath + "/") {
                     selectedScope = .folder(folderURL)
                 }
             }
+        } else if sourceFolderRows[index].depth == 0 {
+            collapsedFolderPaths.remove(folderPath)
+        } else {
+            expandedFolderPaths.insert(folderPath)
         }
 
-        rebuildSourceRows(includeTags: false)
+        reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
     }
 
@@ -1738,7 +1888,7 @@ final class LibraryWindowController: NSWindowController,
             _ = try noteStore.trashNote(at: selectedURL ?? url)
         }
         clearCurrentDocumentAfterRemoval()
-        rebuildSourceRows(includeTags: false)
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true)
     }
 
@@ -1748,7 +1898,7 @@ final class LibraryWindowController: NSWindowController,
         let restoredURL = try noteStore.restoreTrashedNote(at: url)
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
-        rebuildSourceRows(includeTags: false)
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
         return restoredURL
     }
@@ -1783,7 +1933,7 @@ final class LibraryWindowController: NSWindowController,
     func createLibraryFolder(named name: String) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
         selectedScope = .folder(folderURL)
-        rebuildSourceRows(includeTags: false)
+        reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
         return folderURL
     }
@@ -1796,7 +1946,7 @@ final class LibraryWindowController: NSWindowController,
 
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         selectedScope = .folder(renamedURL)
-        rebuildSourceRows(includeTags: false)
+        reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
         return renamedURL
     }
@@ -1809,7 +1959,7 @@ final class LibraryWindowController: NSWindowController,
         _ = try noteStore.trashFolder(at: folderURL)
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
-        rebuildSourceRows(includeTags: false)
+        reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
     }
 
@@ -1827,7 +1977,7 @@ final class LibraryWindowController: NSWindowController,
         let movedURL = try noteStore.moveNote(at: selectedURL, to: targetDirectory)
         self.selectedURL = movedURL
         selectedScope = .folder(targetDirectory)
-        rebuildSourceRows(includeTags: false)
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
         return movedURL
     }
@@ -1869,7 +2019,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func metadataText(for note: NoteSearchResult) -> String {
         let folder = isTrashURL(note.url) ? "最近删除" : note.url.deletingLastPathComponent().lastPathComponent
-        let tags = note.tags.prefix(3).map { "#\($0)" }.joined(separator: " ")
+        let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
             return "\(relativeDateText(for: note.modifiedAt)) · \(folder)"
         }
