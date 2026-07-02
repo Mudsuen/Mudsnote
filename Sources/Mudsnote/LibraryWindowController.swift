@@ -462,9 +462,12 @@ final class LibraryWindowController: NSWindowController,
         titleField.focusRingType = .none
         titleField.delegate = self
 
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textColor = panelSecondaryTextColor()
+        statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
+        statusLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
+        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureEditorTextView()
         let scrollView = EditorScrollView()
@@ -495,10 +498,21 @@ final class LibraryWindowController: NSWindowController,
             emptyLabel.centerYAnchor.constraint(equalTo: bodyContainer.centerYAnchor)
         ])
 
-        let stack = NSStackView(views: [statusLabel, titleField, bodyContainer])
+        let dateRow = NSView()
+        dateRow.addSubview(statusLabel)
+        NSLayoutConstraint.activate([
+            statusLabel.centerXAnchor.constraint(equalTo: dateRow.centerXAnchor),
+            statusLabel.topAnchor.constraint(equalTo: dateRow.topAnchor),
+            statusLabel.bottomAnchor.constraint(equalTo: dateRow.bottomAnchor),
+            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: dateRow.leadingAnchor, constant: 20),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: dateRow.trailingAnchor, constant: -20),
+            dateRow.heightAnchor.constraint(equalToConstant: 18)
+        ])
+
+        let stack = NSStackView(views: [dateRow, titleField, bodyContainer])
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 12
+        stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 26, left: 30, bottom: 20, right: 30)
         editor.addSubview(stack)
         pin(stack, to: editor)
@@ -1807,7 +1821,7 @@ final class LibraryWindowController: NSWindowController,
             setEditorEditable(selectedScope != .trash)
             applyDocument(title: loaded.title, body: loaded.body, tags: loaded.tags)
             isDirty = false
-            statusLabel.stringValue = statusText(for: note)
+        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
             updateEmptyState()
             updateToolbarActionState()
         } catch {
@@ -1863,7 +1877,7 @@ final class LibraryWindowController: NSWindowController,
 
         selectedURL = savedURL
         isDirty = false
-        statusLabel.stringValue = "已保存"
+        statusLabel.stringValue = editorDateText(for: Date())
         onSave(savedURL)
         updateEmptyState()
         updateToolbarActionState()
@@ -2033,9 +2047,8 @@ final class LibraryWindowController: NSWindowController,
         return relativeDateFormatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private func statusText(for note: NoteSearchResult) -> String {
-        let folder = isTrashURL(note.url) ? "最近删除" : note.url.deletingLastPathComponent().lastPathComponent
-        return "\(dateFormatter.string(from: note.modifiedAt)) · \(folder)"
+    private func editorDateText(for date: Date) -> String {
+        dateFormatter.string(from: date)
     }
 
     private func isTrashURL(_ url: URL) -> Bool {

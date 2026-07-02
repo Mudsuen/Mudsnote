@@ -602,7 +602,11 @@ struct MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
-        _ = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
+        let noteURL = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
+        let noteModifiedAt = try #require((try? FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate]) as? Date)
+        let noteDateFormatter = DateFormatter()
+        noteDateFormatter.dateStyle = .medium
+        noteDateFormatter.timeStyle = .short
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -666,7 +670,10 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
         #expect(controller.titleField.stringValue == "Library Seed")
+        #expect(controller.statusLabel.identifier?.rawValue == "LibraryEditorStatusLabel")
         #expect(controller.statusLabel.alignment == .center)
+        #expect(controller.statusLabel.stringValue == noteDateFormatter.string(from: noteModifiedAt))
+        #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"

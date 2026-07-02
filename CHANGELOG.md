@@ -312,6 +312,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Kept the first library shell lightweight by rendering root folders immediately, loading the full folder tree off the main launch path, and loading tag source rows after the window is visible. Folder disclosure and folder-management actions still refresh the current tree synchronously when the user asks for that structure. Tag rows now display as a single `#` symbol plus the bare tag name in the sidebar while preserving `#tag` in list titles and metadata. Added regression tests for deferred tags, explicit folder-tree loading, search scopes, and nested disclosure behavior.
 - Lesson: Apple Notes parity should be shell-first: the three-pane window must appear on direct open before optional indexing, tag discovery, or deeper filesystem traversal can run.
 
+### 55. Centered editor date line
+
+- Problem: The right editor header still displayed `date · folder`, and the label could sit visually off-center, making the editor pane less like Apple Notes' centered date line.
+- Fix: Changed the library editor status line to show only the formatted note date for loaded notes, moved the label into a dedicated centered date row, and kept dirty/new-note status text for transient editing states. Added regression coverage for the editor status identifier, center alignment, date-only text, and absence of folder separators.
+- Lesson: Apple Notes parity depends on small information hierarchy decisions: folder context belongs in the note list/source list, while the editor header should stay focused on the note timestamp.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
