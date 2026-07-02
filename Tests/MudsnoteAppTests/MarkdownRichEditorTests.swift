@@ -617,12 +617,22 @@ struct MarkdownRichEditorTests {
         #expect(window.styleMask.contains(.resizable))
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
-        #expect(controller.tableView.numberOfRows == 1)
+        #expect(controller.tableView.numberOfRows == 2)
+        #expect(controller.tableView(controller.tableView, isGroupRow: 0))
+        #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
+        let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCount.stringValue == "1")
+        let tagCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-100"
+        })
+        #expect(tagCount.stringValue == "1")
         let tagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "#library" })
         tagButton.performClick(nil)
-        #expect(controller.tableView.numberOfRows == 1)
+        #expect(controller.tableView.numberOfRows == 2)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)

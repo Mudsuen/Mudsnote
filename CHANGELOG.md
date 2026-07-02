@@ -216,6 +216,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Changed ordinary no-argument launches and app reopen events to show the `笔记库` window by default, while preserving explicit `--quick-capture`, `--floating-note`, `--search`, `--preferences`, and `--library` launch modes.
 - Lesson: Once a desktop app gains a real main workspace, direct launch should reveal that workspace; quick capture remains an explicit fast entry point, not the default app identity.
 
+### 39. Apple Notes-style date grouping
+
+- Problem: The desktop library had three panes, but the middle note list was still a flat table and did not read like Apple Notes' time-sectioned note list.
+- Fix: Added non-selectable date group rows for today, yesterday, previous 7 days, previous 30 days, and older years. Left-aligned the note cards and replaced the default selected row with a Notes-like golden highlight. The first real note still auto-selects, tag/search filtering still works, and group rows are skipped by selection.
+- Lesson: Faithful Notes parity is mostly information architecture before decoration; sectioning the note list by recency makes the library feel immediately more native.
+
+### 40. Notes-like source counts
+
+- Problem: The left source list still lacked Apple Notes' quick count cues, so folders and tags did not communicate scope size at a glance.
+- Fix: Added right-aligned counts to the main library scopes and tag rows while preserving the existing button-based filtering behavior. The source rows keep their click targets, selected tint, and tag filtering test coverage.
+- Lesson: Sidebar parity should improve scan density without changing the storage model; count overlays are a lightweight step before deeper folder hierarchy work.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

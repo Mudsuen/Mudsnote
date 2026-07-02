@@ -35,6 +35,41 @@ private enum LibraryScope: Equatable {
     }
 }
 
+private enum LibraryNoteListRow {
+    case group(title: String)
+    case note(NoteSearchResult)
+
+    var note: NoteSearchResult? {
+        guard case .note(let note) = self else { return nil }
+        return note
+    }
+}
+
+@MainActor
+final class LibraryGroupHeaderCellView: NSTableCellView {
+    let titleLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.textColor = panelPrimaryTextColor()
+        titleLabel.lineBreakMode = .byTruncatingTail
+        addSubview(titleLabel)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
@@ -46,27 +81,47 @@ final class LibraryNoteCellView: NSTableCellView {
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.alignment = .left
         titleLabel.textColor = panelPrimaryTextColor()
 
         snippetLabel.font = .systemFont(ofSize: 12)
         snippetLabel.lineBreakMode = .byTruncatingTail
+        snippetLabel.alignment = .left
         snippetLabel.textColor = panelSecondaryTextColor()
 
         metaLabel.font = .systemFont(ofSize: 11, weight: .medium)
         metaLabel.lineBreakMode = .byTruncatingMiddle
+        metaLabel.alignment = .left
         metaLabel.textColor = panelTertiaryTextColor()
 
         let stack = NSStackView(views: [titleLabel, snippetLabel, metaLabel])
         stack.orientation = .vertical
+        stack.alignment = .leading
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
         addSubview(stack)
         pin(stack, to: self)
+        for label in [titleLabel, snippetLabel, metaLabel] {
+            label.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20).isActive = true
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+final class LibraryNoteRowView: NSTableRowView {
+    var isGroupRow = false
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard !isGroupRow else { return }
+        let selectionRect = bounds.insetBy(dx: 7, dy: 2)
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 10, yRadius: 10)
+        NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.08, alpha: 0.95).setFill()
+        path.fill()
     }
 }
 
@@ -93,6 +148,7 @@ final class LibraryWindowController: NSWindowController,
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private var notes: [NoteSearchResult] = []
+    private var listRows: [LibraryNoteListRow] = []
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
@@ -101,6 +157,7 @@ final class LibraryWindowController: NSWindowController,
     private var hasCenteredWindow = false
     private var selectedScope: LibraryScope = .all
     private var sourceButtons: [NSButton] = []
+    private var sourceCountLabels: [Int: NSTextField] = [:]
     private var sourceTagNames: [String] = []
 
     let theme = MarkdownEditorTheme(
@@ -199,34 +256,36 @@ final class LibraryWindowController: NSWindowController,
         let title = NSTextField(labelWithString: "资料库")
         title.font = .systemFont(ofSize: 22, weight: .bold)
         title.textColor = panelPrimaryTextColor()
+        title.alignment = .left
 
         let primaryStack = NSStackView()
         primaryStack.orientation = .vertical
+        primaryStack.alignment = .leading
         primaryStack.spacing = 4
 
         sourceButtons.removeAll()
+        sourceCountLabels.removeAll()
         for scope in [LibraryScope.all, .recent, .inbox] {
-            let button = makeScopeButton(scope, tag: sourceButtons.count)
-            sourceButtons.append(button)
-            primaryStack.addArrangedSubview(button)
+            primaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
         sourceTagNames = noteStore.knownTags(limit: 12)
         let tagHeader = NSTextField(labelWithString: "标签")
         tagHeader.font = .systemFont(ofSize: 11, weight: .bold)
         tagHeader.textColor = panelTertiaryTextColor()
+        tagHeader.alignment = .left
 
         let tagStack = NSStackView()
         tagStack.orientation = .vertical
+        tagStack.alignment = .leading
         tagStack.spacing = 4
         for (index, tag) in sourceTagNames.enumerated() {
-            let button = makeScopeButton(.tag(tag), tag: 100 + index)
-            sourceButtons.append(button)
-            tagStack.addArrangedSubview(button)
+            tagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
         }
 
         let stack = NSStackView(views: [title, primaryStack, tagHeader, tagStack, NSView()])
         stack.orientation = .vertical
+        stack.alignment = .leading
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 14, bottom: 14, right: 12)
         sourceList.addSubview(stack)
@@ -263,9 +322,10 @@ final class LibraryWindowController: NSWindowController,
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
         tableView.headerView = nil
         tableView.rowHeight = 72
-        tableView.intercellSpacing = NSSize(width: 0, height: 4)
+        tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
         tableView.style = .sourceList
+        tableView.selectionHighlightStyle = .regular
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
@@ -396,6 +456,46 @@ final class LibraryWindowController: NSWindowController,
         return button
     }
 
+    private func makeScopeRow(_ scope: LibraryScope, tag: Int) -> NSView {
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        row.widthAnchor.constraint(equalToConstant: 194).isActive = true
+
+        let button = makeScopeButton(scope, tag: tag)
+        let overlay = PassthroughOverlayView()
+        let countLabel = NSTextField(labelWithString: "")
+        countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
+        countLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        countLabel.textColor = panelTertiaryTextColor()
+        countLabel.alignment = .right
+
+        row.addSubview(button)
+        row.addSubview(overlay)
+        overlay.addSubview(countLabel)
+
+        button.translatesAutoresizingMaskIntoConstraints = false
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            button.topAnchor.constraint(equalTo: row.topAnchor),
+            button.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: row.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            countLabel.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -10),
+            countLabel.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            countLabel.widthAnchor.constraint(equalToConstant: 44)
+        ])
+
+        sourceButtons.append(button)
+        sourceCountLabels[tag] = countLabel
+        return row
+    }
+
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
         let button = NSButton(title: scope.buttonTitle, target: self, action: #selector(scopeButtonPressed(_:)))
         button.tag = tag
@@ -410,7 +510,6 @@ final class LibraryWindowController: NSWindowController,
         button.wantsLayer = true
         button.layer?.cornerRadius = 7
         button.layer?.cornerCurve = .continuous
-        button.heightAnchor.constraint(equalToConstant: 30).isActive = true
         return button
     }
 
@@ -421,6 +520,32 @@ final class LibraryWindowController: NSWindowController,
                 ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
                 : NSColor.clear.cgColor
             button.contentTintColor = isSelected ? panelAccentColor() : panelSecondaryTextColor()
+            sourceCountLabels[button.tag]?.textColor = isSelected ? panelAccentColor() : panelTertiaryTextColor()
+        }
+    }
+
+    private func refreshSourceCounts() {
+        let allNotes = noteStore.listNotes(limit: 10_000)
+        let recentCount = noteStore.listRecentFiles(limit: 80).count
+
+        for button in sourceButtons {
+            let count: Int
+            switch scope(for: button) {
+            case .all:
+                count = allNotes.count
+            case .recent:
+                count = recentCount
+            case .inbox:
+                count = allNotes.filter { note in
+                    note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+                        || note.title.localizedCaseInsensitiveContains("Inbox")
+                }.count
+            case .tag(let tag):
+                count = allNotes.filter { note in
+                    note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+                }.count
+            }
+            sourceCountLabels[button.tag]?.stringValue = count > 0 ? String(count) : ""
         }
     }
 
@@ -428,16 +553,18 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let scopedNotes = notesForSelectedScope(limit: 240)
         notes = query.isEmpty ? scopedNotes : filteredNotes(scopedNotes, query: query)
+        listRows = buildGroupedRows(for: notes)
 
         suppressSelectionChanges = true
         tableView.reloadData()
 
         let preferredPath = preferredURL?.standardizedFileURL.path
         if let preferredPath,
-           let row = notes.firstIndex(where: { $0.url.standardizedFileURL.path == preferredPath }) {
+           let row = rowIndex(for: preferredPath) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        } else if loadFirstIfNeeded, !notes.isEmpty {
-            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else if loadFirstIfNeeded,
+                  let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) {
+            tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
         } else {
             tableView.deselectAll(nil)
         }
@@ -449,6 +576,7 @@ final class LibraryWindowController: NSWindowController,
         } else if selectedURL == nil {
             updateEmptyState()
         }
+        refreshSourceCounts()
         refreshSourceSelection()
     }
 
@@ -494,12 +622,75 @@ final class LibraryWindowController: NSWindowController,
             .first(where: { !$0.isEmpty })
     }
 
+    private func buildGroupedRows(for notes: [NoteSearchResult], now: Date = Date()) -> [LibraryNoteListRow] {
+        var rows: [LibraryNoteListRow] = []
+        var currentGroup: String?
+        for note in notes {
+            let group = groupTitle(for: note.modifiedAt, now: now)
+            if group != currentGroup {
+                rows.append(.group(title: group))
+                currentGroup = group
+            }
+            rows.append(.note(note))
+        }
+        return rows
+    }
+
+    private func rowIndex(for standardizedPath: String) -> Int? {
+        listRows.firstIndex { row in
+            row.note?.url.standardizedFileURL.path == standardizedPath
+        }
+    }
+
+    private func note(at row: Int) -> NoteSearchResult? {
+        guard listRows.indices.contains(row) else { return nil }
+        return listRows[row].note
+    }
+
+    private func groupTitle(for date: Date, now: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "今天"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "昨天"
+        }
+
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfDate = calendar.startOfDay(for: date)
+        let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
+        if (2...7).contains(daysAgo) {
+            return "过去 7 天"
+        }
+        if (8...30).contains(daysAgo) {
+            return "过去 30 天"
+        }
+        return String(calendar.component(.year, from: date))
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
-        notes.count
+        listRows.count
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let note = notes[row]
+        switch listRows[row] {
+        case .group(let title):
+            let identifier = NSUserInterfaceItemIdentifier("LibraryGroupHeaderCell")
+            let cell: LibraryGroupHeaderCellView
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? LibraryGroupHeaderCellView {
+                cell = reused
+            } else {
+                cell = LibraryGroupHeaderCellView()
+                cell.identifier = identifier
+            }
+            cell.titleLabel.stringValue = title
+            return cell
+        case .note(let note):
+            return noteCell(for: note, tableView: tableView)
+        }
+    }
+
+    private func noteCell(for note: NoteSearchResult, tableView: NSTableView) -> NSView {
         let identifier = NSUserInterfaceItemIdentifier("LibraryNoteCell")
         let cell: LibraryNoteCellView
         if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? LibraryNoteCellView {
@@ -513,6 +704,31 @@ final class LibraryWindowController: NSWindowController,
         cell.snippetLabel.stringValue = note.snippet.isEmpty ? " " : note.snippet
         cell.metaLabel.stringValue = metadataText(for: note)
         return cell
+    }
+
+    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
+        guard listRows.indices.contains(row) else { return false }
+        if case .group = listRows[row] {
+            return true
+        }
+        return false
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        note(at: row) != nil
+    }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        if note(at: row) == nil {
+            return 54
+        }
+        return 72
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let rowView = LibraryNoteRowView()
+        rowView.isGroupRow = note(at: row) == nil
+        return rowView
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -609,11 +825,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func loadSelectedRow() {
         let row = tableView.selectedRow
-        guard notes.indices.contains(row) else {
+        guard let note = note(at: row) else {
             updateEmptyState()
             return
         }
-        load(note: notes[row])
+        load(note: note)
     }
 
     private func load(note: NoteSearchResult) {
