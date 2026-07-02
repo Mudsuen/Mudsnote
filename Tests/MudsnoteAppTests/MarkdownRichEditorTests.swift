@@ -1568,6 +1568,80 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowDoesNotFocusSearchOnDefaultShow() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-focus-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-focus-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            controller.close()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        controller.showWindowAndFocus()
+        #expect(controller.searchField.currentEditor() == nil)
+        #expect(controller.window?.firstResponder === controller.tableView)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowDeferredShowLoadsFirstNoteWithoutFocusingSearch() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-deferred-focus-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-deferred-focus-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Deferred Seed", body: "Deferred body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            controller.close()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        controller.showWindowAndFocus()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+
+        #expect(controller.searchField.currentEditor() == nil)
+        #expect(controller.titleField.stringValue == "Deferred Seed")
+        #expect(controller.editorTextView.string == "Deferred body")
+    }
+
+    @MainActor
+    @Test
     func preferencesWindowUsesStandardMacSettingsChrome() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-preferences-tests-\(UUID().uuidString)", isDirectory: true)

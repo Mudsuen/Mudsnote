@@ -231,4 +231,4 @@ Exit criteria: these features improve local Markdown workflow without making the
 - Editor now uses a centered date-only header for loaded notes, debounced autosave, lighter save-progress copy, and tighter Notes-like title/body vertical rhythm, but still needs side-by-side visual tuning.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, note-list image thumbnails and in-editor previews for local image references, and selected-source Markdown export, but still lacks full rich table editing and broader non-image attachment previews.
 - Search is in the top toolbar and supports current/all scoping with visible row highlights, no-result feedback, multi-result stepping from the search field, and keyboard loading into the editor, but still lacks indexing.
-- Visual QA is manual; there is no side-by-side comparison artifact yet.
+- Visual QA has a repeatable side-by-side harness against the supplied Apple Notes screenshot, but still needs per-iteration delta notes and closer visual tuning.

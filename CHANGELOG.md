@@ -414,6 +414,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Tightened source-list stack spacing, reduced source row height, softened selected-row corner radius, reduced group/count typography, and added layout contract coverage for the source row and count label.
 - Lesson: Apple Notes parity needs the left source list to carry hierarchy through density and typography, not only through folders and counts.
 
+### 72. Notes visual QA harness
+
+- Problem: Visual parity was still judged from separate screenshots, and the default direct-open library window could show a focused search field that did not match the static Apple Notes reference state.
+- Fix: Added the supplied Apple Notes screenshot as a project reference, added `scripts/visual_notes_qa.sh` to launch the installed app and generate a side-by-side comparison image, and changed default library focus from the search field to the note list. Added regression coverage that default show does not focus search.
+- Lesson: A repeatable visual baseline turns vague Notes-like polish into concrete deltas; default focus state is part of the visual contract.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

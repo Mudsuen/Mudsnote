@@ -423,7 +423,7 @@ final class LibraryWindowController: NSWindowController,
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         if selectedURL == nil {
-            searchField.becomeFirstResponder()
+            window.makeFirstResponder(tableView)
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
         }
@@ -435,9 +435,10 @@ final class LibraryWindowController: NSWindowController,
     private func hydrateInitialNoteListIfNeeded() {
         guard !hasHydratedInitialNoteList else { return }
         hasHydratedInitialNoteList = true
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: true, hydratePreviews: false)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: true, hydratePreviews: true)
+            self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: false, hydratePreviews: true)
         }
     }
 
@@ -1371,20 +1372,23 @@ final class LibraryWindowController: NSWindowController,
         updateNoteListEmptyState(query: query)
 
         let preferredPath = preferredURL?.standardizedFileURL.path
+        var noteToLoad: NoteSearchResult?
         if let preferredPath,
            let row = rowIndex(for: preferredPath) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            noteToLoad = note(at: row)
         } else if loadFirstIfNeeded,
                   let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) {
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
+            noteToLoad = note(at: firstNoteRow)
         } else {
             tableView.deselectAll(nil)
         }
 
         suppressSelectionChanges = false
 
-        if loadFirstIfNeeded, tableView.selectedRow >= 0 {
-            loadSelectedRow()
+        if loadFirstIfNeeded, let noteToLoad {
+            load(note: noteToLoad)
         } else if selectedURL == nil {
             updateEmptyState()
         }
