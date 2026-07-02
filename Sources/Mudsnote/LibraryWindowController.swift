@@ -605,7 +605,7 @@ final class LibraryWindowController: NSWindowController,
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
         titleField.placeholderString = "无标题"
-        titleField.font = .systemFont(ofSize: 28, weight: .bold)
+        titleField.font = .systemFont(ofSize: 30, weight: .bold)
         titleField.textColor = panelPrimaryTextColor()
         titleField.isBordered = false
         titleField.drawsBackground = false
@@ -635,6 +635,7 @@ final class LibraryWindowController: NSWindowController,
         emptyLabel.alignment = .center
 
         let bodyContainer = NSView()
+        bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
         bodyContainer.addSubview(scrollView)
         bodyContainer.addSubview(emptyLabel)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -649,6 +650,7 @@ final class LibraryWindowController: NSWindowController,
         ])
 
         let dateRow = NSView()
+        dateRow.identifier = NSUserInterfaceItemIdentifier("LibraryEditorDateRow")
         dateRow.addSubview(statusLabel)
         NSLayoutConstraint.activate([
             statusLabel.centerXAnchor.constraint(equalTo: dateRow.centerXAnchor),
@@ -660,10 +662,13 @@ final class LibraryWindowController: NSWindowController,
         ])
 
         let stack = NSStackView(views: [dateRow, titleField, bodyContainer])
+        stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 14
-        stack.edgeInsets = NSEdgeInsets(top: 26, left: 30, bottom: 20, right: 30)
+        stack.spacing = 0
+        stack.setCustomSpacing(24, after: dateRow)
+        stack.setCustomSpacing(6, after: titleField)
+        stack.edgeInsets = NSEdgeInsets(top: 22, left: 44, bottom: 20, right: 44)
         editor.addSubview(stack)
         pin(stack, to: editor)
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
@@ -979,7 +984,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.insertionPointColor = theme.accentColor
         editorTextView.isVerticallyResizable = true
         editorTextView.isHorizontallyResizable = false
-        editorTextView.textContainerInset = NSSize(width: 4, height: 8)
+        editorTextView.textContainerInset = NSSize(width: 4, height: 4)
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
     }

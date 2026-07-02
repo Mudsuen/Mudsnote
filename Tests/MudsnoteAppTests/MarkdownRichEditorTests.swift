@@ -709,6 +709,19 @@ struct MarkdownRichEditorTests {
         #expect(controller.statusLabel.alignment == .center)
         #expect(controller.statusLabel.stringValue == noteDateFormatter.string(from: noteModifiedAt))
         #expect(!controller.statusLabel.stringValue.contains("·"))
+        #expect(controller.titleField.font?.pointSize == 30)
+        #expect(controller.editorTextView.textContainerInset.height == 4)
+        let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibraryEditorStack"
+        })
+        let editorDateRow = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorDateRow"
+        })
+        #expect(editorStack.spacing == 0)
+        #expect(editorStack.customSpacing(after: editorDateRow) == 24)
+        #expect(editorStack.customSpacing(after: controller.titleField) == 6)
+        #expect(editorStack.edgeInsets.left == 44)
+        #expect(editorStack.edgeInsets.right == 44)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"

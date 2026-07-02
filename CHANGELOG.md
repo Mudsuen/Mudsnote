@@ -396,6 +396,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replaced the persistent `已修改` dirty label with short autosave-progress copy for existing and new notes, then returned to the normal date line after save. Tightened autosave regression coverage for the status transition.
 - Lesson: A Notes-like editor should communicate persistence without making manual save state the main visual focus.
 
+### 69. Editor vertical rhythm
+
+- Problem: The library editor still used uniform vertical spacing between date, title, and body, so the right pane felt less like Apple Notes' centered date plus tight title/body composition.
+- Fix: Enlarged the library note title, reduced body text top inset, widened editor side margins, and replaced uniform stack spacing with explicit date-to-title and title-to-body spacing. Added layout contract coverage for these values.
+- Lesson: Apple Notes parity depends on asymmetric editor spacing; date/title/body rhythm should be encoded as a contract, not left to default stack spacing.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
