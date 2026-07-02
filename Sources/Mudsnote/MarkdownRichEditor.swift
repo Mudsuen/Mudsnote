@@ -8,6 +8,7 @@ extension NSAttributedString.Key {
     static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
+    static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
 }
 
 let markdownItalicObliqueness: CGFloat = 0.16
@@ -527,6 +528,73 @@ private final class PrefixAttachmentCell: NSTextAttachmentCell {
     }
 }
 
+@MainActor
+private final class FileAttachmentPreviewCell: NSTextAttachmentCell {
+    private let displayTitle: String
+    private let subtitle: String
+    private let icon: NSImage
+
+    init(fileURL: URL, label: String) {
+        let fallbackTitle = fileURL.lastPathComponent.isEmpty ? "Attachment" : fileURL.lastPathComponent
+        self.displayTitle = label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackTitle : label
+        self.subtitle = fileURL.deletingLastPathComponent().lastPathComponent
+        self.icon = NSWorkspace.shared.icon(forFile: fileURL.path)
+        self.icon.size = NSSize(width: 22, height: 22)
+        super.init(textCell: "")
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func cellSize() -> NSSize {
+        NSSize(width: 260, height: 38)
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        let rect = cellFrame.insetBy(dx: 1, dy: 2)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+        panelSubtleFillColor().withAlphaComponent(0.22).setFill()
+        path.fill()
+        panelTertiaryTextColor().withAlphaComponent(0.18).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let iconRect = NSRect(
+            x: rect.minX + 9,
+            y: rect.midY - 11,
+            width: 22,
+            height: 22
+        )
+        icon.draw(in: iconRect)
+
+        let titleRect = NSRect(
+            x: iconRect.maxX + 8,
+            y: rect.minY + 16,
+            width: rect.width - 48,
+            height: 16
+        )
+        let subtitleRect = NSRect(
+            x: iconRect.maxX + 8,
+            y: rect.minY + 5,
+            width: rect.width - 48,
+            height: 13
+        )
+        drawClipped(displayTitle, in: titleRect, font: .systemFont(ofSize: 12, weight: .semibold), color: panelPrimaryTextColor())
+        drawClipped(subtitle, in: subtitleRect, font: .systemFont(ofSize: 10, weight: .medium), color: panelTertiaryTextColor())
+    }
+
+    private func drawClipped(_ text: String, in rect: NSRect, font: NSFont, color: NSColor) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingMiddle
+        (text as NSString).draw(in: rect, withAttributes: [
+            .font: font,
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ])
+    }
+}
+
 enum MarkdownRichTextCodec {
     @MainActor
     static func render(markdown: String, theme: MarkdownEditorTheme, baseURL: URL? = nil) -> NSMutableAttributedString {
@@ -741,6 +809,10 @@ enum MarkdownRichTextCodec {
             return imageMarkdown
         }
 
+        if let attachmentMarkdown = attributes[.qmAttachmentMarkdown] as? String {
+            return attachmentMarkdown
+        }
+
         if (attributes[.qmTag] as? Bool) == true {
             return text
         }
@@ -935,6 +1007,20 @@ enum MarkdownRichTextCodec {
                let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
                 let label = String(source[source.index(after: index)..<closeBracket.lowerBound])
                 let url = String(source[closeBracket.upperBound..<closeParen])
+                let markdown = String(source[index...closeParen])
+                if let attachment = fileAttachmentString(
+                    label: label,
+                    path: url,
+                    markdown: markdown,
+                    paragraphKind: paragraphKind,
+                    theme: theme,
+                    baseAttributes: baseAttributes,
+                    baseURL: baseURL
+                ) {
+                    output.append(attachment)
+                    index = source.index(after: closeParen)
+                    continue
+                }
                 output.append(attributed(label, base: baseAttributes, extra: [
                     .foregroundColor: theme.accentColor,
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
@@ -970,6 +1056,36 @@ enum MarkdownRichTextCodec {
 
     private static func attributed(_ string: String, base: [NSAttributedString.Key: Any], extra: [NSAttributedString.Key: Any] = [:]) -> NSAttributedString {
         NSAttributedString(string: string, attributes: base.merging(extra) { _, new in new })
+    }
+
+    @MainActor
+    private static func fileAttachmentString(
+        label: String,
+        path: String,
+        markdown: String,
+        paragraphKind: MarkdownParagraphKind,
+        theme: MarkdownEditorTheme,
+        baseAttributes: [NSAttributedString.Key: Any],
+        baseURL: URL?
+    ) -> NSAttributedString? {
+        guard let fileURL = localFileURL(path: path, baseURL: baseURL),
+              FileManager.default.fileExists(atPath: fileURL.path),
+              !isImageFile(fileURL) else {
+            return nil
+        }
+
+        let attachment = NSTextAttachment()
+        attachment.attachmentCell = FileAttachmentPreviewCell(fileURL: fileURL, label: label)
+        attachment.bounds = NSRect(x: 0, y: -10, width: 260, height: 38)
+
+        let attributed = NSMutableAttributedString(attachment: attachment)
+        attributed.addAttributes(baseAttributes.merging([
+            .qmAttachmentMarkdown: markdown,
+            .toolTip: fileURL.path,
+            .paragraphStyle: theme.paragraphStyle(for: paragraphKind),
+            .qmParagraphKind: paragraphKind.encodedValue
+        ]) { _, new in new }, range: NSRange(location: 0, length: attributed.length))
+        return attributed
     }
 
     @MainActor
@@ -1012,6 +1128,14 @@ enum MarkdownRichTextCodec {
     }
 
     private static func localImageURL(path: String, baseURL: URL?) -> URL? {
+        guard let fileURL = localFileURL(path: path, baseURL: baseURL),
+              isImageFile(fileURL) else {
+            return nil
+        }
+        return fileURL
+    }
+
+    private static func localFileURL(path: String, baseURL: URL?) -> URL? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -1029,6 +1153,11 @@ enum MarkdownRichTextCodec {
         return baseURL.deletingLastPathComponent()
             .appendingPathComponent(decoded)
             .standardizedFileURL
+    }
+
+    private static func isImageFile(_ url: URL) -> Bool {
+        ["apng", "avif", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
+            .contains(url.pathExtension.lowercased())
     }
 
     private static func isObliqued(_ value: Any?) -> Bool {

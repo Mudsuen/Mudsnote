@@ -444,6 +444,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added explicit Up/Down handling for the library note list. Keyboard movement now skips group rows, clamps at list boundaries, scrolls the target row into view, saves pending edits, and loads the selected note into the editor. Added regression coverage for group-row skipping and note loading.
 - Lesson: Apple Notes parity depends on keyboard browsing details; grouped rows are visual structure, not keyboard destinations.
 
+### 77. Non-image attachment previews
+
+- Problem: The rich editor rendered local image attachments inline, but PDFs and other local files still appeared as plain Markdown links, leaving attachment parity below Apple Notes.
+- Fix: Added a local-file attachment chip for existing non-image Markdown links while preserving the original Markdown through serialization. Added regression coverage for file-link rendering and toolbar-inserted attachments.
+- Lesson: Attachment parity can stay local-first by turning filesystem-backed links into visible editor affordances without changing Markdown storage.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

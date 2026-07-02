@@ -112,6 +112,31 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecRendersLocalMarkdownFileAttachmentsAndSerializesPath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-rich-file-attachment-tests-\(UUID().uuidString)", isDirectory: true)
+        let noteURL = root.appendingPathComponent("Note.md")
+        let attachmentURL = root
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("source file.pdf")
+        try FileManager.default.createDirectory(at: attachmentURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "pdf".write(to: attachmentURL, atomically: true, encoding: .utf8)
+
+        let markdown = "Before\n[source file](Attachments/source%20file.pdf)\nAfter"
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: noteURL)
+        var attachmentMarkdown: String?
+        rendered.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rendered.length)) { value, range, stop in
+            guard value as? NSTextAttachment != nil else { return }
+            attachmentMarkdown = rendered.attribute(.qmAttachmentMarkdown, at: range.location, effectiveRange: nil) as? String
+            stop.pointee = true
+        }
+
+        #expect(attachmentMarkdown == "[source file](Attachments/source%20file.pdf)")
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @Test
     func richCodecShowsEmptyListPrefixesImmediately() {
         let bulletRendered = MarkdownRichTextCodec.renderLine("- ", theme: theme)
         let orderedRendered = MarkdownRichTextCodec.renderLine("1. ", theme: theme)
@@ -931,6 +956,16 @@ struct MarkdownRichEditorTests {
 
         #expect(FileManager.default.fileExists(atPath: copiedAttachment.path))
         #expect(copiedAttachment.path.contains("/Attachments/"))
+        var editorAttachmentMarkdowns: [String] = []
+        controller.editorTextView.attributedString().enumerateAttribute(
+            .qmAttachmentMarkdown,
+            in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
+        ) { value, _, _ in
+            if let value = value as? String {
+                editorAttachmentMarkdowns.append(value)
+            }
+        }
+        #expect(editorAttachmentMarkdowns.contains { $0.contains("source%20file.pdf") })
 
         _ = try controller.saveCurrentNoteForLibrary()
 
