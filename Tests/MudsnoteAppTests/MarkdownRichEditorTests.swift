@@ -877,6 +877,23 @@ struct MarkdownRichEditorTests {
         })
         #expect(clientMoveItem.title.hasPrefix("    "))
         #expect(clientMoveItem.title.trimmingCharacters(in: .whitespaces) == "Client")
+
+        let projectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
+        })
+        projectsDisclosure.performClick(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "Projects")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == false)
+
+        let collapsedProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
+        })
+        collapsedProjectsDisclosure.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == true)
     }
 
     @MainActor

@@ -62,6 +62,7 @@ private enum LibraryNoteListRow {
 private struct LibraryFolderRow: Equatable {
     let url: URL
     let depth: Int
+    let hasChildren: Bool
 }
 
 private enum LibraryActionError: LocalizedError {
@@ -233,6 +234,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceCountLabels: [Int: NSTextField] = [:]
     private var sourceFolderRows: [LibraryFolderRow] = []
     private var sourceTagNames: [String] = []
+    private var collapsedFolderPaths = Set<String>()
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -810,7 +812,11 @@ final class LibraryWindowController: NSWindowController,
 
         sourceFolderRows = folderRowsForSourceList()
         for (index, folderRow) in sourceFolderRows.enumerated() {
-            sourceFolderStack.addArrangedSubview(makeScopeRow(.folder(folderRow.url), tag: 10 + index, depth: folderRow.depth))
+            sourceFolderStack.addArrangedSubview(makeScopeRow(
+                .folder(folderRow.url),
+                tag: 10 + index,
+                folderRow: folderRow
+            ))
         }
 
         sourceTagNames = includeTags ? noteStore.knownTags(limit: 12) : []
@@ -857,10 +863,11 @@ final class LibraryWindowController: NSWindowController,
     ) {
         let standardized = folderURL.standardizedFileURL
         guard seenPaths.insert(standardized.path).inserted else { return }
-        rows.append(LibraryFolderRow(url: standardized, depth: depth))
-        guard depth < maxDepth else { return }
+        let children = childFolderURLs(of: standardized)
+        rows.append(LibraryFolderRow(url: standardized, depth: depth, hasChildren: !children.isEmpty))
+        guard depth < maxDepth, !collapsedFolderPaths.contains(standardized.path) else { return }
 
-        for child in childFolderURLs(of: standardized) {
+        for child in children {
             appendFolderRows(child, depth: depth + 1, maxDepth: maxDepth, seenPaths: &seenPaths, rows: &rows)
         }
     }
@@ -882,7 +889,7 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func makeScopeRow(_ scope: LibraryScope, tag: Int, depth: Int = 0) -> NSView {
+    private func makeScopeRow(_ scope: LibraryScope, tag: Int, folderRow: LibraryFolderRow? = nil) -> NSView {
         let row = NSView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: 30).isActive = true
@@ -900,17 +907,22 @@ final class LibraryWindowController: NSWindowController,
         countLabel.font = .systemFont(ofSize: 13, weight: .medium)
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
+        let depth = folderRow?.depth ?? 0
         let leadingInset = CGFloat(depth * 16)
 
         row.addSubview(button)
         row.addSubview(overlay)
         overlay.addSubview(countLabel)
+        let chevronButton = folderRow.flatMap { makeFolderDisclosureButton(for: $0, tag: tag) }
+        if let chevronButton {
+            row.addSubview(chevronButton)
+            chevronButton.translatesAutoresizingMaskIntoConstraints = false
+        }
 
         button.translatesAutoresizingMaskIntoConstraints = false
         overlay.translatesAutoresizingMaskIntoConstraints = false
         countLabel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
+        var constraints = [
             button.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             button.topAnchor.constraint(equalTo: row.topAnchor),
             button.bottomAnchor.constraint(equalTo: row.bottomAnchor),
@@ -921,11 +933,41 @@ final class LibraryWindowController: NSWindowController,
             countLabel.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -10),
             countLabel.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
             countLabel.widthAnchor.constraint(equalToConstant: 44)
-        ])
+        ]
+        if let chevronButton {
+            constraints.append(contentsOf: [
+                chevronButton.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
+                chevronButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                chevronButton.widthAnchor.constraint(equalToConstant: 16),
+                chevronButton.heightAnchor.constraint(equalToConstant: 18),
+                button.leadingAnchor.constraint(equalTo: chevronButton.trailingAnchor, constant: 2)
+            ])
+        } else {
+            constraints.append(button.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset))
+        }
+        NSLayoutConstraint.activate(constraints)
 
         sourceButtons.append(button)
         sourceCountLabels[tag] = countLabel
         return row
+    }
+
+    private func makeFolderDisclosureButton(for folderRow: LibraryFolderRow, tag: Int) -> NSButton? {
+        guard folderRow.hasChildren else { return nil }
+        let isCollapsed = collapsedFolderPaths.contains(folderRow.url.standardizedFileURL.path)
+        let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
+        let button = NSButton(
+            image: NSImage(systemSymbolName: symbolName, accessibilityDescription: "展开或折叠文件夹") ?? NSImage(),
+            target: self,
+            action: #selector(folderDisclosurePressed(_:))
+        )
+        button.identifier = NSUserInterfaceItemIdentifier("LibraryFolderDisclosure-\(tag)")
+        button.tag = tag
+        button.isBordered = false
+        button.bezelStyle = .shadowlessSquare
+        button.imagePosition = .imageOnly
+        button.contentTintColor = panelTertiaryTextColor()
+        return button
     }
 
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
@@ -1329,6 +1371,29 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
+    }
+
+    @objc
+    private func folderDisclosurePressed(_ sender: NSButton) {
+        let index = sender.tag - 10
+        guard sourceFolderRows.indices.contains(index) else { return }
+        let folderURL = sourceFolderRows[index].url.standardizedFileURL
+        let folderPath = folderURL.path
+
+        if collapsedFolderPaths.contains(folderPath) {
+            collapsedFolderPaths.remove(folderPath)
+        } else {
+            collapsedFolderPaths.insert(folderPath)
+            if case .folder(let selectedFolderURL) = selectedScope {
+                let selectedPath = selectedFolderURL.standardizedFileURL.path
+                if selectedPath.hasPrefix(folderPath + "/") {
+                    selectedScope = .folder(folderURL)
+                }
+            }
+        }
+
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
     }
 
     private func scope(for button: NSButton) -> LibraryScope {
