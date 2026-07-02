@@ -27,6 +27,10 @@ private enum LibraryScope: Equatable {
         }
     }
 
+    var listTitle: String {
+        buttonTitle
+    }
+
     var symbolName: String {
         switch self {
         case .all:
@@ -153,7 +157,7 @@ final class LibraryNoteRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
         let selectionRect = bounds.insetBy(dx: 7, dy: 2)
-        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 10, yRadius: 10)
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 7, yRadius: 7)
         NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.08, alpha: 0.95).setFill()
         path.fill()
     }
@@ -181,6 +185,8 @@ final class LibraryWindowController: NSWindowController,
         target: nil,
         action: nil
     )
+    let noteListTitleLabel = NSTextField(labelWithString: "")
+    let noteListCountLabel = NSTextField(labelWithString: "")
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
     let statusLabel = NSTextField(labelWithString: "")
@@ -252,6 +258,8 @@ final class LibraryWindowController: NSWindowController,
             defer: false
         )
         window.title = "\(MudsnoteBrand.appName) 笔记"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 980, height: 560)
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
@@ -308,7 +316,7 @@ final class LibraryWindowController: NSWindowController,
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(editor)
         sourceList.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        sidebar.widthAnchor.constraint(equalToConstant: 320).isActive = true
+        sidebar.widthAnchor.constraint(equalToConstant: 288).isActive = true
     }
 
     private func buildSourceList() -> NSView {
@@ -319,32 +327,29 @@ final class LibraryWindowController: NSWindowController,
         sourceList.translatesAutoresizingMaskIntoConstraints = false
         sourceListView = sourceList
 
-        let title = NSTextField(labelWithString: "资料库")
-        title.font = .systemFont(ofSize: 22, weight: .bold)
-        title.textColor = panelPrimaryTextColor()
-        title.alignment = .left
-
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
         configureSourceStack(sourceTagStack)
 
-        let folderHeader = NSTextField(labelWithString: "文件夹")
-        folderHeader.font = .systemFont(ofSize: 11, weight: .bold)
-        folderHeader.textColor = panelTertiaryTextColor()
-        folderHeader.alignment = .left
-
-        let tagHeader = NSTextField(labelWithString: "标签")
-        tagHeader.font = .systemFont(ofSize: 11, weight: .bold)
-        tagHeader.textColor = panelTertiaryTextColor()
-        tagHeader.alignment = .left
+        let libraryHeader = makeSourceGroupLabel("Mudsnote", identifier: "LibrarySourceGroup-Mudsnote")
+        let folderHeader = makeSourceGroupLabel("文件夹", identifier: "LibrarySourceGroup-Folders")
+        let tagHeader = makeSourceGroupLabel("标签", identifier: "LibrarySourceGroup-Tags")
 
         rebuildSourceRows(includeTags: false)
 
-        let stack = NSStackView(views: [title, sourcePrimaryStack, folderHeader, sourceFolderStack, tagHeader, sourceTagStack, NSView()])
+        let stack = NSStackView(views: [
+            libraryHeader,
+            sourcePrimaryStack,
+            folderHeader,
+            sourceFolderStack,
+            tagHeader,
+            sourceTagStack,
+            NSView()
+        ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 22, left: 14, bottom: 14, right: 12)
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
         sourceList.addSubview(stack)
         pin(stack, to: sourceList)
         refreshSourceSelection()
@@ -358,18 +363,21 @@ final class LibraryWindowController: NSWindowController,
         sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "笔记")
-        title.font = .systemFont(ofSize: 18, weight: .bold)
-        title.textColor = panelPrimaryTextColor()
+        configureNoteListHeaderLabels()
         configureSearchScopeControl()
 
-        let header = NSStackView(views: [title, NSView(), searchScopeControl])
+        let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 0
+
+        let header = NSStackView(views: [titleStack, NSView(), searchScopeControl])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
-        column.width = 280
+        column.width = 248
         tableView.addTableColumn(column)
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
         tableView.headerView = nil
@@ -492,6 +500,18 @@ final class LibraryWindowController: NSWindowController,
         searchScopeControl.setWidth(44, forSegment: 1)
         searchScopeControl.toolTip = "切换搜索范围"
         searchScopeControl.isHidden = true
+    }
+
+    private func configureNoteListHeaderLabels() {
+        noteListTitleLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListTitle")
+        noteListTitleLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        noteListTitleLabel.textColor = panelPrimaryTextColor()
+        noteListTitleLabel.lineBreakMode = .byTruncatingTail
+
+        noteListCountLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListCount")
+        noteListCountLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        noteListCountLabel.textColor = panelTertiaryTextColor()
+        noteListCountLabel.lineBreakMode = .byTruncatingTail
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -757,6 +777,16 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 4
     }
 
+    private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.identifier = NSUserInterfaceItemIdentifier(identifier)
+        label.font = .systemFont(ofSize: 12, weight: .bold)
+        label.textColor = panelTertiaryTextColor()
+        label.alignment = .left
+        label.lineBreakMode = .byTruncatingTail
+        return label
+    }
+
     private func rebuildSourceRows(includeTags: Bool) {
         sourceButtons.removeAll()
         sourceCountLabels.removeAll()
@@ -899,6 +929,7 @@ final class LibraryWindowController: NSWindowController,
             ? notesForSelectedScope(limit: 240)
             : searchResultsForSelectedScope(query: query, limit: 240)
         listRows = buildGroupedRows(for: notes)
+        updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
         tableView.reloadData()
@@ -924,6 +955,16 @@ final class LibraryWindowController: NSWindowController,
         refreshSourceCounts()
         refreshSourceSelection()
         updateToolbarActionState()
+    }
+
+    private func updateNoteListHeader(query: String) {
+        let title = query.isEmpty
+            ? selectedScope.listTitle
+            : (searchScopeControl.selectedSegment == 1 ? LibraryScope.all.listTitle : selectedScope.listTitle)
+        noteListTitleLabel.stringValue = title
+        noteListCountLabel.stringValue = query.isEmpty
+            ? "\(notes.count) 条笔记"
+            : "\(notes.count) 个结果"
     }
 
     private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {

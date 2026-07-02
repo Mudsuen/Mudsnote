@@ -276,6 +276,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a compact `当前 / 所有` search scope control in the note list header, switched active searches to `NoteStore.searchNotes` so results include body snippets, and highlighted matching title/snippet text in note rows. Added app regression coverage for current-folder search, all-notes search, snippets, and highlight attributes.
 - Lesson: Search parity should improve retrieval feedback before adding a heavier index; scoped search and visible matches give a Notes-like result loop while keeping the storage model simple.
 
+### 49. Notes-like shell header density
+
+- Problem: The library still had a visible app title, a large custom source-list heading, and a generic middle-column `笔记` label, so the first screen did not match Apple Notes' quiet titlebar and scope-aware note list header.
+- Fix: Hid the window title in the titlebar while preserving the system window title, tightened the note-list column width, changed the source list to compact Notes-style group labels, added a selected-scope title plus result/count line to the note-list header, and reduced the selected note card radius. Added app regression coverage for the hidden titlebar, source group label, and list title/count states.
+- Lesson: Notes parity needs density contracts as much as features; the shell should communicate current scope and count without adding heavier controls or changing the Markdown storage boundary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -614,6 +614,8 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         #expect(window.title == "Mudsnote 笔记")
+        #expect(window.titleVisibility == .hidden)
+        #expect(window.titlebarAppearsTransparent)
         #expect(window.styleMask.contains(.resizable))
         #expect(window.toolbar?.displayMode == .iconOnly)
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
@@ -643,6 +645,18 @@ struct MarkdownRichEditorTests {
         #expect(formatItem.image?.accessibilityDescription == "格式")
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
+        let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
+        })
+        #expect(libraryGroup.stringValue == "Mudsnote")
+        let noteListTitle = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibraryNoteListTitle"
+        })
+        let noteListCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibraryNoteListCount"
+        })
+        #expect(noteListTitle.stringValue == "所有笔记")
+        #expect(noteListCount.stringValue == "1 条笔记")
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
@@ -781,6 +795,8 @@ struct MarkdownRichEditorTests {
         #expect(!scopeControl.isHidden)
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
+        #expect(controller.noteListTitleLabel.stringValue == "Projects")
+        #expect(controller.noteListCountLabel.stringValue == "1 个结果")
 
         let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         let titleHighlight = cell.titleLabel.attributedStringValue.attribute(
@@ -802,6 +818,8 @@ struct MarkdownRichEditorTests {
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
+        #expect(controller.noteListTitleLabel.stringValue == "所有笔记")
+        #expect(controller.noteListCountLabel.stringValue == "2 个结果")
     }
 
     @MainActor
