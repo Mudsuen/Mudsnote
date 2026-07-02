@@ -229,6 +229,8 @@ final class LibraryNoteRowView: NSTableRowView {
 fileprivate enum LibraryNoteKeyCommand {
     case open
     case delete
+    case moveDown
+    case moveUp
 }
 
 @MainActor
@@ -247,6 +249,10 @@ final class LibraryNoteTableView: NSTableView {
             command = .open
         case 51, 117:
             command = .delete
+        case 125:
+            command = .moveDown
+        case 126:
+            command = .moveUp
         default:
             command = nil
         }
@@ -1887,6 +1893,10 @@ final class LibraryWindowController: NSWindowController,
                 presentErrorAlert(message: selectedScope == .trash ? "永久删除失败" : "删除失败", details: error.localizedDescription)
                 return true
             }
+        case .moveDown:
+            return moveNoteListSelection(.next)
+        case .moveUp:
+            return moveNoteListSelection(.previous)
         }
     }
 
@@ -1900,6 +1910,45 @@ final class LibraryWindowController: NSWindowController,
     private enum NoteListResultDirection {
         case next
         case previous
+    }
+
+    private func moveNoteListSelection(_ direction: NoteListResultDirection) -> Bool {
+        let noteRows = listRows.indices.filter { listRows[$0].note != nil }
+        guard !noteRows.isEmpty else { return false }
+
+        let selectedRow = tableView.selectedRow
+        let targetRow: Int
+        if let currentIndex = noteRows.firstIndex(of: selectedRow) {
+            switch direction {
+            case .next:
+                targetRow = noteRows[min(currentIndex + 1, noteRows.count - 1)]
+            case .previous:
+                targetRow = noteRows[max(currentIndex - 1, 0)]
+            }
+        } else if selectedRow >= 0 {
+            switch direction {
+            case .next:
+                targetRow = noteRows.first(where: { $0 > selectedRow }) ?? noteRows[noteRows.count - 1]
+            case .previous:
+                targetRow = noteRows.last(where: { $0 < selectedRow }) ?? noteRows[0]
+            }
+        } else {
+            targetRow = direction == .next ? noteRows[0] : noteRows[noteRows.count - 1]
+        }
+
+        do {
+            try saveCurrentNoteIfNeeded()
+            suppressSelectionChanges = true
+            tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+            suppressSelectionChanges = false
+            tableView.scrollRowToVisible(targetRow)
+            loadSelectedRow()
+            return true
+        } catch {
+            suppressSelectionChanges = false
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+            return true
+        }
     }
 
     private func loadFocusedNoteListResultFromSearch() -> Bool {

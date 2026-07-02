@@ -1563,6 +1563,59 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowNoteListArrowKeysSkipGroupRowsAndLoadNotes() throws {
+        let suiteName = "mudsnote.library-arrow-key-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-arrow-key-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Older Keyboard Seed", body: "Older body")
+        _ = try store.saveNewNote(title: "Newer Keyboard Seed", body: "Newer body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        #expect(controller.tableView(controller.tableView, isGroupRow: 0))
+        #expect(controller.tableView.selectedRow == 1)
+        #expect(controller.titleField.stringValue == "Newer Keyboard Seed")
+
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
+        #expect(controller.tableView.selectedRow == 2)
+        #expect(controller.titleField.stringValue == "Older Keyboard Seed")
+
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
+        #expect(controller.tableView.selectedRow == 2)
+        #expect(controller.titleField.stringValue == "Older Keyboard Seed")
+
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
+        #expect(controller.tableView.selectedRow == 1)
+        #expect(controller.titleField.stringValue == "Newer Keyboard Seed")
+
+        controller.tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
+        #expect(controller.tableView.selectedRow == 1)
+        #expect(controller.titleField.stringValue == "Newer Keyboard Seed")
+    }
+
+    @MainActor
+    @Test
     func defaultLaunchOpensLibraryUnlessAnotherSurfaceIsRequested() {
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: []))
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["--library"]))

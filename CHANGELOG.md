@@ -438,6 +438,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added an in-memory Markdown search index keyed by search roots and file signatures. `knownTags`, `listNotes`, and non-empty `searchNotes` now share parsed entries and rebuild only when path, modification date, or size changes. Added regression coverage that modifying a Markdown file refreshes cached search and tag results.
 - Lesson: Local-first Markdown can still feel indexed; cache parsed document metadata while keeping the filesystem as the source of truth.
 
+### 76. Note-list arrow navigation
+
+- Problem: The Notes-like note list handled open/delete keys, but Up/Down navigation still depended on AppKit defaults and could land on recency group rows instead of behaving like a note browser.
+- Fix: Added explicit Up/Down handling for the library note list. Keyboard movement now skips group rows, clamps at list boundaries, scrolls the target row into view, saves pending edits, and loads the selected note into the editor. Added regression coverage for group-row skipping and note loading.
+- Lesson: Apple Notes parity depends on keyboard browsing details; grouped rows are visual structure, not keyboard destinations.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
