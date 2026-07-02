@@ -126,13 +126,16 @@ struct MarkdownRichEditorTests {
         let markdown = "Before\n[source file](Attachments/source%20file.pdf)\nAfter"
         let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: noteURL)
         var attachmentMarkdown: String?
+        var attachmentFilePath: String?
         rendered.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rendered.length)) { value, range, stop in
             guard value as? NSTextAttachment != nil else { return }
             attachmentMarkdown = rendered.attribute(.qmAttachmentMarkdown, at: range.location, effectiveRange: nil) as? String
+            attachmentFilePath = rendered.attribute(.qmAttachmentFilePath, at: range.location, effectiveRange: nil) as? String
             stop.pointee = true
         }
 
         #expect(attachmentMarkdown == "[source file](Attachments/source%20file.pdf)")
+        #expect(attachmentFilePath == attachmentURL.path)
         #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
     }
 
@@ -957,6 +960,7 @@ struct MarkdownRichEditorTests {
         #expect(FileManager.default.fileExists(atPath: copiedAttachment.path))
         #expect(copiedAttachment.path.contains("/Attachments/"))
         var editorAttachmentMarkdowns: [String] = []
+        var editorAttachmentFilePaths: [String] = []
         controller.editorTextView.attributedString().enumerateAttribute(
             .qmAttachmentMarkdown,
             in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
@@ -965,7 +969,16 @@ struct MarkdownRichEditorTests {
                 editorAttachmentMarkdowns.append(value)
             }
         }
+        controller.editorTextView.attributedString().enumerateAttribute(
+            .qmAttachmentFilePath,
+            in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
+        ) { value, _, _ in
+            if let value = value as? String {
+                editorAttachmentFilePaths.append(value)
+            }
+        }
         #expect(editorAttachmentMarkdowns.contains { $0.contains("source%20file.pdf") })
+        #expect(editorAttachmentFilePaths.contains(copiedAttachment.path))
 
         _ = try controller.saveCurrentNoteForLibrary()
 

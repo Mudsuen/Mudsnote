@@ -433,6 +433,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         toggleChecklistIfNeeded(atCharacterIndex: index)
     }
 
+    func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool {
+        guard
+            let storage = textView.textStorage,
+            index >= 0,
+            index < storage.length,
+            let path = storage.attribute(.qmAttachmentFilePath, at: index, effectiveRange: nil) as? String
+        else { return false }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        return true
+    }
+
     // MARK: - NSTextViewDelegate
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

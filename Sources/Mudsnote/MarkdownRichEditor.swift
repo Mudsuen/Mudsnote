@@ -9,6 +9,7 @@ extension NSAttributedString.Key {
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
+    static let qmAttachmentFilePath = NSAttributedString.Key("MudsnoteAttachmentFilePath")
 }
 
 let markdownItalicObliqueness: CGFloat = 0.16
@@ -132,6 +133,13 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView)
     func markdownTextViewToggleChecklist(_ textView: MarkdownTextView)
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool
+    func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool
+}
+
+extension MarkdownTextViewCommands {
+    func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool {
+        false
+    }
 }
 
 final class MarkdownTextView: NSTextView {
@@ -151,7 +159,11 @@ final class MarkdownTextView: NSTextView {
             y: point.y - textContainerInset.height
         )
 
-        if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer) {
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+        if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer)
+            || didHitFileAttachment(atCharacterIndex: characterIndex) {
             NSCursor.pointingHand.set()
         } else {
             NSCursor.iBeam.set()
@@ -238,6 +250,12 @@ final class MarkdownTextView: NSTextView {
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
+        if event.clickCount >= 2,
+           didHitFileAttachment(atCharacterIndex: characterIndex),
+           commandDelegate?.markdownTextView(self, didDoubleClickAttachmentAt: characterIndex) == true {
+            return
+        }
+
         if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer),
            commandDelegate?.markdownTextView(self, didClickCharacterAt: characterIndex) == true {
             return
@@ -248,6 +266,11 @@ final class MarkdownTextView: NSTextView {
 
     override func mouseDragged(with event: NSEvent) {
         super.mouseDragged(with: event)
+    }
+
+    private func didHitFileAttachment(atCharacterIndex characterIndex: Int) -> Bool {
+        guard let textStorage, characterIndex >= 0, characterIndex < textStorage.length else { return false }
+        return textStorage.attribute(.qmAttachmentFilePath, at: characterIndex, effectiveRange: nil) is String
     }
 
     private func addChecklistCursorRects() {
@@ -1081,6 +1104,7 @@ enum MarkdownRichTextCodec {
         let attributed = NSMutableAttributedString(attachment: attachment)
         attributed.addAttributes(baseAttributes.merging([
             .qmAttachmentMarkdown: markdown,
+            .qmAttachmentFilePath: fileURL.path,
             .toolTip: fileURL.path,
             .paragraphStyle: theme.paragraphStyle(for: paragraphKind),
             .qmParagraphKind: paragraphKind.encodedValue

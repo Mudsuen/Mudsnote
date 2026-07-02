@@ -450,6 +450,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a local-file attachment chip for existing non-image Markdown links while preserving the original Markdown through serialization. Added regression coverage for file-link rendering and toolbar-inserted attachments.
 - Lesson: Attachment parity can stay local-first by turning filesystem-backed links into visible editor affordances without changing Markdown storage.
 
+### 78. Openable attachment chips
+
+- Problem: Non-image attachment chips were visible, but still behaved like static glyphs instead of an Apple Notes-style file affordance.
+- Fix: Stored the resolved local file path on rendered attachment chips, switched the editor cursor to a hand over file attachments, and opened the file through the system workspace on double-click in both library and floating editors.
+- Lesson: Lightweight attachment parity should make local files directly reachable while keeping the Markdown link as the durable source of truth.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
