@@ -334,6 +334,7 @@ final class LibraryWindowController: NSWindowController,
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
+    private var autosaveTimer: Timer?
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
@@ -441,6 +442,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func windowWillClose(_ notification: Notification) {
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
         try? saveCurrentNoteIfNeeded()
         onClose()
     }
@@ -2156,6 +2159,28 @@ final class LibraryWindowController: NSWindowController,
         updateEmptyState()
         statusLabel.stringValue = selectedURL == nil ? "新笔记，未保存" : "已修改"
         updateToolbarActionState()
+        scheduleAutosave()
+    }
+
+    private func scheduleAutosave() {
+        autosaveTimer?.invalidate()
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.autosaveCurrentNote()
+            }
+        }
+    }
+
+    private func autosaveCurrentNote() {
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
+        guard isDirty, selectedScope != .trash else { return }
+
+        do {
+            _ = try saveCurrentNote(force: false)
+        } catch {
+            statusLabel.stringValue = "自动保存失败"
+        }
     }
 
     private func saveCurrentNoteIfNeeded() throws {
@@ -2167,6 +2192,8 @@ final class LibraryWindowController: NSWindowController,
     private func saveCurrentNote(force: Bool) throws -> URL? {
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
 
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)

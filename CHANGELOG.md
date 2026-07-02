@@ -384,6 +384,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added Up-arrow handling for the toolbar search field so it selects and focuses the last visible note result, while Return preserves the currently selected result instead of forcing the first result. Expanded regression coverage for first/last result selection.
 - Lesson: Search parity is a responder-chain detail as much as a search algorithm detail; preserve the user's current result selection before loading it.
 
+### 67. Library editor autosave
+
+- Problem: The Notes-like library editor still behaved like a manual-save editor after typing, leaving a visible dirty state until switching notes or closing the window.
+- Fix: Added a lightweight debounced autosave for editable library notes. Edits schedule a short save timer, explicit saves cancel the timer, trash remains read-only, and close still flushes pending edits. Added regression coverage that edits to an existing library note are written back automatically.
+- Lesson: Apple Notes parity requires save behavior as much as visual resemblance; debounce autosave keeps Markdown files current without adding a database or background index.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

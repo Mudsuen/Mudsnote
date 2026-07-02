@@ -927,6 +927,50 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowAutosavesEditedExistingNote() async throws {
+        let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-autosave-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Autosave Seed", body: "Original body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Autosaved body",
+            theme: controller.theme,
+            baseURL: noteURL
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+
+        let loaded = try store.loadNote(at: noteURL)
+        #expect(loaded.body == "Autosaved body")
+        #expect(controller.statusLabel.stringValue != "已修改")
+    }
+
+    @MainActor
+    @Test
     func libraryNoteListShowsImageAttachmentThumbnail() throws {
         let suiteName = "mudsnote.library-thumbnail-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
