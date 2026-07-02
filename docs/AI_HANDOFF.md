@@ -110,7 +110,9 @@ Split into focused extension files (same `EditorWindowController` class, no beha
 
 The user has repeatedly pushed `Mudsnote` toward a more native macOS utility-panel feel, especially for quick capture.
 
-The important current direction is:
+The current desktop goal is full Apple Notes core-function and UI parity for the macOS library window, bounded by local-first Markdown storage. Use `docs/apple-notes-parity-roadmap.md` as the checklist before choosing new desktop UI work.
+
+The important quick-capture direction remains:
 
 - quick capture is not a shrunken full editor
 - quick capture has separate `title + body`
