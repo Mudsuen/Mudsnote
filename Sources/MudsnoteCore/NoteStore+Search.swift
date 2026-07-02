@@ -55,7 +55,8 @@ extension NoteStore {
                     snippet: firstMeaningfulLine(from: note.body) ?? "",
                     modifiedAt: modifiedAt,
                     tags: note.tags,
-                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
+                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
+                    thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
                 ))
             }
         }
@@ -77,7 +78,8 @@ extension NoteStore {
                     snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
                     modifiedAt: note.modifiedAt,
                     tags: loaded?.tags ?? [],
-                    hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false
+                    hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
+                    thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
                 )
             }
         }
@@ -140,7 +142,8 @@ extension NoteStore {
                 snippet: snippet,
                 modifiedAt: modifiedAt,
                 tags: note.tags,
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
+                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
             ),
             score: titleScore + bodyScore + tagScore
         )

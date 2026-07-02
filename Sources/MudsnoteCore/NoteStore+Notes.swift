@@ -169,7 +169,8 @@ extension NoteStore {
                 snippet: firstMeaningfulStoredLine(from: note.body) ?? "",
                 modifiedAt: modifiedAt,
                 tags: note.tags,
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body)
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
+                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
             ))
         }
 

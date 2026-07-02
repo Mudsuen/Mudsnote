@@ -89,6 +89,30 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func listNotesResolvesLocalImageThumbnailReferences() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(
+            title: "Image Note",
+            body: "![preview](Attachments/photo%20one.png)",
+            in: notesDirectory
+        )
+        let imageURL = noteURL.deletingLastPathComponent()
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("photo one.png")
+        try FileManager.default.createDirectory(at: imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: imageURL)
+
+        let note = try #require(store.listNotes(limit: 10).first)
+
+        #expect(note.hasAttachments)
+        #expect(note.thumbnailURL?.standardizedFileURL.path == imageURL.standardizedFileURL.path)
+    }
+
+    @Test
     func trashRestoreAndPermanentDeletePreserveMarkdownLifecycle() throws {
         let harness = try TestHarness()
         let store = harness.store

@@ -899,6 +899,53 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryNoteListShowsImageAttachmentThumbnail() throws {
+        let suiteName = "mudsnote.library-thumbnail-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-thumbnail-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(
+            title: "Image Attachment",
+            body: "![Preview](Attachments/thumb.png)"
+        )
+        let imageURL = noteURL.deletingLastPathComponent()
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("thumb.png")
+        try FileManager.default.createDirectory(at: imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let pngData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        try pngData.write(to: imageURL)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+
+        #expect(controller.noteListSearchResultsForLibrary().first?.thumbnailURL?.path == imageURL.standardizedFileURL.path)
+        #expect(!cell.thumbnailImageView.isHidden)
+        #expect(cell.thumbnailImageView.image != nil)
+        #expect(cell.attachmentImageView.isHidden)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowSearchScopesAndHighlightsMatches() throws {
         let suiteName = "mudsnote.library-search-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

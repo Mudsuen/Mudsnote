@@ -141,6 +141,7 @@ final class LibraryNoteCellView: NSTableCellView {
     let snippetLabel = NSTextField(labelWithString: "")
     let metaLabel = NSTextField(labelWithString: "")
     let attachmentImageView = NSImageView()
+    let thumbnailImageView = NSImageView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -169,24 +170,41 @@ final class LibraryNoteCellView: NSTableCellView {
         attachmentImageView.imageScaling = .scaleProportionallyDown
         attachmentImageView.isHidden = true
 
+        thumbnailImageView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteThumbnailImage")
+        thumbnailImageView.imageScaling = .scaleProportionallyUpOrDown
+        thumbnailImageView.wantsLayer = true
+        thumbnailImageView.layer?.cornerRadius = 6
+        thumbnailImageView.layer?.masksToBounds = true
+        thumbnailImageView.layer?.borderWidth = 1
+        thumbnailImageView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+        thumbnailImageView.isHidden = true
+
         let metaRow = NSStackView(views: [attachmentImageView, metaLabel])
         metaRow.orientation = .horizontal
         metaRow.alignment = .centerY
         metaRow.spacing = 4
 
-        let stack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 4
+        let textStack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 4
+
+        let stack = NSStackView(views: [textStack, thumbnailImageView])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
         addSubview(stack)
         pin(stack, to: self)
         for label in [titleLabel, snippetLabel] {
-            label.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20).isActive = true
+            label.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
         }
-        metaRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20).isActive = true
+        textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
         attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+        thumbnailImageView.widthAnchor.constraint(equalToConstant: 46).isActive = true
+        thumbnailImageView.heightAnchor.constraint(equalToConstant: 46).isActive = true
     }
 
     @available(*, unavailable)
@@ -1416,7 +1434,8 @@ final class LibraryWindowController: NSWindowController,
                 snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
                 modifiedAt: note.modifiedAt,
                 tags: loaded?.tags ?? [],
-                hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false
+                hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
+                thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
             )
         }
     }
@@ -1444,7 +1463,8 @@ final class LibraryWindowController: NSWindowController,
                 snippet: matchingLine ?? firstMeaningfulLine(from: loaded.body) ?? "",
                 modifiedAt: note.modifiedAt,
                 tags: loaded.tags,
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body)
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
             )
         }
     }
@@ -1551,9 +1571,20 @@ final class LibraryWindowController: NSWindowController,
             baseColor: panelSecondaryTextColor(),
             query: query
         )
-        cell.attachmentImageView.isHidden = !note.hasAttachments
+        let thumbnailImage = thumbnailImage(for: note)
+        cell.thumbnailImageView.image = thumbnailImage
+        cell.thumbnailImageView.isHidden = thumbnailImage == nil
+        cell.attachmentImageView.isHidden = !note.hasAttachments || thumbnailImage != nil
         cell.metaLabel.stringValue = metadataText(for: note)
         return cell
+    }
+
+    private func thumbnailImage(for note: NoteSearchResult) -> NSImage? {
+        guard let thumbnailURL = note.thumbnailURL,
+              FileManager.default.fileExists(atPath: thumbnailURL.path) else {
+            return nil
+        }
+        return NSImage(contentsOf: thumbnailURL)
     }
 
     func highlightedSearchString(

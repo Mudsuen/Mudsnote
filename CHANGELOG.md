@@ -354,6 +354,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a `square.and.arrow.up` toolbar item and matching menu action for exporting the selected note as Markdown. Export saves pending edits first, then copies the current `.md` file to a user-chosen destination without introducing a new storage format. Added regression coverage for toolbar presence, enabled/disabled export states, and exported Markdown content.
 - Lesson: Share parity can stay lightweight by exporting the local source file directly; the UI gains a Notes-like affordance without adding account, sync, or proprietary document behavior.
 
+### 62. Note-list image thumbnails
+
+- Problem: Notes with image attachments still looked like ordinary attachment rows in the middle list, while Apple Notes uses compact thumbnails to make visual notes scannable.
+- Fix: Added a lightweight optional thumbnail URL to `NoteSearchResult`, resolved from the first local Markdown image or image attachment reference. The note list now shows a clipped 46px thumbnail for existing local images and falls back to the paperclip for non-image attachments. Added core parsing coverage and app-level row rendering coverage.
+- Lesson: Thumbnail parity can reuse already loaded Markdown bodies; do not add a separate media index until the visible list actually needs it.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

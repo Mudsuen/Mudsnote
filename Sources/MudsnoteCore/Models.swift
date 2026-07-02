@@ -19,6 +19,7 @@ public struct NoteSearchResult: Equatable, Sendable {
     public let modifiedAt: Date
     public let tags: [String]
     public let hasAttachments: Bool
+    public let thumbnailURL: URL?
 
     public init(
         url: URL,
@@ -26,7 +27,8 @@ public struct NoteSearchResult: Equatable, Sendable {
         snippet: String,
         modifiedAt: Date,
         tags: [String] = [],
-        hasAttachments: Bool = false
+        hasAttachments: Bool = false,
+        thumbnailURL: URL? = nil
     ) {
         self.url = url
         self.title = title
@@ -34,6 +36,7 @@ public struct NoteSearchResult: Equatable, Sendable {
         self.modifiedAt = modifiedAt
         self.tags = tags
         self.hasAttachments = hasAttachments
+        self.thumbnailURL = thumbnailURL
     }
 }
 
@@ -152,6 +155,41 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             || loweredBody.contains("](../attachments/")
             || loweredBody.contains("](/attachments/")
             || loweredBody.contains("![") && loweredBody.contains("(attachments/")
+    }
+
+    public static func firstLocalImageURL(in body: String, relativeTo noteURL: URL) -> URL? {
+        let pattern = #"!?\[[^\]]*\]\(([^)\s]+)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+
+        let nsBody = body as NSString
+        let range = NSRange(location: 0, length: nsBody.length)
+        let noteDirectory = noteURL.deletingLastPathComponent()
+        let imageExtensions: Set<String> = ["apng", "avif", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
+
+        for match in regex.matches(in: body, range: range) where match.numberOfRanges > 1 {
+            var rawPath = nsBody.substring(with: match.range(at: 1))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>"))
+            guard !rawPath.isEmpty,
+                  !rawPath.localizedCaseInsensitiveContains("://") else { continue }
+
+            if let fragmentIndex = rawPath.firstIndex(of: "#") {
+                rawPath = String(rawPath[..<fragmentIndex])
+            }
+            if let queryIndex = rawPath.firstIndex(of: "?") {
+                rawPath = String(rawPath[..<queryIndex])
+            }
+
+            let decodedPath = rawPath.removingPercentEncoding ?? rawPath
+            let extensionName = (decodedPath as NSString).pathExtension.lowercased()
+            guard imageExtensions.contains(extensionName) else { continue }
+
+            if decodedPath.hasPrefix("/") {
+                return URL(fileURLWithPath: decodedPath).standardizedFileURL
+            }
+            return noteDirectory.appendingPathComponent(decodedPath).standardizedFileURL
+        }
+
+        return nil
     }
 
     public static func normalizedTags(_ tags: [String]) -> [String] {
