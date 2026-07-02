@@ -420,6 +420,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added the supplied Apple Notes screenshot as a project reference, added `scripts/visual_notes_qa.sh` to launch the installed app and generate a side-by-side comparison image, and changed default library focus from the search field to the note list. Added regression coverage that default show does not focus search.
 - Lesson: A repeatable visual baseline turns vague Notes-like polish into concrete deltas; default focus state is part of the visual contract.
 
+### 73. Wider Notes-like library default
+
+- Problem: The first side-by-side visual QA artifact showed Mudsnote's main library window was narrower than the Apple Notes reference, compressing the editor pane and changing the three-pane balance.
+- Fix: Increased the default and direct-open library window width from 1040 to 1160 while preserving the existing height and split-pane widths, giving the editor more room without changing the storage or navigation model.
+- Lesson: Window proportion is part of Notes parity; compare captured pixels before tuning individual row and toolbar spacing.
+
+### 74. Autosave debounce stability
+
+- Problem: Full app test runs could starve the library editor's RunLoop-backed autosave timer long enough for the autosave assertion to miss the save, exposing a fragile debounce implementation.
+- Fix: Replaced the autosave `Timer` with a cancellable `Task` debounce and changed the autosave regression to wait for the saved state instead of assuming an exact wake-up instant.
+- Lesson: Notes-like autosave must be eventual and resilient under UI load; tests should assert the state contract, not a precise timer boundary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

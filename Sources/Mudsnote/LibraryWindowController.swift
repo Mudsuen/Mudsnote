@@ -334,7 +334,7 @@ final class LibraryWindowController: NSWindowController,
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
-    private var autosaveTimer: Timer?
+    private var autosaveTask: Task<Void, Never>?
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
@@ -377,7 +377,7 @@ final class LibraryWindowController: NSWindowController,
         self.onClose = onClose
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 1160, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -411,7 +411,7 @@ final class LibraryWindowController: NSWindowController,
         guard let window else { return }
         if !hasCenteredWindow {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            let targetSize = NSSize(width: 1040, height: 764)
+            let targetSize = NSSize(width: 1160, height: 764)
             let targetOrigin = NSPoint(
                 x: visibleFrame.midX - targetSize.width / 2,
                 y: visibleFrame.midY - targetSize.height / 2
@@ -443,8 +443,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func windowWillClose(_ notification: Notification) {
-        autosaveTimer?.invalidate()
-        autosaveTimer = nil
+        autosaveTask?.cancel()
+        autosaveTask = nil
         try? saveCurrentNoteIfNeeded()
         onClose()
     }
@@ -2182,17 +2182,19 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func scheduleAutosave() {
-        autosaveTimer?.invalidate()
-        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
                 self?.autosaveCurrentNote()
             }
         }
     }
 
     private func autosaveCurrentNote() {
-        autosaveTimer?.invalidate()
-        autosaveTimer = nil
+        autosaveTask?.cancel()
+        autosaveTask = nil
         guard isDirty, selectedScope != .trash else { return }
 
         do {
@@ -2211,8 +2213,8 @@ final class LibraryWindowController: NSWindowController,
     private func saveCurrentNote(force: Bool) throws -> URL? {
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
-        autosaveTimer?.invalidate()
-        autosaveTimer = nil
+        autosaveTask?.cancel()
+        autosaveTask = nil
 
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)

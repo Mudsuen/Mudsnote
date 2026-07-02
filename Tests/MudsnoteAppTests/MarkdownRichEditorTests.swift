@@ -985,9 +985,16 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.statusLabel.stringValue == "正在保存...")
 
-        try await Task.sleep(nanoseconds: 1_100_000_000)
+        var loaded = try store.loadNote(at: noteURL)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            loaded = try store.loadNote(at: noteURL)
+            if loaded.body == "Autosaved body", controller.statusLabel.stringValue != "正在保存..." {
+                break
+            }
+        }
 
-        let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
         #expect(controller.statusLabel.stringValue != "正在保存...")
     }
