@@ -962,11 +962,13 @@ struct MarkdownRichEditorTests {
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
 
+        #expect(controller.statusLabel.stringValue == "正在保存...")
+
         try await Task.sleep(nanoseconds: 1_100_000_000)
 
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
-        #expect(controller.statusLabel.stringValue != "已修改")
+        #expect(controller.statusLabel.stringValue != "正在保存...")
     }
 
     @MainActor

@@ -2157,7 +2157,7 @@ final class LibraryWindowController: NSWindowController,
         guard !suppressEditorChanges, selectedScope != .trash else { return }
         isDirty = true
         updateEmptyState()
-        statusLabel.stringValue = selectedURL == nil ? "新笔记，未保存" : "已修改"
+        statusLabel.stringValue = selectedURL == nil ? "新笔记，正在保存..." : "正在保存..."
         updateToolbarActionState()
         scheduleAutosave()
     }

@@ -390,6 +390,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight debounced autosave for editable library notes. Edits schedule a short save timer, explicit saves cancel the timer, trash remains read-only, and close still flushes pending edits. Added regression coverage that edits to an existing library note are written back automatically.
 - Lesson: Apple Notes parity requires save behavior as much as visual resemblance; debounce autosave keeps Markdown files current without adding a database or background index.
 
+### 68. Subtler autosave status copy
+
+- Problem: After adding library autosave, the editor still used a manual-save style dirty label, which made the centered metadata line feel less like Apple Notes.
+- Fix: Replaced the persistent `已修改` dirty label with short autosave-progress copy for existing and new notes, then returned to the normal date line after save. Tightened autosave regression coverage for the status transition.
+- Lesson: A Notes-like editor should communicate persistence without making manual save state the main visual focus.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
