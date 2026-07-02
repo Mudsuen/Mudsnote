@@ -444,6 +444,55 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         return true
     }
 
+    @discardableResult
+    func configureAttachmentContextMenu(_ menu: NSMenu, forAttachmentPath path: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+
+        let openItem = NSMenuItem(title: "打开附件", action: #selector(openAttachmentMenuItemPressed(_:)), keyEquivalent: "")
+        openItem.target = self
+        openItem.representedObject = path
+
+        let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealAttachmentMenuItemPressed(_:)), keyEquivalent: "")
+        revealItem.target = self
+        revealItem.representedObject = path
+
+        let copyPathItem = NSMenuItem(title: "复制附件路径", action: #selector(copyAttachmentPathMenuItemPressed(_:)), keyEquivalent: "")
+        copyPathItem.target = self
+        copyPathItem.representedObject = path
+
+        if !menu.items.isEmpty {
+            menu.insertItem(.separator(), at: 0)
+        }
+        for item in [copyPathItem, revealItem, openItem] {
+            menu.insertItem(item, at: 0)
+        }
+        return true
+    }
+
+    @objc
+    private func openAttachmentMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = attachmentURL(from: sender) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc
+    private func revealAttachmentMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = attachmentURL(from: sender) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc
+    private func copyAttachmentPathMenuItemPressed(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+    }
+
+    private func attachmentURL(from sender: NSMenuItem) -> URL? {
+        guard let path = sender.representedObject as? String else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
     // MARK: - NSTextViewDelegate
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {

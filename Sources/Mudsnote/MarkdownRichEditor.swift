@@ -145,7 +145,7 @@ extension MarkdownTextViewCommands {
 final class MarkdownTextView: NSTextView {
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
-    var configureContextMenu: ((NSMenu) -> Void)?
+    var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
 
     private func updateHoverCursor(with event: NSEvent) {
         guard let layoutManager, let textContainer else {
@@ -231,7 +231,7 @@ final class MarkdownTextView: NSTextView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
-        configureContextMenu?(menu)
+        configureContextMenu?(menu, event)
         return menu
     }
 
@@ -269,8 +269,24 @@ final class MarkdownTextView: NSTextView {
     }
 
     private func didHitFileAttachment(atCharacterIndex characterIndex: Int) -> Bool {
-        guard let textStorage, characterIndex >= 0, characterIndex < textStorage.length else { return false }
-        return textStorage.attribute(.qmAttachmentFilePath, at: characterIndex, effectiveRange: nil) is String
+        fileAttachmentPath(atCharacterIndex: characterIndex) != nil
+    }
+
+    func fileAttachmentPath(at event: NSEvent) -> String? {
+        guard let layoutManager, let textContainer else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        return fileAttachmentPath(atCharacterIndex: characterIndex)
+    }
+
+    func fileAttachmentPath(atCharacterIndex characterIndex: Int) -> String? {
+        guard let textStorage, characterIndex >= 0, characterIndex < textStorage.length else { return nil }
+        return textStorage.attribute(.qmAttachmentFilePath, at: characterIndex, effectiveRange: nil) as? String
     }
 
     private func addChecklistCursorRects() {

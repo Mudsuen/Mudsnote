@@ -979,6 +979,10 @@ struct MarkdownRichEditorTests {
         }
         #expect(editorAttachmentMarkdowns.contains { $0.contains("source%20file.pdf") })
         #expect(editorAttachmentFilePaths.contains(copiedAttachment.path))
+        let attachmentMenu = NSMenu()
+        #expect(controller.configureAttachmentContextMenu(attachmentMenu, forAttachmentPath: copiedAttachment.path))
+        #expect(Array(attachmentMenu.items.map(\.title).prefix(3)) == ["打开附件", "在 Finder 中显示", "复制附件路径"])
+        #expect(Array(attachmentMenu.items.prefix(3)).allSatisfy { $0.representedObject as? String == copiedAttachment.path })
 
         _ = try controller.saveCurrentNoteForLibrary()
 

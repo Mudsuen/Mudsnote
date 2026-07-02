@@ -67,7 +67,65 @@ fi
 APP_SCREENSHOT="$OUTPUT_DIR/mudsnote-library.png"
 PAIR_SCREENSHOT="$OUTPUT_DIR/apple-notes-vs-mudsnote.png"
 
-screencapture -x -l "$WINDOW_ID" "$APP_SCREENSHOT"
+if ! screencapture -x -l "$WINDOW_ID" "$APP_SCREENSHOT" 2>/dev/null; then
+  echo "Window capture unavailable; falling back to full-screen crop." >&2
+  FULL_SCREENSHOT="$OUTPUT_DIR/mudsnote-fullscreen.png"
+  screencapture -x "$FULL_SCREENSHOT"
+  /usr/bin/swift - "$WINDOW_ID" "$FULL_SCREENSHOT" "$APP_SCREENSHOT" <<'SWIFT'
+import AppKit
+import CoreGraphics
+
+let args = CommandLine.arguments
+guard args.count == 4, let targetWindowID = Int(args[1]) else {
+    fputs("Usage: crop-window window-id full output\n", stderr)
+    exit(2)
+}
+
+let fullURL = URL(fileURLWithPath: args[2])
+let outputURL = URL(fileURLWithPath: args[3])
+let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+let windows = (CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]) ?? []
+
+guard
+    let window = windows.first(where: { ($0[kCGWindowNumber as String] as? Int) == targetWindowID }),
+    let bounds = window[kCGWindowBounds as String] as? [String: Any],
+    let x = bounds["X"] as? Double,
+    let y = bounds["Y"] as? Double,
+    let width = bounds["Width"] as? Double,
+    let height = bounds["Height"] as? Double,
+    let fullData = try? Data(contentsOf: fullURL),
+    let source = NSBitmapImageRep(data: fullData),
+    let cgImage = source.cgImage
+else {
+    fputs("Could not crop Mudsnote window from full screenshot\n", stderr)
+    exit(2)
+}
+
+let screenFrame = NSScreen.screens.reduce(CGRect.null) { partial, screen in
+    partial.union(screen.frame)
+}
+let scaleX = CGFloat(source.pixelsWide) / max(screenFrame.width, 1)
+let scaleY = CGFloat(source.pixelsHigh) / max(screenFrame.height, 1)
+let cropRect = CGRect(
+    x: CGFloat(x) * scaleX,
+    y: CGFloat(y) * scaleY,
+    width: CGFloat(width) * scaleX,
+    height: CGFloat(height) * scaleY
+).integral.intersection(CGRect(x: 0, y: 0, width: source.pixelsWide, height: source.pixelsHigh))
+
+guard let cropped = cgImage.cropping(to: cropRect), cropRect.width > 0, cropRect.height > 0 else {
+    fputs("Could not create cropped Mudsnote window image\n", stderr)
+    exit(2)
+}
+
+let bitmap = NSBitmapImageRep(cgImage: cropped)
+guard let png = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
+    fputs("Could not encode cropped Mudsnote window image\n", stderr)
+    exit(2)
+}
+try png.write(to: outputURL)
+SWIFT
+fi
 
 /usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" <<'SWIFT'
 import AppKit
@@ -108,6 +166,39 @@ func drawLabel(_ text: String, in rect: NSRect) {
 
 let reference = loadImage(referenceURL)
 let app = loadImage(appURL)
+
+func imageHasVisibleContent(_ image: NSImage) -> Bool {
+    guard
+        let tiff = image.tiffRepresentation,
+        let bitmap = NSBitmapImageRep(data: tiff)
+    else {
+        return false
+    }
+
+    let stepX = max(bitmap.pixelsWide / 80, 1)
+    let stepY = max(bitmap.pixelsHigh / 80, 1)
+    var brightSamples = 0
+    var totalSamples = 0
+
+    for y in stride(from: 0, to: bitmap.pixelsHigh, by: stepY) {
+        for x in stride(from: 0, to: bitmap.pixelsWide, by: stepX) {
+            guard let color = bitmap.colorAt(x: x, y: y) else { continue }
+            totalSamples += 1
+            let brightness = max(color.redComponent, color.greenComponent, color.blueComponent)
+            if color.alphaComponent > 0.05 && brightness > 0.08 {
+                brightSamples += 1
+            }
+        }
+    }
+
+    return totalSamples > 0 && Double(brightSamples) / Double(totalSamples) > 0.002
+}
+
+guard imageHasVisibleContent(app) else {
+    fputs("Mudsnote screenshot appears blank; check macOS screen capture permissions or the active desktop session.\n", stderr)
+    exit(2)
+}
+
 let targetHeight: CGFloat = 900
 let labelHeight: CGFloat = 52
 let gap: CGFloat = 24

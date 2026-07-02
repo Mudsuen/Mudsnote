@@ -456,6 +456,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Stored the resolved local file path on rendered attachment chips, switched the editor cursor to a hand over file attachments, and opened the file through the system workspace on double-click in both library and floating editors.
 - Lesson: Lightweight attachment parity should make local files directly reachable while keeping the Markdown link as the durable source of truth.
 
+### 79. Attachment context actions
+
+- Problem: Attachment chips could be opened with a double-click, but right-clicking them still showed only the generic editor menu instead of file-specific actions.
+- Fix: Added attachment-aware editor context menus for local file chips, with open, reveal in Finder, and copy path actions in both the library and floating editors. Added regression coverage for the library attachment menu contract and hardened visual QA when window-level capture is unavailable.
+- Lesson: Desktop Notes parity needs contextual file actions at the point of interaction, not only global note-level actions.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

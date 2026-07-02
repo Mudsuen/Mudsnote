@@ -27,7 +27,10 @@ extension EditorWindowController {
 
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
-        editorTextView.configureContextMenu = { [weak self] menu in
+        editorTextView.configureContextMenu = { [weak self] menu, event in
+            if let path = self?.editorTextView.fileAttachmentPath(at: event) {
+                self?.configureAttachmentContextMenu(menu, forAttachmentPath: path)
+            }
             self?.configureAIContextMenu(menu)
         }
         editorTextView.onTextInputStateChanged = { [weak self] in
