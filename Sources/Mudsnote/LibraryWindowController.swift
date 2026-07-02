@@ -194,6 +194,7 @@ final class LibraryWindowController: NSWindowController,
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
     private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
+    private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
     private let onOpenInSeparateWindow: (URL) -> Void
@@ -485,17 +486,19 @@ final class LibraryWindowController: NSWindowController,
             Self.linkToolbarItemIdentifier,
             Self.attachmentToolbarItemIdentifier,
             .space,
-            Self.openSeparateToolbarItemIdentifier,
-            Self.moveToolbarItemIdentifier,
-            Self.saveToolbarItemIdentifier,
-            Self.deleteToolbarItemIdentifier,
-            Self.restoreToolbarItemIdentifier,
+            Self.moreToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar)
+        toolbarDefaultItemIdentifiers(toolbar) + [
+            Self.openSeparateToolbarItemIdentifier,
+            Self.moveToolbarItemIdentifier,
+            Self.saveToolbarItemIdentifier,
+            Self.deleteToolbarItemIdentifier,
+            Self.restoreToolbarItemIdentifier
+        ]
     }
 
     func toolbar(
@@ -534,15 +537,12 @@ final class LibraryWindowController: NSWindowController,
                 visibilityPriority: .low
             )
         case Self.formatToolbarItemIdentifier:
-            let item = toolbarButtonItem(
+            let item = toolbarImageItem(
                 identifier: itemIdentifier,
                 label: "格式",
-                symbolName: "textformat.size",
+                image: makeFormatToolbarImage(),
                 action: #selector(formatPressed(_:))
             )
-            if item.image == nil {
-                item.image = makeFormatToolbarImage()
-            }
             return item
         case Self.checklistToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -604,6 +604,13 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(restoreSelectedNotePressed),
                 visibilityPriority: .low
             )
+        case Self.moreToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "更多",
+                symbolName: "ellipsis.circle",
+                action: #selector(moreActionsPressed(_:))
+            )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "搜索"
@@ -626,6 +633,8 @@ final class LibraryWindowController: NSWindowController,
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
+        case Self.moreToolbarItemIdentifier:
+            return true
         case Self.openSeparateToolbarItemIdentifier:
             return selectedURL != nil
         case Self.formatToolbarItemIdentifier,
@@ -659,6 +668,24 @@ final class LibraryWindowController: NSWindowController,
         item.paletteLabel = label
         item.toolTip = label
         item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        item.target = self
+        item.action = action
+        item.visibilityPriority = visibilityPriority
+        return item
+    }
+
+    private func toolbarImageItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        image: NSImage,
+        action: Selector,
+        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
+    ) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = image
         item.target = self
         item.action = action
         item.visibilityPriority = visibilityPriority
@@ -1149,10 +1176,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func savePressed() {
         do {
-            let savedURL = try saveCurrentNote(force: true)
-            if let savedURL {
-                reloadNotes(selecting: savedURL, loadFirstIfNeeded: false)
-            }
+            _ = try saveCurrentNoteForLibrary()
         } catch {
             presentErrorAlert(message: "保存失败", details: error.localizedDescription)
         }
@@ -1227,6 +1251,18 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
+    private func moreActionsPressed(_ sender: Any?) {
+        let menu = makeMoreActionsMenuForLibrary()
+
+        if let item = sender as? NSToolbarItem,
+           let view = item.view {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
+        } else if let contentView = window?.contentView {
+            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
+        }
+    }
+
+    @objc
     private func moveSelectedNotePressed(_ sender: Any?) {
         let menu = makeMoveNoteMenu()
         guard !menu.items.isEmpty else { return }
@@ -1251,17 +1287,8 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func deleteSelectedNotePressed() {
-        guard let url = selectedURL else { return }
         do {
-            if selectedScope == .trash {
-                try noteStore.permanentlyDeleteTrashedNote(at: url)
-            } else {
-                try saveCurrentNoteIfNeeded()
-                _ = try noteStore.trashNote(at: selectedURL ?? url)
-            }
-            clearCurrentDocumentAfterRemoval()
-            rebuildSourceRows(includeTags: false)
-            reloadNotes(loadFirstIfNeeded: true)
+            try deleteSelectedNoteForLibrary()
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
         }
@@ -1303,16 +1330,22 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func restoreSelectedNotePressed() {
-        guard selectedScope == .trash, let url = selectedURL else { return }
         do {
-            let restoredURL = try noteStore.restoreTrashedNote(at: url)
-            selectedScope = .all
-            clearCurrentDocumentAfterRemoval()
-            rebuildSourceRows(includeTags: false)
-            reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
+            _ = try restoreSelectedNoteForLibrary()
         } catch {
             presentErrorAlert(message: "恢复失败", details: error.localizedDescription)
         }
+    }
+
+    @objc
+    private func revealSelectedNoteInFinderPressed() {
+        guard let url = revealSelectedNoteInFinderForLibrary() else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc
+    private func copySelectedMarkdownPathPressed() {
+        _ = copySelectedMarkdownPathForLibrary()
     }
 
     private func loadSelectedRow() {
@@ -1392,6 +1425,55 @@ final class LibraryWindowController: NSWindowController,
         updateEmptyState()
         updateToolbarActionState()
         return savedURL
+    }
+
+    @discardableResult
+    func saveCurrentNoteForLibrary() throws -> URL? {
+        let savedURL = try saveCurrentNote(force: true)
+        if let savedURL {
+            reloadNotes(selecting: savedURL, loadFirstIfNeeded: false)
+        }
+        return savedURL
+    }
+
+    func deleteSelectedNoteForLibrary() throws {
+        guard let url = selectedURL else { return }
+        if selectedScope == .trash {
+            try noteStore.permanentlyDeleteTrashedNote(at: url)
+        } else {
+            try saveCurrentNoteIfNeeded()
+            _ = try noteStore.trashNote(at: selectedURL ?? url)
+        }
+        clearCurrentDocumentAfterRemoval()
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
+    }
+
+    @discardableResult
+    func restoreSelectedNoteForLibrary() throws -> URL? {
+        guard selectedScope == .trash, let url = selectedURL else { return nil }
+        let restoredURL = try noteStore.restoreTrashedNote(at: url)
+        selectedScope = .all
+        clearCurrentDocumentAfterRemoval()
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
+        return restoredURL
+    }
+
+    func selectedMarkdownFileURLForLibrary() -> URL? {
+        selectedURL?.standardizedFileURL
+    }
+
+    @discardableResult
+    func copySelectedMarkdownPathForLibrary() -> String? {
+        guard let path = selectedMarkdownFileURLForLibrary()?.path else { return nil }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        return path
+    }
+
+    func revealSelectedNoteInFinderForLibrary() -> URL? {
+        selectedMarkdownFileURLForLibrary()
     }
 
     @discardableResult
@@ -1557,9 +1639,75 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(moveItem)
         menu.addItem(.separator())
 
+        let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
+        revealItem.target = self
+        revealItem.isEnabled = selectedURL != nil
+        menu.addItem(revealItem)
+
+        let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
+        copyPathItem.target = self
+        copyPathItem.isEnabled = selectedURL != nil
+        menu.addItem(copyPathItem)
+        menu.addItem(.separator())
+
         let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
         deleteItem.target = self
         menu.addItem(deleteItem)
+
+        return menu
+    }
+
+    func makeMoreActionsMenuForLibrary() -> NSMenu {
+        let menu = NSMenu()
+        let hasSelection = selectedURL != nil
+        let isTrashScope = selectedScope == .trash
+
+        let openItem = NSMenuItem(title: "独立窗口打开", action: #selector(openSelectedInSeparateWindow), keyEquivalent: "")
+        openItem.target = self
+        openItem.isEnabled = hasSelection
+        menu.addItem(openItem)
+
+        let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
+        moveItem.submenu = makeMoveNoteMenu()
+        moveItem.isEnabled = hasSelection && !isTrashScope && !sourceFolderURLs.isEmpty
+        menu.addItem(moveItem)
+
+        let saveItem = NSMenuItem(title: "保存", action: #selector(savePressed), keyEquivalent: "s")
+        saveItem.target = self
+        saveItem.keyEquivalentModifierMask = [.command]
+        saveItem.isEnabled = !isTrashScope
+        menu.addItem(saveItem)
+
+        menu.addItem(.separator())
+
+        let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
+        revealItem.target = self
+        revealItem.isEnabled = hasSelection
+        menu.addItem(revealItem)
+
+        let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
+        copyPathItem.target = self
+        copyPathItem.isEnabled = hasSelection
+        menu.addItem(copyPathItem)
+
+        menu.addItem(.separator())
+
+        if isTrashScope {
+            let restoreItem = NSMenuItem(title: "恢复", action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
+            restoreItem.target = self
+            restoreItem.isEnabled = hasSelection
+            menu.addItem(restoreItem)
+
+            let permanentlyDeleteItem = NSMenuItem(title: "永久删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+            permanentlyDeleteItem.target = self
+            permanentlyDeleteItem.isEnabled = hasSelection
+            menu.addItem(permanentlyDeleteItem)
+        } else {
+            let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+            deleteItem.target = self
+            deleteItem.isEnabled = hasSelection
+            menu.addItem(deleteItem)
+        }
 
         return menu
     }

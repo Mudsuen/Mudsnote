@@ -625,16 +625,22 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.save"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
             item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
         }
         let toolbarSearchField = try #require(toolbarSearchFields.first)
         #expect(toolbarSearchField.identifier?.rawValue == "LibraryToolbarSearchField")
         #expect(toolbarSearchField === controller.searchField)
+        let formatItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.format"
+        })
+        #expect(formatItem.image?.accessibilityDescription == "格式")
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
         #expect(controller.tableView.numberOfRows == 2)
@@ -715,10 +721,7 @@ struct MarkdownRichEditorTests {
         #expect(FileManager.default.fileExists(atPath: copiedAttachment.path))
         #expect(copiedAttachment.path.contains("/Attachments/"))
 
-        let saveItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.save"
-        })
-        #expect(NSApp.sendAction(try #require(saveItem.action), to: saveItem.target, from: saveItem))
+        _ = try controller.saveCurrentNoteForLibrary()
 
         let saved = try store.loadNote(at: noteURL)
         #expect(saved.body.contains("**plain**"))
@@ -769,9 +772,6 @@ struct MarkdownRichEditorTests {
         let newItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        let saveItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.save"
-        })
         #expect(NSApp.sendAction(try #require(newItem.action), to: newItem.target, from: newItem))
         controller.titleField.stringValue = "Folder Seed"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
@@ -780,7 +780,7 @@ struct MarkdownRichEditorTests {
             attributes: controller.theme.baseAttributes(for: .paragraph)
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
-        #expect(NSApp.sendAction(try #require(saveItem.action), to: saveItem.target, from: saveItem))
+        _ = try controller.saveCurrentNoteForLibrary()
 
         let savedInProjects = try #require(store.listNotes(limit: 10, roots: [projectsFolder]).first)
         #expect(savedInProjects.title == "Folder Seed")
@@ -837,14 +837,20 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
-        let deleteItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.delete"
-        })
-        let restoreItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.restore"
-        })
+        let moreMenu = controller.makeMoreActionsMenuForLibrary()
+        let moreMenuTitles = moreMenu.items.map(\.title)
+        #expect(moreMenuTitles.contains("独立窗口打开"))
+        #expect(moreMenuTitles.contains("移到文件夹"))
+        #expect(moreMenuTitles.contains("保存"))
+        #expect(moreMenuTitles.contains("在 Finder 中显示"))
+        #expect(moreMenuTitles.contains("复制 Markdown 路径"))
+        #expect(moreMenuTitles.contains("删除"))
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.path == noteURL.standardizedFileURL.path)
+        #expect(controller.revealSelectedNoteInFinderForLibrary()?.path == noteURL.standardizedFileURL.path)
+        #expect(controller.copySelectedMarkdownPathForLibrary() == noteURL.standardizedFileURL.path)
+        #expect(NSPasteboard.general.string(forType: .string) == noteURL.standardizedFileURL.path)
 
-        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        try controller.deleteSelectedNoteForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         let trashedURL = try #require(store.listTrashedNotes(limit: 10).first?.url)
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
@@ -861,20 +867,25 @@ struct MarkdownRichEditorTests {
         })
         #expect(trashCount.stringValue == "1")
 
-        #expect(NSApp.sendAction(try #require(restoreItem.action), to: restoreItem.target, from: restoreItem))
+        let trashMoreMenu = controller.makeMoreActionsMenuForLibrary()
+        let trashMenuTitles = trashMoreMenu.items.map(\.title)
+        #expect(trashMenuTitles.contains("恢复"))
+        #expect(trashMenuTitles.contains("永久删除"))
+
+        _ = try controller.restoreSelectedNoteForLibrary()
         #expect(FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.titleField.stringValue == "Trash Seed")
         #expect(controller.titleField.isEditable)
         #expect(controller.editorTextView.isEditable)
 
-        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        try controller.deleteSelectedNoteForLibrary()
         let restoredTrashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "最近删除"
         })
         restoredTrashButton.performClick(nil)
         #expect(controller.titleField.stringValue == "Trash Seed")
-        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
     }

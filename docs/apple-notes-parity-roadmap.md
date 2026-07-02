@@ -222,7 +222,7 @@ Exit criteria: these features improve local Markdown workflow without making the
 
 ## Current Known Gaps
 
-- Toolbar is still not Notes-like enough.
+- Toolbar has editing tools and a more-actions menu, but still needs share/export polish, tighter disabled states, and side-by-side visual tuning.
 - Source list lacks real folder hierarchy and still defers tag rows from the launch path.
 - Editor metadata/date placement is not yet close enough.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, but still lacks full rich table editing and attachment previews.

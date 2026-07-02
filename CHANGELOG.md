@@ -264,6 +264,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added Notes-style editor toolbar items for formatting, checklist, table, link, and attachment actions. The library editor now shares the rich Markdown command path for inline formatting and checklists, inserts readable Markdown tables and links, copies attachments into a local `Attachments/yyyy/mm/` folder, and saves standard relative Markdown links. Added app regression coverage for the toolbar items and saved Markdown output.
 - Lesson: Toolbar parity should stay functional and local-first; a lightweight Notes clone can add table and attachment workflows through portable Markdown before investing in heavier rich rendering.
 
+### 47. Notes-style more actions
+
+- Problem: The library toolbar had gained functional editing controls, but file/lifecycle actions still crowded the top bar and made it less like Apple Notes.
+- Fix: Moved open, move, save, delete, restore, reveal, and copy-path workflows into a single Notes-style more-actions menu. Added reveal-in-Finder and copy-Markdown-path actions for the selected note, kept context-menu access, and updated regression coverage for the default toolbar shape and file menu workflows.
+- Lesson: Apple Notes parity is partly action hierarchy; common editing tools belong on the toolbar, while less frequent file operations should live behind a compact menu without losing functionality.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
