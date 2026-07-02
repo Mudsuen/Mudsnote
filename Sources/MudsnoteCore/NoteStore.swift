@@ -12,6 +12,8 @@ public final class NoteStore: @unchecked Sendable {
     let defaults: UserDefaults
     let fileManager: FileManager
     let appSupportDirectory: URL
+    let searchIndexLock = NSLock()
+    var searchIndexSnapshot: NoteSearchIndexSnapshot?
 
     public init(
         defaults: UserDefaults = .standard,
@@ -49,6 +51,42 @@ public final class NoteStore: @unchecked Sendable {
         }
 
         return result
+    }
+}
+
+struct NoteSearchIndexSnapshot {
+    let rootsKey: [String]
+    let fileSignatures: [String: NoteSearchFileSignature]
+    let entries: [NoteSearchIndexEntry]
+}
+
+struct NoteSearchFileSignature: Equatable {
+    let modifiedAt: Date
+    let fileSize: UInt64
+}
+
+struct NoteSearchIndexEntry {
+    let url: URL
+    let title: String
+    let body: String
+    let bodyLower: String
+    let snippet: String
+    let modifiedAt: Date
+    let tags: [String]
+    let tagsLower: [String]
+    let hasAttachments: Bool
+    let thumbnailURL: URL?
+
+    var result: NoteSearchResult {
+        NoteSearchResult(
+            url: url,
+            title: title,
+            snippet: snippet,
+            modifiedAt: modifiedAt,
+            tags: tags,
+            hasAttachments: hasAttachments,
+            thumbnailURL: thumbnailURL
+        )
     }
 }
 

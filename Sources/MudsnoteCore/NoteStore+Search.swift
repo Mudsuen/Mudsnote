@@ -7,15 +7,11 @@ extension NoteStore {
     }
 
     public func knownTags(limit: Int = 200) -> [String] {
-        let roots = knownSearchRoots()
         var counts: [String: Int] = [:]
 
-        for root in roots {
-            for fileURL in markdownFiles(in: root) {
-                guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-                for tag in parseStoredDocument(text).tags {
-                    counts[tag, default: 0] += 1
-                }
+        for entry in indexedEntries() {
+            for tag in entry.tags {
+                counts[tag, default: 0] += 1
             }
         }
 
@@ -31,40 +27,10 @@ extension NoteStore {
     }
 
     public func listNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
-        let searchRoots = roots ?? knownSearchRoots()
-        var seenPaths = Set<String>()
-        var notes: [NoteSearchResult] = []
-
-        for root in searchRoots {
-            for fileURL in markdownFiles(in: root) {
-                let standardizedPath = fileURL.standardizedFileURL.path
-                guard seenPaths.insert(standardizedPath).inserted,
-                      let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
-                      let modifiedAt = attrs[.modificationDate] as? Date else {
-                    continue
-                }
-
-                let note = (try? loadNote(at: fileURL)) ?? (
-                    title: fileURL.deletingPathExtension().lastPathComponent,
-                    body: "",
-                    tags: []
-                )
-                notes.append(NoteSearchResult(
-                    url: fileURL,
-                    title: note.title,
-                    snippet: firstMeaningfulLine(from: note.body) ?? "",
-                    modifiedAt: modifiedAt,
-                    tags: note.tags,
-                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
-                    thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
-                ))
-            }
-        }
-
-        return notes
+        indexedEntries(roots: roots)
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(limit)
-            .map { $0 }
+            .map(\.result)
     }
 
     public func searchNotes(query: String, limit: Int = 30, roots: [URL]? = nil) -> [NoteSearchResult] {
@@ -85,17 +51,11 @@ extension NoteStore {
         }
 
         let loweredQuery = trimmedQuery.lowercased()
-        let searchRoots = roots ?? knownSearchRoots()
-        var seenPaths = Set<String>()
         var scoredResults: [(result: NoteSearchResult, score: Int)] = []
 
-        for root in searchRoots {
-            for fileURL in markdownFiles(in: root) {
-                let standardizedPath = fileURL.standardizedFileURL.path
-                guard seenPaths.insert(standardizedPath).inserted else { continue }
-                guard let scored = scoredMatch(for: fileURL, loweredQuery: loweredQuery) else { continue }
-                scoredResults.append(scored)
-            }
+        for entry in indexedEntries(roots: roots) {
+            guard let scored = scoredMatch(for: entry, loweredQuery: loweredQuery) else { continue }
+            scoredResults.append(scored)
         }
 
         return scoredResults
@@ -109,43 +69,105 @@ extension NoteStore {
             .map(\.result)
     }
 
-    private func scoredMatch(for fileURL: URL, loweredQuery: String) -> (result: NoteSearchResult, score: Int)? {
-        guard let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
-              let modifiedAt = attrs[.modificationDate] as? Date,
-              let text = try? String(contentsOf: fileURL, encoding: .utf8) else {
+    private func scoredMatch(for entry: NoteSearchIndexEntry, loweredQuery: String) -> (result: NoteSearchResult, score: Int)? {
+        let titleLower = entry.title.lowercased()
+        guard titleLower.contains(loweredQuery) || entry.bodyLower.contains(loweredQuery) || entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) else {
             return nil
         }
 
+        let titleScore = titleLower.contains(loweredQuery) ? 100 : 0
+        let occurrences = max(entry.bodyLower.components(separatedBy: loweredQuery).count - 1, 0)
+        let bodyScore = min(occurrences * 15, 90)
+        let tagScore = entry.tagsLower.contains(where: { $0 == loweredQuery }) ? 80 : (entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) ? 40 : 0)
+        let snippet = snippet(from: entry.body, query: loweredQuery)
+
+        return (
+            result: NoteSearchResult(
+                url: entry.url,
+                title: entry.title,
+                snippet: snippet,
+                modifiedAt: entry.modifiedAt,
+                tags: entry.tags,
+                hasAttachments: entry.hasAttachments,
+                thumbnailURL: entry.thumbnailURL
+            ),
+            score: titleScore + bodyScore + tagScore
+        )
+    }
+
+    private func indexedEntries(roots: [URL]? = nil) -> [NoteSearchIndexEntry] {
+        searchIndexLock.lock()
+        defer { searchIndexLock.unlock() }
+
+        let searchRoots = roots ?? knownSearchRoots()
+        let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+        var signatures: [String: NoteSearchFileSignature] = [:]
+        var fileURLs: [URL] = []
+        var seenPaths = Set<String>()
+
+        for root in searchRoots {
+            for fileURL in markdownFiles(in: root) {
+                let standardizedURL = fileURL.standardizedFileURL
+                let path = standardizedURL.path
+                guard seenPaths.insert(path).inserted,
+                      let signature = fileSignature(for: standardizedURL) else {
+                    continue
+                }
+                signatures[path] = signature
+                fileURLs.append(standardizedURL)
+            }
+        }
+
+        if let snapshot = searchIndexSnapshot,
+           snapshot.rootsKey == rootsKey,
+           snapshot.fileSignatures == signatures {
+            return snapshot.entries
+        }
+
+        let entries = fileURLs.compactMap { indexedEntry(for: $0, signature: signatures[$0.path]) }
+        let snapshot = NoteSearchIndexSnapshot(
+            rootsKey: rootsKey,
+            fileSignatures: signatures,
+            entries: entries
+        )
+        searchIndexSnapshot = snapshot
+        return entries
+    }
+
+    private func fileSignature(for fileURL: URL) -> NoteSearchFileSignature? {
+        guard let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
+              let modifiedAt = attrs[.modificationDate] as? Date else {
+            return nil
+        }
+
+        let fileSize = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
+        return NoteSearchFileSignature(modifiedAt: modifiedAt, fileSize: fileSize)
+    }
+
+    private func indexedEntry(for fileURL: URL, signature: NoteSearchFileSignature?) -> NoteSearchIndexEntry? {
+        guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return nil
+        }
+
+        let modifiedAt = signature?.modifiedAt ?? Date()
         let note = (try? loadNote(at: fileURL)) ?? (
             title: fileURL.deletingPathExtension().lastPathComponent,
             body: text,
             tags: []
         )
+        let snippet = firstMeaningfulLine(from: note.body) ?? ""
 
-        let titleLower = note.title.lowercased()
-        let bodyLower = note.body.lowercased()
-        let tagsLower = note.tags.map { $0.lowercased() }
-        guard titleLower.contains(loweredQuery) || bodyLower.contains(loweredQuery) || tagsLower.contains(where: { $0.contains(loweredQuery) }) else {
-            return nil
-        }
-
-        let titleScore = titleLower.contains(loweredQuery) ? 100 : 0
-        let occurrences = max(bodyLower.components(separatedBy: loweredQuery).count - 1, 0)
-        let bodyScore = min(occurrences * 15, 90)
-        let tagScore = tagsLower.contains(where: { $0 == loweredQuery }) ? 80 : (tagsLower.contains(where: { $0.contains(loweredQuery) }) ? 40 : 0)
-        let snippet = snippet(from: note.body, query: loweredQuery)
-
-        return (
-            result: NoteSearchResult(
-                url: fileURL,
-                title: note.title,
-                snippet: snippet,
-                modifiedAt: modifiedAt,
-                tags: note.tags,
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
-                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
-            ),
-            score: titleScore + bodyScore + tagScore
+        return NoteSearchIndexEntry(
+            url: fileURL,
+            title: note.title,
+            body: note.body,
+            bodyLower: note.body.lowercased(),
+            snippet: snippet,
+            modifiedAt: modifiedAt,
+            tags: note.tags,
+            tagsLower: note.tags.map { $0.lowercased() },
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
         )
     }
 

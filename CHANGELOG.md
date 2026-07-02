@@ -432,6 +432,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replaced the autosave `Timer` with a cancellable `Task` debounce and changed the autosave regression to wait for the saved state instead of assuming an exact wake-up instant.
 - Lesson: Notes-like autosave must be eventual and resilient under UI load; tests should assert the state contract, not a precise timer boundary.
 
+### 75. Lightweight search index
+
+- Problem: Notes-like search, tags, and list metadata still re-read Markdown bodies on repeated queries, which works for small folders but does not match the expected retrieval speed of Apple Notes as libraries grow.
+- Fix: Added an in-memory Markdown search index keyed by search roots and file signatures. `knownTags`, `listNotes`, and non-empty `searchNotes` now share parsed entries and rebuild only when path, modification date, or size changes. Added regression coverage that modifying a Markdown file refreshes cached search and tag results.
+- Lesson: Local-first Markdown can still feel indexed; cache parsed document metadata while keeping the filesystem as the source of truth.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -66,6 +66,32 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func searchIndexRefreshesWhenMarkdownFileChanges() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(title: "Indexed Note", body: "alpha body", tags: ["alpha"])
+
+        #expect(store.searchNotes(query: "alpha", limit: 10).first?.url.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+        #expect(store.knownTags(limit: 10).contains("alpha"))
+
+        let updatedURL = try store.updateNote(
+            at: noteURL,
+            title: "Indexed Note",
+            body: "beta body with more content",
+            tags: ["beta"]
+        )
+
+        #expect(updatedURL.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+        #expect(store.searchNotes(query: "alpha", limit: 10).isEmpty)
+        #expect(store.searchNotes(query: "beta", limit: 10).first?.url.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+        #expect(!store.knownTags(limit: 10).contains("alpha"))
+        #expect(store.knownTags(limit: 10).contains("beta"))
+    }
+
+    @Test
     func listNotesReturnsAllKnownMarkdownFilesByModifiedDate() throws {
         let harness = try TestHarness()
         let store = harness.store
