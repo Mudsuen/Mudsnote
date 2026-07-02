@@ -706,7 +706,7 @@ extension EditorWindowController {
 
     func applyBodyMarkdown(_ markdown: String) {
         suppressTextDidChange = true
-        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: activeFloatingNoteURL ?? fileURL)
         editorTextView.textStorage?.setAttributedString(rendered)
         suppressTextDidChange = false
     }

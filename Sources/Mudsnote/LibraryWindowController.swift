@@ -2075,7 +2075,7 @@ final class LibraryWindowController: NSWindowController,
         suppressEditorChanges = true
         titleField.stringValue = title
         selectedTags = tags
-        editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: body, theme: theme))
+        editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: body, theme: theme, baseURL: selectedURL))
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
         editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
         suppressEditorChanges = false
@@ -3070,7 +3070,7 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
-        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: selectedURL)
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: selection, with: rendered)

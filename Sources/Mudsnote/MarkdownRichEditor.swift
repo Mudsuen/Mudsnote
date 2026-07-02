@@ -7,6 +7,7 @@ extension NSAttributedString.Key {
     static let qmCode = NSAttributedString.Key("MudsnoteCode")
     static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
+    static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
 }
 
 let markdownItalicObliqueness: CGFloat = 0.16
@@ -528,13 +529,13 @@ private final class PrefixAttachmentCell: NSTextAttachmentCell {
 
 enum MarkdownRichTextCodec {
     @MainActor
-    static func render(markdown: String, theme: MarkdownEditorTheme) -> NSMutableAttributedString {
+    static func render(markdown: String, theme: MarkdownEditorTheme, baseURL: URL? = nil) -> NSMutableAttributedString {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         let output = NSMutableAttributedString()
 
         for (index, line) in lines.enumerated() {
-            output.append(renderLine(line, theme: theme))
+            output.append(renderLine(line, theme: theme, baseURL: baseURL))
             if index < lines.count - 1 {
                 output.append(NSAttributedString(string: "\n", attributes: theme.baseAttributes(for: .paragraph)))
             }
@@ -544,7 +545,7 @@ enum MarkdownRichTextCodec {
     }
 
     @MainActor
-    static func renderLine(_ line: String, theme: MarkdownEditorTheme) -> NSMutableAttributedString {
+    static func renderLine(_ line: String, theme: MarkdownEditorTheme, baseURL: URL? = nil) -> NSMutableAttributedString {
         let kind = paragraphKind(for: line)
         let paragraphString = NSMutableAttributedString()
         let baseAttributes = theme.baseAttributes(for: kind)
@@ -555,7 +556,7 @@ enum MarkdownRichTextCodec {
         }
 
         let content = markdownContent(from: line, kind: kind)
-        paragraphString.append(parseInlineMarkdown(content, paragraphKind: kind, theme: theme))
+        paragraphString.append(parseInlineMarkdown(content, paragraphKind: kind, theme: theme, baseURL: baseURL))
 
         if paragraphString.length == 0 {
             paragraphString.append(NSAttributedString(string: "", attributes: baseAttributes))
@@ -736,6 +737,10 @@ enum MarkdownRichTextCodec {
     private static func serializeRun(text: String, attributes: [NSAttributedString.Key: Any], baseFont: NSFont) -> String {
         if text.isEmpty { return "" }
 
+        if let imageMarkdown = attributes[.qmImageMarkdown] as? String {
+            return imageMarkdown
+        }
+
         if (attributes[.qmTag] as? Bool) == true {
             return text
         }
@@ -843,12 +848,39 @@ enum MarkdownRichTextCodec {
         }
     }
 
-    private static func parseInlineMarkdown(_ source: String, paragraphKind: MarkdownParagraphKind, theme: MarkdownEditorTheme) -> NSMutableAttributedString {
+    @MainActor
+    private static func parseInlineMarkdown(
+        _ source: String,
+        paragraphKind: MarkdownParagraphKind,
+        theme: MarkdownEditorTheme,
+        baseURL: URL? = nil
+    ) -> NSMutableAttributedString {
         let output = NSMutableAttributedString()
         let baseAttributes = theme.baseAttributes(for: paragraphKind)
         var index = source.startIndex
 
         while index < source.endIndex {
+            if source[index...].hasPrefix("!["),
+               let closeBracket = source[source.index(index, offsetBy: 2)...].range(of: "]("),
+               let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
+                let label = String(source[source.index(index, offsetBy: 2)..<closeBracket.lowerBound])
+                let path = String(source[closeBracket.upperBound..<closeParen])
+                let markdown = String(source[index...closeParen])
+                if let imageAttachment = imageAttachmentString(
+                    label: label,
+                    path: path,
+                    markdown: markdown,
+                    paragraphKind: paragraphKind,
+                    theme: theme,
+                    baseAttributes: baseAttributes,
+                    baseURL: baseURL
+                ) {
+                    output.append(imageAttachment)
+                    index = source.index(after: closeParen)
+                    continue
+                }
+            }
+
             if source[index...].hasPrefix("**"),
                let end = source[index...].dropFirst(2).range(of: "**") {
                 let content = String(source[source.index(index, offsetBy: 2)..<end.lowerBound])
@@ -938,6 +970,65 @@ enum MarkdownRichTextCodec {
 
     private static func attributed(_ string: String, base: [NSAttributedString.Key: Any], extra: [NSAttributedString.Key: Any] = [:]) -> NSAttributedString {
         NSAttributedString(string: string, attributes: base.merging(extra) { _, new in new })
+    }
+
+    @MainActor
+    private static func imageAttachmentString(
+        label: String,
+        path: String,
+        markdown: String,
+        paragraphKind: MarkdownParagraphKind,
+        theme: MarkdownEditorTheme,
+        baseAttributes: [NSAttributedString.Key: Any],
+        baseURL: URL?
+    ) -> NSAttributedString? {
+        guard let imageURL = localImageURL(path: path, baseURL: baseURL),
+              let image = NSImage(contentsOf: imageURL),
+              image.size.width > 0,
+              image.size.height > 0
+        else {
+            return nil
+        }
+
+        let maxSize = NSSize(width: 420, height: 240)
+        let scale = min(maxSize.width / image.size.width, maxSize.height / image.size.height, 1)
+        let displaySize = NSSize(
+            width: max(1, image.size.width * scale),
+            height: max(1, image.size.height * scale)
+        )
+
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
+
+        let attributed = NSMutableAttributedString(attachment: attachment)
+        attributed.addAttributes(baseAttributes.merging([
+            .qmImageMarkdown: markdown,
+            .toolTip: label.isEmpty ? imageURL.lastPathComponent : label,
+            .paragraphStyle: theme.paragraphStyle(for: paragraphKind),
+            .qmParagraphKind: paragraphKind.encodedValue
+        ]) { _, new in new }, range: NSRange(location: 0, length: attributed.length))
+        return attributed
+    }
+
+    private static func localImageURL(path: String, baseURL: URL?) -> URL? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed), let scheme = url.scheme {
+            guard scheme == "file" else { return nil }
+            return url.standardizedFileURL
+        }
+
+        let decoded = trimmed.removingPercentEncoding ?? trimmed
+        if decoded.hasPrefix("/") {
+            return URL(fileURLWithPath: decoded).standardizedFileURL
+        }
+
+        guard let baseURL else { return nil }
+        return baseURL.deletingLastPathComponent()
+            .appendingPathComponent(decoded)
+            .standardizedFileURL
     }
 
     private static func isObliqued(_ value: Any?) -> Bool {

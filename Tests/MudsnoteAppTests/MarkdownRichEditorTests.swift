@@ -86,6 +86,32 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecRendersLocalMarkdownImagesAndSerializesPath() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-rich-image-tests-\(UUID().uuidString)", isDirectory: true)
+        let noteURL = root.appendingPathComponent("Note.md")
+        let imageURL = root
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("preview.png")
+        try FileManager.default.createDirectory(at: imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pngData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        try pngData.write(to: imageURL)
+
+        let markdown = "Before\n![Preview](Attachments/preview.png)\nAfter"
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: noteURL)
+        var imageMarkdown: String?
+        rendered.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rendered.length)) { value, range, stop in
+            guard value as? NSTextAttachment != nil else { return }
+            imageMarkdown = rendered.attribute(.qmImageMarkdown, at: range.location, effectiveRange: nil) as? String
+            stop.pointee = true
+        }
+
+        #expect(imageMarkdown == "![Preview](Attachments/preview.png)")
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @Test
     func richCodecShowsEmptyListPrefixesImmediately() {
         let bulletRendered = MarkdownRichTextCodec.renderLine("- ", theme: theme)
         let orderedRendered = MarkdownRichTextCodec.renderLine("1. ", theme: theme)
@@ -950,6 +976,16 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == 44
         })
         #expect(cell.attachmentImageView.isHidden)
+
+        var editorHasImagePreview = false
+        let editorContent = controller.editorTextView.attributedString()
+        editorContent.enumerateAttribute(.attachment, in: NSRange(location: 0, length: editorContent.length)) { value, _, stop in
+            guard value as? NSTextAttachment != nil else { return }
+            editorHasImagePreview = true
+            stop.pointee = true
+        }
+        #expect(editorHasImagePreview)
+        #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "![Preview](Attachments/thumb.png)")
     }
 
     @MainActor
