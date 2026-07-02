@@ -54,14 +54,13 @@ cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
-    <key>LSUIElement</key>
-    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
 </plist>
 PLIST
 
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_DIR}"
 pkill -f '/Applications/Mudsnote.app/Contents/MacOS/Mudsnote' || true
 sleep 1
 open -a "${APP_DIR}"

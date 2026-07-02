@@ -360,6 +360,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight optional thumbnail URL to `NoteSearchResult`, resolved from the first local Markdown image or image attachment reference. The note list now shows a clipped 46px thumbnail for existing local images and falls back to the paperclip for non-image attachments. Added core parsing coverage and app-level row rendering coverage.
 - Lesson: Thumbnail parity can reuse already loaded Markdown bodies; do not add a separate media index until the visible list actually needs it.
 
+### 63. Tighter note-list row density
+
+- Problem: The note list was functionally rich but still a little too loose compared with Apple Notes, especially after adding thumbnails. Direct app launch also exposed a startup risk where synchronous preview hydration could hold the window at a zero-size shell.
+- Fix: Reduced normal row height, tightened row vertical padding, slightly reduced the note title font, adjusted selected-card inset/radius, and sized image thumbnails to a compact 44px square. The app launch path now uses a regular activation policy, shows the library shell first, then hydrates previews and the selected note after the window is visible. Added regression coverage for the row-height, typography, and thumbnail-size contract.
+- Lesson: Notes parity needs explicit density values and shell-first startup; launch should reveal the three-pane library before optional preview work runs.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

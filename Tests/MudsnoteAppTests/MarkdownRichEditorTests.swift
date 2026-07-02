@@ -669,8 +669,10 @@ struct MarkdownRichEditorTests {
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
+        #expect(controller.tableView(controller.tableView, heightOfRow: 1) == 68)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
+        #expect(firstNoteCell.titleLabel.font?.pointSize == 13.5)
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
@@ -941,6 +943,12 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().first?.thumbnailURL?.path == imageURL.standardizedFileURL.path)
         #expect(!cell.thumbnailImageView.isHidden)
         #expect(cell.thumbnailImageView.image != nil)
+        #expect(cell.thumbnailImageView.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == 44
+        })
+        #expect(cell.thumbnailImageView.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == 44
+        })
         #expect(cell.attachmentImageView.isHidden)
     }
 

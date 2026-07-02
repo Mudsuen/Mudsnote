@@ -146,7 +146,7 @@ final class LibraryNoteCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 13.5, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.alignment = .left
@@ -193,7 +193,7 @@ final class LibraryNoteCellView: NSTableCellView {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
         addSubview(stack)
         pin(stack, to: self)
         for label in [titleLabel, snippetLabel] {
@@ -203,8 +203,8 @@ final class LibraryNoteCellView: NSTableCellView {
         metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
         attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
-        thumbnailImageView.widthAnchor.constraint(equalToConstant: 46).isActive = true
-        thumbnailImageView.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        thumbnailImageView.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        thumbnailImageView.heightAnchor.constraint(equalToConstant: 44).isActive = true
     }
 
     @available(*, unavailable)
@@ -219,8 +219,8 @@ final class LibraryNoteRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
-        let selectionRect = bounds.insetBy(dx: 7, dy: 2)
-        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 7, yRadius: 7)
+        let selectionRect = bounds.insetBy(dx: 6, dy: 3)
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 6, yRadius: 6)
         NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.08, alpha: 0.95).setFill()
         path.fill()
     }
@@ -337,6 +337,7 @@ final class LibraryWindowController: NSWindowController,
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
+    private var hasHydratedInitialNoteList = false
     private var selectedScope: LibraryScope = .all
     private var sourceButtons: [NSButton] = []
     private var sourceCountLabels: [Int: NSTextField] = [:]
@@ -364,6 +365,7 @@ final class LibraryWindowController: NSWindowController,
 
     init(
         noteStore: NoteStore,
+        defersInitialNoteHydration: Bool = false,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
@@ -390,7 +392,12 @@ final class LibraryWindowController: NSWindowController,
         window.delegate = self
         configureToolbar()
         buildUI()
-        reloadNotes(loadFirstIfNeeded: true)
+        if defersInitialNoteHydration {
+            reloadNotes(loadFirstIfNeeded: false, hydratePreviews: false)
+        } else {
+            hasHydratedInitialNoteList = true
+            reloadNotes(loadFirstIfNeeded: true, hydratePreviews: true)
+        }
     }
 
     @available(*, unavailable)
@@ -402,11 +409,18 @@ final class LibraryWindowController: NSWindowController,
         showWindow(nil)
         guard let window else { return }
         if !hasCenteredWindow {
-            window.center()
+            let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
+            let targetSize = NSSize(width: 1040, height: 764)
+            let targetOrigin = NSPoint(
+                x: visibleFrame.midX - targetSize.width / 2,
+                y: visibleFrame.midY - targetSize.height / 2
+            )
+            window.setFrame(NSRect(origin: targetOrigin, size: targetSize), display: true)
             hasCenteredWindow = true
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         if selectedURL == nil {
             searchField.becomeFirstResponder()
         } else {
@@ -414,6 +428,16 @@ final class LibraryWindowController: NSWindowController,
         }
         scheduleDeferredSourceFolderLoad()
         scheduleDeferredSourceTagLoad()
+        hydrateInitialNoteListIfNeeded()
+    }
+
+    private func hydrateInitialNoteListIfNeeded() {
+        guard !hasHydratedInitialNoteList else { return }
+        hasHydratedInitialNoteList = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: true, hydratePreviews: true)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -508,7 +532,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.addTableColumn(column)
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
         tableView.headerView = nil
-        tableView.rowHeight = 72
+        tableView.rowHeight = 68
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
         tableView.style = .plain
@@ -1320,11 +1344,15 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func reloadNotes(selecting preferredURL: URL? = nil, loadFirstIfNeeded: Bool) {
+    private func reloadNotes(
+        selecting preferredURL: URL? = nil,
+        loadFirstIfNeeded: Bool,
+        hydratePreviews: Bool = true
+    ) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         searchScopeControl.isHidden = query.isEmpty
         notes = query.isEmpty
-            ? notesForSelectedScope(limit: 240)
+            ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews)
             : searchResultsForSelectedScope(query: query, limit: 240)
         listRows = buildGroupedRows(for: notes)
         updateNoteListHeader(query: query)
@@ -1380,14 +1408,14 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {
+    private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
-            return recentNoteResults(limit: limit, hydratePreview: true)
+            return recentNoteResults(limit: limit, hydratePreview: hydratePreviews)
         case .recent:
-            return recentNoteResults(limit: min(limit, 80), hydratePreview: true)
+            return recentNoteResults(limit: min(limit, 80), hydratePreview: hydratePreviews)
         case .inbox:
-            return recentNoteResults(limit: limit, hydratePreview: true).filter { note in
+            return recentNoteResults(limit: limit, hydratePreview: hydratePreviews).filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }
@@ -1637,7 +1665,7 @@ final class LibraryWindowController: NSWindowController,
         if note(at: row) == nil {
             return 54
         }
-        return 72
+        return 68
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {

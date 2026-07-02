@@ -24,7 +24,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var preferencesWindowController: PreferencesWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) ? .regular : .accessory)
 
         do {
             try noteStore.ensureNotesDirectory()
@@ -258,14 +258,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc
     private func showLibraryWindow() {
         cleanupClosedWindows()
+        NSApp.setActivationPolicy(.regular)
 
-        if let controller = libraryWindowController, controller.window?.isVisible == true {
+        if let controller = libraryWindowController {
             controller.showWindowAndFocus()
             return
         }
 
         let controller = LibraryWindowController(
             noteStore: noteStore,
+            defersInitialNoteHydration: true,
             onOpenInSeparateWindow: { [weak self] url in
                 self?.openEditor(for: url)
             },
