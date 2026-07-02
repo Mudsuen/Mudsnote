@@ -324,6 +324,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight `hasAttachments` flag to `NoteSearchResult`, populated it from already loaded Markdown bodies in list/search/trash/recent paths, and rendered a small SF Symbol paperclip beside the note-list metadata. The empty-search path now loads each recent note once instead of separately reading body and tags.
 - Lesson: Attachment parity should reuse existing bounded hydration and search reads; list affordances should not bring back launch-time full-file scans.
 
+### 57. Note-list keyboard actions
+
+- Problem: The middle note list relied on mouse double-clicks and toolbar/menu actions for opening or deleting selected notes, leaving a gap versus Apple Notes' keyboard-driven list workflow.
+- Fix: Added a lightweight `LibraryNoteTableView` that handles unmodified Return/Enter to open the selected note in a separate window and Delete/Forward Delete to delete or permanently delete the selected note, while leaving all other keys to AppKit's table navigation. Added regression coverage for open, delete-to-trash, and permanent-delete keyboard paths.
+- Lesson: Keyboard parity should extend the existing lifecycle actions instead of creating parallel behavior; arrow-key selection remains native while high-intent keys map to Notes-like workflows.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

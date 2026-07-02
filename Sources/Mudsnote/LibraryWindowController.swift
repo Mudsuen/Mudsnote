@@ -207,6 +207,38 @@ final class LibraryNoteRowView: NSTableRowView {
     }
 }
 
+fileprivate enum LibraryNoteKeyCommand {
+    case open
+    case delete
+}
+
+@MainActor
+final class LibraryNoteTableView: NSTableView {
+    fileprivate var onKeyCommand: ((LibraryNoteKeyCommand) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+
+        let command: LibraryNoteKeyCommand?
+        switch event.keyCode {
+        case 36, 76:
+            command = .open
+        case 51, 117:
+            command = .delete
+        default:
+            command = nil
+        }
+
+        if let command, onKeyCommand?(command) == true {
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 @MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
@@ -221,7 +253,7 @@ final class LibraryWindowController: NSWindowController,
     WindowOpacityAdjusting
 {
     let noteStore: NoteStore
-    let tableView = NSTableView()
+    let tableView = LibraryNoteTableView()
     let searchField = NSSearchField(string: "")
     let searchScopeControl = NSSegmentedControl(
         labels: ["当前", "所有"],
@@ -442,6 +474,9 @@ final class LibraryWindowController: NSWindowController,
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedInSeparateWindow)
+        tableView.onKeyCommand = { [weak self] command in
+            self?.handleNoteListKeyCommand(command) ?? false
+        }
         tableView.menu = makeNoteContextMenu()
 
         let scrollView = NSScrollView()
@@ -1661,6 +1696,24 @@ final class LibraryWindowController: NSWindowController,
     private func openSelectedInSeparateWindow() {
         guard let selectedURL else { return }
         onOpenInSeparateWindow(selectedURL)
+    }
+
+    private func handleNoteListKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
+        switch command {
+        case .open:
+            guard selectedURL != nil else { return false }
+            openSelectedInSeparateWindow()
+            return true
+        case .delete:
+            guard selectedURL != nil else { return false }
+            do {
+                try deleteSelectedNoteForLibrary()
+                return true
+            } catch {
+                presentErrorAlert(message: selectedScope == .trash ? "永久删除失败" : "删除失败", details: error.localizedDescription)
+                return true
+            }
+        }
     }
 
     @objc

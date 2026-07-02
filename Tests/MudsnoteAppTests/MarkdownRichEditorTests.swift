@@ -1134,6 +1134,56 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowNoteListKeyboardOpensAndDeletesNotes() throws {
+        let suiteName = "mudsnote.library-keyboard-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-keyboard-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Keyboard Seed", body: "Keyboard body")
+        var openedURL: URL?
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { openedURL = $0 },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        _ = try #require(controller.window)
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 36, modifiers: [], characters: "\r"))
+        #expect(openedURL?.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 51, modifiers: [], characters: "\u{7F}"))
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
+
+        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "最近删除"
+        })
+        trashButton.performClick(nil)
+        #expect(controller.titleField.stringValue == "Keyboard Seed")
+
+        controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
+        #expect(store.listTrashedNotes(limit: 10).isEmpty)
+        #expect(controller.tableView.numberOfRows == 0)
+    }
+
+    @MainActor
+    @Test
     func defaultLaunchOpensLibraryUnlessAnotherSurfaceIsRequested() {
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: []))
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["--library"]))

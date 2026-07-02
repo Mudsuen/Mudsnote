@@ -225,7 +225,7 @@ Exit criteria: these features improve local Markdown workflow without making the
 - Toolbar has editing tools and a more-actions menu, but still needs share/export polish, tighter disabled states, and side-by-side visual tuning.
 - Titlebar and list headers are closer to Notes, but still need side-by-side spacing, source-list hierarchy, and exact toolbar balance tuning.
 - Source list has compact group labels, counts, launch-safe root folder rows, deferred full folder loading, tag rows after shell visibility, and session-local disclosure controls, but still needs more exact Apple Notes spacing and empty/loading state polish.
-- Note-list rows show bounded body previews, a darker Notes-like column, and a compact attachment paperclip indicator, but still need exact row spacing, thumbnail previews, and keyboard navigation polish.
+- Note-list rows show bounded body previews, a darker Notes-like column, a compact attachment paperclip indicator, and basic keyboard open/delete actions, but still need exact row spacing, thumbnail previews, and broader keyboard navigation polish.
 - Editor now uses a centered date-only header for loaded notes, but still needs exact title/body vertical spacing, dirty-state polish, and side-by-side visual tuning.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, but still lacks full rich table editing and attachment previews.
 - Search is in the top toolbar and supports current/all scoping with visible row highlights, but still lacks indexing, richer empty states, and full result navigation polish.
