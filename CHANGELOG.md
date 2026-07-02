@@ -288,6 +288,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added bounded preview hydration for the first recent-backed rows so the list shows each note's first meaningful body line while count refreshes still use the lightweight metadata path. Locked row labels to single-line truncation to prevent long titles or snippets from overlapping the compact Notes-style row layout.
 - Lesson: List parity should improve scanability without turning launch into a full indexing pass; bounded visible-row hydration gives useful previews while preserving the fast shell-first path.
 
+### 51. Darker Notes-style note list
+
+- Problem: The middle note list still rendered as a broad gray table surface, which made the shell feel less like Apple Notes' dark list column and weakened the selected note card.
+- Fix: Switched the note table to a plain transparent style, gave the list column a darker background, and kept the custom golden selection drawing. The scroll view clip now stays transparent so the list column reads as one dark pane.
+- Lesson: Visual parity often depends on removing default AppKit table styling; keep native behavior, but own the background and selection surfaces where Apple Notes has a strong visual signature.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

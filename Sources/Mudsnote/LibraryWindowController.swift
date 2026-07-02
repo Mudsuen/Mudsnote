@@ -363,7 +363,7 @@ final class LibraryWindowController: NSWindowController,
     private func buildSidebar() -> NSView {
         let sidebar = NSView()
         sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        sidebar.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 1).cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         configureNoteListHeaderLabels()
@@ -387,7 +387,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.rowHeight = 72
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
-        tableView.style = .sourceList
+        tableView.style = .plain
         tableView.selectionHighlightStyle = .regular
         tableView.delegate = self
         tableView.dataSource = self
@@ -399,6 +399,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.contentView.drawsBackground = false
+        scrollView.contentView.backgroundColor = .clear
         scrollView.documentView = tableView
 
         let stack = NSStackView(views: [header, scrollView])

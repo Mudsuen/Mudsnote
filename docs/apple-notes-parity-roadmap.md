@@ -225,7 +225,7 @@ Exit criteria: these features improve local Markdown workflow without making the
 - Toolbar has editing tools and a more-actions menu, but still needs share/export polish, tighter disabled states, and side-by-side visual tuning.
 - Titlebar and list headers are closer to Notes, but still need side-by-side spacing, source-list hierarchy, and exact toolbar balance tuning.
 - Source list has compact group labels and counts, but lacks real folder hierarchy and still defers tag rows from the launch path.
-- Note-list rows show bounded body previews, but still need closer background, row spacing, thumbnail/attachment indicators, and keyboard navigation polish.
+- Note-list rows show bounded body previews and a darker Notes-like column, but still need exact row spacing, thumbnail/attachment indicators, and keyboard navigation polish.
 - Editor metadata/date placement is not yet close enough.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, but still lacks full rich table editing and attachment previews.
 - Search is in the top toolbar and supports current/all scoping with visible row highlights, but still lacks indexing, richer empty states, and full result navigation polish.
