@@ -66,6 +66,7 @@ enum NoteStoreDefaultsKey {
     static let aiOllamaBaseURL = "mudsnote.ai.ollamaBaseURL"
     static let aiOllamaModel = "mudsnote.ai.ollamaModel"
     static let recentFiles = "mudsnote.recentFiles"
+    static let recentFileMetadata = "mudsnote.recentFileMetadata"
     static let quickCaptureFrameX = "mudsnote.quickCaptureFrameX"
     static let quickCaptureFrameY = "mudsnote.quickCaptureFrameY"
     static let quickCaptureFrameWidth = "mudsnote.quickCaptureFrameWidth"

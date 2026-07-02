@@ -615,24 +615,36 @@ struct MarkdownRichEditorTests {
         let window = try #require(controller.window)
         #expect(window.title == "Mudsnote 笔记")
         #expect(window.styleMask.contains(.resizable))
+        #expect(window.toolbar?.displayMode == .iconOnly)
+        let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
+        let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
+            item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
+        }
+        let toolbarSearchField = try #require(toolbarSearchFields.first)
+        #expect(toolbarSearchField.identifier?.rawValue == "LibraryToolbarSearchField")
+        #expect(toolbarSearchField === controller.searchField)
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
         #expect(controller.titleField.stringValue == "Library Seed")
+        #expect(controller.statusLabel.alignment == .center)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCount.stringValue == "1")
-        let tagCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-100"
+        let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-10"
         })
-        #expect(tagCount.stringValue == "1")
-        let tagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "#library" })
-        tagButton.performClick(nil)
-        #expect(controller.tableView.numberOfRows == 2)
+        #expect(folderCount.stringValue == "1")
+        let tagButton = window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "#library" }
+        #expect(tagButton == nil)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)

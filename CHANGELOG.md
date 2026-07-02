@@ -228,6 +228,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added right-aligned counts to the main library scopes and tag rows while preserving the existing button-based filtering behavior. The source rows keep their click targets, selected tint, and tag filtering test coverage.
 - Lesson: Sidebar parity should improve scan density without changing the storage model; count overlays are a lightweight step before deeper folder hierarchy work.
 
+### 41. Native Notes-like library toolbar
+
+- Problem: The main library still carried search, new-note, open, and save controls inside content panes, which made the shell feel like a custom browser rather than Apple Notes.
+- Fix: Added a native `NSToolbar` with icon-first actions for adding a folder, toggling the source list, creating a note, opening a note separately, saving, and searching. Moved search into the right side of the toolbar, added real folder rows to the source list, and centered the editor status/date row above the note title. Changed the launch list to use recent-backed metadata first so the direct-open library appears before any full directory indexing work.
+- Lesson: P0 Notes parity should move global actions into native window chrome before deeper feature work; shell structure changes make the app feel closer to Notes only if the app still opens immediately.
+
+### 42. Launch-safe recent metadata
+
+- Problem: The packaged app could start a process without showing a window because the status menu and library source list synchronously read recent file attributes and scanned tags before the main library appeared.
+- Fix: Made recent-file listing IO-light by deriving display titles and stable dates from stored paths, save-time metadata, and filename prefixes; avoided synchronous tag scans in the library launch path; and added a regression test for stale recent paths. The library now opens directly from `/Applications/Mudsnote.app` even when deeper indexing may need to be deferred.
+- Lesson: The Notes-like main window is the app identity now; expensive indexing, tag discovery, unavailable path handling, and full metadata hydration must happen after the shell is visible or in an asynchronous index layer.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

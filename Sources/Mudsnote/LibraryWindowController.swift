@@ -6,6 +6,7 @@ private enum LibraryScope: Equatable {
     case all
     case recent
     case inbox
+    case folder(URL)
     case tag(String)
 
     var buttonTitle: String {
@@ -16,6 +17,8 @@ private enum LibraryScope: Equatable {
             return "最近"
         case .inbox:
             return "Inbox"
+        case .folder(let url):
+            return url.lastPathComponent.isEmpty ? "Notes" : url.lastPathComponent
         case .tag(let tag):
             return "#\(tag)"
         }
@@ -29,6 +32,8 @@ private enum LibraryScope: Equatable {
             return "clock"
         case .inbox:
             return "tray"
+        case .folder:
+            return "folder"
         case .tag:
             return "number"
         }
@@ -128,6 +133,7 @@ final class LibraryNoteRowView: NSTableRowView {
 @MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
+    NSToolbarDelegate,
     NSTableViewDataSource,
     NSTableViewDelegate,
     NSSearchFieldDelegate,
@@ -144,6 +150,14 @@ final class LibraryWindowController: NSWindowController,
     let statusLabel = NSTextField(labelWithString: "")
     let emptyLabel = NSTextField(labelWithString: "选择或新建一条笔记")
 
+    private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
+    private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
+    private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
+    private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
+    private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
+    private static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
+    private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
+
     private let onOpenInSeparateWindow: (URL) -> Void
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
@@ -158,7 +172,12 @@ final class LibraryWindowController: NSWindowController,
     private var selectedScope: LibraryScope = .all
     private var sourceButtons: [NSButton] = []
     private var sourceCountLabels: [Int: NSTextField] = [:]
+    private var sourceFolderURLs: [URL] = []
     private var sourceTagNames: [String] = []
+    private weak var sourceListView: NSView?
+    private let sourcePrimaryStack = NSStackView()
+    private let sourceFolderStack = NSStackView()
+    private let sourceTagStack = NSStackView()
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -194,6 +213,7 @@ final class LibraryWindowController: NSWindowController,
 
         super.init(window: window)
         window.delegate = self
+        configureToolbar()
         buildUI()
         reloadNotes(loadFirstIfNeeded: true)
     }
@@ -252,38 +272,30 @@ final class LibraryWindowController: NSWindowController,
         sourceList.blendingMode = .withinWindow
         sourceList.state = .active
         sourceList.translatesAutoresizingMaskIntoConstraints = false
+        sourceListView = sourceList
 
         let title = NSTextField(labelWithString: "资料库")
         title.font = .systemFont(ofSize: 22, weight: .bold)
         title.textColor = panelPrimaryTextColor()
         title.alignment = .left
 
-        let primaryStack = NSStackView()
-        primaryStack.orientation = .vertical
-        primaryStack.alignment = .leading
-        primaryStack.spacing = 4
+        configureSourceStack(sourcePrimaryStack)
+        configureSourceStack(sourceFolderStack)
+        configureSourceStack(sourceTagStack)
 
-        sourceButtons.removeAll()
-        sourceCountLabels.removeAll()
-        for scope in [LibraryScope.all, .recent, .inbox] {
-            primaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
-        }
+        let folderHeader = NSTextField(labelWithString: "文件夹")
+        folderHeader.font = .systemFont(ofSize: 11, weight: .bold)
+        folderHeader.textColor = panelTertiaryTextColor()
+        folderHeader.alignment = .left
 
-        sourceTagNames = noteStore.knownTags(limit: 12)
         let tagHeader = NSTextField(labelWithString: "标签")
         tagHeader.font = .systemFont(ofSize: 11, weight: .bold)
         tagHeader.textColor = panelTertiaryTextColor()
         tagHeader.alignment = .left
 
-        let tagStack = NSStackView()
-        tagStack.orientation = .vertical
-        tagStack.alignment = .leading
-        tagStack.spacing = 4
-        for (index, tag) in sourceTagNames.enumerated() {
-            tagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
-        }
+        rebuildSourceRows(includeTags: false)
 
-        let stack = NSStackView(views: [title, primaryStack, tagHeader, tagStack, NSView()])
+        let stack = NSStackView(views: [title, sourcePrimaryStack, folderHeader, sourceFolderStack, tagHeader, sourceTagStack, NSView()])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -305,16 +317,10 @@ final class LibraryWindowController: NSWindowController,
         title.font = .systemFont(ofSize: 18, weight: .bold)
         title.textColor = panelPrimaryTextColor()
 
-        let newButton = makeIconButton(symbolName: "square.and.pencil", toolTip: "新建笔记", action: #selector(newNotePressed))
-
-        let header = NSStackView(views: [title, NSView(), newButton])
+        let header = NSStackView(views: [title, NSView()])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
-
-        searchField.placeholderString = "搜索笔记"
-        searchField.font = .systemFont(ofSize: 13)
-        searchField.delegate = self
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
         column.width = 280
@@ -337,7 +343,7 @@ final class LibraryWindowController: NSWindowController,
         scrollView.hasVerticalScroller = true
         scrollView.documentView = tableView
 
-        let stack = NSStackView(views: [header, searchField, scrollView])
+        let stack = NSStackView(views: [header, scrollView])
         stack.orientation = .vertical
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
@@ -362,24 +368,9 @@ final class LibraryWindowController: NSWindowController,
         titleField.focusRingType = .none
         titleField.delegate = self
 
-        let openButton = NSButton(title: "独立窗口打开", target: self, action: #selector(openSelectedInSeparateWindow))
-        styleSecondaryButton(openButton)
-
-        let saveButton = NSButton(title: "保存", target: self, action: #selector(savePressed))
-        saveButton.keyEquivalent = "s"
-        saveButton.keyEquivalentModifierMask = [.command]
-        styleAccentButton(saveButton)
-
-        let headerActions = NSStackView(views: [openButton, saveButton])
-        headerActions.orientation = .horizontal
-        headerActions.spacing = 8
-
-        let metadataRow = NSStackView(views: [statusLabel, NSView(), headerActions])
-        metadataRow.orientation = .horizontal
-        metadataRow.alignment = .centerY
-        metadataRow.spacing = 10
         statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         statusLabel.textColor = panelSecondaryTextColor()
+        statusLabel.alignment = .center
 
         configureEditorTextView()
         let scrollView = EditorScrollView()
@@ -410,15 +401,129 @@ final class LibraryWindowController: NSWindowController,
             emptyLabel.centerYAnchor.constraint(equalTo: bodyContainer.centerYAnchor)
         ])
 
-        let stack = NSStackView(views: [titleField, metadataRow, bodyContainer])
+        let stack = NSStackView(views: [statusLabel, titleField, bodyContainer])
         stack.orientation = .vertical
-        stack.spacing = 10
+        stack.alignment = .width
+        stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 26, left: 30, bottom: 20, right: 30)
         editor.addSubview(stack)
         pin(stack, to: editor)
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
         return editor
+    }
+
+    private func configureToolbar() {
+        searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
+        searchField.placeholderString = "搜索"
+        searchField.font = .systemFont(ofSize: 13)
+        searchField.delegate = self
+        searchField.isBordered = true
+        searchField.bezelStyle = .roundedBezel
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.frame = NSRect(x: 0, y: 0, width: 250, height: 30)
+        searchField.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window?.toolbar = toolbar
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            Self.addFolderToolbarItemIdentifier,
+            Self.toggleSidebarToolbarItemIdentifier,
+            .space,
+            Self.newNoteToolbarItemIdentifier,
+            .flexibleSpace,
+            Self.openSeparateToolbarItemIdentifier,
+            Self.saveToolbarItemIdentifier,
+            Self.searchToolbarItemIdentifier
+        ]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case Self.addFolderToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "添加文件夹",
+                symbolName: "folder.badge.plus",
+                action: #selector(addFolderPressed)
+            )
+        case Self.toggleSidebarToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "显示或隐藏资料库",
+                symbolName: "sidebar.left",
+                action: #selector(toggleSourceListPressed)
+            )
+        case Self.newNoteToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "新建笔记",
+                symbolName: "square.and.pencil",
+                action: #selector(newNotePressed)
+            )
+        case Self.openSeparateToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "独立窗口打开",
+                symbolName: "rectangle.on.rectangle",
+                action: #selector(openSelectedInSeparateWindow)
+            )
+        case Self.saveToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "保存",
+                symbolName: "checkmark.circle",
+                action: #selector(savePressed)
+            )
+        case Self.searchToolbarItemIdentifier:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "搜索"
+            item.paletteLabel = "搜索"
+            item.toolTip = "搜索笔记"
+            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 270, height: 32))
+            wrapper.addSubview(searchField)
+            NSLayoutConstraint.activate([
+                searchField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
+                searchField.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -10),
+                searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
+            ])
+            item.view = wrapper
+            return item
+        default:
+            return nil
+        }
+    }
+
+    private func toolbarButtonItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        item.target = self
+        item.action = action
+        return item
     }
 
     private func configureEditorTextView() {
@@ -445,15 +550,39 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
     }
 
-    private func makeIconButton(symbolName: String, toolTip: String, action: Selector) -> NSButton {
-        let button = NSButton(title: "", target: self, action: action)
-        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: toolTip)
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.toolTip = toolTip
-        button.bezelStyle = .texturedRounded
-        button.controlSize = .large
-        return button
+    private func configureSourceStack(_ stack: NSStackView) {
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+    }
+
+    private func rebuildSourceRows(includeTags: Bool) {
+        sourceButtons.removeAll()
+        sourceCountLabels.removeAll()
+        removeArrangedSubviews(from: sourcePrimaryStack)
+        removeArrangedSubviews(from: sourceFolderStack)
+        removeArrangedSubviews(from: sourceTagStack)
+
+        for scope in [LibraryScope.all, .recent, .inbox] {
+            sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
+        }
+
+        sourceFolderURLs = noteStore.preferredDirectories
+        for (index, folderURL) in sourceFolderURLs.enumerated() {
+            sourceFolderStack.addArrangedSubview(makeScopeRow(.folder(folderURL), tag: 10 + index))
+        }
+
+        sourceTagNames = includeTags ? noteStore.knownTags(limit: 12) : []
+        for (index, tag) in sourceTagNames.enumerated() {
+            sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
+        }
+    }
+
+    private func removeArrangedSubviews(from stack: NSStackView) {
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
     }
 
     private func makeScopeRow(_ scope: LibraryScope, tag: Int) -> NSView {
@@ -525,23 +654,28 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceCounts() {
-        let allNotes = noteStore.listNotes(limit: 10_000)
+        let recentNotes = recentNoteResults(limit: 10_000)
         let recentCount = noteStore.listRecentFiles(limit: 80).count
 
         for button in sourceButtons {
             let count: Int
             switch scope(for: button) {
             case .all:
-                count = allNotes.count
+                count = recentNotes.count
             case .recent:
                 count = recentCount
             case .inbox:
-                count = allNotes.filter { note in
+                count = recentNotes.filter { note in
                     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                         || note.title.localizedCaseInsensitiveContains("Inbox")
                 }.count
+            case .folder(let url):
+                let folderPath = url.standardizedFileURL.path
+                count = recentNotes.filter { note in
+                    note.url.deletingLastPathComponent().standardizedFileURL.path == folderPath
+                }.count
             case .tag(let tag):
-                count = allNotes.filter { note in
+                count = recentNotes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
                 }.count
             }
@@ -583,27 +717,32 @@ final class LibraryWindowController: NSWindowController,
     private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
-            return noteStore.listNotes(limit: limit)
+            return recentNoteResults(limit: limit)
         case .recent:
-            return noteStore.listRecentFiles(limit: min(limit, 80)).map { note in
-                let loaded = try? noteStore.loadNote(at: note.url)
-                return NoteSearchResult(
-                    url: note.url,
-                    title: note.title,
-                    snippet: loaded.map { firstMeaningfulLine(from: $0.body) ?? "" } ?? "",
-                    modifiedAt: note.modifiedAt,
-                    tags: loaded?.tags ?? []
-                )
-            }
+            return recentNoteResults(limit: min(limit, 80))
         case .inbox:
-            return noteStore.listNotes(limit: limit).filter { note in
+            return recentNoteResults(limit: limit).filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }
+        case .folder(let url):
+            return noteStore.listNotes(limit: limit, roots: [url])
         case .tag(let tag):
             return noteStore.listNotes(limit: limit).filter { note in
                 note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
             }
+        }
+    }
+
+    private func recentNoteResults(limit: Int) -> [NoteSearchResult] {
+        noteStore.listRecentFiles(limit: limit).map { note in
+            NoteSearchResult(
+                url: note.url,
+                title: note.title,
+                snippet: "",
+                modifiedAt: note.modifiedAt,
+                tags: []
+            )
         }
     }
 
@@ -777,6 +916,10 @@ final class LibraryWindowController: NSWindowController,
             return .recent
         case 2:
             return .inbox
+        case 10..<100:
+            let index = button.tag - 10
+            guard sourceFolderURLs.indices.contains(index) else { return .all }
+            return .folder(sourceFolderURLs[index])
         case 100...:
             let index = button.tag - 100
             guard sourceTagNames.indices.contains(index) else { return .all }
@@ -784,6 +927,21 @@ final class LibraryWindowController: NSWindowController,
         default:
             return .all
         }
+    }
+
+    @objc
+    private func addFolderPressed() {
+        guard let directory = chooseDirectory(startingAt: noteStore.notesDirectory)?.standardizedFileURL else { return }
+        noteStore.addPreferredDirectory(directory)
+        selectedScope = .folder(directory)
+        rebuildSourceRows(includeTags: false)
+        reloadNotes(loadFirstIfNeeded: true)
+    }
+
+    @objc
+    private func toggleSourceListPressed() {
+        guard let sourceListView else { return }
+        sourceListView.isHidden.toggle()
     }
 
     @objc
@@ -903,9 +1061,16 @@ final class LibraryWindowController: NSWindowController,
         let folder = note.url.deletingLastPathComponent().lastPathComponent
         let tags = note.tags.prefix(3).map { "#\($0)" }.joined(separator: " ")
         if tags.isEmpty {
-            return "\(relativeDateFormatter.localizedString(for: note.modifiedAt, relativeTo: Date())) · \(folder)"
+            return "\(relativeDateText(for: note.modifiedAt)) · \(folder)"
         }
-        return "\(relativeDateFormatter.localizedString(for: note.modifiedAt, relativeTo: Date())) · \(folder) · \(tags)"
+        return "\(relativeDateText(for: note.modifiedAt)) · \(folder) · \(tags)"
+    }
+
+    private func relativeDateText(for date: Date) -> String {
+        if abs(date.timeIntervalSinceNow) < 60 {
+            return "刚刚"
+        }
+        return relativeDateFormatter.localizedString(for: date, relativeTo: Date())
     }
 
     private func statusText(for note: NoteSearchResult) -> String {

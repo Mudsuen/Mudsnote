@@ -3,20 +3,29 @@ import Foundation
 extension NoteStore {
     public func listRecentFiles(limit: Int = 8) -> [NoteFile] {
         let recentPaths = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
+        let recentMetadata = storedRecentMetadata()
 
-        return recentPaths.compactMap { path in
+        return recentPaths.prefix(limit).map { path in
             let url = URL(fileURLWithPath: path)
-            guard fileManager.fileExists(atPath: url.path),
-                  let attrs = try? fileManager.attributesOfItem(atPath: url.path),
-                  let modifiedAt = attrs[.modificationDate] as? Date else {
-                return nil
-            }
-
-            let title = (try? loadNote(at: url).title) ?? url.deletingPathExtension().lastPathComponent
-            return NoteFile(url: url, title: title, modifiedAt: modifiedAt)
+            return NoteFile(
+                url: url,
+                title: recentTitle(for: url),
+                modifiedAt: recentModifiedDate(for: url, metadata: recentMetadata)
+            )
         }
-        .prefix(limit)
-        .map { $0 }
+    }
+
+    private func recentTitle(for url: URL) -> String {
+        var stem = url.deletingPathExtension().lastPathComponent
+        stem = stem.replacingOccurrences(
+            of: #"^\d{4}-\d{2}-\d{2}-"#,
+            with: "",
+            options: .regularExpression
+        )
+        let title = stem
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? url.deletingPathExtension().lastPathComponent : title
     }
 
     public func loadNote(at url: URL) throws -> (title: String, body: String, tags: [String]) {
@@ -58,7 +67,7 @@ extension NoteStore {
         }
 
         try writeNote(to: desiredURL, title: title, body: body, tags: tags)
-        rememberRecentFile(desiredURL)
+        rememberRecentFile(desiredURL, replacing: desiredURL == url ? nil : url)
         return desiredURL
     }
 
@@ -197,11 +206,52 @@ extension NoteStore {
         return "\(datePrefix)-\(slug.prefix(48))"
     }
 
-    private func rememberRecentFile(_ url: URL) {
+    private func rememberRecentFile(_ url: URL, replacing oldURL: URL? = nil) {
         var items = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
+        if let oldURL {
+            items.removeAll { $0 == oldURL.path }
+        }
         items.removeAll { $0 == url.path }
         items.insert(url.path, at: 0)
-        defaults.set(Array(items.prefix(40)), forKey: NoteStoreDefaultsKey.recentFiles)
+        let trimmedItems = Array(items.prefix(40))
+        defaults.set(trimmedItems, forKey: NoteStoreDefaultsKey.recentFiles)
+
+        var metadata = storedRecentMetadata()
+        if let oldURL {
+            metadata.removeValue(forKey: oldURL.path)
+        }
+        metadata[url.path] = Date().timeIntervalSince1970
+        let retainedPaths = Set(trimmedItems)
+        metadata = metadata.filter { retainedPaths.contains($0.key) }
+        defaults.set(metadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
+    }
+
+    private func storedRecentMetadata() -> [String: TimeInterval] {
+        let rawMetadata = defaults.dictionary(forKey: NoteStoreDefaultsKey.recentFileMetadata) ?? [:]
+        var metadata: [String: TimeInterval] = [:]
+        for (path, rawValue) in rawMetadata {
+            if let timestamp = rawValue as? TimeInterval {
+                metadata[path] = timestamp
+            } else if let number = rawValue as? NSNumber {
+                metadata[path] = number.doubleValue
+            }
+        }
+        return metadata
+    }
+
+    private func recentModifiedDate(for url: URL, metadata: [String: TimeInterval]) -> Date {
+        if let timestamp = metadata[url.path] {
+            return Date(timeIntervalSince1970: timestamp)
+        }
+        return dateFromFilename(for: url) ?? Date()
+    }
+
+    private func dateFromFilename(for url: URL) -> Date? {
+        let stem = url.deletingPathExtension().lastPathComponent
+        guard stem.range(of: #"^\d{4}-\d{2}-\d{2}-"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return Self.datePrefix.date(from: String(stem.prefix(10)))
     }
 
     private static let datePrefix: DateFormatter = {

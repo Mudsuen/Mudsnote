@@ -29,6 +29,26 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func recentFilesAreListedWithoutSynchronousFileMetadataReads() throws {
+        let harness = try TestHarness()
+        let missingPath = harness.root
+            .appendingPathComponent("Missing External")
+            .appendingPathComponent("2025-11-03-Draft.md")
+            .path
+        harness.defaults.set([missingPath], forKey: NoteStoreDefaultsKey.recentFiles)
+
+        let recents = harness.store.listRecentFiles(limit: 5)
+        let components = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: try #require(recents.first?.modifiedAt))
+
+        #expect(recents.count == 1)
+        #expect(recents.first?.url.path == missingPath)
+        #expect(recents.first?.title == "Draft")
+        #expect(components.year == 2025)
+        #expect(components.month == 11)
+        #expect(components.day == 3)
+    }
+
+    @Test
     func searchFindsNotesAcrossKnownRoots() throws {
         let harness = try TestHarness()
         let store = harness.store
