@@ -1168,18 +1168,27 @@ struct MarkdownRichEditorTests {
         controller.searchForLibrary(query: "alpha", allNotes: true)
         controller.tableView.deselectAll(nil)
         let fieldEditor = NSTextView()
+        let firstResultTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         let lastResultTitle = try #require(controller.noteListSearchResultsForLibrary().last?.title)
 
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveDown(_:))))
         #expect(controller.tableView.selectedRow == 1)
-        controller.tableView.deselectAll(nil)
-
-        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveUp(_:))))
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveDown(_:))))
         #expect(controller.tableView.selectedRow == 2)
 
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveUp(_:))))
+        #expect(controller.tableView.selectedRow == 1)
+
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        #expect(controller.titleField.stringValue == firstResultTitle)
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme).contains("keyboard body"))
+
+        controller.searchForLibrary(query: "alpha", allNotes: true)
+        controller.tableView.deselectAll(nil)
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveUp(_:))))
+        #expect(controller.tableView.selectedRow == 2)
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         #expect(controller.titleField.stringValue == lastResultTitle)
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme).contains("keyboard body"))
 
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)

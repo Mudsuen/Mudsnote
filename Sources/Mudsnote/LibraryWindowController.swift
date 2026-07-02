@@ -1713,11 +1713,11 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if commandSelector == #selector(NSResponder.moveDown(_:)) {
-            return focusNoteListResult(.first)
+            return stepSearchResult(.next)
         }
 
         if commandSelector == #selector(NSResponder.moveUp(_:)) {
-            return focusNoteListResult(.last)
+            return stepSearchResult(.previous)
         }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
@@ -1892,37 +1892,46 @@ final class LibraryWindowController: NSWindowController,
         return true
     }
 
-    private enum NoteListResultAnchor {
-        case first
-        case last
-    }
-
-    private func focusNoteListResult(_ anchor: NoteListResultAnchor) -> Bool {
-        guard selectNoteListRowIfNeeded(anchor) else { return false }
-        window?.makeFirstResponder(tableView)
-        return true
+    private enum NoteListResultDirection {
+        case next
+        case previous
     }
 
     private func loadFocusedNoteListResultFromSearch() -> Bool {
-        guard selectNoteListRowIfNeeded(.first) else { return false }
+        guard selectNoteListRowIfNeeded() else { return false }
         loadSelectedRow()
         editorTextView.window?.makeFirstResponder(editorTextView)
         return true
     }
 
-    private func selectNoteListRowIfNeeded(_ anchor: NoteListResultAnchor) -> Bool {
+    private func stepSearchResult(_ direction: NoteListResultDirection) -> Bool {
+        let noteRows = listRows.indices.filter { listRows[$0].note != nil }
+        guard !noteRows.isEmpty else { return false }
+
+        let selectedRow = tableView.selectedRow
+        let targetRow: Int
+        if let currentIndex = noteRows.firstIndex(of: selectedRow) {
+            switch direction {
+            case .next:
+                targetRow = noteRows[min(currentIndex + 1, noteRows.count - 1)]
+            case .previous:
+                targetRow = noteRows[max(currentIndex - 1, 0)]
+            }
+        } else {
+            targetRow = direction == .next ? noteRows[0] : noteRows[noteRows.count - 1]
+        }
+
+        tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+        tableView.scrollRowToVisible(targetRow)
+        return true
+    }
+
+    private func selectNoteListRowIfNeeded() -> Bool {
         if tableView.selectedRow >= 0, note(at: tableView.selectedRow) != nil {
             return true
         }
 
-        let row: Int?
-        switch anchor {
-        case .first:
-            row = listRows.firstIndex(where: { $0.note != nil })
-        case .last:
-            row = listRows.lastIndex(where: { $0.note != nil })
-        }
-
+        let row = listRows.firstIndex(where: { $0.note != nil })
         guard let row else {
             return false
         }
