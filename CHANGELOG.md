@@ -342,6 +342,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a small `LibraryNoteScrollView` that keeps the table document view left-aligned and width-filled, made the sidebar stack explicitly fill the note-list header and list container, and disabled conflicting automatic table-column resizing. Added regression coverage for the document view origin and single-column width contract.
 - Lesson: AppKit scroll/table views need an explicit width contract inside stack views; visual parity depends on verifying the packaged window, not only source-level constraints.
 
+### 60. Notes-like toolbar disabled states
+
+- Problem: The library toolbar and menus still exposed actions in unavailable contexts, especially empty libraries and Recently Deleted, making the shell feel less like Apple Notes' context-aware command surface.
+- Fix: Added shared toolbar/menu state helpers for selected-note, editable-document, move, restore, and more-actions availability. Formatting, checklist, table, link, attachment, save, move, open, delete, restore, and more actions now enable only when their current context can actually run. Context menus and action handlers share the same state. Added regression coverage for empty library, new blank note, normal selected note, and trash selection states.
+- Lesson: Toolbar parity is not only icon placement; disabled state must follow the same document lifecycle rules as the editor and note list.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

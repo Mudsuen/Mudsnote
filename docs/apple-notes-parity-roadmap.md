@@ -222,7 +222,7 @@ Exit criteria: these features improve local Markdown workflow without making the
 
 ## Current Known Gaps
 
-- Toolbar has editing tools and a more-actions menu, but still needs share/export polish, tighter disabled states, and side-by-side visual tuning.
+- Toolbar has editing tools, a more-actions menu, and context-aware disabled states, but still needs share/export polish and side-by-side visual tuning.
 - Titlebar and list headers are closer to Notes, but still need side-by-side spacing, source-list hierarchy, and exact toolbar balance tuning.
 - Source list has compact group labels, counts, launch-safe root folder rows, deferred full folder loading, tag rows after shell visibility, and session-local disclosure controls, but still needs more exact Apple Notes spacing and empty/loading state polish.
 - Note-list rows show bounded body previews, a darker Notes-like column, width-filled selection/list layout, a compact attachment paperclip indicator, basic keyboard open/delete actions, and empty/no-result/trash feedback, but still need exact row spacing, thumbnail previews, and broader keyboard navigation polish.

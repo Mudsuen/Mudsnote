@@ -831,23 +831,23 @@ final class LibraryWindowController: NSWindowController,
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
         case Self.moreToolbarItemIdentifier:
-            return true
+            return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:
-            return selectedURL != nil
+            return canUseSelectedNote
         case Self.formatToolbarItemIdentifier,
              Self.checklistToolbarItemIdentifier,
              Self.tableToolbarItemIdentifier,
              Self.linkToolbarItemIdentifier,
              Self.attachmentToolbarItemIdentifier:
-            return selectedScope != .trash
+            return canEditCurrentDocument
         case Self.moveToolbarItemIdentifier:
-            return selectedURL != nil && selectedScope != .trash && !sourceFolderRows.isEmpty
+            return canMoveSelectedNote
         case Self.saveToolbarItemIdentifier:
-            return selectedScope != .trash
+            return canEditCurrentDocument
         case Self.deleteToolbarItemIdentifier:
-            return selectedURL != nil
+            return canUseSelectedNote
         case Self.restoreToolbarItemIdentifier:
-            return selectedScope == .trash && selectedURL != nil
+            return canRestoreSelectedNote
         default:
             return true
         }
@@ -1786,6 +1786,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func formatPressed(_ sender: Any?) {
+        guard canEditCurrentDocument else { return }
         let menu = makeFormatMenu()
         guard !menu.items.isEmpty else { return }
 
@@ -1805,17 +1806,20 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func checklistPressed() {
+        guard canEditCurrentDocument else { return }
         focusEditorForLibraryAction()
         toggleParagraphKind(.checklist(checked: false))
     }
 
     @objc
     private func tablePressed() {
+        guard canEditCurrentDocument else { return }
         insertTableForLibrary()
     }
 
     @objc
     private func linkPressed() {
+        guard canEditCurrentDocument else { return }
         let defaultLabel = selectedTextForLinkDefault()
         guard let url = promptForText(
             title: "插入链接",
@@ -1828,6 +1832,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func attachmentPressed() {
+        guard canEditCurrentDocument else { return }
         let panel = NSOpenPanel()
         panel.title = "添加附件"
         panel.prompt = "添加"
@@ -1848,6 +1853,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func moreActionsPressed(_ sender: Any?) {
+        guard canShowMoreActions else { return }
         let menu = makeMoreActionsMenuForLibrary()
 
         if let item = sender as? NSToolbarItem,
@@ -1860,6 +1866,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func moveSelectedNotePressed(_ sender: Any?) {
+        guard canMoveSelectedNote else { return }
         let menu = makeMoveNoteMenu()
         guard !menu.items.isEmpty else { return }
 
@@ -2196,6 +2203,31 @@ final class LibraryWindowController: NSWindowController,
         return path == trashPath || path.hasPrefix(trashPath + "/")
     }
 
+    private var canUseSelectedNote: Bool {
+        selectedURL != nil
+    }
+
+    private var canEditCurrentDocument: Bool {
+        guard selectedScope != .trash else { return false }
+        return selectedURL != nil
+            || isDirty
+            || statusLabel.stringValue == "新笔记"
+            || !titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !editorTextView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canMoveSelectedNote: Bool {
+        canUseSelectedNote && selectedScope != .trash && !sourceFolderRows.isEmpty
+    }
+
+    private var canRestoreSelectedNote: Bool {
+        selectedScope == .trash && canUseSelectedNote
+    }
+
+    private var canShowMoreActions: Bool {
+        canUseSelectedNote || canEditCurrentDocument
+    }
+
     private func updateToolbarActionState() {
         let isTrashScope = selectedScope == .trash
         for item in window?.toolbar?.items ?? [] {
@@ -2241,22 +2273,24 @@ final class LibraryWindowController: NSWindowController,
 
         let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
+        moveItem.isEnabled = canMoveSelectedNote
         menu.addItem(moveItem)
         menu.addItem(.separator())
 
         let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
         revealItem.target = self
-        revealItem.isEnabled = selectedURL != nil
+        revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
         let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
-        copyPathItem.isEnabled = selectedURL != nil
+        copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
         menu.addItem(.separator())
 
         let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
         deleteItem.target = self
+        deleteItem.isEnabled = canUseSelectedNote
         menu.addItem(deleteItem)
 
         return menu
@@ -2264,35 +2298,34 @@ final class LibraryWindowController: NSWindowController,
 
     func makeMoreActionsMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
-        let hasSelection = selectedURL != nil
         let isTrashScope = selectedScope == .trash
 
         let openItem = NSMenuItem(title: "独立窗口打开", action: #selector(openSelectedInSeparateWindow), keyEquivalent: "")
         openItem.target = self
-        openItem.isEnabled = hasSelection
+        openItem.isEnabled = canUseSelectedNote
         menu.addItem(openItem)
 
         let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
-        moveItem.isEnabled = hasSelection && !isTrashScope && !sourceFolderRows.isEmpty
+        moveItem.isEnabled = canMoveSelectedNote
         menu.addItem(moveItem)
 
         let saveItem = NSMenuItem(title: "保存", action: #selector(savePressed), keyEquivalent: "s")
         saveItem.target = self
         saveItem.keyEquivalentModifierMask = [.command]
-        saveItem.isEnabled = !isTrashScope
+        saveItem.isEnabled = canEditCurrentDocument
         menu.addItem(saveItem)
 
         menu.addItem(.separator())
 
         let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
         revealItem.target = self
-        revealItem.isEnabled = hasSelection
+        revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
         let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
-        copyPathItem.isEnabled = hasSelection
+        copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
 
         menu.addItem(.separator())
@@ -2300,17 +2333,17 @@ final class LibraryWindowController: NSWindowController,
         if isTrashScope {
             let restoreItem = NSMenuItem(title: "恢复", action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
             restoreItem.target = self
-            restoreItem.isEnabled = hasSelection
+            restoreItem.isEnabled = canRestoreSelectedNote
             menu.addItem(restoreItem)
 
             let permanentlyDeleteItem = NSMenuItem(title: "永久删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
             permanentlyDeleteItem.target = self
-            permanentlyDeleteItem.isEnabled = hasSelection
+            permanentlyDeleteItem.isEnabled = canUseSelectedNote
             menu.addItem(permanentlyDeleteItem)
         } else {
             let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
             deleteItem.target = self
-            deleteItem.isEnabled = hasSelection
+            deleteItem.isEnabled = canUseSelectedNote
             menu.addItem(deleteItem)
         }
 

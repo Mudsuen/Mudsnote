@@ -721,6 +721,106 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryToolbarUsesNotesLikeDisabledStates() throws {
+        let suiteName = "mudsnote.library-toolbar-state-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-toolbar-state-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let emptyController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { emptyController.close() }
+
+        func toolbarItem(_ rawValue: String) -> NSToolbarItem {
+            NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier(rawValue))
+        }
+
+        let formatItem = toolbarItem("mudsnote.library.toolbar.format")
+        let checklistItem = toolbarItem("mudsnote.library.toolbar.checklist")
+        let saveItem = toolbarItem("mudsnote.library.toolbar.save")
+        let moreItem = toolbarItem("mudsnote.library.toolbar.more")
+        let openItem = toolbarItem("mudsnote.library.toolbar.open-separate")
+        let deleteItem = toolbarItem("mudsnote.library.toolbar.delete")
+        let restoreItem = toolbarItem("mudsnote.library.toolbar.restore")
+        let newItem = toolbarItem("mudsnote.library.toolbar.new-note")
+
+        #expect(!emptyController.validateToolbarItem(formatItem))
+        #expect(!emptyController.validateToolbarItem(checklistItem))
+        #expect(!emptyController.validateToolbarItem(saveItem))
+        #expect(!emptyController.validateToolbarItem(moreItem))
+        #expect(!emptyController.validateToolbarItem(openItem))
+        #expect(!emptyController.validateToolbarItem(deleteItem))
+        #expect(!emptyController.validateToolbarItem(restoreItem))
+        #expect(emptyController.validateToolbarItem(newItem))
+
+        let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
+        })
+        #expect(NSApp.sendAction(try #require(visibleNewItem.action), to: visibleNewItem.target, from: visibleNewItem))
+        #expect(emptyController.validateToolbarItem(formatItem))
+        #expect(emptyController.validateToolbarItem(checklistItem))
+        #expect(emptyController.validateToolbarItem(saveItem))
+        #expect(emptyController.validateToolbarItem(moreItem))
+
+        let noteURL = try store.saveNewNote(title: "Toolbar State", body: "Body line")
+        let selectedController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { selectedController.close() }
+
+        #expect(selectedController.selectedMarkdownFileURLForLibrary()?.path == noteURL.standardizedFileURL.path)
+        #expect(selectedController.validateToolbarItem(formatItem))
+        #expect(selectedController.validateToolbarItem(saveItem))
+        #expect(selectedController.validateToolbarItem(moreItem))
+        #expect(selectedController.validateToolbarItem(openItem))
+        #expect(selectedController.validateToolbarItem(deleteItem))
+        #expect(!selectedController.validateToolbarItem(restoreItem))
+
+        let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
+        #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
+        #expect(normalMoreMenu.items.first { $0.title == "删除" }?.isEnabled == true)
+
+        try selectedController.deleteSelectedNoteForLibrary()
+        let trashButton = try #require(selectedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "最近删除"
+        })
+        trashButton.performClick(nil)
+
+        #expect(!selectedController.validateToolbarItem(formatItem))
+        #expect(!selectedController.validateToolbarItem(checklistItem))
+        #expect(!selectedController.validateToolbarItem(saveItem))
+        #expect(selectedController.validateToolbarItem(moreItem))
+        #expect(selectedController.validateToolbarItem(deleteItem))
+        #expect(selectedController.validateToolbarItem(restoreItem))
+
+        let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
+        #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
+        #expect(trashMoreMenu.items.first { $0.title == "恢复" }?.isEnabled == true)
+        #expect(trashMoreMenu.items.first { $0.title == "永久删除" }?.isEnabled == true)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowEditorToolbarInsertsRichMarkdownTools() throws {
         let suiteName = "mudsnote.library-editor-tools-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
