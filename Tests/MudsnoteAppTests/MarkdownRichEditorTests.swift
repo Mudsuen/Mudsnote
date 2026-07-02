@@ -1076,6 +1076,54 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func librarySearchFieldKeyboardNavigatesResultsAndClearsQuery() throws {
+        let suiteName = "mudsnote.library-search-keyboard-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-search-keyboard-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha Result", body: "search keyboard body")
+        _ = try store.saveNewNote(title: "Beta Note", body: "other body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.searchForLibrary(query: "alpha", allNotes: true)
+        controller.tableView.deselectAll(nil)
+        let fieldEditor = NSTextView()
+
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.moveDown(_:))))
+        #expect(controller.tableView.selectedRow == 1)
+
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        #expect(controller.titleField.stringValue == "Alpha Result")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "search keyboard body")
+
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        #expect(controller.searchField.stringValue.isEmpty)
+        #expect(controller.searchScopeControl.isHidden)
+        #expect(controller.noteListTitleLabel.stringValue == "所有笔记")
+    }
+
+    @MainActor
+    @Test
     func libraryWindowLoadsTagRowsAfterShellIsVisible() throws {
         let suiteName = "mudsnote.library-tag-source-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

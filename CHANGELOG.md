@@ -372,6 +372,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Render local `![alt](path)` references as bounded inline image attachments when the current note path can resolve them, while storing the original Markdown on the attachment so save/serialize remains lossless. Library and standalone editor loads now pass the current file URL as the relative image base.
 - Lesson: Attachment preview parity can stay lightweight if the editor only resolves local Markdown references at render time and keeps Markdown as the source of truth.
 
+### 65. Search keyboard result flow
+
+- Problem: Toolbar search showed scoped results, but keyboard flow still required pointer interaction to enter the result list, load the focused result, or clear the query.
+- Fix: Added search-field command handling: Down selects the first visible note result and focuses the list, Return loads the focused result into the editor, and Escape clears the query back to the current library scope. Added regression coverage for the keyboard path.
+- Lesson: Notes parity depends on fast keyboard transitions between search, list, and editor; small responder-chain commands are enough before adding heavier indexing.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
