@@ -119,16 +119,19 @@ final class LibraryNoteCellView: NSTableCellView {
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
         titleLabel.alignment = .left
         titleLabel.textColor = panelPrimaryTextColor()
 
         snippetLabel.font = .systemFont(ofSize: 12)
         snippetLabel.lineBreakMode = .byTruncatingTail
+        snippetLabel.maximumNumberOfLines = 1
         snippetLabel.alignment = .left
         snippetLabel.textColor = panelSecondaryTextColor()
 
         metaLabel.font = .systemFont(ofSize: 11, weight: .medium)
         metaLabel.lineBreakMode = .byTruncatingMiddle
+        metaLabel.maximumNumberOfLines = 1
         metaLabel.alignment = .left
         metaLabel.textColor = panelTertiaryTextColor()
 
@@ -891,7 +894,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceCounts() {
-        let recentNotes = recentNoteResults(limit: 10_000)
+        let recentNotes = recentNoteResults(limit: 10_000, hydratePreview: false)
         let recentCount = noteStore.listRecentFiles(limit: 80).count
 
         for button in sourceButtons {
@@ -970,11 +973,11 @@ final class LibraryWindowController: NSWindowController,
     private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
-            return recentNoteResults(limit: limit)
+            return recentNoteResults(limit: limit, hydratePreview: true)
         case .recent:
-            return recentNoteResults(limit: min(limit, 80))
+            return recentNoteResults(limit: min(limit, 80), hydratePreview: true)
         case .inbox:
-            return recentNoteResults(limit: limit).filter { note in
+            return recentNoteResults(limit: limit, hydratePreview: true).filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }
@@ -1012,14 +1015,15 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func recentNoteResults(limit: Int) -> [NoteSearchResult] {
-        noteStore.listRecentFiles(limit: limit).map { note in
-            NoteSearchResult(
+    private func recentNoteResults(limit: Int, hydratePreview: Bool) -> [NoteSearchResult] {
+        noteStore.listRecentFiles(limit: limit).enumerated().map { index, note in
+            let loaded = hydratePreview && index < 80 ? try? noteStore.loadNote(at: note.url) : nil
+            return NoteSearchResult(
                 url: note.url,
-                title: note.title,
-                snippet: "",
+                title: loaded?.title ?? note.title,
+                snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
                 modifiedAt: note.modifiedAt,
-                tags: []
+                tags: loaded?.tags ?? []
             )
         }
     }

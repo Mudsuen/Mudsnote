@@ -282,6 +282,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Hid the window title in the titlebar while preserving the system window title, tightened the note-list column width, changed the source list to compact Notes-style group labels, added a selected-scope title plus result/count line to the note-list header, and reduced the selected note card radius. Added app regression coverage for the hidden titlebar, source group label, and list title/count states.
 - Lesson: Notes parity needs density contracts as much as features; the shell should communicate current scope and count without adding heavier controls or changing the Markdown storage boundary.
 
+### 50. Note-list preview snippets
+
+- Problem: Normal library rows showed title and metadata but no body preview, so the middle column still lacked the Apple Notes scanning loop outside active search.
+- Fix: Added bounded preview hydration for the first recent-backed rows so the list shows each note's first meaningful body line while count refreshes still use the lightweight metadata path. Locked row labels to single-line truncation to prevent long titles or snippets from overlapping the compact Notes-style row layout.
+- Lesson: List parity should improve scanability without turning launch into a full indexing pass; bounded visible-row hydration gives useful previews while preserving the fast shell-first path.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
