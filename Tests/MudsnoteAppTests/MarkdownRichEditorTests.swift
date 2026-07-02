@@ -734,6 +734,78 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowSearchScopesAndHighlightsMatches() throws {
+        let suiteName = "mudsnote.library-search-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-search-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let projectsFolder = try store.createFolder(named: "Projects")
+        let archiveFolder = try store.createFolder(named: "Archive")
+        _ = try store.saveNewNote(title: "Alpha Project", body: "current folder alpha body", in: projectsFolder)
+        _ = try store.saveNewNote(title: "Archive Note", body: "global alpha body", in: archiveFolder)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let scopeControl = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSegmentedControl }.first {
+            $0.identifier?.rawValue == "LibrarySearchScopeControl"
+        })
+        #expect(scopeControl.selectedSegment == 0)
+        #expect(scopeControl.isHidden)
+
+        let projectsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Projects"
+        })
+        projectsButton.performClick(nil)
+
+        controller.searchForLibrary(query: "alpha", allNotes: false)
+        #expect(!scopeControl.isHidden)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
+        #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
+
+        let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        let titleHighlight = cell.titleLabel.attributedStringValue.attribute(
+            .backgroundColor,
+            at: 0,
+            effectiveRange: nil
+        )
+        let snippetRange = (cell.snippetLabel.attributedStringValue.string as NSString).range(of: "alpha")
+        let snippetHighlight = cell.snippetLabel.attributedStringValue.attribute(
+            .backgroundColor,
+            at: snippetRange.location,
+            effectiveRange: nil
+        )
+        #expect(titleHighlight != nil)
+        #expect(snippetRange.location != NSNotFound)
+        #expect(snippetHighlight != nil)
+
+        controller.searchForLibrary(query: "alpha", allNotes: true)
+        let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
+        #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
+        #expect(scopeControl.selectedSegment == 1)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowCreatesMovesRenamesAndDeletesFolders() throws {
         let suiteName = "mudsnote.library-folder-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

@@ -175,6 +175,12 @@ final class LibraryWindowController: NSWindowController,
     let noteStore: NoteStore
     let tableView = NSTableView()
     let searchField = NSSearchField(string: "")
+    let searchScopeControl = NSSegmentedControl(
+        labels: ["当前", "所有"],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
     let statusLabel = NSTextField(labelWithString: "")
@@ -355,8 +361,9 @@ final class LibraryWindowController: NSWindowController,
         let title = NSTextField(labelWithString: "笔记")
         title.font = .systemFont(ofSize: 18, weight: .bold)
         title.textColor = panelPrimaryTextColor()
+        configureSearchScopeControl()
 
-        let header = NSStackView(views: [title, NSView()])
+        let header = NSStackView(views: [title, NSView(), searchScopeControl])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
@@ -471,6 +478,20 @@ final class LibraryWindowController: NSWindowController,
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         window?.toolbar = toolbar
+    }
+
+    private func configureSearchScopeControl() {
+        searchScopeControl.identifier = NSUserInterfaceItemIdentifier("LibrarySearchScopeControl")
+        searchScopeControl.target = self
+        searchScopeControl.action = #selector(searchScopeChanged(_:))
+        searchScopeControl.selectedSegment = 0
+        searchScopeControl.segmentStyle = .capsule
+        searchScopeControl.controlSize = .small
+        searchScopeControl.font = .systemFont(ofSize: 11, weight: .medium)
+        searchScopeControl.setWidth(44, forSegment: 0)
+        searchScopeControl.setWidth(44, forSegment: 1)
+        searchScopeControl.toolTip = "切换搜索范围"
+        searchScopeControl.isHidden = true
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -873,8 +894,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func reloadNotes(selecting preferredURL: URL? = nil, loadFirstIfNeeded: Bool) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let scopedNotes = notesForSelectedScope(limit: 240)
-        notes = query.isEmpty ? scopedNotes : filteredNotes(scopedNotes, query: query)
+        searchScopeControl.isHidden = query.isEmpty
+        notes = query.isEmpty
+            ? notesForSelectedScope(limit: 240)
+            : searchResultsForSelectedScope(query: query, limit: 240)
         listRows = buildGroupedRows(for: notes)
 
         suppressSelectionChanges = true
@@ -925,6 +948,29 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func searchResultsForSelectedScope(query: String, limit: Int) -> [NoteSearchResult] {
+        if searchScopeControl.selectedSegment == 1 {
+            return noteStore.searchNotes(query: query, limit: limit)
+        }
+
+        switch selectedScope {
+        case .all, .recent:
+            return noteStore.searchNotes(query: query, limit: limit)
+        case .inbox:
+            return noteStore.searchNotes(query: query, limit: limit).filter { note in
+                isInboxNote(note)
+            }
+        case .trash:
+            return filteredTrashedNotes(query: query, limit: limit)
+        case .folder(let url):
+            return noteStore.searchNotes(query: query, limit: limit, roots: [url])
+        case .tag(let tag):
+            return noteStore.searchNotes(query: query, limit: limit).filter { note in
+                note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+            }
+        }
+    }
+
     private func recentNoteResults(limit: Int) -> [NoteSearchResult] {
         noteStore.listRecentFiles(limit: limit).map { note in
             NoteSearchResult(
@@ -937,13 +983,36 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func filteredNotes(_ notes: [NoteSearchResult], query: String) -> [NoteSearchResult] {
-        notes.filter { note in
-            note.title.localizedCaseInsensitiveContains(query)
-                || note.snippet.localizedCaseInsensitiveContains(query)
-                || displayPath(note.url).localizedCaseInsensitiveContains(query)
-                || note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+    private func filteredTrashedNotes(query: String, limit: Int) -> [NoteSearchResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
+
+        return noteStore.listTrashedNotes(limit: limit).compactMap { note in
+            guard let loaded = try? noteStore.loadNote(at: note.url) else {
+                return note.title.localizedCaseInsensitiveContains(trimmedQuery) ? note : nil
+            }
+
+            let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
+            let matchingLine = loaded.body
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
+            let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+            guard matchesTitle || matchingLine != nil || matchesTag else { return nil }
+
+            return NoteSearchResult(
+                url: note.url,
+                title: loaded.title,
+                snippet: matchingLine ?? firstMeaningfulLine(from: loaded.body) ?? "",
+                modifiedAt: note.modifiedAt,
+                tags: loaded.tags
+            )
         }
+    }
+
+    private func isInboxNote(_ note: NoteSearchResult) -> Bool {
+        note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+            || note.title.localizedCaseInsensitiveContains("Inbox")
     }
 
     private func firstMeaningfulLine(from body: String) -> String? {
@@ -1030,10 +1099,55 @@ final class LibraryWindowController: NSWindowController,
             cell.identifier = identifier
         }
 
-        cell.titleLabel.stringValue = note.title.isEmpty ? "无标题" : note.title
-        cell.snippetLabel.stringValue = note.snippet.isEmpty ? " " : note.snippet
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        cell.titleLabel.attributedStringValue = highlightedSearchString(
+            note.title.isEmpty ? "无标题" : note.title,
+            font: cell.titleLabel.font ?? .systemFont(ofSize: 14, weight: .semibold),
+            baseColor: panelPrimaryTextColor(),
+            query: query
+        )
+        cell.snippetLabel.attributedStringValue = highlightedSearchString(
+            note.snippet.isEmpty ? " " : note.snippet,
+            font: cell.snippetLabel.font ?? .systemFont(ofSize: 12),
+            baseColor: panelSecondaryTextColor(),
+            query: query
+        )
         cell.metaLabel.stringValue = metadataText(for: note)
         return cell
+    }
+
+    func highlightedSearchString(
+        _ text: String,
+        font: NSFont,
+        baseColor: NSColor,
+        query: String
+    ) -> NSAttributedString {
+        let attributed = NSMutableAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: baseColor
+        ])
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty, !text.isEmpty else { return attributed }
+
+        let nsText = text as NSString
+        var searchRange = NSRange(location: 0, length: nsText.length)
+        while searchRange.location < nsText.length {
+            let match = nsText.range(
+                of: trimmedQuery,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: searchRange
+            )
+            guard match.location != NSNotFound, match.length > 0 else { break }
+
+            attributed.addAttributes([
+                .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.34),
+                .foregroundColor: panelPrimaryTextColor()
+            ], range: match)
+
+            let nextLocation = NSMaxRange(match)
+            searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
+        }
+        return attributed
     }
 
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
@@ -1090,6 +1204,11 @@ final class LibraryWindowController: NSWindowController,
         } else {
             markDirty()
         }
+    }
+
+    @objc
+    private func searchScopeChanged(_ sender: NSSegmentedControl) {
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
     @objc
@@ -1474,6 +1593,16 @@ final class LibraryWindowController: NSWindowController,
 
     func revealSelectedNoteInFinderForLibrary() -> URL? {
         selectedMarkdownFileURLForLibrary()
+    }
+
+    func searchForLibrary(query: String, allNotes: Bool) {
+        searchField.stringValue = query
+        searchScopeControl.selectedSegment = allNotes ? 1 : 0
+        reloadNotes(loadFirstIfNeeded: false)
+    }
+
+    func noteListSearchResultsForLibrary() -> [NoteSearchResult] {
+        notes
     }
 
     @discardableResult

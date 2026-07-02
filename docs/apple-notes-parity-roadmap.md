@@ -226,5 +226,5 @@ Exit criteria: these features improve local Markdown workflow without making the
 - Source list lacks real folder hierarchy and still defers tag rows from the launch path.
 - Editor metadata/date placement is not yet close enough.
 - Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, but still lacks full rich table editing and attachment previews.
-- Search is in the top toolbar, but still lacks Notes-grade scope controls, result highlighting, and indexing.
+- Search is in the top toolbar and supports current/all scoping with visible row highlights, but still lacks indexing, richer empty states, and full result navigation polish.
 - Visual QA is manual; there is no side-by-side comparison artifact yet.

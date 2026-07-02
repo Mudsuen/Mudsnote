@@ -270,6 +270,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Moved open, move, save, delete, restore, reveal, and copy-path workflows into a single Notes-style more-actions menu. Added reveal-in-Finder and copy-Markdown-path actions for the selected note, kept context-menu access, and updated regression coverage for the default toolbar shape and file menu workflows.
 - Lesson: Apple Notes parity is partly action hierarchy; common editing tools belong on the toolbar, while less frequent file operations should live behind a compact menu without losing functionality.
 
+### 48. Search scope and match highlighting
+
+- Problem: The toolbar search field could filter the note list, but it still felt unlike Apple Notes because it lacked an explicit current/all scope and did not show where the match occurred.
+- Fix: Added a compact `当前 / 所有` search scope control in the note list header, switched active searches to `NoteStore.searchNotes` so results include body snippets, and highlighted matching title/snippet text in note rows. Added app regression coverage for current-folder search, all-notes search, snippets, and highlight attributes.
+- Lesson: Search parity should improve retrieval feedback before adding a heavier index; scoped search and visible matches give a Notes-like result loop while keeping the storage model simple.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
