@@ -223,9 +223,8 @@ Exit criteria: these features improve local Markdown workflow without making the
 ## Current Known Gaps
 
 - Toolbar is still not Notes-like enough.
-- Source list lacks real folder hierarchy and trash behavior.
+- Source list lacks real folder hierarchy and still defers tag rows from the launch path.
 - Editor metadata/date placement is not yet close enough.
-- Rich editor lacks full table/attachment parity.
-- Search is not yet integrated into the top toolbar like Apple Notes.
+- Rich editor has Markdown-level table/link/attachment insertion from the library toolbar, but still lacks full rich table editing and attachment previews.
+- Search is in the top toolbar, but still lacks Notes-grade scope controls, result highlighting, and indexing.
 - Visual QA is manual; there is no side-by-side comparison artifact yet.
-

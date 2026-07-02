@@ -620,6 +620,11 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.format"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.checklist"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
@@ -651,6 +656,77 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowEditorToolbarInsertsRichMarkdownTools() throws {
+        let suiteName = "mudsnote.library-editor-tools-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-editor-tools-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Editor Tools", body: "plain")
+        let sourceAttachment = root.appendingPathComponent("source file.pdf")
+        try "attachment".write(to: sourceAttachment, atomically: true, encoding: .utf8)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.format"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.checklist"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
+
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
+        controller.markdownTextViewToggleBold(controller.editorTextView)
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
+
+        let checklistItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.checklist"
+        })
+        controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))
+        #expect(NSApp.sendAction(try #require(checklistItem.action), to: checklistItem.target, from: checklistItem))
+
+        controller.insertTableForLibrary()
+        controller.insertLinkForLibrary(label: "Muds", url: "https://muds.top")
+        let copiedAttachment = try controller.insertAttachmentReferenceForLibrary(from: sourceAttachment)
+
+        #expect(FileManager.default.fileExists(atPath: copiedAttachment.path))
+        #expect(copiedAttachment.path.contains("/Attachments/"))
+
+        let saveItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.save"
+        })
+        #expect(NSApp.sendAction(try #require(saveItem.action), to: saveItem.target, from: saveItem))
+
+        let saved = try store.loadNote(at: noteURL)
+        #expect(saved.body.contains("**plain**"))
+        #expect(saved.body.contains("- [ ]"))
+        #expect(saved.body.contains("| Column 1 | Column 2 |"))
+        #expect(saved.body.contains("[Muds](https://muds.top)"))
+        #expect(saved.body.contains("[source file](Attachments/"))
+        #expect(saved.body.contains("source%20file.pdf"))
     }
 
     @MainActor

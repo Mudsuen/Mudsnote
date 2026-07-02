@@ -258,6 +258,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added local folder creation, folder rename, note move, and folder delete-to-Trash APIs; wired the library window so new notes save into the selected folder, notes can move between folders, and folder rows expose rename/delete actions. Added core and app regression tests for the full folder lifecycle.
 - Lesson: A Notes replacement needs in-app information architecture controls; showing filesystem directories is only useful once the app can manage them without leaving the three-pane workflow.
 
+### 46. Library editor tools toolbar
+
+- Problem: The macOS library window visually approached Apple Notes, but the main editor toolbar still lacked the everyday editing tools for formatting, checklists, tables, links, and attachments.
+- Fix: Added Notes-style editor toolbar items for formatting, checklist, table, link, and attachment actions. The library editor now shares the rich Markdown command path for inline formatting and checklists, inserts readable Markdown tables and links, copies attachments into a local `Attachments/yyyy/mm/` folder, and saves standard relative Markdown links. Added app regression coverage for the toolbar items and saved Markdown output.
+- Lesson: Toolbar parity should stay functional and local-first; a lightweight Notes clone can add table and attachment workflows through portable Markdown before investing in heavier rich rendering.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -69,6 +69,16 @@ private enum LibraryActionError: LocalizedError {
     }
 }
 
+private enum LibraryFormatCommand: Int {
+    case heading = 1
+    case bold
+    case italic
+    case underline
+    case strikethrough
+    case bullet
+    case ordered
+}
+
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
@@ -179,6 +189,11 @@ final class LibraryWindowController: NSWindowController,
     private static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
     private static let deleteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.delete")
     private static let restoreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.restore")
+    private static let formatToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.format")
+    private static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
+    private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
+    private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
+    private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
     private let onOpenInSeparateWindow: (URL) -> Void
@@ -445,8 +460,8 @@ final class LibraryWindowController: NSWindowController,
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.frame = NSRect(x: 0, y: 0, width: 250, height: 30)
-        searchField.widthAnchor.constraint(equalToConstant: 250).isActive = true
+        searchField.frame = NSRect(x: 0, y: 0, width: 210, height: 30)
+        searchField.widthAnchor.constraint(equalToConstant: 210).isActive = true
         searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
@@ -464,6 +479,12 @@ final class LibraryWindowController: NSWindowController,
             .space,
             Self.newNoteToolbarItemIdentifier,
             .flexibleSpace,
+            Self.formatToolbarItemIdentifier,
+            Self.checklistToolbarItemIdentifier,
+            Self.tableToolbarItemIdentifier,
+            Self.linkToolbarItemIdentifier,
+            Self.attachmentToolbarItemIdentifier,
+            .space,
             Self.openSeparateToolbarItemIdentifier,
             Self.moveToolbarItemIdentifier,
             Self.saveToolbarItemIdentifier,
@@ -509,42 +530,87 @@ final class LibraryWindowController: NSWindowController,
                 identifier: itemIdentifier,
                 label: "独立窗口打开",
                 symbolName: "rectangle.on.rectangle",
-                action: #selector(openSelectedInSeparateWindow)
+                action: #selector(openSelectedInSeparateWindow),
+                visibilityPriority: .low
+            )
+        case Self.formatToolbarItemIdentifier:
+            let item = toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "格式",
+                symbolName: "textformat.size",
+                action: #selector(formatPressed(_:))
+            )
+            if item.image == nil {
+                item.image = makeFormatToolbarImage()
+            }
+            return item
+        case Self.checklistToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "待办列表",
+                symbolName: "checklist",
+                action: #selector(checklistPressed)
+            )
+        case Self.tableToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "插入表格",
+                symbolName: "tablecells",
+                action: #selector(tablePressed)
+            )
+        case Self.linkToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "插入链接",
+                symbolName: "link",
+                action: #selector(linkPressed)
+            )
+        case Self.attachmentToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "添加附件",
+                symbolName: "paperclip",
+                action: #selector(attachmentPressed)
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
                 label: "移动到文件夹",
                 symbolName: "folder",
-                action: #selector(moveSelectedNotePressed(_:))
+                action: #selector(moveSelectedNotePressed(_:)),
+                visibilityPriority: .low
             )
         case Self.saveToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
                 label: "保存",
                 symbolName: "checkmark.circle",
-                action: #selector(savePressed)
+                action: #selector(savePressed),
+                visibilityPriority: .low
             )
         case Self.deleteToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
                 label: "删除",
                 symbolName: "trash",
-                action: #selector(deleteSelectedNotePressed)
+                action: #selector(deleteSelectedNotePressed),
+                visibilityPriority: .low
             )
         case Self.restoreToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
                 label: "恢复",
                 symbolName: "arrow.uturn.backward",
-                action: #selector(restoreSelectedNotePressed)
+                action: #selector(restoreSelectedNotePressed),
+                visibilityPriority: .low
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "搜索"
             item.paletteLabel = "搜索"
             item.toolTip = "搜索笔记"
-            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 270, height: 32))
+            item.visibilityPriority = .high
+            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 230, height: 32))
             wrapper.addSubview(searchField)
             NSLayoutConstraint.activate([
                 searchField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
@@ -562,6 +628,12 @@ final class LibraryWindowController: NSWindowController,
         switch item.itemIdentifier {
         case Self.openSeparateToolbarItemIdentifier:
             return selectedURL != nil
+        case Self.formatToolbarItemIdentifier,
+             Self.checklistToolbarItemIdentifier,
+             Self.tableToolbarItemIdentifier,
+             Self.linkToolbarItemIdentifier,
+             Self.attachmentToolbarItemIdentifier:
+            return selectedScope != .trash
         case Self.moveToolbarItemIdentifier:
             return selectedURL != nil && selectedScope != .trash && !sourceFolderURLs.isEmpty
         case Self.saveToolbarItemIdentifier:
@@ -579,7 +651,8 @@ final class LibraryWindowController: NSWindowController,
         identifier: NSToolbarItem.Identifier,
         label: String,
         symbolName: String,
-        action: Selector
+        action: Selector,
+        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
     ) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = label
@@ -588,7 +661,22 @@ final class LibraryWindowController: NSWindowController,
         item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
         item.target = self
         item.action = action
+        item.visibilityPriority = visibilityPriority
         return item
+    }
+
+    private func makeFormatToolbarImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 24, height: 18))
+        image.lockFocus()
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: NSColor.labelColor
+        ]
+        ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
+        image.unlockFocus()
+        image.isTemplate = true
+        image.accessibilityDescription = "格式"
+        return image
     }
 
     private func configureEditorTextView() {
@@ -970,7 +1058,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textDidChange(_ notification: Notification) {
-        markDirty()
+        if let object = notification.object as AnyObject?, object === editorTextView {
+            libraryUserDidEdit()
+        } else {
+            markDirty()
+        }
     }
 
     @objc
@@ -1070,6 +1162,68 @@ final class LibraryWindowController: NSWindowController,
     private func openSelectedInSeparateWindow() {
         guard let selectedURL else { return }
         onOpenInSeparateWindow(selectedURL)
+    }
+
+    @objc
+    private func formatPressed(_ sender: Any?) {
+        let menu = makeFormatMenu()
+        guard !menu.items.isEmpty else { return }
+
+        if let item = sender as? NSToolbarItem,
+           let view = item.view {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
+        } else if let contentView = window?.contentView {
+            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
+        }
+    }
+
+    @objc
+    private func formatMenuItemPressed(_ sender: NSMenuItem) {
+        guard let command = LibraryFormatCommand(rawValue: sender.tag) else { return }
+        applyFormatCommand(command)
+    }
+
+    @objc
+    private func checklistPressed() {
+        focusEditorForLibraryAction()
+        toggleParagraphKind(.checklist(checked: false))
+    }
+
+    @objc
+    private func tablePressed() {
+        insertTableForLibrary()
+    }
+
+    @objc
+    private func linkPressed() {
+        let defaultLabel = selectedTextForLinkDefault()
+        guard let url = promptForText(
+            title: "插入链接",
+            message: "输入链接地址。",
+            placeholder: "https://example.com",
+            defaultValue: ""
+        ) else { return }
+        insertLinkForLibrary(label: defaultLabel.isEmpty ? url : defaultLabel, url: url)
+    }
+
+    @objc
+    private func attachmentPressed() {
+        let panel = NSOpenPanel()
+        panel.title = "添加附件"
+        panel.prompt = "添加"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+
+        guard panel.runModal() == .OK else { return }
+
+        do {
+            for url in panel.urls {
+                _ = try insertAttachmentReferenceForLibrary(from: url)
+            }
+        } catch {
+            presentErrorAlert(message: "添加附件失败", details: error.localizedDescription)
+        }
     }
 
     @objc
@@ -1410,6 +1564,39 @@ final class LibraryWindowController: NSWindowController,
         return menu
     }
 
+    private func makeFormatMenu() -> NSMenu {
+        let menu = NSMenu()
+        let items: [(String, LibraryFormatCommand, String)] = [
+            ("标题", .heading, "1"),
+            ("加粗", .bold, "b"),
+            ("斜体", .italic, "i"),
+            ("下划线", .underline, "u"),
+            ("删除线", .strikethrough, ""),
+            ("项目符号列表", .bullet, ""),
+            ("编号列表", .ordered, "")
+        ]
+
+        for (title, command, keyEquivalent) in items {
+            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: keyEquivalent)
+            item.target = self
+            item.tag = command.rawValue
+            if command == .heading {
+                item.keyEquivalentModifierMask = [.command, .option]
+            } else if command == .strikethrough {
+                item.keyEquivalentModifierMask = [.command, .shift]
+                item.keyEquivalent = "x"
+            } else if [.bold, .italic, .underline].contains(command) {
+                item.keyEquivalentModifierMask = [.command]
+            }
+            menu.addItem(item)
+            if command == .strikethrough {
+                menu.addItem(.separator())
+            }
+        }
+
+        return menu
+    }
+
     private func makeMoveNoteMenu() -> NSMenu {
         let menu = NSMenu()
         for folderURL in sourceFolderURLs {
@@ -1461,23 +1648,624 @@ final class LibraryWindowController: NSWindowController,
         window?.alphaValue = 1
     }
 
+    private func libraryUserDidEdit() {
+        guard !suppressEditorChanges else { return }
+        if !normalizeCurrentLineAfterListPrefixEdit() {
+            interpretTypedMarkdownIfNeeded()
+        }
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+    }
+
+    private func interpretTypedMarkdownIfNeeded() {
+        guard let storage = editorTextView.textStorage else { return }
+
+        let currentLineRange = visibleLineRangeForSelection()
+        let currentText = (storage.string as NSString).substring(with: currentLineRange)
+        guard MarkdownRichTextCodec.shouldInterpretMarkdown(in: currentText) else { return }
+
+        let selection = editorTextView.selectedRange()
+        let selectionStartOffset = max(selection.location - currentLineRange.location, 0)
+        let selectionEndOffset = max(NSMaxRange(selection) - currentLineRange.location, 0)
+        let rendered = MarkdownRichTextCodec.renderLine(currentText, theme: theme)
+        let clampedStart = min(selectionStartOffset, rendered.length)
+        let clampedEnd = min(selectionEndOffset, rendered.length)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: currentLineRange, with: rendered)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(
+            location: currentLineRange.location + clampedStart,
+            length: max(clampedEnd - clampedStart, 0)
+        ))
+    }
+
+    private func normalizeCurrentLineAfterListPrefixEdit() -> Bool {
+        guard let storage = editorTextView.textStorage else { return false }
+
+        let lineRange = visibleLineRangeForSelection()
+        guard MarkdownRichTextCodec.needsParagraphResetAfterListPrefixEdit(range: lineRange, in: storage) else {
+            return false
+        }
+
+        let storedKind = MarkdownRichTextCodec.storedParagraphKind(at: lineRange, in: storage) ?? .paragraph
+        let contentRange = MarkdownRichTextCodec.paragraphContentRangeAfterListPrefixEdit(
+            for: lineRange,
+            in: storage,
+            storedKind: storedKind
+        )
+        let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+            range: contentRange,
+            in: storage,
+            paragraphKind: .paragraph,
+            theme: theme
+        )
+        let replacement = MarkdownRichTextCodec.renderLine(
+            MarkdownRichTextCodec.markdownLine(for: .paragraph, inlineContent: inlineMarkdown),
+            theme: theme
+        )
+
+        let selection = editorTextView.selectedRange()
+        let removedPrefixLength = max(contentRange.location - lineRange.location, 0)
+        let selectionStartOffset = max(selection.location - lineRange.location - removedPrefixLength, 0)
+        let selectionEndOffset = max(NSMaxRange(selection) - lineRange.location - removedPrefixLength, 0)
+        let clampedStart = min(selectionStartOffset, replacement.length)
+        let clampedEnd = min(selectionEndOffset, replacement.length)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: lineRange, with: replacement)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(
+            location: lineRange.location + clampedStart,
+            length: max(clampedEnd - clampedStart, 0)
+        ))
+        return true
+    }
+
+    private func updateTypingAttributesFromInsertionPoint() {
+        guard let storage = editorTextView.textStorage else { return }
+        let selection = editorTextView.selectedRange()
+        let location = max(min(selection.location, storage.length), 0)
+
+        if storage.length == 0 || location == 0 {
+            editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+            return
+        }
+
+        let lineRange = visibleLineRangeForSelection()
+        let paragraphKind = MarkdownRichTextCodec.paragraphKind(at: lineRange, in: storage)
+        let contentRange = MarkdownRichTextCodec.visibleContentRange(for: lineRange, in: storage, kind: paragraphKind)
+
+        if location <= contentRange.location {
+            editorTextView.typingAttributes = theme.baseAttributes(for: paragraphKind)
+            return
+        }
+
+        let probeLocation = max(min(location - 1, storage.length - 1), contentRange.location)
+        editorTextView.typingAttributes = storage.attributes(at: probeLocation, effectiveRange: nil)
+    }
+
+    private func visibleLineRangeForSelection() -> NSRange {
+        let string = editorTextView.string as NSString
+        let selection = editorTextView.selectedRange()
+        let paragraphRange = string.paragraphRange(for: NSRange(location: min(selection.location, string.length), length: 0))
+        let hasTrailingNewline = string.substring(with: paragraphRange).hasSuffix("\n")
+        return NSRange(location: paragraphRange.location, length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0))
+    }
+
+    private func selectedLineRanges() -> [NSRange] {
+        let string = editorTextView.string as NSString
+        let selection = editorTextView.selectedRange()
+        let fullRange = string.lineRange(for: selection)
+        var ranges: [NSRange] = []
+        var location = fullRange.location
+
+        while location < NSMaxRange(fullRange) {
+            let paragraphRange = string.paragraphRange(for: NSRange(location: location, length: 0))
+            let hasTrailingNewline = string.substring(with: paragraphRange).hasSuffix("\n")
+            ranges.append(NSRange(
+                location: paragraphRange.location,
+                length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
+            ))
+            location = NSMaxRange(paragraphRange)
+        }
+
+        if ranges.isEmpty {
+            ranges.append(NSRange(location: min(selection.location, string.length), length: 0))
+        }
+        return ranges
+    }
+
+    private func handleStructuredNewline() -> Bool {
+        guard let storage = editorTextView.textStorage else { return false }
+
+        let lineRange = visibleLineRangeForSelection()
+        let kind = MarkdownRichTextCodec.paragraphKind(at: lineRange, in: storage)
+        let contentRange = MarkdownRichTextCodec.visibleContentRange(for: lineRange, in: storage, kind: kind)
+        let content = (storage.string as NSString)
+            .substring(with: contentRange)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch kind {
+        case .paragraph:
+            return false
+        case .heading:
+            insertStructuredLine(kind: .paragraph, inlineMarkdown: "")
+            return true
+        case .bullet, .ordered, .checklist:
+            if content.isEmpty {
+                convertCurrentLineToParagraph()
+            } else {
+                let nextKind: MarkdownParagraphKind
+                switch kind {
+                case .ordered(let index):
+                    nextKind = .ordered(index: index + 1)
+                case .checklist:
+                    nextKind = .checklist(checked: false)
+                default:
+                    nextKind = kind
+                }
+                insertStructuredLine(kind: nextKind, inlineMarkdown: "")
+            }
+            return true
+        }
+    }
+
+    private func convertCurrentLineToParagraph() {
+        guard let storage = editorTextView.textStorage else { return }
+        let lineRange = visibleLineRangeForSelection()
+        let replacement = MarkdownRichTextCodec.renderLine("", theme: theme)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: lineRange, with: replacement)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+    }
+
+    private func insertStructuredLine(kind: MarkdownParagraphKind, inlineMarkdown: String) {
+        guard let storage = editorTextView.textStorage else { return }
+        let selection = editorTextView.selectedRange()
+        let markdownLine = MarkdownRichTextCodec.markdownLine(for: kind, inlineContent: inlineMarkdown)
+        let renderedLine = MarkdownRichTextCodec.renderLine(markdownLine, theme: theme)
+        let replacement = NSMutableAttributedString(string: "\n", attributes: theme.baseAttributes(for: .paragraph))
+        replacement.append(renderedLine)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: selection, with: replacement)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: selection.location + 1 + kind.prefixLength, length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+    }
+
+    private func toggleParagraphKind(_ target: MarkdownParagraphKind) {
+        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        let ranges = selectedLineRanges()
+        let currentKinds = ranges.map { MarkdownRichTextCodec.paragraphKind(at: $0, in: storage) }
+        let shouldResetToParagraph = currentKinds.allSatisfy { sameParagraphCategory($0, target) }
+        var renderedLines: [NSAttributedString] = []
+
+        for (index, lineRange) in ranges.enumerated() {
+            let currentKind = currentKinds[index]
+            let contentRange = MarkdownRichTextCodec.visibleContentRange(for: lineRange, in: storage, kind: currentKind)
+            let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+                range: contentRange,
+                in: storage,
+                paragraphKind: currentKind,
+                theme: theme
+            )
+            let nextKind: MarkdownParagraphKind
+            if shouldResetToParagraph {
+                nextKind = .paragraph
+            } else if case .ordered = target {
+                nextKind = .ordered(index: index + 1)
+            } else {
+                nextKind = target
+            }
+            let lineMarkdown = MarkdownRichTextCodec.markdownLine(for: nextKind, inlineContent: inlineMarkdown)
+            renderedLines.append(MarkdownRichTextCodec.renderLine(lineMarkdown, theme: theme))
+        }
+
+        let replacement = joinRenderedLines(renderedLines)
+        let fullRange = combinedRange(of: ranges)
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: fullRange, with: replacement)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: fullRange.location + replacement.length, length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+    }
+
+    private func toggleChecklistIfNeeded(atCharacterIndex index: Int) -> Bool {
+        guard let storage = editorTextView.textStorage, storage.length > 0 else { return false }
+
+        let safeIndex = min(max(index, 0), max(storage.length - 1, 0))
+        let string = storage.string as NSString
+        let paragraphRange = string.paragraphRange(for: NSRange(location: safeIndex, length: 0))
+        let visibleRange = NSRange(
+            location: paragraphRange.location,
+            length: max(paragraphRange.length - (string.substring(with: paragraphRange).hasSuffix("\n") ? 1 : 0), 0)
+        )
+        let kind = MarkdownRichTextCodec.paragraphKind(at: visibleRange, in: storage)
+
+        guard case .checklist(let checked) = kind else { return false }
+        let prefixRange = NSRange(location: visibleRange.location, length: min(kind.prefixLength, visibleRange.length))
+        guard NSLocationInRange(safeIndex, prefixRange) else { return false }
+
+        let contentRange = MarkdownRichTextCodec.visibleContentRange(for: visibleRange, in: storage, kind: kind)
+        let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+            range: contentRange,
+            in: storage,
+            paragraphKind: kind,
+            theme: theme
+        )
+        let replacement = MarkdownRichTextCodec.renderLine(
+            MarkdownRichTextCodec.markdownLine(for: .checklist(checked: !checked), inlineContent: inlineMarkdown),
+            theme: theme
+        )
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: visibleRange, with: replacement)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: min(visibleRange.location + replacement.length, storage.length), length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+        return true
+    }
+
+    private func applyFormatCommand(_ command: LibraryFormatCommand) {
+        focusEditorForLibraryAction()
+        switch command {
+        case .heading:
+            toggleParagraphKind(.heading(level: 1))
+        case .bold:
+            toggleInlineFontTrait(.boldFontMask)
+        case .italic:
+            toggleInlineFontTrait(.italicFontMask)
+        case .underline:
+            toggleIntAttribute(.underlineStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "下划线")
+        case .strikethrough:
+            toggleIntAttribute(.strikethroughStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "删除线")
+        case .bullet:
+            toggleParagraphKind(.bullet)
+        case .ordered:
+            toggleParagraphKind(.ordered(index: 1))
+        }
+    }
+
+    private func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
+        guard selectedScope != .trash else { return }
+
+        if trait.contains(.italicFontMask) {
+            toggleItalicFormatting()
+            return
+        }
+
+        let selection = editorTextView.selectedRange()
+        if selection.length == 0 {
+            var typing = editorTextView.typingAttributes
+            let currentFont = (typing[.font] as? NSFont) ?? theme.bodyFont
+            typing[.font] = toggledFont(from: currentFont, trait: trait)
+            editorTextView.typingAttributes = typing
+            return
+        }
+
+        guard let storage = editorTextView.textStorage else { return }
+        suppressEditorChanges = true
+        storage.beginEditing()
+        var location = selection.location
+        while location < NSMaxRange(selection) {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            let font = (storage.attribute(.font, at: location, effectiveRange: &effectiveRange) as? NSFont) ?? theme.bodyFont
+            let clippedRange = NSIntersectionRange(selection, effectiveRange)
+            storage.addAttribute(.font, value: toggledFont(from: font, trait: trait), range: clippedRange)
+            location = NSMaxRange(clippedRange)
+        }
+        storage.endEditing()
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(selection)
+        markDirty()
+    }
+
+    private func toggleItalicFormatting() {
+        let selection = editorTextView.selectedRange()
+        if selection.length == 0 {
+            var typing = editorTextView.typingAttributes
+            let currentFont = (typing[.font] as? NSFont) ?? theme.bodyFont
+            if isItalicActive(font: currentFont, obliqueness: typing[.obliqueness]) {
+                typing[.font] = NSFontManager.shared.convert(currentFont, toNotHaveTrait: .italicFontMask)
+                typing.removeValue(forKey: .obliqueness)
+            } else {
+                typing[.font] = NSFontManager.shared.convert(currentFont, toHaveTrait: .italicFontMask)
+                typing[.obliqueness] = markdownItalicObliqueness
+            }
+            editorTextView.typingAttributes = typing
+            return
+        }
+
+        guard let storage = editorTextView.textStorage else { return }
+        suppressEditorChanges = true
+        storage.beginEditing()
+        var location = selection.location
+        while location < NSMaxRange(selection) {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            let attributes = storage.attributes(at: location, effectiveRange: &effectiveRange)
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            let clippedRange = NSIntersectionRange(selection, effectiveRange)
+            if isItalicActive(font: font, obliqueness: attributes[.obliqueness]) {
+                storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask), range: clippedRange)
+                storage.removeAttribute(.obliqueness, range: clippedRange)
+            } else {
+                storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask), range: clippedRange)
+                storage.addAttribute(.obliqueness, value: markdownItalicObliqueness, range: clippedRange)
+            }
+            location = NSMaxRange(clippedRange)
+        }
+        storage.endEditing()
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(selection)
+        markDirty()
+    }
+
+    private func toggleIntAttribute(_ key: NSAttributedString.Key, enabledValue: Int, actionName: String) {
+        guard selectedScope != .trash else { return }
+        let selection = editorTextView.selectedRange()
+        if selection.length == 0 {
+            var typing = editorTextView.typingAttributes
+            if (typing[key] as? Int) == enabledValue {
+                typing.removeValue(forKey: key)
+            } else {
+                typing[key] = enabledValue
+            }
+            editorTextView.typingAttributes = typing
+            return
+        }
+
+        guard let storage = editorTextView.textStorage else { return }
+        let enabled = (storage.attribute(key, at: selection.location, effectiveRange: nil) as? Int) == enabledValue
+        suppressEditorChanges = true
+        if enabled {
+            storage.removeAttribute(key, range: selection)
+        } else {
+            storage.addAttribute(key, value: enabledValue, range: selection)
+        }
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(selection)
+        _ = actionName
+        markDirty()
+    }
+
+    private func toggledFont(from font: NSFont, trait: NSFontTraitMask) -> NSFont {
+        if NSFontManager.shared.traits(of: font).contains(trait) {
+            return NSFontManager.shared.convert(font, toNotHaveTrait: trait)
+        }
+        return NSFontManager.shared.convert(font, toHaveTrait: trait)
+    }
+
+    private func isItalicActive(font: NSFont, obliqueness: Any?) -> Bool {
+        if NSFontManager.shared.traits(of: font).contains(.italicFontMask) {
+            return true
+        }
+        if let number = obliqueness as? NSNumber {
+            return abs(number.doubleValue) > 0.001
+        }
+        if let value = obliqueness as? CGFloat {
+            return abs(value) > 0.001
+        }
+        if let value = obliqueness as? Double {
+            return abs(value) > 0.001
+        }
+        return false
+    }
+
+    private func sameParagraphCategory(_ lhs: MarkdownParagraphKind, _ rhs: MarkdownParagraphKind) -> Bool {
+        switch (lhs, rhs) {
+        case (.heading(let lhsLevel), .heading(let rhsLevel)):
+            return lhsLevel == rhsLevel
+        case (.bullet, .bullet), (.ordered, .ordered), (.checklist, .checklist), (.paragraph, .paragraph):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func joinRenderedLines(_ lines: [NSAttributedString]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(string: "\n", attributes: theme.baseAttributes(for: .paragraph)))
+            }
+            result.append(line)
+        }
+        return result
+    }
+
+    private func combinedRange(of ranges: [NSRange]) -> NSRange {
+        guard let first = ranges.first, let last = ranges.last else { return NSRange(location: 0, length: 0) }
+        return NSRange(location: first.location, length: NSMaxRange(last) - first.location)
+    }
+
+    private func focusEditorForLibraryAction() {
+        guard selectedScope != .trash else { return }
+        window?.makeFirstResponder(editorTextView)
+    }
+
+    func insertTableForLibrary() {
+        let markdown = """
+        | Column 1 | Column 2 |
+        | --- | --- |
+        |  |  |
+        """
+        insertMarkdownBlockForLibrary(markdown)
+    }
+
+    func insertLinkForLibrary(label: String, url: String) {
+        guard selectedScope != .trash else { return }
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else { return }
+        let linkLabel = trimmedLabel.isEmpty ? trimmedURL : trimmedLabel
+        replaceSelectionWithRenderedMarkdown("[\(escapedMarkdownLabel(linkLabel))](\(escapedMarkdownURL(trimmedURL)))")
+    }
+
+    @discardableResult
+    func insertAttachmentReferenceForLibrary(from fileURL: URL) throws -> URL {
+        guard selectedScope != .trash else { return fileURL }
+        let noteDirectory = targetDirectoryForAttachment()
+        let copiedURL = try copyAttachment(fileURL, intoNoteDirectory: noteDirectory)
+        let relativePath = relativeMarkdownPath(for: copiedURL, from: noteDirectory)
+        let markdown: String
+        if isImageAttachment(copiedURL) {
+            markdown = "![Image](\(relativePath))"
+        } else {
+            let label = copiedURL.deletingPathExtension().lastPathComponent
+            markdown = "[\(escapedMarkdownLabel(label.isEmpty ? "Attachment" : label))](\(relativePath))"
+        }
+        insertMarkdownBlockForLibrary(markdown)
+        return copiedURL
+    }
+
+    private func selectedTextForLinkDefault() -> String {
+        let selection = editorTextView.selectedRange()
+        guard selection.length > 0, NSMaxRange(selection) <= (editorTextView.string as NSString).length else {
+            return ""
+        }
+        return (editorTextView.string as NSString).substring(with: selection)
+    }
+
+    private func insertMarkdownBlockForLibrary(_ markdown: String) {
+        guard selectedScope != .trash else { return }
+        focusEditorForLibraryAction()
+        let selection = editorTextView.selectedRange()
+        let nsString = editorTextView.string as NSString
+        var block = markdown
+
+        if selection.location > 0,
+           nsString.substring(with: NSRange(location: selection.location - 1, length: 1)) != "\n" {
+            block = "\n" + block
+        }
+        if NSMaxRange(selection) < nsString.length,
+           !block.hasSuffix("\n") {
+            block += "\n"
+        }
+
+        replaceSelectionWithRenderedMarkdown(block)
+    }
+
+    private func replaceSelectionWithRenderedMarkdown(_ markdown: String) {
+        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        focusEditorForLibraryAction()
+        let selection = editorTextView.selectedRange()
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: selection, with: rendered)
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: selection.location + rendered.length, length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
+        markDirty()
+    }
+
+    private func targetDirectoryForAttachment() -> URL {
+        if let selectedURL {
+            return selectedURL.deletingLastPathComponent()
+        }
+        return targetDirectoryForNewNote()
+    }
+
+    private func copyAttachment(_ sourceURL: URL, intoNoteDirectory noteDirectory: URL) throws -> URL {
+        let components = Calendar.current.dateComponents([.year, .month], from: Date())
+        let year = String(components.year ?? 1970)
+        let month = String(format: "%02d", components.month ?? 1)
+        let attachmentDirectory = noteDirectory
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent(year, isDirectory: true)
+            .appendingPathComponent(month, isDirectory: true)
+        try FileManager.default.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
+
+        let destination = uniqueAttachmentDestination(for: sourceURL, in: attachmentDirectory)
+        if sourceURL.standardizedFileURL.path != destination.standardizedFileURL.path {
+            try FileManager.default.copyItem(at: sourceURL, to: destination)
+        }
+        return destination
+    }
+
+    private func uniqueAttachmentDestination(for sourceURL: URL, in directory: URL) -> URL {
+        let fileName = sourceURL.lastPathComponent.isEmpty ? "Attachment" : sourceURL.lastPathComponent
+        let fileExtension = sourceURL.pathExtension
+        let baseName = fileExtension.isEmpty
+            ? fileName
+            : sourceURL.deletingPathExtension().lastPathComponent
+        var candidate = directory.appendingPathComponent(fileName)
+        var copyIndex = 2
+
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            let candidateName = fileExtension.isEmpty
+                ? "\(baseName)-\(copyIndex)"
+                : "\(baseName)-\(copyIndex).\(fileExtension)"
+            candidate = directory.appendingPathComponent(candidateName)
+            copyIndex += 1
+        }
+        return candidate
+    }
+
+    private func relativeMarkdownPath(for fileURL: URL, from noteDirectory: URL) -> String {
+        let filePath = fileURL.standardizedFileURL.path
+        let basePath = noteDirectory.standardizedFileURL.path
+        let relativePath: String
+        if filePath.hasPrefix(basePath + "/") {
+            relativePath = String(filePath.dropFirst(basePath.count + 1))
+        } else {
+            relativePath = fileURL.lastPathComponent
+        }
+        return relativePath
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map { component in
+                String(component).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String(component)
+            }
+            .joined(separator: "/")
+    }
+
+    private func isImageAttachment(_ url: URL) -> Bool {
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff"].contains(url.pathExtension.lowercased())
+    }
+
+    private func escapedMarkdownLabel(_ label: String) -> String {
+        label
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "]", with: "\\]")
+    }
+
+    private func escapedMarkdownURL(_ url: String) -> String {
+        url
+            .replacingOccurrences(of: " ", with: "%20")
+            .replacingOccurrences(of: ")", with: "%29")
+    }
+
     func markdownTextViewInsertNewline(_ textView: MarkdownTextView) {
-        textView.insertText("\n", replacementRange: textView.selectedRange())
+        guard handleStructuredNewline() else {
+            textView.insertNewlineIgnoringFieldEditor(self)
+            updateTypingAttributesFromInsertionPoint()
+            return
+        }
     }
 
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool {
         false
     }
 
-    func markdownTextViewToggleBold(_ textView: MarkdownTextView) {}
-    func markdownTextViewToggleItalic(_ textView: MarkdownTextView) {}
-    func markdownTextViewToggleHeading(_ textView: MarkdownTextView) {}
-    func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) {}
-    func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) {}
-    func markdownTextViewToggleChecklist(_ textView: MarkdownTextView) {}
+    func markdownTextViewToggleBold(_ textView: MarkdownTextView) { toggleInlineFontTrait(.boldFontMask) }
+    func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { toggleInlineFontTrait(.italicFontMask) }
+    func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { toggleParagraphKind(.heading(level: 1)) }
+    func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) { toggleParagraphKind(.bullet) }
+    func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) { toggleParagraphKind(.ordered(index: 1)) }
+    func markdownTextViewToggleChecklist(_ textView: MarkdownTextView) { toggleParagraphKind(.checklist(checked: false)) }
 
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool {
-        false
+        toggleChecklistIfNeeded(atCharacterIndex: index)
     }
 
     private let dateFormatter: DateFormatter = {
