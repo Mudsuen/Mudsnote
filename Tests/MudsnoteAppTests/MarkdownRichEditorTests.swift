@@ -620,6 +620,8 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
             item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
@@ -648,6 +650,79 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowDeletesRestoresAndPermanentlyDeletesNotes() throws {
+        let suiteName = "mudsnote.library-trash-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-trash-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Trash Seed", body: "Body line")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let deleteItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.delete"
+        })
+        let restoreItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.restore"
+        })
+
+        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        let trashedURL = try #require(store.listTrashedNotes(limit: 10).first?.url)
+        #expect(FileManager.default.fileExists(atPath: trashedURL.path))
+
+        let trashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "最近删除"
+        })
+        trashButton.performClick(nil)
+        #expect(controller.titleField.stringValue == "Trash Seed")
+        #expect(!controller.titleField.isEditable)
+        #expect(!controller.editorTextView.isEditable)
+        let trashCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-3"
+        })
+        #expect(trashCount.stringValue == "1")
+
+        #expect(NSApp.sendAction(try #require(restoreItem.action), to: restoreItem.target, from: restoreItem))
+        #expect(FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(store.listTrashedNotes(limit: 10).isEmpty)
+        #expect(controller.titleField.stringValue == "Trash Seed")
+        #expect(controller.titleField.isEditable)
+        #expect(controller.editorTextView.isEditable)
+
+        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        let restoredTrashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "最近删除"
+        })
+        restoredTrashButton.performClick(nil)
+        #expect(controller.titleField.stringValue == "Trash Seed")
+        #expect(NSApp.sendAction(try #require(deleteItem.action), to: deleteItem.target, from: deleteItem))
+        #expect(store.listTrashedNotes(limit: 10).isEmpty)
+        #expect(controller.tableView.numberOfRows == 0)
     }
 
     @MainActor

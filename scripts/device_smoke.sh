@@ -20,14 +20,33 @@ if [[ -z "${XCODE_DEVICE_ID:-}" ]]; then
 fi
 
 if [[ -z "${DEVICECTL_DEVICE_ID:-}" ]]; then
+  DEVICECTL_LIST="$(xcrun devicectl list devices 2>&1 || true)"
   DEVICECTL_DEVICE_ID="$(
-    xcrun devicectl list devices \
+    printf '%s\n' "$DEVICECTL_LIST" \
       | awk 'NR > 2 && /iPhone/ && ($4 == "connected" || $4 == "available") { print $3; exit }'
   )"
 fi
 
 if [[ -z "$XCODE_DEVICE_ID" || -z "$DEVICECTL_DEVICE_ID" ]]; then
-  echo "No connected iOS device destination found. Connect and unlock the iPhone, then retry." >&2
+  if [[ -z "${DEVICECTL_LIST:-}" ]]; then
+    DEVICECTL_LIST="$(xcrun devicectl list devices 2>&1 || true)"
+  fi
+  UNAVAILABLE_DEVICE="$(
+    printf '%s\n' "$DEVICECTL_LIST" \
+      | awk 'NR > 2 && /iPhone/ && $4 == "unavailable" { print $1 " (" $3 ")"; exit }'
+  )"
+  if [[ -n "$UNAVAILABLE_DEVICE" ]]; then
+    echo "An iOS device is paired but unavailable to CoreDevice: $UNAVAILABLE_DEVICE" >&2
+    echo "" >&2
+    printf '%s\n' "$DEVICECTL_LIST" >&2
+    echo "" >&2
+    echo "Xcode: $(xcodebuild -version | tr '\n' ' ')" >&2
+    echo "iPhoneOS SDK: $(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || echo unknown)" >&2
+    echo "" >&2
+    echo "If the phone is unlocked and trusted, install/use an Xcode version whose DeviceSupport/DDI matches the phone OS, then rerun scripts/device_smoke.sh." >&2
+  else
+    echo "No connected iOS device destination found. Connect and unlock the iPhone, then retry." >&2
+  fi
   exit 1
 fi
 

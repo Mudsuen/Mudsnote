@@ -1,5 +1,10 @@
 import Foundation
 
+private struct TrashedNoteMetadata: Codable {
+    let originalPath: String
+    let deletedAt: Date
+}
+
 extension NoteStore {
     public func listRecentFiles(limit: Int = 8) -> [NoteFile] {
         let recentPaths = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
@@ -69,6 +74,84 @@ extension NoteStore {
         try writeNote(to: desiredURL, title: title, body: body, tags: tags)
         rememberRecentFile(desiredURL, replacing: desiredURL == url ? nil : url)
         return desiredURL
+    }
+
+    public func trashDirectory() -> URL {
+        appSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
+    }
+
+    public func listTrashedNotes(limit: Int = 200) -> [NoteSearchResult] {
+        let metadata = storedTrashedNotesMetadata()
+        var notes: [NoteSearchResult] = []
+
+        for fileURL in markdownFiles(in: trashDirectory()) {
+            let key = metadataKey(for: fileURL)
+            let note = (try? loadNote(at: fileURL)) ?? (
+                title: fileURL.deletingPathExtension().lastPathComponent,
+                body: "",
+                tags: []
+            )
+            let modifiedAt = metadata[key]?.deletedAt ?? fileModificationDate(for: fileURL) ?? Date()
+            notes.append(NoteSearchResult(
+                url: fileURL,
+                title: note.title,
+                snippet: firstMeaningfulStoredLine(from: note.body) ?? "",
+                modifiedAt: modifiedAt,
+                tags: note.tags
+            ))
+        }
+
+        return notes
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    public func trashNote(at url: URL) throws -> URL {
+        let standardizedURL = url.standardizedFileURL
+        let trashDirectory = trashDirectory()
+        try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+
+        let trashedURL = uniqueTrashURL(for: standardizedURL, in: trashDirectory)
+        try fileManager.moveItem(at: standardizedURL, to: trashedURL)
+        forgetRecentFile(standardizedURL)
+
+        var metadata = storedTrashedNotesMetadata()
+        metadata[metadataKey(for: trashedURL)] = TrashedNoteMetadata(
+            originalPath: standardizedURL.path,
+            deletedAt: Date()
+        )
+        storeTrashedNotesMetadata(metadata)
+        return trashedURL
+    }
+
+    public func restoreTrashedNote(at url: URL) throws -> URL {
+        let standardizedTrashURL = url.standardizedFileURL
+        var metadata = storedTrashedNotesMetadata()
+        let metadataKey = metadataKey(for: standardizedTrashURL)
+        let originalURL = metadata[metadataKey]
+            .map { URL(fileURLWithPath: $0.originalPath) }
+            ?? notesDirectory.appendingPathComponent(standardizedTrashURL.lastPathComponent)
+        let restoreDirectory = originalURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: restoreDirectory, withIntermediateDirectories: true)
+
+        let restoredURL = uniqueRestoredURL(for: originalURL)
+        try fileManager.moveItem(at: standardizedTrashURL, to: restoredURL)
+        metadata.removeValue(forKey: metadataKey)
+        storeTrashedNotesMetadata(metadata)
+        rememberRecentFile(restoredURL, replacing: standardizedTrashURL)
+        return restoredURL
+    }
+
+    public func permanentlyDeleteTrashedNote(at url: URL) throws {
+        let standardizedURL = url.standardizedFileURL
+        if fileManager.fileExists(atPath: standardizedURL.path) {
+            try fileManager.removeItem(at: standardizedURL)
+        }
+        var metadata = storedTrashedNotesMetadata()
+        metadata.removeValue(forKey: metadataKey(for: standardizedURL))
+        storeTrashedNotesMetadata(metadata)
+        forgetRecentFile(standardizedURL)
     }
 
     func markdownFiles(in root: URL) -> [URL] {
@@ -182,6 +265,35 @@ extension NoteStore {
         return candidate
     }
 
+    private func uniqueTrashURL(for url: URL, in directory: URL) -> URL {
+        uniqueURLPreservingExtension(
+            directory: directory,
+            filenameStem: url.deletingPathExtension().lastPathComponent,
+            pathExtension: url.pathExtension.isEmpty ? "md" : url.pathExtension
+        )
+    }
+
+    private func uniqueRestoredURL(for url: URL) -> URL {
+        uniqueURLPreservingExtension(
+            directory: url.deletingLastPathComponent(),
+            filenameStem: url.deletingPathExtension().lastPathComponent,
+            pathExtension: url.pathExtension.isEmpty ? "md" : url.pathExtension
+        )
+    }
+
+    private func uniqueURLPreservingExtension(directory: URL, filenameStem: String, pathExtension: String) -> URL {
+        let ext = pathExtension.isEmpty ? "md" : pathExtension
+        var candidate = directory.appendingPathComponent(filenameStem).appendingPathExtension(ext)
+        var counter = 2
+
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(filenameStem)-\(counter)").appendingPathExtension(ext)
+            counter += 1
+        }
+
+        return candidate
+    }
+
     private func filenameStem(for title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = "note-" + Self.filenameTimestamp.string(from: Date())
@@ -226,6 +338,16 @@ extension NoteStore {
         defaults.set(metadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
     }
 
+    private func forgetRecentFile(_ url: URL) {
+        var items = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
+        items.removeAll { $0 == url.path }
+        defaults.set(items, forKey: NoteStoreDefaultsKey.recentFiles)
+
+        var metadata = storedRecentMetadata()
+        metadata.removeValue(forKey: url.path)
+        defaults.set(metadata, forKey: NoteStoreDefaultsKey.recentFileMetadata)
+    }
+
     private func storedRecentMetadata() -> [String: TimeInterval] {
         let rawMetadata = defaults.dictionary(forKey: NoteStoreDefaultsKey.recentFileMetadata) ?? [:]
         var metadata: [String: TimeInterval] = [:]
@@ -252,6 +374,34 @@ extension NoteStore {
             return nil
         }
         return Self.datePrefix.date(from: String(stem.prefix(10)))
+    }
+
+    private func fileModificationDate(for url: URL) -> Date? {
+        let attrs = try? fileManager.attributesOfItem(atPath: url.path)
+        return attrs?[.modificationDate] as? Date
+    }
+
+    private func firstMeaningfulStoredLine(from body: String) -> String? {
+        body.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+    }
+
+    private func storedTrashedNotesMetadata() -> [String: TrashedNoteMetadata] {
+        guard let data = defaults.data(forKey: NoteStoreDefaultsKey.trashedNotesMetadata) else {
+            return [:]
+        }
+        return (try? PropertyListDecoder().decode([String: TrashedNoteMetadata].self, from: data)) ?? [:]
+    }
+
+    private func storeTrashedNotesMetadata(_ metadata: [String: TrashedNoteMetadata]) {
+        if let data = try? PropertyListEncoder().encode(metadata) {
+            defaults.set(data, forKey: NoteStoreDefaultsKey.trashedNotesMetadata)
+        }
+    }
+
+    private func metadataKey(for url: URL) -> String {
+        url.standardizedFileURL.path
     }
 
     private static let datePrefix: DateFormatter = {

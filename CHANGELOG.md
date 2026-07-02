@@ -240,6 +240,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Made recent-file listing IO-light by deriving display titles and stable dates from stored paths, save-time metadata, and filename prefixes; avoided synchronous tag scans in the library launch path; and added a regression test for stale recent paths. The library now opens directly from `/Applications/Mudsnote.app` even when deeper indexing may need to be deferred.
 - Lesson: The Notes-like main window is the app identity now; expensive indexing, tag discovery, unavailable path handling, and full metadata hydration must happen after the shell is visible or in an asynchronous index layer.
 
+### 43. Recently Deleted lifecycle
+
+- Problem: The Notes-like library could browse and edit notes, but it still lacked the Apple Notes lifecycle path for deleting, restoring, and permanently deleting notes.
+- Fix: Added a local Markdown Trash under app support with original-path metadata, a `最近删除` source-list scope, toolbar delete/restore actions, read-only deleted notes, and regression tests for delete-to-trash, restore, and permanent delete from both core storage and the library window.
+- Lesson: Notes parity is not only a three-column shell; daily replacement requires reversible note lifecycle operations that keep plain Markdown files recoverable and outside a database.
+
+### 44. Clear iOS unavailable-device diagnosis
+
+- Problem: The iOS device smoke script reported an unavailable paired phone as a generic missing or locked device, which obscured Xcode/CoreDevice compatibility issues.
+- Fix: Updated `scripts/device_smoke.sh` to detect paired-but-unavailable iPhones, print the CoreDevice list, Xcode version, and iPhoneOS SDK version, and point the user toward matching DeviceSupport/DDI before retrying.
+- Lesson: Real-device verification should distinguish connection, trust, lock, and SDK/DDI compatibility failures; otherwise the next action is unclear.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

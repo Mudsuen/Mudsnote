@@ -89,6 +89,40 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func trashRestoreAndPermanentDeletePreserveMarkdownLifecycle() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        let noteURL = try store.saveNewNote(title: "Trash Candidate", body: "restore me", tags: ["trash-test"])
+
+        let trashedURL = try store.trashNote(at: noteURL)
+
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(FileManager.default.fileExists(atPath: trashedURL.path))
+        #expect(store.listRecentFiles(limit: 5).contains { $0.url == noteURL } == false)
+        let trashedNotes = store.listTrashedNotes(limit: 10)
+        #expect(trashedNotes.first?.url.standardizedFileURL.path == trashedURL.standardizedFileURL.path)
+        #expect(trashedNotes.first?.title == "Trash Candidate")
+        #expect(trashedNotes.first?.snippet == "restore me")
+        #expect(trashedNotes.first?.tags == ["trash-test"])
+
+        let restoredURL = try store.restoreTrashedNote(at: trashedURL)
+
+        #expect(restoredURL == noteURL)
+        #expect(FileManager.default.fileExists(atPath: restoredURL.path))
+        #expect(store.listTrashedNotes(limit: 10).isEmpty)
+        #expect(store.listRecentFiles(limit: 5).first?.url == restoredURL)
+
+        let trashedAgainURL = try store.trashNote(at: restoredURL)
+        try store.permanentlyDeleteTrashedNote(at: trashedAgainURL)
+
+        #expect(!FileManager.default.fileExists(atPath: trashedAgainURL.path))
+        #expect(store.listTrashedNotes(limit: 10).isEmpty)
+    }
+
+    @Test
     func tagsRoundTripAndKnownTagsAreCollected() throws {
         let harness = try TestHarness()
         let store = harness.store

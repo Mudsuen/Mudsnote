@@ -8,6 +8,7 @@ private enum LibraryScope: Equatable {
     case inbox
     case folder(URL)
     case tag(String)
+    case trash
 
     var buttonTitle: String {
         switch self {
@@ -21,6 +22,8 @@ private enum LibraryScope: Equatable {
             return url.lastPathComponent.isEmpty ? "Notes" : url.lastPathComponent
         case .tag(let tag):
             return "#\(tag)"
+        case .trash:
+            return "最近删除"
         }
     }
 
@@ -36,6 +39,8 @@ private enum LibraryScope: Equatable {
             return "folder"
         case .tag:
             return "number"
+        case .trash:
+            return "trash"
         }
     }
 }
@@ -134,6 +139,7 @@ final class LibraryNoteRowView: NSTableRowView {
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
     NSToolbarDelegate,
+    NSToolbarItemValidation,
     NSTableViewDataSource,
     NSTableViewDelegate,
     NSSearchFieldDelegate,
@@ -156,6 +162,8 @@ final class LibraryWindowController: NSWindowController,
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
+    private static let deleteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.delete")
+    private static let restoreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.restore")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
     private let onOpenInSeparateWindow: (URL) -> Void
@@ -442,6 +450,8 @@ final class LibraryWindowController: NSWindowController,
             .flexibleSpace,
             Self.openSeparateToolbarItemIdentifier,
             Self.saveToolbarItemIdentifier,
+            Self.deleteToolbarItemIdentifier,
+            Self.restoreToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }
@@ -491,6 +501,20 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "checkmark.circle",
                 action: #selector(savePressed)
             )
+        case Self.deleteToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "删除",
+                symbolName: "trash",
+                action: #selector(deleteSelectedNotePressed)
+            )
+        case Self.restoreToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "恢复",
+                symbolName: "arrow.uturn.backward",
+                action: #selector(restoreSelectedNotePressed)
+            )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "搜索"
@@ -507,6 +531,21 @@ final class LibraryWindowController: NSWindowController,
             return item
         default:
             return nil
+        }
+    }
+
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        switch item.itemIdentifier {
+        case Self.openSeparateToolbarItemIdentifier:
+            return selectedURL != nil
+        case Self.saveToolbarItemIdentifier:
+            return selectedScope != .trash
+        case Self.deleteToolbarItemIdentifier:
+            return selectedURL != nil
+        case Self.restoreToolbarItemIdentifier:
+            return selectedScope == .trash && selectedURL != nil
+        default:
+            return true
         }
     }
 
@@ -563,7 +602,7 @@ final class LibraryWindowController: NSWindowController,
         removeArrangedSubviews(from: sourceFolderStack)
         removeArrangedSubviews(from: sourceTagStack)
 
-        for scope in [LibraryScope.all, .recent, .inbox] {
+        for scope in [LibraryScope.all, .recent, .inbox, .trash] {
             sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
@@ -669,6 +708,8 @@ final class LibraryWindowController: NSWindowController,
                     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                         || note.title.localizedCaseInsensitiveContains("Inbox")
                 }.count
+            case .trash:
+                count = noteStore.listTrashedNotes(limit: 10_000).count
             case .folder(let url):
                 let folderPath = url.standardizedFileURL.path
                 count = recentNotes.filter { note in
@@ -712,6 +753,7 @@ final class LibraryWindowController: NSWindowController,
         }
         refreshSourceCounts()
         refreshSourceSelection()
+        updateToolbarActionState()
     }
 
     private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {
@@ -725,6 +767,8 @@ final class LibraryWindowController: NSWindowController,
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }
+        case .trash:
+            return noteStore.listTrashedNotes(limit: limit)
         case .folder(let url):
             return noteStore.listNotes(limit: limit, roots: [url])
         case .tag(let tag):
@@ -916,6 +960,8 @@ final class LibraryWindowController: NSWindowController,
             return .recent
         case 2:
             return .inbox
+        case 3:
+            return .trash
         case 10..<100:
             let index = button.tag - 10
             guard sourceFolderURLs.indices.contains(index) else { return .all }
@@ -948,15 +994,21 @@ final class LibraryWindowController: NSWindowController,
     private func newNotePressed() {
         do {
             try saveCurrentNoteIfNeeded()
+            if selectedScope == .trash {
+                selectedScope = .all
+            }
             selectedURL = nil
             selectedTags = []
             suppressSelectionChanges = true
             tableView.deselectAll(nil)
             suppressSelectionChanges = false
+            setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
             isDirty = false
             statusLabel.stringValue = "新笔记"
             updateEmptyState()
+            refreshSourceSelection()
+            updateToolbarActionState()
             titleField.becomeFirstResponder()
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -981,6 +1033,38 @@ final class LibraryWindowController: NSWindowController,
         onOpenInSeparateWindow(selectedURL)
     }
 
+    @objc
+    private func deleteSelectedNotePressed() {
+        guard let url = selectedURL else { return }
+        do {
+            if selectedScope == .trash {
+                try noteStore.permanentlyDeleteTrashedNote(at: url)
+            } else {
+                try saveCurrentNoteIfNeeded()
+                _ = try noteStore.trashNote(at: selectedURL ?? url)
+            }
+            clearCurrentDocumentAfterRemoval()
+            rebuildSourceRows(includeTags: false)
+            reloadNotes(loadFirstIfNeeded: true)
+        } catch {
+            presentErrorAlert(message: "删除失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func restoreSelectedNotePressed() {
+        guard selectedScope == .trash, let url = selectedURL else { return }
+        do {
+            let restoredURL = try noteStore.restoreTrashedNote(at: url)
+            selectedScope = .all
+            clearCurrentDocumentAfterRemoval()
+            rebuildSourceRows(includeTags: false)
+            reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
+        } catch {
+            presentErrorAlert(message: "恢复失败", details: error.localizedDescription)
+        }
+    }
+
     private func loadSelectedRow() {
         let row = tableView.selectedRow
         guard let note = note(at: row) else {
@@ -994,10 +1078,12 @@ final class LibraryWindowController: NSWindowController,
         do {
             let loaded = try noteStore.loadNote(at: note.url)
             selectedURL = note.url
+            setEditorEditable(selectedScope != .trash)
             applyDocument(title: loaded.title, body: loaded.body, tags: loaded.tags)
             isDirty = false
             statusLabel.stringValue = statusText(for: note)
             updateEmptyState()
+            updateToolbarActionState()
         } catch {
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
@@ -1014,10 +1100,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func markDirty() {
-        guard !suppressEditorChanges else { return }
+        guard !suppressEditorChanges, selectedScope != .trash else { return }
         isDirty = true
         updateEmptyState()
         statusLabel.stringValue = selectedURL == nil ? "新笔记，未保存" : "已修改"
+        updateToolbarActionState()
     }
 
     private func saveCurrentNoteIfNeeded() throws {
@@ -1028,6 +1115,7 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
         guard force || isDirty else { return selectedURL }
+        guard selectedScope != .trash else { return selectedURL }
 
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
@@ -1047,7 +1135,22 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.stringValue = "已保存"
         onSave(savedURL)
         updateEmptyState()
+        updateToolbarActionState()
         return savedURL
+    }
+
+    private func clearCurrentDocumentAfterRemoval() {
+        selectedURL = nil
+        selectedTags = []
+        isDirty = false
+        setEditorEditable(selectedScope != .trash)
+        applyDocument(title: "", body: "", tags: [])
+        updateEmptyState()
+    }
+
+    private func setEditorEditable(_ isEditable: Bool) {
+        titleField.isEditable = isEditable
+        editorTextView.isEditable = isEditable
     }
 
     private func updateEmptyState() {
@@ -1058,7 +1161,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func metadataText(for note: NoteSearchResult) -> String {
-        let folder = note.url.deletingLastPathComponent().lastPathComponent
+        let folder = isTrashURL(note.url) ? "最近删除" : note.url.deletingLastPathComponent().lastPathComponent
         let tags = note.tags.prefix(3).map { "#\($0)" }.joined(separator: " ")
         if tags.isEmpty {
             return "\(relativeDateText(for: note.modifiedAt)) · \(folder)"
@@ -1074,8 +1177,37 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func statusText(for note: NoteSearchResult) -> String {
-        let folder = note.url.deletingLastPathComponent().lastPathComponent
+        let folder = isTrashURL(note.url) ? "最近删除" : note.url.deletingLastPathComponent().lastPathComponent
         return "\(dateFormatter.string(from: note.modifiedAt)) · \(folder)"
+    }
+
+    private func isTrashURL(_ url: URL) -> Bool {
+        let trashPath = noteStore.trashDirectory().standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == trashPath || path.hasPrefix(trashPath + "/")
+    }
+
+    private func updateToolbarActionState() {
+        let isTrashScope = selectedScope == .trash
+        for item in window?.toolbar?.items ?? [] {
+            switch item.itemIdentifier {
+            case Self.deleteToolbarItemIdentifier:
+                item.label = isTrashScope ? "永久删除" : "删除"
+                item.paletteLabel = item.label
+                item.toolTip = item.label
+                item.image = NSImage(
+                    systemSymbolName: isTrashScope ? "trash.slash" : "trash",
+                    accessibilityDescription: item.label
+                )
+            case Self.restoreToolbarItemIdentifier:
+                item.label = "恢复"
+                item.paletteLabel = "恢复"
+                item.toolTip = "恢复笔记"
+            default:
+                continue
+            }
+        }
+        window?.toolbar?.validateVisibleItems()
     }
 
     private func presentErrorAlert(message: String, details: String) {
