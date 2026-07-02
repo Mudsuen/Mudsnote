@@ -1705,7 +1705,11 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if commandSelector == #selector(NSResponder.moveDown(_:)) {
-            return focusFirstNoteListResult()
+            return focusNoteListResult(.first)
+        }
+
+        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            return focusNoteListResult(.last)
         }
 
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
@@ -1880,30 +1884,43 @@ final class LibraryWindowController: NSWindowController,
         return true
     }
 
-    private func focusFirstNoteListResult() -> Bool {
-        guard selectFirstNoteRowIfNeeded() else { return false }
+    private enum NoteListResultAnchor {
+        case first
+        case last
+    }
+
+    private func focusNoteListResult(_ anchor: NoteListResultAnchor) -> Bool {
+        guard selectNoteListRowIfNeeded(anchor) else { return false }
         window?.makeFirstResponder(tableView)
         return true
     }
 
     private func loadFocusedNoteListResultFromSearch() -> Bool {
-        guard selectFirstNoteRowIfNeeded() else { return false }
+        guard selectNoteListRowIfNeeded(.first) else { return false }
         loadSelectedRow()
         editorTextView.window?.makeFirstResponder(editorTextView)
         return true
     }
 
-    private func selectFirstNoteRowIfNeeded() -> Bool {
+    private func selectNoteListRowIfNeeded(_ anchor: NoteListResultAnchor) -> Bool {
         if tableView.selectedRow >= 0, note(at: tableView.selectedRow) != nil {
             return true
         }
 
-        guard let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) else {
+        let row: Int?
+        switch anchor {
+        case .first:
+            row = listRows.firstIndex(where: { $0.note != nil })
+        case .last:
+            row = listRows.lastIndex(where: { $0.note != nil })
+        }
+
+        guard let row else {
             return false
         }
 
-        tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
-        tableView.scrollRowToVisible(firstNoteRow)
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        tableView.scrollRowToVisible(row)
         return true
     }
 

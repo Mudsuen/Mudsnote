@@ -378,6 +378,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added search-field command handling: Down selects the first visible note result and focuses the list, Return loads the focused result into the editor, and Escape clears the query back to the current library scope. Added regression coverage for the keyboard path.
 - Lesson: Notes parity depends on fast keyboard transitions between search, list, and editor; small responder-chain commands are enough before adding heavier indexing.
 
+### 66. Search result stepping polish
+
+- Problem: The search keyboard path could enter the first result, but reverse navigation from the search field still fell back to default AppKit behavior instead of selecting the last visible result.
+- Fix: Added Up-arrow handling for the toolbar search field so it selects and focuses the last visible note result, while Return preserves the currently selected result instead of forcing the first result. Expanded regression coverage for first/last result selection.
+- Lesson: Search parity is a responder-chain detail as much as a search algorithm detail; preserve the user's current result selection before loading it.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
