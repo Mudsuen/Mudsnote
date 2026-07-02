@@ -330,6 +330,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight `LibraryNoteTableView` that handles unmodified Return/Enter to open the selected note in a separate window and Delete/Forward Delete to delete or permanently delete the selected note, while leaving all other keys to AppKit's table navigation. Added regression coverage for open, delete-to-trash, and permanent-delete keyboard paths.
 - Lesson: Keyboard parity should extend the existing lifecycle actions instead of creating parallel behavior; arrow-key selection remains native while high-intent keys map to Notes-like workflows.
 
+### 58. Note-list empty states
+
+- Problem: Empty note-list results still collapsed to a blank middle column, so failed searches and empty trash states lacked the clear edge-state feedback Apple Notes provides.
+- Fix: Added a lightweight centered note-list empty label that appears for no search results, empty normal scopes, and an empty Recently Deleted scope. The state is driven by the already loaded `listRows`, so it does not add filesystem scanning or indexing work. Added regression coverage for normal hidden state, no-result search, and empty trash after permanent delete.
+- Lesson: Edge-state parity should be explicit but cheap; list feedback can be UI-only when the current row model already knows whether the scope is empty.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

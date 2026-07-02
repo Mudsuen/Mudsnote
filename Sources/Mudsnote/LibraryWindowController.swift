@@ -263,6 +263,7 @@ final class LibraryWindowController: NSWindowController,
     )
     let noteListTitleLabel = NSTextField(labelWithString: "")
     let noteListCountLabel = NSTextField(labelWithString: "")
+    let noteListEmptyLabel = NSTextField(labelWithString: "")
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
     let statusLabel = NSTextField(labelWithString: "")
@@ -487,7 +488,30 @@ final class LibraryWindowController: NSWindowController,
         scrollView.contentView.backgroundColor = .clear
         scrollView.documentView = tableView
 
-        let stack = NSStackView(views: [header, scrollView])
+        noteListEmptyLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListEmptyLabel")
+        noteListEmptyLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        noteListEmptyLabel.textColor = panelTertiaryTextColor()
+        noteListEmptyLabel.alignment = .center
+        noteListEmptyLabel.lineBreakMode = .byWordWrapping
+        noteListEmptyLabel.maximumNumberOfLines = 2
+        noteListEmptyLabel.isHidden = true
+
+        let listContainer = NSView()
+        listContainer.addSubview(scrollView)
+        listContainer.addSubview(noteListEmptyLabel)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        noteListEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: listContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
+            noteListEmptyLabel.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 18),
+            noteListEmptyLabel.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -18),
+            noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
+        ])
+
+        let stack = NSStackView(views: [header, listContainer])
         stack.orientation = .vertical
         stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
@@ -1248,6 +1272,7 @@ final class LibraryWindowController: NSWindowController,
 
         suppressSelectionChanges = true
         tableView.reloadData()
+        updateNoteListEmptyState(query: query)
 
         let preferredPath = preferredURL?.standardizedFileURL.path
         if let preferredPath,
@@ -1280,6 +1305,20 @@ final class LibraryWindowController: NSWindowController,
         noteListCountLabel.stringValue = query.isEmpty
             ? "\(notes.count) 条笔记"
             : "\(notes.count) 个结果"
+    }
+
+    private func updateNoteListEmptyState(query: String) {
+        let isEmpty = listRows.isEmpty
+        noteListEmptyLabel.isHidden = !isEmpty
+        guard isEmpty else { return }
+
+        if !query.isEmpty {
+            noteListEmptyLabel.stringValue = "未找到结果"
+        } else if selectedScope == .trash {
+            noteListEmptyLabel.stringValue = "最近删除为空"
+        } else {
+            noteListEmptyLabel.stringValue = "没有笔记"
+        }
     }
 
     private func notesForSelectedScope(limit: Int) -> [NoteSearchResult] {

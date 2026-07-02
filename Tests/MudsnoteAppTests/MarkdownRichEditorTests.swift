@@ -659,8 +659,12 @@ struct MarkdownRichEditorTests {
         let noteListCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListCount"
         })
+        let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
+        })
         #expect(noteListTitle.stringValue == "所有笔记")
         #expect(noteListCount.stringValue == "1 条笔记")
+        #expect(noteListEmpty.isHidden)
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
@@ -838,6 +842,15 @@ struct MarkdownRichEditorTests {
         #expect(scopeControl.selectedSegment == 1)
         #expect(controller.noteListTitleLabel.stringValue == "所有笔记")
         #expect(controller.noteListCountLabel.stringValue == "2 个结果")
+
+        controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
+        let emptyLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
+        })
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+        #expect(controller.tableView.numberOfRows == 0)
+        #expect(!emptyLabel.isHidden)
+        #expect(emptyLabel.stringValue == "未找到结果")
     }
 
     @MainActor
@@ -1130,6 +1143,8 @@ struct MarkdownRichEditorTests {
         try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
+        #expect(controller.noteListEmptyLabel.stringValue == "最近删除为空")
+        #expect(!controller.noteListEmptyLabel.isHidden)
     }
 
     @MainActor
