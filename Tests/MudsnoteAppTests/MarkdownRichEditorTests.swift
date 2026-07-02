@@ -829,6 +829,58 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowShowsNestedFoldersInSourceList() throws {
+        let suiteName = "mudsnote.library-nested-folder-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-nested-folder-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let projectsFolder = try store.createFolder(named: "Projects")
+        let clientFolder = projectsFolder.appendingPathComponent("Client", isDirectory: true)
+        try FileManager.default.createDirectory(at: clientFolder, withIntermediateDirectories: true)
+        _ = try store.saveNewNote(title: "Client Seed", body: "Nested body", in: clientFolder)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let clientButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Client"
+        })
+        clientButton.performClick(nil)
+
+        #expect(controller.noteListTitleLabel.stringValue == "Client")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Client Seed"])
+
+        let moveMenu = try #require(controller.makeMoreActionsMenuForLibrary().items.first {
+            $0.title == "移到文件夹"
+        }?.submenu)
+        let clientMoveItem = try #require(moveMenu.items.first {
+            $0.representedObject as? URL == clientFolder.standardizedFileURL
+        })
+        #expect(clientMoveItem.title.hasPrefix("    "))
+        #expect(clientMoveItem.title.trimmingCharacters(in: .whitespaces) == "Client")
+    }
+
+    @MainActor
+    @Test
     func libraryWindowCreatesMovesRenamesAndDeletesFolders() throws {
         let suiteName = "mudsnote.library-folder-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

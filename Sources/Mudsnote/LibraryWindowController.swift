@@ -59,6 +59,11 @@ private enum LibraryNoteListRow {
     }
 }
 
+private struct LibraryFolderRow: Equatable {
+    let url: URL
+    let depth: Int
+}
+
 private enum LibraryActionError: LocalizedError {
     case noFolderSelected
     case noNoteSelected
@@ -226,7 +231,7 @@ final class LibraryWindowController: NSWindowController,
     private var selectedScope: LibraryScope = .all
     private var sourceButtons: [NSButton] = []
     private var sourceCountLabels: [Int: NSTextField] = [:]
-    private var sourceFolderURLs: [URL] = []
+    private var sourceFolderRows: [LibraryFolderRow] = []
     private var sourceTagNames: [String] = []
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
@@ -690,7 +695,7 @@ final class LibraryWindowController: NSWindowController,
              Self.attachmentToolbarItemIdentifier:
             return selectedScope != .trash
         case Self.moveToolbarItemIdentifier:
-            return selectedURL != nil && selectedScope != .trash && !sourceFolderURLs.isEmpty
+            return selectedURL != nil && selectedScope != .trash && !sourceFolderRows.isEmpty
         case Self.saveToolbarItemIdentifier:
             return selectedScope != .trash
         case Self.deleteToolbarItemIdentifier:
@@ -803,9 +808,9 @@ final class LibraryWindowController: NSWindowController,
             sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
-        sourceFolderURLs = noteStore.preferredDirectories
-        for (index, folderURL) in sourceFolderURLs.enumerated() {
-            sourceFolderStack.addArrangedSubview(makeScopeRow(.folder(folderURL), tag: 10 + index))
+        sourceFolderRows = folderRowsForSourceList()
+        for (index, folderRow) in sourceFolderRows.enumerated() {
+            sourceFolderStack.addArrangedSubview(makeScopeRow(.folder(folderRow.url), tag: 10 + index, depth: folderRow.depth))
         }
 
         sourceTagNames = includeTags ? noteStore.knownTags(limit: 12) : []
@@ -822,7 +827,62 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func makeScopeRow(_ scope: LibraryScope, tag: Int) -> NSView {
+    private func folderRowsForSourceList() -> [LibraryFolderRow] {
+        let preferredRoots = rootPreferredDirectories(from: noteStore.preferredDirectories)
+        var seenPaths = Set<String>()
+        var rows: [LibraryFolderRow] = []
+
+        for root in preferredRoots {
+            appendFolderRows(root, depth: 0, maxDepth: 3, seenPaths: &seenPaths, rows: &rows)
+        }
+
+        return rows
+    }
+
+    private func rootPreferredDirectories(from directories: [URL]) -> [URL] {
+        let standardized = directories.map(\.standardizedFileURL)
+        return standardized.filter { candidate in
+            !standardized.contains { other in
+                other != candidate && candidate.path.hasPrefix(other.path + "/")
+            }
+        }
+    }
+
+    private func appendFolderRows(
+        _ folderURL: URL,
+        depth: Int,
+        maxDepth: Int,
+        seenPaths: inout Set<String>,
+        rows: inout [LibraryFolderRow]
+    ) {
+        let standardized = folderURL.standardizedFileURL
+        guard seenPaths.insert(standardized.path).inserted else { return }
+        rows.append(LibraryFolderRow(url: standardized, depth: depth))
+        guard depth < maxDepth else { return }
+
+        for child in childFolderURLs(of: standardized) {
+            appendFolderRows(child, depth: depth + 1, maxDepth: maxDepth, seenPaths: &seenPaths, rows: &rows)
+        }
+    }
+
+    private func childFolderURLs(of folderURL: URL) -> [URL] {
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isHiddenKey]
+        let children = (try? FileManager.default.contentsOfDirectory(
+            at: folderURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        )) ?? []
+
+        return children.filter { url in
+            guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return false }
+            return values.isDirectory == true && values.isHidden != true
+        }
+        .sorted {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+        }
+    }
+
+    private func makeScopeRow(_ scope: LibraryScope, tag: Int, depth: Int = 0) -> NSView {
         let row = NSView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: 30).isActive = true
@@ -840,6 +900,7 @@ final class LibraryWindowController: NSWindowController,
         countLabel.font = .systemFont(ofSize: 13, weight: .medium)
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
+        let leadingInset = CGFloat(depth * 16)
 
         row.addSubview(button)
         row.addSubview(overlay)
@@ -849,7 +910,7 @@ final class LibraryWindowController: NSWindowController,
         overlay.translatesAutoresizingMaskIntoConstraints = false
         countLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            button.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
             button.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             button.topAnchor.constraint(equalTo: row.topAnchor),
             button.bottomAnchor.constraint(equalTo: row.bottomAnchor),
@@ -916,7 +977,8 @@ final class LibraryWindowController: NSWindowController,
             case .folder(let url):
                 let folderPath = url.standardizedFileURL.path
                 count = recentNotes.filter { note in
-                    note.url.deletingLastPathComponent().standardizedFileURL.path == folderPath
+                    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
+                    return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
                 }.count
             case .tag(let tag):
                 count = recentNotes.filter { note in
@@ -1281,8 +1343,8 @@ final class LibraryWindowController: NSWindowController,
             return .trash
         case 10..<100:
             let index = button.tag - 10
-            guard sourceFolderURLs.indices.contains(index) else { return .all }
-            return .folder(sourceFolderURLs[index])
+            guard sourceFolderRows.indices.contains(index) else { return .all }
+            return .folder(sourceFolderRows[index].url)
         case 100...:
             let index = button.tag - 100
             guard sourceTagNames.indices.contains(index) else { return .all }
@@ -1845,7 +1907,7 @@ final class LibraryWindowController: NSWindowController,
 
         let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
-        moveItem.isEnabled = hasSelection && !isTrashScope && !sourceFolderURLs.isEmpty
+        moveItem.isEnabled = hasSelection && !isTrashScope && !sourceFolderRows.isEmpty
         menu.addItem(moveItem)
 
         let saveItem = NSMenuItem(title: "保存", action: #selector(savePressed), keyEquivalent: "s")
@@ -1923,8 +1985,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeMoveNoteMenu() -> NSMenu {
         let menu = NSMenu()
-        for folderURL in sourceFolderURLs {
-            let item = NSMenuItem(title: folderURL.lastPathComponent, action: #selector(moveNoteMenuItemPressed(_:)), keyEquivalent: "")
+        for folderRow in sourceFolderRows {
+            let folderURL = folderRow.url
+            let title = String(repeating: "  ", count: folderRow.depth) + folderURL.lastPathComponent
+            let item = NSMenuItem(title: title, action: #selector(moveNoteMenuItemPressed(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = folderURL
             item.isEnabled = true

@@ -294,6 +294,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Switched the note table to a plain transparent style, gave the list column a darker background, and kept the custom golden selection drawing. The scroll view clip now stays transparent so the list column reads as one dark pane.
 - Lesson: Visual parity often depends on removing default AppKit table styling; keep native behavior, but own the background and selection surfaces where Apple Notes has a strong visual signature.
 
+### 52. Nested folder source rows
+
+- Problem: The source list showed only flat preferred folders, so local subfolders could not be browsed from the Notes-like sidebar even though Apple Notes relies on visible folder hierarchy.
+- Fix: Added a lightweight folder-row model that expands preferred roots into indented local subfolders, reuses the existing folder scope for selection/search/new notes, updates folder counts to include descendant notes, and includes nested folders in the move-note menu. Added app regression coverage for selecting a nested folder and moving to it.
+- Lesson: Folder hierarchy can be represented directly from the filesystem before adding heavier disclosure-state or metadata layers; keep the first pass local-first and bounded.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
