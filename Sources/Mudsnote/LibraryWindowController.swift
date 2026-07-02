@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import MudsnoteCore
+import UniformTypeIdentifiers
 
 private enum LibraryScope: Equatable {
     case all
@@ -303,6 +304,7 @@ final class LibraryWindowController: NSWindowController,
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
     private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
+    private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
@@ -683,6 +685,7 @@ final class LibraryWindowController: NSWindowController,
             Self.linkToolbarItemIdentifier,
             Self.attachmentToolbarItemIdentifier,
             .space,
+            Self.exportToolbarItemIdentifier,
             Self.moreToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
@@ -769,6 +772,13 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "paperclip",
                 action: #selector(attachmentPressed)
             )
+        case Self.exportToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "导出 Markdown",
+                symbolName: "square.and.arrow.up",
+                action: #selector(exportSelectedMarkdownPressed)
+            )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -844,6 +854,8 @@ final class LibraryWindowController: NSWindowController,
             return canMoveSelectedNote
         case Self.saveToolbarItemIdentifier:
             return canEditCurrentDocument
+        case Self.exportToolbarItemIdentifier:
+            return canExportSelectedNote
         case Self.deleteToolbarItemIdentifier:
             return canUseSelectedNote
         case Self.restoreToolbarItemIdentifier:
@@ -1951,6 +1963,31 @@ final class LibraryWindowController: NSWindowController,
         _ = copySelectedMarkdownPathForLibrary()
     }
 
+    @objc
+    private func exportSelectedMarkdownPressed() {
+        guard canExportSelectedNote,
+              let sourceURL = selectedMarkdownFileURLForLibrary() else { return }
+
+        let panel = NSSavePanel()
+        panel.title = "导出 Markdown"
+        panel.prompt = "导出"
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "md"),
+            UTType(filenameExtension: "markdown"),
+            .plainText
+        ].compactMap { $0 }
+        panel.nameFieldStringValue = sourceURL.lastPathComponent
+
+        guard panel.runModal() == .OK,
+              let destinationURL = panel.url else { return }
+
+        do {
+            _ = try exportSelectedMarkdownForLibrary(to: destinationURL)
+        } catch {
+            presentErrorAlert(message: "导出失败", details: error.localizedDescription)
+        }
+    }
+
     private func loadSelectedRow() {
         let row = tableView.selectedRow
         guard let note = note(at: row) else {
@@ -2077,6 +2114,20 @@ final class LibraryWindowController: NSWindowController,
 
     func revealSelectedNoteInFinderForLibrary() -> URL? {
         selectedMarkdownFileURLForLibrary()
+    }
+
+    @discardableResult
+    func exportSelectedMarkdownForLibrary(to destinationURL: URL) throws -> URL? {
+        guard canExportSelectedNote,
+              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+
+        try saveCurrentNoteIfNeeded()
+        let destination = destinationURL.standardizedFileURL
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        return destination
     }
 
     func searchForLibrary(query: String, allNotes: Bool) {
@@ -2220,6 +2271,10 @@ final class LibraryWindowController: NSWindowController,
         canUseSelectedNote && selectedScope != .trash && !sourceFolderRows.isEmpty
     }
 
+    private var canExportSelectedNote: Bool {
+        canUseSelectedNote && selectedScope != .trash
+    }
+
     private var canRestoreSelectedNote: Bool {
         selectedScope == .trash && canUseSelectedNote
     }
@@ -2286,6 +2341,11 @@ final class LibraryWindowController: NSWindowController,
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
+
+        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        exportItem.target = self
+        exportItem.isEnabled = canExportSelectedNote
+        menu.addItem(exportItem)
         menu.addItem(.separator())
 
         let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
@@ -2327,6 +2387,11 @@ final class LibraryWindowController: NSWindowController,
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
+
+        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        exportItem.target = self
+        exportItem.isEnabled = canExportSelectedNote
+        menu.addItem(exportItem)
 
         menu.addItem(.separator())
 

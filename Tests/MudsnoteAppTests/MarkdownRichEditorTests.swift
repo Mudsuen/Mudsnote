@@ -631,6 +631,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.export"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.save"))
@@ -759,6 +760,7 @@ struct MarkdownRichEditorTests {
         let openItem = toolbarItem("mudsnote.library.toolbar.open-separate")
         let deleteItem = toolbarItem("mudsnote.library.toolbar.delete")
         let restoreItem = toolbarItem("mudsnote.library.toolbar.restore")
+        let exportItem = toolbarItem("mudsnote.library.toolbar.export")
         let newItem = toolbarItem("mudsnote.library.toolbar.new-note")
 
         #expect(!emptyController.validateToolbarItem(formatItem))
@@ -768,6 +770,7 @@ struct MarkdownRichEditorTests {
         #expect(!emptyController.validateToolbarItem(openItem))
         #expect(!emptyController.validateToolbarItem(deleteItem))
         #expect(!emptyController.validateToolbarItem(restoreItem))
+        #expect(!emptyController.validateToolbarItem(exportItem))
         #expect(emptyController.validateToolbarItem(newItem))
 
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
@@ -794,10 +797,12 @@ struct MarkdownRichEditorTests {
         #expect(selectedController.validateToolbarItem(moreItem))
         #expect(selectedController.validateToolbarItem(openItem))
         #expect(selectedController.validateToolbarItem(deleteItem))
+        #expect(selectedController.validateToolbarItem(exportItem))
         #expect(!selectedController.validateToolbarItem(restoreItem))
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
+        #expect(normalMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "删除" }?.isEnabled == true)
 
         try selectedController.deleteSelectedNoteForLibrary()
@@ -809,12 +814,14 @@ struct MarkdownRichEditorTests {
         #expect(!selectedController.validateToolbarItem(formatItem))
         #expect(!selectedController.validateToolbarItem(checklistItem))
         #expect(!selectedController.validateToolbarItem(saveItem))
+        #expect(!selectedController.validateToolbarItem(exportItem))
         #expect(selectedController.validateToolbarItem(moreItem))
         #expect(selectedController.validateToolbarItem(deleteItem))
         #expect(selectedController.validateToolbarItem(restoreItem))
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
+        #expect(trashMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "恢复" }?.isEnabled == true)
         #expect(trashMoreMenu.items.first { $0.title == "永久删除" }?.isEnabled == true)
     }
@@ -1222,11 +1229,17 @@ struct MarkdownRichEditorTests {
         #expect(moreMenuTitles.contains("保存"))
         #expect(moreMenuTitles.contains("在 Finder 中显示"))
         #expect(moreMenuTitles.contains("复制 Markdown 路径"))
+        #expect(moreMenuTitles.contains("导出 Markdown..."))
         #expect(moreMenuTitles.contains("删除"))
         #expect(controller.selectedMarkdownFileURLForLibrary()?.path == noteURL.standardizedFileURL.path)
         #expect(controller.revealSelectedNoteInFinderForLibrary()?.path == noteURL.standardizedFileURL.path)
         #expect(controller.copySelectedMarkdownPathForLibrary() == noteURL.standardizedFileURL.path)
         #expect(NSPasteboard.general.string(forType: .string) == noteURL.standardizedFileURL.path)
+        let exportURL = root.appendingPathComponent("Exported Toolbar Seed.md")
+        #expect(try controller.exportSelectedMarkdownForLibrary(to: exportURL)?.path == exportURL.standardizedFileURL.path)
+        let exportedMarkdown = try String(contentsOf: exportURL, encoding: .utf8)
+        #expect(exportedMarkdown.contains("Trash Seed"))
+        #expect(exportedMarkdown.contains("Body line"))
 
         try controller.deleteSelectedNoteForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))

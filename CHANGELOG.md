@@ -348,6 +348,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added shared toolbar/menu state helpers for selected-note, editable-document, move, restore, and more-actions availability. Formatting, checklist, table, link, attachment, save, move, open, delete, restore, and more actions now enable only when their current context can actually run. Context menus and action handlers share the same state. Added regression coverage for empty library, new blank note, normal selected note, and trash selection states.
 - Lesson: Toolbar parity is not only icon placement; disabled state must follow the same document lifecycle rules as the editor and note list.
 
+### 61. Markdown export action
+
+- Problem: The Notes-like toolbar still lacked a share/export affordance, so portable Markdown actions were hidden behind reveal/copy-path workflows instead of appearing where Apple Notes shows sharing.
+- Fix: Added a `square.and.arrow.up` toolbar item and matching menu action for exporting the selected note as Markdown. Export saves pending edits first, then copies the current `.md` file to a user-chosen destination without introducing a new storage format. Added regression coverage for toolbar presence, enabled/disabled export states, and exported Markdown content.
+- Lesson: Share parity can stay lightweight by exporting the local source file directly; the UI gains a Notes-like affordance without adding account, sync, or proprietary document behavior.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
