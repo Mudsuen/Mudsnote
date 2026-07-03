@@ -1024,9 +1024,13 @@ struct MarkdownRichEditorTests {
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
+        #expect(normalMoreMenu.items.first { $0.title == "分享..." }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "删除" }?.isEnabled == true)
+        let normalShareMenu = selectedController.makeShareExportMenuForLibrary()
+        #expect(normalShareMenu.items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
+        #expect(normalShareMenu.items.allSatisfy { $0.isEnabled })
 
         try selectedController.deleteSelectedNoteForLibrary()
         let trashButton = try #require(selectedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
@@ -1044,10 +1048,12 @@ struct MarkdownRichEditorTests {
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
+        #expect(trashMoreMenu.items.first { $0.title == "分享..." }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "恢复" }?.isEnabled == true)
         #expect(trashMoreMenu.items.first { $0.title == "永久删除" }?.isEnabled == true)
+        #expect(selectedController.makeShareExportMenuForLibrary().items.allSatisfy { !$0.isEnabled })
     }
 
     @MainActor
@@ -1706,6 +1712,7 @@ struct MarkdownRichEditorTests {
         #expect(moreMenuTitles.contains("移到文件夹"))
         #expect(moreMenuTitles.contains("保存"))
         #expect(moreMenuTitles.contains("在 Finder 中显示"))
+        #expect(moreMenuTitles.contains("分享..."))
         #expect(moreMenuTitles.contains("复制 Markdown 路径"))
         #expect(moreMenuTitles.contains("复制 Markdown 内容"))
         #expect(moreMenuTitles.contains("导出 Markdown..."))
@@ -1723,6 +1730,14 @@ struct MarkdownRichEditorTests {
         let exportedMarkdown = try String(contentsOf: exportURL, encoding: .utf8)
         #expect(exportedMarkdown.contains("Trash Seed"))
         #expect(exportedMarkdown.contains("Body line"))
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Shared body",
+            theme: controller.theme,
+            baseURL: noteURL
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        #expect(try controller.shareSelectedMarkdownFileForLibrary()?.path == noteURL.standardizedFileURL.path)
+        #expect(try store.loadNote(at: noteURL).body == "Shared body")
 
         try controller.deleteSelectedNoteForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))

@@ -588,6 +588,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added `复制 Markdown 内容` to the library more menu and note context menu. It saves pending edits when needed, reads the selected Markdown file, and places the full note Markdown on the pasteboard. Trash scope keeps it disabled.
 - Lesson: Richer sharing can stay lightweight by adding local Markdown destinations before introducing heavier share/export infrastructure.
 
+### 101. System share from library
+
+- Problem: The Notes-like toolbar showed a share-style icon, but it still launched only a save-panel export instead of offering the system share sheet Apple Notes users expect.
+- Fix: Changed the toolbar share icon into a compact share/export menu with `分享...`, `复制 Markdown 内容`, and `导出 Markdown...`. The context menu and more-actions menu now expose the same system share action, and the share path saves pending edits before handing the current Markdown file to macOS sharing services.
+- Lesson: Share parity can stay local-first: hand the existing Markdown file to system services instead of adding sync, accounts, or a proprietary export format.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

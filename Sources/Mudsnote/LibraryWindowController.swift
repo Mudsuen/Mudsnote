@@ -1137,9 +1137,9 @@ final class LibraryWindowController: NSWindowController,
         case Self.exportToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
-                label: "导出 Markdown",
+                label: "分享与导出",
                 symbolName: "square.and.arrow.up",
-                action: #selector(exportSelectedMarkdownPressed)
+                action: #selector(shareExportPressed(_:))
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -2457,8 +2457,16 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func moreActionsPressed(_ sender: Any?) {
         guard canShowMoreActions else { return }
-        let menu = makeMoreActionsMenuForLibrary()
+        popUpToolbarMenu(makeMoreActionsMenuForLibrary(), from: sender)
+    }
 
+    @objc
+    private func shareExportPressed(_ sender: Any?) {
+        guard canExportSelectedNote else { return }
+        popUpToolbarMenu(makeShareExportMenuForLibrary(), from: sender)
+    }
+
+    private func popUpToolbarMenu(_ menu: NSMenu, from sender: Any?) {
         if let item = sender as? NSToolbarItem,
            let view = item.view {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
@@ -2560,6 +2568,23 @@ final class LibraryWindowController: NSWindowController,
             _ = try copySelectedMarkdownContentForLibrary()
         } catch {
             presentErrorAlert(message: "复制失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func shareSelectedMarkdownPressed(_ sender: Any?) {
+        do {
+            guard let sourceURL = try shareSelectedMarkdownFileForLibrary() else { return }
+            let picker = NSSharingServicePicker(items: [sourceURL])
+            if let item = sender as? NSToolbarItem,
+               let view = item.view {
+                picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+            } else if let contentView = window?.contentView {
+                let anchor = NSRect(x: contentView.bounds.midX, y: contentView.bounds.maxY - 44, width: 1, height: 1)
+                picker.show(relativeTo: anchor, of: contentView, preferredEdge: .maxY)
+            }
+        } catch {
+            presentErrorAlert(message: "分享失败", details: error.localizedDescription)
         }
     }
 
@@ -2755,6 +2780,15 @@ final class LibraryWindowController: NSWindowController,
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(markdown, forType: .string)
         return markdown
+    }
+
+    @discardableResult
+    func shareSelectedMarkdownFileForLibrary() throws -> URL? {
+        guard canExportSelectedNote,
+              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+
+        try saveCurrentNoteIfNeeded()
+        return sourceURL
     }
 
     @discardableResult
@@ -3059,6 +3093,11 @@ final class LibraryWindowController: NSWindowController,
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
+        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        shareItem.target = self
+        shareItem.isEnabled = canExportSelectedNote
+        menu.addItem(shareItem)
+
         let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
@@ -3079,6 +3118,27 @@ final class LibraryWindowController: NSWindowController,
         deleteItem.target = self
         deleteItem.isEnabled = canUseSelectedNote
         menu.addItem(deleteItem)
+
+        return menu
+    }
+
+    func makeShareExportMenuForLibrary() -> NSMenu {
+        let menu = NSMenu()
+
+        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        shareItem.target = self
+        shareItem.isEnabled = canExportSelectedNote
+        menu.addItem(shareItem)
+
+        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        copyContentItem.target = self
+        copyContentItem.isEnabled = canExportSelectedNote
+        menu.addItem(copyContentItem)
+
+        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        exportItem.target = self
+        exportItem.isEnabled = canExportSelectedNote
+        menu.addItem(exportItem)
 
         return menu
     }
@@ -3109,6 +3169,11 @@ final class LibraryWindowController: NSWindowController,
         revealItem.target = self
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
+
+        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        shareItem.target = self
+        shareItem.isEnabled = canExportSelectedNote
+        menu.addItem(shareItem)
 
         let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
