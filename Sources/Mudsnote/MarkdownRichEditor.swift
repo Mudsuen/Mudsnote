@@ -11,6 +11,7 @@ extension NSAttributedString.Key {
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
     static let qmAttachmentFilePath = NSAttributedString.Key("MudsnoteAttachmentFilePath")
     static let qmAttachmentMetadata = NSAttributedString.Key("MudsnoteAttachmentMetadata")
+    static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
 }
 
 final class MarkdownAttachmentReference: NSObject {

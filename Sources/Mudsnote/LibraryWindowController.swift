@@ -2133,6 +2133,7 @@ final class LibraryWindowController: NSWindowController,
 
         if object === searchField {
             reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+            applyEditorSearchHighlightsForCurrentQuery()
             return
         }
 
@@ -2174,6 +2175,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func searchScopeChanged(_ sender: NSSegmentedControl) {
         reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        applyEditorSearchHighlightsForCurrentQuery()
     }
 
     @objc
@@ -2328,6 +2330,7 @@ final class LibraryWindowController: NSWindowController,
         guard !searchField.stringValue.isEmpty else { return false }
         searchField.stringValue = ""
         reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        removeEditorSearchHighlights()
         return true
     }
 
@@ -2664,7 +2667,8 @@ final class LibraryWindowController: NSWindowController,
             setEditorEditable(selectedScope != .trash)
             applyDocument(title: loaded.title, body: loaded.body, tags: loaded.tags)
             isDirty = false
-        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+            statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+            applyEditorSearchHighlightsForCurrentQuery()
             updateEmptyState()
             updateToolbarActionState()
         } catch {
@@ -2680,6 +2684,60 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
         editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
         suppressEditorChanges = false
+    }
+
+    func applyEditorSearchHighlightsForCurrentQuery() {
+        applyEditorSearchHighlights(query: searchField.stringValue)
+    }
+
+    func applyEditorSearchHighlights(query: String) {
+        guard let storage = editorTextView.textStorage else { return }
+        let wasSuppressingEditorChanges = suppressEditorChanges
+        suppressEditorChanges = true
+        defer { suppressEditorChanges = wasSuppressingEditorChanges }
+
+        removeEditorSearchHighlights()
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty, storage.length > 0 else { return }
+
+        let nsText = storage.string as NSString
+        var searchRange = NSRange(location: 0, length: nsText.length)
+        while searchRange.location < nsText.length {
+            let match = nsText.range(
+                of: trimmedQuery,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: searchRange
+            )
+            guard match.location != NSNotFound, match.length > 0 else { break }
+
+            storage.addAttributes([
+                .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.30),
+                .qmSearchHighlight: true
+            ], range: match)
+
+            let nextLocation = NSMaxRange(match)
+            searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
+        }
+    }
+
+    func removeEditorSearchHighlights() {
+        guard let storage = editorTextView.textStorage, storage.length > 0 else { return }
+        let wasSuppressingEditorChanges = suppressEditorChanges
+        suppressEditorChanges = true
+        defer { suppressEditorChanges = wasSuppressingEditorChanges }
+
+        let fullRange = NSRange(location: 0, length: storage.length)
+        var highlightedRanges: [NSRange] = []
+        storage.enumerateAttribute(.qmSearchHighlight, in: fullRange, options: []) { value, range, _ in
+            if value != nil {
+                highlightedRanges.append(range)
+            }
+        }
+        for range in highlightedRanges {
+            storage.removeAttribute(.backgroundColor, range: range)
+            storage.removeAttribute(.qmSearchHighlight, range: range)
+        }
     }
 
     private func markDirty() {
@@ -2940,6 +2998,7 @@ final class LibraryWindowController: NSWindowController,
         searchField.stringValue = query
         searchScopeControl.selectedSegment = allNotes ? 1 : 0
         reloadNotes(loadFirstIfNeeded: false)
+        applyEditorSearchHighlightsForCurrentQuery()
     }
 
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {
@@ -3493,11 +3552,16 @@ final class LibraryWindowController: NSWindowController,
 
     private func libraryUserDidEdit() {
         guard !suppressEditorChanges else { return }
+        let activeSearchQuery = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        removeEditorSearchHighlights()
         if !normalizeCurrentLineAfterListPrefixEdit() {
             interpretTypedMarkdownIfNeeded()
         }
         updateTypingAttributesFromInsertionPoint()
         markDirty()
+        if !activeSearchQuery.isEmpty {
+            applyEditorSearchHighlights(query: activeSearchQuery)
+        }
     }
 
     private func interpretTypedMarkdownIfNeeded() {

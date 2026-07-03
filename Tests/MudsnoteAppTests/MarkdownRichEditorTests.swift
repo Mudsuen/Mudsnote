@@ -1475,6 +1475,19 @@ struct MarkdownRichEditorTests {
         #expect(snippetRange.location != NSNotFound)
         #expect(snippetHighlight != nil)
 
+        let fieldEditor = NSTextView()
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        let editorText = controller.editorTextView.attributedString()
+        let editorMatchRange = (editorText.string as NSString).range(of: "alpha")
+        #expect(editorMatchRange.location != NSNotFound)
+        #expect(editorText.attribute(.qmSearchHighlight, at: editorMatchRange.location, effectiveRange: nil) != nil)
+        #expect(editorText.attribute(.backgroundColor, at: editorMatchRange.location, effectiveRange: nil) != nil)
+        #expect(MarkdownRichTextCodec.serialize(editorText, theme: controller.theme) == "current folder alpha body")
+
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        #expect(controller.searchField.stringValue.isEmpty)
+        #expect(controller.editorTextView.attributedString().attribute(.qmSearchHighlight, at: editorMatchRange.location, effectiveRange: nil) == nil)
+
         controller.searchForLibrary(query: "alpha", allNotes: true)
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))

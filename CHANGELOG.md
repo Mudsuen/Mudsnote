@@ -636,6 +636,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Increased source-row height, source/group/count font sizes, note-list header size, group row height, note row height, and note title/snippet/meta font sizes. Slightly expanded note-cell padding so larger text has room without clipping.
 - Lesson: Visual parity needs typography and row-density tuning after canvas tuning; larger windows make undersized list text more obvious.
 
+### 109. Editor search match highlights
+
+- Problem: Search results highlighted matches in the note list, but opening a result did not show the matching text in the editor, so search-to-edit felt less like Apple Notes.
+- Fix: Added disposable editor-side search highlights for the active query. Highlights are tagged with a private attribute, cleared when search is cleared, and suppressed from dirty/autosave handling so Markdown serialization stays unchanged.
+- Lesson: Search polish should stay visual and reversible; retrieval metadata must not leak into the local Markdown source of truth.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
