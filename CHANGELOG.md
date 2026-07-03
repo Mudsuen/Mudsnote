@@ -480,6 +480,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added an explicit search-index prewarm API and moved deferred library tag loading onto a utility queue that prewarms the index before publishing tag rows. Added regression coverage that prewarming builds a reusable snapshot without changing search/tag results.
 - Lesson: Notes-grade search can stay lightweight if the app warms filesystem metadata off the main thread before the user asks for retrieval.
 
+### 83. Source-list loading states
+
+- Problem: The source list loaded folders and tags asynchronously, but the folder/tag sections could look unfinished while work was pending or when no tags were available.
+- Fix: Added lightweight folder and tag status rows for loading and empty states, without changing source-row selection tags or filesystem storage. Added regression coverage for initial loading copy and cleanup after folder/tag rows load.
+- Lesson: Notes-like sidebars need explicit quiet states; async loading should read as intentional, not missing content.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

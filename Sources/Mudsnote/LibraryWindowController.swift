@@ -370,6 +370,8 @@ final class LibraryWindowController: NSWindowController,
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
     private let sourceTagStack = NSStackView()
+    private let sourceFolderStatusLabel = NSTextField(labelWithString: "")
+    private let sourceTagStatusLabel = NSTextField(labelWithString: "")
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -499,6 +501,14 @@ final class LibraryWindowController: NSWindowController,
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
         configureSourceStack(sourceTagStack)
+        configureSourceStatusLabel(
+            sourceFolderStatusLabel,
+            identifier: "LibrarySourceFolderStatus"
+        )
+        configureSourceStatusLabel(
+            sourceTagStatusLabel,
+            identifier: "LibrarySourceTagStatus"
+        )
 
         let libraryHeader = makeSourceGroupLabel("Mudsnote", identifier: "LibrarySourceGroup-Mudsnote")
         let folderHeader = makeSourceGroupLabel("文件夹", identifier: "LibrarySourceGroup-Folders")
@@ -1018,6 +1028,18 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 2
     }
 
+    private func configureSourceStatusLabel(_ label: NSTextField, identifier: String) {
+        label.identifier = NSUserInterfaceItemIdentifier(identifier)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = panelTertiaryTextColor().withAlphaComponent(0.82)
+        label.alignment = .left
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 194).isActive = true
+    }
+
     private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
         let label = NSTextField(labelWithString: title)
         label.identifier = NSUserInterfaceItemIdentifier(identifier)
@@ -1046,6 +1068,10 @@ final class LibraryWindowController: NSWindowController,
                 folderRow: folderRow
             ))
         }
+        updateSourceFolderStatus()
+        if !sourceFolderStatusLabel.stringValue.isEmpty {
+            sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
+        }
 
         if !includeTags {
             sourceTagNames = []
@@ -1053,7 +1079,31 @@ final class LibraryWindowController: NSWindowController,
         for (index, tag) in sourceTagNames.enumerated() {
             sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
         }
+        updateSourceTagStatus()
+        if !sourceTagStatusLabel.stringValue.isEmpty {
+            sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
+        }
         tableView.menu = makeNoteContextMenu()
+    }
+
+    private func updateSourceFolderStatus() {
+        if !sourceFoldersLoaded {
+            sourceFolderStatusLabel.stringValue = "正在载入文件夹..."
+        } else if sourceFolderRows.isEmpty {
+            sourceFolderStatusLabel.stringValue = "没有文件夹"
+        } else {
+            sourceFolderStatusLabel.stringValue = ""
+        }
+    }
+
+    private func updateSourceTagStatus() {
+        if !sourceTagsLoaded {
+            sourceTagStatusLabel.stringValue = "正在索引标签..."
+        } else if sourceTagNames.isEmpty {
+            sourceTagStatusLabel.stringValue = "没有标签"
+        } else {
+            sourceTagStatusLabel.stringValue = ""
+        }
     }
 
     private func scheduleDeferredSourceFolderLoad() {

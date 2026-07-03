@@ -712,6 +712,14 @@ struct MarkdownRichEditorTests {
         })
         #expect(libraryGroup.stringValue == "Mudsnote")
         #expect(libraryGroup.font?.pointSize == 11)
+        let sourceFolderStatus = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceFolderStatus"
+        })
+        let sourceTagStatus = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceTagStatus"
+        })
+        #expect(sourceFolderStatus.stringValue == "正在载入文件夹...")
+        #expect(sourceTagStatus.stringValue == "正在索引标签...")
         let noteListTitle = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListTitle"
         })
@@ -1329,6 +1337,10 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "library"
         } == false)
+        let initialTagStatus = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceTagStatus"
+        })
+        #expect(initialTagStatus.stringValue == "正在索引标签...")
 
         controller.loadSourceTagsForLibrary()
 
@@ -1339,6 +1351,9 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-100"
         })
         #expect(tagCount.stringValue == "1")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
+            $0.identifier?.rawValue == "LibrarySourceTagStatus"
+        } == false)
 
         tagButton.performClick(nil)
         #expect(controller.noteListTitleLabel.stringValue == "#library")
@@ -1379,7 +1394,14 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        let initialFolderStatus = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceFolderStatus"
+        })
+        #expect(initialFolderStatus.stringValue == "正在载入文件夹...")
         controller.loadSourceFoldersForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
+            $0.identifier?.rawValue == "LibrarySourceFolderStatus"
+        } == false)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Projects"
         } == true)
