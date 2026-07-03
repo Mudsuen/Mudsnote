@@ -113,6 +113,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 36
     static let toolbarEditorToolButtonWidth: CGFloat = 36
     static let toolbarEditorToolButtonHeight: CGFloat = 30
+    static let toolbarSymbolPointSize: CGFloat = 20
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 40
     static let noteGroupRowHeight: CGFloat = 66
@@ -691,7 +692,7 @@ final class LibraryWindowController: NSWindowController,
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.minSize = LibraryNotesLayout.minimumWindowSize
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .expanded
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
@@ -1355,7 +1356,7 @@ final class LibraryWindowController: NSWindowController,
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        item.image = toolbarSymbolImage(symbolName: symbolName, label: label)
         item.target = self
         item.action = action
         item.visibilityPriority = visibilityPriority
@@ -1447,7 +1448,7 @@ final class LibraryWindowController: NSWindowController,
         symbolName: String,
         action: Selector
     ) -> NSButton {
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
         image?.isTemplate = true
         return toolbarEditorToolButton(identifier: identifier, label: label, image: image, action: action)
     }
@@ -1502,10 +1503,18 @@ final class LibraryWindowController: NSWindowController,
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        item.image = toolbarSymbolImage(symbolName: symbolName, label: label)
         item.menu = menu
         item.visibilityPriority = visibilityPriority
         return item
+    }
+
+    private func toolbarSymbolImage(symbolName: String, label: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.toolbarSymbolPointSize,
+            weight: .regular
+        )) ?? image
     }
 
     private func makeFormatToolbarImage() -> NSImage {
