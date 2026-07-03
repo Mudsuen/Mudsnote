@@ -546,6 +546,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a tested source-list visibility contract and updated the toolbar item label, tooltip, and accessibility description as the source list is shown or hidden.
 - Lesson: Toolbar parity is not only icon placement; Notes-like controls need stateful behavior that remains correct across direct clicks and future shortcuts.
 
+### 94. Cached drag-move validation
+
+- Problem: Dragging a note across folder rows repeatedly validated the dragged Markdown file by scanning the note library, which could become unnecessary work in large local-first libraries.
+- Fix: Cached the movable Markdown path set for drag validation and invalidated it after save, move, delete, restore, and folder mutations. Added coverage that proves a moved note is immediately recognized at its new path after the cache was warmed.
+- Lesson: Notes-like drag interactions need to stay responsive during hover, not only after drop; local-first validation can be fast without weakening the real-file contract.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

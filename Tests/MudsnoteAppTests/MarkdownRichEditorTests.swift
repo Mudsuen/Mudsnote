@@ -1571,6 +1571,8 @@ struct MarkdownRichEditorTests {
 
         let movedURL = try controller.moveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder)
         #expect(movedURL.deletingLastPathComponent().standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
+        #expect(!controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder))
+        #expect(controller.canMoveDraggedNoteForLibrary(at: movedURL, to: projectsFolder))
         #expect(store.listNotes(limit: 10, roots: [projectsFolder]).isEmpty)
         #expect(store.listNotes(limit: 10, roots: [archiveFolder]).first?.title == "Folder Seed")
 

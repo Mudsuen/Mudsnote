@@ -570,6 +570,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
+    private var movableNotePathCache: Set<String>?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -2594,6 +2595,7 @@ final class LibraryWindowController: NSWindowController,
 
         selectedURL = savedURL
         isDirty = false
+        invalidateMovableNotePathCache()
         statusLabel.stringValue = editorDateText(for: Date())
         onSave(savedURL)
         updateEmptyState()
@@ -2618,6 +2620,7 @@ final class LibraryWindowController: NSWindowController,
             try saveCurrentNoteIfNeeded()
             _ = try noteStore.trashNote(at: selectedURL ?? url)
         }
+        invalidateMovableNotePathCache()
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true)
@@ -2627,6 +2630,7 @@ final class LibraryWindowController: NSWindowController,
     func restoreSelectedNoteForLibrary() throws -> URL? {
         guard selectedScope == .trash, let url = selectedURL else { return nil }
         let restoredURL = try noteStore.restoreTrashedNote(at: url)
+        invalidateMovableNotePathCache()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -2696,6 +2700,7 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func createLibraryFolder(named name: String) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
+        invalidateMovableNotePathCache()
         selectedScope = .folder(folderURL)
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
@@ -2709,6 +2714,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
+        invalidateMovableNotePathCache()
         selectedScope = .folder(renamedURL)
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
@@ -2721,6 +2727,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         _ = try noteStore.trashFolder(at: folderURL)
+        invalidateMovableNotePathCache()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
         reloadSourceFolderRowsForCurrentState()
@@ -2739,6 +2746,7 @@ final class LibraryWindowController: NSWindowController,
 
         let targetDirectory = directory.standardizedFileURL
         let movedURL = try noteStore.moveNote(at: selectedURL, to: targetDirectory)
+        invalidateMovableNotePathCache()
         self.selectedURL = movedURL
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -2756,9 +2764,7 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
 
-        return noteStore.listNotes(limit: 10_000).contains {
-            $0.url.standardizedFileURL.path == sourceURL.path
-        }
+        return movableNotePathsForLibrary().contains(sourceURL.path)
     }
 
     @discardableResult
@@ -2773,11 +2779,28 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let movedURL = try noteStore.moveNote(at: sourceURL, to: targetDirectory)
+        invalidateMovableNotePathCache()
         selectedURL = movedURL
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
         return movedURL
+    }
+
+    private func movableNotePathsForLibrary() -> Set<String> {
+        if let movableNotePathCache {
+            return movableNotePathCache
+        }
+
+        let paths = Set(noteStore.listNotes(limit: 10_000).map {
+            $0.url.standardizedFileURL.path
+        })
+        movableNotePathCache = paths
+        return paths
+    }
+
+    private func invalidateMovableNotePathCache() {
+        movableNotePathCache = nil
     }
 
     private func clearCurrentDocumentAfterRemoval() {
