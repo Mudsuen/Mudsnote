@@ -504,6 +504,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a local source-selection palette with a dark selected fill and warm foreground tint for selected icons, titles, and counts. Kept the global editor/toolbar accent unchanged.
 - Lesson: Notes parity needs local surface palettes; changing the app-wide accent would make unrelated controls less native.
 
+### 87. Note-list hover feedback
+
+- Problem: Note-list rows had selected and keyboard states, but pointer movement over rows did not give a quiet native-feeling preview state.
+- Fix: Added a subtle inset hover background for note rows only. Group headers remain non-hoverable, preserving their section-label behavior.
+- Lesson: Pointer polish should reinforce existing list semantics without turning section labels into interactive-looking rows.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

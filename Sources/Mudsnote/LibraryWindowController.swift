@@ -236,8 +236,71 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionHorizontalInset: CGFloat = 14
     static let selectionVerticalInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
+    static let hoverHorizontalInset: CGFloat = 14
+    static let hoverVerticalInset: CGFloat = 5
+    static let hoverCornerRadius: CGFloat = 8
 
-    var isGroupRow = false
+    private var hoverTrackingArea: NSTrackingArea?
+    private(set) var isPointerHovered = false
+
+    var isGroupRow = false {
+        didSet {
+            if isGroupRow {
+                setPointerHovered(false)
+            }
+            updateTrackingAreas()
+        }
+    }
+
+    override func updateTrackingAreas() {
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+            self.hoverTrackingArea = nil
+        }
+        super.updateTrackingAreas()
+        guard !isGroupRow else { return }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setPointerHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setPointerHovered(false)
+    }
+
+    func setPointerHovered(_ hovered: Bool) {
+        let nextValue = isGroupRow ? false : hovered
+        guard isPointerHovered != nextValue else { return }
+        isPointerHovered = nextValue
+        needsDisplay = true
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard !isGroupRow, isPointerHovered, !isSelected else { return }
+
+        let hoverRect = bounds.insetBy(
+            dx: Self.hoverHorizontalInset,
+            dy: Self.hoverVerticalInset
+        )
+        let path = NSBezierPath(
+            roundedRect: hoverRect,
+            xRadius: Self.hoverCornerRadius,
+            yRadius: Self.hoverCornerRadius
+        )
+        NSColor(calibratedWhite: 0.20, alpha: 0.72).setFill()
+        path.fill()
+    }
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
