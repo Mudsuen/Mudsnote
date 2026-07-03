@@ -1576,6 +1576,94 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryEditorCommandDeleteRemovesMarkdownTableDataRows() throws {
+        let suiteName = "mudsnote.library-table-delete-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-table-delete-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(
+            title: "Table Delete",
+            body: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            | Beta | Done |
+            """
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let deleteEvent = try keyEvent(keyCode: UInt16(kVK_Delete), modifiers: [.command], characters: "\u{7F}")
+        var text = controller.editorTextView.string as NSString
+        let alphaLocation = text.range(of: "Alpha").location
+        let alphaRowLocation = text.range(of: "| Alpha | Todo |").location
+        #expect(alphaLocation != NSNotFound)
+        #expect(alphaRowLocation != NSNotFound)
+        controller.editorTextView.setSelectedRange(NSRange(location: alphaLocation, length: 0))
+        controller.editorTextView.keyDown(with: deleteEvent)
+
+        var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "| Beta | Done |"
+        ])
+        #expect(controller.editorTextView.selectedRange().location == alphaRowLocation)
+
+        text = controller.editorTextView.string as NSString
+        let betaLocation = text.range(of: "Beta").location
+        #expect(betaLocation != NSNotFound)
+        controller.editorTextView.setSelectedRange(NSRange(location: betaLocation, length: 0))
+        controller.editorTextView.keyDown(with: deleteEvent)
+
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |"
+        ])
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            """,
+            theme: controller.theme
+        ))
+        let headerLocation = (controller.editorTextView.string as NSString).range(of: "Name").location
+        #expect(headerLocation != NSNotFound)
+        controller.editorTextView.setSelectedRange(NSRange(location: headerLocation, length: 0))
+        #expect(!controller.markdownTextView(controller.editorTextView, handleKeyDown: deleteEvent))
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Plain paragraph",
+            theme: controller.theme
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        #expect(!controller.markdownTextView(controller.editorTextView, handleKeyDown: deleteEvent))
+    }
+
+    @MainActor
+    @Test
     func libraryWindowAutosavesEditedExistingNote() async throws {
         let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

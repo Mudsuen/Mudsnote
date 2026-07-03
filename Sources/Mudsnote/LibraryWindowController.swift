@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import MudsnoteCore
 import UniformTypeIdentifiers
@@ -4933,6 +4934,37 @@ final class LibraryWindowController: NSWindowController,
         return min(insertionLocation + 3, storage.length)
     }
 
+    @discardableResult
+    private func deleteCurrentMarkdownTableRowForLibrary() -> Bool {
+        guard selectedScope != .trash,
+              editorTextView.selectedRange().length == 0,
+              let storage = editorTextView.textStorage else {
+            return false
+        }
+
+        let string = editorTextView.string as NSString
+        guard string.length > 0 else { return false }
+
+        let currentLineRange = visibleLineRangeForSelection()
+        let currentLine = string.substring(with: currentLineRange)
+        guard markdownTableColumnCount(in: currentLine) != nil,
+              !isMarkdownTableSeparatorLine(currentLine),
+              isMarkdownTableDataRow(currentLineRange, in: string) else {
+            return false
+        }
+
+        let deletionRange = fullLineDeletionRange(for: currentLineRange, in: string)
+        let nextSelectionLocation = deletionRange.location
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: deletionRange, with: NSAttributedString(string: ""))
+        suppressEditorChanges = false
+
+        markDirty()
+        moveEditorSelection(to: nextSelectionLocation)
+        return true
+    }
+
     private func moveEditorSelection(to location: Int) {
         guard let storage = editorTextView.textStorage else { return }
         editorTextView.setSelectedRange(NSRange(location: max(0, min(location, storage.length)), length: 0))
@@ -4986,6 +5018,42 @@ final class LibraryWindowController: NSWindowController,
             candidate = lineRange(before: candidateRange, in: string)
         }
         return nil
+    }
+
+    private func isMarkdownTableDataRow(_ range: NSRange, in string: NSString) -> Bool {
+        if let nextLineRange = lineRange(after: range, in: string) {
+            let nextLine = string.substring(with: nextLineRange)
+            if isMarkdownTableSeparatorLine(nextLine) {
+                return false
+            }
+            if markdownTableColumnCount(in: nextLine) != nil {
+                return true
+            }
+        }
+
+        if let previousLineRange = lineRange(before: range, in: string) {
+            let previousLine = string.substring(with: previousLineRange)
+            if isMarkdownTableSeparatorLine(previousLine) {
+                return true
+            }
+            return markdownTableColumnCount(in: previousLine) != nil
+        }
+
+        return false
+    }
+
+    private func fullLineDeletionRange(for range: NSRange, in string: NSString) -> NSRange {
+        let fullLineRange = string.lineRange(for: range)
+        if NSMaxRange(fullLineRange) > NSMaxRange(range) {
+            return fullLineRange
+        }
+
+        if range.location > 0,
+           string.substring(with: NSRange(location: range.location - 1, length: 1)) == "\n" {
+            return NSRange(location: range.location - 1, length: range.length + 1)
+        }
+
+        return fullLineRange
     }
 
     private func markdownTableColumnCount(in line: String) -> Int? {
@@ -5210,6 +5278,15 @@ final class LibraryWindowController: NSWindowController,
 
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool {
         false
+    }
+
+    func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
+        guard textView === editorTextView,
+              event.keyCode == UInt16(kVK_Delete),
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command] else {
+            return false
+        }
+        return deleteCurrentMarkdownTableRowForLibrary()
     }
 
     func markdownTextViewToggleBold(_ textView: MarkdownTextView) { toggleInlineFontTrait(.boldFontMask) }

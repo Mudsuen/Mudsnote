@@ -146,11 +146,16 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextViewToggleBulletList(_ textView: MarkdownTextView)
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView)
     func markdownTextViewToggleChecklist(_ textView: MarkdownTextView)
+    func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool
 }
 
 extension MarkdownTextViewCommands {
+    func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
+        false
+    }
+
     func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool {
         false
     }
@@ -206,6 +211,13 @@ final class MarkdownTextView: NSTextView {
     override func mouseMoved(with event: NSEvent) {
         updateHoverCursor(with: event)
         super.mouseMoved(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
+            return
+        }
+        super.keyDown(with: event)
     }
 
     override func insertNewline(_ sender: Any?) {
