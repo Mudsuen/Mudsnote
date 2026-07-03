@@ -492,6 +492,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a shared `LibraryNotesLayout` spec and wired the library window, source rows, note table, and toolbar search to it. Added regression checks for split widths, search width, and note-table resizing.
 - Lesson: Pixel-level Notes parity needs one source of truth for layout before repeated visual tuning.
 
+### 85. Active-window visual QA
+
+- Problem: The Apple Notes comparison harness could capture Mudsnote while it was not the active foreground window, making toolbar and window chrome colors harder to compare.
+- Fix: The visual QA script now explicitly activates Mudsnote before and after the launch delay, then captures the library window.
+- Lesson: Visual parity checks need stable foreground state; otherwise screenshots mix product differences with OS focus differences.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
