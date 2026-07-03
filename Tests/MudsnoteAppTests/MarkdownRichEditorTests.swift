@@ -127,15 +127,18 @@ struct MarkdownRichEditorTests {
         let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: noteURL)
         var attachmentMarkdown: String?
         var attachmentFilePath: String?
+        var attachmentMetadata: String?
         rendered.enumerateAttribute(.attachment, in: NSRange(location: 0, length: rendered.length)) { value, range, stop in
             guard value as? NSTextAttachment != nil else { return }
             attachmentMarkdown = rendered.attribute(.qmAttachmentMarkdown, at: range.location, effectiveRange: nil) as? String
             attachmentFilePath = rendered.attribute(.qmAttachmentFilePath, at: range.location, effectiveRange: nil) as? String
+            attachmentMetadata = rendered.attribute(.qmAttachmentMetadata, at: range.location, effectiveRange: nil) as? String
             stop.pointee = true
         }
 
         #expect(attachmentMarkdown == "[source file](Attachments/source%20file.pdf)")
         #expect(attachmentFilePath == attachmentURL.path)
+        #expect(attachmentMetadata?.hasPrefix("PDF · ") == true)
         #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
     }
 
@@ -961,6 +964,7 @@ struct MarkdownRichEditorTests {
         #expect(copiedAttachment.path.contains("/Attachments/"))
         var editorAttachmentMarkdowns: [String] = []
         var editorAttachmentFilePaths: [String] = []
+        var editorAttachmentMetadata: [String] = []
         controller.editorTextView.attributedString().enumerateAttribute(
             .qmAttachmentMarkdown,
             in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
@@ -977,12 +981,34 @@ struct MarkdownRichEditorTests {
                 editorAttachmentFilePaths.append(value)
             }
         }
+        controller.editorTextView.attributedString().enumerateAttribute(
+            .qmAttachmentMetadata,
+            in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
+        ) { value, _, _ in
+            if let value = value as? String {
+                editorAttachmentMetadata.append(value)
+            }
+        }
         #expect(editorAttachmentMarkdowns.contains { $0.contains("source%20file.pdf") })
         #expect(editorAttachmentFilePaths.contains(copiedAttachment.path))
+        #expect(editorAttachmentMetadata.contains { $0.hasPrefix("PDF · ") })
         let attachmentMenu = NSMenu()
-        #expect(controller.configureAttachmentContextMenu(attachmentMenu, forAttachmentPath: copiedAttachment.path))
-        #expect(Array(attachmentMenu.items.map(\.title).prefix(3)) == ["打开附件", "在 Finder 中显示", "复制附件路径"])
-        #expect(Array(attachmentMenu.items.prefix(3)).allSatisfy { $0.representedObject as? String == copiedAttachment.path })
+        let insertedAttachmentMarkdown = try #require(editorAttachmentMarkdowns.first { $0.contains("source%20file.pdf") })
+        #expect(controller.configureAttachmentContextMenu(
+            attachmentMenu,
+            forAttachmentPath: copiedAttachment.path,
+            markdown: insertedAttachmentMarkdown
+        ))
+        #expect(Array(attachmentMenu.items.map(\.title).prefix(4)) == [
+            "打开附件",
+            "在 Finder 中显示",
+            "复制 Markdown 链接",
+            "复制附件路径"
+        ])
+        #expect(attachmentMenu.items[0].representedObject as? String == copiedAttachment.path)
+        #expect(attachmentMenu.items[1].representedObject as? String == copiedAttachment.path)
+        #expect((attachmentMenu.items[2].representedObject as? String)?.contains("source%20file.pdf") == true)
+        #expect(attachmentMenu.items[3].representedObject as? String == copiedAttachment.path)
 
         _ = try controller.saveCurrentNoteForLibrary()
 

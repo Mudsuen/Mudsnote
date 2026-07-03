@@ -10,6 +10,19 @@ extension NSAttributedString.Key {
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
     static let qmAttachmentFilePath = NSAttributedString.Key("MudsnoteAttachmentFilePath")
+    static let qmAttachmentMetadata = NSAttributedString.Key("MudsnoteAttachmentMetadata")
+}
+
+final class MarkdownAttachmentReference: NSObject {
+    let path: String
+    let markdown: String
+    let metadata: String
+
+    init(path: String, markdown: String, metadata: String) {
+        self.path = path
+        self.markdown = markdown
+        self.metadata = metadata
+    }
 }
 
 let markdownItalicObliqueness: CGFloat = 0.16
@@ -163,7 +176,7 @@ final class MarkdownTextView: NSTextView {
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
         if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer)
-            || didHitFileAttachment(atCharacterIndex: characterIndex) {
+            || fileAttachmentReference(atCharacterIndex: characterIndex) != nil {
             NSCursor.pointingHand.set()
         } else {
             NSCursor.iBeam.set()
@@ -251,7 +264,7 @@ final class MarkdownTextView: NSTextView {
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
         if event.clickCount >= 2,
-           didHitFileAttachment(atCharacterIndex: characterIndex),
+           fileAttachmentReference(atCharacterIndex: characterIndex) != nil,
            commandDelegate?.markdownTextView(self, didDoubleClickAttachmentAt: characterIndex) == true {
             return
         }
@@ -268,11 +281,7 @@ final class MarkdownTextView: NSTextView {
         super.mouseDragged(with: event)
     }
 
-    private func didHitFileAttachment(atCharacterIndex characterIndex: Int) -> Bool {
-        fileAttachmentPath(atCharacterIndex: characterIndex) != nil
-    }
-
-    func fileAttachmentPath(at event: NSEvent) -> String? {
+    func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
         guard let layoutManager, let textContainer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         let containerPoint = NSPoint(
@@ -281,12 +290,17 @@ final class MarkdownTextView: NSTextView {
         )
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-        return fileAttachmentPath(atCharacterIndex: characterIndex)
+        return fileAttachmentReference(atCharacterIndex: characterIndex)
     }
 
-    func fileAttachmentPath(atCharacterIndex characterIndex: Int) -> String? {
+    func fileAttachmentReference(atCharacterIndex characterIndex: Int) -> MarkdownAttachmentReference? {
         guard let textStorage, characterIndex >= 0, characterIndex < textStorage.length else { return nil }
-        return textStorage.attribute(.qmAttachmentFilePath, at: characterIndex, effectiveRange: nil) as? String
+        guard
+            let path = textStorage.attribute(.qmAttachmentFilePath, at: characterIndex, effectiveRange: nil) as? String,
+            let markdown = textStorage.attribute(.qmAttachmentMarkdown, at: characterIndex, effectiveRange: nil) as? String
+        else { return nil }
+        let metadata = textStorage.attribute(.qmAttachmentMetadata, at: characterIndex, effectiveRange: nil) as? String ?? ""
+        return MarkdownAttachmentReference(path: path, markdown: markdown, metadata: metadata)
     }
 
     private func addChecklistCursorRects() {
@@ -576,7 +590,7 @@ private final class FileAttachmentPreviewCell: NSTextAttachmentCell {
     init(fileURL: URL, label: String) {
         let fallbackTitle = fileURL.lastPathComponent.isEmpty ? "Attachment" : fileURL.lastPathComponent
         self.displayTitle = label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackTitle : label
-        self.subtitle = fileURL.deletingLastPathComponent().lastPathComponent
+        self.subtitle = MarkdownRichTextCodec.attachmentMetadataText(for: fileURL)
         self.icon = NSWorkspace.shared.icon(forFile: fileURL.path)
         self.icon.size = NSSize(width: 22, height: 22)
         super.init(textCell: "")
@@ -1112,6 +1126,7 @@ enum MarkdownRichTextCodec {
               !isImageFile(fileURL) else {
             return nil
         }
+        let metadata = attachmentMetadataText(for: fileURL)
 
         let attachment = NSTextAttachment()
         attachment.attachmentCell = FileAttachmentPreviewCell(fileURL: fileURL, label: label)
@@ -1121,11 +1136,32 @@ enum MarkdownRichTextCodec {
         attributed.addAttributes(baseAttributes.merging([
             .qmAttachmentMarkdown: markdown,
             .qmAttachmentFilePath: fileURL.path,
-            .toolTip: fileURL.path,
+            .qmAttachmentMetadata: metadata,
+            .toolTip: "\(metadata)\n\(fileURL.path)",
             .paragraphStyle: theme.paragraphStyle(for: paragraphKind),
             .qmParagraphKind: paragraphKind.encodedValue
         ]) { _, new in new }, range: NSRange(location: 0, length: attributed.length))
         return attributed
+    }
+
+    static func attachmentMetadataText(for fileURL: URL) -> String {
+        let extensionLabel: String
+        let pathExtension = fileURL.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        if pathExtension.isEmpty {
+            extensionLabel = "File"
+        } else {
+            extensionLabel = pathExtension.uppercased()
+        }
+
+        guard
+            let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
+            let fileSize = values.fileSize
+        else {
+            return extensionLabel
+        }
+
+        let size = ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+        return "\(extensionLabel) · \(size)"
     }
 
     @MainActor

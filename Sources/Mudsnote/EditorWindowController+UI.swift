@@ -28,8 +28,8 @@ extension EditorWindowController {
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.configureContextMenu = { [weak self] menu, event in
-            if let path = self?.editorTextView.fileAttachmentPath(at: event) {
-                self?.configureAttachmentContextMenu(menu, forAttachmentPath: path)
+            if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
+                self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
             }
             self?.configureAIContextMenu(menu)
         }

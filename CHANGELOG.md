@@ -462,6 +462,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added attachment-aware editor context menus for local file chips, with open, reveal in Finder, and copy path actions in both the library and floating editors. Added regression coverage for the library attachment menu contract and hardened visual QA when window-level capture is unavailable.
 - Lesson: Desktop Notes parity needs contextual file actions at the point of interaction, not only global note-level actions.
 
+### 80. Attachment metadata and Markdown copy
+
+- Problem: Attachment chips were actionable, but their secondary line did not identify the file type or size, and the context menu could not copy the durable Markdown link.
+- Fix: Added deterministic file-type/size metadata to local attachment chips, stored that metadata on the rendered attachment, and added a copy Markdown link menu action alongside open, reveal, and copy path. Expanded attachment regression coverage.
+- Lesson: A local-first Notes clone should make attachments useful as visible file objects while keeping the Markdown reference one click away.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -445,7 +445,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     @discardableResult
-    func configureAttachmentContextMenu(_ menu: NSMenu, forAttachmentPath path: String) -> Bool {
+    func configureAttachmentContextMenu(_ menu: NSMenu, forAttachment attachment: MarkdownAttachmentReference) -> Bool {
+        configureAttachmentContextMenu(menu, forAttachmentPath: attachment.path, markdown: attachment.markdown)
+    }
+
+    @discardableResult
+    func configureAttachmentContextMenu(_ menu: NSMenu, forAttachmentPath path: String, markdown: String? = nil) -> Bool {
         guard FileManager.default.fileExists(atPath: path) else { return false }
 
         let openItem = NSMenuItem(title: "打开附件", action: #selector(openAttachmentMenuItemPressed(_:)), keyEquivalent: "")
@@ -460,10 +465,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         copyPathItem.target = self
         copyPathItem.representedObject = path
 
+        let copyMarkdownItem = NSMenuItem(title: "复制 Markdown 链接", action: #selector(copyAttachmentMarkdownMenuItemPressed(_:)), keyEquivalent: "")
+        copyMarkdownItem.target = self
+        copyMarkdownItem.representedObject = markdown
+        copyMarkdownItem.isEnabled = !(markdown?.isEmpty ?? true)
+
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }
-        for item in [copyPathItem, revealItem, openItem] {
+        for item in [copyPathItem, copyMarkdownItem, revealItem, openItem] {
             menu.insertItem(item, at: 0)
         }
         return true
@@ -486,6 +496,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         guard let path = sender.representedObject as? String else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
+    }
+
+    @objc
+    private func copyAttachmentMarkdownMenuItemPressed(_ sender: NSMenuItem) {
+        guard let markdown = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown, forType: .string)
     }
 
     private func attachmentURL(from sender: NSMenuItem) -> URL? {
