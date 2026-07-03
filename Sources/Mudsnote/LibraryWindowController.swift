@@ -676,6 +676,7 @@ fileprivate enum LibraryNoteKeyCommand {
 @MainActor
 final class LibraryNoteTableView: NSTableView {
     fileprivate var onKeyCommand: ((LibraryNoteKeyCommand) -> Bool)?
+    fileprivate var onContextMenu: ((Int) -> NSMenu?)?
 
     override func keyDown(with event: NSEvent) {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
@@ -701,6 +702,11 @@ final class LibraryNoteTableView: NSTableView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let location = convert(event.locationInWindow, from: nil)
+        return onContextMenu?(row(at: location)) ?? super.menu(for: event)
     }
 }
 
@@ -1123,7 +1129,9 @@ final class LibraryWindowController: NSWindowController,
         tableView.onKeyCommand = { [weak self] command in
             self?.handleNoteListKeyCommand(command) ?? false
         }
-        tableView.menu = makeNoteContextMenu()
+        tableView.onContextMenu = { [weak self] row in
+            self?.noteContextMenuForLibrary(row: row)
+        }
 
         let scrollView = LibraryNoteScrollView()
         scrollView.drawsBackground = false
@@ -1853,7 +1861,6 @@ final class LibraryWindowController: NSWindowController,
                 sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
             }
         }
-        tableView.menu = makeNoteContextMenu()
     }
 
     private func isSourceSectionCollapsed(_ section: LibrarySourceSection) -> Bool {
@@ -4066,6 +4073,26 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(deleteItem)
 
         return menu
+    }
+
+    func noteContextMenuForLibrary(row: Int) -> NSMenu? {
+        guard let clickedNote = note(at: row) else { return nil }
+
+        if !tableView.selectedRowIndexes.contains(row) {
+            do {
+                try saveCurrentNoteIfNeeded()
+                suppressSelectionChanges = true
+                tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                suppressSelectionChanges = false
+                load(note: clickedNote)
+            } catch {
+                suppressSelectionChanges = false
+                presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+                return nil
+            }
+        }
+
+        return makeNoteContextMenu()
     }
 
     private func makeNoteContextMenu() -> NSMenu {

@@ -1224,11 +1224,34 @@ struct MarkdownRichEditorTests {
         #expect(moreMenu.items.contains { $0.title == "复制 2 个 Markdown 路径" })
         #expect(moreMenu.items.contains { $0.title == "删除 2 条笔记" })
         #expect(!controller.validateToolbarItem(NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate"))))
+        let multiContextMenu = try #require(controller.noteContextMenuForLibrary(row: selectableRows[0]))
+        #expect(multiContextMenu.items.contains { $0.title == "移动 2 条笔记到文件夹" })
+        #expect(multiContextMenu.items.contains { $0.title == "复制 2 个 Markdown 路径" })
+        #expect(multiContextMenu.items.contains { $0.title == "删除 2 条笔记" })
+        #expect(controller.selectedMarkdownFileURLsForLibrary().count == 2)
+
+        controller.tableView.selectRowIndexes(IndexSet(integer: selectableRows[0]), byExtendingSelection: false)
+        let secondRowURL = try #require(controller.tableView(
+            controller.tableView,
+            pasteboardWriterForRow: selectableRows[1]
+        ) as? NSURL) as URL
+        let singleContextMenu = try #require(controller.noteContextMenuForLibrary(row: selectableRows[1]))
+        #expect(controller.selectedMarkdownFileURLsForLibrary().map(\.path) == [secondRowURL.standardizedFileURL.path])
+        #expect(singleContextMenu.items.contains { $0.title == "移到文件夹" })
+        #expect(singleContextMenu.items.contains { $0.title == "复制 Markdown 路径" })
+        #expect(singleContextMenu.items.contains { $0.title == "删除" })
+        #expect(!singleContextMenu.items.contains { $0.title == "删除 2 条笔记" })
+        #expect(controller.noteContextMenuForLibrary(row: 0) == nil)
+        #expect(controller.selectedMarkdownFileURLsForLibrary().map(\.path) == [secondRowURL.standardizedFileURL.path])
 
         let copiedPaths = try #require(controller.copySelectedMarkdownPathForLibrary())
-        #expect(copiedPaths.contains(firstURL.standardizedFileURL.path))
-        #expect(copiedPaths.contains(secondURL.standardizedFileURL.path))
-        #expect(copiedPaths.contains("\n"))
+        #expect(copiedPaths == secondRowURL.standardizedFileURL.path)
+        controller.tableView.selectRowIndexes(IndexSet(selectableRows), byExtendingSelection: false)
+
+        let multiCopiedPaths = try #require(controller.copySelectedMarkdownPathForLibrary())
+        #expect(multiCopiedPaths.contains(firstURL.standardizedFileURL.path))
+        #expect(multiCopiedPaths.contains(secondURL.standardizedFileURL.path))
+        #expect(multiCopiedPaths.contains("\n"))
 
         let copiedMarkdown = try #require(try controller.copySelectedMarkdownContentForLibrary())
         #expect(copiedMarkdown.contains("Multi One"))
