@@ -893,13 +893,23 @@ struct MarkdownRichEditorTests {
         #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
-        })
+        } as? LibrarySourceRowView)
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.sourceRowHeight
         })
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceRowWidth
         })
+        #expect(LibrarySourceRowView.hoverHorizontalInset == 0)
+        #expect(LibrarySourceRowView.hoverVerticalInset == 1)
+        #expect(LibrarySourceRowView.hoverCornerRadius == 6)
+        #expect(LibrarySourceRowView.hoverColor.alphaComponent < LibrarySourceRowView.dropHighlightColor.alphaComponent)
+        #expect(!allSourceRow.isPointerHovered)
+        allSourceRow.setPointerHovered(true)
+        #expect(allSourceRow.isPointerHovered)
+        allSourceRow.setDropTargeted(true)
+        #expect(allSourceRow.isDropTargeted)
+        allSourceRow.setDropTargeted(false)
         let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"
         })

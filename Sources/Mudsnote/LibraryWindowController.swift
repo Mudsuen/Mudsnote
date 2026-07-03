@@ -483,11 +483,17 @@ final class LibraryNoteRowView: NSTableRowView {
 
 @MainActor
 final class LibrarySourceRowView: NSView {
+    static let hoverHorizontalInset: CGFloat = 0
+    static let hoverVerticalInset: CGFloat = 1
+    static let hoverCornerRadius: CGFloat = 6
+    static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
     static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
 
     var targetDirectory: URL?
     var canDropNotes: (([URL], URL) -> Bool)?
     var onDropNotes: (([URL], URL) -> Bool)?
+    private var hoverTrackingArea: NSTrackingArea?
+    private(set) var isPointerHovered = false
     private(set) var isDropTargeted = false
 
     override init(frame frameRect: NSRect) {
@@ -498,6 +504,31 @@ final class LibrarySourceRowView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+            self.hoverTrackingArea = nil
+        }
+        super.updateTrackingAreas()
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setPointerHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setPointerHovered(false)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -524,6 +555,21 @@ final class LibrarySourceRowView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+
+        if isPointerHovered, !isDropTargeted {
+            let hoverRect = bounds.insetBy(
+                dx: Self.hoverHorizontalInset,
+                dy: Self.hoverVerticalInset
+            )
+            let hoverPath = NSBezierPath(
+                roundedRect: hoverRect,
+                xRadius: Self.hoverCornerRadius,
+                yRadius: Self.hoverCornerRadius
+            )
+            Self.hoverColor.setFill()
+            hoverPath.fill()
+        }
+
         guard isDropTargeted else { return }
 
         let path = NSBezierPath(
@@ -533,6 +579,12 @@ final class LibrarySourceRowView: NSView {
         )
         Self.dropHighlightColor.setFill()
         path.fill()
+    }
+
+    func setPointerHovered(_ hovered: Bool) {
+        guard isPointerHovered != hovered else { return }
+        isPointerHovered = hovered
+        needsDisplay = true
     }
 
     func setDropTargeted(_ targeted: Bool) {
