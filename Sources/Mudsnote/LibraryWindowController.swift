@@ -71,6 +71,19 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
+enum LibraryNotesLayout {
+    static let initialWindowSize = NSSize(width: 1160, height: 680)
+    static let presentedWindowSize = NSSize(width: 1160, height: 764)
+    static let minimumWindowSize = NSSize(width: 980, height: 560)
+    static let sourceColumnWidth: CGFloat = 220
+    static let noteColumnWidth: CGFloat = 288
+    static let noteTableInitialWidth: CGFloat = 248
+    static let noteTableMinimumWidth: CGFloat = 220
+    static let sourceRowWidth: CGFloat = 194
+    static let toolbarSearchWidth: CGFloat = 210
+    static let toolbarSearchWrapperWidth: CGFloat = 230
+}
+
 private func libraryDisplayTag(_ tag: String) -> String {
     let trimmed = libraryBareTag(tag)
     guard !trimmed.isEmpty else { return "#" }
@@ -278,7 +291,7 @@ final class LibraryNoteTableView: NSTableView {
 @MainActor
 final class LibraryNoteScrollView: NSScrollView {
     override func layout() {
-        let targetWidth = max(220, frame.width)
+        let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, frame.width)
         super.layout()
         guard let tableView = documentView as? LibraryNoteTableView else { return }
 
@@ -396,7 +409,7 @@ final class LibraryWindowController: NSWindowController,
         self.onClose = onClose
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1160, height: 680),
+            contentRect: NSRect(origin: .zero, size: LibraryNotesLayout.initialWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -404,7 +417,7 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.minSize = NSSize(width: 980, height: 560)
+        window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
 
@@ -430,7 +443,7 @@ final class LibraryWindowController: NSWindowController,
         guard let window else { return }
         if !hasCenteredWindow {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            let targetSize = NSSize(width: 1160, height: 764)
+            let targetSize = LibraryNotesLayout.presentedWindowSize
             let targetOrigin = NSPoint(
                 x: visibleFrame.midX - targetSize.width / 2,
                 y: visibleFrame.midY - targetSize.height / 2
@@ -486,8 +499,8 @@ final class LibraryWindowController: NSWindowController,
         splitView.addArrangedSubview(sourceList)
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(editor)
-        sourceList.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        sidebar.widthAnchor.constraint(equalToConstant: 288).isActive = true
+        sourceList.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceColumnWidth).isActive = true
+        sidebar.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.noteColumnWidth).isActive = true
     }
 
     private func buildSourceList() -> NSView {
@@ -557,8 +570,8 @@ final class LibraryWindowController: NSWindowController,
         header.spacing = 8
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
-        column.width = 248
-        column.minWidth = 220
+        column.width = LibraryNotesLayout.noteTableInitialWidth
+        column.minWidth = LibraryNotesLayout.noteTableMinimumWidth
         column.resizingMask = .userResizingMask
         tableView.addTableColumn(column)
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
@@ -712,8 +725,8 @@ final class LibraryWindowController: NSWindowController,
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.frame = NSRect(x: 0, y: 0, width: 210, height: 30)
-        searchField.widthAnchor.constraint(equalToConstant: 210).isActive = true
+        searchField.frame = NSRect(x: 0, y: 0, width: LibraryNotesLayout.toolbarSearchWidth, height: 30)
+        searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
         searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
@@ -902,7 +915,7 @@ final class LibraryWindowController: NSWindowController,
             item.paletteLabel = "搜索"
             item.toolTip = "搜索笔记"
             item.visibilityPriority = .high
-            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 230, height: 32))
+            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: LibraryNotesLayout.toolbarSearchWrapperWidth, height: 32))
             wrapper.addSubview(searchField)
             NSLayoutConstraint.activate([
                 searchField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
@@ -1037,7 +1050,7 @@ final class LibraryWindowController: NSWindowController,
         label.maximumNumberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         label.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        label.widthAnchor.constraint(equalToConstant: 194).isActive = true
+        label.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
     }
 
     private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
@@ -1300,7 +1313,7 @@ final class LibraryWindowController: NSWindowController,
         row.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(tag)")
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        row.widthAnchor.constraint(equalToConstant: 194).isActive = true
+        row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
 
         let button = makeScopeButton(scope, tag: tag)
         if case .folder(let folderURL) = scope {

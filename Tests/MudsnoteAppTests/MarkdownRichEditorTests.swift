@@ -678,6 +678,8 @@ struct MarkdownRichEditorTests {
         #expect(window.titleVisibility == .hidden)
         #expect(window.titlebarAppearsTransparent)
         #expect(window.styleMask.contains(.resizable))
+        #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
+        #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(window.toolbar?.displayMode == .iconOnly)
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
@@ -701,12 +703,21 @@ struct MarkdownRichEditorTests {
         let toolbarSearchField = try #require(toolbarSearchFields.first)
         #expect(toolbarSearchField.identifier?.rawValue == "LibraryToolbarSearchField")
         #expect(toolbarSearchField === controller.searchField)
+        #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         let formatItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.format"
         })
         #expect(formatItem.image?.accessibilityDescription == "格式")
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
+        let sourceList = splitView.arrangedSubviews[0]
+        let noteList = splitView.arrangedSubviews[1]
+        #expect(sourceList.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceColumnWidth
+        })
+        #expect(noteList.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.noteColumnWidth
+        })
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
         })
@@ -779,6 +790,9 @@ struct MarkdownRichEditorTests {
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == 28
         })
+        #expect(allSourceRow.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceRowWidth
+        })
         let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"
         })
@@ -795,15 +809,15 @@ struct MarkdownRichEditorTests {
     func libraryNoteScrollViewFitsSingleColumnToVisibleWidth() {
         let tableView = LibraryNoteTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
-        column.width = 248
-        column.minWidth = 220
+        column.width = LibraryNotesLayout.noteTableInitialWidth
+        column.minWidth = LibraryNotesLayout.noteTableMinimumWidth
         column.resizingMask = .userResizingMask
         tableView.addTableColumn(column)
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         let scrollView = LibraryNoteScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 300))
         scrollView.documentView = tableView
         scrollView.contentView.bounds = NSRect(x: 0, y: 0, width: 340, height: 300)
-        tableView.frame = NSRect(x: 92, y: 0, width: 248, height: 300)
+        tableView.frame = NSRect(x: 92, y: 0, width: LibraryNotesLayout.noteTableInitialWidth, height: 300)
 
         scrollView.layout()
 

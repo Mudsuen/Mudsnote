@@ -486,6 +486,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added lightweight folder and tag status rows for loading and empty states, without changing source-row selection tags or filesystem storage. Added regression coverage for initial loading copy and cleanup after folder/tag rows load.
 - Lesson: Notes-like sidebars need explicit quiet states; async loading should read as intentional, not missing content.
 
+### 84. Notes-like layout metrics
+
+- Problem: Default window, source column, note column, search field, and row widths were scattered as magic numbers, making side-by-side Notes tuning fragile.
+- Fix: Added a shared `LibraryNotesLayout` spec and wired the library window, source rows, note table, and toolbar search to it. Added regression checks for split widths, search width, and note-table resizing.
+- Lesson: Pixel-level Notes parity needs one source of truth for layout before repeated visual tuning.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
