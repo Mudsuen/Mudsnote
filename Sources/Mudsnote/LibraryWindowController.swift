@@ -1211,7 +1211,7 @@ final class LibraryWindowController: NSWindowController,
         case Self.moreToolbarItemIdentifier:
             return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:
-            return canUseSelectedNote
+            return canUseSingleSelectedNote
         case Self.formatToolbarItemIdentifier,
              Self.checklistToolbarItemIdentifier,
              Self.tableToolbarItemIdentifier,
@@ -2288,7 +2288,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func openSelectedInSeparateWindow() {
-        guard let selectedURL else { return }
+        guard canUseSingleSelectedNote, let selectedURL else { return }
         onOpenInSeparateWindow(selectedURL)
     }
 
@@ -2494,7 +2494,7 @@ final class LibraryWindowController: NSWindowController,
     private func moveNoteMenuItemPressed(_ sender: NSMenuItem) {
         guard let directory = sender.representedObject as? URL else { return }
         do {
-            _ = try moveSelectedNoteForLibrary(to: directory)
+            _ = try moveSelectedNotesForLibrary(to: directory)
         } catch {
             presentErrorAlert(message: "移动失败", details: error.localizedDescription)
         }
@@ -2554,8 +2554,9 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func revealSelectedNoteInFinderPressed() {
-        guard let url = revealSelectedNoteInFinderForLibrary() else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        let urls = revealSelectedNotesInFinderForLibrary()
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     @objc
@@ -2824,7 +2825,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func revealSelectedNoteInFinderForLibrary() -> URL? {
-        selectedMarkdownFileURLForLibrary()
+        revealSelectedNotesInFinderForLibrary().first
+    }
+
+    func revealSelectedNotesInFinderForLibrary() -> [URL] {
+        selectedMarkdownFileURLsForLibrary()
     }
 
     @discardableResult
@@ -2989,22 +2994,33 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func moveSelectedNoteForLibrary(to directory: URL) throws -> URL {
+        guard let movedURL = try moveSelectedNotesForLibrary(to: directory).first else {
+            throw LibraryActionError.noNoteSelected
+        }
+        return movedURL
+    }
+
+    @discardableResult
+    func moveSelectedNotesForLibrary(to directory: URL) throws -> [URL] {
         try saveCurrentNoteIfNeeded()
         guard selectedScope != .trash else {
             throw LibraryActionError.noNoteSelected
         }
-        guard let selectedURL else {
+        let sourceURLs = selectedMarkdownFileURLsForLibrary()
+        guard !sourceURLs.isEmpty else {
             throw LibraryActionError.noNoteSelected
         }
 
         let targetDirectory = directory.standardizedFileURL
-        let movedURL = try noteStore.moveNote(at: selectedURL, to: targetDirectory)
+        let movedURLs = try sourceURLs.map { sourceURL in
+            try noteStore.moveNote(at: sourceURL, to: targetDirectory)
+        }
         invalidateMovableNotePathCache()
-        self.selectedURL = movedURL
+        selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
-        return movedURL
+        reloadNotes(selecting: movedURLs.first, loadFirstIfNeeded: true)
+        return movedURLs
     }
 
     func canMoveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) -> Bool {
@@ -3121,6 +3137,10 @@ final class LibraryWindowController: NSWindowController,
         !selectedMarkdownFileURLsForLibrary().isEmpty
     }
 
+    private var canUseSingleSelectedNote: Bool {
+        selectedMarkdownFileURLsForLibrary().count == 1
+    }
+
     private var canEditCurrentDocument: Bool {
         guard selectedScope != .trash else { return false }
         return selectedURL != nil
@@ -3148,6 +3168,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateToolbarActionState() {
         let isTrashScope = selectedScope == .trash
+        let selectionCount = selectedMarkdownFileURLsForLibrary().count
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
             case Self.toggleSidebarToolbarItemIdentifier:
@@ -3160,7 +3181,9 @@ final class LibraryWindowController: NSWindowController,
                     accessibilityDescription: label
                 )
             case Self.deleteToolbarItemIdentifier:
-                item.label = isTrashScope ? "永久删除" : "删除"
+                item.label = isTrashScope
+                    ? noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount)
+                    : noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount)
                 item.paletteLabel = item.label
                 item.toolTip = item.label
                 item.image = NSImage(
@@ -3168,9 +3191,10 @@ final class LibraryWindowController: NSWindowController,
                     accessibilityDescription: item.label
                 )
             case Self.restoreToolbarItemIdentifier:
-                item.label = "恢复"
-                item.paletteLabel = "恢复"
-                item.toolTip = "恢复笔记"
+                let label = noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount)
+                item.label = label
+                item.paletteLabel = label
+                item.toolTip = label
             case Self.exportToolbarItemIdentifier:
                 (item as? NSMenuToolbarItem)?.menu = makeShareExportMenuForLibrary()
             case Self.moreToolbarItemIdentifier:
@@ -3201,40 +3225,41 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeNoteContextMenu() -> NSMenu {
         let menu = NSMenu()
+        let selectionCount = selectedMarkdownFileURLsForLibrary().count
 
-        let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
+        let moveItem = NSMenuItem(title: noteActionTitle(single: "移到文件夹", multiple: "移动 %d 条笔记到文件夹", count: selectionCount), action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
         moveItem.isEnabled = canMoveSelectedNote
         menu.addItem(moveItem)
         menu.addItem(.separator())
 
-        let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
+        let revealItem = NSMenuItem(title: noteActionTitle(single: "在 Finder 中显示", multiple: "在 Finder 中显示 %d 个文件", count: selectionCount), action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
         revealItem.target = self
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
-        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
         shareItem.target = self
         shareItem.isEnabled = canExportSelectedNote
         menu.addItem(shareItem)
 
-        let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
+        let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
 
-        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        let copyContentItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 内容", multiple: "复制 %d 条 Markdown 内容", count: selectionCount), action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
         copyContentItem.target = self
         copyContentItem.isEnabled = canExportSelectedNote
         menu.addItem(copyContentItem)
 
-        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        let exportItem = NSMenuItem(title: noteActionTitle(single: "导出 Markdown...", multiple: "导出 %d 个 Markdown 文件...", count: selectionCount), action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
         exportItem.target = self
         exportItem.isEnabled = canExportSelectedNote
         menu.addItem(exportItem)
         menu.addItem(.separator())
 
-        let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+        let deleteItem = NSMenuItem(title: noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
         deleteItem.target = self
         deleteItem.isEnabled = canUseSelectedNote
         menu.addItem(deleteItem)
@@ -3244,18 +3269,19 @@ final class LibraryWindowController: NSWindowController,
 
     func makeShareExportMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
+        let selectionCount = selectedMarkdownFileURLsForLibrary().count
 
-        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
         shareItem.target = self
         shareItem.isEnabled = canExportSelectedNote
         menu.addItem(shareItem)
 
-        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        let copyContentItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 内容", multiple: "复制 %d 条 Markdown 内容", count: selectionCount), action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
         copyContentItem.target = self
         copyContentItem.isEnabled = canExportSelectedNote
         menu.addItem(copyContentItem)
 
-        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        let exportItem = NSMenuItem(title: noteActionTitle(single: "导出 Markdown...", multiple: "导出 %d 个 Markdown 文件...", count: selectionCount), action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
         exportItem.target = self
         exportItem.isEnabled = canExportSelectedNote
         menu.addItem(exportItem)
@@ -3266,13 +3292,14 @@ final class LibraryWindowController: NSWindowController,
     func makeMoreActionsMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
         let isTrashScope = selectedScope == .trash
+        let selectionCount = selectedMarkdownFileURLsForLibrary().count
 
         let openItem = NSMenuItem(title: "独立窗口打开", action: #selector(openSelectedInSeparateWindow), keyEquivalent: "")
         openItem.target = self
-        openItem.isEnabled = canUseSelectedNote
+        openItem.isEnabled = canUseSingleSelectedNote
         menu.addItem(openItem)
 
-        let moveItem = NSMenuItem(title: "移到文件夹", action: nil, keyEquivalent: "")
+        let moveItem = NSMenuItem(title: noteActionTitle(single: "移到文件夹", multiple: "移动 %d 条笔记到文件夹", count: selectionCount), action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
         moveItem.isEnabled = canMoveSelectedNote
         menu.addItem(moveItem)
@@ -3285,27 +3312,27 @@ final class LibraryWindowController: NSWindowController,
 
         menu.addItem(.separator())
 
-        let revealItem = NSMenuItem(title: "在 Finder 中显示", action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
+        let revealItem = NSMenuItem(title: noteActionTitle(single: "在 Finder 中显示", multiple: "在 Finder 中显示 %d 个文件", count: selectionCount), action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
         revealItem.target = self
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
-        let shareItem = NSMenuItem(title: "分享...", action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
+        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
         shareItem.target = self
         shareItem.isEnabled = canExportSelectedNote
         menu.addItem(shareItem)
 
-        let copyPathItem = NSMenuItem(title: "复制 Markdown 路径", action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
+        let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
 
-        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        let copyContentItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 内容", multiple: "复制 %d 条 Markdown 内容", count: selectionCount), action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
         copyContentItem.target = self
         copyContentItem.isEnabled = canExportSelectedNote
         menu.addItem(copyContentItem)
 
-        let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
+        let exportItem = NSMenuItem(title: noteActionTitle(single: "导出 Markdown...", multiple: "导出 %d 个 Markdown 文件...", count: selectionCount), action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
         exportItem.target = self
         exportItem.isEnabled = canExportSelectedNote
         menu.addItem(exportItem)
@@ -3313,23 +3340,27 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(.separator())
 
         if isTrashScope {
-            let restoreItem = NSMenuItem(title: "恢复", action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
+            let restoreItem = NSMenuItem(title: noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount), action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
             restoreItem.target = self
             restoreItem.isEnabled = canRestoreSelectedNote
             menu.addItem(restoreItem)
 
-            let permanentlyDeleteItem = NSMenuItem(title: "永久删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+            let permanentlyDeleteItem = NSMenuItem(title: noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
             permanentlyDeleteItem.target = self
             permanentlyDeleteItem.isEnabled = canUseSelectedNote
             menu.addItem(permanentlyDeleteItem)
         } else {
-            let deleteItem = NSMenuItem(title: "删除", action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+            let deleteItem = NSMenuItem(title: noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
             deleteItem.target = self
             deleteItem.isEnabled = canUseSelectedNote
             menu.addItem(deleteItem)
         }
 
         return menu
+    }
+
+    private func noteActionTitle(single: String, multiple: String, count: Int) -> String {
+        count > 1 ? String(format: multiple, count) : single
     }
 
     private func makeFormatMenu() -> NSMenu {

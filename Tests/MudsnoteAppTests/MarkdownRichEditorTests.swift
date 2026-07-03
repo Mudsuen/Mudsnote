@@ -1086,6 +1086,7 @@ struct MarkdownRichEditorTests {
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let firstURL = try store.saveNewNote(title: "Multi One", body: "First body")
         let secondURL = try store.saveNewNote(title: "Multi Two", body: "Second body")
+        let projectFolder = try store.createFolder(named: "Batch Project")
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -1109,7 +1110,20 @@ struct MarkdownRichEditorTests {
         #expect(selectedPaths.count == 2)
         #expect(selectedPaths.contains(firstURL.standardizedFileURL.path))
         #expect(selectedPaths.contains(secondURL.standardizedFileURL.path))
-        #expect(controller.makeShareExportMenuForLibrary().items.allSatisfy { $0.isEnabled })
+        let shareMenu = controller.makeShareExportMenuForLibrary()
+        #expect(shareMenu.items.map(\.title) == [
+            "分享 2 个 Markdown 文件...",
+            "复制 2 条 Markdown 内容",
+            "导出 2 个 Markdown 文件..."
+        ])
+        #expect(shareMenu.items.allSatisfy { $0.isEnabled })
+        let moreMenu = controller.makeMoreActionsMenuForLibrary()
+        #expect(moreMenu.items.first { $0.title == "独立窗口打开" }?.isEnabled == false)
+        #expect(moreMenu.items.contains { $0.title == "移动 2 条笔记到文件夹" })
+        #expect(moreMenu.items.contains { $0.title == "在 Finder 中显示 2 个文件" })
+        #expect(moreMenu.items.contains { $0.title == "复制 2 个 Markdown 路径" })
+        #expect(moreMenu.items.contains { $0.title == "删除 2 条笔记" })
+        #expect(!controller.validateToolbarItem(NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate"))))
 
         let copiedPaths = try #require(controller.copySelectedMarkdownPathForLibrary())
         #expect(copiedPaths.contains(firstURL.standardizedFileURL.path))
@@ -1132,9 +1146,27 @@ struct MarkdownRichEditorTests {
         #expect(exportedURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         #expect(Set(exportedURLs.map(\.lastPathComponent)) == Set([firstURL.lastPathComponent, secondURL.lastPathComponent]))
 
-        try controller.deleteSelectedNotesForLibrary()
+        let movedURLs = try controller.moveSelectedNotesForLibrary(to: projectFolder)
+        #expect(movedURLs.count == 2)
+        #expect(movedURLs.allSatisfy {
+            $0.deletingLastPathComponent().standardizedFileURL.path == projectFolder.standardizedFileURL.path
+        })
+        #expect(movedURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
         #expect(!FileManager.default.fileExists(atPath: firstURL.path))
         #expect(!FileManager.default.fileExists(atPath: secondURL.path))
+
+        let movedRows = (0..<controller.tableView.numberOfRows).filter { row in
+            guard let url = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else { return false }
+            return Set(movedURLs.map(\.standardizedFileURL.path)).contains((url as URL).standardizedFileURL.path)
+        }
+        #expect(movedRows.count == 2)
+        controller.tableView.selectRowIndexes(IndexSet(movedRows), byExtendingSelection: false)
+
+        try controller.deleteSelectedNotesForLibrary()
+        #expect(movedURLs.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
         #expect(store.listTrashedNotes(limit: 10).count == 2)
     }
 

@@ -606,6 +606,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Enabled multi-selection in the note list and extended file actions to the selected Markdown set. Sharing passes all selected files to macOS sharing services, path/content copy handles multiple notes, multi-export copies selected Markdown files into a chosen folder with conflict-safe names, and delete/trash works across the selected set.
 - Lesson: Multi-note parity can stay lightweight by treating selected notes as plain files; no database or sync layer is needed for useful batch actions.
 
+### 104. Selection-count action wording
+
+- Problem: After adding multi-note actions, menus still used single-note labels like `分享...` and `移到文件夹`, and moving selected notes still only handled the loaded note.
+- Fix: Added selection-count-aware labels for share, copy, export, Finder reveal, move, delete, restore, and permanent delete actions. The move-to-folder path now moves every selected Markdown note, while single-note-only open-in-separate-window is disabled for multi-selection.
+- Lesson: Multi-selection parity requires the UI contract and the action contract to match; labels should tell the user exactly when an operation will affect several notes.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
