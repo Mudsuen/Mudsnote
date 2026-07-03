@@ -3,7 +3,7 @@ import Foundation
 import MudsnoteCore
 import UniformTypeIdentifiers
 
-private enum LibraryScope: Equatable {
+private enum LibraryScope: Equatable, Sendable {
     case all
     case recent
     case inbox
@@ -63,6 +63,73 @@ private enum LibraryNoteListRow {
         guard case .note(let note) = self else { return nil }
         return note
     }
+}
+
+private func librarySearchResults(
+    noteStore: NoteStore,
+    scope: LibraryScope,
+    query: String,
+    limit: Int,
+    searchesAllNotes: Bool
+) -> [NoteSearchResult] {
+    if searchesAllNotes {
+        return noteStore.searchNotes(query: query, limit: limit)
+    }
+
+    switch scope {
+    case .all, .recent:
+        return noteStore.searchNotes(query: query, limit: limit)
+    case .inbox:
+        return noteStore.searchNotes(query: query, limit: limit).filter(libraryIsInboxNote)
+    case .trash:
+        return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
+    case .folder(let url):
+        return noteStore.searchNotes(query: query, limit: limit, roots: [url])
+    case .tag(let tag):
+        return noteStore.searchNotes(query: query, limit: limit).filter { note in
+            note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+        }
+    }
+}
+
+private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
+
+    return noteStore.listTrashedNotes(limit: limit).compactMap { note in
+        guard let loaded = try? noteStore.loadNote(at: note.url) else {
+            return note.title.localizedCaseInsensitiveContains(trimmedQuery) ? note : nil
+        }
+
+        let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
+        let matchingLine = loaded.body
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
+        let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+        guard matchesTitle || matchingLine != nil || matchesTag else { return nil }
+
+        return NoteSearchResult(
+            url: note.url,
+            title: loaded.title,
+            snippet: matchingLine ?? libraryFirstMeaningfulLine(from: loaded.body) ?? "",
+            modifiedAt: note.modifiedAt,
+            tags: loaded.tags,
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
+        )
+    }
+}
+
+private func libraryIsInboxNote(_ note: NoteSearchResult) -> Bool {
+    note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+        || note.title.localizedCaseInsensitiveContains("Inbox")
+}
+
+private func libraryFirstMeaningfulLine(from body: String) -> String? {
+    body.components(separatedBy: .newlines)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first(where: { !$0.isEmpty })
 }
 
 private struct LibraryFolderRow: Equatable, Sendable {
@@ -628,6 +695,8 @@ final class LibraryWindowController: NSWindowController,
     private var isDirty = false
     private var autosaveTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
+    private var searchResultsTask: Task<Void, Never>?
+    private var searchResultsGeneration = 0
     private var hasPendingSearchReload = false
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
@@ -815,6 +884,13 @@ final class LibraryWindowController: NSWindowController,
                 guard let self else { return }
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
+                let currentQuery = self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !currentQuery.isEmpty {
+                    self.sourceCountSnapshot = allNotes
+                    self.refreshSourceCounts(using: allNotes)
+                    self.updateNoteListHeader(query: currentQuery)
+                    return
+                }
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: false,
@@ -830,6 +906,7 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
+        cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         try? saveCurrentNoteIfNeeded()
         onClose()
@@ -2031,6 +2108,7 @@ final class LibraryWindowController: NSWindowController,
         allNotesSnapshot: [NoteSearchResult]? = nil,
         refreshCounts: Bool = true
     ) {
+        cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let needsAllNotes = query.isEmpty || refreshCounts
         let allNotes = allNotesSnapshot ?? (needsAllNotes ? allNoteResults(limit: Self.sourceCountSnapshotLimit) : [])
@@ -2129,26 +2207,27 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func searchResultsForSelectedScope(query: String, limit: Int) -> [NoteSearchResult] {
-        if searchScopeControl.selectedSegment == 1 {
-            return noteStore.searchNotes(query: query, limit: limit)
-        }
+        searchResults(
+            for: selectedScope,
+            query: query,
+            limit: limit,
+            searchesAllNotes: searchScopeControl.selectedSegment == 1
+        )
+    }
 
-        switch selectedScope {
-        case .all, .recent:
-            return noteStore.searchNotes(query: query, limit: limit)
-        case .inbox:
-            return noteStore.searchNotes(query: query, limit: limit).filter { note in
-                isInboxNote(note)
-            }
-        case .trash:
-            return filteredTrashedNotes(query: query, limit: limit)
-        case .folder(let url):
-            return noteStore.searchNotes(query: query, limit: limit, roots: [url])
-        case .tag(let tag):
-            return noteStore.searchNotes(query: query, limit: limit).filter { note in
-                note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-            }
-        }
+    private func searchResults(
+        for scope: LibraryScope,
+        query: String,
+        limit: Int,
+        searchesAllNotes: Bool
+    ) -> [NoteSearchResult] {
+        librarySearchResults(
+            noteStore: noteStore,
+            scope: scope,
+            query: query,
+            limit: limit,
+            searchesAllNotes: searchesAllNotes
+        )
     }
 
     private func allNoteResults(limit: Int) -> [NoteSearchResult] {
@@ -2168,40 +2247,6 @@ final class LibraryWindowController: NSWindowController,
                 thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
             )
         }
-    }
-
-    private func filteredTrashedNotes(query: String, limit: Int) -> [NoteSearchResult] {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
-
-        return noteStore.listTrashedNotes(limit: limit).compactMap { note in
-            guard let loaded = try? noteStore.loadNote(at: note.url) else {
-                return note.title.localizedCaseInsensitiveContains(trimmedQuery) ? note : nil
-            }
-
-            let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
-            let matchingLine = loaded.body
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
-            let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-            guard matchesTitle || matchingLine != nil || matchesTag else { return nil }
-
-            return NoteSearchResult(
-                url: note.url,
-                title: loaded.title,
-                snippet: matchingLine ?? firstMeaningfulLine(from: loaded.body) ?? "",
-                modifiedAt: note.modifiedAt,
-                tags: loaded.tags,
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
-                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
-            )
-        }
-    }
-
-    private func isInboxNote(_ note: NoteSearchResult) -> Bool {
-        note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-            || note.title.localizedCaseInsensitiveContains("Inbox")
     }
 
     private func firstMeaningfulLine(from body: String) -> String? {
@@ -2466,8 +2511,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func searchScopeChanged(_ sender: NSSegmentedControl) {
         cancelPendingSearchReload()
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
-        applyEditorSearchHighlightsForCurrentQuery()
+        performSearchReload()
     }
 
     @objc
@@ -2668,7 +2712,7 @@ final class LibraryWindowController: NSWindowController,
     private func flushPendingSearchReload() {
         guard hasPendingSearchReload else { return }
         cancelPendingSearchReload()
-        performSearchReload()
+        performSearchReload(synchronously: true)
     }
 
     private func cancelPendingSearchReload() {
@@ -2677,12 +2721,82 @@ final class LibraryWindowController: NSWindowController,
         hasPendingSearchReload = false
     }
 
-    private func performSearchReload() {
+    private func cancelActiveSearchResultReload() {
+        searchResultsTask?.cancel()
+        searchResultsTask = nil
+        searchResultsGeneration += 1
+    }
+
+    private func performSearchReload(synchronously: Bool = false) {
         cancelPendingSearchReload()
-        let queryIsEmpty = searchField.stringValue
+        let query = searchField.stringValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: queryIsEmpty)
+        if query.isEmpty {
+            reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: true)
+            applyEditorSearchHighlightsForCurrentQuery()
+        } else if synchronously {
+            reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
+            applyEditorSearchHighlightsForCurrentQuery()
+        } else {
+            scheduleSearchResultReload(query: query, selecting: selectedURL)
+        }
+    }
+
+    private func scheduleSearchResultReload(query: String, selecting preferredURL: URL?) {
+        cancelActiveSearchResultReload()
+        let generation = searchResultsGeneration
+        let scope = selectedScope
+        let searchesAllNotes = searchScopeControl.selectedSegment == 1
+        let noteStore = noteStore
+        searchScopeControl.isHidden = false
+        updateNoteListHeader(query: query)
+
+        let task = Task.detached(priority: .userInitiated) { [noteStore, scope, query, searchesAllNotes, generation, preferredURL] in
+            guard !Task.isCancelled else { return }
+            let results = librarySearchResults(
+                noteStore: noteStore,
+                scope: scope,
+                query: query,
+                limit: 240,
+                searchesAllNotes: searchesAllNotes
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.searchResultsGeneration == generation,
+                      self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) == query,
+                      self.selectedScope == scope,
+                      (self.searchScopeControl.selectedSegment == 1) == searchesAllNotes else {
+                    return
+                }
+                self.applySearchResults(results, query: query, selecting: preferredURL)
+            }
+        }
+        searchResultsTask = task
+    }
+
+    private func applySearchResults(_ results: [NoteSearchResult], query: String, selecting preferredURL: URL?) {
+        notes = results
+        listRows = buildGroupedRows(for: notes)
+        updateNoteListHeader(query: query)
+
+        suppressSelectionChanges = true
+        tableView.reloadData()
+        updateNoteListEmptyState(query: query)
+
+        if let preferredPath = preferredURL?.standardizedFileURL.path,
+           let row = rowIndex(for: preferredPath) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
+        }
+        suppressSelectionChanges = false
+
+        if selectedURL == nil {
+            updateEmptyState()
+        }
+        refreshSourceSelection()
+        updateToolbarActionState()
         applyEditorSearchHighlightsForCurrentQuery()
     }
 
@@ -3439,6 +3553,7 @@ final class LibraryWindowController: NSWindowController,
 
     func searchForLibrary(query: String, allNotes: Bool) {
         cancelPendingSearchReload()
+        cancelActiveSearchResultReload()
         searchField.stringValue = query
         searchScopeControl.selectedSegment = allNotes ? 1 : 0
         reloadNotes(

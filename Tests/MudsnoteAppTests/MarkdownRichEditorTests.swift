@@ -1658,7 +1658,11 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
 
-        try await Task.sleep(nanoseconds: 220_000_000)
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline,
+              controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"] {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
         #expect(controller.noteListCountLabel.stringValue == "1 个结果")
 
