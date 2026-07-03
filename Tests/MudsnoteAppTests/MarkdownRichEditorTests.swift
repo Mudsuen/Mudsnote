@@ -1502,6 +1502,80 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryEditorTabsBetweenMarkdownTableCells() throws {
+        let suiteName = "mudsnote.library-table-tab-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-table-tab-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(
+            title: "Table Tabs",
+            body: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            """
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let text = controller.editorTextView.string as NSString
+        let alphaLocation = text.range(of: "Alpha").location
+        let todoLocation = text.range(of: "Todo").location
+        #expect(alphaLocation != NSNotFound)
+        #expect(todoLocation != NSNotFound)
+
+        controller.editorTextView.setSelectedRange(NSRange(location: alphaLocation, length: 0))
+        #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertTab(_:))))
+        #expect(controller.editorTextView.selectedRange().location == todoLocation)
+
+        #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertBacktab(_:))))
+        #expect(controller.editorTextView.selectedRange().location == alphaLocation)
+
+        controller.editorTextView.setSelectedRange(NSRange(location: todoLocation, length: 0))
+        #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertTab(_:))))
+        let tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "| Alpha | Todo |",
+            "|   |   |"
+        ])
+        let insertedRowStart = (controller.editorTextView.string as NSString).range(of: "|   |   |").location
+        #expect(insertedRowStart != NSNotFound)
+        #expect(controller.editorTextView.selectedRange().location == insertedRowStart + 2)
+
+        #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertBacktab(_:))))
+        #expect(controller.editorTextView.selectedRange().location == todoLocation)
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Plain paragraph",
+            theme: controller.theme
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        #expect(!controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertTab(_:))))
+    }
+
+    @MainActor
+    @Test
     func libraryWindowAutosavesEditedExistingNote() async throws {
         let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

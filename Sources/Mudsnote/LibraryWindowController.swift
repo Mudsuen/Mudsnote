@@ -2638,6 +2638,20 @@ final class LibraryWindowController: NSWindowController,
         return false
     }
 
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard textView === editorTextView else { return false }
+
+        if commandSelector == #selector(NSResponder.insertTab(_:)) {
+            return moveMarkdownTableCellSelectionForLibrary(.next)
+        }
+
+        if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+            return moveMarkdownTableCellSelectionForLibrary(.previous)
+        }
+
+        return false
+    }
+
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
@@ -4805,6 +4819,76 @@ final class LibraryWindowController: NSWindowController,
         insertMarkdownBlockForLibrary(markdown)
     }
 
+    private enum MarkdownTableCellDirection {
+        case next
+        case previous
+    }
+
+    private func moveMarkdownTableCellSelectionForLibrary(_ direction: MarkdownTableCellDirection) -> Bool {
+        guard selectedScope != .trash,
+              editorTextView.selectedRange().length == 0,
+              let storage = editorTextView.textStorage else {
+            return false
+        }
+
+        let string = editorTextView.string as NSString
+        guard string.length > 0 else { return false }
+
+        let currentLineRange = visibleLineRangeForSelection()
+        let currentLine = string.substring(with: currentLineRange)
+        guard markdownTableColumnCount(in: currentLine) != nil,
+              !isMarkdownTableSeparatorLine(currentLine),
+              let currentCell = markdownTableCellIndex(at: editorTextView.selectedRange().location, lineRange: currentLineRange, in: string),
+              let currentCellStarts = markdownTableCellStartLocations(in: currentLine, lineStartLocation: currentLineRange.location) else {
+            return false
+        }
+
+        switch direction {
+        case .next:
+            if currentCell + 1 < currentCellStarts.count {
+                moveEditorSelection(to: currentCellStarts[currentCell + 1])
+                return true
+            }
+
+            if let nextRow = adjacentMarkdownTableDataRow(after: currentLineRange, in: string),
+               let nextStarts = markdownTableCellStartLocations(
+                    in: string.substring(with: nextRow),
+                    lineStartLocation: nextRow.location
+               ),
+               let firstStart = nextStarts.first {
+                moveEditorSelection(to: firstStart)
+                return true
+            }
+
+            let columnCount = currentCellStarts.count
+            let insertedRowStart = insertEmptyMarkdownTableRow(after: currentLineRange, columnCount: columnCount, in: storage)
+            moveEditorSelection(to: insertedRowStart)
+            return true
+
+        case .previous:
+            if currentCell > 0 {
+                moveEditorSelection(to: currentCellStarts[currentCell - 1])
+                return true
+            }
+
+            if let previousRow = adjacentMarkdownTableDataRow(before: currentLineRange, in: string),
+               let previousStarts = markdownTableCellStartLocations(
+                    in: string.substring(with: previousRow),
+                    lineStartLocation: previousRow.location
+               ),
+               let lastStart = previousStarts.last {
+                moveEditorSelection(to: lastStart)
+                return true
+            }
+
+            if let firstStart = currentCellStarts.first {
+                moveEditorSelection(to: firstStart)
+                return true
+            }
+            return false
+        }
+    }
+
     @discardableResult
     private func insertTableRowInCurrentMarkdownTableForLibrary() -> Bool {
         guard selectedScope != .trash,
@@ -4832,6 +4916,11 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
+        moveEditorSelection(to: insertEmptyMarkdownTableRow(after: targetLineRange, columnCount: columnCount, in: storage))
+        return true
+    }
+
+    private func insertEmptyMarkdownTableRow(after targetLineRange: NSRange, columnCount: Int, in storage: NSTextStorage) -> Int {
         let insertionLocation = NSMaxRange(targetLineRange)
         let rowMarkdown = "\n" + emptyMarkdownTableRow(columnCount: columnCount)
         let rendered = MarkdownRichTextCodec.render(markdown: rowMarkdown, theme: theme, baseURL: selectedURL)
@@ -4840,12 +4929,15 @@ final class LibraryWindowController: NSWindowController,
         storage.replaceCharacters(in: NSRange(location: insertionLocation, length: 0), with: rendered)
         suppressEditorChanges = false
 
-        let firstCellLocation = min(insertionLocation + 3, storage.length)
-        editorTextView.setSelectedRange(NSRange(location: firstCellLocation, length: 0))
+        markDirty()
+        return min(insertionLocation + 3, storage.length)
+    }
+
+    private func moveEditorSelection(to location: Int) {
+        guard let storage = editorTextView.textStorage else { return }
+        editorTextView.setSelectedRange(NSRange(location: max(0, min(location, storage.length)), length: 0))
         updateTypingAttributesFromInsertionPoint()
         editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
-        markDirty()
-        return true
     }
 
     private func lineRange(after range: NSRange, in string: NSString) -> NSRange? {
@@ -4857,6 +4949,43 @@ final class LibraryWindowController: NSWindowController,
             location: paragraphRange.location,
             length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
         )
+    }
+
+    private func lineRange(before range: NSRange, in string: NSString) -> NSRange? {
+        guard range.location > 0 else { return nil }
+        let previousProbeLocation = max(range.location - 1, 0)
+        let paragraphRange = string.paragraphRange(for: NSRange(location: previousProbeLocation, length: 0))
+        let hasTrailingNewline = string.substring(with: paragraphRange).hasSuffix("\n")
+        return NSRange(
+            location: paragraphRange.location,
+            length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
+        )
+    }
+
+    private func adjacentMarkdownTableDataRow(after range: NSRange, in string: NSString) -> NSRange? {
+        var candidate = lineRange(after: range, in: string)
+        while let candidateRange = candidate {
+            let line = string.substring(with: candidateRange)
+            guard markdownTableColumnCount(in: line) != nil else { return nil }
+            if !isMarkdownTableSeparatorLine(line) {
+                return candidateRange
+            }
+            candidate = lineRange(after: candidateRange, in: string)
+        }
+        return nil
+    }
+
+    private func adjacentMarkdownTableDataRow(before range: NSRange, in string: NSString) -> NSRange? {
+        var candidate = lineRange(before: range, in: string)
+        while let candidateRange = candidate {
+            let line = string.substring(with: candidateRange)
+            guard markdownTableColumnCount(in: line) != nil else { return nil }
+            if !isMarkdownTableSeparatorLine(line) {
+                return candidateRange
+            }
+            candidate = lineRange(before: candidateRange, in: string)
+        }
+        return nil
     }
 
     private func markdownTableColumnCount(in line: String) -> Int? {
@@ -4888,6 +5017,43 @@ final class LibraryWindowController: NSWindowController,
 
     private func emptyMarkdownTableRow(columnCount: Int) -> String {
         "| " + Array(repeating: " ", count: max(columnCount, 2)).joined(separator: " | ") + " |"
+    }
+
+    private func markdownTableCellStartLocations(in line: String, lineStartLocation: Int) -> [Int]? {
+        let lineString = line as NSString
+        let pipeIndexes = markdownTablePipeIndexes(in: lineString)
+        guard pipeIndexes.count >= 3 else { return nil }
+
+        return (0..<(pipeIndexes.count - 1)).map { index in
+            var start = pipeIndexes[index] + 1
+            while start < pipeIndexes[index + 1],
+                  lineString.substring(with: NSRange(location: start, length: 1)) == " " {
+                start += 1
+            }
+            return lineStartLocation + min(start, pipeIndexes[index + 1])
+        }
+    }
+
+    private func markdownTableCellIndex(at location: Int, lineRange: NSRange, in string: NSString) -> Int? {
+        let lineString = string.substring(with: lineRange) as NSString
+        let pipeIndexes = markdownTablePipeIndexes(in: lineString)
+        guard pipeIndexes.count >= 3 else { return nil }
+
+        let localLocation = max(0, min(location - lineRange.location, lineString.length))
+        for index in 0..<(pipeIndexes.count - 1) {
+            if localLocation <= pipeIndexes[index + 1] {
+                return index
+            }
+        }
+        return pipeIndexes.count - 2
+    }
+
+    private func markdownTablePipeIndexes(in line: NSString) -> [Int] {
+        var indexes: [Int] = []
+        for index in 0..<line.length where line.substring(with: NSRange(location: index, length: 1)) == "|" {
+            indexes.append(index)
+        }
+        return indexes
     }
 
     func insertLinkForLibrary(label: String, url: String) {
