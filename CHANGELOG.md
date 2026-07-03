@@ -594,6 +594,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Changed the toolbar share icon into a compact share/export menu with `分享...`, `复制 Markdown 内容`, and `导出 Markdown...`. The context menu and more-actions menu now expose the same system share action, and the share path saves pending edits before handing the current Markdown file to macOS sharing services.
 - Lesson: Share parity can stay local-first: hand the existing Markdown file to system services instead of adding sync, accounts, or a proprietary export format.
 
+### 102. Native menu toolbar entries
+
+- Problem: The share/export and more-actions toolbar icons behaved like ordinary buttons that manually popped menus, which was less native than Apple Notes' menu-style toolbar controls.
+- Fix: Switched both controls to `NSMenuToolbarItem`, kept their menus rebuilt with current selection/trash state, and added regression coverage that the default toolbar uses native menu toolbar items.
+- Lesson: Notes-like polish should prefer AppKit's toolbar primitives when they fit; fewer custom popup paths make state and accessibility easier to keep aligned.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

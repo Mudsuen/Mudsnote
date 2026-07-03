@@ -1135,11 +1135,11 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(attachmentPressed)
             )
         case Self.exportToolbarItemIdentifier:
-            return toolbarButtonItem(
+            return toolbarMenuItem(
                 identifier: itemIdentifier,
                 label: "分享与导出",
                 symbolName: "square.and.arrow.up",
-                action: #selector(shareExportPressed(_:))
+                menu: makeShareExportMenuForLibrary()
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -1174,11 +1174,11 @@ final class LibraryWindowController: NSWindowController,
                 visibilityPriority: .low
             )
         case Self.moreToolbarItemIdentifier:
-            return toolbarButtonItem(
+            return toolbarMenuItem(
                 identifier: itemIdentifier,
                 label: "更多",
                 symbolName: "ellipsis.circle",
-                action: #selector(moreActionsPressed(_:))
+                menu: makeMoreActionsMenuForLibrary()
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
@@ -1264,6 +1264,23 @@ final class LibraryWindowController: NSWindowController,
         item.image = image
         item.target = self
         item.action = action
+        item.visibilityPriority = visibilityPriority
+        return item
+    }
+
+    private func toolbarMenuItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        menu: NSMenu,
+        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
+    ) -> NSToolbarItem {
+        let item = NSMenuToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        item.menu = menu
         item.visibilityPriority = visibilityPriority
         return item
     }
@@ -2455,27 +2472,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func moreActionsPressed(_ sender: Any?) {
-        guard canShowMoreActions else { return }
-        popUpToolbarMenu(makeMoreActionsMenuForLibrary(), from: sender)
-    }
-
-    @objc
-    private func shareExportPressed(_ sender: Any?) {
-        guard canExportSelectedNote else { return }
-        popUpToolbarMenu(makeShareExportMenuForLibrary(), from: sender)
-    }
-
-    private func popUpToolbarMenu(_ menu: NSMenu, from sender: Any?) {
-        if let item = sender as? NSToolbarItem,
-           let view = item.view {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
-        } else if let contentView = window?.contentView {
-            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
-        }
-    }
-
-    @objc
     private func moveSelectedNotePressed(_ sender: Any?) {
         guard canMoveSelectedNote else { return }
         let menu = makeMoveNoteMenu()
@@ -3055,6 +3051,10 @@ final class LibraryWindowController: NSWindowController,
                 item.label = "恢复"
                 item.paletteLabel = "恢复"
                 item.toolTip = "恢复笔记"
+            case Self.exportToolbarItemIdentifier:
+                (item as? NSMenuToolbarItem)?.menu = makeShareExportMenuForLibrary()
+            case Self.moreToolbarItemIdentifier:
+                (item as? NSMenuToolbarItem)?.menu = makeMoreActionsMenuForLibrary()
             default:
                 continue
             }

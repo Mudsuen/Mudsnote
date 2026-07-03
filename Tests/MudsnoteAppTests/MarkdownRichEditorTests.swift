@@ -703,6 +703,14 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
+        let shareToolbarItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.export"
+        } as? NSMenuToolbarItem)
+        #expect(shareToolbarItem.label == "分享与导出")
+        #expect(shareToolbarItem.menu.items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
+        #expect((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.more"
+        } is NSMenuToolbarItem)
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
             item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
         }
