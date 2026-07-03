@@ -691,7 +691,9 @@ struct MarkdownRichEditorTests {
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.format"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.checklist"))
@@ -746,6 +748,16 @@ struct MarkdownRichEditorTests {
         }?.image?.accessibilityDescription == "格式")
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
+        let sourceTrackingSeparator = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.source-separator"
+        } as? NSTrackingSeparatorToolbarItem)
+        let noteTrackingSeparator = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-separator"
+        } as? NSTrackingSeparatorToolbarItem)
+        #expect(sourceTrackingSeparator.splitView === splitView)
+        #expect(sourceTrackingSeparator.dividerIndex == 0)
+        #expect(noteTrackingSeparator.splitView === splitView)
+        #expect(noteTrackingSeparator.dividerIndex == 1)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
         #expect(sourceList.constraints.contains {

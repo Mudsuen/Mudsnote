@@ -668,6 +668,8 @@ final class LibraryWindowController: NSWindowController,
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
     private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
+    private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
+    private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
@@ -718,6 +720,7 @@ final class LibraryWindowController: NSWindowController,
     private var movableNotePathCache: Set<String>?
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
+    private weak var librarySplitView: NSSplitView?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -766,8 +769,8 @@ final class LibraryWindowController: NSWindowController,
 
         super.init(window: window)
         window.delegate = self
-        configureToolbar()
         buildUI()
+        configureToolbar()
         if defersInitialNoteHydration {
             reloadNotes(
                 loadFirstIfNeeded: false,
@@ -921,6 +924,7 @@ final class LibraryWindowController: NSWindowController,
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.translatesAutoresizingMaskIntoConstraints = false
+        librarySplitView = splitView
         contentView.addSubview(splitView)
         pin(splitView, to: contentView)
 
@@ -1224,8 +1228,9 @@ final class LibraryWindowController: NSWindowController,
         [
             Self.addFolderToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
-            .space,
+            Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
+            Self.noteTrackingSeparatorToolbarItemIdentifier,
             .flexibleSpace,
             Self.editorToolsToolbarItemIdentifier,
             .space,
@@ -1237,6 +1242,8 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar) + [
+            Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.noteTrackingSeparatorToolbarItemIdentifier,
             Self.openSeparateToolbarItemIdentifier,
             Self.moveToolbarItemIdentifier,
             Self.saveToolbarItemIdentifier,
@@ -1256,6 +1263,10 @@ final class LibraryWindowController: NSWindowController,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch itemIdentifier {
+        case Self.sourceTrackingSeparatorToolbarItemIdentifier:
+            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 0)
+        case Self.noteTrackingSeparatorToolbarItemIdentifier:
+            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.addFolderToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -1392,6 +1403,20 @@ final class LibraryWindowController: NSWindowController,
         default:
             return nil
         }
+    }
+
+    private func toolbarTrackingSeparatorItem(
+        identifier: NSToolbarItem.Identifier,
+        dividerIndex: Int
+    ) -> NSToolbarItem {
+        guard let librarySplitView else {
+            return NSToolbarItem(itemIdentifier: identifier)
+        }
+        return NSTrackingSeparatorToolbarItem(
+            identifier: identifier,
+            splitView: librarySplitView,
+            dividerIndex: dividerIndex
+        )
     }
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
