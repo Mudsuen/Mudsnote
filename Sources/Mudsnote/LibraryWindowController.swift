@@ -610,6 +610,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
     private var fullLibrarySnapshotReloadScheduled = false
+    private var isFullLibrarySnapshotLoading = false
     private var movableNotePathCache: Set<String>?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
@@ -720,12 +721,16 @@ final class LibraryWindowController: NSWindowController,
     private func scheduleFullLibrarySnapshotReload() {
         guard !fullLibrarySnapshotReloadScheduled else { return }
         fullLibrarySnapshotReloadScheduled = true
+        isFullLibrarySnapshotLoading = true
+        updateNoteListHeader(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let noteStore = noteStore
         let snapshotLimit = Self.sourceCountSnapshotLimit
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let allNotes = noteStore.listNotes(limit: snapshotLimit)
             DispatchQueue.main.async {
-                guard let self, self.window?.isVisible == true else { return }
+                guard let self else { return }
+                self.isFullLibrarySnapshotLoading = false
+                guard self.window?.isVisible == true else { return }
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: false,
@@ -1823,9 +1828,13 @@ final class LibraryWindowController: NSWindowController,
             ? selectedScope.listTitle
             : (searchScopeControl.selectedSegment == 1 ? LibraryScope.all.listTitle : selectedScope.listTitle)
         noteListTitleLabel.stringValue = title
-        noteListCountLabel.stringValue = query.isEmpty
-            ? "\(notes.count) 条笔记"
-            : "\(notes.count) 个结果"
+        if query.isEmpty {
+            noteListCountLabel.stringValue = isFullLibrarySnapshotLoading
+                ? "\(notes.count) 条笔记 · 正在索引..."
+                : "\(notes.count) 条笔记"
+        } else {
+            noteListCountLabel.stringValue = "\(notes.count) 个结果"
+        }
     }
 
     private func updateNoteListEmptyState(query: String) {

@@ -2116,6 +2116,7 @@ struct MarkdownRichEditorTests {
         }
 
         controller.showWindowAndFocus()
+        #expect(controller.noteListCountLabel.stringValue.contains("正在索引"))
         RunLoop.current.run(until: Date().addingTimeInterval(0.15))
 
         #expect(controller.searchField.currentEditor() == nil)

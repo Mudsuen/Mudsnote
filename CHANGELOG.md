@@ -654,6 +654,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a Notes-like piled drag preview for note-list drags with a count badge for multi-note selections. The dragged payload remains the real Markdown file URLs, so folder drops and external file workflows keep the same local-first contract.
 - Lesson: Batch interactions need visible feedback as well as working commands; count badges reduce destructive-action ambiguity without adding app-private drag models.
 
+### 112. Background library indexing status
+
+- Problem: Direct launch intentionally shows a lightweight note-list snapshot before the full Markdown library scan completes, but the note-list count looked final while background indexing was still running.
+- Fix: Added a temporary `正在索引...` note-list count state during deferred full-library hydration. The shell remains fast, the first note still opens without focusing search, and the label returns to the normal count after the background snapshot is applied.
+- Lesson: Performance work needs visible progress state; keeping launch asynchronous should not make the library feel silently incomplete.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
