@@ -193,7 +193,7 @@ final class LibraryNoteCellView: NSTableCellView {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 7, left: 18, bottom: 7, right: 16)
         addSubview(stack)
         pin(stack, to: self)
         for label in [titleLabel, snippetLabel] {
@@ -215,12 +215,23 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
+    static let selectionHorizontalInset: CGFloat = 14
+    static let selectionVerticalInset: CGFloat = 4
+    static let selectionCornerRadius: CGFloat = 8
+
     var isGroupRow = false
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
-        let selectionRect = bounds.insetBy(dx: 6, dy: 3)
-        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 6, yRadius: 6)
+        let selectionRect = bounds.insetBy(
+            dx: Self.selectionHorizontalInset,
+            dy: Self.selectionVerticalInset
+        )
+        let path = NSBezierPath(
+            roundedRect: selectionRect,
+            xRadius: Self.selectionCornerRadius,
+            yRadius: Self.selectionCornerRadius
+        )
         NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.08, alpha: 0.95).setFill()
         path.fill()
     }

@@ -468,6 +468,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added deterministic file-type/size metadata to local attachment chips, stored that metadata on the rendered attachment, and added a copy Markdown link menu action alongside open, reveal, and copy path. Expanded attachment regression coverage.
 - Lesson: A local-first Notes clone should make attachments useful as visible file objects while keeping the Markdown reference one click away.
 
+### 81. Note-list selected card inset
+
+- Problem: The note-list selected row still read as a nearly full-width table highlight, while Apple Notes uses a more card-like selected note with visible side inset and rounded corners.
+- Fix: Increased the custom selected-row inset and radius, and aligned note-row content padding with the selected card. Added a layout contract test for the selected-card geometry.
+- Lesson: Notes parity depends on selection geometry as much as color; the note list should feel like scannable cards, not a generic table.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
