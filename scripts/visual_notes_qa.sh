@@ -68,6 +68,7 @@ fi
 
 APP_SCREENSHOT="$OUTPUT_DIR/mudsnote-library.png"
 PAIR_SCREENSHOT="$OUTPUT_DIR/apple-notes-vs-mudsnote.png"
+METADATA_PATH="$OUTPUT_DIR/visual-qa-metadata.txt"
 
 if ! screencapture -x -l "$WINDOW_ID" "$APP_SCREENSHOT" 2>/dev/null; then
   echo "Window capture unavailable; falling back to full-screen crop." >&2
@@ -129,49 +130,95 @@ try png.write(to: outputURL)
 SWIFT
 fi
 
-/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" <<'SWIFT'
+/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" <<'SWIFT'
 import AppKit
 
 let args = CommandLine.arguments
-guard args.count == 4 else {
-    fputs("Usage: stitch reference app output\n", stderr)
+guard args.count == 5 else {
+    fputs("Usage: stitch reference app output metadata\n", stderr)
     exit(2)
 }
 
 let referenceURL = URL(fileURLWithPath: args[1])
 let appURL = URL(fileURLWithPath: args[2])
 let outputURL = URL(fileURLWithPath: args[3])
+let metadataURL = URL(fileURLWithPath: args[4])
 
-func loadImage(_ url: URL) -> NSImage {
-    guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
+struct ImageMetrics {
+    let url: URL
+    let image: NSImage
+    let pixelsWide: Int
+    let pixelsHigh: Int
+
+    var pointWidth: CGFloat { image.size.width }
+    var pointHeight: CGFloat { image.size.height }
+    var backingScaleX: CGFloat { CGFloat(pixelsWide) / max(pointWidth, 1) }
+    var backingScaleY: CGFloat { CGFloat(pixelsHigh) / max(pointHeight, 1) }
+    var backingScaleDescription: String {
+        let scale = max(backingScaleX, backingScaleY)
+        return String(format: "%.1fx", scale)
+    }
+
+    var pointDescription: String {
+        "\(Int(pointWidth.rounded()))x\(Int(pointHeight.rounded())) pt"
+    }
+
+    var pixelDescription: String {
+        "\(pixelsWide)x\(pixelsHigh) px"
+    }
+}
+
+func loadImageMetrics(_ url: URL) -> ImageMetrics {
+    guard
+        let image = NSImage(contentsOf: url),
+        image.size.width > 0,
+        image.size.height > 0,
+        let data = try? Data(contentsOf: url),
+        let bitmap = NSBitmapImageRep(data: data)
+    else {
         fputs("Could not load image: \(url.path)\n", stderr)
         exit(2)
     }
-    return image
+    return ImageMetrics(
+        url: url,
+        image: image,
+        pixelsWide: bitmap.pixelsWide,
+        pixelsHigh: bitmap.pixelsHigh
+    )
 }
 
-func scaledSize(for image: NSImage, targetHeight: CGFloat) -> NSSize {
-    let ratio = targetHeight / max(image.size.height, 1)
-    return NSSize(width: image.size.width * ratio, height: targetHeight)
+func scaledSize(for metrics: ImageMetrics, targetHeight: CGFloat) -> NSSize {
+    let ratio = targetHeight / max(metrics.pointHeight, 1)
+    return NSSize(width: metrics.pointWidth * ratio, height: targetHeight)
 }
 
-func drawLabel(_ text: String, in rect: NSRect) {
+func drawLabel(_ title: String, metrics: ImageMetrics, drawScale: CGFloat, in rect: NSRect) {
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .left
-    let attributes: [NSAttributedString.Key: Any] = [
+
+    let titleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
         .foregroundColor: NSColor(calibratedWhite: 0.88, alpha: 1),
         .paragraphStyle: paragraph
     ]
-    text.draw(in: rect.insetBy(dx: 4, dy: 12), withAttributes: attributes)
+    let metricsAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+        .foregroundColor: NSColor(calibratedWhite: 0.62, alpha: 1),
+        .paragraphStyle: paragraph
+    ]
+
+    let text = NSMutableAttributedString(string: "\(title)\n", attributes: titleAttributes)
+    let metricsText = "\(metrics.pointDescription) · \(metrics.pixelDescription) · \(metrics.backingScaleDescription) · draw \(String(format: "%.2fx", drawScale))"
+    text.append(NSAttributedString(string: metricsText, attributes: metricsAttributes))
+    text.draw(in: rect.insetBy(dx: 4, dy: 10))
 }
 
-let reference = loadImage(referenceURL)
-let app = loadImage(appURL)
+let reference = loadImageMetrics(referenceURL)
+let app = loadImageMetrics(appURL)
 
-func imageHasVisibleContent(_ image: NSImage) -> Bool {
+func imageHasVisibleContent(_ metrics: ImageMetrics) -> Bool {
     guard
-        let tiff = image.tiffRepresentation,
+        let tiff = metrics.image.tiffRepresentation,
         let bitmap = NSBitmapImageRep(data: tiff)
     else {
         return false
@@ -201,11 +248,14 @@ guard imageHasVisibleContent(app) else {
     exit(2)
 }
 
-let targetHeight: CGFloat = 900
-let labelHeight: CGFloat = 52
+let configuredTargetHeight = ProcessInfo.processInfo.environment["MUDSNOTE_VISUAL_QA_TARGET_HEIGHT"].flatMap(Double.init)
+let targetHeight = CGFloat(configuredTargetHeight ?? 900)
+let labelHeight: CGFloat = 68
 let gap: CGFloat = 24
 let referenceSize = scaledSize(for: reference, targetHeight: targetHeight)
 let appSize = scaledSize(for: app, targetHeight: targetHeight)
+let referenceDrawScale = targetHeight / max(reference.pointHeight, 1)
+let appDrawScale = targetHeight / max(app.pointHeight, 1)
 let canvasSize = NSSize(
     width: referenceSize.width + gap + appSize.width,
     height: labelHeight + targetHeight
@@ -218,10 +268,20 @@ NSRect(origin: .zero, size: canvasSize).fill()
 
 let referenceOrigin = NSPoint(x: 0, y: 0)
 let appOrigin = NSPoint(x: referenceSize.width + gap, y: 0)
-drawLabel("Apple Notes Reference", in: NSRect(x: referenceOrigin.x, y: targetHeight, width: referenceSize.width, height: labelHeight))
-drawLabel("Mudsnote Current", in: NSRect(x: appOrigin.x, y: targetHeight, width: appSize.width, height: labelHeight))
-reference.draw(in: NSRect(origin: referenceOrigin, size: referenceSize))
-app.draw(in: NSRect(origin: appOrigin, size: appSize))
+drawLabel(
+    "Apple Notes Reference",
+    metrics: reference,
+    drawScale: referenceDrawScale,
+    in: NSRect(x: referenceOrigin.x, y: targetHeight, width: referenceSize.width, height: labelHeight)
+)
+drawLabel(
+    "Mudsnote Current",
+    metrics: app,
+    drawScale: appDrawScale,
+    in: NSRect(x: appOrigin.x, y: targetHeight, width: appSize.width, height: labelHeight)
+)
+reference.image.draw(in: NSRect(origin: referenceOrigin, size: referenceSize))
+app.image.draw(in: NSRect(origin: appOrigin, size: appSize))
 canvas.unlockFocus()
 
 guard let tiff = canvas.tiffRepresentation,
@@ -232,9 +292,25 @@ guard let tiff = canvas.tiffRepresentation,
 }
 
 try png.write(to: outputURL)
+let metadata = """
+reference_path=\(reference.url.path)
+reference_points=\(reference.pointDescription)
+reference_pixels=\(reference.pixelDescription)
+reference_backing_scale=\(reference.backingScaleDescription)
+reference_draw_scale=\(String(format: "%.4f", referenceDrawScale))
+mudsnote_path=\(app.url.path)
+mudsnote_points=\(app.pointDescription)
+mudsnote_pixels=\(app.pixelDescription)
+mudsnote_backing_scale=\(app.backingScaleDescription)
+mudsnote_draw_scale=\(String(format: "%.4f", appDrawScale))
+target_height_points=\(Int(targetHeight.rounded()))
+comparison_path=\(outputURL.path)
+"""
+try metadata.write(to: metadataURL, atomically: true, encoding: .utf8)
 print(outputURL.path)
 SWIFT
 
 echo "Reference: $REFERENCE_PATH"
 echo "Mudsnote:  $APP_SCREENSHOT"
 echo "Compare:   $PAIR_SCREENSHOT"
+echo "Metadata:  $METADATA_PATH"
