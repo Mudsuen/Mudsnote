@@ -630,6 +630,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Increased the default presented window target, widened the source and note columns, widened note-table sizing, and expanded the toolbar search field while preserving the existing screen-clamping behavior for smaller displays.
 - Lesson: Notes parity needs the first opened window to feel like the primary workspace; column polish is hard to judge while the whole canvas is undersized.
 
+### 108. Larger Notes-like list typography
+
+- Problem: After the main canvas was widened, the source list and note list still looked scaled down compared with Apple Notes, making hierarchy and selected-note emphasis weaker than the reference.
+- Fix: Increased source-row height, source/group/count font sizes, note-list header size, group row height, note row height, and note title/snippet/meta font sizes. Slightly expanded note-cell padding so larger text has room without clipping.
+- Lesson: Visual parity needs typography and row-density tuning after canvas tuning; larger windows make undersized list text more obvious.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

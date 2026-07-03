@@ -85,16 +85,18 @@ enum LibraryNotesLayout {
     static let toolbarSearchWrapperWidth: CGFloat = 360
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 30
-    static let noteGroupRowHeight: CGFloat = 56
-    static let noteRowHeight: CGFloat = 72
-    static let sourceGroupFontSize: CGFloat = 12
-    static let sourceButtonFontSize: CGFloat = 14
-    static let sourceCountFontSize: CGFloat = 13
-    static let noteGroupFontSize: CGFloat = 17
-    static let noteTitleFontSize: CGFloat = 14.5
-    static let noteSnippetFontSize: CGFloat = 12.5
-    static let noteMetaFontSize: CGFloat = 11.5
+    static let sourceRowHeight: CGFloat = 34
+    static let noteGroupRowHeight: CGFloat = 62
+    static let noteRowHeight: CGFloat = 86
+    static let sourceGroupFontSize: CGFloat = 13.5
+    static let sourceButtonFontSize: CGFloat = 15.5
+    static let sourceCountFontSize: CGFloat = 14
+    static let noteGroupFontSize: CGFloat = 19
+    static let noteTitleFontSize: CGFloat = 16.5
+    static let noteSnippetFontSize: CGFloat = 14.5
+    static let noteMetaFontSize: CGFloat = 12.5
+    static let noteListHeaderTitleFontSize: CGFloat = 21
+    static let noteListHeaderCountFontSize: CGFloat = 13
     static let noteListLeadingInset: CGFloat = 18
     static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 18
@@ -187,9 +189,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 8
-    static let contentLeadingInset: CGFloat = 18
-    static let contentBottomInset: CGFloat = 8
+    static let contentTopInset: CGFloat = 9
+    static let contentLeadingInset: CGFloat = 20
+    static let contentBottomInset: CGFloat = 9
     static let contentTrailingInset: CGFloat = 16
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -1030,12 +1032,12 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureNoteListHeaderLabels() {
         noteListTitleLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListTitle")
-        noteListTitleLabel.font = .systemFont(ofSize: 18, weight: .bold)
+        noteListTitleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .bold)
         noteListTitleLabel.textColor = panelPrimaryTextColor()
         noteListTitleLabel.lineBreakMode = .byTruncatingTail
 
         noteListCountLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListCount")
-        noteListCountLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        noteListCountLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderCountFontSize, weight: .semibold)
         noteListCountLabel.textColor = panelTertiaryTextColor()
         noteListCountLabel.lineBreakMode = .byTruncatingTail
     }
