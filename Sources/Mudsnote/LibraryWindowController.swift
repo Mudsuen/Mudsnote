@@ -84,6 +84,10 @@ enum LibraryNotesLayout {
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 360
     static let toolbarSearchWrapperHeight: CGFloat = 36
+    static let toolbarEditorToolsWidth: CGFloat = 184
+    static let toolbarEditorToolsHeight: CGFloat = 36
+    static let toolbarEditorToolButtonWidth: CGFloat = 36
+    static let toolbarEditorToolButtonHeight: CGFloat = 30
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 34
     static let noteGroupRowHeight: CGFloat = 62
@@ -577,6 +581,7 @@ final class LibraryWindowController: NSWindowController,
     private static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
     private static let deleteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.delete")
     private static let restoreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.restore")
+    private static let editorToolsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.editor-tools")
     private static let formatToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.format")
     private static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
@@ -1061,11 +1066,7 @@ final class LibraryWindowController: NSWindowController,
             .space,
             Self.newNoteToolbarItemIdentifier,
             .flexibleSpace,
-            Self.formatToolbarItemIdentifier,
-            Self.checklistToolbarItemIdentifier,
-            Self.tableToolbarItemIdentifier,
-            Self.linkToolbarItemIdentifier,
-            Self.attachmentToolbarItemIdentifier,
+            Self.editorToolsToolbarItemIdentifier,
             .space,
             Self.exportToolbarItemIdentifier,
             Self.moreToolbarItemIdentifier,
@@ -1079,7 +1080,12 @@ final class LibraryWindowController: NSWindowController,
             Self.moveToolbarItemIdentifier,
             Self.saveToolbarItemIdentifier,
             Self.deleteToolbarItemIdentifier,
-            Self.restoreToolbarItemIdentifier
+            Self.restoreToolbarItemIdentifier,
+            Self.formatToolbarItemIdentifier,
+            Self.checklistToolbarItemIdentifier,
+            Self.tableToolbarItemIdentifier,
+            Self.linkToolbarItemIdentifier,
+            Self.attachmentToolbarItemIdentifier
         ]
     }
 
@@ -1118,6 +1124,8 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(openSelectedInSeparateWindow),
                 visibilityPriority: .low
             )
+        case Self.editorToolsToolbarItemIdentifier:
+            return toolbarEditorToolsItem(identifier: itemIdentifier)
         case Self.formatToolbarItemIdentifier:
             let item = toolbarImageItem(
                 identifier: itemIdentifier,
@@ -1231,7 +1239,8 @@ final class LibraryWindowController: NSWindowController,
             return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:
             return canUseSingleSelectedNote
-        case Self.formatToolbarItemIdentifier,
+        case Self.editorToolsToolbarItemIdentifier,
+             Self.formatToolbarItemIdentifier,
              Self.checklistToolbarItemIdentifier,
              Self.tableToolbarItemIdentifier,
              Self.linkToolbarItemIdentifier,
@@ -1268,6 +1277,117 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.visibilityPriority = visibilityPriority
         return item
+    }
+
+    private func toolbarEditorToolsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "编辑工具"
+        item.paletteLabel = "编辑工具"
+        item.toolTip = "编辑工具"
+        item.visibilityPriority = .high
+
+        let capsule = NSVisualEffectView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarEditorToolsWidth,
+            height: LibraryNotesLayout.toolbarEditorToolsHeight
+        ))
+        capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorTools")
+        capsule.blendingMode = .withinWindow
+        capsule.material = .titlebar
+        capsule.state = .active
+        capsule.wantsLayer = true
+        capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarEditorToolsHeight / 2
+        capsule.layer?.borderWidth = 1
+        capsule.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+        capsule.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.distribution = .fillEqually
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let buttons = [
+            toolbarEditorToolButton(
+                identifier: Self.formatToolbarItemIdentifier,
+                label: "格式",
+                image: makeFormatToolbarImage(),
+                action: #selector(formatPressed(_:))
+            ),
+            toolbarEditorToolButton(
+                identifier: Self.checklistToolbarItemIdentifier,
+                label: "待办列表",
+                symbolName: "checklist",
+                action: #selector(checklistPressed)
+            ),
+            toolbarEditorToolButton(
+                identifier: Self.tableToolbarItemIdentifier,
+                label: "插入表格",
+                symbolName: "tablecells",
+                action: #selector(tablePressed)
+            ),
+            toolbarEditorToolButton(
+                identifier: Self.linkToolbarItemIdentifier,
+                label: "插入链接",
+                symbolName: "link",
+                action: #selector(linkPressed)
+            ),
+            toolbarEditorToolButton(
+                identifier: Self.attachmentToolbarItemIdentifier,
+                label: "添加附件",
+                symbolName: "paperclip",
+                action: #selector(attachmentPressed)
+            )
+        ]
+        buttons.forEach { stack.addArrangedSubview($0) }
+
+        capsule.addSubview(stack)
+        NSLayoutConstraint.activate([
+            capsule.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsWidth),
+            capsule.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsHeight),
+            stack.leadingAnchor.constraint(equalTo: capsule.leadingAnchor, constant: 2),
+            stack.trailingAnchor.constraint(equalTo: capsule.trailingAnchor, constant: -2),
+            stack.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
+            stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight)
+        ])
+
+        item.view = capsule
+        setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+        return item
+    }
+
+    private func toolbarEditorToolButton(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSButton {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        image?.isTemplate = true
+        return toolbarEditorToolButton(identifier: identifier, label: label, image: image, action: action)
+    }
+
+    private func toolbarEditorToolButton(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        image: NSImage?,
+        action: Selector
+    ) -> NSButton {
+        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
+        button.toolTip = label
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonWidth).isActive = true
+        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight).isActive = true
+        return button
     }
 
     private func toolbarImageItem(
@@ -2471,6 +2591,8 @@ final class LibraryWindowController: NSWindowController,
         if let item = sender as? NSToolbarItem,
            let view = item.view {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
+        } else if let view = sender as? NSView {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
         } else if let contentView = window?.contentView {
             menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
         }
@@ -3418,11 +3540,33 @@ final class LibraryWindowController: NSWindowController,
                 (item as? NSMenuToolbarItem)?.menu = makeShareExportMenuForLibrary()
             case Self.moreToolbarItemIdentifier:
                 (item as? NSMenuToolbarItem)?.menu = makeMoreActionsMenuForLibrary()
+            case Self.editorToolsToolbarItemIdentifier:
+                setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
             default:
                 continue
             }
         }
         window?.toolbar?.validateVisibleItems()
+        updateVisibleEditorToolsToolbarGroupEnabled()
+    }
+
+    private func updateVisibleEditorToolsToolbarGroupEnabled() {
+        for item in window?.toolbar?.items ?? [] where item.itemIdentifier == Self.editorToolsToolbarItemIdentifier {
+            setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+        }
+    }
+
+    private func setEditorToolsToolbarGroupEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
+        item.isEnabled = isEnabled
+        guard let view = item.view else { return }
+        setControls(in: view, enabled: isEnabled)
+    }
+
+    private func setControls(in view: NSView, enabled isEnabled: Bool) {
+        if let control = view as? NSControl {
+            control.isEnabled = isEnabled
+        }
+        view.subviews.forEach { setControls(in: $0, enabled: isEnabled) }
     }
 
     private func makeFolderContextMenu(for folderURL: URL) -> NSMenu {
