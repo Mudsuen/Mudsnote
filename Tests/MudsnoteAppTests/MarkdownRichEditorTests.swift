@@ -2137,6 +2137,19 @@ struct MarkdownRichEditorTests {
         let trashMenuTitles = trashMoreMenu.items.map(\.title)
         #expect(trashMenuTitles.contains("恢复"))
         #expect(trashMenuTitles.contains("永久删除"))
+        let trashedNoteRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            controller.tableView(controller.tableView, pasteboardWriterForRow: row) != nil
+        })
+        let trashContextMenu = try #require(controller.noteContextMenuForLibrary(row: trashedNoteRow))
+        let trashContextTitles = trashContextMenu.items.map(\.title)
+        #expect(trashContextTitles.contains("恢复"))
+        #expect(trashContextTitles.contains("永久删除"))
+        #expect(trashContextTitles.contains("在 Finder 中显示"))
+        #expect(trashContextTitles.contains("复制 Markdown 路径"))
+        #expect(!trashContextTitles.contains("移到文件夹"))
+        #expect(!trashContextTitles.contains("分享..."))
+        #expect(!trashContextTitles.contains("导出 Markdown..."))
+        #expect(!trashContextTitles.contains("删除"))
 
         _ = try controller.restoreSelectedNoteForLibrary()
         #expect(FileManager.default.fileExists(atPath: noteURL.path))

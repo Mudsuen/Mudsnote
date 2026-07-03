@@ -4097,7 +4097,25 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeNoteContextMenu() -> NSMenu {
         let menu = NSMenu()
+        let isTrashScope = selectedScope == .trash
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
+
+        if isTrashScope {
+            addTrashNoteLifecycleItems(to: menu, selectionCount: selectionCount)
+            menu.addItem(.separator())
+
+            let revealItem = NSMenuItem(title: noteActionTitle(single: "在 Finder 中显示", multiple: "在 Finder 中显示 %d 个文件", count: selectionCount), action: #selector(revealSelectedNoteInFinderPressed), keyEquivalent: "")
+            revealItem.target = self
+            revealItem.isEnabled = canUseSelectedNote
+            menu.addItem(revealItem)
+
+            let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
+            copyPathItem.target = self
+            copyPathItem.isEnabled = canUseSelectedNote
+            menu.addItem(copyPathItem)
+
+            return menu
+        }
 
         let moveItem = NSMenuItem(title: noteActionTitle(single: "移到文件夹", multiple: "移动 %d 条笔记到文件夹", count: selectionCount), action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
@@ -4137,6 +4155,18 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(deleteItem)
 
         return menu
+    }
+
+    private func addTrashNoteLifecycleItems(to menu: NSMenu, selectionCount: Int) {
+        let restoreItem = NSMenuItem(title: noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount), action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
+        restoreItem.target = self
+        restoreItem.isEnabled = canRestoreSelectedNote
+        menu.addItem(restoreItem)
+
+        let permanentlyDeleteItem = NSMenuItem(title: noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
+        permanentlyDeleteItem.target = self
+        permanentlyDeleteItem.isEnabled = canUseSelectedNote
+        menu.addItem(permanentlyDeleteItem)
     }
 
     func makeShareExportMenuForLibrary() -> NSMenu {
@@ -4212,15 +4242,7 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(.separator())
 
         if isTrashScope {
-            let restoreItem = NSMenuItem(title: noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount), action: #selector(restoreSelectedNotePressed), keyEquivalent: "")
-            restoreItem.target = self
-            restoreItem.isEnabled = canRestoreSelectedNote
-            menu.addItem(restoreItem)
-
-            let permanentlyDeleteItem = NSMenuItem(title: noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
-            permanentlyDeleteItem.target = self
-            permanentlyDeleteItem.isEnabled = canUseSelectedNote
-            menu.addItem(permanentlyDeleteItem)
+            addTrashNoteLifecycleItems(to: menu, selectionCount: selectionCount)
         } else {
             let deleteItem = NSMenuItem(title: noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")
             deleteItem.target = self
