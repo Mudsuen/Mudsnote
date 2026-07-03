@@ -112,6 +112,83 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func searchIndexPersistsAndReloadsAcrossStoreInstances() throws {
+        let harness = try TestHarness()
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        harness.store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        _ = try harness.store.saveNewNote(title: "Cache Alpha", body: "durable body one", tags: ["cache"], in: notesDirectory)
+        _ = try harness.store.saveNewNote(title: "Cache Beta", body: "durable body two", tags: ["reload"], in: projectDirectory)
+
+        #expect(harness.store.prewarmSearchIndex() == 2)
+        #expect(FileManager.default.fileExists(atPath: harness.store.searchIndexCacheURL.path))
+
+        let reloadedStore = NoteStore(
+            defaults: harness.defaults,
+            legacyDefaults: nil,
+            fileManager: FileManager.default,
+            appSupportDirectory: harness.store.appSupportDirectory
+        )
+        reloadedStore.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        #expect(reloadedStore.searchIndexSnapshot == nil)
+        #expect(reloadedStore.prewarmSearchIndex() == 2)
+        #expect(reloadedStore.searchIndexSnapshot?.entries.map(\.title).sorted() == ["Cache Alpha", "Cache Beta"])
+        #expect(reloadedStore.searchNotes(query: "durable body two", limit: 10).first?.title == "Cache Beta")
+        #expect(reloadedStore.knownTags(limit: 10) == ["cache", "reload"])
+    }
+
+    @Test
+    func searchIndexDiskCacheRefreshesWhenMarkdownFileChanges() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(title: "Disk Cache", body: "old body", tags: ["old"])
+
+        #expect(store.prewarmSearchIndex() == 1)
+        #expect(FileManager.default.fileExists(atPath: store.searchIndexCacheURL.path))
+
+        let updatedURL = try store.updateNote(at: noteURL, title: "Disk Cache", body: "new body", tags: ["new"])
+        #expect(updatedURL.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+
+        let reloadedStore = NoteStore(
+            defaults: harness.defaults,
+            legacyDefaults: nil,
+            fileManager: FileManager.default,
+            appSupportDirectory: store.appSupportDirectory
+        )
+        reloadedStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+
+        #expect(reloadedStore.searchNotes(query: "old", limit: 10).isEmpty)
+        #expect(reloadedStore.searchNotes(query: "new", limit: 10).first?.title == "Disk Cache")
+        #expect(reloadedStore.knownTags(limit: 10) == ["new"])
+    }
+
+    @Test
+    func corruptSearchIndexDiskCacheIsIgnoredAndRebuilt() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        _ = try store.saveNewNote(title: "Recovered", body: "cache recovery", tags: ["healthy"])
+
+        try FileManager.default.createDirectory(
+            at: store.searchIndexCacheURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("not-json".utf8).write(to: store.searchIndexCacheURL)
+
+        #expect(store.prewarmSearchIndex() == 1)
+        #expect(store.searchNotes(query: "recovery", limit: 10).first?.title == "Recovered")
+        #expect(store.knownTags(limit: 10) == ["healthy"])
+        #expect(FileManager.default.fileExists(atPath: store.searchIndexCacheURL.path))
+    }
+
+    @Test
     func listNotesReturnsAllKnownMarkdownFilesByModifiedDate() throws {
         let harness = try TestHarness()
         let store = harness.store

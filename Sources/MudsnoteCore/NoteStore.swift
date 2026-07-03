@@ -14,6 +14,11 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
+    var searchIndexCacheURL: URL {
+        appSupportDirectory
+            .appendingPathComponent("SearchIndex", isDirectory: true)
+            .appendingPathComponent("index-v1.json", isDirectory: false)
+    }
 
     public init(
         defaults: UserDefaults = .standard,
@@ -54,18 +59,18 @@ public final class NoteStore: @unchecked Sendable {
     }
 }
 
-struct NoteSearchIndexSnapshot {
+struct NoteSearchIndexSnapshot: Codable {
     let rootsKey: [String]
     let fileSignatures: [String: NoteSearchFileSignature]
     let entries: [NoteSearchIndexEntry]
 }
 
-struct NoteSearchFileSignature: Equatable {
+struct NoteSearchFileSignature: Equatable, Codable {
     let modifiedAt: Date
     let fileSize: UInt64
 }
 
-struct NoteSearchIndexEntry {
+struct NoteSearchIndexEntry: Codable {
     let url: URL
     let title: String
     let body: String
@@ -88,6 +93,13 @@ struct NoteSearchIndexEntry {
             thumbnailURL: thumbnailURL
         )
     }
+}
+
+struct NoteSearchIndexDiskCache: Codable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let snapshot: NoteSearchIndexSnapshot
 }
 
 enum NoteStoreDefaultsKey {

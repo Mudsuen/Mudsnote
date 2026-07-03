@@ -129,6 +129,11 @@ extension NoteStore {
             return snapshot.entries
         }
 
+        if let snapshot = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey, fileSignatures: signatures) {
+            searchIndexSnapshot = snapshot
+            return snapshot.entries
+        }
+
         let entries = fileURLs.compactMap { indexedEntry(for: $0, signature: signatures[$0.path]) }
         let snapshot = NoteSearchIndexSnapshot(
             rootsKey: rootsKey,
@@ -136,7 +141,45 @@ extension NoteStore {
             entries: entries
         )
         searchIndexSnapshot = snapshot
+        writeSearchIndexSnapshotToDisk(snapshot)
         return entries
+    }
+
+    func readSearchIndexSnapshotFromDisk(rootsKey: [String], fileSignatures: [String: NoteSearchFileSignature]) -> NoteSearchIndexSnapshot? {
+        guard let data = try? Data(contentsOf: searchIndexCacheURL) else {
+            return nil
+        }
+
+        do {
+            let cache = try JSONDecoder().decode(NoteSearchIndexDiskCache.self, from: data)
+            guard cache.schemaVersion == NoteSearchIndexDiskCache.currentSchemaVersion,
+                  cache.snapshot.rootsKey == rootsKey,
+                  cache.snapshot.fileSignatures == fileSignatures else {
+                return nil
+            }
+            return cache.snapshot
+        } catch {
+            try? fileManager.removeItem(at: searchIndexCacheURL)
+            return nil
+        }
+    }
+
+    func writeSearchIndexSnapshotToDisk(_ snapshot: NoteSearchIndexSnapshot) {
+        let cache = NoteSearchIndexDiskCache(
+            schemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion,
+            snapshot: snapshot
+        )
+
+        do {
+            try fileManager.createDirectory(
+                at: searchIndexCacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(cache)
+            try data.write(to: searchIndexCacheURL, options: .atomic)
+        } catch {
+            try? fileManager.removeItem(at: searchIndexCacheURL)
+        }
     }
 
     private func fileSignature(for fileURL: URL) -> NoteSearchFileSignature? {

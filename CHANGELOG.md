@@ -618,6 +618,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Source-list folder drop targets now read all dragged file URLs, validate the full Markdown set, reject mixed invalid drops, and move every dragged note into the target folder through the existing local-first move path.
 - Lesson: Drag parity should share the same batch action contract as menus; hover validation stays fast through the existing movable-path cache while the drop keeps real `.md` files as the source of truth.
 
+### 106. Persistent lightweight search index
+
+- Problem: The Notes-like library could prewarm a Markdown search index only in memory, so relaunching a large local library still had to parse every Markdown file again before search, tags, and All Notes felt fully warm.
+- Fix: Added an App Support JSON cache for the lightweight search snapshot. The cache is used only when the root set and every Markdown file signature match, and corrupt or stale caches fall back to rebuilding from the real files.
+- Lesson: Scale work should stay local-first and disposable; a cache can make relaunch faster without becoming a second source of truth.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
