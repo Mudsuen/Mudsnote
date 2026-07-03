@@ -4324,14 +4324,22 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func configureMarkdownTableContextMenuForLibrary(_ menu: NSMenu, atCharacterIndex characterIndex: Int) -> Bool {
-        guard canEditCurrentDocument,
-              markdownTableColumnCount(atCharacterIndex: characterIndex) != nil else {
+        guard canEditCurrentDocument else {
+            return false
+        }
+
+        let string = editorTextView.string as NSString
+        guard let tableLocation = markdownTableLocation(atCharacterIndex: characterIndex, in: string) else {
             return false
         }
 
         let insertRowItem = NSMenuItem(title: "插入表格行", action: #selector(insertMarkdownTableRowMenuItemPressed(_:)), keyEquivalent: "")
         insertRowItem.target = self
         insertRowItem.representedObject = characterIndex
+
+        let insertColumnItem = NSMenuItem(title: "插入右侧列", action: #selector(insertMarkdownTableColumnMenuItemPressed(_:)), keyEquivalent: "")
+        insertColumnItem.target = self
+        insertColumnItem.representedObject = characterIndex
 
         let deleteRowItem = NSMenuItem(title: "删除表格行", action: #selector(deleteMarkdownTableRowMenuItemPressed(_:)), keyEquivalent: "")
         deleteRowItem.target = self
@@ -4340,11 +4348,17 @@ final class LibraryWindowController: NSWindowController,
         deleteRowItem.keyEquivalentModifierMask = [.command]
         deleteRowItem.isEnabled = isMarkdownTableDataRow(atCharacterIndex: characterIndex)
 
+        let deleteColumnItem = NSMenuItem(title: "删除表格列", action: #selector(deleteMarkdownTableColumnMenuItemPressed(_:)), keyEquivalent: "")
+        deleteColumnItem.target = self
+        deleteColumnItem.representedObject = characterIndex
+        deleteColumnItem.isEnabled = tableLocation.columnCount > 2
+
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }
-        menu.insertItem(deleteRowItem, at: 0)
-        menu.insertItem(insertRowItem, at: 0)
+        for item in [insertRowItem, insertColumnItem, deleteRowItem, deleteColumnItem].reversed() {
+            menu.insertItem(item, at: 0)
+        }
         return true
     }
 
@@ -4360,6 +4374,18 @@ final class LibraryWindowController: NSWindowController,
         guard let characterIndex = sender.representedObject as? Int else { return }
         moveEditorSelection(to: characterIndex)
         deleteCurrentMarkdownTableRowForLibrary()
+    }
+
+    @objc
+    private func insertMarkdownTableColumnMenuItemPressed(_ sender: NSMenuItem) {
+        guard let characterIndex = sender.representedObject as? Int else { return }
+        insertMarkdownTableColumnForLibrary(atCharacterIndex: characterIndex)
+    }
+
+    @objc
+    private func deleteMarkdownTableColumnMenuItemPressed(_ sender: NSMenuItem) {
+        guard let characterIndex = sender.representedObject as? Int else { return }
+        deleteMarkdownTableColumnForLibrary(atCharacterIndex: characterIndex)
     }
 
     private func promptForText(title: String, message: String, placeholder: String, defaultValue: String) -> String? {
@@ -4868,6 +4894,12 @@ final class LibraryWindowController: NSWindowController,
         case previous
     }
 
+    private struct MarkdownTableLocation {
+        let lineRange: NSRange
+        let columnIndex: Int
+        let columnCount: Int
+    }
+
     private func moveMarkdownTableCellSelectionForLibrary(_ direction: MarkdownTableCellDirection) -> Bool {
         guard selectedScope != .trash,
               editorTextView.selectedRange().length == 0,
@@ -5008,6 +5040,96 @@ final class LibraryWindowController: NSWindowController,
         return true
     }
 
+    @discardableResult
+    private func insertMarkdownTableColumnForLibrary(atCharacterIndex characterIndex: Int) -> Bool {
+        editMarkdownTableColumnForLibrary(atCharacterIndex: characterIndex, operation: .insertAfter)
+    }
+
+    @discardableResult
+    private func deleteMarkdownTableColumnForLibrary(atCharacterIndex characterIndex: Int) -> Bool {
+        editMarkdownTableColumnForLibrary(atCharacterIndex: characterIndex, operation: .delete)
+    }
+
+    private enum MarkdownTableColumnOperation {
+        case insertAfter
+        case delete
+    }
+
+    @discardableResult
+    private func editMarkdownTableColumnForLibrary(
+        atCharacterIndex characterIndex: Int,
+        operation: MarkdownTableColumnOperation
+    ) -> Bool {
+        guard selectedScope != .trash,
+              let storage = editorTextView.textStorage else {
+            return false
+        }
+
+        let string = editorTextView.string as NSString
+        guard let location = markdownTableLocation(atCharacterIndex: characterIndex, in: string),
+              let lineRanges = markdownTableLineRanges(containing: location.lineRange, in: string),
+              location.columnCount > 1 else {
+            return false
+        }
+
+        if operation == .delete, location.columnCount <= 2 {
+            return false
+        }
+
+        var replacementLines: [String] = []
+        for lineRange in lineRanges {
+            let line = string.substring(with: lineRange)
+            guard var cells = markdownTableCells(in: line) else { return false }
+            switch operation {
+            case .insertAfter:
+                cells.insert(isMarkdownTableSeparatorLine(line) ? "---" : "", at: min(location.columnIndex + 1, cells.count))
+            case .delete:
+                guard cells.indices.contains(location.columnIndex) else { return false }
+                cells.remove(at: location.columnIndex)
+            }
+            replacementLines.append(markdownTableLine(cells: cells))
+        }
+
+        guard let firstRange = lineRanges.first,
+              let lastRange = lineRanges.last else {
+            return false
+        }
+
+        let tableRange = NSRange(location: firstRange.location, length: NSMaxRange(lastRange) - firstRange.location)
+        let currentRowIndex = lineRanges.firstIndex { $0.location == location.lineRange.location } ?? 0
+        let targetColumnIndex: Int
+        switch operation {
+        case .insertAfter:
+            targetColumnIndex = location.columnIndex + 1
+        case .delete:
+            targetColumnIndex = min(location.columnIndex, max(location.columnCount - 2, 0))
+        }
+
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: replacementLines.joined(separator: "\n"),
+            theme: theme,
+            baseURL: selectedURL
+        )
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: tableRange, with: rendered)
+        suppressEditorChanges = false
+
+        markDirty()
+        let targetLineStart = firstRange.location + replacementLines.prefix(currentRowIndex).reduce(0) { partial, line in
+            partial + (line as NSString).length + 1
+        }
+        if let targetStarts = markdownTableCellStartLocations(
+            in: replacementLines[currentRowIndex],
+            lineStartLocation: targetLineStart
+        ), targetStarts.indices.contains(targetColumnIndex) {
+            moveEditorSelection(to: targetStarts[targetColumnIndex])
+        } else {
+            moveEditorSelection(to: firstRange.location)
+        }
+        return true
+    }
+
     private func moveEditorSelection(to location: Int) {
         guard let storage = editorTextView.textStorage else { return }
         editorTextView.setSelectedRange(NSRange(location: max(0, min(location, storage.length)), length: 0))
@@ -5063,33 +5185,62 @@ final class LibraryWindowController: NSWindowController,
         return nil
     }
 
+    private func markdownTableLocation(atCharacterIndex characterIndex: Int, in string: NSString) -> MarkdownTableLocation? {
+        guard string.length > 0 else { return nil }
+        let safeLocation = max(0, min(characterIndex, string.length))
+        let lineRange = visibleLineRange(atCharacterIndex: safeLocation, in: string)
+        let line = string.substring(with: lineRange)
+        guard let columnCount = markdownTableColumnCount(in: line),
+              let columnIndex = markdownTableCellIndex(at: safeLocation, lineRange: lineRange, in: string) else {
+            return nil
+        }
+        return MarkdownTableLocation(lineRange: lineRange, columnIndex: min(columnIndex, columnCount - 1), columnCount: columnCount)
+    }
+
+    private func markdownTableLineRanges(containing range: NSRange, in string: NSString) -> [NSRange]? {
+        guard markdownTableColumnCount(in: string.substring(with: range)) != nil else { return nil }
+
+        var firstRange = range
+        while let previousRange = lineRange(before: firstRange, in: string),
+              markdownTableColumnCount(in: string.substring(with: previousRange)) != nil {
+            firstRange = previousRange
+        }
+
+        var ranges = [firstRange]
+        var currentRange = firstRange
+        while let nextRange = lineRange(after: currentRange, in: string),
+              markdownTableColumnCount(in: string.substring(with: nextRange)) != nil {
+            ranges.append(nextRange)
+            currentRange = nextRange
+        }
+
+        return ranges
+    }
+
     private func markdownTableColumnCount(atCharacterIndex characterIndex: Int) -> Int? {
         let string = editorTextView.string as NSString
         guard string.length > 0 else { return nil }
-        let safeLocation = max(0, min(characterIndex, string.length))
-        let lineRange = string.paragraphRange(for: NSRange(location: safeLocation, length: 0))
-        let hasTrailingNewline = string.substring(with: lineRange).hasSuffix("\n")
-        let visibleLineRange = NSRange(
-            location: lineRange.location,
-            length: max(lineRange.length - (hasTrailingNewline ? 1 : 0), 0)
-        )
-        return markdownTableColumnCount(in: string.substring(with: visibleLineRange))
+        return markdownTableLocation(atCharacterIndex: characterIndex, in: string)?.columnCount
     }
 
     private func isMarkdownTableDataRow(atCharacterIndex characterIndex: Int) -> Bool {
         let string = editorTextView.string as NSString
         guard string.length > 0 else { return false }
-        let safeLocation = max(0, min(characterIndex, string.length))
-        let lineRange = string.paragraphRange(for: NSRange(location: safeLocation, length: 0))
-        let hasTrailingNewline = string.substring(with: lineRange).hasSuffix("\n")
-        let visibleLineRange = NSRange(
-            location: lineRange.location,
-            length: max(lineRange.length - (hasTrailingNewline ? 1 : 0), 0)
-        )
+        guard let tableLocation = markdownTableLocation(atCharacterIndex: characterIndex, in: string) else { return false }
+        let visibleLineRange = tableLocation.lineRange
         let line = string.substring(with: visibleLineRange)
         return markdownTableColumnCount(in: line) != nil
             && !isMarkdownTableSeparatorLine(line)
             && isMarkdownTableDataRow(visibleLineRange, in: string)
+    }
+
+    private func visibleLineRange(atCharacterIndex characterIndex: Int, in string: NSString) -> NSRange {
+        let lineRange = string.paragraphRange(for: NSRange(location: max(0, min(characterIndex, string.length)), length: 0))
+        let hasTrailingNewline = string.substring(with: lineRange).hasSuffix("\n")
+        return NSRange(
+            location: lineRange.location,
+            length: max(lineRange.length - (hasTrailingNewline ? 1 : 0), 0)
+        )
     }
 
     private func isMarkdownTableDataRow(_ range: NSRange, in string: NSString) -> Bool {
@@ -5157,6 +5308,20 @@ final class LibraryWindowController: NSWindowController,
 
     private func emptyMarkdownTableRow(columnCount: Int) -> String {
         "| " + Array(repeating: " ", count: max(columnCount, 2)).joined(separator: " | ") + " |"
+    }
+
+    private func markdownTableCells(in line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard markdownTableColumnCount(in: trimmed) != nil else { return nil }
+        return trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .dropFirst()
+            .dropLast()
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private func markdownTableLine(cells: [String]) -> String {
+        "| " + cells.joined(separator: " | ") + " |"
     }
 
     private func markdownTableCellStartLocations(in line: String, lineStartLocation: Int) -> [Int]? {

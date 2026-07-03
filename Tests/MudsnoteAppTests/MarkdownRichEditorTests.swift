@@ -1664,7 +1664,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryEditorTableContextMenuEditsMarkdownRows() throws {
+    func libraryEditorTableContextMenuEditsMarkdownRowsAndColumns() throws {
         let suiteName = "mudsnote.library-table-menu-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -1703,14 +1703,41 @@ struct MarkdownRichEditorTests {
         #expect(headerLocation != NSNotFound)
         let headerMenu = NSMenu()
         #expect(controller.configureMarkdownTableContextMenuForLibrary(headerMenu, atCharacterIndex: headerLocation))
-        #expect(headerMenu.items.map(\.title) == ["插入表格行", "删除表格行"])
-        let headerInsertItem = try #require(headerMenu.items.first)
-        let headerDeleteItem = try #require(headerMenu.items.last)
-        #expect(headerInsertItem.isEnabled)
-        #expect(!headerDeleteItem.isEnabled)
-        #expect(NSApp.sendAction(try #require(headerInsertItem.action), to: headerInsertItem.target, from: headerInsertItem))
+        #expect(headerMenu.items.map(\.title) == ["插入表格行", "插入右侧列", "删除表格行", "删除表格列"])
+        let headerInsertRowItem = try #require(headerMenu.items.first)
+        let headerInsertColumnItem = try #require(headerMenu.items.dropFirst().first)
+        let headerDeleteRowItem = try #require(headerMenu.items.dropFirst(2).first)
+        let headerDeleteColumnItem = try #require(headerMenu.items.last)
+        #expect(headerInsertRowItem.isEnabled)
+        #expect(headerInsertColumnItem.isEnabled)
+        #expect(!headerDeleteRowItem.isEnabled)
+        #expect(!headerDeleteColumnItem.isEnabled)
+        #expect(NSApp.sendAction(try #require(headerInsertColumnItem.action), to: headerInsertColumnItem.target, from: headerInsertColumnItem))
 
         var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name |  | Status |",
+            "| --- | --- | --- |",
+            "| Alpha |  | Todo |"
+        ])
+        let insertedColumnLocation = (controller.editorTextView.string as NSString).range(of: "| Name |  | Status |").location + 9
+        let columnMenu = NSMenu()
+        #expect(controller.configureMarkdownTableContextMenuForLibrary(columnMenu, atCharacterIndex: insertedColumnLocation))
+        #expect(columnMenu.items.map(\.title) == ["插入表格行", "插入右侧列", "删除表格行", "删除表格列"])
+        let deleteColumnItem = try #require(columnMenu.items.last)
+        #expect(deleteColumnItem.isEnabled)
+        #expect(NSApp.sendAction(try #require(deleteColumnItem.action), to: deleteColumnItem.target, from: deleteColumnItem))
+
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "| Alpha | Todo |"
+        ])
+
+        #expect(NSApp.sendAction(try #require(headerInsertRowItem.action), to: headerInsertRowItem.target, from: headerInsertRowItem))
+
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
         #expect(tableMarkdown.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
@@ -1722,12 +1749,14 @@ struct MarkdownRichEditorTests {
         #expect(alphaLocation != NSNotFound)
         let dataMenu = NSMenu()
         #expect(controller.configureMarkdownTableContextMenuForLibrary(dataMenu, atCharacterIndex: alphaLocation))
-        #expect(dataMenu.items.map(\.title) == ["插入表格行", "删除表格行"])
-        let dataDeleteItem = try #require(dataMenu.items.last)
-        #expect(dataDeleteItem.isEnabled)
-        #expect(dataDeleteItem.keyEquivalent == "\u{7F}")
-        #expect(dataDeleteItem.keyEquivalentModifierMask == [.command])
-        #expect(NSApp.sendAction(try #require(dataDeleteItem.action), to: dataDeleteItem.target, from: dataDeleteItem))
+        #expect(dataMenu.items.map(\.title) == ["插入表格行", "插入右侧列", "删除表格行", "删除表格列"])
+        let dataDeleteRowItem = try #require(dataMenu.items.dropFirst(2).first)
+        let dataDeleteColumnItem = try #require(dataMenu.items.last)
+        #expect(dataDeleteRowItem.isEnabled)
+        #expect(dataDeleteRowItem.keyEquivalent == "\u{7F}")
+        #expect(dataDeleteRowItem.keyEquivalentModifierMask == [.command])
+        #expect(!dataDeleteColumnItem.isEnabled)
+        #expect(NSApp.sendAction(try #require(dataDeleteRowItem.action), to: dataDeleteRowItem.target, from: dataDeleteRowItem))
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
         #expect(tableMarkdown.components(separatedBy: "\n") == [
