@@ -239,6 +239,9 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverHorizontalInset: CGFloat = 14
     static let hoverVerticalInset: CGFloat = 5
     static let hoverCornerRadius: CGFloat = 8
+    static let separatorLeadingInset: CGFloat = 32
+    static let separatorTrailingInset: CGFloat = 18
+    static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isPointerHovered = false
@@ -287,7 +290,22 @@ final class LibraryNoteRowView: NSTableRowView {
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
-        guard !isGroupRow, isPointerHovered, !isSelected else { return }
+        guard !isGroupRow else { return }
+
+        if !isSelected {
+            let y = bounds.minY + 0.5
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: Self.separatorLeadingInset, y: y))
+            path.line(to: NSPoint(
+                x: max(Self.separatorLeadingInset, bounds.maxX - Self.separatorTrailingInset),
+                y: y
+            ))
+            panelSeparatorColor(alpha: Self.separatorAlpha).setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+
+        guard isPointerHovered, !isSelected else { return }
 
         let hoverRect = bounds.insetBy(
             dx: Self.hoverHorizontalInset,

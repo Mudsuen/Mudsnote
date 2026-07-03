@@ -528,6 +528,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Made source loading rows quiet once the sidebar has usable root folder rows, and hid transient tag-indexing copy while tags load in the background. The visual QA script now explicitly opens the library path while normal app launches keep the shell-first deferred loading path.
 - Lesson: Visual QA needs deterministic state, and users benefit from the same quieter shell when background indexing is slow.
 
+### 91. Note-list row separators
+
+- Problem: Unselected note rows in the middle pane lacked the faint horizontal separators used by Apple Notes, so the list read more like isolated text blocks than a dense scannable note list.
+- Fix: Added low-contrast inset separators for normal note rows while keeping section headers and the selected golden card visually clean. Added regression coverage for the separator geometry and opacity contract.
+- Lesson: Small list chrome matters for Notes parity; separators should clarify row boundaries without competing with selection or hover states.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
