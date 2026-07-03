@@ -492,6 +492,7 @@ final class LibrarySourceRowView: NSView {
     static let hoverCornerRadius: CGFloat = 6
     static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
     static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
+    static let dropRejectedColor = NSColor(calibratedWhite: 0.36, alpha: 0.34)
 
     var targetDirectory: URL?
     var canDropNotes: (([URL], URL) -> Bool)?
@@ -499,6 +500,7 @@ final class LibrarySourceRowView: NSView {
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isPointerHovered = false
     private(set) var isDropTargeted = false
+    private(set) var isDropRejected = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -545,6 +547,7 @@ final class LibrarySourceRowView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         setDropTargeted(false)
+        setDropRejected(false)
         let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
         guard let targetDirectory,
               !noteURLs.isEmpty else {
@@ -555,12 +558,13 @@ final class LibrarySourceRowView: NSView {
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
         setDropTargeted(false)
+        setDropRejected(false)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        if isPointerHovered, !isDropTargeted {
+        if isPointerHovered, !isDropTargeted, !isDropRejected {
             let hoverRect = bounds.insetBy(
                 dx: Self.hoverHorizontalInset,
                 dy: Self.hoverVerticalInset
@@ -572,6 +576,18 @@ final class LibrarySourceRowView: NSView {
             )
             Self.hoverColor.setFill()
             hoverPath.fill()
+        }
+
+        if isDropRejected {
+            let rejectedRect = bounds.insetBy(dx: 1, dy: 2)
+            let rejectedPath = NSBezierPath(
+                roundedRect: rejectedRect,
+                xRadius: 6,
+                yRadius: 6
+            )
+            rejectedPath.lineWidth = 1.5
+            Self.dropRejectedColor.setStroke()
+            rejectedPath.stroke()
         }
 
         guard isDropTargeted else { return }
@@ -594,6 +610,18 @@ final class LibrarySourceRowView: NSView {
     func setDropTargeted(_ targeted: Bool) {
         guard isDropTargeted != targeted else { return }
         isDropTargeted = targeted
+        if targeted {
+            isDropRejected = false
+        }
+        needsDisplay = true
+    }
+
+    func setDropRejected(_ rejected: Bool) {
+        guard isDropRejected != rejected else { return }
+        isDropRejected = rejected
+        if rejected {
+            isDropTargeted = false
+        }
         needsDisplay = true
     }
 
@@ -601,11 +629,16 @@ final class LibrarySourceRowView: NSView {
         let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
         guard targetDirectory != nil,
               !noteURLs.isEmpty,
-              let targetDirectory,
-              canDropNotes?(noteURLs, targetDirectory) == true else {
+              let targetDirectory else {
             setDropTargeted(false)
+            setDropRejected(false)
             return []
         }
+        guard canDropNotes?(noteURLs, targetDirectory) == true else {
+            setDropRejected(true)
+            return []
+        }
+        setDropRejected(false)
         setDropTargeted(true)
         return .move
     }
