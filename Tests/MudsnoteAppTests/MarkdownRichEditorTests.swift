@@ -2237,8 +2237,10 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue.contains("正在索引"))
+        let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
+        #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline, controller.titleField.stringValue != "Deferred Seed" {
+        while Date() < deadline, controller.editorTextView.string != "Deferred body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 

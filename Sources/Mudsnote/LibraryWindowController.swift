@@ -628,6 +628,7 @@ final class LibraryWindowController: NSWindowController,
     private var autosaveTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var hasPendingSearchReload = false
+    private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
@@ -750,9 +751,21 @@ final class LibraryWindowController: NSWindowController,
             suppressSelectionChanges = true
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
             suppressSelectionChanges = false
+            showInitialNoteLoadingShell(for: noteToLoad)
             loadInitialNoteAfterLaunch(noteToLoad)
         }
         scheduleFullLibrarySnapshotReload()
+    }
+
+    private func showInitialNoteLoadingShell(for note: NoteSearchResult) {
+        isLoadingInitialNote = true
+        selectedURL = nil
+        setEditorEditable(false)
+        applyDocument(title: note.title, body: "", tags: note.tags)
+        isDirty = false
+        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        updateEmptyState()
+        updateToolbarActionState()
     }
 
     private func loadInitialNoteAfterLaunch(_ note: NoteSearchResult) {
@@ -2564,6 +2577,7 @@ final class LibraryWindowController: NSWindowController,
             if selectedScope == .trash {
                 selectedScope = .all
             }
+            isLoadingInitialNote = false
             selectedURL = nil
             selectedTags = []
             suppressSelectionChanges = true
@@ -2986,6 +3000,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func load(note: NoteSearchResult) {
+        isLoadingInitialNote = false
         do {
             let loaded = try noteStore.loadNote(at: note.url)
             applyLoadedNoteResult(.success(loaded), for: note)
@@ -2995,6 +3010,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyLoadedNoteResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
+        isLoadingInitialNote = false
         switch result {
         case .success(let loaded):
             selectedURL = note.url
@@ -3587,6 +3603,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func clearCurrentDocumentAfterRemoval() {
+        isLoadingInitialNote = false
         selectedURL = nil
         selectedTags = []
         isDirty = false
@@ -3657,6 +3674,7 @@ final class LibraryWindowController: NSWindowController,
 
     private var canEditCurrentDocument: Bool {
         guard selectedScope != .trash else { return false }
+        guard !isLoadingInitialNote else { return false }
         return selectedURL != nil
             || isDirty
             || statusLabel.stringValue == "新笔记"
