@@ -1027,11 +1027,14 @@ struct MarkdownRichEditorTests {
         )
         defer { emptyController.close() }
 
-        func visibleEditorToolButtons(in controller: LibraryWindowController) throws -> [NSButton] {
-            let editorToolsView = try #require((controller.window?.toolbar?.items ?? []).first {
+        func visibleEditorToolsView(in controller: LibraryWindowController) throws -> NSView {
+            try #require((controller.window?.toolbar?.items ?? []).first {
                 $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
             }?.view)
-            return editorToolsView.allSubviews.compactMap { $0 as? NSButton }
+        }
+
+        func visibleEditorToolButtons(in controller: LibraryWindowController) throws -> [NSButton] {
+            try visibleEditorToolsView(in: controller).allSubviews.compactMap { $0 as? NSButton }
         }
 
         func toolbarItem(_ rawValue: String) -> NSToolbarItem {
@@ -1060,6 +1063,7 @@ struct MarkdownRichEditorTests {
         #expect(!emptyController.validateToolbarItem(exportItem))
         #expect(emptyController.validateToolbarItem(newItem))
         #expect(try visibleEditorToolButtons(in: emptyController).allSatisfy { !$0.isEnabled })
+        #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
 
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
@@ -1071,6 +1075,7 @@ struct MarkdownRichEditorTests {
         #expect(emptyController.validateToolbarItem(saveItem))
         #expect(emptyController.validateToolbarItem(moreItem))
         #expect(try visibleEditorToolButtons(in: emptyController).allSatisfy(\.isEnabled))
+        #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
 
         let noteURL = try store.saveNewNote(title: "Toolbar State", body: "Body line")
         let selectedController = LibraryWindowController(
@@ -1090,6 +1095,7 @@ struct MarkdownRichEditorTests {
         #expect(selectedController.validateToolbarItem(deleteItem))
         #expect(selectedController.validateToolbarItem(exportItem))
         #expect(!selectedController.validateToolbarItem(restoreItem))
+        #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
@@ -1116,6 +1122,7 @@ struct MarkdownRichEditorTests {
         #expect(selectedController.validateToolbarItem(deleteItem))
         #expect(selectedController.validateToolbarItem(restoreItem))
         #expect(try visibleEditorToolButtons(in: selectedController).allSatisfy { !$0.isEnabled })
+        #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)

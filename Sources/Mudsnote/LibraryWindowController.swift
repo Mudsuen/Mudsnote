@@ -180,6 +180,10 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 36
     static let toolbarEditorToolButtonWidth: CGFloat = 39
     static let toolbarEditorToolButtonHeight: CGFloat = 30
+    static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
+    static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
+    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0.55
+    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0.25
     static let toolbarSymbolPointSize: CGFloat = 21
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 40
@@ -3960,6 +3964,16 @@ final class LibraryWindowController: NSWindowController,
     private func setEditorToolsToolbarGroupEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
         item.isEnabled = isEnabled
         guard let view = item.view else { return }
+        view.alphaValue = isEnabled
+            ? LibraryNotesLayout.toolbarEditorToolsEnabledAlpha
+            : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
+        view.layer?.borderColor = NSColor.separatorColor
+            .withAlphaComponent(
+                isEnabled
+                    ? LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha
+                    : LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha
+            )
+            .cgColor
         setControls(in: view, enabled: isEnabled)
     }
 
