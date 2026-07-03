@@ -756,6 +756,7 @@ final class LibraryWindowController: NSWindowController,
     private var searchResultsTask: Task<Void, Never>?
     private var searchResultsGeneration = 0
     private var hasPendingSearchReload = false
+    private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
@@ -2251,6 +2252,8 @@ final class LibraryWindowController: NSWindowController,
             noteListCountLabel.stringValue = isFullLibrarySnapshotLoading
                 ? "\(notes.count) 条笔记 · 正在索引..."
                 : "\(notes.count) 条笔记"
+        } else if hasPendingSearchReload || isSearchResultReloading {
+            noteListCountLabel.stringValue = "正在搜索..."
         } else {
             noteListCountLabel.stringValue = "\(notes.count) 个结果"
         }
@@ -2261,7 +2264,9 @@ final class LibraryWindowController: NSWindowController,
         noteListEmptyLabel.isHidden = !isEmpty
         guard isEmpty else { return }
 
-        if !query.isEmpty {
+        if !query.isEmpty, hasPendingSearchReload || isSearchResultReloading {
+            noteListEmptyLabel.stringValue = "正在搜索..."
+        } else if !query.isEmpty {
             noteListEmptyLabel.stringValue = "未找到结果"
         } else if selectedScope == .trash {
             noteListEmptyLabel.stringValue = "最近删除为空"
@@ -2790,7 +2795,20 @@ final class LibraryWindowController: NSWindowController,
 
     private func scheduleSearchReloadFromTyping() {
         searchReloadWorkItem?.cancel()
+
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            hasPendingSearchReload = false
+            performSearchReload(synchronously: true)
+            removeEditorSearchHighlights()
+            return
+        }
+
         hasPendingSearchReload = true
+        searchScopeControl.isHidden = false
+        updateNoteListHeader(query: query)
+        updateNoteListEmptyState(query: query)
+        applyEditorSearchHighlightsForCurrentQuery()
 
         let workItem = DispatchWorkItem { [weak self] in
             self?.performSearchReload()
@@ -2814,6 +2832,7 @@ final class LibraryWindowController: NSWindowController,
     private func cancelActiveSearchResultReload() {
         searchResultsTask?.cancel()
         searchResultsTask = nil
+        isSearchResultReloading = false
         searchResultsGeneration += 1
     }
 
@@ -2838,8 +2857,10 @@ final class LibraryWindowController: NSWindowController,
         let scope = selectedScope
         let searchesAllNotes = searchScopeControl.selectedSegment == 1
         let noteStore = noteStore
+        isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
+        updateNoteListEmptyState(query: query)
 
         let task = Task.detached(priority: .userInitiated) { [noteStore, scope, query, searchesAllNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
@@ -2866,6 +2887,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applySearchResults(_ results: [NoteSearchResult], query: String, selecting preferredURL: URL?) {
+        isSearchResultReloading = false
         notes = results
         listRows = buildGroupedRows(for: notes)
         updateNoteListHeader(query: query)

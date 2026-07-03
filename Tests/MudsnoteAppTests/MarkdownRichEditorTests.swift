@@ -1706,6 +1706,8 @@ struct MarkdownRichEditorTests {
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
+        #expect(!controller.searchScopeControl.isHidden)
+        #expect(controller.noteListCountLabel.stringValue == "正在搜索...")
 
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline,
@@ -1720,6 +1722,12 @@ struct MarkdownRichEditorTests {
         let fieldEditor = NSTextView()
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         #expect(controller.titleField.stringValue == "Beta Debounced")
+
+        controller.searchField.stringValue = ""
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        #expect(controller.searchScopeControl.isHidden)
+        #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
+        #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
     }
 
     @MainActor
