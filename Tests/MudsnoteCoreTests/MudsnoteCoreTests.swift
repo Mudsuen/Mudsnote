@@ -92,6 +92,26 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func prewarmSearchIndexBuildsReusableSnapshot() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        _ = try store.saveNewNote(title: "Alpha", body: "body one", tags: ["alpha"], in: notesDirectory)
+        _ = try store.saveNewNote(title: "Beta", body: "body two", tags: ["beta"], in: projectDirectory)
+
+        #expect(store.searchIndexSnapshot == nil)
+        #expect(store.prewarmSearchIndex() == 2)
+        let snapshot = try #require(store.searchIndexSnapshot)
+        #expect(snapshot.entries.map(\.title).sorted() == ["Alpha", "Beta"])
+        #expect(store.searchNotes(query: "body two", limit: 10).first?.title == "Beta")
+        #expect(store.knownTags(limit: 10) == ["alpha", "beta"])
+    }
+
+    @Test
     func listNotesReturnsAllKnownMarkdownFilesByModifiedDate() throws {
         let harness = try TestHarness()
         let store = harness.store

@@ -6,6 +6,11 @@ extension NoteStore {
         return deduplicatedDirectories(preferredDirectories + recentDirectories)
     }
 
+    @discardableResult
+    public func prewarmSearchIndex(roots: [URL]? = nil) -> Int {
+        indexedEntries(roots: roots).count
+    }
+
     public func knownTags(limit: Int = 200) -> [String] {
         var counts: [String: Int] = [:]
 

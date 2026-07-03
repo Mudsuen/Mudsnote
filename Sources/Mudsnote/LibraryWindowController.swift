@@ -1047,7 +1047,9 @@ final class LibraryWindowController: NSWindowController,
             ))
         }
 
-        sourceTagNames = includeTags ? noteStore.knownTags(limit: 12) : []
+        if !includeTags {
+            sourceTagNames = []
+        }
         for (index, tag) in sourceTagNames.enumerated() {
             sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
         }
@@ -1084,14 +1086,25 @@ final class LibraryWindowController: NSWindowController,
 
     private func scheduleDeferredSourceTagLoad() {
         guard !sourceTagsLoaded else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.loadSourceTagsForLibrary()
+        let noteStore = noteStore
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            noteStore.prewarmSearchIndex()
+            let tags = noteStore.knownTags(limit: 12)
+            DispatchQueue.main.async {
+                self?.applySourceTagsForLibrary(tags)
+            }
         }
     }
 
     func loadSourceTagsForLibrary() {
         guard !sourceTagsLoaded else { return }
+        applySourceTagsForLibrary(noteStore.knownTags(limit: 12))
+    }
+
+    private func applySourceTagsForLibrary(_ tags: [String]) {
+        guard !sourceTagsLoaded else { return }
         sourceTagsLoaded = true
+        sourceTagNames = tags
         rebuildSourceRows(includeTags: true)
         reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
     }

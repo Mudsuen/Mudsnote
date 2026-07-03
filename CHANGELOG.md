@@ -474,6 +474,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Increased the custom selected-row inset and radius, and aligned note-row content padding with the selected card. Added a layout contract test for the selected-card geometry.
 - Lesson: Notes parity depends on selection geometry as much as color; the note list should feel like scannable cards, not a generic table.
 
+### 82. Search index prewarming
+
+- Problem: The lightweight Markdown index existed, but the first tags/search operation could still pay the indexing cost on the main library path.
+- Fix: Added an explicit search-index prewarm API and moved deferred library tag loading onto a utility queue that prewarms the index before publishing tag rows. Added regression coverage that prewarming builds a reusable snapshot without changing search/tag results.
+- Lesson: Notes-grade search can stay lightweight if the app warms filesystem metadata off the main thread before the user asks for retrieval.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
