@@ -722,7 +722,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
         #expect(toolbarSearchField.font?.pointSize == 14)
-        #expect(LibraryNotesLayout.toolbarSymbolPointSize == 20)
+        #expect(LibraryNotesLayout.toolbarSymbolPointSize == 21)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
         #expect(toolbarSearchWrapper.frame.height == LibraryNotesLayout.toolbarSearchWrapperHeight)
