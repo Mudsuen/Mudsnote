@@ -724,6 +724,8 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
         #expect(toolbarSearchField.font?.pointSize == 14)
+        #expect(toolbarSearchField.toolTip == "搜索笔记")
+        #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 21)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
@@ -743,6 +745,8 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.link",
             "mudsnote.library.toolbar.attachment"
         ])
+        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
+        #expect(Set(editorToolButtons.compactMap { $0.accessibilityLabel() }) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
         #expect(editorToolButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.format"
         }?.image?.accessibilityDescription == "格式")

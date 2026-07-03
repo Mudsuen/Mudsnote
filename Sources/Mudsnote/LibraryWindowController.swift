@@ -1240,6 +1240,8 @@ final class LibraryWindowController: NSWindowController,
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
         searchField.placeholderString = "搜索"
+        searchField.toolTip = "搜索笔记"
+        searchField.setAccessibilityLabel("搜索笔记")
         searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
         searchField.isBordered = true
@@ -1628,6 +1630,7 @@ final class LibraryWindowController: NSWindowController,
         let button = NSButton(image: image ?? NSImage(), target: self, action: action)
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
+        button.setAccessibilityLabel(label)
         button.bezelStyle = .regularSquare
         button.isBordered = false
         button.imagePosition = .imageOnly
