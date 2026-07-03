@@ -1066,6 +1066,80 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowSharesExportsAndDeletesMultipleSelectedNotes() throws {
+        let suiteName = "mudsnote.library-multi-note-actions-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-multi-note-actions-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let firstURL = try store.saveNewNote(title: "Multi One", body: "First body")
+        let secondURL = try store.saveNewNote(title: "Multi Two", body: "Second body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let selectableRows = (0..<controller.tableView.numberOfRows).filter { row in
+            guard let url = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else { return false }
+            return [firstURL.standardizedFileURL.path, secondURL.standardizedFileURL.path].contains((url as URL).standardizedFileURL.path)
+        }
+        #expect(selectableRows.count == 2)
+        controller.tableView.selectRowIndexes(IndexSet(selectableRows), byExtendingSelection: false)
+
+        let selectedPaths = controller.selectedMarkdownFileURLsForLibrary().map(\.path)
+        #expect(selectedPaths.count == 2)
+        #expect(selectedPaths.contains(firstURL.standardizedFileURL.path))
+        #expect(selectedPaths.contains(secondURL.standardizedFileURL.path))
+        #expect(controller.makeShareExportMenuForLibrary().items.allSatisfy { $0.isEnabled })
+
+        let copiedPaths = try #require(controller.copySelectedMarkdownPathForLibrary())
+        #expect(copiedPaths.contains(firstURL.standardizedFileURL.path))
+        #expect(copiedPaths.contains(secondURL.standardizedFileURL.path))
+        #expect(copiedPaths.contains("\n"))
+
+        let copiedMarkdown = try #require(try controller.copySelectedMarkdownContentForLibrary())
+        #expect(copiedMarkdown.contains("Multi One"))
+        #expect(copiedMarkdown.contains("First body"))
+        #expect(copiedMarkdown.contains("Multi Two"))
+        #expect(copiedMarkdown.contains("Second body"))
+        #expect(copiedMarkdown.contains("\n\n---\n\n"))
+
+        let shareURLs = try controller.shareSelectedMarkdownFilesForLibrary()
+        #expect(Set(shareURLs.map(\.path)) == Set(selectedPaths))
+
+        let exportDirectory = root.appendingPathComponent("Exports", isDirectory: true)
+        let exportedURLs = try controller.exportSelectedMarkdownFilesForLibrary(to: exportDirectory)
+        #expect(exportedURLs.count == 2)
+        #expect(exportedURLs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        #expect(Set(exportedURLs.map(\.lastPathComponent)) == Set([firstURL.lastPathComponent, secondURL.lastPathComponent]))
+
+        try controller.deleteSelectedNotesForLibrary()
+        #expect(!FileManager.default.fileExists(atPath: firstURL.path))
+        #expect(!FileManager.default.fileExists(atPath: secondURL.path))
+        #expect(store.listTrashedNotes(limit: 10).count == 2)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowEditorToolbarInsertsRichMarkdownTools() throws {
         let suiteName = "mudsnote.library-editor-tools-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

@@ -830,6 +830,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.style = .plain
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.selectionHighlightStyle = .regular
+        tableView.allowsMultipleSelection = true
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
@@ -2107,7 +2108,11 @@ final class LibraryWindowController: NSWindowController,
         guard !suppressSelectionChanges else { return }
         do {
             try saveCurrentNoteIfNeeded()
-            loadSelectedRow()
+            if preservesCurrentLoadedNoteForMultiSelection() {
+                updateToolbarActionState()
+            } else {
+                loadSelectedRow()
+            }
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
@@ -2498,7 +2503,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func deleteSelectedNotePressed() {
         do {
-            try deleteSelectedNoteForLibrary()
+            try deleteSelectedNotesForLibrary()
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
         }
@@ -2570,8 +2575,9 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func shareSelectedMarkdownPressed(_ sender: Any?) {
         do {
-            guard let sourceURL = try shareSelectedMarkdownFileForLibrary() else { return }
-            let picker = NSSharingServicePicker(items: [sourceURL])
+            let sourceURLs = try shareSelectedMarkdownFilesForLibrary()
+            guard !sourceURLs.isEmpty else { return }
+            let picker = NSSharingServicePicker(items: sourceURLs)
             if let item = sender as? NSToolbarItem,
                let view = item.view {
                 picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
@@ -2586,8 +2592,30 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func exportSelectedMarkdownPressed() {
-        guard canExportSelectedNote,
-              let sourceURL = selectedMarkdownFileURLForLibrary() else { return }
+        guard canExportSelectedNote else { return }
+
+        let sourceURLs = selectedMarkdownFileURLsForLibrary()
+        if sourceURLs.count > 1 {
+            let panel = NSOpenPanel()
+            panel.title = "导出 Markdown 笔记"
+            panel.prompt = "导出"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.allowsMultipleSelection = false
+
+            guard panel.runModal() == .OK,
+                  let destinationDirectory = panel.url else { return }
+
+            do {
+                _ = try exportSelectedMarkdownFilesForLibrary(to: destinationDirectory)
+            } catch {
+                presentErrorAlert(message: "导出失败", details: error.localizedDescription)
+            }
+            return
+        }
+
+        guard let sourceURL = sourceURLs.first else { return }
 
         let panel = NSSavePanel()
         panel.title = "导出 Markdown"
@@ -2725,12 +2753,21 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func deleteSelectedNoteForLibrary() throws {
-        guard let url = selectedURL else { return }
+        try deleteSelectedNotesForLibrary()
+    }
+
+    func deleteSelectedNotesForLibrary() throws {
+        let urls = selectedMarkdownFileURLsForLibrary()
+        guard !urls.isEmpty else { return }
         if selectedScope == .trash {
-            try noteStore.permanentlyDeleteTrashedNote(at: url)
+            for url in urls {
+                try noteStore.permanentlyDeleteTrashedNote(at: url)
+            }
         } else {
             try saveCurrentNoteIfNeeded()
-            _ = try noteStore.trashNote(at: selectedURL ?? url)
+            for url in urls {
+                _ = try noteStore.trashNote(at: url)
+            }
         }
         invalidateMovableNotePathCache()
         clearCurrentDocumentAfterRemoval()
@@ -2740,8 +2777,10 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func restoreSelectedNoteForLibrary() throws -> URL? {
-        guard selectedScope == .trash, let url = selectedURL else { return nil }
-        let restoredURL = try noteStore.restoreTrashedNote(at: url)
+        let urls = selectedMarkdownFileURLsForLibrary()
+        guard selectedScope == .trash, !urls.isEmpty else { return nil }
+        let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
+        let restoredURL = restoredURLs.first
         invalidateMovableNotePathCache()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
@@ -2751,12 +2790,34 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func selectedMarkdownFileURLForLibrary() -> URL? {
-        selectedURL?.standardizedFileURL
+        selectedMarkdownFileURLsForLibrary().first
+    }
+
+    func selectedMarkdownFileURLsForLibrary() -> [URL] {
+        var urls: [URL] = []
+        var seenPaths = Set<String>()
+
+        for row in tableView.selectedRowIndexes.sorted() {
+            guard let url = note(at: row)?.url.standardizedFileURL else { continue }
+            if seenPaths.insert(url.path).inserted {
+                urls.append(url)
+            }
+        }
+
+        if urls.isEmpty,
+           let selectedURL = selectedURL?.standardizedFileURL,
+           seenPaths.insert(selectedURL.path).inserted {
+            urls.append(selectedURL)
+        }
+
+        return urls
     }
 
     @discardableResult
     func copySelectedMarkdownPathForLibrary() -> String? {
-        guard let path = selectedMarkdownFileURLForLibrary()?.path else { return nil }
+        let paths = selectedMarkdownFileURLsForLibrary().map(\.path)
+        guard !paths.isEmpty else { return nil }
+        let path = paths.joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
         return path
@@ -2768,11 +2829,12 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func copySelectedMarkdownContentForLibrary() throws -> String? {
-        guard canExportSelectedNote,
-              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+        guard canExportSelectedNote else { return nil }
 
         try saveCurrentNoteIfNeeded()
-        let markdown = try String(contentsOf: sourceURL, encoding: .utf8)
+        let markdown = try selectedMarkdownFileURLsForLibrary()
+            .map { try String(contentsOf: $0, encoding: .utf8) }
+            .joined(separator: "\n\n---\n\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(markdown, forType: .string)
         return markdown
@@ -2780,11 +2842,15 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func shareSelectedMarkdownFileForLibrary() throws -> URL? {
-        guard canExportSelectedNote,
-              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+        (try shareSelectedMarkdownFilesForLibrary()).first
+    }
+
+    @discardableResult
+    func shareSelectedMarkdownFilesForLibrary() throws -> [URL] {
+        guard canExportSelectedNote else { return [] }
 
         try saveCurrentNoteIfNeeded()
-        return sourceURL
+        return selectedMarkdownFileURLsForLibrary()
     }
 
     @discardableResult
@@ -2799,6 +2865,60 @@ final class LibraryWindowController: NSWindowController,
         }
         try FileManager.default.copyItem(at: sourceURL, to: destination)
         return destination
+    }
+
+    @discardableResult
+    func exportSelectedMarkdownFilesForLibrary(to destinationDirectoryURL: URL) throws -> [URL] {
+        guard canExportSelectedNote else { return [] }
+
+        try saveCurrentNoteIfNeeded()
+        let destinationDirectory = destinationDirectoryURL.standardizedFileURL
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        var reservedNames = Set<String>()
+        return try selectedMarkdownFileURLsForLibrary().map { sourceURL in
+            let destination = uniqueExportDestination(
+                for: sourceURL,
+                in: destinationDirectory,
+                reservedNames: &reservedNames
+            )
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destination)
+            return destination
+        }
+    }
+
+    private func preservesCurrentLoadedNoteForMultiSelection() -> Bool {
+        guard tableView.selectedRowIndexes.count > 1,
+              let selectedPath = selectedURL?.standardizedFileURL.path else {
+            return false
+        }
+        return selectedMarkdownFileURLsForLibrary().contains {
+            $0.standardizedFileURL.path == selectedPath
+        }
+    }
+
+    private func uniqueExportDestination(
+        for sourceURL: URL,
+        in destinationDirectory: URL,
+        reservedNames: inout Set<String>
+    ) -> URL {
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let pathExtension = sourceURL.pathExtension
+        var candidateName = sourceURL.lastPathComponent
+        var suffix = 2
+
+        while reservedNames.contains(candidateName)
+            || FileManager.default.fileExists(atPath: destinationDirectory.appendingPathComponent(candidateName).path) {
+            candidateName = pathExtension.isEmpty
+                ? "\(baseName) \(suffix)"
+                : "\(baseName) \(suffix).\(pathExtension)"
+            suffix += 1
+        }
+
+        reservedNames.insert(candidateName)
+        return destinationDirectory.appendingPathComponent(candidateName)
     }
 
     func searchForLibrary(query: String, allNotes: Bool) {
@@ -2998,7 +3118,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private var canUseSelectedNote: Bool {
-        selectedURL != nil
+        !selectedMarkdownFileURLsForLibrary().isEmpty
     }
 
     private var canEditCurrentDocument: Bool {

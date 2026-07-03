@@ -600,6 +600,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Switched both controls to `NSMenuToolbarItem`, kept their menus rebuilt with current selection/trash state, and added regression coverage that the default toolbar uses native menu toolbar items.
 - Lesson: Notes-like polish should prefer AppKit's toolbar primitives when they fit; fewer custom popup paths make state and accessibility easier to keep aligned.
 
+### 103. Multi-note file actions
+
+- Problem: The Notes-like note list could share, copy, export, or delete only the currently loaded note, leaving multi-selected notes below Apple Notes' file-action workflow.
+- Fix: Enabled multi-selection in the note list and extended file actions to the selected Markdown set. Sharing passes all selected files to macOS sharing services, path/content copy handles multiple notes, multi-export copies selected Markdown files into a chosen folder with conflict-safe names, and delete/trash works across the selected set.
+- Lesson: Multi-note parity can stay lightweight by treating selected notes as plain files; no database or sync layer is needed for useful batch actions.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
