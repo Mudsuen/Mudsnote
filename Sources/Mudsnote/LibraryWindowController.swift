@@ -80,8 +80,10 @@ enum LibraryNotesLayout {
     static let noteTableInitialWidth: CGFloat = 292
     static let noteTableMinimumWidth: CGFloat = 250
     static let sourceRowWidth: CGFloat = 244
-    static let toolbarSearchWidth: CGFloat = 260
-    static let toolbarSearchWrapperWidth: CGFloat = 280
+    static let toolbarSearchWidth: CGFloat = 300
+    static let toolbarSearchHeight: CGFloat = 32
+    static let toolbarSearchWrapperWidth: CGFloat = 320
+    static let toolbarSearchWrapperHeight: CGFloat = 36
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 30
     static let noteGroupRowHeight: CGFloat = 56
@@ -97,6 +99,12 @@ enum LibraryNotesLayout {
     static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 18
     static let noteListBottomInset: CGFloat = 14
+    static let editorTopInset: CGFloat = 34
+    static let editorHorizontalInset: CGFloat = 52
+    static let editorBottomInset: CGFloat = 20
+    static let editorDateRowHeight: CGFloat = 20
+    static let editorDateToTitleSpacing: CGFloat = 28
+    static let editorTitleToBodySpacing: CGFloat = 8
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -952,7 +960,7 @@ final class LibraryWindowController: NSWindowController,
             statusLabel.bottomAnchor.constraint(equalTo: dateRow.bottomAnchor),
             statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: dateRow.leadingAnchor, constant: 20),
             statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: dateRow.trailingAnchor, constant: -20),
-            dateRow.heightAnchor.constraint(equalToConstant: 18)
+            dateRow.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.editorDateRowHeight)
         ])
 
         let stack = NSStackView(views: [dateRow, titleField, bodyContainer])
@@ -960,9 +968,14 @@ final class LibraryWindowController: NSWindowController,
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 0
-        stack.setCustomSpacing(24, after: dateRow)
-        stack.setCustomSpacing(6, after: titleField)
-        stack.edgeInsets = NSEdgeInsets(top: 22, left: 44, bottom: 20, right: 44)
+        stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
+        stack.setCustomSpacing(LibraryNotesLayout.editorTitleToBodySpacing, after: titleField)
+        stack.edgeInsets = NSEdgeInsets(
+            top: LibraryNotesLayout.editorTopInset,
+            left: LibraryNotesLayout.editorHorizontalInset,
+            bottom: LibraryNotesLayout.editorBottomInset,
+            right: LibraryNotesLayout.editorHorizontalInset
+        )
         editor.addSubview(stack)
         pin(stack, to: editor)
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
@@ -973,14 +986,19 @@ final class LibraryWindowController: NSWindowController,
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
         searchField.placeholderString = "搜索"
-        searchField.font = .systemFont(ofSize: 13)
+        searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.frame = NSRect(x: 0, y: 0, width: LibraryNotesLayout.toolbarSearchWidth, height: 30)
+        searchField.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarSearchWidth,
+            height: LibraryNotesLayout.toolbarSearchHeight
+        )
         searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
-        searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        searchField.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchHeight).isActive = true
 
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
         toolbar.delegate = self
@@ -1168,7 +1186,12 @@ final class LibraryWindowController: NSWindowController,
             item.paletteLabel = "搜索"
             item.toolTip = "搜索笔记"
             item.visibilityPriority = .high
-            let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: LibraryNotesLayout.toolbarSearchWrapperWidth, height: 32))
+            let wrapper = NSView(frame: NSRect(
+                x: 0,
+                y: 0,
+                width: LibraryNotesLayout.toolbarSearchWrapperWidth,
+                height: LibraryNotesLayout.toolbarSearchWrapperHeight
+            ))
             wrapper.addSubview(searchField)
             NSLayoutConstraint.activate([
                 searchField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),

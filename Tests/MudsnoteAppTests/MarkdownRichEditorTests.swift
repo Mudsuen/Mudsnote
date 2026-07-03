@@ -710,6 +710,11 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.identifier?.rawValue == "LibraryToolbarSearchField")
         #expect(toolbarSearchField === controller.searchField)
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
+        #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
+        #expect(toolbarSearchField.font?.pointSize == 14)
+        let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
+        #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
+        #expect(toolbarSearchWrapper.frame.height == LibraryNotesLayout.toolbarSearchWrapperHeight)
         let formatItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.format"
         })
@@ -819,10 +824,14 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibraryEditorDateRow"
         })
         #expect(editorStack.spacing == 0)
-        #expect(editorStack.customSpacing(after: editorDateRow) == 24)
-        #expect(editorStack.customSpacing(after: controller.titleField) == 6)
-        #expect(editorStack.edgeInsets.left == 44)
-        #expect(editorStack.edgeInsets.right == 44)
+        #expect(editorDateRow.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
+        })
+        #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
+        #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
+        #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
+        #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
+        #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"

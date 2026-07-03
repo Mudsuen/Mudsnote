@@ -576,6 +576,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Centralized library typography metrics, increased source-list row height and font sizes, raised note-list title/snippet/meta sizes, and gave note rows slightly more vertical breathing room.
 - Lesson: Visual parity needs typography contracts alongside layout contracts; otherwise the app can have the right columns but still feel scaled down.
 
+### 99. Notes-like toolbar and editor rhythm
+
+- Problem: The side-by-side visual QA still showed the library toolbar search and editor top spacing as compressed compared with Apple Notes.
+- Fix: Centralized toolbar search and editor spacing metrics, widened/tallened the toolbar search field, increased its text size, and opened up the editor top inset plus date/title/title-body spacing.
+- Lesson: Toolbar balance and editor rhythm should be controlled by shared layout metrics so visual QA can tune the Notes surface without scattering magic numbers.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
