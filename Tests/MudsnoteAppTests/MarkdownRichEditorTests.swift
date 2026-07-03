@@ -1117,6 +1117,12 @@ struct MarkdownRichEditorTests {
         #expect(selectedPaths.count == 2)
         #expect(selectedPaths.contains(firstURL.standardizedFileURL.path))
         #expect(selectedPaths.contains(secondURL.standardizedFileURL.path))
+        #expect(controller.noteDragPreviewCountForLibrary(rowIndexes: IndexSet(selectableRows)) == 2)
+        #expect(controller.noteDragPreviewBadgeTitleForLibrary(rowIndexes: IndexSet(selectableRows)) == "2")
+        let dragPreview = try #require(controller.noteDragPreviewImageForLibrary(rowIndexes: IndexSet(selectableRows)))
+        #expect(dragPreview.size.width >= 240)
+        #expect(dragPreview.size.height >= 60)
+        #expect(controller.noteDragPreviewBadgeTitleForLibrary(rowIndexes: IndexSet(integer: selectableRows[0])) == nil)
         let shareMenu = controller.makeShareExportMenuForLibrary()
         #expect(shareMenu.items.map(\.title) == [
             "分享 2 个 Markdown 文件...",

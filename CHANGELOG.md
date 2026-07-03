@@ -648,6 +648,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added explicit library-editor typography metrics and increased the editor date/status, title, body, bold, italic, and code font sizes without changing the quick-capture editor theme.
 - Lesson: The Notes-like library editor needs its own typography contract; quick capture and desktop review/editing should not be forced to share the same scale.
 
+### 111. Multi-note drag preview count
+
+- Problem: Multi-selected notes could be dragged to folders, but the drag preview did not clearly communicate that several Markdown notes were moving together.
+- Fix: Added a Notes-like piled drag preview for note-list drags with a count badge for multi-note selections. The dragged payload remains the real Markdown file URLs, so folder drops and external file workflows keep the same local-first contract.
+- Lesson: Batch interactions need visible feedback as well as working commands; count badges reduce destructive-action ambiguity without adding app-private drag models.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

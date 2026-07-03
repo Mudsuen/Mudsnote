@@ -2108,6 +2108,30 @@ final class LibraryWindowController: NSWindowController,
         return note.url as NSURL
     }
 
+    func tableView(
+        _ tableView: NSTableView,
+        draggingImageForRowsWith rowIndexes: IndexSet,
+        tableColumns: [NSTableColumn],
+        event: NSEvent,
+        offset dragImageOffset: UnsafeMutablePointer<NSPoint>
+    ) -> NSImage {
+        if let image = noteDragPreviewImageForLibrary(rowIndexes: rowIndexes) {
+            dragImageOffset.pointee = NSPoint(x: -18, y: 18)
+            return image
+        }
+
+        return tableView.dragImageForRows(with: rowIndexes, tableColumns: tableColumns, event: event, offset: dragImageOffset)
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        draggingSession session: NSDraggingSession,
+        willBeginAt screenPoint: NSPoint,
+        forRowIndexes rowIndexes: IndexSet
+    ) {
+        session.draggingFormation = noteDragPreviewCountForLibrary(rowIndexes: rowIndexes) > 1 ? .pile : .default
+    }
+
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         if note(at: row) == nil {
             return LibraryNotesLayout.noteGroupRowHeight
@@ -2887,6 +2911,84 @@ final class LibraryWindowController: NSWindowController,
         }
 
         return urls
+    }
+
+    func noteDragPreviewCountForLibrary(rowIndexes: IndexSet) -> Int {
+        var seenPaths = Set<String>()
+        var count = 0
+        for row in rowIndexes.sorted() {
+            guard let path = note(at: row)?.url.standardizedFileURL.path,
+                  seenPaths.insert(path).inserted else {
+                continue
+            }
+            count += 1
+        }
+        return count
+    }
+
+    func noteDragPreviewBadgeTitleForLibrary(rowIndexes: IndexSet) -> String? {
+        let count = noteDragPreviewCountForLibrary(rowIndexes: rowIndexes)
+        return count > 1 ? String(count) : nil
+    }
+
+    func noteDragPreviewImageForLibrary(rowIndexes: IndexSet) -> NSImage? {
+        let draggedNotes = rowIndexes.sorted().compactMap { note(at: $0) }
+        guard let firstNote = draggedNotes.first else { return nil }
+
+        let count = noteDragPreviewCountForLibrary(rowIndexes: rowIndexes)
+        let imageSize = NSSize(width: 248, height: 64)
+        let image = NSImage(size: imageSize)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        if count > 1 {
+            let shadowRect = NSRect(x: 8, y: 2, width: 232, height: 52)
+            let shadowPath = NSBezierPath(roundedRect: shadowRect, xRadius: 8, yRadius: 8)
+            NSColor(calibratedWhite: 0.08, alpha: 0.78).setFill()
+            shadowPath.fill()
+        }
+
+        let cardRect = NSRect(x: 0, y: 8, width: 232, height: 52)
+        let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: 8, yRadius: 8)
+        NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.08, alpha: 0.96).setFill()
+        cardPath.fill()
+
+        let title = firstNote.title.isEmpty ? "无标题" : firstNote.title
+        let snippet = firstNote.snippet.isEmpty ? metadataText(for: firstNote) : firstNote.snippet
+        (title as NSString).draw(
+            in: NSRect(x: 16, y: 31, width: 176, height: 18),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 14, weight: .semibold),
+                .foregroundColor: NSColor.white
+            ]
+        )
+        (snippet as NSString).draw(
+            in: NSRect(x: 16, y: 15, width: 176, height: 14),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.72)
+            ]
+        )
+
+        if let badgeTitle = noteDragPreviewBadgeTitleForLibrary(rowIndexes: rowIndexes) {
+            let badgeRect = NSRect(x: 206, y: 38, width: 28, height: 22)
+            let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 11, yRadius: 11)
+            NSColor.white.withAlphaComponent(0.96).setFill()
+            badgePath.fill()
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            (badgeTitle as NSString).draw(
+                in: NSRect(x: badgeRect.minX, y: badgeRect.minY + 3, width: badgeRect.width, height: 16),
+                withAttributes: [
+                    .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+                    .foregroundColor: NSColor(calibratedRed: 0.38, green: 0.28, blue: 0.04, alpha: 1),
+                    .paragraphStyle: paragraph
+                ]
+            )
+        }
+
+        return image
     }
 
     @discardableResult
