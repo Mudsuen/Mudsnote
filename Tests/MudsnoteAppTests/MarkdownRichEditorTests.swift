@@ -718,6 +718,13 @@ struct MarkdownRichEditorTests {
         #expect(noteList.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.noteColumnWidth
         })
+        let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibraryNoteListStack"
+        })
+        #expect(noteListStack.edgeInsets.top == LibraryNotesLayout.noteListTopInset)
+        #expect(noteListStack.edgeInsets.left == LibraryNotesLayout.noteListLeadingInset)
+        #expect(noteListStack.edgeInsets.bottom == LibraryNotesLayout.noteListBottomInset)
+        #expect(noteListStack.edgeInsets.right == LibraryNotesLayout.noteListTrailingInset)
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
         })
@@ -766,6 +773,10 @@ struct MarkdownRichEditorTests {
         #expect(noteRowView.isPointerHovered)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
+        #expect(LibraryNoteCellView.contentTopInset == 7)
+        #expect(LibraryNoteCellView.contentLeadingInset == 18)
+        #expect(LibraryNoteCellView.contentBottomInset == 7)
+        #expect(LibraryNoteCellView.contentTrailingInset == 16)
         #expect(firstNoteCell.titleLabel.font?.pointSize == 13.5)
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)

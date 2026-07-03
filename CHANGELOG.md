@@ -534,6 +534,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added low-contrast inset separators for normal note rows while keeping section headers and the selected golden card visually clean. Added regression coverage for the separator geometry and opacity contract.
 - Lesson: Small list chrome matters for Notes parity; separators should clarify row boundaries without competing with selection or hover states.
 
+### 92. Note-list horizontal rhythm
+
+- Problem: The middle pane still mixed hard-coded title, empty-state, row-content, and list-container insets, making side-by-side Notes tuning brittle and leaving the note list feeling less deliberately aligned.
+- Fix: Centralized the note-list horizontal rhythm into layout constants, named the note-list stack for inspection, and exposed note-cell content insets for regression coverage.
+- Lesson: Pixel-level Notes parity needs stable spacing contracts before repeated visual passes can converge.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -82,6 +82,10 @@ enum LibraryNotesLayout {
     static let sourceRowWidth: CGFloat = 194
     static let toolbarSearchWidth: CGFloat = 210
     static let toolbarSearchWrapperWidth: CGFloat = 230
+    static let noteListLeadingInset: CGFloat = 18
+    static let noteListTrailingInset: CGFloat = 12
+    static let noteListTopInset: CGFloat = 18
+    static let noteListBottomInset: CGFloat = 14
 }
 
 enum LibrarySourceSelectionPalette {
@@ -155,6 +159,11 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
+    static let contentTopInset: CGFloat = 7
+    static let contentLeadingInset: CGFloat = 18
+    static let contentBottomInset: CGFloat = 7
+    static let contentTrailingInset: CGFloat = 16
+
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
     let metaLabel = NSTextField(labelWithString: "")
@@ -211,7 +220,12 @@ final class LibraryNoteCellView: NSTableCellView {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 7, left: 18, bottom: 7, right: 16)
+        stack.edgeInsets = NSEdgeInsets(
+            top: Self.contentTopInset,
+            left: Self.contentLeadingInset,
+            bottom: Self.contentBottomInset,
+            right: Self.contentTrailingInset
+        )
         addSubview(stack)
         pin(stack, to: self)
         for label in [titleLabel, snippetLabel] {
@@ -798,16 +812,28 @@ final class LibraryWindowController: NSWindowController,
             scrollView.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: listContainer.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: listContainer.bottomAnchor),
-            noteListEmptyLabel.leadingAnchor.constraint(equalTo: listContainer.leadingAnchor, constant: 18),
-            noteListEmptyLabel.trailingAnchor.constraint(equalTo: listContainer.trailingAnchor, constant: -18),
+            noteListEmptyLabel.leadingAnchor.constraint(
+                equalTo: listContainer.leadingAnchor,
+                constant: LibraryNotesLayout.noteListLeadingInset
+            ),
+            noteListEmptyLabel.trailingAnchor.constraint(
+                equalTo: listContainer.trailingAnchor,
+                constant: -LibraryNotesLayout.noteListLeadingInset
+            ),
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
         let stack = NSStackView(views: [header, listContainer])
+        stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
+        stack.edgeInsets = NSEdgeInsets(
+            top: LibraryNotesLayout.noteListTopInset,
+            left: LibraryNotesLayout.noteListLeadingInset,
+            bottom: LibraryNotesLayout.noteListBottomInset,
+            right: LibraryNotesLayout.noteListTrailingInset
+        )
         sidebar.addSubview(stack)
         pin(stack, to: sidebar)
         header.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
