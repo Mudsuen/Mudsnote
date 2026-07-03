@@ -718,6 +718,19 @@ struct MarkdownRichEditorTests {
         #expect(noteList.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.noteColumnWidth
         })
+        let toggleSourceItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.toggle-sidebar"
+        })
+        #expect(controller.isSourceListVisibleForLibrary)
+        #expect(toggleSourceItem.label == "隐藏资料库")
+        #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
+        #expect(!controller.isSourceListVisibleForLibrary)
+        #expect(sourceList.isHidden)
+        #expect(toggleSourceItem.label == "显示资料库")
+        #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
+        #expect(controller.isSourceListVisibleForLibrary)
+        #expect(!sourceList.isHidden)
+        #expect(toggleSourceItem.label == "隐藏资料库")
         let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryNoteListStack"
         })

@@ -540,6 +540,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Centralized the note-list horizontal rhythm into layout constants, named the note-list stack for inspection, and exposed note-cell content insets for regression coverage.
 - Lesson: Pixel-level Notes parity needs stable spacing contracts before repeated visual passes can converge.
 
+### 93. Stateful source-list toggle
+
+- Problem: The Notes-like sidebar toolbar button existed, but its state was not inspectable and its label did not communicate whether the source list would be shown or hidden.
+- Fix: Added a tested source-list visibility contract and updated the toolbar item label, tooltip, and accessibility description as the source list is shown or hidden.
+- Lesson: Toolbar parity is not only icon placement; Notes-like controls need stateful behavior that remains correct across direct clicks and future shortcuts.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

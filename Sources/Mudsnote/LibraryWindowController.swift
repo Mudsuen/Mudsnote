@@ -1012,7 +1012,7 @@ final class LibraryWindowController: NSWindowController,
         case Self.toggleSidebarToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
-                label: "显示或隐藏资料库",
+                label: "隐藏资料库",
                 symbolName: "sidebar.left",
                 action: #selector(toggleSourceListPressed)
             )
@@ -2144,8 +2144,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func toggleSourceListPressed() {
-        guard let sourceListView else { return }
-        sourceListView.isHidden.toggle()
+        toggleSourceListForLibrary()
     }
 
     @objc
@@ -2675,6 +2674,25 @@ final class LibraryWindowController: NSWindowController,
         notes
     }
 
+    var isSourceListVisibleForLibrary: Bool {
+        sourceListView?.isHidden == false
+    }
+
+    @discardableResult
+    func toggleSourceListForLibrary() -> Bool {
+        setSourceListVisibleForLibrary(!isSourceListVisibleForLibrary)
+    }
+
+    @discardableResult
+    func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
+        guard let sourceListView else { return false }
+        sourceListView.isHidden = !isVisible
+        sourceListView.superview?.needsLayout = true
+        sourceListView.superview?.layoutSubtreeIfNeeded()
+        updateToolbarActionState()
+        return isSourceListVisibleForLibrary
+    }
+
     @discardableResult
     func createLibraryFolder(named name: String) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
@@ -2856,6 +2874,15 @@ final class LibraryWindowController: NSWindowController,
         let isTrashScope = selectedScope == .trash
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
+            case Self.toggleSidebarToolbarItemIdentifier:
+                let label = isSourceListVisibleForLibrary ? "隐藏资料库" : "显示资料库"
+                item.label = label
+                item.paletteLabel = label
+                item.toolTip = label
+                item.image = NSImage(
+                    systemSymbolName: "sidebar.left",
+                    accessibilityDescription: label
+                )
             case Self.deleteToolbarItemIdentifier:
                 item.label = isTrashScope ? "永久删除" : "删除"
                 item.paletteLabel = item.label
