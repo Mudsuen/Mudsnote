@@ -780,6 +780,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
+    private let sourceTrashStack = NSStackView()
     private let sourceTagStack = NSStackView()
     private let sourceFolderStatusLabel = NSTextField(labelWithString: "")
     private let sourceTagStatusLabel = NSTextField(labelWithString: "")
@@ -1004,7 +1005,12 @@ final class LibraryWindowController: NSWindowController,
 
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
+        configureSourceStack(sourceTrashStack)
         configureSourceStack(sourceTagStack)
+        sourcePrimaryStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourcePrimaryStack")
+        sourceFolderStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFolderStack")
+        sourceTrashStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTrashStack")
+        sourceTagStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTagStack")
         configureSourceStatusLabel(
             sourceFolderStatusLabel,
             identifier: "LibrarySourceFolderStatus"
@@ -1026,6 +1032,7 @@ final class LibraryWindowController: NSWindowController,
             sourcePrimaryStack,
             folderHeader,
             sourceFolderStack,
+            sourceTrashStack,
             tagHeader,
             sourceTagStack,
             NSView()
@@ -1775,9 +1782,10 @@ final class LibraryWindowController: NSWindowController,
         sourceCountLabels.removeAll()
         removeArrangedSubviews(from: sourcePrimaryStack)
         removeArrangedSubviews(from: sourceFolderStack)
+        removeArrangedSubviews(from: sourceTrashStack)
         removeArrangedSubviews(from: sourceTagStack)
 
-        for scope in [LibraryScope.all, .recent, .inbox, .trash] {
+        for scope in [LibraryScope.all, .recent, .inbox] {
             sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
@@ -1794,6 +1802,7 @@ final class LibraryWindowController: NSWindowController,
                 sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
             }
         }
+        sourceTrashStack.addArrangedSubview(makeScopeRow(.trash, tag: 3))
 
         if !includeTags {
             sourceTagNames = []

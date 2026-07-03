@@ -791,6 +791,22 @@ struct MarkdownRichEditorTests {
         })
         #expect(libraryGroup.stringValue == "Mudsnote")
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
+        let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
+        })
+        let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySourceTrashStack"
+        })
+        let primarySourceTitles = sourcePrimaryStack.arrangedSubviews
+            .flatMap(\.allSubviews)
+            .compactMap { ($0 as? NSButton)?.title }
+            .filter { !$0.isEmpty }
+        let trashSourceTitles = sourceTrashStack.arrangedSubviews
+            .flatMap(\.allSubviews)
+            .compactMap { ($0 as? NSButton)?.title }
+            .filter { !$0.isEmpty }
+        #expect(primarySourceTitles == ["所有笔记", "最近", "Inbox"])
+        #expect(trashSourceTitles == ["最近删除"])
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
@@ -900,6 +916,10 @@ struct MarkdownRichEditorTests {
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceRowWidth
         })
+        let trashSourceRow = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibrarySourceRow-3"
+        } as? LibrarySourceRowView)
+        #expect(sourceTrashStack.arrangedSubviews.contains(trashSourceRow))
         #expect(LibrarySourceRowView.hoverHorizontalInset == 0)
         #expect(LibrarySourceRowView.hoverVerticalInset == 1)
         #expect(LibrarySourceRowView.hoverCornerRadius == 6)
