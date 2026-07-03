@@ -654,6 +654,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedInSeparateWindow)
+        tableView.setDraggingSourceOperationMask(.copy, forLocal: false)
         tableView.onKeyCommand = { [weak self] command in
             self?.handleNoteListKeyCommand(command) ?? false
         }
@@ -1842,6 +1843,11 @@ final class LibraryWindowController: NSWindowController,
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         note(at: row) != nil
+    }
+
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard let note = note(at: row) else { return nil }
+        return note.url as NSURL
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {

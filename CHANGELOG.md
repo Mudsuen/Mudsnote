@@ -510,6 +510,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a subtle inset hover background for note rows only. Group headers remain non-hoverable, preserving their section-label behavior.
 - Lesson: Pointer polish should reinforce existing list semantics without turning section labels into interactive-looking rows.
 
+### 88. Note-list Markdown file drag-out
+
+- Problem: Note-list rows still behaved like static table rows when dragged, so notes could not participate in native macOS file workflows.
+- Fix: Enabled external copy dragging for note rows and exposed each note as its backing Markdown file URL. Group headers remain non-draggable.
+- Lesson: Drag support should preserve the local-first contract: a dragged note is the real `.md` file, not an app-private object.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
