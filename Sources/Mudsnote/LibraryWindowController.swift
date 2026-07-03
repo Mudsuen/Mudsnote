@@ -383,8 +383,8 @@ final class LibrarySourceRowView: NSView {
     static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
 
     var targetDirectory: URL?
-    var canDropNote: ((URL, URL) -> Bool)?
-    var onDropNote: ((URL, URL) -> Bool)?
+    var canDropNotes: (([URL], URL) -> Bool)?
+    var onDropNotes: (([URL], URL) -> Bool)?
     private(set) var isDropTargeted = false
 
     override init(frame frameRect: NSRect) {
@@ -407,11 +407,12 @@ final class LibrarySourceRowView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         setDropTargeted(false)
+        let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
         guard let targetDirectory,
-              let noteURL = firstDraggedFileURL(from: sender.draggingPasteboard) else {
+              !noteURLs.isEmpty else {
             return false
         }
-        return onDropNote?(noteURL, targetDirectory) ?? false
+        return onDropNotes?(noteURLs, targetDirectory) ?? false
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -438,10 +439,11 @@ final class LibrarySourceRowView: NSView {
     }
 
     private func dragOperation(for sender: NSDraggingInfo) -> NSDragOperation {
+        let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
         guard targetDirectory != nil,
-              let noteURL = firstDraggedFileURL(from: sender.draggingPasteboard),
+              !noteURLs.isEmpty,
               let targetDirectory,
-              canDropNote?(noteURL, targetDirectory) == true else {
+              canDropNotes?(noteURLs, targetDirectory) == true else {
             setDropTargeted(false)
             return []
         }
@@ -449,11 +451,12 @@ final class LibrarySourceRowView: NSView {
         return .move
     }
 
-    private func firstDraggedFileURL(from pasteboard: NSPasteboard) -> URL? {
+    private func draggedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
         let objects = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) ?? []
+        var seenPaths = Set<String>()
         return objects.compactMap { object -> URL? in
             let url: URL?
             if let swiftURL = object as? URL {
@@ -464,8 +467,10 @@ final class LibrarySourceRowView: NSView {
                 url = nil
             }
             guard let url else { return nil }
-            return url.isFileURL ? url : nil
-        }.first
+            let standardized = url.standardizedFileURL
+            guard standardized.isFileURL, seenPaths.insert(standardized.path).inserted else { return nil }
+            return standardized
+        }
     }
 }
 
@@ -1612,11 +1617,14 @@ final class LibraryWindowController: NSWindowController,
             let menu = makeFolderContextMenu(for: folderURL)
             row.menu = menu
             row.targetDirectory = folderURL
-            row.canDropNote = { [weak self] noteURL, targetDirectory in
-                self?.canMoveDraggedNoteForLibrary(at: noteURL, to: targetDirectory) ?? false
+            row.canDropNotes = { [weak self] noteURLs, targetDirectory in
+                self?.canMoveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) ?? false
             }
-            row.onDropNote = { [weak self] noteURL, targetDirectory in
-                (try? self?.moveDraggedNoteForLibrary(at: noteURL, to: targetDirectory)) != nil
+            row.onDropNotes = { [weak self] noteURLs, targetDirectory in
+                guard let movedURLs = try? self?.moveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) else {
+                    return false
+                }
+                return !movedURLs.isEmpty
             }
             button.menu = menu
         }
@@ -3024,7 +3032,18 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func canMoveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) -> Bool {
-        let sourceURL = noteURL.standardizedFileURL
+        canMoveDraggedNotesForLibrary(at: [noteURL], to: directory)
+    }
+
+    func canMoveDraggedNotesForLibrary(at noteURLs: [URL], to directory: URL) -> Bool {
+        let sourceURLs = uniqueStandardizedFileURLs(from: noteURLs)
+        guard !sourceURLs.isEmpty else { return false }
+        return sourceURLs.allSatisfy { sourceURL in
+            canMoveDraggedNoteForLibrary(sourceURL: sourceURL, to: directory)
+        }
+    }
+
+    private func canMoveDraggedNoteForLibrary(sourceURL: URL, to directory: URL) -> Bool {
         let targetDirectory = directory.standardizedFileURL
         guard sourceURL.pathExtension.localizedCaseInsensitiveCompare("md") == .orderedSame,
               FileManager.default.fileExists(atPath: sourceURL.path),
@@ -3038,22 +3057,43 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func moveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) throws -> URL {
-        let sourceURL = noteURL.standardizedFileURL
-        let targetDirectory = directory.standardizedFileURL
-        guard canMoveDraggedNoteForLibrary(at: sourceURL, to: targetDirectory) else {
+        guard let movedURL = try moveDraggedNotesForLibrary(at: [noteURL], to: directory).first else {
             throw LibraryActionError.noNoteSelected
         }
-        if selectedURL?.standardizedFileURL.path == sourceURL.path {
+        return movedURL
+    }
+
+    @discardableResult
+    func moveDraggedNotesForLibrary(at noteURLs: [URL], to directory: URL) throws -> [URL] {
+        let sourceURLs = uniqueStandardizedFileURLs(from: noteURLs)
+        let targetDirectory = directory.standardizedFileURL
+        guard canMoveDraggedNotesForLibrary(at: sourceURLs, to: targetDirectory) else {
+            throw LibraryActionError.noNoteSelected
+        }
+
+        let selectedPath = selectedURL?.standardizedFileURL.path
+        if sourceURLs.contains(where: { $0.path == selectedPath }) {
             try saveCurrentNoteIfNeeded()
         }
 
-        let movedURL = try noteStore.moveNote(at: sourceURL, to: targetDirectory)
+        let movedURLs = try sourceURLs.map { sourceURL in
+            try noteStore.moveNote(at: sourceURL, to: targetDirectory)
+        }
         invalidateMovableNotePathCache()
-        selectedURL = movedURL
+        selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
-        return movedURL
+        reloadNotes(selecting: movedURLs.first, loadFirstIfNeeded: true)
+        return movedURLs
+    }
+
+    private func uniqueStandardizedFileURLs(from urls: [URL]) -> [URL] {
+        var seenPaths = Set<String>()
+        return urls.compactMap { url in
+            let standardized = url.standardizedFileURL
+            guard seenPaths.insert(standardized.path).inserted else { return nil }
+            return standardized
+        }
     }
 
     private func movableNotePathsForLibrary() -> Set<String> {

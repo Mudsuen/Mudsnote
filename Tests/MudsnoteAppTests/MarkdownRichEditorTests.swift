@@ -1753,8 +1753,11 @@ struct MarkdownRichEditorTests {
 
         let savedInProjects = try #require(store.listNotes(limit: 10, roots: [projectsFolder]).first)
         #expect(savedInProjects.title == "Folder Seed")
+        let secondProjectNoteURL = try store.saveNewNote(title: "Second Drag Seed", body: "Second body", in: projectsFolder)
         #expect(controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder))
+        #expect(controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: archiveFolder))
         #expect(!controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: projectsFolder))
+        #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: projectsFolder))
         let archiveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Archive"
         })
@@ -1766,12 +1769,20 @@ struct MarkdownRichEditorTests {
         archiveSourceRow.setDropTargeted(false)
         #expect(LibrarySourceRowView.dropHighlightColor.alphaComponent == 0.80)
 
-        let movedURL = try controller.moveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder)
+        let movedURLs = try controller.moveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: archiveFolder)
+        #expect(movedURLs.count == 2)
+        #expect(movedURLs.allSatisfy {
+            $0.deletingLastPathComponent().standardizedFileURL.path == archiveFolder.standardizedFileURL.path
+        })
+        let movedURL = try #require(movedURLs.first { $0.lastPathComponent == savedInProjects.url.lastPathComponent })
         #expect(movedURL.deletingLastPathComponent().standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
         #expect(!controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder))
+        #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: archiveFolder))
         #expect(controller.canMoveDraggedNoteForLibrary(at: movedURL, to: projectsFolder))
         #expect(store.listNotes(limit: 10, roots: [projectsFolder]).isEmpty)
-        #expect(store.listNotes(limit: 10, roots: [archiveFolder]).first?.title == "Folder Seed")
+        let archiveTitles = store.listNotes(limit: 10, roots: [archiveFolder]).map(\.title)
+        #expect(archiveTitles.contains("Folder Seed"))
+        #expect(archiveTitles.contains("Second Drag Seed"))
 
         let renamedArchive = try controller.renameSelectedFolderForLibrary(to: "Renamed Archive")
         #expect(FileManager.default.fileExists(atPath: renamedArchive.path))
@@ -1782,11 +1793,13 @@ struct MarkdownRichEditorTests {
 
         try controller.deleteSelectedFolderForLibrary()
         #expect(!FileManager.default.fileExists(atPath: renamedArchive.path))
-        #expect(store.listTrashedNotes(limit: 10).first?.title == "Folder Seed")
+        let trashedTitles = store.listTrashedNotes(limit: 10).map(\.title)
+        #expect(trashedTitles.contains("Folder Seed"))
+        #expect(trashedTitles.contains("Second Drag Seed"))
         let trashCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-3"
         })
-        #expect(trashCount.stringValue == "1")
+        #expect(trashCount.stringValue == "2")
     }
 
     @MainActor

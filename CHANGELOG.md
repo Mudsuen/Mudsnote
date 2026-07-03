@@ -612,6 +612,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added selection-count-aware labels for share, copy, export, Finder reveal, move, delete, restore, and permanent delete actions. The move-to-folder path now moves every selected Markdown note, while single-note-only open-in-separate-window is disabled for multi-selection.
 - Lesson: Multi-selection parity requires the UI contract and the action contract to match; labels should tell the user exactly when an operation will affect several notes.
 
+### 105. Multi-note drag-to-folder moves
+
+- Problem: Dragging notes onto a source-list folder still processed only the first dragged Markdown file, so multi-selected note drags did not match the batch move behavior users expect from Apple Notes.
+- Fix: Source-list folder drop targets now read all dragged file URLs, validate the full Markdown set, reject mixed invalid drops, and move every dragged note into the target folder through the existing local-first move path.
+- Lesson: Drag parity should share the same batch action contract as menus; hover validation stays fast through the existing movable-path cache while the drop keeps real `.md` files as the source of truth.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
