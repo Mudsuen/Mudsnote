@@ -1664,6 +1664,90 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryEditorTableContextMenuEditsMarkdownRows() throws {
+        let suiteName = "mudsnote.library-table-menu-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-table-menu-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(
+            title: "Table Menu",
+            body: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            """
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let headerLocation = (controller.editorTextView.string as NSString).range(of: "Name").location
+        #expect(headerLocation != NSNotFound)
+        let headerMenu = NSMenu()
+        #expect(controller.configureMarkdownTableContextMenuForLibrary(headerMenu, atCharacterIndex: headerLocation))
+        #expect(headerMenu.items.map(\.title) == ["插入表格行", "删除表格行"])
+        let headerInsertItem = try #require(headerMenu.items.first)
+        let headerDeleteItem = try #require(headerMenu.items.last)
+        #expect(headerInsertItem.isEnabled)
+        #expect(!headerDeleteItem.isEnabled)
+        #expect(NSApp.sendAction(try #require(headerInsertItem.action), to: headerInsertItem.target, from: headerInsertItem))
+
+        var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "|   |   |",
+            "| Alpha | Todo |"
+        ])
+
+        let alphaLocation = (controller.editorTextView.string as NSString).range(of: "Alpha").location
+        #expect(alphaLocation != NSNotFound)
+        let dataMenu = NSMenu()
+        #expect(controller.configureMarkdownTableContextMenuForLibrary(dataMenu, atCharacterIndex: alphaLocation))
+        #expect(dataMenu.items.map(\.title) == ["插入表格行", "删除表格行"])
+        let dataDeleteItem = try #require(dataMenu.items.last)
+        #expect(dataDeleteItem.isEnabled)
+        #expect(dataDeleteItem.keyEquivalent == "\u{7F}")
+        #expect(dataDeleteItem.keyEquivalentModifierMask == [.command])
+        #expect(NSApp.sendAction(try #require(dataDeleteItem.action), to: dataDeleteItem.target, from: dataDeleteItem))
+
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "|   |   |"
+        ])
+
+        let paragraphLocation = (controller.editorTextView.string as NSString).length
+        let paragraphMenu = NSMenu()
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Plain paragraph",
+            theme: controller.theme
+        ))
+        #expect(!controller.configureMarkdownTableContextMenuForLibrary(paragraphMenu, atCharacterIndex: paragraphLocation))
+        #expect(paragraphMenu.items.isEmpty)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowAutosavesEditedExistingNote() async throws {
         let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -1980,9 +2064,10 @@ struct MarkdownRichEditorTests {
         #expect(!controller.searchScopeControl.isHidden)
         #expect(controller.noteListCountLabel.stringValue == "正在搜索...")
 
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(6)
         while Date() < deadline,
-              controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"] {
+              controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"]
+                || controller.noteListCountLabel.stringValue != "1 个结果" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])

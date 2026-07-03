@@ -295,6 +295,11 @@ final class MarkdownTextView: NSTextView {
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
+        guard let characterIndex = characterIndex(at: event) else { return nil }
+        return fileAttachmentReference(atCharacterIndex: characterIndex)
+    }
+
+    func characterIndex(at event: NSEvent) -> Int? {
         guard let layoutManager, let textContainer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         let containerPoint = NSPoint(
@@ -302,8 +307,7 @@ final class MarkdownTextView: NSTextView {
             y: point.y - textContainerInset.height
         )
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
-        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-        return fileAttachmentReference(atCharacterIndex: characterIndex)
+        return layoutManager.characterIndexForGlyph(at: glyphIndex)
     }
 
     func fileAttachmentReference(atCharacterIndex characterIndex: Int) -> MarkdownAttachmentReference? {
