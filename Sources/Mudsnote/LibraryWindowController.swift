@@ -2032,7 +2032,8 @@ final class LibraryWindowController: NSWindowController,
         refreshCounts: Bool = true
     ) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let allNotes = allNotesSnapshot ?? allNoteResults(limit: Self.sourceCountSnapshotLimit)
+        let needsAllNotes = query.isEmpty || refreshCounts
+        let allNotes = allNotesSnapshot ?? (needsAllNotes ? allNoteResults(limit: Self.sourceCountSnapshotLimit) : [])
         searchScopeControl.isHidden = query.isEmpty
         notes = query.isEmpty
             ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews, allNotes: allNotes)
@@ -2465,7 +2466,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func searchScopeChanged(_ sender: NSSegmentedControl) {
         cancelPendingSearchReload()
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
         applyEditorSearchHighlightsForCurrentQuery()
     }
 
@@ -2678,7 +2679,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func performSearchReload() {
         cancelPendingSearchReload()
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        let queryIsEmpty = searchField.stringValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: queryIsEmpty)
         applyEditorSearchHighlightsForCurrentQuery()
     }
 
@@ -3437,7 +3441,10 @@ final class LibraryWindowController: NSWindowController,
         cancelPendingSearchReload()
         searchField.stringValue = query
         searchScopeControl.selectedSegment = allNotes ? 1 : 0
-        reloadNotes(loadFirstIfNeeded: false)
+        reloadNotes(
+            loadFirstIfNeeded: false,
+            refreshCounts: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
         applyEditorSearchHighlightsForCurrentQuery()
     }
 
