@@ -570,6 +570,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Increased the default library window size and three-column widths, widened the source rows and toolbar search field, and clamped the presented size to the current screen's visible frame so smaller displays remain usable.
 - Lesson: Notes parity depends on first-launch geometry as much as individual controls; the app should open into a real desktop editor scale, not a utility-sized library.
 
+### 98. Stronger Notes-like list typography
+
+- Problem: After the window proportions improved, the source list and note list still read too small and light next to Apple Notes, weakening hierarchy even when the three-column layout was correct.
+- Fix: Centralized library typography metrics, increased source-list row height and font sizes, raised note-list title/snippet/meta sizes, and gave note rows slightly more vertical breathing room.
+- Lesson: Visual parity needs typography contracts alongside layout contracts; otherwise the app can have the right columns but still feel scaled down.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -83,6 +83,16 @@ enum LibraryNotesLayout {
     static let toolbarSearchWidth: CGFloat = 260
     static let toolbarSearchWrapperWidth: CGFloat = 280
     static let windowScreenMargin: CGFloat = 72
+    static let sourceRowHeight: CGFloat = 30
+    static let noteGroupRowHeight: CGFloat = 56
+    static let noteRowHeight: CGFloat = 72
+    static let sourceGroupFontSize: CGFloat = 12
+    static let sourceButtonFontSize: CGFloat = 14
+    static let sourceCountFontSize: CGFloat = 13
+    static let noteGroupFontSize: CGFloat = 17
+    static let noteTitleFontSize: CGFloat = 14.5
+    static let noteSnippetFontSize: CGFloat = 12.5
+    static let noteMetaFontSize: CGFloat = 11.5
     static let noteListLeadingInset: CGFloat = 18
     static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 18
@@ -149,7 +159,7 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteGroupFontSize, weight: .bold)
         titleLabel.textColor = panelPrimaryTextColor()
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
@@ -169,9 +179,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 7
+    static let contentTopInset: CGFloat = 8
     static let contentLeadingInset: CGFloat = 18
-    static let contentBottomInset: CGFloat = 7
+    static let contentBottomInset: CGFloat = 8
     static let contentTrailingInset: CGFloat = 16
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -183,19 +193,19 @@ final class LibraryNoteCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.alignment = .left
         titleLabel.textColor = panelPrimaryTextColor()
 
-        snippetLabel.font = .systemFont(ofSize: 12)
+        snippetLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteSnippetFontSize)
         snippetLabel.lineBreakMode = .byTruncatingTail
         snippetLabel.maximumNumberOfLines = 1
         snippetLabel.alignment = .left
         snippetLabel.textColor = panelSecondaryTextColor()
 
-        metaLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        metaLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteMetaFontSize, weight: .medium)
         metaLabel.lineBreakMode = .byTruncatingMiddle
         metaLabel.maximumNumberOfLines = 1
         metaLabel.alignment = .left
@@ -1299,7 +1309,7 @@ final class LibraryWindowController: NSWindowController,
     private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
         let label = NSTextField(labelWithString: title)
         label.identifier = NSUserInterfaceItemIdentifier(identifier)
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
         label.textColor = panelTertiaryTextColor()
         label.alignment = .left
         label.lineBreakMode = .byTruncatingTail
@@ -1553,7 +1563,7 @@ final class LibraryWindowController: NSWindowController,
         let row = LibrarySourceRowView()
         row.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(tag)")
         row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        row.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight).isActive = true
         row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
 
         let button = makeScopeButton(scope, tag: tag)
@@ -1572,7 +1582,7 @@ final class LibraryWindowController: NSWindowController,
         let overlay = PassthroughOverlayView()
         let countLabel = NSTextField(labelWithString: "")
         countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
-        countLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
         let depth = folderRow?.depth ?? 0
@@ -1647,7 +1657,7 @@ final class LibraryWindowController: NSWindowController,
         button.alignment = .left
         button.isBordered = false
         button.bezelStyle = .shadowlessSquare
-        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .medium)
         button.contentTintColor = panelSecondaryTextColor()
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
@@ -1963,13 +1973,13 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         cell.titleLabel.attributedStringValue = highlightedSearchString(
             note.title.isEmpty ? "无标题" : note.title,
-            font: cell.titleLabel.font ?? .systemFont(ofSize: 14, weight: .semibold),
+            font: cell.titleLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .semibold),
             baseColor: panelPrimaryTextColor(),
             query: query
         )
         cell.snippetLabel.attributedStringValue = highlightedSearchString(
             note.snippet.isEmpty ? " " : note.snippet,
-            font: cell.snippetLabel.font ?? .systemFont(ofSize: 12),
+            font: cell.snippetLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteSnippetFontSize),
             baseColor: panelSecondaryTextColor(),
             query: query
         )
@@ -2042,9 +2052,9 @@ final class LibraryWindowController: NSWindowController,
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         if note(at: row) == nil {
-            return 54
+            return LibraryNotesLayout.noteGroupRowHeight
         }
-        return 68
+        return LibraryNotesLayout.noteRowHeight
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {

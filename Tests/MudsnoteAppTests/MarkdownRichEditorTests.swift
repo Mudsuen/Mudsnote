@@ -748,7 +748,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
         })
         #expect(libraryGroup.stringValue == "Mudsnote")
-        #expect(libraryGroup.font?.pointSize == 11)
+        #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
@@ -774,7 +774,8 @@ struct MarkdownRichEditorTests {
         let groupRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 0) as? LibraryNoteRowView)
         groupRowView.setPointerHovered(true)
         #expect(!groupRowView.isPointerHovered)
-        #expect(controller.tableView(controller.tableView, heightOfRow: 1) == 68)
+        #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
+        #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
@@ -792,11 +793,13 @@ struct MarkdownRichEditorTests {
         #expect(noteRowView.isPointerHovered)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
-        #expect(LibraryNoteCellView.contentTopInset == 7)
+        #expect(LibraryNoteCellView.contentTopInset == 8)
         #expect(LibraryNoteCellView.contentLeadingInset == 18)
-        #expect(LibraryNoteCellView.contentBottomInset == 7)
+        #expect(LibraryNoteCellView.contentBottomInset == 8)
         #expect(LibraryNoteCellView.contentTrailingInset == 16)
-        #expect(firstNoteCell.titleLabel.font?.pointSize == 13.5)
+        #expect(firstNoteCell.titleLabel.font?.pointSize == LibraryNotesLayout.noteTitleFontSize)
+        #expect(firstNoteCell.snippetLabel.font?.pointSize == LibraryNotesLayout.noteSnippetFontSize)
+        #expect(firstNoteCell.metaLabel.font?.pointSize == LibraryNotesLayout.noteMetaFontSize)
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
@@ -825,18 +828,19 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCount.stringValue == "1")
-        #expect(allCount.font?.pointSize == 12)
+        #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
         #expect(allCount.textColor == LibrarySourceSelectionPalette.foregroundColor)
         let allSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "所有笔记"
         })
+        #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
         #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
         })
         #expect(allSourceRow.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == 28
+            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.sourceRowHeight
         })
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceRowWidth
