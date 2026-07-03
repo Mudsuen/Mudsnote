@@ -570,6 +570,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
+    private var fullLibrarySnapshotReloadScheduled = false
     private var movableNotePathCache: Set<String>?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
@@ -577,6 +578,7 @@ final class LibraryWindowController: NSWindowController,
     private let sourceTagStack = NSStackView()
     private let sourceFolderStatusLabel = NSTextField(labelWithString: "")
     private let sourceTagStatusLabel = NSTextField(labelWithString: "")
+    private static let sourceCountSnapshotLimit = 10_000
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -618,7 +620,12 @@ final class LibraryWindowController: NSWindowController,
         configureToolbar()
         buildUI()
         if defersInitialNoteHydration {
-            reloadNotes(loadFirstIfNeeded: false, hydratePreviews: false)
+            reloadNotes(
+                loadFirstIfNeeded: false,
+                hydratePreviews: false,
+                allNotesSnapshot: recentNoteResults(limit: 240, hydratePreview: false),
+                refreshCounts: false
+            )
         } else {
             hasHydratedInitialNoteList = true
             reloadNotes(loadFirstIfNeeded: true, hydratePreviews: true)
@@ -659,10 +666,31 @@ final class LibraryWindowController: NSWindowController,
     private func hydrateInitialNoteListIfNeeded() {
         guard !hasHydratedInitialNoteList else { return }
         hasHydratedInitialNoteList = true
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: true, hydratePreviews: false)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: false, hydratePreviews: true)
+        if selectedURL == nil,
+           let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }),
+           let noteToLoad = note(at: firstNoteRow) {
+            tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
+            load(note: noteToLoad)
+        }
+        scheduleFullLibrarySnapshotReload()
+    }
+
+    private func scheduleFullLibrarySnapshotReload() {
+        guard !fullLibrarySnapshotReloadScheduled else { return }
+        fullLibrarySnapshotReloadScheduled = true
+        let noteStore = noteStore
+        let snapshotLimit = Self.sourceCountSnapshotLimit
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            DispatchQueue.main.async {
+                guard let self, self.window?.isVisible == true else { return }
+                self.reloadNotes(
+                    selecting: self.selectedURL,
+                    loadFirstIfNeeded: false,
+                    hydratePreviews: false,
+                    allNotesSnapshot: allNotes
+                )
+            }
         }
     }
 
@@ -1632,8 +1660,7 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func refreshSourceCounts() {
-        let allNotes = allNoteResults(limit: 10_000)
+    private func refreshSourceCounts(using allNotes: [NoteSearchResult]) {
         let recentCount = noteStore.listRecentFiles(limit: 80).count
 
         for button in sourceButtons {
@@ -1668,12 +1695,15 @@ final class LibraryWindowController: NSWindowController,
     private func reloadNotes(
         selecting preferredURL: URL? = nil,
         loadFirstIfNeeded: Bool,
-        hydratePreviews: Bool = true
+        hydratePreviews: Bool = true,
+        allNotesSnapshot: [NoteSearchResult]? = nil,
+        refreshCounts: Bool = true
     ) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allNotes = allNotesSnapshot ?? allNoteResults(limit: Self.sourceCountSnapshotLimit)
         searchScopeControl.isHidden = query.isEmpty
         notes = query.isEmpty
-            ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews)
+            ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews, allNotes: allNotes)
             : searchResultsForSelectedScope(query: query, limit: 240)
         listRows = buildGroupedRows(for: notes)
         updateNoteListHeader(query: query)
@@ -1703,7 +1733,9 @@ final class LibraryWindowController: NSWindowController,
         } else if selectedURL == nil {
             updateEmptyState()
         }
-        refreshSourceCounts()
+        if refreshCounts {
+            refreshSourceCounts(using: allNotes)
+        }
         refreshSourceSelection()
         updateToolbarActionState()
     }
@@ -1732,25 +1764,29 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true) -> [NoteSearchResult] {
+    private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
-            return allNoteResults(limit: limit)
+            return Array(allNotes.prefix(limit))
         case .recent:
             return recentNoteResults(limit: min(limit, 80), hydratePreview: hydratePreviews)
         case .inbox:
-            return allNoteResults(limit: limit).filter { note in
+            return Array(allNotes.filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
-            }
+            }.prefix(limit))
         case .trash:
             return noteStore.listTrashedNotes(limit: limit)
         case .folder(let url):
-            return noteStore.listNotes(limit: limit, roots: [url])
+            let folderPath = url.standardizedFileURL.path
+            return Array(allNotes.filter { note in
+                let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
+                return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+            }.prefix(limit))
         case .tag(let tag):
-            return noteStore.listNotes(limit: limit).filter { note in
+            return Array(allNotes.filter { note in
                 note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-            }
+            }.prefix(limit))
         }
     }
 

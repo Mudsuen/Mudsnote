@@ -1433,7 +1433,9 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         _ = try store.saveNewNote(title: "Tagged Seed", body: "tag body", tags: ["library"])
-        _ = try store.saveNewNote(title: "Plain Seed", body: "plain body")
+        for index in 0..<245 {
+            _ = try store.saveNewNote(title: "Plain Seed \(index)", body: "plain body")
+        }
 
         let controller = LibraryWindowController(
             noteStore: store,

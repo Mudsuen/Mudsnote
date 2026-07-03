@@ -558,6 +558,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Switched `所有笔记`, Inbox matching, and source-list counts to use the indexed full-library note results while keeping `最近` backed by recent files. Added coverage for a Finder-created Markdown file that appears in All but not Recent.
 - Lesson: Local-first interoperability means All Notes must be filesystem-backed, not only app-recent-backed.
 
+### 96. Single library snapshot per refresh
+
+- Problem: After `所有笔记` became filesystem-backed, one library refresh could ask the Markdown index for the full library more than once while updating the note list and source counts.
+- Fix: Built one full-library note snapshot per refresh and reused it for All, Inbox, folder, tag, and source-count filtering. Direct launch now renders the library shell from a lightweight recent snapshot first, then refreshes from the shared full-library snapshot after the window is visible. Expanded tag coverage so a tagged note beyond the first visible page is still found.
+- Lesson: Notes-grade scale comes from reusing lightweight local snapshots, not from adding a heavier data layer.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
