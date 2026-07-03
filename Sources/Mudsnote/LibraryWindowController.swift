@@ -1015,6 +1015,8 @@ final class LibraryWindowController: NSWindowController,
         titleField.placeholderString = "无标题"
         titleField.font = .systemFont(ofSize: LibraryNotesLayout.editorTitleFontSize, weight: .bold)
         titleField.textColor = panelPrimaryTextColor()
+        titleField.alignment = .left
+        titleField.lineBreakMode = .byTruncatingTail
         titleField.isBordered = false
         titleField.drawsBackground = false
         titleField.focusRingType = .none

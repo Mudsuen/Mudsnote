@@ -842,6 +842,8 @@ struct MarkdownRichEditorTests {
         #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
+        #expect(controller.titleField.alignment == .left)
+        #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
         #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
         #expect(controller.theme.boldFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
         #expect(controller.theme.italicFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
