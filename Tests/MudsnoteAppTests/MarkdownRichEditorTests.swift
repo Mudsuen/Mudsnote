@@ -784,6 +784,12 @@ struct MarkdownRichEditorTests {
         })
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == 12)
+        #expect(allCount.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        let allSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "所有笔记"
+        })
+        #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
         })

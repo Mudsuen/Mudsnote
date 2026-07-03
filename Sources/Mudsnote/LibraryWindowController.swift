@@ -84,6 +84,11 @@ enum LibraryNotesLayout {
     static let toolbarSearchWrapperWidth: CGFloat = 230
 }
 
+enum LibrarySourceSelectionPalette {
+    static let backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.86)
+    static let foregroundColor = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.16, alpha: 1)
+}
+
 private func libraryDisplayTag(_ tag: String) -> String {
     let trimmed = libraryBareTag(tag)
     guard !trimmed.isEmpty else { return "#" }
@@ -1411,10 +1416,14 @@ final class LibraryWindowController: NSWindowController,
         for button in sourceButtons {
             let isSelected = scope(for: button) == selectedScope
             button.layer?.backgroundColor = isSelected
-                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                ? LibrarySourceSelectionPalette.backgroundColor.cgColor
                 : NSColor.clear.cgColor
-            button.contentTintColor = isSelected ? panelAccentColor() : panelSecondaryTextColor()
-            sourceCountLabels[button.tag]?.textColor = isSelected ? panelAccentColor() : panelTertiaryTextColor()
+            button.contentTintColor = isSelected
+                ? LibrarySourceSelectionPalette.foregroundColor
+                : panelSecondaryTextColor()
+            sourceCountLabels[button.tag]?.textColor = isSelected
+                ? LibrarySourceSelectionPalette.foregroundColor
+                : panelTertiaryTextColor()
         }
     }
 

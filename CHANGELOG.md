@@ -498,6 +498,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The visual QA script now explicitly activates Mudsnote before and after the launch delay, then captures the library window.
 - Lesson: Visual parity checks need stable foreground state; otherwise screenshots mix product differences with OS focus differences.
 
+### 86. Notes-like source selection tint
+
+- Problem: The library source list still used the system accent selection tint, which appeared blue and diverged from Apple Notes' warmer dark-sidebar selected source rows.
+- Fix: Added a local source-selection palette with a dark selected fill and warm foreground tint for selected icons, titles, and counts. Kept the global editor/toolbar accent unchanged.
+- Lesson: Notes parity needs local surface palettes; changing the app-wide accent would make unrelated controls less native.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
