@@ -552,6 +552,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Cached the movable Markdown path set for drag validation and invalidated it after save, move, delete, restore, and folder mutations. Added coverage that proves a moved note is immediately recognized at its new path after the cache was warmed.
 - Lesson: Notes-like drag interactions need to stay responsive during hover, not only after drop; local-first validation can be fast without weakening the real-file contract.
 
+### 95. True all-notes scope
+
+- Problem: The `所有笔记` scope and source counts were still driven by recent-file state, so plain Markdown files copied into the library outside Mudsnote could be omitted from the Notes-like All view.
+- Fix: Switched `所有笔记`, Inbox matching, and source-list counts to use the indexed full-library note results while keeping `最近` backed by recent files. Added coverage for a Finder-created Markdown file that appears in All but not Recent.
+- Lesson: Local-first interoperability means All Notes must be filesystem-backed, not only app-recent-backed.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

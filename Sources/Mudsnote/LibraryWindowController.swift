@@ -1633,19 +1633,18 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceCounts() {
-        let recentNotes = recentNoteResults(limit: 10_000, hydratePreview: false)
+        let allNotes = allNoteResults(limit: 10_000)
         let recentCount = noteStore.listRecentFiles(limit: 80).count
-        let taggedNotes = sourceTagNames.isEmpty ? [] : noteStore.listNotes(limit: 10_000)
 
         for button in sourceButtons {
             let count: Int
             switch scope(for: button) {
             case .all:
-                count = recentNotes.count
+                count = allNotes.count
             case .recent:
                 count = recentCount
             case .inbox:
-                count = recentNotes.filter { note in
+                count = allNotes.filter { note in
                     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                         || note.title.localizedCaseInsensitiveContains("Inbox")
                 }.count
@@ -1653,12 +1652,12 @@ final class LibraryWindowController: NSWindowController,
                 count = noteStore.listTrashedNotes(limit: 10_000).count
             case .folder(let url):
                 let folderPath = url.standardizedFileURL.path
-                count = recentNotes.filter { note in
+                count = allNotes.filter { note in
                     let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
                     return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
                 }.count
             case .tag(let tag):
-                count = taggedNotes.filter { note in
+                count = allNotes.filter { note in
                     note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
                 }.count
             }
@@ -1736,11 +1735,11 @@ final class LibraryWindowController: NSWindowController,
     private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
-            return recentNoteResults(limit: limit, hydratePreview: hydratePreviews)
+            return allNoteResults(limit: limit)
         case .recent:
             return recentNoteResults(limit: min(limit, 80), hydratePreview: hydratePreviews)
         case .inbox:
-            return recentNoteResults(limit: limit, hydratePreview: hydratePreviews).filter { note in
+            return allNoteResults(limit: limit).filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }
@@ -1776,6 +1775,10 @@ final class LibraryWindowController: NSWindowController,
                 note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
             }
         }
+    }
+
+    private func allNoteResults(limit: Int) -> [NoteSearchResult] {
+        noteStore.listNotes(limit: limit)
     }
 
     private func recentNoteResults(limit: Int, hydratePreview: Bool) -> [NoteSearchResult] {

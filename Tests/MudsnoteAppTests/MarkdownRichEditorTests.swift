@@ -871,6 +871,60 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryAllNotesIncludesPlainMarkdownOutsideRecents() throws {
+        let suiteName = "mudsnote.library-all-notes-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-all-notes-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        let externalNoteURL = notesDirectory.appendingPathComponent("External Seed.md")
+        try "# External Seed\n\nBody from Finder".write(to: externalNoteURL, atomically: true, encoding: .utf8)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["External Seed"])
+        #expect(controller.titleField.stringValue == "External Seed")
+        let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCount.stringValue == "1")
+        let recentCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-1"
+        })
+        #expect(recentCount.stringValue == "")
+
+        let recentButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "最近"
+        })
+        recentButton.performClick(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "最近")
+        #expect(controller.noteListCountLabel.stringValue == "0 条笔记")
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+    }
+
+    @MainActor
+    @Test
     func libraryToolbarUsesNotesLikeDisabledStates() throws {
         let suiteName = "mudsnote.library-toolbar-state-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
