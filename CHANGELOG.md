@@ -624,6 +624,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added an App Support JSON cache for the lightweight search snapshot. The cache is used only when the root set and every Markdown file signature match, and corrupt or stale caches fall back to rebuilding from the real files.
 - Lesson: Scale work should stay local-first and disposable; a cache can make relaunch faster without becoming a second source of truth.
 
+### 107. Larger desktop Notes canvas
+
+- Problem: Side-by-side visual QA still showed the main Notes-like library opening closer to a utility window than Apple Notes' broad desktop editing canvas, with source and note columns feeling compressed.
+- Fix: Increased the default presented window target, widened the source and note columns, widened note-table sizing, and expanded the toolbar search field while preserving the existing screen-clamping behavior for smaller displays.
+- Lesson: Notes parity needs the first opened window to feel like the primary workspace; column polish is hard to judge while the whole canvas is undersized.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

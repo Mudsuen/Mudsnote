@@ -72,17 +72,17 @@ private struct LibraryFolderRow: Equatable, Sendable {
 }
 
 enum LibraryNotesLayout {
-    static let initialWindowSize = NSSize(width: 1420, height: 820)
-    static let presentedWindowSize = NSSize(width: 1420, height: 860)
+    static let initialWindowSize = NSSize(width: 1720, height: 940)
+    static let presentedWindowSize = NSSize(width: 1840, height: 1010)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
-    static let sourceColumnWidth: CGFloat = 270
-    static let noteColumnWidth: CGFloat = 330
-    static let noteTableInitialWidth: CGFloat = 292
-    static let noteTableMinimumWidth: CGFloat = 250
-    static let sourceRowWidth: CGFloat = 244
-    static let toolbarSearchWidth: CGFloat = 300
+    static let sourceColumnWidth: CGFloat = 320
+    static let noteColumnWidth: CGFloat = 390
+    static let noteTableInitialWidth: CGFloat = 352
+    static let noteTableMinimumWidth: CGFloat = 300
+    static let sourceRowWidth: CGFloat = 292
+    static let toolbarSearchWidth: CGFloat = 340
     static let toolbarSearchHeight: CGFloat = 32
-    static let toolbarSearchWrapperWidth: CGFloat = 320
+    static let toolbarSearchWrapperWidth: CGFloat = 360
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 30

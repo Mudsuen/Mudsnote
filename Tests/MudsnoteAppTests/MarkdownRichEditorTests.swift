@@ -680,7 +680,7 @@ struct MarkdownRichEditorTests {
         #expect(window.styleMask.contains(.resizable))
         #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
-        #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1800, height: 1100)) == LibraryNotesLayout.presentedWindowSize)
+        #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 2200, height: 1200)) == LibraryNotesLayout.presentedWindowSize)
         let clampedSize = LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1180, height: 720))
         #expect(clampedSize.width == 1108)
         #expect(clampedSize.height == 648)
