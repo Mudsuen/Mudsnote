@@ -1618,6 +1618,55 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func librarySearchFieldDebouncesTypingButFlushesKeyboardActions() async throws {
+        let suiteName = "mudsnote.library-search-debounce-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-search-debounce-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha Debounced", body: "debounced body")
+        _ = try store.saveNewNote(title: "Beta Debounced", body: "other body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.searchField.stringValue = "a"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        controller.searchField.stringValue = "alpha"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
+
+        try await Task.sleep(nanoseconds: 220_000_000)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
+        #expect(controller.noteListCountLabel.stringValue == "1 个结果")
+
+        controller.searchField.stringValue = "beta"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        let fieldEditor = NSTextView()
+        #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        #expect(controller.titleField.stringValue == "Beta Debounced")
+    }
+
+    @MainActor
+    @Test
     func libraryWindowLoadsTagRowsAfterShellIsVisible() throws {
         let suiteName = "mudsnote.library-tag-source-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2157,7 +2206,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowDeferredShowLoadsFirstNoteWithoutFocusingSearch() throws {
+    func libraryWindowDeferredShowLoadsFirstNoteWithoutFocusingSearch() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-library-deferred-focus-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -2188,7 +2237,10 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue.contains("正在索引"))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, controller.titleField.stringValue != "Deferred Seed" {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
 
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")

@@ -71,6 +71,8 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
+private typealias LoadedLibraryNote = (title: String, body: String, tags: [String])
+
 private enum LibrarySourceSection: Int {
     case folders = 0
     case tags = 1
@@ -624,6 +626,8 @@ final class LibraryWindowController: NSWindowController,
     private var selectedTags: [String] = []
     private var isDirty = false
     private var autosaveTask: Task<Void, Never>?
+    private var searchReloadWorkItem: DispatchWorkItem?
+    private var hasPendingSearchReload = false
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
@@ -743,10 +747,45 @@ final class LibraryWindowController: NSWindowController,
         if selectedURL == nil,
            let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }),
            let noteToLoad = note(at: firstNoteRow) {
+            suppressSelectionChanges = true
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
-            load(note: noteToLoad)
+            suppressSelectionChanges = false
+            loadInitialNoteAfterLaunch(noteToLoad)
         }
         scheduleFullLibrarySnapshotReload()
+    }
+
+    private func loadInitialNoteAfterLaunch(_ note: NoteSearchResult) {
+        let noteStore = noteStore
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result<LoadedLibraryNote, Error> {
+                try noteStore.loadNote(at: note.url)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.applyInitialNoteLoadResult(result, for: note)
+            }
+        }
+    }
+
+    private func selectedNoteStillMatchesInitialLoad(_ note: NoteSearchResult) -> Bool {
+        if let selectedNote = self.note(at: tableView.selectedRow),
+           selectedNote.url.standardizedFileURL.path != note.url.standardizedFileURL.path {
+            return false
+        }
+
+        if let selectedURL,
+           selectedURL.standardizedFileURL.path != note.url.standardizedFileURL.path {
+            return false
+        }
+
+        return true
+    }
+
+    private func applyInitialNoteLoadResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
+        guard window?.isVisible == true else { return }
+        guard selectedNoteStillMatchesInitialLoad(note) else { return }
+        applyLoadedNoteResult(result, for: note)
     }
 
     private func scheduleFullLibrarySnapshotReload() {
@@ -775,6 +814,9 @@ final class LibraryWindowController: NSWindowController,
     func windowWillClose(_ notification: Notification) {
         autosaveTask?.cancel()
         autosaveTask = nil
+        searchReloadWorkItem?.cancel()
+        searchReloadWorkItem = nil
+        hasPendingSearchReload = false
         try? saveCurrentNoteIfNeeded()
         onClose()
     }
@@ -2356,8 +2398,7 @@ final class LibraryWindowController: NSWindowController,
         guard let object = obj.object as AnyObject? else { return }
 
         if object === searchField {
-            reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
-            applyEditorSearchHighlightsForCurrentQuery()
+            scheduleSearchReloadFromTyping()
             return
         }
 
@@ -2368,6 +2409,7 @@ final class LibraryWindowController: NSWindowController,
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard control === searchField else { return false }
+        flushPendingSearchReload()
 
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
             return clearSearchFromKeyboard()
@@ -2398,6 +2440,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func searchScopeChanged(_ sender: NSSegmentedControl) {
+        cancelPendingSearchReload()
         reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
         applyEditorSearchHighlightsForCurrentQuery()
     }
@@ -2579,9 +2622,39 @@ final class LibraryWindowController: NSWindowController,
     private func clearSearchFromKeyboard() -> Bool {
         guard !searchField.stringValue.isEmpty else { return false }
         searchField.stringValue = ""
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        cancelPendingSearchReload()
+        performSearchReload()
         removeEditorSearchHighlights()
         return true
+    }
+
+    private func scheduleSearchReloadFromTyping() {
+        searchReloadWorkItem?.cancel()
+        hasPendingSearchReload = true
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performSearchReload()
+        }
+        searchReloadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(140), execute: workItem)
+    }
+
+    private func flushPendingSearchReload() {
+        guard hasPendingSearchReload else { return }
+        cancelPendingSearchReload()
+        performSearchReload()
+    }
+
+    private func cancelPendingSearchReload() {
+        searchReloadWorkItem?.cancel()
+        searchReloadWorkItem = nil
+        hasPendingSearchReload = false
+    }
+
+    private func performSearchReload() {
+        cancelPendingSearchReload()
+        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        applyEditorSearchHighlightsForCurrentQuery()
     }
 
     private enum NoteListResultDirection {
@@ -2915,6 +2988,15 @@ final class LibraryWindowController: NSWindowController,
     private func load(note: NoteSearchResult) {
         do {
             let loaded = try noteStore.loadNote(at: note.url)
+            applyLoadedNoteResult(.success(loaded), for: note)
+        } catch {
+            presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
+        }
+    }
+
+    private func applyLoadedNoteResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
+        switch result {
+        case .success(let loaded):
             selectedURL = note.url
             setEditorEditable(selectedScope != .trash)
             applyDocument(title: loaded.title, body: loaded.body, tags: loaded.tags)
@@ -2923,7 +3005,7 @@ final class LibraryWindowController: NSWindowController,
             applyEditorSearchHighlightsForCurrentQuery()
             updateEmptyState()
             updateToolbarActionState()
-        } catch {
+        case .failure(let error):
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
     }
@@ -3325,6 +3407,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func searchForLibrary(query: String, allNotes: Bool) {
+        cancelPendingSearchReload()
         searchField.stringValue = query
         searchScopeControl.selectedSegment = allNotes ? 1 : 0
         reloadNotes(loadFirstIfNeeded: false)
