@@ -642,6 +642,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added disposable editor-side search highlights for the active query. Highlights are tagged with a private attribute, cleared when search is cleared, and suppressed from dirty/autosave handling so Markdown serialization stays unchanged.
 - Lesson: Search polish should stay visual and reversible; retrieval metadata must not leak into the local Markdown source of truth.
 
+### 110. Larger Notes-like editor typography
+
+- Problem: After the library canvas and lists were enlarged, the right editor still read slightly undersized against the Apple Notes reference, especially the title/body relationship.
+- Fix: Added explicit library-editor typography metrics and increased the editor date/status, title, body, bold, italic, and code font sizes without changing the quick-capture editor theme.
+- Lesson: The Notes-like library editor needs its own typography contract; quick capture and desktop review/editing should not be forced to share the same scale.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

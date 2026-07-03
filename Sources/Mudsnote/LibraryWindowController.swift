@@ -107,6 +107,10 @@ enum LibraryNotesLayout {
     static let editorDateRowHeight: CGFloat = 20
     static let editorDateToTitleSpacing: CGFloat = 28
     static let editorTitleToBodySpacing: CGFloat = 8
+    static let editorStatusFontSize: CGFloat = 14
+    static let editorTitleFontSize: CGFloat = 34
+    static let editorBodyFontSize: CGFloat = 16.5
+    static let editorCodeFontSize: CGFloat = 15.5
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -619,10 +623,13 @@ final class LibraryWindowController: NSWindowController,
         textColor: panelPrimaryTextColor(),
         mutedTextColor: panelSecondaryTextColor(),
         accentColor: panelAccentColor(),
-        bodyFont: .systemFont(ofSize: 15, weight: .regular),
-        boldFont: .systemFont(ofSize: 15, weight: .bold),
-        italicFont: NSFontManager.shared.convert(.systemFont(ofSize: 15, weight: .regular), toHaveTrait: .italicFontMask),
-        codeFont: .monospacedSystemFont(ofSize: 14, weight: .medium)
+        bodyFont: .systemFont(ofSize: LibraryNotesLayout.editorBodyFontSize, weight: .regular),
+        boldFont: .systemFont(ofSize: LibraryNotesLayout.editorBodyFontSize, weight: .bold),
+        italicFont: NSFontManager.shared.convert(
+            .systemFont(ofSize: LibraryNotesLayout.editorBodyFontSize, weight: .regular),
+            toHaveTrait: .italicFontMask
+        ),
+        codeFont: .monospacedSystemFont(ofSize: LibraryNotesLayout.editorCodeFontSize, weight: .medium)
     )
 
     init(
@@ -915,7 +922,7 @@ final class LibraryWindowController: NSWindowController,
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
         titleField.placeholderString = "无标题"
-        titleField.font = .systemFont(ofSize: 30, weight: .bold)
+        titleField.font = .systemFont(ofSize: LibraryNotesLayout.editorTitleFontSize, weight: .bold)
         titleField.textColor = panelPrimaryTextColor()
         titleField.isBordered = false
         titleField.drawsBackground = false
@@ -923,7 +930,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.delegate = self
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
-        statusLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail

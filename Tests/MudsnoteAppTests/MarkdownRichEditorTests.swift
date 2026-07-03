@@ -825,7 +825,12 @@ struct MarkdownRichEditorTests {
         #expect(controller.statusLabel.alignment == .center)
         #expect(controller.statusLabel.stringValue == noteDateFormatter.string(from: noteModifiedAt))
         #expect(!controller.statusLabel.stringValue.contains("·"))
-        #expect(controller.titleField.font?.pointSize == 30)
+        #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
+        #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
+        #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
+        #expect(controller.theme.boldFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
+        #expect(controller.theme.italicFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
+        #expect(controller.theme.codeFont.pointSize == LibraryNotesLayout.editorCodeFontSize)
         #expect(controller.editorTextView.textContainerInset.height == 4)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
