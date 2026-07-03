@@ -1024,6 +1024,7 @@ struct MarkdownRichEditorTests {
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
+        #expect(normalMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "删除" }?.isEnabled == true)
 
@@ -1043,6 +1044,7 @@ struct MarkdownRichEditorTests {
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
+        #expect(trashMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "恢复" }?.isEnabled == true)
         #expect(trashMoreMenu.items.first { $0.title == "永久删除" }?.isEnabled == true)
@@ -1705,12 +1707,17 @@ struct MarkdownRichEditorTests {
         #expect(moreMenuTitles.contains("保存"))
         #expect(moreMenuTitles.contains("在 Finder 中显示"))
         #expect(moreMenuTitles.contains("复制 Markdown 路径"))
+        #expect(moreMenuTitles.contains("复制 Markdown 内容"))
         #expect(moreMenuTitles.contains("导出 Markdown..."))
         #expect(moreMenuTitles.contains("删除"))
         #expect(controller.selectedMarkdownFileURLForLibrary()?.path == noteURL.standardizedFileURL.path)
         #expect(controller.revealSelectedNoteInFinderForLibrary()?.path == noteURL.standardizedFileURL.path)
         #expect(controller.copySelectedMarkdownPathForLibrary() == noteURL.standardizedFileURL.path)
         #expect(NSPasteboard.general.string(forType: .string) == noteURL.standardizedFileURL.path)
+        let copiedMarkdown = try #require(try controller.copySelectedMarkdownContentForLibrary())
+        #expect(copiedMarkdown.contains("Trash Seed"))
+        #expect(copiedMarkdown.contains("Body line"))
+        #expect(NSPasteboard.general.string(forType: .string) == copiedMarkdown)
         let exportURL = root.appendingPathComponent("Exported Toolbar Seed.md")
         #expect(try controller.exportSelectedMarkdownForLibrary(to: exportURL)?.path == exportURL.standardizedFileURL.path)
         let exportedMarkdown = try String(contentsOf: exportURL, encoding: .utf8)

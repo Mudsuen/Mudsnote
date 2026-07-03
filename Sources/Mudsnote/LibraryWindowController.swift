@@ -2555,6 +2555,15 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
+    private func copySelectedMarkdownContentPressed() {
+        do {
+            _ = try copySelectedMarkdownContentForLibrary()
+        } catch {
+            presentErrorAlert(message: "复制失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
     private func exportSelectedMarkdownPressed() {
         guard canExportSelectedNote,
               let sourceURL = selectedMarkdownFileURLForLibrary() else { return }
@@ -2734,6 +2743,18 @@ final class LibraryWindowController: NSWindowController,
 
     func revealSelectedNoteInFinderForLibrary() -> URL? {
         selectedMarkdownFileURLForLibrary()
+    }
+
+    @discardableResult
+    func copySelectedMarkdownContentForLibrary() throws -> String? {
+        guard canExportSelectedNote,
+              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+
+        try saveCurrentNoteIfNeeded()
+        let markdown = try String(contentsOf: sourceURL, encoding: .utf8)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown, forType: .string)
+        return markdown
     }
 
     @discardableResult
@@ -3043,6 +3064,11 @@ final class LibraryWindowController: NSWindowController,
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
 
+        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        copyContentItem.target = self
+        copyContentItem.isEnabled = canExportSelectedNote
+        menu.addItem(copyContentItem)
+
         let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
         exportItem.target = self
         exportItem.isEnabled = canExportSelectedNote
@@ -3088,6 +3114,11 @@ final class LibraryWindowController: NSWindowController,
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
         menu.addItem(copyPathItem)
+
+        let copyContentItem = NSMenuItem(title: "复制 Markdown 内容", action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
+        copyContentItem.target = self
+        copyContentItem.isEnabled = canExportSelectedNote
+        menu.addItem(copyContentItem)
 
         let exportItem = NSMenuItem(title: "导出 Markdown...", action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
         exportItem.target = self

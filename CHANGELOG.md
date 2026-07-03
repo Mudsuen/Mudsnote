@@ -582,6 +582,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Centralized toolbar search and editor spacing metrics, widened/tallened the toolbar search field, increased its text size, and opened up the editor top inset plus date/title/title-body spacing.
 - Lesson: Toolbar balance and editor rhythm should be controlled by shared layout metrics so visual QA can tune the Notes surface without scattering magic numbers.
 
+### 100. Copy Markdown content from library
+
+- Problem: The Notes-like export/share surface still only exposed file-oriented actions such as Finder reveal, path copy, and exporting a separate Markdown file.
+- Fix: Added `复制 Markdown 内容` to the library more menu and note context menu. It saves pending edits when needed, reads the selected Markdown file, and places the full note Markdown on the pasteboard. Trash scope keeps it disabled.
+- Lesson: Richer sharing can stay lightweight by adding local Markdown destinations before introducing heavier share/export infrastructure.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
