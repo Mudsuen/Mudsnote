@@ -130,12 +130,13 @@ try png.write(to: outputURL)
 SWIFT
 fi
 
-/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" <<'SWIFT'
+/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" "$WINDOW_ID" <<'SWIFT'
 import AppKit
+import CoreGraphics
 
 let args = CommandLine.arguments
-guard args.count == 5 else {
-    fputs("Usage: stitch reference app output metadata\n", stderr)
+guard args.count == 6, let capturedWindowID = Int(args[5]) else {
+    fputs("Usage: stitch reference app output metadata window-id\n", stderr)
     exit(2)
 }
 
@@ -166,6 +167,22 @@ struct ImageMetrics {
     var pixelDescription: String {
         "\(pixelsWide)x\(pixelsHigh) px"
     }
+}
+
+func capturedWindowBoundsDescription(windowID: Int) -> String {
+    let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+    let windows = (CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]) ?? []
+    guard
+        let window = windows.first(where: { ($0[kCGWindowNumber as String] as? Int) == windowID }),
+        let bounds = window[kCGWindowBounds as String] as? [String: Any],
+        let width = bounds["Width"] as? Double,
+        let height = bounds["Height"] as? Double,
+        let x = bounds["X"] as? Double,
+        let y = bounds["Y"] as? Double
+    else {
+        return "unavailable"
+    }
+    return String(format: "x=%.0f,y=%.0f,width=%.0f,height=%.0f", x, y, width, height)
 }
 
 func loadImageMetrics(_ url: URL) -> ImageMetrics {
@@ -299,6 +316,8 @@ reference_pixels=\(reference.pixelDescription)
 reference_backing_scale=\(reference.backingScaleDescription)
 reference_draw_scale=\(String(format: "%.4f", referenceDrawScale))
 mudsnote_path=\(app.url.path)
+mudsnote_window_id=\(capturedWindowID)
+mudsnote_window_bounds=\(capturedWindowBoundsDescription(windowID: capturedWindowID))
 mudsnote_points=\(app.pointDescription)
 mudsnote_pixels=\(app.pixelDescription)
 mudsnote_backing_scale=\(app.backingScaleDescription)

@@ -1659,9 +1659,15 @@ struct MarkdownRichEditorTests {
 
         controller.loadSourceTagsForLibrary()
 
-        let tagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "library"
+        let tagsHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
         })
+        #expect(tagsHeader.title == "标签")
+        #expect(tagsHeader.image?.accessibilityDescription == "标签")
+
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "library"
+        } == true)
         let tagCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-100"
         })
@@ -1670,7 +1676,21 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
 
-        tagButton.performClick(nil)
+        tagsHeader.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "library"
+        } == false)
+        #expect(tagsHeader.image?.accessibilityDescription == "标签")
+
+        tagsHeader.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "library"
+        } == true)
+
+        let restoredTagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "library"
+        })
+        restoredTagButton.performClick(nil)
         #expect(controller.noteListTitleLabel.stringValue == "#library")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Tagged Seed"])
     }
@@ -1722,6 +1742,20 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Client"
         } == false)
+
+        let foldersHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Folders"
+        })
+        #expect(foldersHeader.title == "文件夹")
+        #expect(foldersHeader.image?.accessibilityDescription == "文件夹")
+        foldersHeader.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Projects"
+        } == false)
+        foldersHeader.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Projects"
+        } == true)
 
         let initialProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibraryFolderDisclosure-11"

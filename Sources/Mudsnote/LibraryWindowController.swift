@@ -71,6 +71,29 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
+private enum LibrarySourceSection: Int {
+    case folders = 0
+    case tags = 1
+
+    var title: String {
+        switch self {
+        case .folders:
+            return "文件夹"
+        case .tags:
+            return "标签"
+        }
+    }
+
+    var identifier: String {
+        switch self {
+        case .folders:
+            return "Folders"
+        case .tags:
+            return "Tags"
+        }
+    }
+}
+
 enum LibraryNotesLayout {
     static let initialWindowSize = NSSize(width: 1720, height: 940)
     static let presentedWindowSize = NSSize(width: 1840, height: 1010)
@@ -596,6 +619,7 @@ final class LibraryWindowController: NSWindowController,
     private let onClose: () -> Void
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
+    private var sourceCountSnapshot: [NoteSearchResult] = []
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
@@ -617,6 +641,8 @@ final class LibraryWindowController: NSWindowController,
     private var fullLibrarySnapshotReloadScheduled = false
     private var isFullLibrarySnapshotLoading = false
     private var movableNotePathCache: Set<String>?
+    private var sourceFoldersSectionCollapsed = false
+    private var sourceTagsSectionCollapsed = false
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -796,8 +822,8 @@ final class LibraryWindowController: NSWindowController,
         )
 
         let libraryHeader = makeSourceGroupLabel("Mudsnote", identifier: "LibrarySourceGroup-Mudsnote")
-        let folderHeader = makeSourceGroupLabel("文件夹", identifier: "LibrarySourceGroup-Folders")
-        let tagHeader = makeSourceGroupLabel("标签", identifier: "LibrarySourceGroup-Tags")
+        let folderHeader = makeSourceSectionHeader(.folders)
+        let tagHeader = makeSourceSectionHeader(.tags)
 
         sourceFolderRows = rootFolderRowsForSourceList()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -1496,6 +1522,30 @@ final class LibraryWindowController: NSWindowController,
         return label
     }
 
+    private func makeSourceSectionHeader(_ section: LibrarySourceSection) -> NSButton {
+        let isCollapsed = isSourceSectionCollapsed(section)
+        let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
+        let button = NSButton(
+            title: section.title,
+            image: NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title) ?? NSImage(),
+            target: self,
+            action: #selector(sourceSectionDisclosurePressed(_:))
+        )
+        button.identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-\(section.identifier)")
+        button.tag = section.rawValue
+        button.isBordered = false
+        button.bezelStyle = .shadowlessSquare
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.alignment = .left
+        button.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
+        button.contentTintColor = panelTertiaryTextColor()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
+        return button
+    }
+
     private func rebuildSourceRows(includeTags: Bool) {
         sourceButtons.removeAll()
         sourceCountLabels.removeAll()
@@ -1507,29 +1557,42 @@ final class LibraryWindowController: NSWindowController,
             sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
         }
 
-        for (index, folderRow) in sourceFolderRows.enumerated() {
-            sourceFolderStack.addArrangedSubview(makeScopeRow(
-                .folder(folderRow.url),
-                tag: 10 + index,
-                folderRow: folderRow
-            ))
-        }
         updateSourceFolderStatus()
-        if !sourceFolderStatusLabel.stringValue.isEmpty {
-            sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
+        if !sourceFoldersSectionCollapsed {
+            for (index, folderRow) in sourceFolderRows.enumerated() {
+                sourceFolderStack.addArrangedSubview(makeScopeRow(
+                    .folder(folderRow.url),
+                    tag: 10 + index,
+                    folderRow: folderRow
+                ))
+            }
+            if !sourceFolderStatusLabel.stringValue.isEmpty {
+                sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
+            }
         }
 
         if !includeTags {
             sourceTagNames = []
         }
-        for (index, tag) in sourceTagNames.enumerated() {
-            sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
-        }
         updateSourceTagStatus()
-        if !sourceTagStatusLabel.stringValue.isEmpty {
-            sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
+        if !sourceTagsSectionCollapsed {
+            for (index, tag) in sourceTagNames.enumerated() {
+                sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
+            }
+            if !sourceTagStatusLabel.stringValue.isEmpty {
+                sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
+            }
         }
         tableView.menu = makeNoteContextMenu()
+    }
+
+    private func isSourceSectionCollapsed(_ section: LibrarySourceSection) -> Bool {
+        switch section {
+        case .folders:
+            return sourceFoldersSectionCollapsed
+        case .tags:
+            return sourceTagsSectionCollapsed
+        }
     }
 
     private func updateSourceFolderStatus() {
@@ -1937,6 +2000,7 @@ final class LibraryWindowController: NSWindowController,
             updateEmptyState()
         }
         if refreshCounts {
+            sourceCountSnapshot = allNotes
             refreshSourceCounts(using: allNotes)
         }
         refreshSourceSelection()
@@ -2378,6 +2442,32 @@ final class LibraryWindowController: NSWindowController,
 
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
+    }
+
+    @objc
+    private func sourceSectionDisclosurePressed(_ sender: NSButton) {
+        guard let section = LibrarySourceSection(rawValue: sender.tag) else { return }
+
+        switch section {
+        case .folders:
+            sourceFoldersSectionCollapsed.toggle()
+            if !sourceFoldersSectionCollapsed {
+                scheduleDeferredSourceFolderLoad()
+            }
+        case .tags:
+            sourceTagsSectionCollapsed.toggle()
+            if !sourceTagsSectionCollapsed {
+                scheduleDeferredSourceTagLoad()
+            }
+        }
+
+        sender.image = NSImage(
+            systemSymbolName: isSourceSectionCollapsed(section) ? "chevron.right" : "chevron.down",
+            accessibilityDescription: section.title
+        )
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+        refreshSourceCounts(using: sourceCountSnapshot)
+        refreshSourceSelection()
     }
 
     private func scope(for button: NSButton) -> LibraryScope {
