@@ -522,6 +522,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added source-row drop targets for folders, validating dragged notes against the current Markdown library and moving them into the target folder with a subtle drop highlight. Same-folder, trash, non-Markdown, and non-library file drops are rejected.
 - Lesson: Drag-to-folder can stay lightweight when it reuses the existing filesystem-backed move path instead of introducing app-private drag models.
 
+### 90. Stable source shell for visual QA
+
+- Problem: The Apple Notes comparison harness could capture the library before deferred source folders and tags finished loading, making screenshots show loading rows instead of the steady Notes-like sidebar state.
+- Fix: Made source loading rows quiet once the sidebar has usable root folder rows, and hid transient tag-indexing copy while tags load in the background. The visual QA script now explicitly opens the library path while normal app launches keep the shell-first deferred loading path.
+- Lesson: Visual QA needs deterministic state, and users benefit from the same quieter shell when background indexing is slow.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

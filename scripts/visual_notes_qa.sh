@@ -20,7 +20,7 @@ fi
 
 pkill -x Mudsnote >/dev/null 2>&1 || true
 sleep 1
-open "$APP_PATH"
+open -n "$APP_PATH" --args --library
 osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
 osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true

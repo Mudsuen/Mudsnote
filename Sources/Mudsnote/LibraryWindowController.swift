@@ -1260,7 +1260,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateSourceFolderStatus() {
-        if !sourceFoldersLoaded {
+        if !sourceFoldersLoaded && sourceFolderRows.isEmpty {
             sourceFolderStatusLabel.stringValue = "正在载入文件夹..."
         } else if sourceFolderRows.isEmpty {
             sourceFolderStatusLabel.stringValue = "没有文件夹"
@@ -1270,9 +1270,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateSourceTagStatus() {
-        if !sourceTagsLoaded {
-            sourceTagStatusLabel.stringValue = "正在索引标签..."
-        } else if sourceTagNames.isEmpty {
+        if sourceTagsLoaded && sourceTagNames.isEmpty {
             sourceTagStatusLabel.stringValue = "没有标签"
         } else {
             sourceTagStatusLabel.stringValue = ""
