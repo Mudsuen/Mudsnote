@@ -318,6 +318,97 @@ final class LibraryNoteRowView: NSTableRowView {
     }
 }
 
+@MainActor
+final class LibrarySourceRowView: NSView {
+    static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
+
+    var targetDirectory: URL?
+    var canDropNote: ((URL, URL) -> Bool)?
+    var onDropNote: ((URL, URL) -> Bool)?
+    private(set) var isDropTargeted = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dragOperation(for: sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dragOperation(for: sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setDropTargeted(false)
+        guard let targetDirectory,
+              let noteURL = firstDraggedFileURL(from: sender.draggingPasteboard) else {
+            return false
+        }
+        return onDropNote?(noteURL, targetDirectory) ?? false
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setDropTargeted(false)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isDropTargeted else { return }
+
+        let path = NSBezierPath(
+            roundedRect: bounds,
+            xRadius: 6,
+            yRadius: 6
+        )
+        Self.dropHighlightColor.setFill()
+        path.fill()
+    }
+
+    func setDropTargeted(_ targeted: Bool) {
+        guard isDropTargeted != targeted else { return }
+        isDropTargeted = targeted
+        needsDisplay = true
+    }
+
+    private func dragOperation(for sender: NSDraggingInfo) -> NSDragOperation {
+        guard targetDirectory != nil,
+              let noteURL = firstDraggedFileURL(from: sender.draggingPasteboard),
+              let targetDirectory,
+              canDropNote?(noteURL, targetDirectory) == true else {
+            setDropTargeted(false)
+            return []
+        }
+        setDropTargeted(true)
+        return .move
+    }
+
+    private func firstDraggedFileURL(from pasteboard: NSPasteboard) -> URL? {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) ?? []
+        return objects.compactMap { object -> URL? in
+            let url: URL?
+            if let swiftURL = object as? URL {
+                url = swiftURL
+            } else if let nsURL = object as? NSURL {
+                url = nsURL as URL
+            } else {
+                url = nil
+            }
+            guard let url else { return nil }
+            return url.isFileURL ? url : nil
+        }.first
+    }
+}
+
 fileprivate enum LibraryNoteKeyCommand {
     case open
     case delete
@@ -1378,7 +1469,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func makeScopeRow(_ scope: LibraryScope, tag: Int, folderRow: LibraryFolderRow? = nil) -> NSView {
-        let row = NSView()
+        let row = LibrarySourceRowView()
         row.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(tag)")
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: 28).isActive = true
@@ -1388,6 +1479,13 @@ final class LibraryWindowController: NSWindowController,
         if case .folder(let folderURL) = scope {
             let menu = makeFolderContextMenu(for: folderURL)
             row.menu = menu
+            row.targetDirectory = folderURL
+            row.canDropNote = { [weak self] noteURL, targetDirectory in
+                self?.canMoveDraggedNoteForLibrary(at: noteURL, to: targetDirectory) ?? false
+            }
+            row.onDropNote = { [weak self] noteURL, targetDirectory in
+                (try? self?.moveDraggedNoteForLibrary(at: noteURL, to: targetDirectory)) != nil
+            }
             button.menu = menu
         }
         let overlay = PassthroughOverlayView()
@@ -2582,6 +2680,40 @@ final class LibraryWindowController: NSWindowController,
         let targetDirectory = directory.standardizedFileURL
         let movedURL = try noteStore.moveNote(at: selectedURL, to: targetDirectory)
         self.selectedURL = movedURL
+        selectedScope = .folder(targetDirectory)
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+        reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)
+        return movedURL
+    }
+
+    func canMoveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) -> Bool {
+        let sourceURL = noteURL.standardizedFileURL
+        let targetDirectory = directory.standardizedFileURL
+        guard sourceURL.pathExtension.localizedCaseInsensitiveCompare("md") == .orderedSame,
+              FileManager.default.fileExists(atPath: sourceURL.path),
+              sourceURL.deletingLastPathComponent().standardizedFileURL.path != targetDirectory.path,
+              !isTrashURL(sourceURL) else {
+            return false
+        }
+
+        return noteStore.listNotes(limit: 10_000).contains {
+            $0.url.standardizedFileURL.path == sourceURL.path
+        }
+    }
+
+    @discardableResult
+    func moveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) throws -> URL {
+        let sourceURL = noteURL.standardizedFileURL
+        let targetDirectory = directory.standardizedFileURL
+        guard canMoveDraggedNoteForLibrary(at: sourceURL, to: targetDirectory) else {
+            throw LibraryActionError.noNoteSelected
+        }
+        if selectedURL?.standardizedFileURL.path == sourceURL.path {
+            try saveCurrentNoteIfNeeded()
+        }
+
+        let movedURL = try noteStore.moveNote(at: sourceURL, to: targetDirectory)
+        selectedURL = movedURL
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: movedURL, loadFirstIfNeeded: true)

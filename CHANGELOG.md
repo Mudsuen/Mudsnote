@@ -516,6 +516,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Enabled external copy dragging for note rows and exposed each note as its backing Markdown file URL. Group headers remain non-draggable.
 - Lesson: Drag support should preserve the local-first contract: a dragged note is the real `.md` file, not an app-private object.
 
+### 89. Drag notes to folders
+
+- Problem: Notes could be moved through menus, but the library still lacked the direct drag-to-folder interaction expected from a Notes-like desktop sidebar.
+- Fix: Added source-row drop targets for folders, validating dragged notes against the current Markdown library and moving them into the target folder with a subtle drop highlight. Same-folder, trash, non-Markdown, and non-library file drops are rejected.
+- Lesson: Drag-to-folder can stay lightweight when it reuses the existing filesystem-backed move path instead of introducing app-private drag models.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

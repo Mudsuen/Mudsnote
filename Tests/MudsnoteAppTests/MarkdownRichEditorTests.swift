@@ -1533,8 +1533,20 @@ struct MarkdownRichEditorTests {
 
         let savedInProjects = try #require(store.listNotes(limit: 10, roots: [projectsFolder]).first)
         #expect(savedInProjects.title == "Folder Seed")
+        #expect(controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder))
+        #expect(!controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: projectsFolder))
+        let archiveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Archive"
+        })
+        let archiveSourceRow = try #require(archiveButton.superview as? LibrarySourceRowView)
+        #expect(archiveSourceRow.targetDirectory?.standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
+        #expect(!archiveSourceRow.isDropTargeted)
+        archiveSourceRow.setDropTargeted(true)
+        #expect(archiveSourceRow.isDropTargeted)
+        archiveSourceRow.setDropTargeted(false)
+        #expect(LibrarySourceRowView.dropHighlightColor.alphaComponent == 0.80)
 
-        let movedURL = try controller.moveSelectedNoteForLibrary(to: archiveFolder)
+        let movedURL = try controller.moveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder)
         #expect(movedURL.deletingLastPathComponent().standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
         #expect(store.listNotes(limit: 10, roots: [projectsFolder]).isEmpty)
         #expect(store.listNotes(limit: 10, roots: [archiveFolder]).first?.title == "Folder Seed")
