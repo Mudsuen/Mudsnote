@@ -72,20 +72,30 @@ private struct LibraryFolderRow: Equatable, Sendable {
 }
 
 enum LibraryNotesLayout {
-    static let initialWindowSize = NSSize(width: 1160, height: 680)
-    static let presentedWindowSize = NSSize(width: 1160, height: 764)
-    static let minimumWindowSize = NSSize(width: 980, height: 560)
-    static let sourceColumnWidth: CGFloat = 220
-    static let noteColumnWidth: CGFloat = 288
-    static let noteTableInitialWidth: CGFloat = 248
-    static let noteTableMinimumWidth: CGFloat = 220
-    static let sourceRowWidth: CGFloat = 194
-    static let toolbarSearchWidth: CGFloat = 210
-    static let toolbarSearchWrapperWidth: CGFloat = 230
+    static let initialWindowSize = NSSize(width: 1420, height: 820)
+    static let presentedWindowSize = NSSize(width: 1420, height: 860)
+    static let minimumWindowSize = NSSize(width: 1040, height: 620)
+    static let sourceColumnWidth: CGFloat = 270
+    static let noteColumnWidth: CGFloat = 330
+    static let noteTableInitialWidth: CGFloat = 292
+    static let noteTableMinimumWidth: CGFloat = 250
+    static let sourceRowWidth: CGFloat = 244
+    static let toolbarSearchWidth: CGFloat = 260
+    static let toolbarSearchWrapperWidth: CGFloat = 280
+    static let windowScreenMargin: CGFloat = 72
     static let noteListLeadingInset: CGFloat = 18
     static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 18
     static let noteListBottomInset: CGFloat = 14
+
+    static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
+        let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
+        let availableHeight = max(minimumWindowSize.height, visibleFrame.height - windowScreenMargin)
+        return NSSize(
+            width: min(presentedWindowSize.width, availableWidth),
+            height: min(presentedWindowSize.height, availableHeight)
+        )
+    }
 }
 
 enum LibrarySourceSelectionPalette {
@@ -642,7 +652,7 @@ final class LibraryWindowController: NSWindowController,
         guard let window else { return }
         if !hasCenteredWindow {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            let targetSize = LibraryNotesLayout.presentedWindowSize
+            let targetSize = LibraryNotesLayout.presentedWindowSize(in: visibleFrame)
             let targetOrigin = NSPoint(
                 x: visibleFrame.midX - targetSize.width / 2,
                 y: visibleFrame.midY - targetSize.height / 2

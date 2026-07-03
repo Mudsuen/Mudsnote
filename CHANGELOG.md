@@ -564,6 +564,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Built one full-library note snapshot per refresh and reused it for All, Inbox, folder, tag, and source-count filtering. Direct launch now renders the library shell from a lightweight recent snapshot first, then refreshes from the shared full-library snapshot after the window is visible. Expanded tag coverage so a tagged note beyond the first visible page is still found.
 - Lesson: Notes-grade scale comes from reusing lightweight local snapshots, not from adding a heavier data layer.
 
+### 97. Larger Notes-like library proportions
+
+- Problem: The visual QA side-by-side still made Mudsnote read as a compressed Notes clone: the main window, source column, note list, and toolbar search field were all narrower than the Apple Notes reference.
+- Fix: Increased the default library window size and three-column widths, widened the source rows and toolbar search field, and clamped the presented size to the current screen's visible frame so smaller displays remain usable.
+- Lesson: Notes parity depends on first-launch geometry as much as individual controls; the app should open into a real desktop editor scale, not a utility-sized library.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
