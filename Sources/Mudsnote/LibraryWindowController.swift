@@ -4793,12 +4793,101 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func insertTableForLibrary() {
+        if insertTableRowInCurrentMarkdownTableForLibrary() {
+            return
+        }
+
         let markdown = """
         | Column 1 | Column 2 |
         | --- | --- |
         |  |  |
         """
         insertMarkdownBlockForLibrary(markdown)
+    }
+
+    @discardableResult
+    private func insertTableRowInCurrentMarkdownTableForLibrary() -> Bool {
+        guard selectedScope != .trash,
+              editorTextView.selectedRange().length == 0,
+              let storage = editorTextView.textStorage else {
+            return false
+        }
+
+        let string = editorTextView.string as NSString
+        guard string.length > 0 else { return false }
+
+        let currentLineRange = visibleLineRangeForSelection()
+        let currentLine = string.substring(with: currentLineRange)
+        guard markdownTableColumnCount(in: currentLine) != nil else { return false }
+
+        var targetLineRange = currentLineRange
+        var columnCount = markdownTableColumnCount(in: currentLine) ?? 2
+        if !isMarkdownTableSeparatorLine(currentLine),
+           let nextLineRange = lineRange(after: currentLineRange, in: string) {
+            let nextLine = string.substring(with: nextLineRange)
+            if isMarkdownTableSeparatorLine(nextLine),
+               let nextColumnCount = markdownTableColumnCount(in: nextLine) {
+                targetLineRange = nextLineRange
+                columnCount = nextColumnCount
+            }
+        }
+
+        let insertionLocation = NSMaxRange(targetLineRange)
+        let rowMarkdown = "\n" + emptyMarkdownTableRow(columnCount: columnCount)
+        let rendered = MarkdownRichTextCodec.render(markdown: rowMarkdown, theme: theme, baseURL: selectedURL)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: NSRange(location: insertionLocation, length: 0), with: rendered)
+        suppressEditorChanges = false
+
+        let firstCellLocation = min(insertionLocation + 3, storage.length)
+        editorTextView.setSelectedRange(NSRange(location: firstCellLocation, length: 0))
+        updateTypingAttributesFromInsertionPoint()
+        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
+        markDirty()
+        return true
+    }
+
+    private func lineRange(after range: NSRange, in string: NSString) -> NSRange? {
+        let nextLocation = NSMaxRange(string.lineRange(for: range))
+        guard nextLocation < string.length else { return nil }
+        let paragraphRange = string.paragraphRange(for: NSRange(location: nextLocation, length: 0))
+        let hasTrailingNewline = string.substring(with: paragraphRange).hasSuffix("\n")
+        return NSRange(
+            location: paragraphRange.location,
+            length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
+        )
+    }
+
+    private func markdownTableColumnCount(in line: String) -> Int? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
+
+        let columns = trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .dropFirst()
+            .dropLast()
+        let count = columns.count
+        return count >= 2 ? count : nil
+    }
+
+    private func isMarkdownTableSeparatorLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard markdownTableColumnCount(in: trimmed) != nil else { return false }
+
+        let cells = trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .dropFirst()
+            .dropLast()
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return cells.allSatisfy { cell in
+            let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
+        }
+    }
+
+    private func emptyMarkdownTableRow(columnCount: Int) -> String {
+        "| " + Array(repeating: " ", count: max(columnCount, 2)).joined(separator: " | ") + " |"
     }
 
     func insertLinkForLibrary(label: String, url: String) {

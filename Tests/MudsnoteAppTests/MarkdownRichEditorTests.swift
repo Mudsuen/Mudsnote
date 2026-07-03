@@ -1420,6 +1420,88 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryTableButtonAddsRowsInsideExistingMarkdownTables() throws {
+        let suiteName = "mudsnote.library-table-editing-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-table-editing-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(
+            title: "Table Editing",
+            body: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            """
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let alphaLocation = (controller.editorTextView.string as NSString).range(of: "Alpha").location
+        #expect(alphaLocation != NSNotFound)
+        controller.editorTextView.setSelectedRange(NSRange(location: alphaLocation, length: 0))
+        controller.insertTableForLibrary()
+
+        var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "| Alpha | Todo |",
+            "|   |   |"
+        ])
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: """
+            | Name | Status |
+            | --- | --- |
+            | Alpha | Todo |
+            """,
+            theme: controller.theme
+        ))
+        let headerLocation = (controller.editorTextView.string as NSString).range(of: "Name").location
+        #expect(headerLocation != NSNotFound)
+        controller.editorTextView.setSelectedRange(NSRange(location: headerLocation, length: 0))
+        controller.insertTableForLibrary()
+
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.components(separatedBy: "\n") == [
+            "| Name | Status |",
+            "| --- | --- |",
+            "|   |   |",
+            "| Alpha | Todo |"
+        ])
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Plain paragraph",
+            theme: controller.theme
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))
+        controller.insertTableForLibrary()
+        tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
+        #expect(tableMarkdown.contains("| Column 1 | Column 2 |"))
+        #expect(tableMarkdown.contains("| --- | --- |"))
+    }
+
+    @MainActor
+    @Test
     func libraryWindowAutosavesEditedExistingNote() async throws {
         let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
