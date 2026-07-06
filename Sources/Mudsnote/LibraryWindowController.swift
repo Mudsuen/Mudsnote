@@ -15,7 +15,7 @@ private enum LibraryScope: Equatable, Sendable {
     var buttonTitle: String {
         switch self {
         case .all:
-            return "所有笔记"
+            return "All iCloud"
         case .recent:
             return "最近"
         case .inbox:
@@ -25,7 +25,7 @@ private enum LibraryScope: Equatable, Sendable {
         case .tag(let tag):
             return libraryBareTag(tag)
         case .trash:
-            return "最近删除"
+            return "Recently Deleted"
         }
     }
 
@@ -166,13 +166,13 @@ private enum LibrarySourceSection: Int {
 
 enum LibraryNotesLayout {
     static let initialWindowSize = NSSize(width: 1720, height: 940)
-    static let presentedWindowSize = NSSize(width: 1840, height: 1010)
+    static let presentedWindowSize = NSSize(width: 1840, height: 1060)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
-    static let sourceColumnWidth: CGFloat = 340
-    static let noteColumnWidth: CGFloat = 430
-    static let noteTableInitialWidth: CGFloat = 390
+    static let sourceColumnWidth: CGFloat = 416
+    static let noteColumnWidth: CGFloat = 405
+    static let noteTableInitialWidth: CGFloat = 365
     static let noteTableMinimumWidth: CGFloat = 300
-    static let sourceRowWidth: CGFloat = 312
+    static let sourceRowWidth: CGFloat = 360
     static let toolbarSearchWidth: CGFloat = 360
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 380
@@ -181,38 +181,42 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 36
     static let toolbarEditorToolButtonWidth: CGFloat = 39
     static let toolbarEditorToolButtonHeight: CGFloat = 30
+    static let toolbarNoteListTitleWidth: CGFloat = 280
+    static let toolbarNoteListTitleHeight: CGFloat = 52
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0.55
     static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0.25
     static let toolbarSymbolPointSize: CGFloat = 21
+    static let sourceSymbolPointSize: CGFloat = 18
+    static let sourceDisclosureSymbolPointSize: CGFloat = 12
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 40
+    static let sourceRowHeight: CGFloat = 42
     static let noteGroupRowHeight: CGFloat = 66
-    static let noteRowHeight: CGFloat = 92
-    static let sourceGroupFontSize: CGFloat = 14.5
-    static let sourceButtonFontSize: CGFloat = 16.5
-    static let sourceCountFontSize: CGFloat = 15
-    static let noteGroupFontSize: CGFloat = 20
-    static let noteTitleFontSize: CGFloat = 17.5
-    static let noteSnippetFontSize: CGFloat = 15.5
-    static let noteMetaFontSize: CGFloat = 13
-    static let noteListHeaderTitleFontSize: CGFloat = 23
-    static let noteListHeaderCountFontSize: CGFloat = 14
+    static let noteRowHeight: CGFloat = 118
+    static let sourceGroupFontSize: CGFloat = 16
+    static let sourceButtonFontSize: CGFloat = 18
+    static let sourceCountFontSize: CGFloat = 16
+    static let noteGroupFontSize: CGFloat = 21.5
+    static let noteTitleFontSize: CGFloat = 19
+    static let noteSnippetFontSize: CGFloat = 16.5
+    static let noteMetaFontSize: CGFloat = 14
+    static let noteListHeaderTitleFontSize: CGFloat = 25
+    static let noteListHeaderCountFontSize: CGFloat = 15
     static let noteListLeadingInset: CGFloat = 20
     static let noteListTrailingInset: CGFloat = 16
     static let noteListTopInset: CGFloat = 18
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 34
-    static let editorHorizontalInset: CGFloat = 52
+    static let editorHorizontalInset: CGFloat = 58
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
     static let editorDateToTitleSpacing: CGFloat = 28
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusFontSize: CGFloat = 14
-    static let editorTitleFontSize: CGFloat = 34
-    static let editorBodyFontSize: CGFloat = 16.5
-    static let editorCodeFontSize: CGFloat = 15.5
+    static let editorTitleFontSize: CGFloat = 36
+    static let editorBodyFontSize: CGFloat = 17.5
+    static let editorCodeFontSize: CGFloat = 16.5
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -295,9 +299,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 9
-    static let contentLeadingInset: CGFloat = 20
-    static let contentBottomInset: CGFloat = 9
+    static let contentTopInset: CGFloat = 15
+    static let contentLeadingInset: CGFloat = 26
+    static let contentBottomInset: CGFloat = 15
     static let contentTrailingInset: CGFloat = 16
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -383,14 +387,14 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionHorizontalInset: CGFloat = 14
-    static let selectionVerticalInset: CGFloat = 4
+    static let selectionHorizontalInset: CGFloat = 24
+    static let selectionVerticalInset: CGFloat = 7
     static let selectionCornerRadius: CGFloat = 8
-    static let hoverHorizontalInset: CGFloat = 14
-    static let hoverVerticalInset: CGFloat = 5
+    static let hoverHorizontalInset: CGFloat = 24
+    static let hoverVerticalInset: CGFloat = 7
     static let hoverCornerRadius: CGFloat = 8
-    static let separatorLeadingInset: CGFloat = 32
-    static let separatorTrailingInset: CGFloat = 18
+    static let separatorLeadingInset: CGFloat = 44
+    static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
@@ -766,6 +770,7 @@ final class LibraryWindowController: NSWindowController,
     private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
+    private static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
@@ -1061,7 +1066,7 @@ final class LibraryWindowController: NSWindowController,
             identifier: "LibrarySourceTagStatus"
         )
 
-        let libraryHeader = makeSourceGroupLabel("Mudsnote", identifier: "LibrarySourceGroup-Mudsnote")
+        let libraryHeader = makeSourceGroupLabel("iCloud", identifier: "LibrarySourceGroup-iCloud")
         let folderHeader = makeSourceSectionHeader(.folders)
         let tagHeader = makeSourceSectionHeader(.tags)
 
@@ -1081,7 +1086,7 @@ final class LibraryWindowController: NSWindowController,
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 14, bottom: 14, right: 12)
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 28, bottom: 14, right: 28)
         sourceList.addSubview(stack)
         pin(stack, to: sourceList)
         refreshSourceSelection()
@@ -1097,16 +1102,6 @@ final class LibraryWindowController: NSWindowController,
 
         configureNoteListHeaderLabels()
         configureSearchScopeControl()
-
-        let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
-        titleStack.orientation = .vertical
-        titleStack.alignment = .leading
-        titleStack.spacing = 0
-
-        let header = NSStackView(views: [titleStack, NSView(), searchScopeControl])
-        header.orientation = .horizontal
-        header.alignment = .centerY
-        header.spacing = 8
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
         column.width = LibraryNotesLayout.noteTableInitialWidth
@@ -1174,11 +1169,11 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [header, listContainer])
+        let stack = NSStackView(views: [listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 12
+        stack.spacing = 0
         stack.edgeInsets = NSEdgeInsets(
             top: LibraryNotesLayout.noteListTopInset,
             left: LibraryNotesLayout.noteListLeadingInset,
@@ -1187,7 +1182,6 @@ final class LibraryWindowController: NSWindowController,
         )
         sidebar.addSubview(stack)
         pin(stack, to: sidebar)
-        header.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         return sidebar
@@ -1337,6 +1331,7 @@ final class LibraryWindowController: NSWindowController,
             Self.addFolderToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.noteListTitleToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
             .flexibleSpace,
@@ -1375,6 +1370,8 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 0)
         case Self.noteTrackingSeparatorToolbarItemIdentifier:
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
+        case Self.noteListTitleToolbarItemIdentifier:
+            return toolbarNoteListTitleItem(identifier: itemIdentifier)
         case Self.addFolderToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -1525,6 +1522,33 @@ final class LibraryWindowController: NSWindowController,
             splitView: librarySplitView,
             dividerIndex: dividerIndex
         )
+    }
+
+    private func toolbarNoteListTitleItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "笔记列表标题"
+        item.paletteLabel = "笔记列表标题"
+        item.visibilityPriority = .high
+
+        let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 0
+
+        let wrapper = NSStackView(views: [titleStack, NSView(), searchScopeControl])
+        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListTitle")
+        wrapper.orientation = .horizontal
+        wrapper.alignment = .centerY
+        wrapper.spacing = 8
+        wrapper.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 6)
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
+            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight)
+        ])
+
+        item.view = wrapper
+        return item
     }
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
@@ -1805,9 +1829,14 @@ final class LibraryWindowController: NSWindowController,
     private func makeSourceSectionHeader(_ section: LibrarySourceSection) -> NSButton {
         let isCollapsed = isSourceSectionCollapsed(section)
         let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
+                weight: .semibold
+            ))
         let button = NSButton(
             title: section.title,
-            image: NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title) ?? NSImage(),
+            image: image ?? NSImage(),
             target: self,
             action: #selector(sourceSectionDisclosurePressed(_:))
         )
@@ -2161,8 +2190,13 @@ final class LibraryWindowController: NSWindowController,
         guard folderRow.hasChildren else { return nil }
         let isCollapsed = !isSourceFolderExpanded(path: folderRow.url.standardizedFileURL.path, depth: folderRow.depth)
         let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "展开或折叠文件夹")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
+                weight: .semibold
+            ))
         let button = NSButton(
-            image: NSImage(systemSymbolName: symbolName, accessibilityDescription: "展开或折叠文件夹") ?? NSImage(),
+            image: image ?? NSImage(),
             target: self,
             action: #selector(folderDisclosurePressed(_:))
         )
@@ -2178,7 +2212,11 @@ final class LibraryWindowController: NSWindowController,
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
         let button = NSButton(title: scope.buttonTitle, target: self, action: #selector(scopeButtonPressed(_:)))
         button.tag = tag
-        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: scope.buttonTitle)
+        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: scope.buttonTitle)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+                weight: .regular
+            ))
         button.imagePosition = .imageLeading
         button.imageHugsTitle = true
         button.alignment = .left

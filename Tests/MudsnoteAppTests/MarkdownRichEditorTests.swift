@@ -692,6 +692,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
@@ -729,7 +730,14 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 21)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
-        #expect(toolbarSearchWrapper.frame.height == LibraryNotesLayout.toolbarSearchWrapperHeight)
+        #expect(toolbarSearchWrapper.frame.height >= LibraryNotesLayout.toolbarSearchWrapperHeight)
+        let noteListTitleToolbarItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-title"
+        })
+        let noteListTitleToolbarView = try #require(noteListTitleToolbarItem.view)
+        #expect(noteListTitleToolbarView.identifier?.rawValue == "LibraryToolbarNoteListTitle")
+        #expect(noteListTitleToolbarView.frame.width == LibraryNotesLayout.toolbarNoteListTitleWidth)
+        #expect(noteListTitleToolbarView.frame.height == LibraryNotesLayout.toolbarNoteListTitleHeight)
         let editorToolsItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
         })
@@ -791,9 +799,9 @@ struct MarkdownRichEditorTests {
         #expect(noteListStack.edgeInsets.bottom == LibraryNotesLayout.noteListBottomInset)
         #expect(noteListStack.edgeInsets.right == LibraryNotesLayout.noteListTrailingInset)
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
+            $0.identifier?.rawValue == "LibrarySourceGroup-iCloud"
         })
-        #expect(libraryGroup.stringValue == "Mudsnote")
+        #expect(libraryGroup.stringValue == "iCloud")
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
@@ -809,24 +817,27 @@ struct MarkdownRichEditorTests {
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
             .filter { !$0.isEmpty }
-        #expect(primarySourceTitles == ["所有笔记", "最近", "Inbox"])
-        #expect(trashSourceTitles == ["最近删除"])
+        #expect(primarySourceTitles == ["All iCloud", "最近", "Inbox"])
+        #expect(trashSourceTitles == ["Recently Deleted"])
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
-        let noteListTitle = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        let toolbarTextFields = (window.toolbar?.items ?? []).flatMap { item in
+            item.view?.allSubviews.compactMap { $0 as? NSTextField } ?? []
+        }
+        let noteListTitle = try #require(toolbarTextFields.first {
             $0.identifier?.rawValue == "LibraryNoteListTitle"
         })
-        let noteListCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        let noteListCount = try #require(toolbarTextFields.first {
             $0.identifier?.rawValue == "LibraryNoteListCount"
         })
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
-        #expect(noteListTitle.stringValue == "所有笔记")
+        #expect(noteListTitle.stringValue == "All iCloud")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(noteListCount.stringValue == "1 条笔记")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
@@ -844,8 +855,8 @@ struct MarkdownRichEditorTests {
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
-        #expect(LibraryNoteRowView.selectionHorizontalInset == 14)
-        #expect(LibraryNoteRowView.selectionVerticalInset == 4)
+        #expect(LibraryNoteRowView.selectionHorizontalInset == 24)
+        #expect(LibraryNoteRowView.selectionVerticalInset == 7)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
         #expect(LibraryNoteRowView.hoverHorizontalInset == LibraryNoteRowView.selectionHorizontalInset)
         #expect(LibraryNoteRowView.hoverCornerRadius == LibraryNoteRowView.selectionCornerRadius)
@@ -857,9 +868,11 @@ struct MarkdownRichEditorTests {
         #expect(noteRowView.isPointerHovered)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
-        #expect(LibraryNoteCellView.contentTopInset == 9)
-        #expect(LibraryNoteCellView.contentLeadingInset == 20)
-        #expect(LibraryNoteCellView.contentBottomInset == 9)
+        #expect(LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height > 1.65)
+        #expect(LibraryNotesLayout.sourceColumnWidth / LibraryNotesLayout.noteColumnWidth > 1)
+        #expect(LibraryNoteCellView.contentTopInset == 15)
+        #expect(LibraryNoteCellView.contentLeadingInset == 26)
+        #expect(LibraryNoteCellView.contentBottomInset == 15)
         #expect(LibraryNoteCellView.contentTrailingInset == 16)
         #expect(firstNoteCell.titleLabel.font?.pointSize == LibraryNotesLayout.noteTitleFontSize)
         #expect(firstNoteCell.snippetLabel.font?.pointSize == LibraryNotesLayout.noteSnippetFontSize)
@@ -906,7 +919,7 @@ struct MarkdownRichEditorTests {
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
         #expect(allCount.textColor == LibrarySourceSelectionPalette.foregroundColor)
         let allSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "所有笔记"
+            $0.title == "All iCloud"
         })
         #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
         #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
@@ -1133,7 +1146,7 @@ struct MarkdownRichEditorTests {
 
         try selectedController.deleteSelectedNoteForLibrary()
         let trashButton = try #require(selectedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "最近删除"
+            $0.title == "Recently Deleted"
         })
         trashButton.performClick(nil)
 
@@ -1926,7 +1939,9 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
-        let scopeControl = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSegmentedControl }.first {
+        let scopeControl = try #require((window.toolbar?.items ?? []).flatMap { item in
+            item.view?.allSubviews.compactMap { $0 as? NSSegmentedControl } ?? []
+        }.first {
             $0.identifier?.rawValue == "LibrarySearchScopeControl"
         })
         #expect(scopeControl.selectedSegment == 0)
@@ -1977,7 +1992,7 @@ struct MarkdownRichEditorTests {
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
-        #expect(controller.noteListTitleLabel.stringValue == "所有笔记")
+        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
         #expect(controller.noteListCountLabel.stringValue == "2 个结果")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
@@ -2050,7 +2065,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)
         #expect(controller.searchScopeControl.isHidden)
-        #expect(controller.noteListTitleLabel.stringValue == "所有笔记")
+        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
     }
 
     @MainActor
@@ -2480,7 +2495,7 @@ struct MarkdownRichEditorTests {
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
 
         let trashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "最近删除"
+            $0.title == "Recently Deleted"
         })
         trashButton.performClick(nil)
         #expect(controller.titleField.stringValue == "Trash Seed")
@@ -2518,7 +2533,7 @@ struct MarkdownRichEditorTests {
 
         try controller.deleteSelectedNoteForLibrary()
         let restoredTrashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "最近删除"
+            $0.title == "Recently Deleted"
         })
         restoredTrashButton.performClick(nil)
         #expect(controller.titleField.stringValue == "Trash Seed")
@@ -2569,7 +2584,7 @@ struct MarkdownRichEditorTests {
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
         let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "最近删除"
+            $0.title == "Recently Deleted"
         })
         trashButton.performClick(nil)
         #expect(controller.titleField.stringValue == "Keyboard Seed")
