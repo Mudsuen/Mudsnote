@@ -165,43 +165,43 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let initialWindowSize = NSSize(width: 1720, height: 940)
-    static let presentedWindowSize = NSSize(width: 1840, height: 1060)
+    static let initialWindowSize = NSSize(width: 1500, height: 860)
+    static let presentedWindowSize = NSSize(width: 1600, height: 940)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
     static let sourceColumnWidth: CGFloat = 416
-    static let noteColumnWidth: CGFloat = 426
-    static let noteTableInitialWidth: CGFloat = 390
+    static let noteColumnWidth: CGFloat = 405
+    static let noteTableInitialWidth: CGFloat = 365
     static let noteTableMinimumWidth: CGFloat = 300
     static let sourceRowWidth: CGFloat = 360
     static let toolbarSearchWidth: CGFloat = 360
-    static let toolbarSearchHeight: CGFloat = 34
+    static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 380
-    static let toolbarSearchWrapperHeight: CGFloat = 40
-    static let toolbarEditorToolsWidth: CGFloat = 240
-    static let toolbarEditorToolsHeight: CGFloat = 38
-    static let toolbarEditorToolButtonWidth: CGFloat = 47
-    static let toolbarEditorToolButtonHeight: CGFloat = 32
-    static let toolbarIconButtonSize: CGFloat = 38
+    static let toolbarSearchWrapperHeight: CGFloat = 36
+    static let toolbarEditorToolsWidth: CGFloat = 200
+    static let toolbarEditorToolsHeight: CGFloat = 36
+    static let toolbarEditorToolButtonWidth: CGFloat = 39
+    static let toolbarEditorToolButtonHeight: CGFloat = 30
     static let toolbarNoteListTitleWidth: CGFloat = 280
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
-    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0.55
-    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0.25
-    static let toolbarSymbolPointSize: CGFloat = 22.5
-    static let sourceSymbolPointSize: CGFloat = 20
+    static let toolbarEditorToolsBorderWidth: CGFloat = 0.6
+    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0.20
+    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0.08
+    static let toolbarSymbolPointSize: CGFloat = 21
+    static let sourceSymbolPointSize: CGFloat = 18
     static let sourceDisclosureSymbolPointSize: CGFloat = 12
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 46
+    static let sourceRowHeight: CGFloat = 42
     static let noteGroupRowHeight: CGFloat = 60
-    static let noteRowHeight: CGFloat = 136
-    static let sourceGroupFontSize: CGFloat = 17
-    static let sourceButtonFontSize: CGFloat = 20
-    static let sourceCountFontSize: CGFloat = 18
-    static let noteGroupFontSize: CGFloat = 24
-    static let noteTitleFontSize: CGFloat = 22
-    static let noteSnippetFontSize: CGFloat = 18
-    static let noteMetaFontSize: CGFloat = 15.5
+    static let noteRowHeight: CGFloat = 118
+    static let sourceGroupFontSize: CGFloat = 16
+    static let sourceButtonFontSize: CGFloat = 18
+    static let sourceCountFontSize: CGFloat = 16
+    static let noteGroupFontSize: CGFloat = 21.5
+    static let noteTitleFontSize: CGFloat = 19
+    static let noteSnippetFontSize: CGFloat = 16.5
+    static let noteMetaFontSize: CGFloat = 14
     static let noteListHeaderTitleFontSize: CGFloat = 25
     static let noteListHeaderCountFontSize: CGFloat = 15
     static let noteListLeadingInset: CGFloat = 20
@@ -214,10 +214,10 @@ enum LibraryNotesLayout {
     static let editorDateRowHeight: CGFloat = 20
     static let editorDateToTitleSpacing: CGFloat = 34
     static let editorTitleToBodySpacing: CGFloat = 8
-    static let editorStatusFontSize: CGFloat = 15
-    static let editorTitleFontSize: CGFloat = 42
-    static let editorBodyFontSize: CGFloat = 19
-    static let editorCodeFontSize: CGFloat = 18
+    static let editorStatusFontSize: CGFloat = 14
+    static let editorTitleFontSize: CGFloat = 36
+    static let editorBodyFontSize: CGFloat = 17.5
+    static let editorCodeFontSize: CGFloat = 16.5
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -307,9 +307,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 18
+    static let contentTopInset: CGFloat = 15
     static let contentLeadingInset: CGFloat = 26
-    static let contentBottomInset: CGFloat = 18
+    static let contentBottomInset: CGFloat = 15
     static let contentTrailingInset: CGFloat = 16
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -362,7 +362,7 @@ final class LibraryNoteCellView: NSTableCellView {
         let textStack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
         textStack.orientation = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 5
+        textStack.spacing = 4
 
         let stack = NSStackView(views: [textStack, thumbnailImageView])
         stack.orientation = .horizontal
@@ -1620,47 +1620,7 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.visibilityPriority = visibilityPriority
         item.isBordered = false
-        item.view = toolbarIconButton(
-            identifier: identifier,
-            label: label,
-            symbolName: symbolName,
-            action: action
-        )
         return item
-    }
-
-    private func toolbarIconButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSButton {
-        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
-        image?.isTemplate = true
-        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = panelPrimaryTextColor()
-        button.wantsLayer = true
-        button.layer?.cornerRadius = LibraryNotesLayout.toolbarIconButtonSize / 2
-        button.layer?.cornerCurve = .continuous
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarIconButtonSize,
-            height: LibraryNotesLayout.toolbarIconButtonSize
-        )
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarIconButtonSize),
-            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarIconButtonSize)
-        ])
-        return button
     }
 
     private func toolbarEditorToolsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
@@ -1682,8 +1642,10 @@ final class LibraryWindowController: NSWindowController,
         capsule.state = .active
         capsule.wantsLayer = true
         capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarEditorToolsHeight / 2
-        capsule.layer?.borderWidth = 1
-        capsule.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+        capsule.layer?.borderWidth = LibraryNotesLayout.toolbarEditorToolsBorderWidth
+        capsule.layer?.borderColor = NSColor.separatorColor
+            .withAlphaComponent(LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha)
+            .cgColor
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView()
