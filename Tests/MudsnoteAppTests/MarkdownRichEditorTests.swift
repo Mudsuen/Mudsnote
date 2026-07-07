@@ -966,6 +966,8 @@ struct MarkdownRichEditorTests {
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
         } as? LibrarySourceRowView)
+        #expect(allSourceRow.subviews.last?.identifier?.rawValue == "LibrarySourceCountOverlay-0")
+        #expect(allSourceRow.subviews.last?.allSubviews.contains(allCount) == true)
         #expect(allSourceRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.sourceRowHeight
         })
@@ -2225,6 +2227,10 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-100"
         })
         #expect(tagCount.stringValue == "1")
+        let allCountAfterTagLoad = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCountAfterTagLoad.stringValue == "246")
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
@@ -2289,6 +2295,10 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
+        let allCountAfterFolderLoad = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCountAfterFolderLoad.stringValue == "1")
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Projects"
         } == true)
@@ -2759,6 +2769,10 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue == "1 note")
+        let allCount = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCount.stringValue == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(2)

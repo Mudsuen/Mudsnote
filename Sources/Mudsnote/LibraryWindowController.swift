@@ -887,7 +887,7 @@ final class LibraryWindowController: NSWindowController,
                 loadFirstIfNeeded: false,
                 hydratePreviews: false,
                 allNotesSnapshot: recentNoteResults(limit: 240, hydratePreview: false),
-                refreshCounts: false
+                refreshCounts: true
             )
         } else {
             hasHydratedInitialNoteList = true
@@ -1920,6 +1920,8 @@ final class LibraryWindowController: NSWindowController,
                 sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
             }
         }
+        refreshSourceCounts(using: sourceCountSnapshot)
+        refreshSourceSelection()
     }
 
     private func isSourceSectionCollapsed(_ section: LibrarySourceSection) -> Bool {
@@ -2162,6 +2164,7 @@ final class LibraryWindowController: NSWindowController,
             button.menu = menu
         }
         let overlay = PassthroughOverlayView()
+        overlay.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCountOverlay-\(tag)")
         let countLabel = NSTextField(labelWithString: "")
         countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
         countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
@@ -2171,7 +2174,7 @@ final class LibraryWindowController: NSWindowController,
         let leadingInset = CGFloat(depth * 16)
 
         row.addSubview(button)
-        row.addSubview(overlay)
+        row.addSubview(overlay, positioned: .above, relativeTo: button)
         overlay.addSubview(countLabel)
         let chevronButton = folderRow.flatMap { makeFolderDisclosureButton(for: $0, tag: tag) }
         if let chevronButton {
