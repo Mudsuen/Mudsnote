@@ -817,8 +817,11 @@ struct MarkdownRichEditorTests {
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
             .filter { !$0.isEmpty }
-        #expect(primarySourceTitles == ["All iCloud", "最近", "Inbox"])
+        #expect(primarySourceTitles == ["All iCloud"])
         #expect(trashSourceTitles == ["Recently Deleted"])
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "最近" || $0.title == "Inbox"
+        } == false)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
@@ -1021,15 +1024,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCount.stringValue == "1")
-        let recentCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-1"
-        })
-        #expect(recentCount.stringValue == "")
-
-        let recentButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "最近"
-        })
-        recentButton.performClick(nil)
+        controller.selectRecentScopeForLibrary()
         #expect(controller.noteListTitleLabel.stringValue == "最近")
         #expect(controller.noteListCountLabel.stringValue == "0 条笔记")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
@@ -2176,8 +2171,8 @@ struct MarkdownRichEditorTests {
         let tagsHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
         })
-        #expect(tagsHeader.title == "标签")
-        #expect(tagsHeader.image?.accessibilityDescription == "标签")
+        #expect(tagsHeader.title == "Tags")
+        #expect(tagsHeader.image?.accessibilityDescription == "Tags")
 
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "library"
@@ -2194,7 +2189,7 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "library"
         } == false)
-        #expect(tagsHeader.image?.accessibilityDescription == "标签")
+        #expect(tagsHeader.image?.accessibilityDescription == "Tags")
 
         tagsHeader.performClick(nil)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
@@ -2257,16 +2252,9 @@ struct MarkdownRichEditorTests {
             $0.title == "Client"
         } == false)
 
-        let foldersHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Folders"
-        })
-        #expect(foldersHeader.title == "文件夹")
-        #expect(foldersHeader.image?.accessibilityDescription == "文件夹")
-        foldersHeader.performClick(nil)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Projects"
+            $0.identifier?.rawValue == "LibrarySourceGroup-Folders"
         } == false)
-        foldersHeader.performClick(nil)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Projects"
         } == true)

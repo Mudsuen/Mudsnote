@@ -148,9 +148,9 @@ private enum LibrarySourceSection: Int {
     var title: String {
         switch self {
         case .folders:
-            return "文件夹"
+            return "Folders"
         case .tags:
-            return "标签"
+            return "Tags"
         }
     }
 
@@ -1067,7 +1067,6 @@ final class LibraryWindowController: NSWindowController,
         )
 
         let libraryHeader = makeSourceGroupLabel("iCloud", identifier: "LibrarySourceGroup-iCloud")
-        let folderHeader = makeSourceSectionHeader(.folders)
         let tagHeader = makeSourceSectionHeader(.tags)
 
         sourceFolderRows = rootFolderRowsForSourceList()
@@ -1076,7 +1075,6 @@ final class LibraryWindowController: NSWindowController,
         let stack = NSStackView(views: [
             libraryHeader,
             sourcePrimaryStack,
-            folderHeader,
             sourceFolderStack,
             sourceTrashStack,
             tagHeader,
@@ -1863,9 +1861,7 @@ final class LibraryWindowController: NSWindowController,
         removeArrangedSubviews(from: sourceTrashStack)
         removeArrangedSubviews(from: sourceTagStack)
 
-        for scope in [LibraryScope.all, .recent, .inbox] {
-            sourcePrimaryStack.addArrangedSubview(makeScopeRow(scope, tag: sourceButtons.count))
-        }
+        sourcePrimaryStack.addArrangedSubview(makeScopeRow(.all, tag: 0))
 
         updateSourceFolderStatus()
         if !sourceFoldersSectionCollapsed {
@@ -3772,6 +3768,11 @@ final class LibraryWindowController: NSWindowController,
             refreshCounts: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         )
         applyEditorSearchHighlightsForCurrentQuery()
+    }
+
+    func selectRecentScopeForLibrary() {
+        selectedScope = .recent
+        reloadNotes(loadFirstIfNeeded: true)
     }
 
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {
