@@ -181,6 +181,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 38
     static let toolbarEditorToolButtonWidth: CGFloat = 47
     static let toolbarEditorToolButtonHeight: CGFloat = 32
+    static let toolbarIconButtonSize: CGFloat = 38
     static let toolbarNoteListTitleWidth: CGFloat = 280
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
@@ -1539,32 +1540,36 @@ final class LibraryWindowController: NSWindowController,
         item.label = "笔记列表标题"
         item.paletteLabel = "笔记列表标题"
         item.visibilityPriority = .high
+        item.isBordered = false
 
         let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
         titleStack.orientation = .vertical
         titleStack.alignment = .leading
         titleStack.spacing = 0
 
-        let wrapper = NSStackView(
-            frame: NSRect(
-                x: 0,
-                y: 0,
-                width: LibraryNotesLayout.toolbarNoteListTitleWidth,
-                height: LibraryNotesLayout.toolbarNoteListTitleHeight
-            )
-        )
-        wrapper.addArrangedSubview(titleStack)
-        wrapper.addArrangedSubview(NSView())
-        wrapper.addArrangedSubview(searchScopeControl)
+        let wrapper = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarNoteListTitleWidth,
+            height: LibraryNotesLayout.toolbarNoteListTitleHeight
+        ))
         wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListTitle")
-        wrapper.orientation = .horizontal
-        wrapper.alignment = .centerY
-        wrapper.spacing = 8
-        wrapper.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 6)
         wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(titleStack)
+        wrapper.addSubview(searchScopeControl)
+        titleStack.translatesAutoresizingMaskIntoConstraints = false
+        searchScopeControl.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight)
+            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight),
+            titleStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            titleStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
+            titleStack.trailingAnchor.constraint(
+                lessThanOrEqualTo: searchScopeControl.leadingAnchor,
+                constant: -8
+            ),
+            searchScopeControl.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
+            searchScopeControl.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
         ])
 
         item.view = wrapper
@@ -1614,7 +1619,48 @@ final class LibraryWindowController: NSWindowController,
         item.target = self
         item.action = action
         item.visibilityPriority = visibilityPriority
+        item.isBordered = false
+        item.view = toolbarIconButton(
+            identifier: identifier,
+            label: label,
+            symbolName: symbolName,
+            action: action
+        )
         return item
+    }
+
+    private func toolbarIconButton(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSButton {
+        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        image?.isTemplate = true
+        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = panelPrimaryTextColor()
+        button.wantsLayer = true
+        button.layer?.cornerRadius = LibraryNotesLayout.toolbarIconButtonSize / 2
+        button.layer?.cornerCurve = .continuous
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarIconButtonSize,
+            height: LibraryNotesLayout.toolbarIconButtonSize
+        )
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarIconButtonSize),
+            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarIconButtonSize)
+        ])
+        return button
     }
 
     private func toolbarEditorToolsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
@@ -4072,28 +4118,19 @@ final class LibraryWindowController: NSWindowController,
             switch item.itemIdentifier {
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isSourceListVisibleForLibrary ? "隐藏资料库" : "显示资料库"
-                item.label = label
-                item.paletteLabel = label
-                item.toolTip = label
-                item.image = NSImage(
-                    systemSymbolName: "sidebar.left",
-                    accessibilityDescription: label
-                )
+                updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
             case Self.deleteToolbarItemIdentifier:
-                item.label = isTrashScope
+                let label = isTrashScope
                     ? noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount)
                     : noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount)
-                item.paletteLabel = item.label
-                item.toolTip = item.label
-                item.image = NSImage(
-                    systemSymbolName: isTrashScope ? "trash.slash" : "trash",
-                    accessibilityDescription: item.label
+                updateToolbarItemPresentation(
+                    item,
+                    label: label,
+                    symbolName: isTrashScope ? "trash.slash" : "trash"
                 )
             case Self.restoreToolbarItemIdentifier:
                 let label = noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount)
-                item.label = label
-                item.paletteLabel = label
-                item.toolTip = label
+                updateToolbarItemPresentation(item, label: label, symbolName: "arrow.uturn.backward")
             case Self.exportToolbarItemIdentifier:
                 (item as? NSMenuToolbarItem)?.menu = makeShareExportMenuForLibrary()
             case Self.moreToolbarItemIdentifier:
@@ -4106,6 +4143,19 @@ final class LibraryWindowController: NSWindowController,
         }
         window?.toolbar?.validateVisibleItems()
         updateVisibleEditorToolsToolbarGroupEnabled()
+    }
+
+    private func updateToolbarItemPresentation(_ item: NSToolbarItem, label: String, symbolName: String) {
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        image?.isTemplate = true
+        item.image = image
+        guard let button = item.view as? NSButton else { return }
+        button.image = image
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
     }
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {

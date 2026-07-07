@@ -708,6 +708,26 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
+        for toolbarButtonID in [
+            "mudsnote.library.toolbar.add-folder",
+            "mudsnote.library.toolbar.toggle-sidebar",
+            "mudsnote.library.toolbar.new-note"
+        ] {
+            let item = try #require((window.toolbar?.items ?? []).first {
+                $0.itemIdentifier.rawValue == toolbarButtonID
+            })
+            #expect(!item.isBordered)
+            let button = try #require(item.view as? NSButton)
+            #expect(button.constraints.contains {
+                $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarIconButtonSize
+            })
+            #expect(button.constraints.contains {
+                $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarIconButtonSize
+            })
+            #expect(button.isBordered == false)
+            #expect(button.imagePosition == .imageOnly)
+            #expect(button.accessibilityLabel() == item.label)
+        }
         let shareToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.export"
         } as? NSMenuToolbarItem)
@@ -734,6 +754,7 @@ struct MarkdownRichEditorTests {
         let noteListTitleToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-title"
         })
+        #expect(!noteListTitleToolbarItem.isBordered)
         let noteListTitleToolbarView = try #require(noteListTitleToolbarItem.view)
         #expect(noteListTitleToolbarView.identifier?.rawValue == "LibraryToolbarNoteListTitle")
         #expect(noteListTitleToolbarView.frame.width == LibraryNotesLayout.toolbarNoteListTitleWidth)
@@ -783,14 +804,17 @@ struct MarkdownRichEditorTests {
         })
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(toggleSourceItem.label == "隐藏资料库")
+        #expect((toggleSourceItem.view as? NSButton)?.accessibilityLabel() == "隐藏资料库")
         #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
         #expect(!controller.isSourceListVisibleForLibrary)
         #expect(sourceList.isHidden)
         #expect(toggleSourceItem.label == "显示资料库")
+        #expect((toggleSourceItem.view as? NSButton)?.accessibilityLabel() == "显示资料库")
         #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(!sourceList.isHidden)
         #expect(toggleSourceItem.label == "隐藏资料库")
+        #expect((toggleSourceItem.view as? NSButton)?.accessibilityLabel() == "隐藏资料库")
         let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryNoteListStack"
         })
