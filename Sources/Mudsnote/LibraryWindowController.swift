@@ -185,9 +185,11 @@ enum LibraryNotesLayout {
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
-    static let toolbarEditorToolsBorderWidth: CGFloat = 0.6
-    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0.20
-    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0.08
+    static let toolbarEditorToolsBorderWidth: CGFloat = 0
+    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0
+    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0
+    static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.48
+    static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.26
     static let toolbarSymbolPointSize: CGFloat = 21
     static let sourceSymbolPointSize: CGFloat = 18
     static let sourceDisclosureSymbolPointSize: CGFloat = 12
@@ -1646,6 +1648,7 @@ final class LibraryWindowController: NSWindowController,
         capsule.layer?.borderColor = NSColor.separatorColor
             .withAlphaComponent(LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha)
             .cgColor
+        capsule.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: true).cgColor
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView()
@@ -3538,6 +3541,11 @@ final class LibraryWindowController: NSWindowController,
         return savedURL
     }
 
+    @discardableResult
+    func flushPendingAutosaveForTesting() throws -> URL? {
+        try saveCurrentNote(force: false)
+    }
+
     func deleteSelectedNoteForLibrary() throws {
         try deleteSelectedNotesForLibrary()
     }
@@ -4161,7 +4169,15 @@ final class LibraryWindowController: NSWindowController,
                     : LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha
             )
             .cgColor
+        view.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: isEnabled).cgColor
         setControls(in: view, enabled: isEnabled)
+    }
+
+    private static func toolbarEditorToolsFillColor(isEnabled: Bool) -> NSColor {
+        NSColor(calibratedWhite: 0.18, alpha: isEnabled
+            ? LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha
+            : LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha
+        )
     }
 
     private func setControls(in view: NSView, enabled isEnabled: Bool) {
