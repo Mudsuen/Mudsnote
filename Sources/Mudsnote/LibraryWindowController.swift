@@ -771,7 +771,7 @@ final class LibraryWindowController: NSWindowController,
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
     let statusLabel = NSTextField(labelWithString: "")
-    let emptyLabel = NSTextField(labelWithString: "选择或新建一条笔记")
+    let emptyLabel = NSTextField(labelWithString: "Select or create a note")
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1286,9 +1286,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
-        searchField.placeholderString = "搜索"
-        searchField.toolTip = "搜索笔记"
-        searchField.setAccessibilityLabel("搜索笔记")
+        searchField.placeholderString = "Search"
+        searchField.toolTip = "Search Notes"
+        searchField.setAccessibilityLabel("Search Notes")
         searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
         searchField.isBordered = true
@@ -1498,9 +1498,9 @@ final class LibraryWindowController: NSWindowController,
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "搜索"
-            item.paletteLabel = "搜索"
-            item.toolTip = "搜索笔记"
+            item.label = "Search"
+            item.paletteLabel = "Search"
+            item.toolTip = "Search Notes"
             item.visibilityPriority = .high
             let wrapper = NSView(frame: NSRect(
                 x: 0,
@@ -1933,9 +1933,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateSourceFolderStatus() {
         if !sourceFoldersLoaded && sourceFolderRows.isEmpty {
-            sourceFolderStatusLabel.stringValue = "正在载入文件夹..."
+            sourceFolderStatusLabel.stringValue = "Loading Folders..."
         } else if sourceFolderRows.isEmpty {
-            sourceFolderStatusLabel.stringValue = "没有文件夹"
+            sourceFolderStatusLabel.stringValue = "No Folders"
         } else {
             sourceFolderStatusLabel.stringValue = ""
         }
@@ -1943,7 +1943,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateSourceTagStatus() {
         if sourceTagsLoaded && sourceTagNames.isEmpty {
-            sourceTagStatusLabel.stringValue = "没有标签"
+            sourceTagStatusLabel.stringValue = "No Tags"
         } else {
             sourceTagStatusLabel.stringValue = ""
         }
@@ -2360,13 +2360,11 @@ final class LibraryWindowController: NSWindowController,
             : (searchScopeControl.selectedSegment == 1 ? LibraryScope.all.listTitle : selectedScope.listTitle)
         noteListTitleLabel.stringValue = title
         if query.isEmpty {
-            noteListCountLabel.stringValue = isFullLibrarySnapshotLoading
-                ? "\(notes.count) 条笔记 · 正在索引..."
-                : "\(notes.count) 条笔记"
+            noteListCountLabel.stringValue = notesCountText(notes.count)
         } else if hasPendingSearchReload || isSearchResultReloading {
-            noteListCountLabel.stringValue = "正在搜索..."
+            noteListCountLabel.stringValue = "Searching..."
         } else {
-            noteListCountLabel.stringValue = "\(notes.count) 个结果"
+            noteListCountLabel.stringValue = resultsCountText(notes.count)
         }
     }
 
@@ -2376,13 +2374,13 @@ final class LibraryWindowController: NSWindowController,
         guard isEmpty else { return }
 
         if !query.isEmpty, hasPendingSearchReload || isSearchResultReloading {
-            noteListEmptyLabel.stringValue = "正在搜索..."
+            noteListEmptyLabel.stringValue = "Searching..."
         } else if !query.isEmpty {
-            noteListEmptyLabel.stringValue = "未找到结果"
+            noteListEmptyLabel.stringValue = "No Results"
         } else if selectedScope == .trash {
-            noteListEmptyLabel.stringValue = "最近删除为空"
+            noteListEmptyLabel.stringValue = "Recently Deleted is empty"
         } else {
-            noteListEmptyLabel.stringValue = "没有笔记"
+            noteListEmptyLabel.stringValue = "No Notes"
         }
     }
 
@@ -2489,20 +2487,20 @@ final class LibraryWindowController: NSWindowController,
     private func groupTitle(for date: Date, now: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) {
-            return "今天"
+            return "Today"
         }
         if calendar.isDateInYesterday(date) {
-            return "昨天"
+            return "Yesterday"
         }
 
         let startOfToday = calendar.startOfDay(for: now)
         let startOfDate = calendar.startOfDay(for: date)
         let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
         if (2...7).contains(daysAgo) {
-            return "过去 7 天"
+            return "Previous 7 Days"
         }
         if (8...30).contains(daysAgo) {
-            return "过去 30 天"
+            return "Previous 30 Days"
         }
         return String(calendar.component(.year, from: date))
     }
@@ -4014,23 +4012,44 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func metadataText(for note: NoteSearchResult) -> String {
-        let folder = isTrashURL(note.url) ? "最近删除" : note.url.deletingLastPathComponent().lastPathComponent
+        let folder = isTrashURL(note.url) ? "Recently Deleted" : note.url.deletingLastPathComponent().lastPathComponent
         let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
-            return "\(relativeDateText(for: note.modifiedAt)) · \(folder)"
+            return "\(noteListDateText(for: note.modifiedAt)) · \(folder)"
         }
-        return "\(relativeDateText(for: note.modifiedAt)) · \(folder) · \(tags)"
+        return "\(noteListDateText(for: note.modifiedAt)) · \(folder) · \(tags)"
     }
 
-    private func relativeDateText(for date: Date) -> String {
-        if abs(date.timeIntervalSinceNow) < 60 {
-            return "刚刚"
+    private func noteListDateText(for date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return noteListTimeFormatter.string(from: date)
         }
-        return relativeDateFormatter.localizedString(for: date, relativeTo: Date())
+
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfDate = calendar.startOfDay(for: date)
+        let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
+        if (2...7).contains(daysAgo) {
+            return noteListWeekdayFormatter.string(from: date)
+        }
+
+        return noteListShortDateFormatter.string(from: date)
     }
 
     private func editorDateText(for date: Date) -> String {
         dateFormatter.string(from: date)
+    }
+
+    private func notesCountText(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "note" : "notes")"
+    }
+
+    private func resultsCountText(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "result" : "results")"
     }
 
     private func isTrashURL(_ url: URL) -> Bool {
@@ -5689,14 +5708,29 @@ final class LibraryWindowController: NSWindowController,
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMMM d, yyyy 'at' HH:mm"
         return formatter
     }()
 
-    private let relativeDateFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
+    private let noteListTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private let noteListWeekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEEE"
+        return formatter
+    }()
+
+    private let noteListShortDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "M/d/yy"
         return formatter
     }()
 }

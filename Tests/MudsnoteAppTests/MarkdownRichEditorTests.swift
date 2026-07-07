@@ -662,8 +662,8 @@ struct MarkdownRichEditorTests {
         let noteURL = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
         let noteModifiedAt = try #require((try? FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate]) as? Date)
         let noteDateFormatter = DateFormatter()
-        noteDateFormatter.dateStyle = .medium
-        noteDateFormatter.timeStyle = .short
+        noteDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        noteDateFormatter.dateFormat = "MMMM d, yyyy 'at' HH:mm"
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -738,8 +738,9 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
         #expect(toolbarSearchField.font?.pointSize == 14)
-        #expect(toolbarSearchField.toolTip == "搜索笔记")
-        #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
+        #expect(toolbarSearchField.placeholderString == "Search")
+        #expect(toolbarSearchField.toolTip == "Search Notes")
+        #expect(toolbarSearchField.accessibilityLabel() == "Search Notes")
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 21)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
@@ -862,13 +863,15 @@ struct MarkdownRichEditorTests {
         })
         #expect(noteListTitle.stringValue == "All iCloud")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
-        #expect(noteListCount.stringValue == "1 条笔记")
+        #expect(noteListCount.stringValue == "1 note")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
         #expect(noteListEmpty.isHidden)
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
         #expect(controller.tableView(controller.tableView, pasteboardWriterForRow: 0) == nil)
+        let groupCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
+        #expect(groupCell.titleLabel.stringValue == "Today")
         let groupRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 0) as? LibraryNoteRowView)
         groupRowView.setPointerHovered(true)
         #expect(!groupRowView.isPointerHovered)
@@ -901,6 +904,10 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.titleLabel.font?.pointSize == LibraryNotesLayout.noteTitleFontSize)
         #expect(firstNoteCell.snippetLabel.font?.pointSize == LibraryNotesLayout.noteSnippetFontSize)
         #expect(firstNoteCell.metaLabel.font?.pointSize == LibraryNotesLayout.noteMetaFontSize)
+        let noteTimeFormatter = DateFormatter()
+        noteTimeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        noteTimeFormatter.dateFormat = "HH:mm"
+        #expect(firstNoteCell.metaLabel.stringValue == "\(noteTimeFormatter.string(from: noteModifiedAt)) · Notes · #library")
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
@@ -1055,7 +1062,7 @@ struct MarkdownRichEditorTests {
         #expect(allCount.stringValue == "1")
         controller.selectRecentScopeForLibrary()
         #expect(controller.noteListTitleLabel.stringValue == "最近")
-        #expect(controller.noteListCountLabel.stringValue == "0 条笔记")
+        #expect(controller.noteListCountLabel.stringValue == "0 notes")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
     }
 
@@ -1989,7 +1996,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
-        #expect(controller.noteListCountLabel.stringValue == "1 个结果")
+        #expect(controller.noteListCountLabel.stringValue == "1 result")
 
         let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         let titleHighlight = cell.titleLabel.attributedStringValue.attribute(
@@ -2025,7 +2032,7 @@ struct MarkdownRichEditorTests {
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
         #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(controller.noteListCountLabel.stringValue == "2 个结果")
+        #expect(controller.noteListCountLabel.stringValue == "2 results")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
         let emptyLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
@@ -2034,7 +2041,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
         #expect(!emptyLabel.isHidden)
-        #expect(emptyLabel.stringValue == "未找到结果")
+        #expect(emptyLabel.stringValue == "No Results")
     }
 
     @MainActor
@@ -2138,16 +2145,16 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
         #expect(!controller.searchScopeControl.isHidden)
-        #expect(controller.noteListCountLabel.stringValue == "正在搜索...")
+        #expect(controller.noteListCountLabel.stringValue == "Searching...")
 
         let deadline = Date().addingTimeInterval(6)
         while Date() < deadline,
               controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"]
-                || controller.noteListCountLabel.stringValue != "1 个结果" {
+                || controller.noteListCountLabel.stringValue != "1 result" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
-        #expect(controller.noteListCountLabel.stringValue == "1 个结果")
+        #expect(controller.noteListCountLabel.stringValue == "1 result")
 
         controller.searchField.stringValue = "beta"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
@@ -2159,7 +2166,7 @@ struct MarkdownRichEditorTests {
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         #expect(controller.searchScopeControl.isHidden)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
-        #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
+        #expect(controller.noteListCountLabel.stringValue == "2 notes")
     }
 
     @MainActor
@@ -2565,7 +2572,7 @@ struct MarkdownRichEditorTests {
         try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
-        #expect(controller.noteListEmptyLabel.stringValue == "最近删除为空")
+        #expect(controller.noteListEmptyLabel.stringValue == "Recently Deleted is empty")
         #expect(!controller.noteListEmptyLabel.isHidden)
     }
 
@@ -2751,7 +2758,7 @@ struct MarkdownRichEditorTests {
         }
 
         controller.showWindowAndFocus()
-        #expect(controller.noteListCountLabel.stringValue.contains("正在索引"))
+        #expect(controller.noteListCountLabel.stringValue == "1 note")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(2)
