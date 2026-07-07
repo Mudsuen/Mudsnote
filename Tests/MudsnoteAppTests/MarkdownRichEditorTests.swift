@@ -727,7 +727,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.font?.pointSize == 14)
         #expect(toolbarSearchField.toolTip == "搜索笔记")
         #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
-        #expect(LibraryNotesLayout.toolbarSymbolPointSize == 21)
+        #expect(LibraryNotesLayout.toolbarSymbolPointSize > 22)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
         #expect(toolbarSearchWrapper.frame.height >= LibraryNotesLayout.toolbarSearchWrapperHeight)
@@ -853,6 +853,7 @@ struct MarkdownRichEditorTests {
         groupRowView.setPointerHovered(true)
         #expect(!groupRowView.isPointerHovered)
         #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
+        #expect(LibraryNotesLayout.noteGroupRowHeight <= 60)
         #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
         #expect(notePasteboardWriter as URL == noteURL)
@@ -872,10 +873,10 @@ struct MarkdownRichEditorTests {
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
         #expect(LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height > 1.65)
-        #expect(LibraryNotesLayout.sourceColumnWidth / LibraryNotesLayout.noteColumnWidth > 1)
-        #expect(LibraryNoteCellView.contentTopInset == 15)
+        #expect(abs(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth) <= 16)
+        #expect(LibraryNoteCellView.contentTopInset == 18)
         #expect(LibraryNoteCellView.contentLeadingInset == 26)
-        #expect(LibraryNoteCellView.contentBottomInset == 15)
+        #expect(LibraryNoteCellView.contentBottomInset == 18)
         #expect(LibraryNoteCellView.contentTrailingInset == 16)
         #expect(firstNoteCell.titleLabel.font?.pointSize == LibraryNotesLayout.noteTitleFontSize)
         #expect(firstNoteCell.snippetLabel.font?.pointSize == LibraryNotesLayout.noteSnippetFontSize)
@@ -906,14 +907,22 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibraryEditorDateRow"
         })
         #expect(editorStack.spacing == 0)
+        #expect(editorStack.alignment == .leading)
         #expect(editorDateRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
+        #expect(LibraryNotesLayout.editorTopInset < 30)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
+        #expect(editorStack.constraints.contains {
+            $0.firstAttribute == .width
+                && $0.firstItem === controller.titleField
+                && $0.secondItem === editorStack
+                && $0.constant == -(LibraryNotesLayout.editorHorizontalInset * 2)
+        })
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
