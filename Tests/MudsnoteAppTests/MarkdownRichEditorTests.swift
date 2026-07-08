@@ -1126,6 +1126,53 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryNoteListAvoidsDuplicatingWeekdayPrefixInSnippet() throws {
+        let suiteName = "mudsnote-note-list-weekday-snippet-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-note-list-weekday-snippet-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let modifiedAt = try #require(Calendar.current.date(byAdding: .day, value: -3, to: Date()))
+        let weekdayFormatter = DateFormatter()
+        weekdayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        weekdayFormatter.dateFormat = "EEEE"
+        let weekday = weekdayFormatter.string(from: modifiedAt)
+        let noteURL = try store.saveNewNote(title: "Weekday Prefix", body: "\(weekday)  动机")
+        try FileManager.default.setAttributes([.modificationDate: modifiedAt], ofItemAtPath: noteURL.path)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let noteCell = try #require((0..<controller.tableView.numberOfRows).compactMap { row -> LibraryNoteCellView? in
+            controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView
+        }.first {
+            $0.titleLabel.attributedStringValue.string == "Weekday Prefix"
+        })
+        let snippet = noteCell.snippetLabel.attributedStringValue.string
+        #expect(snippet == "\(weekday)  动机")
+        #expect(!snippet.contains("\(weekday) \(weekday)"))
+    }
+
+    @MainActor
+    @Test
     func libraryNoteScrollViewFitsSingleColumnToVisibleWidth() {
         let tableView = LibraryNoteTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))

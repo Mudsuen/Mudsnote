@@ -4210,7 +4210,28 @@ final class LibraryWindowController: NSWindowController,
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
         let snippet = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
         let preview = snippet.isEmpty ? "No additional text" : snippet
-        return "\(noteListDateText(for: note.modifiedAt))  \(preview)"
+        let dateText = noteListDateText(for: note.modifiedAt)
+        let cleanedPreview = noteListPreviewText(preview, removingDuplicateDateText: dateText)
+        guard !cleanedPreview.isEmpty else { return dateText }
+        return "\(dateText)  \(cleanedPreview)"
+    }
+
+    private func noteListPreviewText(_ preview: String, removingDuplicateDateText dateText: String) -> String {
+        guard !preview.isEmpty,
+              !dateText.isEmpty else {
+            return preview
+        }
+
+        if preview.localizedCaseInsensitiveCompare(dateText) == .orderedSame {
+            return ""
+        }
+
+        let prefix = "\(dateText) "
+        if preview.range(of: prefix, options: [.anchored, .caseInsensitive, .diacriticInsensitive]) != nil {
+            let index = preview.index(preview.startIndex, offsetBy: dateText.count)
+            return String(preview[index...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return preview
     }
 
     private func noteListFolderText(for note: NoteSearchResult) -> String {
