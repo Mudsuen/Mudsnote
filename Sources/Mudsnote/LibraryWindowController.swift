@@ -463,6 +463,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionHorizontalInset: CGFloat = 10
     static let selectionVerticalInset: CGFloat = 6
     static let selectionCornerRadius: CGFloat = 7
+    static let selectionFillColor = NSColor(calibratedRed: 0.52, green: 0.38, blue: 0.0, alpha: 0.96)
     static let hoverHorizontalInset: CGFloat = 10
     static let hoverVerticalInset: CGFloat = 6
     static let hoverCornerRadius: CGFloat = 7
@@ -559,7 +560,7 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.selectionCornerRadius,
             yRadius: Self.selectionCornerRadius
         )
-        NSColor(calibratedRed: 0.58, green: 0.45, blue: 0.08, alpha: 0.96).setFill()
+        Self.selectionFillColor.setFill()
         path.fill()
     }
 }
