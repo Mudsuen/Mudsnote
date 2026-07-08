@@ -201,10 +201,10 @@ enum LibraryNotesLayout {
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 360
     static let toolbarSearchWrapperHeight: CGFloat = 36
-    static let toolbarEditorToolsWidth: CGFloat = 192
-    static let toolbarEditorToolsHeight: CGFloat = 34
-    static let toolbarEditorToolButtonWidth: CGFloat = 37
-    static let toolbarEditorToolButtonHeight: CGFloat = 28
+    static let toolbarEditorToolsWidth: CGFloat = 184
+    static let toolbarEditorToolsHeight: CGFloat = 32
+    static let toolbarEditorToolButtonWidth: CGFloat = 35
+    static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarNoteListTitleWidth: CGFloat = 280
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
@@ -212,9 +212,9 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsBorderWidth: CGFloat = 0
     static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0
     static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0
-    static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.48
-    static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.26
-    static let toolbarSymbolPointSize: CGFloat = 20
+    static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.40
+    static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.22
+    static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 17
     static let sourceDisclosureSymbolPointSize: CGFloat = 11
     static let windowScreenMargin: CGFloat = 72
@@ -1685,16 +1685,13 @@ final class LibraryWindowController: NSWindowController,
         item.toolTip = "编辑工具"
         item.visibilityPriority = .high
 
-        let capsule = NSVisualEffectView(frame: NSRect(
+        let capsule = NSView(frame: NSRect(
             x: 0,
             y: 0,
             width: LibraryNotesLayout.toolbarEditorToolsWidth,
             height: LibraryNotesLayout.toolbarEditorToolsHeight
         ))
         capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorTools")
-        capsule.blendingMode = .withinWindow
-        capsule.material = .titlebar
-        capsule.state = .active
         capsule.wantsLayer = true
         capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarEditorToolsHeight / 2
         capsule.layer?.borderWidth = LibraryNotesLayout.toolbarEditorToolsBorderWidth
@@ -1837,10 +1834,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func makeFormatToolbarImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 22, height: 17))
+        let image = NSImage(size: NSSize(width: 21, height: 16))
         image.lockFocus()
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
             .foregroundColor: NSColor.labelColor
         ]
         ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
