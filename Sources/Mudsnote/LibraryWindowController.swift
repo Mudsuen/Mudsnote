@@ -192,11 +192,11 @@ enum LibraryNotesLayout {
     static let initialWindowSize = NSSize(width: 1420, height: 820)
     static let presentedWindowSize = NSSize(width: 1420, height: 860)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
-    static let sourceColumnWidth: CGFloat = 340
-    static let noteColumnWidth: CGFloat = 340
-    static let noteTableInitialWidth: CGFloat = 304
-    static let noteTableMinimumWidth: CGFloat = 300
-    static let sourceRowWidth: CGFloat = 300
+    static let sourceColumnWidth: CGFloat = 320
+    static let noteColumnWidth: CGFloat = 304
+    static let noteTableInitialWidth: CGFloat = 278
+    static let noteTableMinimumWidth: CGFloat = 272
+    static let sourceRowWidth: CGFloat = 272
     static let toolbarSearchWidth: CGFloat = 340
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 360
@@ -209,7 +209,7 @@ enum LibraryNotesLayout {
     static let toolbarMenuButtonHeight: CGFloat = 30
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarMoreSymbolName = "ellipsis"
-    static let toolbarNoteListTitleWidth: CGFloat = 280
+    static let toolbarNoteListTitleWidth: CGFloat = 248
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
@@ -226,6 +226,10 @@ enum LibraryNotesLayout {
     static let sourceRowHeight: CGFloat = 36
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
+    static let sourceListTopInset: CGFloat = 18
+    static let sourceListLeadingInset: CGFloat = 24
+    static let sourceListBottomInset: CGFloat = 14
+    static let sourceListTrailingInset: CGFloat = 24
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 8
     static let noteGroupRowHeight: CGFloat = 54
@@ -239,8 +243,8 @@ enum LibraryNotesLayout {
     static let noteMetaFontSize: CGFloat = 13
     static let noteListHeaderTitleFontSize: CGFloat = 25
     static let noteListHeaderCountFontSize: CGFloat = 15
-    static let noteListLeadingInset: CGFloat = 20
-    static let noteListTrailingInset: CGFloat = 16
+    static let noteListLeadingInset: CGFloat = 14
+    static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 4
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 18
@@ -353,9 +357,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 12
-    static let contentLeadingInset: CGFloat = 34
+    static let contentLeadingInset: CGFloat = 28
     static let contentBottomInset: CGFloat = 12
-    static let contentTrailingInset: CGFloat = 16
+    static let contentTrailingInset: CGFloat = 12
     static let textRowSpacing: CGFloat = 3
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -449,15 +453,15 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionHorizontalInset: CGFloat = 24
-    static let selectionVerticalInset: CGFloat = 7
-    static let selectionCornerRadius: CGFloat = 8
-    static let hoverHorizontalInset: CGFloat = 24
-    static let hoverVerticalInset: CGFloat = 7
-    static let hoverCornerRadius: CGFloat = 8
+    static let selectionHorizontalInset: CGFloat = 10
+    static let selectionVerticalInset: CGFloat = 6
+    static let selectionCornerRadius: CGFloat = 7
+    static let hoverHorizontalInset: CGFloat = 10
+    static let hoverVerticalInset: CGFloat = 6
+    static let hoverCornerRadius: CGFloat = 7
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 52
-    static let separatorTrailingInset: CGFloat = 28
+    static let separatorLeadingInset: CGFloat = 42
+    static let separatorTrailingInset: CGFloat = 16
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
@@ -1161,7 +1165,12 @@ final class LibraryWindowController: NSWindowController,
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = LibraryNotesLayout.sourceSectionSpacing
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 28, bottom: 14, right: 28)
+        stack.edgeInsets = NSEdgeInsets(
+            top: LibraryNotesLayout.sourceListTopInset,
+            left: LibraryNotesLayout.sourceListLeadingInset,
+            bottom: LibraryNotesLayout.sourceListBottomInset,
+            right: LibraryNotesLayout.sourceListTrailingInset
+        )
         sourceList.addSubview(stack)
         pin(stack, to: sourceList)
         refreshSourceSelection()
