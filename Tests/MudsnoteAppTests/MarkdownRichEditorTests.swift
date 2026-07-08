@@ -2976,6 +2976,63 @@ struct MarkdownRichEditorTests {
         ])
         #expect(defaults.string(forKey: "mudsnote.notesDirectory") == notesDirectory.standardizedFileURL.path)
         #expect(UserDefaults.standard.string(forKey: "mudsnote.notesDirectory") != notesDirectory.standardizedFileURL.path)
+        let selectedNoteURL = notesDirectory.appendingPathComponent("Selected Visual.md")
+        #expect(AppController.visualQASelectedNoteURL(arguments: [
+            "--visual-qa-select-note",
+            selectedNoteURL.path
+        ]) == selectedNoteURL.standardizedFileURL)
+        #expect(AppController.visualQASelectedNoteURL(arguments: [
+            "--visual-qa-select-note",
+            "--library"
+        ]) == nil)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowVisualQASelectionLoadsRequestedContentNote() throws {
+        let suiteName = "mudsnote.visual-qa-selection-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-visual-qa-selection-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let contentURL = try store.saveNewNote(title: "Content Visual", body: "Visible editor body")
+        let emptyURL = try store.saveNewNote(title: "Empty Visual", body: "")
+        let now = Date()
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-120)],
+            ofItemAtPath: contentURL.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: now],
+            ofItemAtPath: emptyURL.path
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.selectNoteForVisualQA(at: contentURL)
+
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == contentURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Content Visual")
+        #expect(controller.editorTextView.string == "Visible editor body")
     }
 
     @MainActor

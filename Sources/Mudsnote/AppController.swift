@@ -7,6 +7,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let noteStore: NoteStore
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments: Set<String>
+    private let visualQASelectedNoteURL: URL?
     static let explicitLaunchWindowArguments: Set<String> = [
         "--quick-capture",
         "--search",
@@ -27,6 +28,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
         self.launchArguments = Set(rawLaunchArguments)
         self.noteStore = Self.makeNoteStore(arguments: rawLaunchArguments)
+        self.visualQASelectedNoteURL = Self.visualQASelectedNoteURL(arguments: rawLaunchArguments)
         super.init()
     }
 
@@ -106,6 +108,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         noteStore.configurePreferredDirectories([notesDirectory] + extraDirectories, defaultDirectory: notesDirectory)
         return noteStore
+    }
+
+    static func visualQASelectedNoteURL(arguments: [String]) -> URL? {
+        value(after: "--visual-qa-select-note", in: arguments).map {
+            URL(fileURLWithPath: $0).standardizedFileURL
+        }
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
@@ -309,6 +317,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if let controller = libraryWindowController {
             controller.showWindowAndFocus()
+            selectVisualQANoteIfNeeded(in: controller)
             return
         }
 
@@ -328,6 +337,15 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         libraryWindowController = controller
         controller.showWindowAndFocus()
+        selectVisualQANoteIfNeeded(in: controller)
+    }
+
+    private func selectVisualQANoteIfNeeded(in controller: LibraryWindowController) {
+        guard let visualQASelectedNoteURL else { return }
+        controller.selectNoteForVisualQA(at: visualQASelectedNoteURL)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak controller] in
+            controller?.selectNoteForVisualQA(at: visualQASelectedNoteURL)
+        }
     }
 
     @objc

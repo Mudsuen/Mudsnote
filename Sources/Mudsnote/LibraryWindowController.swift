@@ -3663,6 +3663,15 @@ final class LibraryWindowController: NSWindowController,
         selectedMarkdownFileURLsForLibrary().first
     }
 
+    func selectNoteForVisualQA(at url: URL) {
+        reloadNotes(
+            selecting: url.standardizedFileURL,
+            loadFirstIfNeeded: true,
+            hydratePreviews: true,
+            refreshCounts: false
+        )
+    }
+
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
         var urls: [URL] = []
         var seenPaths = Set<String>()

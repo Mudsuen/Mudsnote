@@ -51,6 +51,20 @@ FIXTURE_RESOURCES_DIR="$FIXTURE_ROOT/Resources"
 FIXTURE_ARCHIVES_DIR="$FIXTURE_ROOT/Archives"
 FIXTURE_APP_SUPPORT_DIR="$FIXTURE_ROOT/AppSupport"
 FIXTURE_DEFAULTS_SUITE="local.codex.mudsnote.visual-qa"
+SELECTED_FIXTURE="${MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE:-empty}"
+
+case "$SELECTED_FIXTURE" in
+  empty)
+    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
+    ;;
+  content)
+    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/lz合集.md"
+    ;;
+  *)
+    echo "Unknown MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE '$SELECTED_FIXTURE'. Expected 'empty' or 'content'." >&2
+    exit 2
+    ;;
+esac
 
 rm -rf "$FIXTURE_ROOT"
 mkdir -p "$FIXTURE_ROOT"
@@ -128,7 +142,16 @@ try writeNote(
     directory: notesDirectory,
     filename: "lz合集.md",
     title: "lz 合集",
-    body: "Monday  动机",
+    body: """
+    Monday  动机
+    人际：身边没有更优秀的人，无法进步
+    节奏：无自由探索时间，风格不符合
+    搬迁：房租成本和创业环境
+    职业：与 ai 太远，发展潜力低
+
+    1. 换房：安静 隔音 视野开阔 less is more 东西整理
+    2. 灰产了解
+    """,
     daysAgo: 3,
     hour: 10,
     minute: 15
@@ -191,7 +214,8 @@ open -n "$APP_PATH" --args \
   --visual-qa-notes-dir "$FIXTURE_NOTES_DIR" \
   --visual-qa-extra-dir "$FIXTURE_RESOURCES_DIR" \
   --visual-qa-extra-dir "$FIXTURE_ARCHIVES_DIR" \
-  --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR"
+  --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR" \
+  --visual-qa-select-note "$SELECTED_NOTE_PATH"
 activate_mudsnote_for_capture
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
 activate_mudsnote_for_capture
@@ -518,6 +542,8 @@ SWIFT
   echo "fixture_archives_dir=$FIXTURE_ARCHIVES_DIR"
   echo "fixture_app_support_dir=$FIXTURE_APP_SUPPORT_DIR"
   echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
+  echo "selected_fixture=$SELECTED_FIXTURE"
+  echo "selected_note_path=$SELECTED_NOTE_PATH"
   echo "frontmost_before_capture=$FRONTMOST_BEFORE_CAPTURE"
 } >> "$METADATA_PATH"
 
