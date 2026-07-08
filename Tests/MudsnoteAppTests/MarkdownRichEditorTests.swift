@@ -888,6 +888,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
         #expect(LibraryNoteRowView.hoverHorizontalInset == LibraryNoteRowView.selectionHorizontalInset)
         #expect(LibraryNoteRowView.hoverCornerRadius == LibraryNoteRowView.selectionCornerRadius)
+        #expect(LibraryNoteRowView.hoverFillColor.alphaComponent < 0.3)
         #expect(LibraryNoteRowView.separatorLeadingInset > LibraryNoteRowView.selectionHorizontalInset)
         #expect(LibraryNoteRowView.separatorTrailingInset > 0)
         #expect(LibraryNoteRowView.separatorAlpha < 0.4)

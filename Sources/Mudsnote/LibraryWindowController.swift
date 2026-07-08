@@ -403,6 +403,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverHorizontalInset: CGFloat = 24
     static let hoverVerticalInset: CGFloat = 7
     static let hoverCornerRadius: CGFloat = 8
+    static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
     static let separatorLeadingInset: CGFloat = 44
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
@@ -480,7 +481,7 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.hoverCornerRadius,
             yRadius: Self.hoverCornerRadius
         )
-        NSColor(calibratedWhite: 0.18, alpha: 0.78).setFill()
+        Self.hoverFillColor.setFill()
         path.fill()
     }
 

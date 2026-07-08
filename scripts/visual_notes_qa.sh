@@ -66,6 +66,15 @@ if [[ -z "$WINDOW_ID" ]]; then
   exit 1
 fi
 
+# Keep pointer hover from polluting the static Notes comparison.
+/usr/bin/swift - <<'SWIFT'
+import CoreGraphics
+
+CGWarpMouseCursorPosition(CGPoint(x: 2, y: 2))
+CGAssociateMouseAndMouseCursorPosition(1)
+SWIFT
+sleep 0.2
+
 APP_SCREENSHOT="$OUTPUT_DIR/mudsnote-library.png"
 PAIR_SCREENSHOT="$OUTPUT_DIR/apple-notes-vs-mudsnote.png"
 METADATA_PATH="$OUTPUT_DIR/visual-qa-metadata.txt"
