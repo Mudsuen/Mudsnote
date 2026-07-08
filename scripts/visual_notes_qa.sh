@@ -18,6 +18,33 @@ if [[ ! -f "$REFERENCE_PATH" ]]; then
   exit 1
 fi
 
+frontmost_application_name() {
+  osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'
+}
+
+activate_mudsnote_for_capture() {
+  local frontmost=""
+  for _ in {1..10}; do
+    frontmost="$(osascript <<'APPLESCRIPT' 2>/dev/null || true
+tell application "Mudsnote" to activate
+tell application "System Events"
+  if exists application process "Mudsnote" then
+    set frontmost of application process "Mudsnote" to true
+  end if
+  return name of first application process whose frontmost is true
+end tell
+APPLESCRIPT
+)"
+    if [[ "$frontmost" == "Mudsnote" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  echo "Could not make Mudsnote frontmost before visual QA capture; frontmost app is '${frontmost:-unknown}'." >&2
+  return 1
+}
+
 FIXTURE_ROOT="$OUTPUT_DIR/visual-qa-library"
 FIXTURE_NOTES_DIR="$FIXTURE_ROOT/Notes"
 FIXTURE_RESOURCES_DIR="$FIXTURE_ROOT/Resources"
@@ -165,9 +192,9 @@ open -n "$APP_PATH" --args \
   --visual-qa-extra-dir "$FIXTURE_RESOURCES_DIR" \
   --visual-qa-extra-dir "$FIXTURE_ARCHIVES_DIR" \
   --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR"
-osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
+activate_mudsnote_for_capture
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
-osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
+activate_mudsnote_for_capture
 
 WINDOW_ID="$(/usr/bin/swift - <<'SWIFT'
 import CoreGraphics
@@ -218,6 +245,8 @@ CGWarpMouseCursorPosition(CGPoint(x: 2, y: 2))
 CGAssociateMouseAndMouseCursorPosition(1)
 SWIFT
 sleep 0.2
+activate_mudsnote_for_capture
+FRONTMOST_BEFORE_CAPTURE="$(frontmost_application_name || true)"
 
 APP_SCREENSHOT="$OUTPUT_DIR/mudsnote-library.png"
 PAIR_SCREENSHOT="$OUTPUT_DIR/apple-notes-vs-mudsnote.png"
@@ -489,6 +518,7 @@ SWIFT
   echo "fixture_archives_dir=$FIXTURE_ARCHIVES_DIR"
   echo "fixture_app_support_dir=$FIXTURE_APP_SUPPORT_DIR"
   echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
+  echo "frontmost_before_capture=$FRONTMOST_BEFORE_CAPTURE"
 } >> "$METADATA_PATH"
 
 echo "Reference: $REFERENCE_PATH"
