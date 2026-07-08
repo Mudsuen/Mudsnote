@@ -36,6 +36,7 @@ extension NoteStore {
     public func loadNote(at url: URL) throws -> (title: String, body: String, tags: [String]) {
         let text = try String(contentsOf: url, encoding: .utf8)
         let parsed = parseStoredDocument(text)
+        let trimmedBody = parsed.body.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = parsed.body.components(separatedBy: .newlines)
 
         if let firstLine = lines.first, firstLine.hasPrefix("# ") {
@@ -48,8 +49,18 @@ extension NoteStore {
             return (title, body, parsed.tags)
         }
 
+        guard !trimmedBody.isEmpty else {
+            return ("", "", parsed.tags)
+        }
+
         let fallbackTitle = url.deletingPathExtension().lastPathComponent
-        return (fallbackTitle, parsed.body.trimmingCharacters(in: .whitespacesAndNewlines), parsed.tags)
+        return (fallbackTitle, trimmedBody, parsed.tags)
+    }
+
+    func displayTitle(for url: URL, loadedTitle: String) -> String {
+        let trimmedTitle = loadedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedTitle.isEmpty else { return trimmedTitle }
+        return recentTitle(for: url)
     }
 
     public func saveNewNote(title: String, body: String, tags: [String] = [], in directory: URL? = nil) throws -> URL {

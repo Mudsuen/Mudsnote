@@ -45,7 +45,7 @@ extension NoteStore {
                 let loaded = try? loadNote(at: note.url)
                 return NoteSearchResult(
                     url: note.url,
-                    title: loaded?.title ?? note.title,
+                    title: loaded.map { displayTitle(for: note.url, loadedTitle: $0.title) } ?? note.title,
                     snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
                     modifiedAt: note.modifiedAt,
                     tags: loaded?.tags ?? [],
@@ -203,11 +203,12 @@ extension NoteStore {
             body: text,
             tags: []
         )
+        let title = displayTitle(for: fileURL, loadedTitle: note.title)
         let snippet = firstMeaningfulLine(from: note.body) ?? ""
 
         return NoteSearchIndexEntry(
             url: fileURL,
-            title: note.title,
+            title: title,
             body: note.body,
             bodyLower: note.body.lowercased(),
             snippet: snippet,

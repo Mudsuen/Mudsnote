@@ -85,7 +85,7 @@ func writeNote(
 try writeNote(
     directory: notesDirectory,
     filename: "New Note.md",
-    title: "New Note",
+    title: "",
     body: "",
     daysAgo: 0,
     hour: 11,

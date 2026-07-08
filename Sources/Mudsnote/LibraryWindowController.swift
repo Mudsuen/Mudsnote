@@ -1208,7 +1208,7 @@ final class LibraryWindowController: NSWindowController,
         editor.layer?.backgroundColor = LibraryNotesPalette.editorBackground.cgColor
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
-        titleField.placeholderString = "无标题"
+        titleField.placeholderString = ""
         titleField.font = .systemFont(ofSize: LibraryNotesLayout.editorTitleFontSize, weight: .bold)
         titleField.textColor = panelPrimaryTextColor()
         titleField.alignment = .left
@@ -2591,7 +2591,7 @@ final class LibraryWindowController: NSWindowController,
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         cell.titleLabel.attributedStringValue = highlightedSearchString(
-            note.title.isEmpty ? "无标题" : note.title,
+            noteListDisplayTitle(for: note),
             font: cell.titleLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .semibold),
             baseColor: panelPrimaryTextColor(),
             query: query
@@ -2608,6 +2608,14 @@ final class LibraryWindowController: NSWindowController,
         cell.attachmentImageView.isHidden = !note.hasAttachments || thumbnailImage != nil
         cell.metaLabel.stringValue = metadataText(for: note)
         return cell
+    }
+
+    private func noteListDisplayTitle(for note: NoteSearchResult) -> String {
+        let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard title.isEmpty else { return title }
+        let fallback = note.url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "New Note" : fallback
     }
 
     private func thumbnailImage(for note: NoteSearchResult) -> NSImage? {

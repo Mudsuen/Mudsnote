@@ -49,6 +49,35 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func emptyMarkdownFileKeepsEditorTitleEmptyButListsByFilename() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        let emptyNoteURL = notesDirectory.appendingPathComponent("New Note.md")
+        try Data().write(to: emptyNoteURL)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_800_000_000)],
+            ofItemAtPath: emptyNoteURL.path
+        )
+
+        let loaded = try store.loadNote(at: emptyNoteURL)
+        #expect(loaded.title == "")
+        #expect(loaded.body == "")
+        #expect(loaded.tags.isEmpty)
+
+        let listedNote = try #require(store.listNotes(limit: 10).first)
+        #expect(listedNote.title == "New Note")
+        #expect(listedNote.snippet == "")
+
+        let searchResult = try #require(store.searchNotes(query: "New", limit: 10).first)
+        #expect(searchResult.url.standardizedFileURL.path == emptyNoteURL.standardizedFileURL.path)
+        #expect(searchResult.title == "New Note")
+    }
+
+    @Test
     func searchFindsNotesAcrossKnownRoots() throws {
         let harness = try TestHarness()
         let store = harness.store

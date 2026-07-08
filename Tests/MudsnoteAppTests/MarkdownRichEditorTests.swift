@@ -924,6 +924,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
+        #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
         #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
@@ -1070,6 +1071,50 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListTitleLabel.stringValue == "最近")
         #expect(controller.noteListCountLabel.stringValue == "0 notes")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowShowsEmptyMarkdownFileAsBlankEditorNewNote() throws {
+        let suiteName = "mudsnote.library-empty-new-note-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-empty-new-note-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let emptyNoteURL = notesDirectory.appendingPathComponent("New Note.md")
+        try Data().write(to: emptyNoteURL)
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: emptyNoteURL.path)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["New Note"])
+        #expect(controller.titleField.stringValue == "")
+        #expect(controller.titleField.placeholderString == "")
+        #expect(controller.editorTextView.string == "")
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == emptyNoteURL.standardizedFileURL.path)
+
+        let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        #expect(noteCell.titleLabel.attributedStringValue.string == "New Note")
+        #expect(noteCell.snippetLabel.attributedStringValue.string == " ")
     }
 
     @MainActor

@@ -120,6 +120,7 @@ Use this checklist to decide whether future work is moving toward the goal.
   - tags
   - attachments
 - Empty note, unsaved note, and dirty states are clear without heavy chrome.
+- Empty Markdown files keep a blank editor title while the note list can still show the filename, matching Apple Notes' empty-new-note feel without losing local file identity.
 - Save remains reliable and local-first.
 
 ### 5. Search
