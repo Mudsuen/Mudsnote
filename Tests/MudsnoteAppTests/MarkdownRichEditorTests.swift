@@ -2228,6 +2228,51 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowHidesEmptyTagPlaceholderLikeAppleNotes() throws {
+        let suiteName = "mudsnote.library-empty-tag-source-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-empty-tag-source-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Plain Seed", body: "plain body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        controller.loadSourceTagsForLibrary()
+
+        let tagsHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
+        })
+        #expect(tagsHeader.title == "Tags")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
+            $0.identifier?.rawValue == "LibrarySourceTagStatus"
+        } == false)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
+            $0.stringValue == "No Tags"
+        } == false)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowLoadsTagRowsAfterShellIsVisible() throws {
         let suiteName = "mudsnote.library-tag-source-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

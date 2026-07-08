@@ -1949,11 +1949,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateSourceTagStatus() {
-        if sourceTagsLoaded && sourceTagNames.isEmpty {
-            sourceTagStatusLabel.stringValue = "No Tags"
-        } else {
-            sourceTagStatusLabel.stringValue = ""
-        }
+        sourceTagStatusLabel.stringValue = ""
     }
 
     private func scheduleDeferredSourceFolderLoad() {
