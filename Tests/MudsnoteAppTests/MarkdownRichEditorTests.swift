@@ -906,7 +906,7 @@ struct MarkdownRichEditorTests {
         noteRowView.setPointerHovered(true)
         #expect(noteRowView.isPointerHovered)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
-        #expect(firstNoteCell.snippetLabel.attributedStringValue.string == "Body line")
+        #expect(firstNoteCell.snippetLabel.attributedStringValue.string.contains("Body line"))
         #expect(LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height > 1.65)
         #expect(abs(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth) <= 16)
         #expect(LibraryNoteCellView.contentTopInset == 15)
@@ -919,10 +919,13 @@ struct MarkdownRichEditorTests {
         let noteTimeFormatter = DateFormatter()
         noteTimeFormatter.locale = Locale(identifier: "en_US_POSIX")
         noteTimeFormatter.dateFormat = "HH:mm"
-        #expect(firstNoteCell.metaLabel.stringValue == "\(noteTimeFormatter.string(from: noteModifiedAt)) · Notes · #library")
+        #expect(firstNoteCell.snippetLabel.attributedStringValue.string.hasPrefix(noteTimeFormatter.string(from: noteModifiedAt)))
+        #expect(firstNoteCell.metaLabel.stringValue == "Notes · #library")
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
+        #expect(firstNoteCell.folderImageView.identifier?.rawValue == "LibraryNoteFolderIndicator")
+        #expect(firstNoteCell.folderImageView.image?.accessibilityDescription == "文件夹")
         #expect(firstNoteCell.attachmentImageView.identifier?.rawValue == "LibraryNoteAttachmentIndicator")
         #expect(firstNoteCell.attachmentImageView.isHidden)
         #expect(controller.titleField.stringValue == "Library Seed")
@@ -1122,7 +1125,8 @@ struct MarkdownRichEditorTests {
 
         let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(noteCell.titleLabel.attributedStringValue.string == "New Note")
-        #expect(noteCell.snippetLabel.attributedStringValue.string == " ")
+        #expect(noteCell.snippetLabel.attributedStringValue.string.contains("No additional text"))
+        #expect(noteCell.metaLabel.stringValue == "Notes")
     }
 
     @MainActor

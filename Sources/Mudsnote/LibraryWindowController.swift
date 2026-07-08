@@ -320,6 +320,7 @@ final class LibraryNoteCellView: NSTableCellView {
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
     let metaLabel = NSTextField(labelWithString: "")
+    let folderImageView = NSImageView()
     let attachmentImageView = NSImageView()
     let thumbnailImageView = NSImageView()
 
@@ -344,6 +345,11 @@ final class LibraryNoteCellView: NSTableCellView {
         metaLabel.alignment = .left
         metaLabel.textColor = panelTertiaryTextColor()
 
+        folderImageView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteFolderIndicator")
+        folderImageView.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "文件夹")
+        folderImageView.contentTintColor = panelTertiaryTextColor()
+        folderImageView.imageScaling = .scaleProportionallyDown
+
         attachmentImageView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteAttachmentIndicator")
         attachmentImageView.image = NSImage(systemSymbolName: "paperclip", accessibilityDescription: "有附件")
         attachmentImageView.contentTintColor = panelTertiaryTextColor()
@@ -359,7 +365,7 @@ final class LibraryNoteCellView: NSTableCellView {
         thumbnailImageView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         thumbnailImageView.isHidden = true
 
-        let metaRow = NSStackView(views: [attachmentImageView, metaLabel])
+        let metaRow = NSStackView(views: [folderImageView, metaLabel, attachmentImageView])
         metaRow.orientation = .horizontal
         metaRow.alignment = .centerY
         metaRow.spacing = 4
@@ -386,6 +392,8 @@ final class LibraryNoteCellView: NSTableCellView {
         }
         textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
+        folderImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        folderImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
         attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
         thumbnailImageView.widthAnchor.constraint(equalToConstant: 44).isActive = true
@@ -2606,7 +2614,7 @@ final class LibraryWindowController: NSWindowController,
             query: query
         )
         cell.snippetLabel.attributedStringValue = highlightedSearchString(
-            note.snippet.isEmpty ? " " : note.snippet,
+            noteListSnippetText(for: note),
             font: cell.snippetLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteSnippetFontSize),
             baseColor: panelSecondaryTextColor(),
             query: query
@@ -2615,7 +2623,7 @@ final class LibraryWindowController: NSWindowController,
         cell.thumbnailImageView.image = thumbnailImage
         cell.thumbnailImageView.isHidden = thumbnailImage == nil
         cell.attachmentImageView.isHidden = !note.hasAttachments || thumbnailImage != nil
-        cell.metaLabel.stringValue = metadataText(for: note)
+        cell.metaLabel.stringValue = noteListFolderText(for: note)
         return cell
     }
 
@@ -3711,7 +3719,7 @@ final class LibraryWindowController: NSWindowController,
         cardPath.fill()
 
         let title = firstNote.title.isEmpty ? "无标题" : firstNote.title
-        let snippet = firstNote.snippet.isEmpty ? metadataText(for: firstNote) : firstNote.snippet
+        let snippet = noteListSnippetText(for: firstNote)
         (title as NSString).draw(
             in: NSRect(x: 16, y: 31, width: 176, height: 18),
             withAttributes: [
@@ -4085,15 +4093,21 @@ final class LibraryWindowController: NSWindowController,
         emptyLabel.isHidden = hasContent
     }
 
-    private func metadataText(for note: NoteSearchResult) -> String {
+    private func noteListSnippetText(for note: NoteSearchResult) -> String {
+        let snippet = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preview = snippet.isEmpty ? "No additional text" : snippet
+        return "\(noteListDateText(for: note.modifiedAt))  \(preview)"
+    }
+
+    private func noteListFolderText(for note: NoteSearchResult) -> String {
         let folder = isTrashURL(note.url)
             ? "Recently Deleted"
             : folderTitle(for: note.url.deletingLastPathComponent())
         let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
-            return "\(noteListDateText(for: note.modifiedAt)) · \(folder)"
+            return folder
         }
-        return "\(noteListDateText(for: note.modifiedAt)) · \(folder) · \(tags)"
+        return "\(folder) · \(tags)"
     }
 
     private func noteListDateText(for date: Date, now: Date = Date()) -> String {
