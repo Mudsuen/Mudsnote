@@ -1032,10 +1032,11 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
-        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 28)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 42)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
-        #expect(LibraryNotesLayout.editorTopInset < 30)
+        #expect(LibraryNotesLayout.editorTopInset == 12)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing > LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
         #expect(LibraryNotesLayout.editorHorizontalInset == 44)
