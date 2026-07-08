@@ -768,8 +768,8 @@ struct MarkdownRichEditorTests {
         #expect(moreToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.more")
         #expect(!moreToolbarButton.isBordered)
         #expect(moreToolbarButton.image?.accessibilityDescription == "更多")
-        #expect(LibraryNotesLayout.toolbarMenuButtonWidth == 32)
-        #expect(LibraryNotesLayout.toolbarMenuButtonHeight == 30)
+        #expect(LibraryNotesLayout.toolbarMenuButtonWidth == 30)
+        #expect(LibraryNotesLayout.toolbarMenuButtonHeight == 28)
         #expect(LibraryNotesLayout.toolbarMenuButtonDisabledAlpha == 0.42)
         #expect(LibraryNotesLayout.toolbarMoreSymbolName == "ellipsis")
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
@@ -805,6 +805,7 @@ struct MarkdownRichEditorTests {
         #expect(editorToolsView.frame.height == LibraryNotesLayout.toolbarEditorToolsHeight)
         #expect((editorToolsView as? NSVisualEffectView) == nil)
         #expect(editorToolsView.layer?.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
+        #expect(editorToolsView.layer?.masksToBounds == true)
         #expect(editorToolsView.layer?.borderWidth == LibraryNotesLayout.toolbarEditorToolsBorderWidth)
         #expect(LibraryNotesLayout.toolbarEditorToolsBorderWidth == 0)
         #expect(LibraryNotesLayout.toolbarEditorToolsWidth == 184)

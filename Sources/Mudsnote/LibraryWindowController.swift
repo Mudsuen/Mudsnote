@@ -205,8 +205,8 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 35
     static let toolbarEditorToolButtonHeight: CGFloat = 26
-    static let toolbarMenuButtonWidth: CGFloat = 32
-    static let toolbarMenuButtonHeight: CGFloat = 30
+    static let toolbarMenuButtonWidth: CGFloat = 30
+    static let toolbarMenuButtonHeight: CGFloat = 28
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 248
@@ -1725,10 +1725,9 @@ final class LibraryWindowController: NSWindowController,
         capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorTools")
         capsule.wantsLayer = true
         capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarEditorToolsHeight / 2
+        capsule.layer?.masksToBounds = true
         capsule.layer?.borderWidth = LibraryNotesLayout.toolbarEditorToolsBorderWidth
-        capsule.layer?.borderColor = NSColor.separatorColor
-            .withAlphaComponent(LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha)
-            .cgColor
+        capsule.layer?.borderColor = Self.toolbarEditorToolsBorderColor(isEnabled: true).cgColor
         capsule.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: true).cgColor
         capsule.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1811,6 +1810,7 @@ final class LibraryWindowController: NSWindowController,
         button.setAccessibilityLabel(label)
         button.bezelStyle = .regularSquare
         button.isBordered = false
+        button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -1862,6 +1862,7 @@ final class LibraryWindowController: NSWindowController,
         button.setAccessibilityLabel(label)
         button.bezelStyle = .regularSquare
         button.isBordered = false
+        button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -4406,15 +4407,17 @@ final class LibraryWindowController: NSWindowController,
         view.alphaValue = isEnabled
             ? LibraryNotesLayout.toolbarEditorToolsEnabledAlpha
             : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
-        view.layer?.borderColor = NSColor.separatorColor
-            .withAlphaComponent(
-                isEnabled
-                    ? LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha
-                    : LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha
-            )
-            .cgColor
+        view.layer?.borderColor = Self.toolbarEditorToolsBorderColor(isEnabled: isEnabled).cgColor
         view.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: isEnabled).cgColor
         setControls(in: view, enabled: isEnabled)
+    }
+
+    private static func toolbarEditorToolsBorderColor(isEnabled: Bool) -> NSColor {
+        let alpha = isEnabled
+            ? LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha
+            : LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha
+        guard alpha > 0 else { return .clear }
+        return NSColor.separatorColor.withAlphaComponent(alpha)
     }
 
     private static func toolbarEditorToolsFillColor(isEnabled: Bool) -> NSColor {
