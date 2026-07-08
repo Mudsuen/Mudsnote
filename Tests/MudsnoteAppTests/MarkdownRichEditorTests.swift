@@ -2758,6 +2758,36 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func appControllerVisualQAModeUsesIsolatedNoteStore() throws {
+        let suiteName = "mudsnote.visual-qa-launch-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-visual-qa-launch-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let appSupportDirectory = root.appendingPathComponent("AppSupport", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = AppController.makeNoteStore(arguments: [
+            "--library",
+            "--visual-qa-defaults-suite",
+            suiteName,
+            "--visual-qa-notes-dir",
+            notesDirectory.path,
+            "--visual-qa-app-support-dir",
+            appSupportDirectory.path
+        ])
+
+        #expect(store.notesDirectory.standardizedFileURL == notesDirectory.standardizedFileURL)
+        #expect(defaults.string(forKey: "mudsnote.notesDirectory") == notesDirectory.standardizedFileURL.path)
+        #expect(UserDefaults.standard.string(forKey: "mudsnote.notesDirectory") != notesDirectory.standardizedFileURL.path)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowDoesNotFocusSearchOnDefaultShow() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-library-focus-tests-\(UUID().uuidString)", isDirectory: true)
@@ -2838,6 +2868,55 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowDeferredShowLoadsFirstPlainMarkdownWhenRecentsAreEmpty() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-deferred-plain-markdown-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-deferred-plain-markdown-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        try "# External Deferred\n\nExternal body\n".write(
+            to: notesDirectory.appendingPathComponent("External Deferred.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            controller.close()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        controller.showWindowAndFocus()
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, controller.editorTextView.string != "External body" {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.tableView.selectedRow >= 0)
+        #expect(controller.searchField.currentEditor() == nil)
+        #expect(controller.titleField.stringValue == "External Deferred")
+        #expect(controller.editorTextView.string == "External body")
     }
 
     @MainActor

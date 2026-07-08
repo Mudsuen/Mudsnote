@@ -4,9 +4,9 @@ import MudsnoteCore
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
-    private let noteStore = NoteStore()
+    private let noteStore: NoteStore
     private let hotKeyManager = GlobalHotKeyManager()
-    private let launchArguments = Set(CommandLine.arguments.dropFirst())
+    private let launchArguments: Set<String>
     static let explicitLaunchWindowArguments: Set<String> = [
         "--quick-capture",
         "--search",
@@ -22,6 +22,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var libraryWindowController: LibraryWindowController?
     private var searchWindowController: SearchWindowController?
     private var preferencesWindowController: PreferencesWindowController?
+
+    override init() {
+        let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
+        self.launchArguments = Set(rawLaunchArguments)
+        self.noteStore = Self.makeNoteStore(arguments: rawLaunchArguments)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) ? .regular : .accessory)
@@ -77,6 +84,33 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     static func shouldOpenLibraryOnLaunch(arguments: Set<String>) -> Bool {
         arguments.contains("--library") || arguments.isDisjoint(with: explicitLaunchWindowArguments)
+    }
+
+    static func makeNoteStore(
+        arguments: [String] = Array(CommandLine.arguments.dropFirst())
+    ) -> NoteStore {
+        guard let notesDirectoryPath = value(after: "--visual-qa-notes-dir", in: arguments) else {
+            return NoteStore()
+        }
+
+        let suiteName = value(after: "--visual-qa-defaults-suite", in: arguments)
+            ?? "local.codex.mudsnote.visual-qa"
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        let appSupportDirectory = value(after: "--visual-qa-app-support-dir", in: arguments).map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }
+        let noteStore = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: appSupportDirectory)
+        let notesDirectory = URL(fileURLWithPath: notesDirectoryPath, isDirectory: true).standardizedFileURL
+        noteStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        return noteStore
+    }
+
+    private static func value(after flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag) else { return nil }
+        let valueIndex = arguments.index(after: index)
+        guard arguments.indices.contains(valueIndex) else { return nil }
+        let value = arguments[valueIndex]
+        return value.hasPrefix("--") ? nil : value
     }
 
     private func setupStatusItem() {

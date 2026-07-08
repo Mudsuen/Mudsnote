@@ -946,7 +946,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func showInitialNoteLoadingShell(for note: NoteSearchResult) {
         isLoadingInitialNote = true
-        selectedURL = nil
+        selectedURL = note.url
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
@@ -1008,9 +1008,10 @@ final class LibraryWindowController: NSWindowController,
                     self.updateNoteListHeader(query: currentQuery)
                     return
                 }
+                let shouldLoadFirstAfterSnapshot = self.selectedURL == nil && self.tableView.selectedRow < 0
                 self.reloadNotes(
                     selecting: self.selectedURL,
-                    loadFirstIfNeeded: false,
+                    loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
                     hydratePreviews: false,
                     allNotesSnapshot: allNotes
                 )

@@ -18,9 +18,136 @@ if [[ ! -f "$REFERENCE_PATH" ]]; then
   exit 1
 fi
 
+FIXTURE_ROOT="$OUTPUT_DIR/visual-qa-library"
+FIXTURE_NOTES_DIR="$FIXTURE_ROOT/Notes"
+FIXTURE_APP_SUPPORT_DIR="$FIXTURE_ROOT/AppSupport"
+FIXTURE_DEFAULTS_SUITE="local.codex.mudsnote.visual-qa"
+
+rm -rf "$FIXTURE_ROOT"
+mkdir -p "$FIXTURE_ROOT"
+defaults delete "$FIXTURE_DEFAULTS_SUITE" >/dev/null 2>&1 || true
+
+/usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_APP_SUPPORT_DIR" <<'SWIFT'
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count == 3 else {
+    fputs("Usage: seed-visual-qa notes-dir app-support-dir\n", stderr)
+    exit(2)
+}
+
+let notesDirectory = URL(fileURLWithPath: args[1], isDirectory: true)
+let appSupportDirectory = URL(fileURLWithPath: args[2], isDirectory: true)
+let trashDirectory = appSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
+let fileManager = FileManager.default
+try fileManager.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
+
+let calendar = Calendar.current
+let now = Date()
+
+func fixtureDate(daysAgo: Int, hour: Int, minute: Int) -> Date {
+    let shifted = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+    var components = calendar.dateComponents([.year, .month, .day], from: shifted)
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    return calendar.date(from: components) ?? shifted
+}
+
+func noteContent(title: String, body: String) -> String {
+    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmedTitle.isEmpty {
+        return trimmedBody.isEmpty ? "" : "\(trimmedBody)\n"
+    }
+    if trimmedBody.isEmpty {
+        return "# \(trimmedTitle)\n"
+    }
+    return "# \(trimmedTitle)\n\n\(trimmedBody)\n"
+}
+
+func writeNote(
+    directory: URL,
+    filename: String,
+    title: String,
+    body: String,
+    daysAgo: Int,
+    hour: Int,
+    minute: Int
+) throws {
+    let url = directory.appendingPathComponent(filename)
+    try noteContent(title: title, body: body).write(to: url, atomically: true, encoding: .utf8)
+    let date = fixtureDate(daysAgo: daysAgo, hour: hour, minute: minute)
+    try fileManager.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+}
+
+try writeNote(
+    directory: notesDirectory,
+    filename: "New Note.md",
+    title: "New Note",
+    body: "",
+    daysAgo: 0,
+    hour: 11,
+    minute: 51
+)
+try writeNote(
+    directory: notesDirectory,
+    filename: "lz合集.md",
+    title: "lz 合集",
+    body: "Monday  动机",
+    daysAgo: 3,
+    hour: 10,
+    minute: 15
+)
+try writeNote(
+    directory: notesDirectory,
+    filename: "knock 短密码.md",
+    title: "knock 短密码",
+    body: "135792",
+    daysAgo: 5,
+    hour: 9,
+    minute: 40
+)
+try writeNote(
+    directory: notesDirectory,
+    filename: "Call Recording.md",
+    title: "Call Recording",
+    body: "1 audio recording",
+    daysAgo: 21,
+    hour: 17,
+    minute: 5
+)
+try writeNote(
+    directory: notesDirectory,
+    filename: "gptest.md",
+    title: "gptest",
+    body: "...",
+    daysAgo: 250,
+    hour: 14,
+    minute: 0
+)
+
+for index in 1...4 {
+    try writeNote(
+        directory: trashDirectory,
+        filename: "Deleted \(index).md",
+        title: "Deleted \(index)",
+        body: "",
+        daysAgo: 8 + index,
+        hour: 8,
+        minute: index
+    )
+}
+SWIFT
+
 pkill -x Mudsnote >/dev/null 2>&1 || true
 sleep 1
-open -n "$APP_PATH" --args --library
+open -n "$APP_PATH" --args \
+  --library \
+  --visual-qa-defaults-suite "$FIXTURE_DEFAULTS_SUITE" \
+  --visual-qa-notes-dir "$FIXTURE_NOTES_DIR" \
+  --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR"
 osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
 osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
@@ -337,6 +464,13 @@ comparison_path=\(outputURL.path)
 try metadata.write(to: metadataURL, atomically: true, encoding: .utf8)
 print(outputURL.path)
 SWIFT
+
+{
+  echo
+  echo "fixture_notes_dir=$FIXTURE_NOTES_DIR"
+  echo "fixture_app_support_dir=$FIXTURE_APP_SUPPORT_DIR"
+  echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
+} >> "$METADATA_PATH"
 
 echo "Reference: $REFERENCE_PATH"
 echo "Mudsnote:  $APP_SCREENSHOT"
