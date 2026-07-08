@@ -284,6 +284,9 @@ private enum LibraryFormatCommand: Int {
 
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
+    static let titleLeadingInset: CGFloat = 16
+    static let titleTrailingInset: CGFloat = 12
+
     let titleLabel = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
@@ -295,8 +298,8 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
         addSubview(titleLabel)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.titleLeadingInset),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.titleTrailingInset),
             titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
         ])
     }
@@ -310,7 +313,7 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 15
-    static let contentLeadingInset: CGFloat = 26
+    static let contentLeadingInset: CGFloat = 34
     static let contentBottomInset: CGFloat = 15
     static let contentTrailingInset: CGFloat = 16
 
@@ -404,7 +407,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverVerticalInset: CGFloat = 7
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 44
+    static let separatorLeadingInset: CGFloat = 52
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
 
