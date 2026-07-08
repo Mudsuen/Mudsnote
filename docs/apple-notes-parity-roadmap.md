@@ -78,6 +78,7 @@ Use this checklist to decide whether future work is moving toward the goal.
   - share/export or file actions
   - search
 - Toolbar controls are icon-first and use native symbols where possible.
+- The editor-tools group should keep the earlier compact, borderless dark capsule treatment; avoid returning to a prominent light rim or oversized custom buttons.
 - Keyboard shortcuts map to expected note actions.
 
 ### 2. Source List
@@ -92,6 +93,7 @@ Use this checklist to decide whether future work is moving toward the goal.
   - trash/recently deleted
   - counts
 - Selection state, disclosure state, hover, and disabled states are visible and native-feeling.
+- The default Markdown root is presented as `Notes` in the source list, note metadata, and move menus, even if the local folder is named `Mudsnote`.
 
 ### 3. Note List
 

@@ -2243,9 +2243,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
-        let button = NSButton(title: scope.buttonTitle, target: self, action: #selector(scopeButtonPressed(_:)))
+        let title = sourceTitle(for: scope)
+        let button = NSButton(title: title, target: self, action: #selector(scopeButtonPressed(_:)))
         button.tag = tag
-        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: scope.buttonTitle)?
+        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
                 pointSize: LibraryNotesLayout.sourceSymbolPointSize,
                 weight: .regular
@@ -2261,6 +2262,33 @@ final class LibraryWindowController: NSWindowController,
         button.layer?.cornerRadius = 6
         button.layer?.cornerCurve = .continuous
         return button
+    }
+
+    private func sourceTitle(for scope: LibraryScope) -> String {
+        switch scope {
+        case .folder(let url):
+            return folderTitle(for: url)
+        default:
+            return scope.buttonTitle
+        }
+    }
+
+    private func noteListTitle(for scope: LibraryScope) -> String {
+        switch scope {
+        case .tag(let tag):
+            return libraryDisplayTag(tag)
+        default:
+            return sourceTitle(for: scope)
+        }
+    }
+
+    private func folderTitle(for url: URL) -> String {
+        let standardizedURL = url.standardizedFileURL
+        let notesDirectory = noteStore.notesDirectory.standardizedFileURL
+        if standardizedURL.path == notesDirectory.path {
+            return "Notes"
+        }
+        return standardizedURL.lastPathComponent.isEmpty ? "Notes" : standardizedURL.lastPathComponent
     }
 
     private func refreshSourceSelection() {
@@ -2363,8 +2391,8 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateNoteListHeader(query: String) {
         let title = query.isEmpty
-            ? selectedScope.listTitle
-            : (searchScopeControl.selectedSegment == 1 ? LibraryScope.all.listTitle : selectedScope.listTitle)
+            ? noteListTitle(for: selectedScope)
+            : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
         noteListTitleLabel.stringValue = title
         if query.isEmpty {
             noteListCountLabel.stringValue = notesCountText(notes.count)
@@ -4024,7 +4052,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func metadataText(for note: NoteSearchResult) -> String {
-        let folder = isTrashURL(note.url) ? "Recently Deleted" : note.url.deletingLastPathComponent().lastPathComponent
+        let folder = isTrashURL(note.url)
+            ? "Recently Deleted"
+            : folderTitle(for: note.url.deletingLastPathComponent())
         let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
             return "\(noteListDateText(for: note.modifiedAt)) · \(folder)"
@@ -4424,7 +4454,7 @@ final class LibraryWindowController: NSWindowController,
         let menu = NSMenu()
         for folderRow in sourceFolderRows {
             let folderURL = folderRow.url
-            let title = String(repeating: "  ", count: folderRow.depth) + folderURL.lastPathComponent
+            let title = String(repeating: "  ", count: folderRow.depth) + folderTitle(for: folderURL)
             let item = NSMenuItem(title: title, action: #selector(moveNoteMenuItemPressed(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = folderURL

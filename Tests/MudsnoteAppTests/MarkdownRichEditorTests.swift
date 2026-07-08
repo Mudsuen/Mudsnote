@@ -1072,6 +1072,59 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func librarySourceListDisplaysDefaultNotesFolderLikeAppleNotes() throws {
+        let suiteName = "mudsnote.library-notes-folder-title-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-notes-folder-title-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Mudsnote", isDirectory: true)
+        _ = try store.saveNewNote(title: "Default Root", body: "Body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Mudsnote"
+        } == false)
+        let notesButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Notes"
+        })
+
+        notesButton.performClick(nil)
+
+        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Default Root"])
+        let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        #expect(noteCell.metaLabel.stringValue.contains("Notes"))
+        #expect(!noteCell.metaLabel.stringValue.contains("Mudsnote"))
+        let moveMenu = try #require(controller.makeMoreActionsMenuForLibrary().items.first {
+            $0.title == "移到文件夹"
+        }?.submenu)
+        #expect(moveMenu.items.contains {
+            $0.title == "Notes" && ($0.representedObject as? URL) == store.notesDirectory.standardizedFileURL
+        })
+    }
+
+    @MainActor
+    @Test
     func libraryToolbarUsesNotesLikeDisabledStates() throws {
         let suiteName = "mudsnote.library-toolbar-state-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
