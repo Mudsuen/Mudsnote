@@ -271,6 +271,7 @@ private enum LibraryNotesPalette {
 enum LibrarySourceSelectionPalette {
     static let backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.86)
     static let foregroundColor = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.16, alpha: 1)
+    static let unselectedForegroundColor = NSColor.labelColor.withAlphaComponent(0.92)
 }
 
 private func libraryDisplayTag(_ tag: String) -> String {
@@ -2321,7 +2322,7 @@ final class LibraryWindowController: NSWindowController,
         button.isBordered = false
         button.bezelStyle = .shadowlessSquare
         button.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .medium)
-        button.contentTintColor = panelSecondaryTextColor()
+        button.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         button.wantsLayer = true
         button.layer?.cornerRadius = 6
         button.layer?.cornerCurve = .continuous
@@ -2363,7 +2364,7 @@ final class LibraryWindowController: NSWindowController,
                 : NSColor.clear.cgColor
             button.contentTintColor = isSelected
                 ? LibrarySourceSelectionPalette.foregroundColor
-                : panelSecondaryTextColor()
+                : LibrarySourceSelectionPalette.unselectedForegroundColor
             sourceCountLabels[button.tag]?.textColor = isSelected
                 ? LibrarySourceSelectionPalette.foregroundColor
                 : panelTertiaryTextColor()

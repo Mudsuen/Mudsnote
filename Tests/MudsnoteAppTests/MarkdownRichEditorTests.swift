@@ -1017,6 +1017,7 @@ struct MarkdownRichEditorTests {
             $0.title == "Call Recordings"
         })
         #expect(callRecordingsButton.image?.accessibilityDescription == "Call Recordings")
+        #expect(callRecordingsButton.contentTintColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
         let callRecordingsCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-4"
         })
