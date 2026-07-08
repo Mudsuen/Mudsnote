@@ -841,6 +841,7 @@ final class LibraryWindowController: NSWindowController,
     private let sourceTagStack = NSStackView()
     private let sourceFolderStatusLabel = NSTextField(labelWithString: "")
     private let sourceTagStatusLabel = NSTextField(labelWithString: "")
+    private weak var sourceTagHeaderButton: NSButton?
     private static let sourceCountSnapshotLimit = 10_000
 
     let theme = MarkdownEditorTheme(
@@ -1079,6 +1080,7 @@ final class LibraryWindowController: NSWindowController,
 
         let libraryHeader = makeSourceGroupLabel("iCloud", identifier: "LibrarySourceGroup-iCloud")
         let tagHeader = makeSourceSectionHeader(.tags)
+        sourceTagHeaderButton = tagHeader
 
         sourceFolderRows = rootFolderRowsForSourceList()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -1860,16 +1862,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func makeSourceSectionHeader(_ section: LibrarySourceSection) -> NSButton {
-        let isCollapsed = isSourceSectionCollapsed(section)
-        let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
-                weight: .semibold
-            ))
         let button = NSButton(
             title: section.title,
-            image: image ?? NSImage(),
+            image: sourceSectionDisclosureImage(for: section) ?? NSImage(),
             target: self,
             action: #selector(sourceSectionDisclosurePressed(_:))
         )
@@ -1886,6 +1881,15 @@ final class LibraryWindowController: NSWindowController,
         button.heightAnchor.constraint(equalToConstant: 24).isActive = true
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
         return button
+    }
+
+    private func sourceSectionDisclosureImage(for section: LibrarySourceSection) -> NSImage? {
+        let symbolName = isSourceSectionCollapsed(section) ? "chevron.right" : "chevron.down"
+        return NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
+                weight: .semibold
+            ))
     }
 
     private func rebuildSourceRows(includeTags: Bool) {
@@ -1917,6 +1921,7 @@ final class LibraryWindowController: NSWindowController,
             sourceTagNames = []
         }
         updateSourceTagStatus()
+        updateSourceTagHeaderPresentation()
         if !sourceTagsSectionCollapsed {
             for (index, tag) in sourceTagNames.enumerated() {
                 sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
@@ -1950,6 +1955,18 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateSourceTagStatus() {
         sourceTagStatusLabel.stringValue = ""
+    }
+
+    private func updateSourceTagHeaderPresentation() {
+        guard let button = sourceTagHeaderButton else { return }
+        if sourceTagsLoaded && sourceTagNames.isEmpty {
+            button.image = nil
+            button.imagePosition = .noImage
+        } else {
+            button.image = sourceSectionDisclosureImage(for: .tags)
+            button.imagePosition = .imageLeading
+        }
+        button.imageHugsTitle = true
     }
 
     private func scheduleDeferredSourceFolderLoad() {

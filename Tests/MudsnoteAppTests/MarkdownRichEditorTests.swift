@@ -2263,6 +2263,8 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
         })
         #expect(tagsHeader.title == "Tags")
+        #expect(tagsHeader.image == nil)
+        #expect(tagsHeader.imagePosition == .noImage)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
