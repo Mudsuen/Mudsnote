@@ -993,7 +993,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorTopInset < 30)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
-        #expect(LibraryNotesLayout.editorHorizontalInset == 52)
+        #expect(LibraryNotesLayout.editorHorizontalInset == 44)
         #expect(editorStack.constraints.contains {
             $0.firstAttribute == .width
                 && $0.firstItem === controller.titleField
