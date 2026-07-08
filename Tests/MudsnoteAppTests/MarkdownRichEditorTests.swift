@@ -950,6 +950,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
+        #expect(LibraryNotesLayout.editorTitleFontSize == 34)
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
@@ -957,6 +958,8 @@ struct MarkdownRichEditorTests {
         #expect(controller.theme.boldFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
         #expect(controller.theme.italicFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
         #expect(controller.theme.codeFont.pointSize == LibraryNotesLayout.editorCodeFontSize)
+        #expect(LibraryNotesLayout.editorBodyFontSize == 16.5)
+        #expect(LibraryNotesLayout.editorCodeFontSize == 15.5)
         #expect(controller.editorTextView.textContainerInset.height == 4)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
@@ -970,11 +973,13 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 28)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
         #expect(LibraryNotesLayout.editorTopInset < 30)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
+        #expect(LibraryNotesLayout.editorHorizontalInset == 52)
         #expect(editorStack.constraints.contains {
             $0.firstAttribute == .width
                 && $0.firstItem === controller.titleField

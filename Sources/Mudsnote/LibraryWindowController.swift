@@ -215,15 +215,15 @@ enum LibraryNotesLayout {
     static let noteListTopInset: CGFloat = 4
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 18
-    static let editorHorizontalInset: CGFloat = 58
+    static let editorHorizontalInset: CGFloat = 52
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 34
+    static let editorDateToTitleSpacing: CGFloat = 28
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusFontSize: CGFloat = 14
-    static let editorTitleFontSize: CGFloat = 36
-    static let editorBodyFontSize: CGFloat = 17.5
-    static let editorCodeFontSize: CGFloat = 16.5
+    static let editorTitleFontSize: CGFloat = 34
+    static let editorBodyFontSize: CGFloat = 16.5
+    static let editorCodeFontSize: CGFloat = 15.5
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
