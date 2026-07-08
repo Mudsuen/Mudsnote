@@ -1021,7 +1021,16 @@ struct MarkdownRichEditorTests {
         let callRecordingsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Call Recordings"
         })
+        let expectedCallRecordingsSymbol = try #require(
+            NSImage(systemSymbolName: LibraryNotesLayout.callRecordingsSourceSymbolName, accessibilityDescription: "Call Recordings")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                    pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+                    weight: .regular
+                ))
+        )
+        #expect(LibraryNotesLayout.callRecordingsSourceSymbolName == "phone.and.waveform.fill")
         #expect(callRecordingsButton.image?.accessibilityDescription == "Call Recordings")
+        #expect(callRecordingsButton.image?.size == expectedCallRecordingsSymbol.size)
         #expect(callRecordingsButton.contentTintColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
         let callRecordingsCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-4"

@@ -44,7 +44,7 @@ private enum LibraryScope: Equatable, Sendable {
     var symbolName: String {
         switch self {
         case .callRecordings:
-            return "phone.fill"
+            return LibraryNotesLayout.callRecordingsSourceSymbolName
         case .all:
             return "folder"
         case .recent:
@@ -217,6 +217,7 @@ enum LibraryNotesLayout {
     static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 17
     static let sourceDisclosureSymbolPointSize: CGFloat = 11
+    static let callRecordingsSourceSymbolName = "phone.and.waveform.fill"
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 36
     static let sourceSectionHeaderHeight: CGFloat = 22
