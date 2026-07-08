@@ -224,6 +224,8 @@ enum LibraryNotesLayout {
     static let editorTitleFontSize: CGFloat = 34
     static let editorBodyFontSize: CGFloat = 16.5
     static let editorCodeFontSize: CGFloat = 15.5
+    static let editorLineSpacing: CGFloat = 3.5
+    static let editorParagraphSpacing: CGFloat = 8
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -870,7 +872,9 @@ final class LibraryWindowController: NSWindowController,
             .systemFont(ofSize: LibraryNotesLayout.editorBodyFontSize, weight: .regular),
             toHaveTrait: .italicFontMask
         ),
-        codeFont: .monospacedSystemFont(ofSize: LibraryNotesLayout.editorCodeFontSize, weight: .medium)
+        codeFont: .monospacedSystemFont(ofSize: LibraryNotesLayout.editorCodeFontSize, weight: .medium),
+        lineSpacing: LibraryNotesLayout.editorLineSpacing,
+        paragraphSpacing: LibraryNotesLayout.editorParagraphSpacing
     )
 
     init(

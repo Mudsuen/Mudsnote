@@ -960,6 +960,11 @@ struct MarkdownRichEditorTests {
         #expect(controller.theme.codeFont.pointSize == LibraryNotesLayout.editorCodeFontSize)
         #expect(LibraryNotesLayout.editorBodyFontSize == 16.5)
         #expect(LibraryNotesLayout.editorCodeFontSize == 15.5)
+        let editorParagraphStyle = controller.theme.paragraphStyle(for: .paragraph)
+        #expect(editorParagraphStyle.lineSpacing == LibraryNotesLayout.editorLineSpacing)
+        #expect(editorParagraphStyle.paragraphSpacing == LibraryNotesLayout.editorParagraphSpacing)
+        #expect(LibraryNotesLayout.editorLineSpacing == 3.5)
+        #expect(LibraryNotesLayout.editorParagraphSpacing == 8)
         #expect(controller.editorTextView.textContainerInset.height == 4)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"

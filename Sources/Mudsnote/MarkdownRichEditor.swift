@@ -95,6 +95,8 @@ struct MarkdownEditorTheme {
     let boldFont: NSFont
     let italicFont: NSFont
     let codeFont: NSFont
+    var lineSpacing: CGFloat = 2
+    var paragraphSpacing: CGFloat = 6
 
     func font(for paragraphKind: MarkdownParagraphKind) -> NSFont {
         switch paragraphKind {
@@ -108,8 +110,8 @@ struct MarkdownEditorTheme {
 
     func paragraphStyle(for paragraphKind: MarkdownParagraphKind) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = 2
-        style.paragraphSpacing = 6
+        style.lineSpacing = lineSpacing
+        style.paragraphSpacing = paragraphSpacing
 
         switch paragraphKind {
         case .bullet, .ordered, .checklist:
