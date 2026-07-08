@@ -176,6 +176,15 @@ try writeNote(
 )
 try writeNote(
     directory: notesDirectory,
+    filename: "Call Recording 2.md",
+    title: "Call Recording",
+    body: "1 audio recording",
+    daysAgo: 22,
+    hour: 16,
+    minute: 40
+)
+try writeNote(
+    directory: notesDirectory,
     filename: "gptest.md",
     title: "gptest",
     body: "...",

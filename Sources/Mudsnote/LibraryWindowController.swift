@@ -5,6 +5,7 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 private enum LibraryScope: Equatable, Sendable {
+    case callRecordings
     case all
     case recent
     case inbox
@@ -14,6 +15,8 @@ private enum LibraryScope: Equatable, Sendable {
 
     var buttonTitle: String {
         switch self {
+        case .callRecordings:
+            return "Call Recordings"
         case .all:
             return "All iCloud"
         case .recent:
@@ -40,6 +43,8 @@ private enum LibraryScope: Equatable, Sendable {
 
     var symbolName: String {
         switch self {
+        case .callRecordings:
+            return "phone.fill"
         case .all:
             return "folder"
         case .recent:
@@ -78,6 +83,8 @@ private func librarySearchResults(
     }
 
     switch scope {
+    case .callRecordings:
+        return noteStore.searchNotes(query: query, limit: limit).filter(libraryIsCallRecordingNote)
     case .all, .recent:
         return noteStore.searchNotes(query: query, limit: limit)
     case .inbox:
@@ -125,6 +132,23 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
 private func libraryIsInboxNote(_ note: NoteSearchResult) -> Bool {
     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
         || note.title.localizedCaseInsensitiveContains("Inbox")
+}
+
+private func libraryIsCallRecordingNote(_ note: NoteSearchResult) -> Bool {
+    let searchableText = [
+        note.title,
+        note.snippet,
+        note.url.deletingPathExtension().lastPathComponent
+    ].joined(separator: " ")
+    return searchableText.range(
+        of: "call recording",
+        options: [.caseInsensitive, .diacriticInsensitive]
+    ) != nil
+        || searchableText.range(
+            of: "audio recording",
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) != nil
+        || searchableText.localizedCaseInsensitiveContains("录音")
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
@@ -853,6 +877,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsSectionCollapsed = false
     private weak var librarySplitView: NSSplitView?
     private weak var sourceListView: NSView?
+    private let sourceSmartStack = NSStackView()
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
     private let sourceTrashStack = NSStackView()
@@ -1081,10 +1106,12 @@ final class LibraryWindowController: NSWindowController,
         sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground.cgColor
         sourceListView = sourceList
 
+        configureSourceStack(sourceSmartStack)
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
         configureSourceStack(sourceTrashStack)
         configureSourceStack(sourceTagStack)
+        sourceSmartStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSmartStack")
         sourcePrimaryStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourcePrimaryStack")
         sourceFolderStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFolderStack")
         sourceTrashStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTrashStack")
@@ -1106,6 +1133,7 @@ final class LibraryWindowController: NSWindowController,
         rebuildSourceRows(includeTags: sourceTagsLoaded)
 
         let stack = NSStackView(views: [
+            sourceSmartStack,
             libraryHeader,
             sourcePrimaryStack,
             sourceFolderStack,
@@ -1915,11 +1943,13 @@ final class LibraryWindowController: NSWindowController,
     private func rebuildSourceRows(includeTags: Bool) {
         sourceButtons.removeAll()
         sourceCountLabels.removeAll()
+        removeArrangedSubviews(from: sourceSmartStack)
         removeArrangedSubviews(from: sourcePrimaryStack)
         removeArrangedSubviews(from: sourceFolderStack)
         removeArrangedSubviews(from: sourceTrashStack)
         removeArrangedSubviews(from: sourceTagStack)
 
+        sourceSmartStack.addArrangedSubview(makeScopeRow(.callRecordings, tag: 4))
         sourcePrimaryStack.addArrangedSubview(makeScopeRow(.all, tag: 0))
 
         updateSourceFolderStatus()
@@ -2346,6 +2376,8 @@ final class LibraryWindowController: NSWindowController,
         for button in sourceButtons {
             let count: Int
             switch scope(for: button) {
+            case .callRecordings:
+                count = allNotes.filter(libraryIsCallRecordingNote).count
             case .all:
                 count = allNotes.count
             case .recent:
@@ -2455,6 +2487,8 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.stringValue = "Searching..."
         } else if !query.isEmpty {
             noteListEmptyLabel.stringValue = "No Results"
+        } else if selectedScope == .callRecordings {
+            noteListEmptyLabel.stringValue = "No Call Recordings"
         } else if selectedScope == .trash {
             noteListEmptyLabel.stringValue = "Recently Deleted is empty"
         } else {
@@ -2464,6 +2498,8 @@ final class LibraryWindowController: NSWindowController,
 
     private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
         switch selectedScope {
+        case .callRecordings:
+            return Array(allNotes.filter(libraryIsCallRecordingNote).prefix(limit))
         case .all:
             return Array(allNotes.prefix(limit))
         case .recent:
@@ -2896,6 +2932,8 @@ final class LibraryWindowController: NSWindowController,
             return .inbox
         case 3:
             return .trash
+        case 4:
+            return .callRecordings
         case 10..<100:
             let index = button.tag - 10
             guard sourceFolderRows.indices.contains(index) else { return .all }
@@ -3900,6 +3938,11 @@ final class LibraryWindowController: NSWindowController,
 
     func selectRecentScopeForLibrary() {
         selectedScope = .recent
+        reloadNotes(loadFirstIfNeeded: true)
+    }
+
+    func selectCallRecordingsScopeForLibrary() {
+        selectedScope = .callRecordings
         reloadNotes(loadFirstIfNeeded: true)
     }
 

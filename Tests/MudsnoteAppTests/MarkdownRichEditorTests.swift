@@ -845,9 +845,17 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
         })
         #expect(sourcePrimaryStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
+        let sourceSmartStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySourceSmartStack"
+        })
+        #expect(sourceSmartStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
         let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourceTrashStack"
         })
+        let smartSourceTitles = sourceSmartStack.arrangedSubviews
+            .flatMap(\.allSubviews)
+            .compactMap { ($0 as? NSButton)?.title }
+            .filter { !$0.isEmpty }
         let primarySourceTitles = sourcePrimaryStack.arrangedSubviews
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
@@ -856,6 +864,7 @@ struct MarkdownRichEditorTests {
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
             .filter { !$0.isEmpty }
+        #expect(smartSourceTitles == ["Call Recordings"])
         #expect(primarySourceTitles == ["All iCloud"])
         #expect(trashSourceTitles == ["Recently Deleted"])
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
@@ -1004,6 +1013,14 @@ struct MarkdownRichEditorTests {
         #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
         #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
+        let callRecordingsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Call Recordings"
+        })
+        #expect(callRecordingsButton.image?.accessibilityDescription == "Call Recordings")
+        let callRecordingsCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-4"
+        })
+        #expect(callRecordingsCount.stringValue == "")
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
         } as? LibrarySourceRowView)
@@ -1107,6 +1124,55 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListTitleLabel.stringValue == "最近")
         #expect(controller.noteListCountLabel.stringValue == "0 notes")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func libraryCallRecordingsSourceFiltersExistingSnapshot() throws {
+        let suiteName = "mudsnote.library-call-recordings-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-call-recordings-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let callURL = try store.saveNewNote(title: "Call Recording", body: "1 audio recording")
+        _ = try store.saveNewNote(title: "Reference Note", body: "ordinary body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let callCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-4"
+        })
+        #expect(callCount.stringValue == "1")
+
+        controller.selectCallRecordingsScopeForLibrary()
+
+        #expect(controller.noteListTitleLabel.stringValue == "Call Recordings")
+        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Call Recording"])
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == callURL.standardizedFileURL)
+        let callSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Call Recordings"
+        })
+        #expect(callSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
     }
 
     @MainActor
