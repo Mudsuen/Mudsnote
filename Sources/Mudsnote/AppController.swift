@@ -101,7 +101,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let noteStore = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: appSupportDirectory)
         let notesDirectory = URL(fileURLWithPath: notesDirectoryPath, isDirectory: true).standardizedFileURL
-        noteStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let extraDirectories = values(after: "--visual-qa-extra-dir", in: arguments).map {
+            URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL
+        }
+        noteStore.configurePreferredDirectories([notesDirectory] + extraDirectories, defaultDirectory: notesDirectory)
         return noteStore
     }
 
@@ -111,6 +114,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard arguments.indices.contains(valueIndex) else { return nil }
         let value = arguments[valueIndex]
         return value.hasPrefix("--") ? nil : value
+    }
+
+    private static func values(after flag: String, in arguments: [String]) -> [String] {
+        arguments.indices.compactMap { index in
+            guard arguments[index] == flag else { return nil }
+            let valueIndex = arguments.index(after: index)
+            guard arguments.indices.contains(valueIndex) else { return nil }
+            let value = arguments[valueIndex]
+            return value.hasPrefix("--") ? nil : value
+        }
     }
 
     private func setupStatusItem() {

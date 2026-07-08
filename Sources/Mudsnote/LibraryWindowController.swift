@@ -2351,7 +2351,16 @@ final class LibraryWindowController: NSWindowController,
                     note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
                 }.count
             }
-            sourceCountLabels[button.tag]?.stringValue = count > 0 ? String(count) : ""
+            sourceCountLabels[button.tag]?.stringValue = sourceCountText(count, for: scope(for: button))
+        }
+    }
+
+    private func sourceCountText(_ count: Int, for scope: LibraryScope) -> String {
+        switch scope {
+        case .folder:
+            return String(count)
+        default:
+            return count > 0 ? String(count) : ""
         }
     }
 

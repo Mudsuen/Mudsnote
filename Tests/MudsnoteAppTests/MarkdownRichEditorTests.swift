@@ -1172,6 +1172,61 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func librarySourceListShowsZeroCountsForEmptyFoldersLikeAppleNotes() throws {
+        let suiteName = "mudsnote.library-empty-folder-count-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-empty-folder-count-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let resourcesDirectory = root.appendingPathComponent("Resources", isDirectory: true)
+        let archivesDirectory = root.appendingPathComponent("Archives", isDirectory: true)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.configurePreferredDirectories(
+            [notesDirectory, resourcesDirectory, archivesDirectory],
+            defaultDirectory: notesDirectory
+        )
+        _ = try store.saveNewNote(title: "Default Note", body: "Body", in: notesDirectory)
+        _ = try store.saveNewNote(title: "Archived Note", body: "Old body", in: archivesDirectory)
+        try FileManager.default.createDirectory(at: resourcesDirectory, withIntermediateDirectories: true)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        func countText(for sourceTitle: String) throws -> String {
+            let row = try #require(window.contentView?.allSubviews.first { view in
+                guard view is LibrarySourceRowView else { return false }
+                return view.allSubviews.compactMap { ($0 as? NSButton)?.title }.contains(sourceTitle)
+            } as? LibrarySourceRowView)
+            let countLabel = try #require(row.allSubviews.compactMap { $0 as? NSTextField }.first {
+                $0.identifier?.rawValue.hasPrefix("LibrarySourceCount-") == true
+            })
+            return countLabel.stringValue
+        }
+
+        #expect(try countText(for: "Notes") == "1")
+        #expect(try countText(for: "Resources") == "0")
+        #expect(try countText(for: "Archives") == "1")
+    }
+
+    @MainActor
+    @Test
     func libraryToolbarUsesNotesLikeDisabledStates() throws {
         let suiteName = "mudsnote.library-toolbar-state-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2859,6 +2914,8 @@ struct MarkdownRichEditorTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-visual-qa-launch-tests-\(UUID().uuidString)", isDirectory: true)
         let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let resourcesDirectory = root.appendingPathComponent("Resources", isDirectory: true)
+        let archivesDirectory = root.appendingPathComponent("Archives", isDirectory: true)
         let appSupportDirectory = root.appendingPathComponent("AppSupport", isDirectory: true)
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2871,11 +2928,20 @@ struct MarkdownRichEditorTests {
             suiteName,
             "--visual-qa-notes-dir",
             notesDirectory.path,
+            "--visual-qa-extra-dir",
+            resourcesDirectory.path,
+            "--visual-qa-extra-dir",
+            archivesDirectory.path,
             "--visual-qa-app-support-dir",
             appSupportDirectory.path
         ])
 
         #expect(store.notesDirectory.standardizedFileURL == notesDirectory.standardizedFileURL)
+        #expect(store.preferredDirectories.map(\.standardizedFileURL.path) == [
+            notesDirectory.standardizedFileURL.path,
+            resourcesDirectory.standardizedFileURL.path,
+            archivesDirectory.standardizedFileURL.path
+        ])
         #expect(defaults.string(forKey: "mudsnote.notesDirectory") == notesDirectory.standardizedFileURL.path)
         #expect(UserDefaults.standard.string(forKey: "mudsnote.notesDirectory") != notesDirectory.standardizedFileURL.path)
     }

@@ -20,6 +20,8 @@ fi
 
 FIXTURE_ROOT="$OUTPUT_DIR/visual-qa-library"
 FIXTURE_NOTES_DIR="$FIXTURE_ROOT/Notes"
+FIXTURE_RESOURCES_DIR="$FIXTURE_ROOT/Resources"
+FIXTURE_ARCHIVES_DIR="$FIXTURE_ROOT/Archives"
 FIXTURE_APP_SUPPORT_DIR="$FIXTURE_ROOT/AppSupport"
 FIXTURE_DEFAULTS_SUITE="local.codex.mudsnote.visual-qa"
 
@@ -27,20 +29,24 @@ rm -rf "$FIXTURE_ROOT"
 mkdir -p "$FIXTURE_ROOT"
 defaults delete "$FIXTURE_DEFAULTS_SUITE" >/dev/null 2>&1 || true
 
-/usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_APP_SUPPORT_DIR" <<'SWIFT'
+/usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_RESOURCES_DIR" "$FIXTURE_ARCHIVES_DIR" "$FIXTURE_APP_SUPPORT_DIR" <<'SWIFT'
 import Foundation
 
 let args = CommandLine.arguments
-guard args.count == 3 else {
-    fputs("Usage: seed-visual-qa notes-dir app-support-dir\n", stderr)
+guard args.count == 5 else {
+    fputs("Usage: seed-visual-qa notes-dir resources-dir archives-dir app-support-dir\n", stderr)
     exit(2)
 }
 
 let notesDirectory = URL(fileURLWithPath: args[1], isDirectory: true)
-let appSupportDirectory = URL(fileURLWithPath: args[2], isDirectory: true)
+let resourcesDirectory = URL(fileURLWithPath: args[2], isDirectory: true)
+let archivesDirectory = URL(fileURLWithPath: args[3], isDirectory: true)
+let appSupportDirectory = URL(fileURLWithPath: args[4], isDirectory: true)
 let trashDirectory = appSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
 let fileManager = FileManager.default
 try fileManager.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+try fileManager.createDirectory(at: resourcesDirectory, withIntermediateDirectories: true)
+try fileManager.createDirectory(at: archivesDirectory, withIntermediateDirectories: true)
 try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
 
 let calendar = Calendar.current
@@ -127,6 +133,15 @@ try writeNote(
     hour: 14,
     minute: 0
 )
+try writeNote(
+    directory: archivesDirectory,
+    filename: "Archived Plan.md",
+    title: "Archived Plan",
+    body: "old reference",
+    daysAgo: 370,
+    hour: 15,
+    minute: 20
+)
 
 for index in 1...4 {
     try writeNote(
@@ -147,6 +162,8 @@ open -n "$APP_PATH" --args \
   --library \
   --visual-qa-defaults-suite "$FIXTURE_DEFAULTS_SUITE" \
   --visual-qa-notes-dir "$FIXTURE_NOTES_DIR" \
+  --visual-qa-extra-dir "$FIXTURE_RESOURCES_DIR" \
+  --visual-qa-extra-dir "$FIXTURE_ARCHIVES_DIR" \
   --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR"
 osascript -e 'tell application "Mudsnote" to activate' >/dev/null 2>&1 || true
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
@@ -468,6 +485,8 @@ SWIFT
 {
   echo
   echo "fixture_notes_dir=$FIXTURE_NOTES_DIR"
+  echo "fixture_resources_dir=$FIXTURE_RESOURCES_DIR"
+  echo "fixture_archives_dir=$FIXTURE_ARCHIVES_DIR"
   echo "fixture_app_support_dir=$FIXTURE_APP_SUPPORT_DIR"
   echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
 } >> "$METADATA_PATH"

@@ -92,6 +92,7 @@ Use this checklist to decide whether future work is moving toward the goal.
   - tags
   - trash/recently deleted
   - counts
+- Empty local folders should still show `0` counts in the source list when they are visible.
 - Selection state, disclosure state, hover, and disabled states are visible and native-feeling.
 - The default Markdown root is presented as `Notes` in the source list, note metadata, and move menus, even if the local folder is named `Mudsnote`.
 
