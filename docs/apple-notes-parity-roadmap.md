@@ -94,6 +94,7 @@ Use this checklist to decide whether future work is moving toward the goal.
   - counts
 - Empty local folders should still show `0` counts in the source list when they are visible.
 - Selection state, disclosure state, hover, and disabled states are visible and native-feeling.
+- Source rows should stay in the compact Apple Notes rhythm: small icons, 36pt rows, restrained counts, and tight section spacing.
 - The default Markdown root is presented as `Notes` in the source list, note metadata, and move menus, even if the local folder is named `Mudsnote`.
 
 ### 3. Note List

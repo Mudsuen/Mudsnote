@@ -191,15 +191,19 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.48
     static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.26
     static let toolbarSymbolPointSize: CGFloat = 20
-    static let sourceSymbolPointSize: CGFloat = 18
-    static let sourceDisclosureSymbolPointSize: CGFloat = 12
+    static let sourceSymbolPointSize: CGFloat = 17
+    static let sourceDisclosureSymbolPointSize: CGFloat = 11
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 42
+    static let sourceRowHeight: CGFloat = 36
+    static let sourceSectionHeaderHeight: CGFloat = 22
+    static let sourceStatusRowHeight: CGFloat = 22
+    static let sourceInnerRowSpacing: CGFloat = 1
+    static let sourceSectionSpacing: CGFloat = 8
     static let noteGroupRowHeight: CGFloat = 60
     static let noteRowHeight: CGFloat = 118
-    static let sourceGroupFontSize: CGFloat = 16
-    static let sourceButtonFontSize: CGFloat = 18
-    static let sourceCountFontSize: CGFloat = 16
+    static let sourceGroupFontSize: CGFloat = 14.5
+    static let sourceButtonFontSize: CGFloat = 16.5
+    static let sourceCountFontSize: CGFloat = 15
     static let noteGroupFontSize: CGFloat = 21.5
     static let noteTitleFontSize: CGFloat = 19
     static let noteSnippetFontSize: CGFloat = 16.5
@@ -1107,7 +1111,7 @@ final class LibraryWindowController: NSWindowController,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
+        stack.spacing = LibraryNotesLayout.sourceSectionSpacing
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 28, bottom: 14, right: 28)
         sourceList.addSubview(stack)
         pin(stack, to: sourceList)
@@ -1847,7 +1851,7 @@ final class LibraryWindowController: NSWindowController,
     private func configureSourceStack(_ stack: NSStackView) {
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        stack.spacing = LibraryNotesLayout.sourceInnerRowSpacing
     }
 
     private func configureSourceStatusLabel(_ label: NSTextField, identifier: String) {
@@ -1858,7 +1862,7 @@ final class LibraryWindowController: NSWindowController,
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        label.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceStatusRowHeight).isActive = true
         label.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
     }
 
@@ -1889,7 +1893,7 @@ final class LibraryWindowController: NSWindowController,
         button.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
         button.contentTintColor = panelTertiaryTextColor()
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceSectionHeaderHeight).isActive = true
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
         return button
     }

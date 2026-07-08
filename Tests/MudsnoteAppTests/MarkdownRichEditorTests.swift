@@ -770,6 +770,9 @@ struct MarkdownRichEditorTests {
         #expect(editorToolsView.frame.height == LibraryNotesLayout.toolbarEditorToolsHeight)
         #expect(editorToolsView.layer?.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
         #expect(editorToolsView.layer?.borderWidth == LibraryNotesLayout.toolbarEditorToolsBorderWidth)
+        #expect(LibraryNotesLayout.toolbarEditorToolsBorderWidth == 0)
+        #expect(LibraryNotesLayout.toolbarEditorToolsWidth <= 200)
+        #expect(LibraryNotesLayout.toolbarEditorToolsHeight <= 34)
         #expect(abs((editorToolsView.layer?.borderColor?.alpha ?? -1) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
         #expect(abs((editorToolsView.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
@@ -833,9 +836,15 @@ struct MarkdownRichEditorTests {
         })
         #expect(libraryGroup.stringValue == "iCloud")
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
+        #expect(LibraryNotesLayout.sourceRowHeight == 36)
+        #expect(LibraryNotesLayout.sourceSymbolPointSize == 17)
+        #expect(LibraryNotesLayout.sourceDisclosureSymbolPointSize == 11)
+        #expect(LibraryNotesLayout.sourceButtonFontSize == 16.5)
+        #expect(LibraryNotesLayout.sourceCountFontSize == 15)
         let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
         })
+        #expect(sourcePrimaryStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
         let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourceTrashStack"
         })
