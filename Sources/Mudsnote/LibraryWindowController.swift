@@ -260,6 +260,10 @@ enum LibraryNotesLayout {
             height: min(presentedWindowSize.height, availableHeight)
         )
     }
+
+    static func presentedWindowSize(in visibleFrame: NSRect, usesCanonicalSize: Bool) -> NSSize {
+        usesCanonicalSize ? presentedWindowSize : presentedWindowSize(in: visibleFrame)
+    }
 }
 
 private enum LibraryNotesPalette {
@@ -845,6 +849,7 @@ final class LibraryWindowController: NSWindowController,
     private let onOpenInSeparateWindow: (URL) -> Void
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
+    private let usesCanonicalWindowSize: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
     private var sourceCountSnapshot: [NoteSearchResult] = []
@@ -907,11 +912,13 @@ final class LibraryWindowController: NSWindowController,
     init(
         noteStore: NoteStore,
         defersInitialNoteHydration: Bool = false,
+        usesCanonicalWindowSize: Bool = false,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
+        self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
         self.onSave = onSave
         self.onClose = onClose
@@ -956,7 +963,10 @@ final class LibraryWindowController: NSWindowController,
         guard let window else { return }
         if !hasCenteredWindow {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            let targetSize = LibraryNotesLayout.presentedWindowSize(in: visibleFrame)
+            let targetSize = LibraryNotesLayout.presentedWindowSize(
+                in: visibleFrame,
+                usesCanonicalSize: usesCanonicalWindowSize
+            )
             let targetOrigin = NSPoint(
                 x: visibleFrame.midX - targetSize.width / 2,
                 y: visibleFrame.midY - targetSize.height / 2

@@ -224,7 +224,8 @@ open -n "$APP_PATH" --args \
   --visual-qa-extra-dir "$FIXTURE_RESOURCES_DIR" \
   --visual-qa-extra-dir "$FIXTURE_ARCHIVES_DIR" \
   --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR" \
-  --visual-qa-select-note "$SELECTED_NOTE_PATH"
+  --visual-qa-select-note "$SELECTED_NOTE_PATH" \
+  --visual-qa-canonical-window-size
 activate_mudsnote_for_capture
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
 activate_mudsnote_for_capture

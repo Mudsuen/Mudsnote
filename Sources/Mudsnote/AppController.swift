@@ -8,6 +8,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments: Set<String>
     private let visualQASelectedNoteURL: URL?
+    private let usesCanonicalVisualQAWindowSize: Bool
     static let explicitLaunchWindowArguments: Set<String> = [
         "--quick-capture",
         "--search",
@@ -29,6 +30,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         self.launchArguments = Set(rawLaunchArguments)
         self.noteStore = Self.makeNoteStore(arguments: rawLaunchArguments)
         self.visualQASelectedNoteURL = Self.visualQASelectedNoteURL(arguments: rawLaunchArguments)
+        self.usesCanonicalVisualQAWindowSize = Self.usesCanonicalVisualQAWindowSize(arguments: rawLaunchArguments)
         super.init()
     }
 
@@ -114,6 +116,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         value(after: "--visual-qa-select-note", in: arguments).map {
             URL(fileURLWithPath: $0).standardizedFileURL
         }
+    }
+
+    static func usesCanonicalVisualQAWindowSize(arguments: [String]) -> Bool {
+        arguments.contains("--visual-qa-canonical-window-size")
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
@@ -324,6 +330,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         let controller = LibraryWindowController(
             noteStore: noteStore,
             defersInitialNoteHydration: true,
+            usesCanonicalWindowSize: usesCanonicalVisualQAWindowSize,
             onOpenInSeparateWindow: { [weak self] url in
                 self?.openEditor(for: url)
             },

@@ -695,6 +695,14 @@ struct MarkdownRichEditorTests {
         #expect(clampedSize.height == 648)
         #expect(clampedSize.width >= LibraryNotesLayout.minimumWindowSize.width)
         #expect(clampedSize.height >= LibraryNotesLayout.minimumWindowSize.height)
+        #expect(LibraryNotesLayout.presentedWindowSize(
+            in: NSRect(x: 0, y: 0, width: 1180, height: 720),
+            usesCanonicalSize: true
+        ) == LibraryNotesLayout.presentedWindowSize)
+        #expect(LibraryNotesLayout.presentedWindowSize(
+            in: NSRect(x: 0, y: 0, width: 1180, height: 720),
+            usesCanonicalSize: false
+        ) == clampedSize)
         #expect(window.toolbar?.displayMode == .iconOnly)
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
@@ -3021,6 +3029,11 @@ struct MarkdownRichEditorTests {
         #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--floating-note"]))
         #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--search"]))
         #expect(!AppController.shouldOpenLibraryOnLaunch(arguments: ["--preferences"]))
+        #expect(AppController.usesCanonicalVisualQAWindowSize(arguments: [
+            "--library",
+            "--visual-qa-canonical-window-size"
+        ]))
+        #expect(!AppController.usesCanonicalVisualQAWindowSize(arguments: ["--library"]))
     }
 
     @MainActor
