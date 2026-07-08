@@ -199,15 +199,15 @@ enum LibraryNotesLayout {
     static let sourceStatusRowHeight: CGFloat = 22
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 8
-    static let noteGroupRowHeight: CGFloat = 60
-    static let noteRowHeight: CGFloat = 118
+    static let noteGroupRowHeight: CGFloat = 54
+    static let noteRowHeight: CGFloat = 106
     static let sourceGroupFontSize: CGFloat = 14.5
     static let sourceButtonFontSize: CGFloat = 16.5
     static let sourceCountFontSize: CGFloat = 15
-    static let noteGroupFontSize: CGFloat = 21.5
-    static let noteTitleFontSize: CGFloat = 19
-    static let noteSnippetFontSize: CGFloat = 16.5
-    static let noteMetaFontSize: CGFloat = 14
+    static let noteGroupFontSize: CGFloat = 20
+    static let noteTitleFontSize: CGFloat = 18
+    static let noteSnippetFontSize: CGFloat = 15.5
+    static let noteMetaFontSize: CGFloat = 13
     static let noteListHeaderTitleFontSize: CGFloat = 25
     static let noteListHeaderCountFontSize: CGFloat = 15
     static let noteListLeadingInset: CGFloat = 20
@@ -316,10 +316,11 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 15
+    static let contentTopInset: CGFloat = 12
     static let contentLeadingInset: CGFloat = 34
-    static let contentBottomInset: CGFloat = 15
+    static let contentBottomInset: CGFloat = 12
     static let contentTrailingInset: CGFloat = 16
+    static let textRowSpacing: CGFloat = 3
 
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
@@ -377,7 +378,7 @@ final class LibraryNoteCellView: NSTableCellView {
         let textStack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
         textStack.orientation = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 4
+        textStack.spacing = Self.textRowSpacing
 
         let stack = NSStackView(views: [textStack, thumbnailImageView])
         stack.orientation = .horizontal
