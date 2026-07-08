@@ -739,12 +739,35 @@ struct MarkdownRichEditorTests {
         }
         let shareToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.export"
-        } as? NSMenuToolbarItem)
+        })
         #expect(shareToolbarItem.label == "分享与导出")
-        #expect(shareToolbarItem.menu.items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
-        #expect((window.toolbar?.items ?? []).first {
+        #expect(!(shareToolbarItem is NSMenuToolbarItem))
+        #expect(!shareToolbarItem.isBordered)
+        let shareToolbarButton = try #require(shareToolbarItem.view as? NSButton)
+        #expect(shareToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.export")
+        #expect(!shareToolbarButton.isBordered)
+        #expect(shareToolbarButton.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarMenuButtonWidth
+        })
+        #expect(shareToolbarButton.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarMenuButtonHeight
+        })
+        #expect(shareToolbarButton.image?.accessibilityDescription == "分享与导出")
+        #expect(shareToolbarButton.toolTip == "分享与导出")
+        #expect(controller.makeShareExportMenuForLibrary().items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
+        let moreToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.more"
-        } is NSMenuToolbarItem)
+        })
+        #expect(!(moreToolbarItem is NSMenuToolbarItem))
+        #expect(!moreToolbarItem.isBordered)
+        let moreToolbarButton = try #require(moreToolbarItem.view as? NSButton)
+        #expect(moreToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.more")
+        #expect(!moreToolbarButton.isBordered)
+        #expect(moreToolbarButton.image?.accessibilityDescription == "更多")
+        #expect(LibraryNotesLayout.toolbarMenuButtonWidth == 32)
+        #expect(LibraryNotesLayout.toolbarMenuButtonHeight == 30)
+        #expect(LibraryNotesLayout.toolbarMenuButtonDisabledAlpha == 0.42)
+        #expect(LibraryNotesLayout.toolbarMoreSymbolName == "ellipsis")
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
             item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
         }

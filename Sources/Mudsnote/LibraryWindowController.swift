@@ -205,6 +205,10 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 35
     static let toolbarEditorToolButtonHeight: CGFloat = 26
+    static let toolbarMenuButtonWidth: CGFloat = 32
+    static let toolbarMenuButtonHeight: CGFloat = 30
+    static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
+    static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 280
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
@@ -1517,11 +1521,11 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(attachmentPressed)
             )
         case Self.exportToolbarItemIdentifier:
-            return toolbarMenuItem(
+            return toolbarMenuButtonItem(
                 identifier: itemIdentifier,
                 label: "分享与导出",
                 symbolName: "square.and.arrow.up",
-                menu: makeShareExportMenuForLibrary()
+                action: #selector(shareExportToolbarMenuPressed(_:))
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -1556,11 +1560,11 @@ final class LibraryWindowController: NSWindowController,
                 visibilityPriority: .low
             )
         case Self.moreToolbarItemIdentifier:
-            return toolbarMenuItem(
+            return toolbarMenuButtonItem(
                 identifier: itemIdentifier,
                 label: "更多",
-                symbolName: "ellipsis.circle",
-                menu: makeMoreActionsMenuForLibrary()
+                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
+                action: #selector(moreToolbarMenuPressed(_:))
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
@@ -1819,20 +1823,38 @@ final class LibraryWindowController: NSWindowController,
         return item
     }
 
-    private func toolbarMenuItem(
+    private func toolbarMenuButtonItem(
         identifier: NSToolbarItem.Identifier,
         label: String,
         symbolName: String,
-        menu: NSMenu,
+        action: Selector,
         visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
     ) -> NSToolbarItem {
-        let item = NSMenuToolbarItem(itemIdentifier: identifier)
+        let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        item.image = toolbarSymbolImage(symbolName: symbolName, label: label)
-        item.menu = menu
         item.visibilityPriority = visibilityPriority
+        item.isBordered = false
+
+        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        image?.isTemplate = true
+        item.image = image
+        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonWidth).isActive = true
+        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight).isActive = true
+        item.view = button
+        setToolbarMenuButtonEnabled(validateToolbarItem(item), in: item)
         return item
     }
 
@@ -4273,9 +4295,9 @@ final class LibraryWindowController: NSWindowController,
                 let label = noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount)
                 updateToolbarItemPresentation(item, label: label, symbolName: "arrow.uturn.backward")
             case Self.exportToolbarItemIdentifier:
-                (item as? NSMenuToolbarItem)?.menu = makeShareExportMenuForLibrary()
+                setToolbarMenuButtonEnabled(canExportSelectedNote, in: item)
             case Self.moreToolbarItemIdentifier:
-                (item as? NSMenuToolbarItem)?.menu = makeMoreActionsMenuForLibrary()
+                setToolbarMenuButtonEnabled(canShowMoreActions, in: item)
             case Self.editorToolsToolbarItemIdentifier:
                 setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
             default:
@@ -4297,6 +4319,36 @@ final class LibraryWindowController: NSWindowController,
         button.image = image
         button.toolTip = label
         button.setAccessibilityLabel(label)
+    }
+
+    @objc
+    private func shareExportToolbarMenuPressed(_ sender: Any?) {
+        popToolbarMenu(makeShareExportMenuForLibrary(), from: sender)
+    }
+
+    @objc
+    private func moreToolbarMenuPressed(_ sender: Any?) {
+        popToolbarMenu(makeMoreActionsMenuForLibrary(), from: sender)
+    }
+
+    private func popToolbarMenu(_ menu: NSMenu, from sender: Any?) {
+        guard let view = sender as? NSView else {
+            menu.popUp(positioning: nil, at: .zero, in: nil)
+            return
+        }
+
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: view.bounds.minY - 2),
+            in: view
+        )
+    }
+
+    private func setToolbarMenuButtonEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
+        item.isEnabled = isEnabled
+        guard let button = item.view as? NSButton else { return }
+        button.isEnabled = isEnabled
+        button.alphaValue = isEnabled ? 1 : LibraryNotesLayout.toolbarMenuButtonDisabledAlpha
     }
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {
