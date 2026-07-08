@@ -877,12 +877,19 @@ struct MarkdownRichEditorTests {
         #expect(libraryGroup.stringValue == "iCloud")
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         #expect(LibraryNotesLayout.sourceRowHeight == 36)
-        #expect(LibraryNotesLayout.sourceListTopInset == 18)
+        #expect(LibraryNotesLayout.sourceListTopInset == 12)
         #expect(LibraryNotesLayout.sourceListLeadingInset == 24)
         #expect(LibraryNotesLayout.sourceListBottomInset == 14)
         #expect(LibraryNotesLayout.sourceListTrailingInset == 24)
         #expect(LibraryNotesLayout.sourceSymbolPointSize == 17)
-        #expect(LibraryNotesLayout.sourceDisclosureSymbolPointSize == 11)
+        #expect(LibraryNotesLayout.sourceDisclosureSymbolPointSize == 10)
+        #expect(LibraryNotesLayout.sourceRowCornerRadius == 7)
+        #expect(LibraryNotesLayout.sourceFolderIndentStep == 14)
+        #expect(LibraryNotesLayout.sourceDisclosureButtonWidth == 14)
+        #expect(LibraryNotesLayout.sourceDisclosureButtonHeight == 18)
+        #expect(LibraryNotesLayout.sourceDisclosureToButtonSpacing == 1)
+        #expect(LibraryNotesLayout.sourceCountTrailingInset == 8)
+        #expect(LibraryNotesLayout.sourceCountWidth == 38)
         #expect(LibraryNotesLayout.sourceButtonFontSize == 16.5)
         #expect(LibraryNotesLayout.sourceCountFontSize == 15)
         let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
@@ -1053,12 +1060,16 @@ struct MarkdownRichEditorTests {
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
         #expect(allCount.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(allCount.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceCountWidth
+        })
         let allSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "All iCloud"
         })
         #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
         #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
+        #expect(allSourceButton.layer?.cornerRadius == LibraryNotesLayout.sourceRowCornerRadius)
         let callRecordingsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Call Recordings"
         })
@@ -1094,7 +1105,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceTrashStack.arrangedSubviews.contains(trashSourceRow))
         #expect(LibrarySourceRowView.hoverHorizontalInset == 0)
         #expect(LibrarySourceRowView.hoverVerticalInset == 1)
-        #expect(LibrarySourceRowView.hoverCornerRadius == 6)
+        #expect(LibrarySourceRowView.hoverCornerRadius == LibraryNotesLayout.sourceRowCornerRadius)
         #expect(LibrarySourceRowView.hoverColor.alphaComponent < LibrarySourceRowView.dropHighlightColor.alphaComponent)
         #expect(!allSourceRow.isPointerHovered)
         allSourceRow.setPointerHovered(true)

@@ -220,18 +220,25 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.22
     static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 17
-    static let sourceDisclosureSymbolPointSize: CGFloat = 11
+    static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let callRecordingsSourceSymbolName = "phone.and.waveform.fill"
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 36
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
-    static let sourceListTopInset: CGFloat = 18
+    static let sourceListTopInset: CGFloat = 12
     static let sourceListLeadingInset: CGFloat = 24
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 24
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 8
+    static let sourceRowCornerRadius: CGFloat = 7
+    static let sourceFolderIndentStep: CGFloat = 14
+    static let sourceDisclosureButtonWidth: CGFloat = 14
+    static let sourceDisclosureButtonHeight: CGFloat = 18
+    static let sourceDisclosureToButtonSpacing: CGFloat = 1
+    static let sourceCountTrailingInset: CGFloat = 8
+    static let sourceCountWidth: CGFloat = 38
     static let noteGroupRowHeight: CGFloat = 54
     static let noteRowHeight: CGFloat = 106
     static let sourceGroupFontSize: CGFloat = 14.5
@@ -561,7 +568,7 @@ final class LibraryNoteRowView: NSTableRowView {
 final class LibrarySourceRowView: NSView {
     static let hoverHorizontalInset: CGFloat = 0
     static let hoverVerticalInset: CGFloat = 1
-    static let hoverCornerRadius: CGFloat = 6
+    static let hoverCornerRadius: CGFloat = LibraryNotesLayout.sourceRowCornerRadius
     static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
     static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
     static let dropRejectedColor = NSColor(calibratedWhite: 0.36, alpha: 0.34)
@@ -654,8 +661,8 @@ final class LibrarySourceRowView: NSView {
             let rejectedRect = bounds.insetBy(dx: 1, dy: 2)
             let rejectedPath = NSBezierPath(
                 roundedRect: rejectedRect,
-                xRadius: 6,
-                yRadius: 6
+                xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+                yRadius: LibraryNotesLayout.sourceRowCornerRadius
             )
             rejectedPath.lineWidth = 1.5
             Self.dropRejectedColor.setStroke()
@@ -666,8 +673,8 @@ final class LibrarySourceRowView: NSView {
 
         let path = NSBezierPath(
             roundedRect: bounds,
-            xRadius: 6,
-            yRadius: 6
+            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+            yRadius: LibraryNotesLayout.sourceRowCornerRadius
         )
         Self.dropHighlightColor.setFill()
         path.fill()
@@ -2279,7 +2286,7 @@ final class LibraryWindowController: NSWindowController,
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
         let depth = folderRow?.depth ?? 0
-        let leadingInset = CGFloat(depth * 16)
+        let leadingInset = CGFloat(depth) * LibraryNotesLayout.sourceFolderIndentStep
 
         row.addSubview(button)
         row.addSubview(overlay, positioned: .above, relativeTo: button)
@@ -2301,17 +2308,23 @@ final class LibraryWindowController: NSWindowController,
             overlay.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             overlay.topAnchor.constraint(equalTo: row.topAnchor),
             overlay.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            countLabel.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -10),
+            countLabel.trailingAnchor.constraint(
+                equalTo: overlay.trailingAnchor,
+                constant: -LibraryNotesLayout.sourceCountTrailingInset
+            ),
             countLabel.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
-            countLabel.widthAnchor.constraint(equalToConstant: 44)
+            countLabel.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceCountWidth)
         ]
         if let chevronButton {
             constraints.append(contentsOf: [
                 chevronButton.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
                 chevronButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                chevronButton.widthAnchor.constraint(equalToConstant: 16),
-                chevronButton.heightAnchor.constraint(equalToConstant: 18),
-                button.leadingAnchor.constraint(equalTo: chevronButton.trailingAnchor, constant: 2)
+                chevronButton.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceDisclosureButtonWidth),
+                chevronButton.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceDisclosureButtonHeight),
+                button.leadingAnchor.constraint(
+                    equalTo: chevronButton.trailingAnchor,
+                    constant: LibraryNotesLayout.sourceDisclosureToButtonSpacing
+                )
             ])
         } else {
             constraints.append(button.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset))
@@ -2363,7 +2376,7 @@ final class LibraryWindowController: NSWindowController,
         button.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .medium)
         button.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         button.wantsLayer = true
-        button.layer?.cornerRadius = 6
+        button.layer?.cornerRadius = LibraryNotesLayout.sourceRowCornerRadius
         button.layer?.cornerCurve = .continuous
         return button
     }
