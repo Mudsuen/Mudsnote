@@ -1545,7 +1545,7 @@ struct MarkdownRichEditorTests {
         #expect(abs(try visibleEditorToolsBorderAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha) < 0.001)
         #expect(abs(try visibleEditorToolsFillAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha) < 0.001)
         #expect(LibraryNotesLayout.toolbarEditorToolsDisabledAlpha == 1)
-        #expect(LibraryNotesLayout.toolbarIconEnabledAlpha == 0.86)
+        #expect(LibraryNotesLayout.toolbarIconEnabledAlpha == 0.76)
         #expect(LibraryNotesLayout.toolbarIconDisabledAlpha == LibraryNotesLayout.toolbarMenuButtonDisabledAlpha)
         #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001
@@ -3272,11 +3272,13 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
+        controller.showWindowAndFocus()
         controller.selectNoteForVisualQA(at: contentURL)
 
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == contentURL.standardizedFileURL)
         #expect(controller.titleField.stringValue == "Content Visual")
         #expect(controller.editorTextView.string == "Visible editor body")
+        #expect(controller.window?.firstResponder === controller.tableView)
     }
 
     @MainActor

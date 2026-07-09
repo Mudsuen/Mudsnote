@@ -208,7 +208,7 @@ enum LibraryNotesLayout {
     static let toolbarMenuButtonWidth: CGFloat = 30
     static let toolbarMenuButtonHeight: CGFloat = 28
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
-    static let toolbarIconEnabledAlpha: CGFloat = 0.86
+    static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 248
@@ -3799,6 +3799,7 @@ final class LibraryWindowController: NSWindowController,
             hydratePreviews: true,
             refreshCounts: false
         )
+        window?.makeFirstResponder(tableView)
     }
 
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
