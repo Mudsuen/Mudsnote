@@ -245,9 +245,13 @@ enum LibraryNotesLayout {
     static let sourceButtonFontSize: CGFloat = 16.5
     static let sourceCountFontSize: CGFloat = 15
     static let noteGroupFontSize: CGFloat = 20
+    static let noteGroupFontWeight: NSFont.Weight = .bold
     static let noteTitleFontSize: CGFloat = 18
+    static let noteTitleFontWeight: NSFont.Weight = .bold
     static let noteSnippetFontSize: CGFloat = 15.5
+    static let noteSnippetFontWeight: NSFont.Weight = .medium
     static let noteMetaFontSize: CGFloat = 13
+    static let noteMetaFontWeight: NSFont.Weight = .medium
     static let noteListHeaderTitleFontSize: CGFloat = 25
     static let noteListHeaderCountFontSize: CGFloat = 15
     static let noteListLeadingInset: CGFloat = 14
@@ -343,7 +347,10 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteGroupFontSize, weight: .bold)
+        titleLabel.font = .systemFont(
+            ofSize: LibraryNotesLayout.noteGroupFontSize,
+            weight: LibraryNotesLayout.noteGroupFontWeight
+        )
         titleLabel.textColor = panelPrimaryTextColor()
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
@@ -379,19 +386,28 @@ final class LibraryNoteCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .semibold)
+        titleLabel.font = .systemFont(
+            ofSize: LibraryNotesLayout.noteTitleFontSize,
+            weight: LibraryNotesLayout.noteTitleFontWeight
+        )
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.alignment = .left
         titleLabel.textColor = panelPrimaryTextColor()
 
-        snippetLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteSnippetFontSize)
+        snippetLabel.font = .systemFont(
+            ofSize: LibraryNotesLayout.noteSnippetFontSize,
+            weight: LibraryNotesLayout.noteSnippetFontWeight
+        )
         snippetLabel.lineBreakMode = .byTruncatingTail
         snippetLabel.maximumNumberOfLines = 1
         snippetLabel.alignment = .left
         snippetLabel.textColor = panelSecondaryTextColor()
 
-        metaLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteMetaFontSize, weight: .medium)
+        metaLabel.font = .systemFont(
+            ofSize: LibraryNotesLayout.noteMetaFontSize,
+            weight: LibraryNotesLayout.noteMetaFontWeight
+        )
         metaLabel.lineBreakMode = .byTruncatingMiddle
         metaLabel.maximumNumberOfLines = 1
         metaLabel.alignment = .left
