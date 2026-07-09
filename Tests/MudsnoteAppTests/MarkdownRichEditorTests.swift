@@ -1073,7 +1073,8 @@ struct MarkdownRichEditorTests {
         })
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
-        #expect(allCount.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(allCount.textColor == LibrarySourceSelectionPalette.selectedCountColor)
+        #expect(allCount.textColor != LibrarySourceSelectionPalette.foregroundColor)
         #expect(allCount.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceCountWidth
         })
@@ -1293,6 +1294,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-4"
         })
         #expect(callCount.stringValue == "1")
+        #expect(callCount.textColor == panelTertiaryTextColor())
 
         controller.selectCallRecordingsScopeForLibrary()
 
@@ -1304,6 +1306,7 @@ struct MarkdownRichEditorTests {
             $0.title == "Call Recordings"
         })
         #expect(callSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(callCount.textColor == LibrarySourceSelectionPalette.selectedCountColor)
     }
 
     @MainActor

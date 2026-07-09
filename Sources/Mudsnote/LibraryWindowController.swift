@@ -301,6 +301,7 @@ private enum LibraryNotesPalette {
 enum LibrarySourceSelectionPalette {
     static let backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.86)
     static let foregroundColor = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.16, alpha: 1)
+    static let selectedCountColor = NSColor.labelColor.withAlphaComponent(0.42)
     static let unselectedForegroundColor = NSColor.labelColor.withAlphaComponent(0.92)
 }
 
@@ -2460,7 +2461,7 @@ final class LibraryWindowController: NSWindowController,
                     : LibraryNotesLayout.sourceUnselectedButtonFontWeight
             )
             sourceCountLabels[button.tag]?.textColor = isSelected
-                ? LibrarySourceSelectionPalette.foregroundColor
+                ? LibrarySourceSelectionPalette.selectedCountColor
                 : panelTertiaryTextColor()
         }
     }
