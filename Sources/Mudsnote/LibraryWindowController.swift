@@ -245,7 +245,9 @@ enum LibraryNotesLayout {
     static let noteRowHeight: CGFloat = 96
     static let sourceGroupFontSize: CGFloat = 14.5
     static let sourceButtonFontSize: CGFloat = 16.5
-    static let sourceButtonFontWeight: NSFont.Weight = .semibold
+    static let sourceSelectedButtonFontWeight: NSFont.Weight = .semibold
+    static let sourceUnselectedButtonFontWeight: NSFont.Weight = .medium
+    static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
     static let sourceCountFontSize: CGFloat = 15
     static let sourceSymbolWeight: NSFont.Weight = .medium
     static let noteGroupFontSize: CGFloat = 20
@@ -2406,7 +2408,7 @@ final class LibraryWindowController: NSWindowController,
         button.bezelStyle = .shadowlessSquare
         button.font = .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: LibraryNotesLayout.sourceButtonFontWeight
+            weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
         )
         button.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         button.wantsLayer = true
@@ -2451,6 +2453,12 @@ final class LibraryWindowController: NSWindowController,
             button.contentTintColor = isSelected
                 ? LibrarySourceSelectionPalette.foregroundColor
                 : LibrarySourceSelectionPalette.unselectedForegroundColor
+            button.font = .systemFont(
+                ofSize: LibraryNotesLayout.sourceButtonFontSize,
+                weight: isSelected
+                    ? LibraryNotesLayout.sourceSelectedButtonFontWeight
+                    : LibraryNotesLayout.sourceUnselectedButtonFontWeight
+            )
             sourceCountLabels[button.tag]?.textColor = isSelected
                 ? LibrarySourceSelectionPalette.foregroundColor
                 : panelTertiaryTextColor()

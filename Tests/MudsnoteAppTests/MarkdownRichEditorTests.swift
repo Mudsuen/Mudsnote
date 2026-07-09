@@ -892,7 +892,9 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceCountTrailingInset == 8)
         #expect(LibraryNotesLayout.sourceCountWidth == 38)
         #expect(LibraryNotesLayout.sourceButtonFontSize == 16.5)
-        #expect(LibraryNotesLayout.sourceButtonFontWeight == .semibold)
+        #expect(LibraryNotesLayout.sourceButtonFontWeight == LibraryNotesLayout.sourceSelectedButtonFontWeight)
+        #expect(LibraryNotesLayout.sourceSelectedButtonFontWeight == .semibold)
+        #expect(LibraryNotesLayout.sourceUnselectedButtonFontWeight == .medium)
         #expect(LibraryNotesLayout.sourceCountFontSize == 15)
         #expect(LibraryNotesLayout.sourceSymbolWeight == .medium)
         let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
@@ -1096,6 +1098,9 @@ struct MarkdownRichEditorTests {
         #expect(callRecordingsButton.image?.accessibilityDescription == "Call Recordings")
         #expect(callRecordingsButton.image?.size == expectedCallRecordingsSymbol.size)
         #expect(callRecordingsButton.contentTintColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
+        let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceButton.font))
+        let unselectedSourceWeight = NSFontManager.shared.weight(of: try #require(callRecordingsButton.font))
+        #expect(selectedSourceWeight > unselectedSourceWeight)
         let callRecordingsCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-4"
         })
