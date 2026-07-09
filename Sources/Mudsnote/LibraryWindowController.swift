@@ -208,11 +208,13 @@ enum LibraryNotesLayout {
     static let toolbarMenuButtonWidth: CGFloat = 30
     static let toolbarMenuButtonHeight: CGFloat = 28
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
+    static let toolbarIconEnabledAlpha: CGFloat = 0.86
+    static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 248
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
-    static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
+    static let toolbarEditorToolsDisabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsBorderWidth: CGFloat = 0
     static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0
     static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0
@@ -1832,6 +1834,7 @@ final class LibraryWindowController: NSWindowController,
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -1884,6 +1887,7 @@ final class LibraryWindowController: NSWindowController,
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -1900,6 +1904,13 @@ final class LibraryWindowController: NSWindowController,
             pointSize: LibraryNotesLayout.toolbarSymbolPointSize,
             weight: .regular
         )) ?? image
+    }
+
+    private func toolbarIconTintColor(isEnabled: Bool) -> NSColor {
+        panelPrimaryTextColor().withAlphaComponent(isEnabled
+            ? LibraryNotesLayout.toolbarIconEnabledAlpha
+            : LibraryNotesLayout.toolbarIconDisabledAlpha
+        )
     }
 
     private func makeFormatToolbarImage() -> NSImage {
@@ -4414,7 +4425,8 @@ final class LibraryWindowController: NSWindowController,
         item.isEnabled = isEnabled
         guard let button = item.view as? NSButton else { return }
         button.isEnabled = isEnabled
-        button.alphaValue = isEnabled ? 1 : LibraryNotesLayout.toolbarMenuButtonDisabledAlpha
+        button.alphaValue = 1
+        button.contentTintColor = toolbarIconTintColor(isEnabled: isEnabled)
     }
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {
@@ -4452,6 +4464,10 @@ final class LibraryWindowController: NSWindowController,
     private func setControls(in view: NSView, enabled isEnabled: Bool) {
         if let control = view as? NSControl {
             control.isEnabled = isEnabled
+        }
+        if let button = view as? NSButton {
+            button.alphaValue = 1
+            button.contentTintColor = toolbarIconTintColor(isEnabled: isEnabled)
         }
         view.subviews.forEach { setControls(in: $0, enabled: isEnabled) }
     }

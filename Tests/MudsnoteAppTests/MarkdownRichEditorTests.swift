@@ -1493,6 +1493,20 @@ struct MarkdownRichEditorTests {
             try visibleEditorToolsView(in: controller).allSubviews.compactMap { $0 as? NSButton }
         }
 
+        func visibleToolbarButton(in controller: LibraryWindowController, rawValue: String) throws -> NSButton {
+            try #require((controller.window?.toolbar?.items ?? []).first {
+                $0.itemIdentifier.rawValue == rawValue
+            }?.view as? NSButton)
+        }
+
+        func tintAlpha(_ button: NSButton) throws -> CGFloat {
+            try #require(button.contentTintColor).alphaComponent
+        }
+
+        func editorToolTintAlphas(in controller: LibraryWindowController) throws -> [CGFloat] {
+            try visibleEditorToolButtons(in: controller).map { try tintAlpha($0) }
+        }
+
         func visibleEditorToolsBorderAlpha(in controller: LibraryWindowController) throws -> CGFloat {
             try #require(visibleEditorToolsView(in: controller).layer?.borderColor?.alpha)
         }
@@ -1530,6 +1544,20 @@ struct MarkdownRichEditorTests {
         #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
         #expect(abs(try visibleEditorToolsBorderAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha) < 0.001)
         #expect(abs(try visibleEditorToolsFillAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha) < 0.001)
+        #expect(LibraryNotesLayout.toolbarEditorToolsDisabledAlpha == 1)
+        #expect(LibraryNotesLayout.toolbarIconEnabledAlpha == 0.86)
+        #expect(LibraryNotesLayout.toolbarIconDisabledAlpha == LibraryNotesLayout.toolbarMenuButtonDisabledAlpha)
+        #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
+            abs($0 - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001
+        })
+        let emptyExportButton = try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.export")
+        let emptyMoreButton = try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.more")
+        #expect(!emptyExportButton.isEnabled)
+        #expect(!emptyMoreButton.isEnabled)
+        #expect(emptyExportButton.alphaValue == 1)
+        #expect(emptyMoreButton.alphaValue == 1)
+        #expect(abs(try tintAlpha(emptyExportButton) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
+        #expect(abs(try tintAlpha(emptyMoreButton) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
 
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
@@ -1544,6 +1572,10 @@ struct MarkdownRichEditorTests {
         #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
         #expect(abs(try visibleEditorToolsBorderAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
         #expect(abs(try visibleEditorToolsFillAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
+        #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
+            abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
+        })
+        #expect(abs(try tintAlpha(try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
 
         let noteURL = try store.saveNewNote(title: "Toolbar State", body: "Body line")
         let selectedController = LibraryWindowController(
@@ -1566,6 +1598,11 @@ struct MarkdownRichEditorTests {
         #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
         #expect(abs(try visibleEditorToolsBorderAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
         #expect(abs(try visibleEditorToolsFillAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
+        #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
+            abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
+        })
+        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.export")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
+        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
@@ -1595,6 +1632,11 @@ struct MarkdownRichEditorTests {
         #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
         #expect(abs(try visibleEditorToolsBorderAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha) < 0.001)
         #expect(abs(try visibleEditorToolsFillAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha) < 0.001)
+        #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
+            abs($0 - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001
+        })
+        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.export")) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
+        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
