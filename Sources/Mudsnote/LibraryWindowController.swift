@@ -243,7 +243,9 @@ enum LibraryNotesLayout {
     static let noteRowHeight: CGFloat = 96
     static let sourceGroupFontSize: CGFloat = 14.5
     static let sourceButtonFontSize: CGFloat = 16.5
+    static let sourceButtonFontWeight: NSFont.Weight = .semibold
     static let sourceCountFontSize: CGFloat = 15
+    static let sourceSymbolWeight: NSFont.Weight = .medium
     static let noteGroupFontSize: CGFloat = 20
     static let noteGroupFontWeight: NSFont.Weight = .bold
     static let noteTitleFontSize: CGFloat = 18
@@ -2384,14 +2386,17 @@ final class LibraryWindowController: NSWindowController,
         button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
                 pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-                weight: .regular
+                weight: LibraryNotesLayout.sourceSymbolWeight
             ))
         button.imagePosition = .imageLeading
         button.imageHugsTitle = true
         button.alignment = .left
         button.isBordered = false
         button.bezelStyle = .shadowlessSquare
-        button.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .medium)
+        button.font = .systemFont(
+            ofSize: LibraryNotesLayout.sourceButtonFontSize,
+            weight: LibraryNotesLayout.sourceButtonFontWeight
+        )
         button.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         button.wantsLayer = true
         button.layer?.cornerRadius = LibraryNotesLayout.sourceRowCornerRadius

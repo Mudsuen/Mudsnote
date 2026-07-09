@@ -892,7 +892,9 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceCountTrailingInset == 8)
         #expect(LibraryNotesLayout.sourceCountWidth == 38)
         #expect(LibraryNotesLayout.sourceButtonFontSize == 16.5)
+        #expect(LibraryNotesLayout.sourceButtonFontWeight == .semibold)
         #expect(LibraryNotesLayout.sourceCountFontSize == 15)
+        #expect(LibraryNotesLayout.sourceSymbolWeight == .medium)
         let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
         })
@@ -1087,7 +1089,7 @@ struct MarkdownRichEditorTests {
             NSImage(systemSymbolName: LibraryNotesLayout.callRecordingsSourceSymbolName, accessibilityDescription: "Call Recordings")?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(
                     pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-                    weight: .regular
+                    weight: LibraryNotesLayout.sourceSymbolWeight
                 ))
         )
         #expect(LibraryNotesLayout.callRecordingsSourceSymbolName == "phone.and.waveform.fill")
