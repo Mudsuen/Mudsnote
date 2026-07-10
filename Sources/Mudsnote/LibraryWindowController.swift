@@ -145,6 +145,56 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
+struct LibrarySourceCountIndex {
+    let inboxCount: Int
+    private let folderCounts: [String: Int]
+    private let tagCounts: [String: Int]
+
+    init(notes: [NoteSearchResult], folderPaths: Set<String>) {
+        var inboxCount = 0
+        var folderCounts: [String: Int] = [:]
+        var tagCounts: [String: Int] = [:]
+
+        for note in notes {
+            if libraryIsInboxNote(note) {
+                inboxCount += 1
+            }
+
+            var directory = note.url.deletingLastPathComponent().standardizedFileURL
+            while true {
+                let path = directory.path
+                if folderPaths.contains(path) {
+                    folderCounts[path, default: 0] += 1
+                }
+                let parent = directory.deletingLastPathComponent().standardizedFileURL
+                guard parent.path != path else { break }
+                directory = parent
+            }
+
+            let noteTagKeys = Set(note.tags.map(Self.tagKey))
+            for key in noteTagKeys {
+                tagCounts[key, default: 0] += 1
+            }
+        }
+
+        self.inboxCount = inboxCount
+        self.folderCounts = folderCounts
+        self.tagCounts = tagCounts
+    }
+
+    func count(forFolder url: URL) -> Int {
+        folderCounts[url.standardizedFileURL.path, default: 0]
+    }
+
+    func count(forTag tag: String) -> Int {
+        tagCounts[Self.tagKey(tag), default: 0]
+    }
+
+    private static func tagKey(_ tag: String) -> String {
+        tag.folding(options: [.caseInsensitive], locale: .current)
+    }
+}
+
 private typealias LoadedLibraryNote = (title: String, body: String, tags: [String])
 
 private final class LoadedLibraryNoteCacheEntry: NSObject {
@@ -2677,6 +2727,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func refreshSourceCounts(using allNotes: [NoteSearchResult]) {
         let recentCount = noteStore.listRecentFiles(limit: 80).count
+        let folderPaths = Set(sourceFolderRows.map { $0.url.standardizedFileURL.path })
+        let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: folderPaths)
+        let trashCount = noteStore.trashedNoteCount()
 
         for button in sourceButtons {
             let count: Int
@@ -2686,22 +2739,13 @@ final class LibraryWindowController: NSWindowController,
             case .recent:
                 count = recentCount
             case .inbox:
-                count = allNotes.filter { note in
-                    note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                        || note.title.localizedCaseInsensitiveContains("Inbox")
-                }.count
+                count = countIndex.inboxCount
             case .trash:
-                count = noteStore.trashedNoteCount()
+                count = trashCount
             case .folder(let url):
-                let folderPath = url.standardizedFileURL.path
-                count = allNotes.filter { note in
-                    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
-                    return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
-                }.count
+                count = countIndex.count(forFolder: url)
             case .tag(let tag):
-                count = allNotes.filter { note in
-                    note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-                }.count
+                count = countIndex.count(forTag: tag)
             }
             sourceCountLabels[button.tag]?.stringValue = sourceCountText(count, for: scope(for: button))
         }

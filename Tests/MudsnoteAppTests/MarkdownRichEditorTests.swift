@@ -23,6 +23,49 @@ struct MarkdownRichEditorTests {
     )
 
     @Test
+    func librarySourceCountIndexAggregatesFoldersTagsAndInboxInOnePass() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Source Count Index", isDirectory: true)
+        let notesFolder = root.appendingPathComponent("Notes", isDirectory: true)
+        let projectsFolder = root.appendingPathComponent("Projects", isDirectory: true)
+        let clientFolder = projectsFolder.appendingPathComponent("Client", isDirectory: true)
+        let now = Date()
+        let notes = [
+            NoteSearchResult(
+                url: notesFolder.appendingPathComponent("Inbox.md"),
+                title: "Inbox",
+                snippet: "",
+                modifiedAt: now,
+                tags: ["Alpha", "alpha"]
+            ),
+            NoteSearchResult(
+                url: projectsFolder.appendingPathComponent("Plan.md"),
+                title: "Plan",
+                snippet: "",
+                modifiedAt: now,
+                tags: ["ALPHA"]
+            ),
+            NoteSearchResult(
+                url: clientFolder.appendingPathComponent("Brief.md"),
+                title: "Brief",
+                snippet: "",
+                modifiedAt: now,
+                tags: ["Beta"]
+            )
+        ]
+        let index = LibrarySourceCountIndex(
+            notes: notes,
+            folderPaths: Set([notesFolder.path, projectsFolder.path, clientFolder.path])
+        )
+
+        #expect(index.inboxCount == 1)
+        #expect(index.count(forFolder: notesFolder) == 1)
+        #expect(index.count(forFolder: projectsFolder) == 2)
+        #expect(index.count(forFolder: clientFolder) == 1)
+        #expect(index.count(forTag: "alpha") == 2)
+        #expect(index.count(forTag: "BETA") == 1)
+    }
+
+    @Test
     func richCodecRoundTripsHeadingAndLists() {
         let markdown = """
         # Smoke Title
