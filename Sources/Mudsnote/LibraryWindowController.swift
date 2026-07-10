@@ -997,6 +997,8 @@ final class LibraryWindowController: NSWindowController,
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
     private var searchResultsGeneration = 0
+    private var sourceSnapshotValidationTask: Task<Void, Never>?
+    private var sourceSnapshotValidationGeneration = 0
     private var hasPendingSearchReload = false
     private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
@@ -1232,6 +1234,7 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
+        cancelSourceSnapshotValidation()
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
         cancelActiveSearchResultReload()
@@ -2367,14 +2370,14 @@ final class LibraryWindowController: NSWindowController,
                 self.sourceFoldersLoading = false
                 self.sourceFolderRows = rows
                 self.rebuildSourceRows(includeTags: self.sourceTagsLoaded)
-                self.reloadNotes(selecting: self.selectedURL, loadFirstIfNeeded: false)
+                self.reloadNotesForNavigation(selecting: self.selectedURL, loadFirstIfNeeded: false)
             }
         }
     }
 
     func loadSourceFoldersForLibrary() {
         reloadSourceFolderRowsForCurrentState()
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
     private func scheduleDeferredSourceTagLoad() {
@@ -2399,7 +2402,7 @@ final class LibraryWindowController: NSWindowController,
         sourceTagsLoaded = true
         sourceTagNames = tags
         rebuildSourceRows(includeTags: true)
-        reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false)
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
     private func removeArrangedSubviews(from stack: NSStackView) {
@@ -2769,6 +2772,7 @@ final class LibraryWindowController: NSWindowController,
         sourceCountIndex: LibrarySourceCountIndex? = nil,
         refreshCounts: Bool = true
     ) {
+        cancelSourceSnapshotValidation()
         cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let needsAllNotes = query.isEmpty || refreshCounts
@@ -2812,6 +2816,82 @@ final class LibraryWindowController: NSWindowController,
         }
         refreshSourceSelection()
         updateToolbarActionState()
+    }
+
+    private func reloadNotesForNavigation(
+        selecting preferredURL: URL? = nil,
+        loadFirstIfNeeded: Bool
+    ) {
+        guard !sourceCountSnapshot.isEmpty else {
+            reloadNotes(selecting: preferredURL, loadFirstIfNeeded: loadFirstIfNeeded)
+            return
+        }
+
+        let cachedSnapshot = sourceCountSnapshot
+        reloadNotes(
+            selecting: preferredURL,
+            loadFirstIfNeeded: loadFirstIfNeeded,
+            allNotesSnapshot: cachedSnapshot,
+            refreshCounts: false
+        )
+        scheduleSourceSnapshotValidation(loadFirstIfNeeded: loadFirstIfNeeded)
+    }
+
+    private func scheduleSourceSnapshotValidation(loadFirstIfNeeded: Bool) {
+        sourceSnapshotValidationTask?.cancel()
+        sourceSnapshotValidationGeneration += 1
+        let generation = sourceSnapshotValidationGeneration
+        let scope = selectedScope
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let noteStore = noteStore
+        let snapshotLimit = Self.sourceCountSnapshotLimit
+        let sourceFolderPaths = currentSourceFolderPaths()
+
+        sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            guard !Task.isCancelled else { return }
+            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard let self,
+                      generation == self.sourceSnapshotValidationGeneration,
+                      scope == self.selectedScope,
+                      query == self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                    return
+                }
+
+                self.sourceSnapshotValidationTask = nil
+                let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
+                    ? countIndex
+                    : nil
+                guard allNotes != self.sourceCountSnapshot else {
+                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
+                    return
+                }
+
+                let selectedURL = self.selectedURL
+                let selectedPath = selectedURL?.standardizedFileURL.path
+                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: allNotes)
+                let selectionStillExists = selectedPath.map { path in
+                    nextNotes.contains { $0.url.standardizedFileURL.path == path }
+                } ?? false
+                self.reloadNotes(
+                    selecting: selectionStillExists ? selectedURL : nil,
+                    loadFirstIfNeeded: loadFirstIfNeeded && !selectionStillExists,
+                    allNotesSnapshot: allNotes,
+                    sourceCountIndex: reusableCountIndex
+                )
+            }
+        }
+    }
+
+    private func cancelSourceSnapshotValidation() {
+        sourceSnapshotValidationTask?.cancel()
+        sourceSnapshotValidationTask = nil
+        sourceSnapshotValidationGeneration += 1
     }
 
     private func updateNoteListHeader(query: String) {
@@ -3249,7 +3329,7 @@ final class LibraryWindowController: NSWindowController,
         do {
             try saveCurrentNoteIfNeeded()
             selectedScope = scope(for: sender)
-            reloadNotes(loadFirstIfNeeded: true)
+            reloadNotesForNavigation(loadFirstIfNeeded: true)
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
@@ -3283,7 +3363,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         reloadSourceFolderRowsForCurrentState()
-        reloadNotes(loadFirstIfNeeded: true)
+        reloadNotesForNavigation(loadFirstIfNeeded: true)
     }
 
     @objc
@@ -3476,7 +3556,7 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
-            reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: true)
+            reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
             applyEditorSearchHighlightsForCurrentQuery()
         } else if synchronously {
             reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
@@ -4110,6 +4190,7 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope != .trash else { return selectedURL }
         autosaveTask?.cancel()
         autosaveTask = nil
+        cancelSourceSnapshotValidation()
 
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
@@ -4117,10 +4198,11 @@ final class LibraryWindowController: NSWindowController,
         let title = rawTitle.isEmpty ? "无标题" : rawTitle
         guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return nil }
 
+        let previousURL = selectedURL
         let savedURL: URL
-        if let selectedURL {
-            loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: selectedURL))
-            savedURL = try noteStore.updateNote(at: selectedURL, title: title, body: body, tags: selectedTags)
+        if let previousURL {
+            loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
+            savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
         } else {
             savedURL = try noteStore.saveNewNote(
                 title: title,
@@ -4132,12 +4214,50 @@ final class LibraryWindowController: NSWindowController,
 
         selectedURL = savedURL
         isDirty = false
+        let savedAt = Date()
+        updateSourceCountSnapshotAfterSave(
+            previousURL: previousURL,
+            savedURL: savedURL,
+            title: title,
+            body: body,
+            tags: selectedTags,
+            modifiedAt: savedAt
+        )
         invalidateMovableNotePathCache()
-        statusLabel.stringValue = editorDateText(for: Date())
+        statusLabel.stringValue = editorDateText(for: savedAt)
         onSave(savedURL)
         updateEmptyState()
         updateToolbarActionState()
         return savedURL
+    }
+
+    private func updateSourceCountSnapshotAfterSave(
+        previousURL: URL?,
+        savedURL: URL,
+        title: String,
+        body: String,
+        tags: [String],
+        modifiedAt: Date
+    ) {
+        let previousPath = previousURL?.standardizedFileURL.path
+        let savedPath = savedURL.standardizedFileURL.path
+        sourceCountSnapshot.removeAll { note in
+            let notePath = note.url.standardizedFileURL.path
+            return notePath == previousPath || notePath == savedPath
+        }
+        sourceCountSnapshot.append(NoteSearchResult(
+            url: savedURL,
+            title: title,
+            snippet: libraryFirstMeaningfulLine(from: body) ?? "",
+            modifiedAt: modifiedAt,
+            tags: tags,
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
+        ))
+        sourceCountSnapshot.sort { $0.modifiedAt > $1.modifiedAt }
+        if sourceCountSnapshot.count > Self.sourceCountSnapshotLimit {
+            sourceCountSnapshot.removeLast(sourceCountSnapshot.count - Self.sourceCountSnapshotLimit)
+        }
     }
 
     @discardableResult
@@ -4432,7 +4552,16 @@ final class LibraryWindowController: NSWindowController,
 
     func selectRecentScopeForLibrary() {
         selectedScope = .recent
-        reloadNotes(loadFirstIfNeeded: true)
+        reloadNotesForNavigation(loadFirstIfNeeded: true)
+    }
+
+    func refreshSelectedScopeFromCachedSnapshotForLibrary() {
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
+    }
+
+    func waitForSourceSnapshotValidationForLibrary() async {
+        let task = sourceSnapshotValidationTask
+        await task?.value
     }
 
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {

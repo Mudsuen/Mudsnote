@@ -1598,6 +1598,52 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryNavigationUsesCachedSnapshotThenValidatesExternalChanges() async throws {
+        let suiteName = "mudsnote.library-navigation-snapshot-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-navigation-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        _ = try store.saveNewNote(title: "Cached Note", body: "Initial body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Cached Note"])
+
+        let externalURL = notesDirectory.appendingPathComponent("External Note.md")
+        try "# External Note\n\nAdded outside Mudsnote".write(
+            to: externalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        controller.refreshSelectedScopeFromCachedSnapshotForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Cached Note"])
+
+        await controller.waitForSourceSnapshotValidationForLibrary()
+        #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == ["Cached Note", "External Note"])
+    }
+
+    @MainActor
+    @Test
     func libraryWindowShowsEmptyMarkdownFileAsBlankEditorNewNote() throws {
         let suiteName = "mudsnote.library-empty-new-note-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2606,6 +2652,8 @@ struct MarkdownRichEditorTests {
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
         #expect(controller.statusLabel.stringValue != "正在保存...")
+        controller.refreshSelectedScopeFromCachedSnapshotForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
     }
 
     @MainActor
