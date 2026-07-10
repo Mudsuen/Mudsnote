@@ -197,6 +197,10 @@ extension NoteStore {
             .map { $0 }
     }
 
+    public func trashedNoteCount() -> Int {
+        markdownFiles(in: trashDirectory()).count
+    }
+
     public func trashNote(at url: URL) throws -> URL {
         let standardizedURL = url.standardizedFileURL
         let trashDirectory = trashDirectory()

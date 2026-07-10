@@ -272,8 +272,10 @@ struct MudsnoteCoreTests {
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
         store.notesDirectory = notesDirectory
         let noteURL = try store.saveNewNote(title: "Trash Candidate", body: "restore me", tags: ["trash-test"])
+        #expect(store.trashedNoteCount() == 0)
 
         let trashedURL = try store.trashNote(at: noteURL)
+        #expect(store.trashedNoteCount() == 1)
 
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
@@ -285,6 +287,7 @@ struct MudsnoteCoreTests {
         #expect(trashedNotes.first?.tags == ["trash-test"])
 
         let restoredURL = try store.restoreTrashedNote(at: trashedURL)
+        #expect(store.trashedNoteCount() == 0)
 
         #expect(restoredURL == noteURL)
         #expect(FileManager.default.fileExists(atPath: restoredURL.path))
@@ -292,7 +295,9 @@ struct MudsnoteCoreTests {
         #expect(store.listRecentFiles(limit: 5).first?.url == restoredURL)
 
         let trashedAgainURL = try store.trashNote(at: restoredURL)
+        #expect(store.trashedNoteCount() == 1)
         try store.permanentlyDeleteTrashedNote(at: trashedAgainURL)
+        #expect(store.trashedNoteCount() == 0)
 
         #expect(!FileManager.default.fileExists(atPath: trashedAgainURL.path))
         #expect(store.listTrashedNotes(limit: 10).isEmpty)

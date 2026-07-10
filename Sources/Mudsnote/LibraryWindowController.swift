@@ -2691,7 +2691,7 @@ final class LibraryWindowController: NSWindowController,
                         || note.title.localizedCaseInsensitiveContains("Inbox")
                 }.count
             case .trash:
-                count = noteStore.listTrashedNotes(limit: 10_000).count
+                count = noteStore.trashedNoteCount()
             case .folder(let url):
                 let folderPath = url.standardizedFileURL.path
                 count = allNotes.filter { note in
