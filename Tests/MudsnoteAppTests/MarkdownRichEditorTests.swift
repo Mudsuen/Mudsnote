@@ -3357,10 +3357,14 @@ struct MarkdownRichEditorTests {
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
         #expect(controller.tableView.selectedRow == 1)
         #expect(controller.titleField.stringValue == "Newer Keyboard Seed")
+        let initiallySelectedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        #expect(controller.hasCachedLoadedNoteForLibrary(at: initiallySelectedURL))
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.tableView.selectedRow == 2)
         #expect(controller.titleField.stringValue == "Older Keyboard Seed")
+        let secondSelectedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        #expect(controller.hasCachedLoadedNoteForLibrary(at: secondSelectedURL))
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.tableView.selectedRow == 2)
@@ -3374,6 +3378,60 @@ struct MarkdownRichEditorTests {
         controller.tableView.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.tableView.selectedRow == 1)
         #expect(controller.titleField.stringValue == "Newer Keyboard Seed")
+    }
+
+    @MainActor
+    @Test
+    func libraryLoadedNoteCacheInvalidatesAfterExternalMarkdownChange() throws {
+        let suiteName = "mudsnote.library-load-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-load-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let olderURL = try store.saveNewNote(title: "Cache Older", body: "Old body")
+        _ = try store.saveNewNote(title: "Cache Newer", body: "New body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let olderRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            (controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView)?
+                .titleLabel.stringValue == "Cache Older"
+        })
+        controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
+        #expect(controller.editorTextView.string == "Old body")
+        #expect(controller.hasCachedLoadedNoteForLibrary(at: olderURL))
+
+        try "Cache Older\n\nExternally changed body".write(to: olderURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(5)],
+            ofItemAtPath: olderURL.path
+        )
+        let newerRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            (controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView)?
+                .titleLabel.stringValue == "Cache Newer"
+        })
+        controller.tableView.selectRowIndexes(IndexSet(integer: newerRow), byExtendingSelection: false)
+        controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
+
+        #expect(controller.editorTextView.string.contains("Externally changed body"))
     }
 
     @MainActor

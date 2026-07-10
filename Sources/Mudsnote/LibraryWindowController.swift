@@ -170,6 +170,38 @@ private struct LibraryFolderRow: Equatable, Sendable {
 
 private typealias LoadedLibraryNote = (title: String, body: String, tags: [String])
 
+private final class LoadedLibraryNoteCacheEntry: NSObject {
+    let loaded: LoadedLibraryNote
+    let fileModifiedAt: Date
+    var renderedBody: NSAttributedString?
+
+    init(loaded: LoadedLibraryNote, fileModifiedAt: Date) {
+        self.loaded = loaded
+        self.fileModifiedAt = fileModifiedAt
+    }
+}
+
+private final class LoadedLibraryNoteCache: @unchecked Sendable {
+    private let storage: NSCache<NSString, LoadedLibraryNoteCacheEntry>
+
+    init(countLimit: Int) {
+        storage = NSCache<NSString, LoadedLibraryNoteCacheEntry>()
+        storage.countLimit = countLimit
+    }
+
+    func entry(forKey key: NSString) -> LoadedLibraryNoteCacheEntry? {
+        storage.object(forKey: key)
+    }
+
+    func insert(_ entry: LoadedLibraryNoteCacheEntry, forKey key: NSString) {
+        storage.setObject(entry, forKey: key)
+    }
+
+    func removeEntry(forKey key: NSString) {
+        storage.removeObject(forKey: key)
+    }
+}
+
 private enum LibrarySourceSection: Int {
     case folders = 0
     case tags = 1
@@ -940,6 +972,7 @@ final class LibraryWindowController: NSWindowController,
     private var selectedTags: [String] = []
     private var isDirty = false
     private var autosaveTask: Task<Void, Never>?
+    private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
     private var searchResultsGeneration = 0
@@ -957,6 +990,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagNames: [String] = []
     private var collapsedFolderPaths = Set<String>()
     private var expandedFolderPaths = Set<String>()
+    private let loadedNoteCache = LoadedLibraryNoteCache(countLimit: 32)
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
@@ -1165,6 +1199,8 @@ final class LibraryWindowController: NSWindowController,
     func windowWillClose(_ notification: Notification) {
         autosaveTask?.cancel()
         autosaveTask = nil
+        notePrefetchTask?.cancel()
+        notePrefetchTask = nil
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
         cancelActiveSearchResultReload()
@@ -3843,6 +3879,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func load(note: NoteSearchResult) {
         isLoadingInitialNote = false
+        if let cached = cachedLoadedNote(for: note) {
+            applyLoadedNote(cached, for: note)
+            return
+        }
+
         do {
             let loaded = try noteStore.loadNote(at: note.url)
             applyLoadedNoteResult(.success(loaded), for: note)
@@ -3855,27 +3896,136 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = false
         switch result {
         case .success(let loaded):
-            selectedURL = note.url
-            setEditorEditable(selectedScope != .trash)
-            applyDocument(title: loaded.title, body: loaded.body, tags: loaded.tags)
-            isDirty = false
-            statusLabel.stringValue = editorDateText(for: note.modifiedAt)
-            applyEditorSearchHighlightsForCurrentQuery()
-            updateEmptyState()
-            updateToolbarActionState()
+            let cached = cacheLoadedNote(loaded, for: note)
+            applyLoadedNote(cached, for: note)
         case .failure(let error):
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
     }
 
-    private func applyDocument(title: String, body: String, tags: [String]) {
+    private func applyLoadedNote(_ cached: LoadedLibraryNoteCacheEntry, for note: NoteSearchResult) {
+        selectedURL = note.url
+        setEditorEditable(selectedScope != .trash)
+
+        let renderedBody: NSAttributedString
+        if let rendered = cached.renderedBody {
+            renderedBody = rendered
+        } else {
+            let rendered = MarkdownRichTextCodec.render(
+                markdown: cached.loaded.body,
+                theme: theme,
+                baseURL: note.url
+            )
+            renderedBody = rendered
+            if !MarkdownEditorDocument.containsAttachmentReference(in: cached.loaded.body) {
+                cached.renderedBody = rendered.copy() as? NSAttributedString
+            }
+        }
+
+        applyDocument(
+            title: cached.loaded.title,
+            body: cached.loaded.body,
+            tags: cached.loaded.tags,
+            renderedBody: renderedBody
+        )
+        isDirty = false
+        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        applyEditorSearchHighlightsForCurrentQuery()
+        updateEmptyState()
+        updateToolbarActionState()
+        prefetchAdjacentNotes(around: note)
+    }
+
+    private func applyDocument(
+        title: String,
+        body: String,
+        tags: [String],
+        renderedBody: NSAttributedString? = nil
+    ) {
         suppressEditorChanges = true
         titleField.stringValue = title
         selectedTags = tags
-        editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: body, theme: theme, baseURL: selectedURL))
+        editorTextView.textStorage?.setAttributedString(
+            renderedBody ?? MarkdownRichTextCodec.render(markdown: body, theme: theme, baseURL: selectedURL)
+        )
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
         editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
         suppressEditorChanges = false
+    }
+
+    private func cachedLoadedNote(for note: NoteSearchResult) -> LoadedLibraryNoteCacheEntry? {
+        let key = loadedNoteCacheKey(for: note.url)
+        guard let cached = loadedNoteCache.entry(forKey: key),
+              let currentModifiedAt = fileModificationDate(at: note.url),
+              abs(currentModifiedAt.timeIntervalSince(cached.fileModifiedAt)) < 0.001 else {
+            loadedNoteCache.removeEntry(forKey: key)
+            return nil
+        }
+        return cached
+    }
+
+    @discardableResult
+    private func cacheLoadedNote(
+        _ loaded: LoadedLibraryNote,
+        for note: NoteSearchResult
+    ) -> LoadedLibraryNoteCacheEntry {
+        let cached = LoadedLibraryNoteCacheEntry(
+            loaded: loaded,
+            fileModifiedAt: fileModificationDate(at: note.url) ?? note.modifiedAt
+        )
+        loadedNoteCache.insert(cached, forKey: loadedNoteCacheKey(for: note.url))
+        return cached
+    }
+
+    private func prefetchAdjacentNotes(around note: NoteSearchResult) {
+        guard let index = notes.firstIndex(where: {
+            $0.url.standardizedFileURL.path == note.url.standardizedFileURL.path
+        }) else { return }
+
+        let lowerBound = max(0, index - 2)
+        let upperBound = min(notes.count, index + 3)
+        let candidates = notes[lowerBound..<upperBound].filter {
+            $0.url.standardizedFileURL.path != note.url.standardizedFileURL.path
+                && loadedNoteCache.entry(forKey: loadedNoteCacheKey(for: $0.url)) == nil
+        }
+        guard !candidates.isEmpty else { return }
+
+        let noteStore = noteStore
+        let cache = loadedNoteCache
+        notePrefetchTask?.cancel()
+        let task = Task.detached(priority: .utility) {
+            for candidate in candidates {
+                guard !Task.isCancelled else { return }
+                let key = candidate.url.standardizedFileURL.path as NSString
+                guard cache.entry(forKey: key) == nil,
+                      let loaded = try? noteStore.loadNote(at: candidate.url) else {
+                    continue
+                }
+                guard !Task.isCancelled else { return }
+                let modifiedAt = Self.fileModificationDate(at: candidate.url) ?? candidate.modifiedAt
+                cache.insert(
+                    LoadedLibraryNoteCacheEntry(loaded: loaded, fileModifiedAt: modifiedAt),
+                    forKey: key
+                )
+            }
+        }
+        notePrefetchTask = task
+    }
+
+    private func loadedNoteCacheKey(for url: URL) -> NSString {
+        url.standardizedFileURL.path as NSString
+    }
+
+    nonisolated private static func fileModificationDate(at url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    private func fileModificationDate(at url: URL) -> Date? {
+        Self.fileModificationDate(at: url)
+    }
+
+    func hasCachedLoadedNoteForLibrary(at url: URL) -> Bool {
+        loadedNoteCache.entry(forKey: loadedNoteCacheKey(for: url)) != nil
     }
 
     func applyEditorSearchHighlightsForCurrentQuery() {
@@ -3984,6 +4134,7 @@ final class LibraryWindowController: NSWindowController,
 
         let savedURL: URL
         if let selectedURL {
+            loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: selectedURL))
             savedURL = try noteStore.updateNote(at: selectedURL, title: title, body: body, tags: selectedTags)
         } else {
             savedURL = try noteStore.saveNewNote(
