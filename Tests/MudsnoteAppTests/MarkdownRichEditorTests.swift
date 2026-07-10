@@ -677,7 +677,7 @@ struct MarkdownRichEditorTests {
         #expect(window.title == "Mudsnote 笔记")
         #expect(window.titleVisibility == .hidden)
         #expect(window.titlebarAppearsTransparent)
-        #expect(window.toolbarStyle == .expanded)
+        #expect(window.toolbarStyle == .unified)
         #expect(window.styleMask.contains(.resizable))
         #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)

@@ -1052,7 +1052,7 @@ final class LibraryWindowController: NSWindowController,
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.minSize = LibraryNotesLayout.minimumWindowSize
-        window.toolbarStyle = .expanded
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
