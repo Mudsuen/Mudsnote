@@ -253,6 +253,11 @@ enum LibraryNotesLayout {
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
     static let sourceColumnWidth: CGFloat = 320
     static let noteColumnWidth: CGFloat = 304
+    static let sourceColumnMinimumWidth: CGFloat = 320
+    static let sourceColumnMaximumWidth: CGFloat = 440
+    static let noteColumnMinimumWidth: CGFloat = 304
+    static let noteColumnMaximumWidth: CGFloat = 480
+    static let editorColumnMinimumWidth: CGFloat = 360
     static let noteTableInitialWidth: CGFloat = 278
     static let noteTableMinimumWidth: CGFloat = 272
     static let sourceRowWidth: CGFloat = 292
@@ -355,6 +360,14 @@ enum LibraryNotesLayout {
 
     static func presentedWindowSize(in visibleFrame: NSRect, usesCanonicalSize: Bool) -> NSSize {
         usesCanonicalSize ? presentedWindowSize : presentedWindowSize(in: visibleFrame)
+    }
+
+    static func clampedSourceColumnWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, sourceColumnMinimumWidth), sourceColumnMaximumWidth)
+    }
+
+    static func clampedNoteColumnWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width, noteColumnMinimumWidth), noteColumnMaximumWidth)
     }
 }
 
@@ -928,6 +941,7 @@ final class LibraryNoteScrollView: NSScrollView {
 @MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
+    NSSplitViewDelegate,
     NSToolbarDelegate,
     NSToolbarItemValidation,
     NSTableViewDataSource,
@@ -1030,6 +1044,8 @@ final class LibraryWindowController: NSWindowController,
     private var movableNotePathCache: Set<String>?
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
+    private var isApplyingStoredSplitLayout = false
+    private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
@@ -1126,6 +1142,8 @@ final class LibraryWindowController: NSWindowController,
             window.setFrame(NSRect(origin: targetOrigin, size: targetSize), display: true)
             hasCenteredWindow = true
         }
+        window.contentView?.layoutSubtreeIfNeeded()
+        applyStoredLibrarySplitLayoutForLibrary()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -1194,8 +1212,59 @@ final class LibraryWindowController: NSWindowController,
 
     private func applyInitialNoteLoadResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
         guard window?.isVisible == true else { return }
+        if case .failure(let error) = result,
+           isMissingInitialNoteError(error) {
+            noteStore.removeRecentFileReference(at: note.url)
+            guard selectedNoteStillMatchesInitialLoad(note) else { return }
+            recoverFromMissingInitialNote(note)
+            return
+        }
         guard selectedNoteStillMatchesInitialLoad(note) else { return }
         applyLoadedNoteResult(result, for: note)
+    }
+
+    private func isMissingInitialNoteError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain,
+           (nsError.code == CocoaError.Code.fileNoSuchFile.rawValue
+            || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue) {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain,
+           nsError.code == Int(POSIXErrorCode.ENOENT.rawValue) {
+            return true
+        }
+        if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isMissingInitialNoteError(underlyingError)
+        }
+        return false
+    }
+
+    private func recoverFromMissingInitialNote(_ missingNote: NoteSearchResult) {
+        let missingPath = missingNote.url.standardizedFileURL.path
+        notes.removeAll { $0.url.standardizedFileURL.path == missingPath }
+        listRows = buildGroupedRows(for: notes)
+
+        suppressSelectionChanges = true
+        tableView.reloadData()
+        tableView.deselectAll(nil)
+        suppressSelectionChanges = false
+        clearCurrentDocumentAfterRemoval()
+        statusLabel.stringValue = ""
+        updateNoteListHeader(query: "")
+        updateNoteListEmptyState(query: "")
+
+        guard let nextNoteRow = listRows.firstIndex(where: { $0.note != nil }),
+              let nextNote = note(at: nextNoteRow) else {
+            updateToolbarActionState()
+            return
+        }
+
+        suppressSelectionChanges = true
+        tableView.selectRowIndexes(IndexSet(integer: nextNoteRow), byExtendingSelection: false)
+        suppressSelectionChanges = false
+        showInitialNoteLoadingShell(for: nextNote)
+        loadInitialNoteAfterLaunch(nextNote)
     }
 
     private func scheduleFullLibrarySnapshotReload() {
@@ -1245,6 +1314,9 @@ final class LibraryWindowController: NSWindowController,
         searchReloadWorkItem = nil
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
+        splitLayoutPersistenceWorkItem?.cancel()
+        splitLayoutPersistenceWorkItem = nil
+        persistLibrarySplitLayoutForLibrary()
         try? saveCurrentNoteIfNeeded()
         onClose()
     }
@@ -1257,6 +1329,7 @@ final class LibraryWindowController: NSWindowController,
         let splitView = NSSplitView()
         splitView.isVertical = true
         splitView.dividerStyle = .thin
+        splitView.delegate = self
         splitView.translatesAutoresizingMaskIntoConstraints = false
         librarySplitView = splitView
         contentView.addSubview(splitView)
@@ -1268,8 +1341,9 @@ final class LibraryWindowController: NSWindowController,
         splitView.addArrangedSubview(sourceList)
         splitView.addArrangedSubview(sidebar)
         splitView.addArrangedSubview(editor)
-        sourceList.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceColumnWidth).isActive = true
-        sidebar.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.noteColumnWidth).isActive = true
+        sourceList.isHidden = !noteStore.librarySourceListVisible
+        contentView.layoutSubtreeIfNeeded()
+        applyStoredLibrarySplitLayoutForLibrary()
     }
 
     private func buildSourceList() -> NSView {
@@ -4599,6 +4673,125 @@ final class LibraryWindowController: NSWindowController,
         sourceListView?.isHidden == false
     }
 
+    private var storedSourceColumnWidthForLibrary: CGFloat {
+        LibraryNotesLayout.clampedSourceColumnWidth(
+            CGFloat(noteStore.librarySourceColumnWidth ?? Double(LibraryNotesLayout.sourceColumnWidth))
+        )
+    }
+
+    private var storedNoteColumnWidthForLibrary: CGFloat {
+        LibraryNotesLayout.clampedNoteColumnWidth(
+            CGFloat(noteStore.libraryNoteColumnWidth ?? Double(LibraryNotesLayout.noteColumnWidth))
+        )
+    }
+
+    func applyStoredLibrarySplitLayoutForLibrary() {
+        guard let splitView = librarySplitView,
+              splitView.arrangedSubviews.count == 3,
+              splitView.bounds.width > 0 else {
+            return
+        }
+
+        isApplyingStoredSplitLayout = true
+        defer { isApplyingStoredSplitLayout = false }
+
+        let sourceList = splitView.arrangedSubviews[0]
+        let noteList = splitView.arrangedSubviews[1]
+        sourceList.isHidden = !noteStore.librarySourceListVisible
+        splitView.adjustSubviews()
+
+        if !sourceList.isHidden {
+            splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
+            splitView.layoutSubtreeIfNeeded()
+        }
+        let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
+        splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
+        splitView.layoutSubtreeIfNeeded()
+    }
+
+    func persistLibrarySplitLayoutForLibrary() {
+        guard !isApplyingStoredSplitLayout,
+              let splitView = librarySplitView,
+              splitView.arrangedSubviews.count == 3 else {
+            return
+        }
+
+        let sourceList = splitView.arrangedSubviews[0]
+        let noteList = splitView.arrangedSubviews[1]
+        if !sourceList.isHidden, sourceList.frame.width > 0 {
+            noteStore.librarySourceColumnWidth = Double(
+                LibraryNotesLayout.clampedSourceColumnWidth(sourceList.frame.width)
+            )
+        }
+        if noteList.frame.width > 0 {
+            noteStore.libraryNoteColumnWidth = Double(
+                LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width)
+            )
+        }
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard let resizedSplitView = notification.object as? NSSplitView,
+              resizedSplitView === librarySplitView,
+              !isApplyingStoredSplitLayout,
+              window?.isVisible == true else {
+            return
+        }
+        splitLayoutPersistenceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.splitLayoutPersistenceWorkItem = nil
+            self?.persistLibrarySplitLayoutForLibrary()
+        }
+        splitLayoutPersistenceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(160), execute: workItem)
+    }
+
+    func splitView(_ splitView: NSSplitView, shouldAdjustSizeOfSubview view: NSView) -> Bool {
+        view === splitView.arrangedSubviews.last
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMinCoordinate proposedMinimumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        switch dividerIndex {
+        case 0:
+            return LibraryNotesLayout.sourceColumnMinimumWidth
+        case 1:
+            let noteList = splitView.arrangedSubviews[1]
+            return noteList.frame.minX + LibraryNotesLayout.noteColumnMinimumWidth
+        default:
+            return proposedMinimumPosition
+        }
+    }
+
+    func splitView(
+        _ splitView: NSSplitView,
+        constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+        ofSubviewAt dividerIndex: Int
+    ) -> CGFloat {
+        let editorLimit = splitView.bounds.width
+            - LibraryNotesLayout.editorColumnMinimumWidth
+            - splitView.dividerThickness
+        switch dividerIndex {
+        case 0:
+            let remainingColumnsLimit = splitView.bounds.width
+                - LibraryNotesLayout.noteColumnMinimumWidth
+                - LibraryNotesLayout.editorColumnMinimumWidth
+                - (splitView.dividerThickness * 2)
+            return min(LibraryNotesLayout.sourceColumnMaximumWidth, remainingColumnsLimit)
+        case 1:
+            let noteList = splitView.arrangedSubviews[1]
+            return min(
+                noteList.frame.minX + LibraryNotesLayout.noteColumnMaximumWidth,
+                editorLimit
+            )
+        default:
+            return proposedMaximumPosition
+        }
+    }
+
     @discardableResult
     func toggleSourceListForLibrary() -> Bool {
         setSourceListVisibleForLibrary(!isSourceListVisibleForLibrary)
@@ -4607,9 +4800,9 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
         guard let sourceListView else { return false }
+        noteStore.librarySourceListVisible = isVisible
         sourceListView.isHidden = !isVisible
-        sourceListView.superview?.needsLayout = true
-        sourceListView.superview?.layoutSubtreeIfNeeded()
+        applyStoredLibrarySplitLayoutForLibrary()
         updateToolbarActionState()
         return isSourceListVisibleForLibrary
     }

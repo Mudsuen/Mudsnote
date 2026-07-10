@@ -87,6 +87,21 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryTagsSectionCollapsed) }
     }
 
+    public var librarySourceColumnWidth: Double? {
+        get { storedPositiveFiniteDouble(forKey: NoteStoreDefaultsKey.librarySourceColumnWidth) }
+        set { storeOptionalFiniteDouble(newValue, forKey: NoteStoreDefaultsKey.librarySourceColumnWidth) }
+    }
+
+    public var libraryNoteColumnWidth: Double? {
+        get { storedPositiveFiniteDouble(forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth) }
+        set { storeOptionalFiniteDouble(newValue, forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth) }
+    }
+
+    public var librarySourceListVisible: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.librarySourceListVisible) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.librarySourceListVisible) }
+    }
+
     public var libraryPinnedNotePaths: [String] {
         let storedPaths = defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? []
         return Array(Set(storedPaths.map {
@@ -306,6 +321,23 @@ extension NoteStore {
             guard path == oldPath || path.hasPrefix(oldPath + "/") else { return path }
             return newPath + String(path.dropFirst(oldPath.count))
         })
+    }
+
+    private func storedPositiveFiniteDouble(forKey key: String) -> Double? {
+        guard let value = defaults.object(forKey: key) as? Double,
+              value.isFinite,
+              value > 0 else {
+            return nil
+        }
+        return value
+    }
+
+    private func storeOptionalFiniteDouble(_ value: Double?, forKey key: String) {
+        guard let value, value.isFinite, value > 0 else {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        defaults.set(value, forKey: key)
     }
 
     private func readStoredFrame(xKey: String, yKey: String, widthKey: String, heightKey: String) -> StoredWindowFrame? {

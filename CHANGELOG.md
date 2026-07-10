@@ -696,6 +696,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Persisted expanded/collapsed folder paths and folder/tag section state in lightweight preferences, restored them before the source list is built, and kept stored paths synchronized through folder rename and delete lifecycles. Cleaned the content-state visual fixture so weekday metadata is not duplicated by fixture text.
 - Lesson: Navigation state belongs in tiny durable preferences, not the note index; persistence should preserve the user's hierarchy without adding filesystem reads to launch or source navigation.
 
+### 119. Persistent resizable Notes workspace
+
+- Problem: Required width constraints locked the source and note columns to their startup sizes, so the three-pane workspace could not be adjusted like Apple Notes and source visibility reset with each new window.
+- Fix: Replaced locked widths with constrained native split-view dividers, kept the editor as the window-resize absorption column, and persisted source width, note width, and source-list visibility in lightweight preferences. Drag updates are coalesced before writing preferences, while window close still persists immediately. Added cross-window regression coverage and installed-app restart verification.
+- Lesson: Workspace geometry should remain native and user-controlled; small preferences can restore layout without adding note reads, indexing work, or a second document model.
+
+### 120. Silent recovery from stale recent notes
+
+- Problem: The lightweight launch snapshot could contain a recently opened Markdown path that had since been removed outside Mudsnote, causing direct launch to block on an `无法打开笔记` warning before the full library snapshot arrived.
+- Fix: Missing-file failures during asynchronous initial hydration now remove only the stale recent reference, rebuild the current lightweight rows, and continue loading the next note. Other load failures still surface normally, and recent-list construction remains free of synchronous metadata reads.
+- Lesson: Fast launch snapshots must tolerate stale derived state; repair the disposable reference on confirmed `ENOENT` instead of turning an expected external-file change into a modal startup failure.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

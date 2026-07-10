@@ -20,6 +20,10 @@ extension NoteStore {
         }
     }
 
+    public func removeRecentFileReference(at url: URL) {
+        forgetRecentFile(url.standardizedFileURL)
+    }
+
     private func recentTitle(for url: URL) -> String {
         var stem = url.deletingPathExtension().lastPathComponent
         stem = stem.replacingOccurrences(

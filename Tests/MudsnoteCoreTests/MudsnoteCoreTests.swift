@@ -46,6 +46,9 @@ struct MudsnoteCoreTests {
         #expect(components.year == 2025)
         #expect(components.month == 11)
         #expect(components.day == 3)
+
+        harness.store.removeRecentFileReference(at: URL(fileURLWithPath: missingPath))
+        #expect(harness.store.listRecentFiles(limit: 5).isEmpty)
     }
 
     @Test
@@ -528,6 +531,9 @@ struct MudsnoteCoreTests {
         #expect(store.libraryExpandedFolderPaths.isEmpty)
         #expect(!store.libraryFoldersSectionCollapsed)
         #expect(!store.libraryTagsSectionCollapsed)
+        #expect(store.librarySourceColumnWidth == nil)
+        #expect(store.libraryNoteColumnWidth == nil)
+        #expect(store.librarySourceListVisible)
         #expect(!store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://localhost:11434")
         #expect(store.aiOllamaModel == "llama3.2")
@@ -541,6 +547,9 @@ struct MudsnoteCoreTests {
         store.libraryExpandedFolderPaths = ["/tmp/Notes/Projects"]
         store.libraryFoldersSectionCollapsed = true
         store.libraryTagsSectionCollapsed = true
+        store.librarySourceColumnWidth = 372
+        store.libraryNoteColumnWidth = 388
+        store.librarySourceListVisible = false
         store.aiEnabled = true
         store.aiOllamaBaseURLString = "http://127.0.0.1:11434"
         store.aiOllamaModel = "qwen2.5"
@@ -554,6 +563,9 @@ struct MudsnoteCoreTests {
         #expect(store.libraryExpandedFolderPaths == ["/tmp/Notes/Projects"])
         #expect(store.libraryFoldersSectionCollapsed)
         #expect(store.libraryTagsSectionCollapsed)
+        #expect(store.librarySourceColumnWidth == 372)
+        #expect(store.libraryNoteColumnWidth == 388)
+        #expect(!store.librarySourceListVisible)
         #expect(store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://127.0.0.1:11434")
         #expect(store.aiOllamaModel == "qwen2.5")

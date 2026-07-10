@@ -82,6 +82,7 @@ Use this checklist to decide whether future work is moving toward the goal.
 - The editor-tools group should keep the earlier compact, borderless dark capsule treatment: `184x32`, `19pt` toolbar symbols, plain dark `NSView` fill, clear border when rim alpha is zero, whole-capsule disabled fade, and no oversized custom buttons.
 - Copy/export and current-note more actions should share a compact `72x32` dark capsule with no visible rim while retaining independent menu actions and disabled icon states.
 - The middle-column list-options and new-note actions should use independent compact `30x30` dark circular buttons with `16pt` symbols and no visible rim.
+- Source and note columns are independently resizable within stable limits; their widths and source-list visibility persist across launches while the editor absorbs ordinary window resizing.
 - Keyboard shortcuts map to expected note actions.
 
 ### 2. Source List
@@ -201,6 +202,7 @@ Objective: make retrieval feel Notes-grade.
 - task and attachment indicators
 - lightweight local index cache
 - recent access and pinned notes
+- stale recent-file references self-heal during asynchronous launch hydration without adding a synchronous filesystem scan
 
 Exit criteria: searching and returning to old notes is faster than manually navigating folders.
 

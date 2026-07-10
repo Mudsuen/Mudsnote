@@ -1056,12 +1056,17 @@ struct MarkdownRichEditorTests {
         #expect(noteTrackingSeparator.dividerIndex == 1)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
-        #expect(sourceList.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceColumnWidth
+        #expect(!sourceList.constraints.contains {
+            $0.firstAttribute == .width && $0.priority == .required
         })
-        #expect(noteList.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.noteColumnWidth
+        #expect(!noteList.constraints.contains {
+            $0.firstAttribute == .width && $0.priority == .required
         })
+        #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 320)
+        #expect(LibraryNotesLayout.sourceColumnMaximumWidth == 440)
+        #expect(LibraryNotesLayout.noteColumnMinimumWidth == 304)
+        #expect(LibraryNotesLayout.noteColumnMaximumWidth == 480)
+        #expect(LibraryNotesLayout.editorColumnMinimumWidth == 360)
         let toggleSourceItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.toggle-sidebar"
         })
@@ -1339,6 +1344,76 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func librarySplitLayoutPersistsAcrossWindows() throws {
+        let suiteName = "mudsnote-library-split-layout-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-split-layout-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Split Layout", body: "Body")
+
+        let firstController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { firstController.close() }
+        firstController.showWindowAndFocus()
+        let firstWindow = try #require(firstController.window)
+        firstWindow.contentView?.layoutSubtreeIfNeeded()
+        let firstSplitView = try #require(firstWindow.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
+        let desiredSourceWidth: CGFloat = 384
+        let desiredNoteWidth: CGFloat = 396
+
+        firstSplitView.setPosition(desiredSourceWidth, ofDividerAt: 0)
+        firstSplitView.layoutSubtreeIfNeeded()
+        let firstNoteList = firstSplitView.arrangedSubviews[1]
+        firstSplitView.setPosition(firstNoteList.frame.minX + desiredNoteWidth, ofDividerAt: 1)
+        firstSplitView.layoutSubtreeIfNeeded()
+        firstController.persistLibrarySplitLayoutForLibrary()
+
+        #expect(abs((store.librarySourceColumnWidth ?? 0) - Double(desiredSourceWidth)) < 1)
+        #expect(abs((store.libraryNoteColumnWidth ?? 0) - Double(desiredNoteWidth)) < 1)
+        #expect(firstController.setSourceListVisibleForLibrary(false) == false)
+        #expect(!store.librarySourceListVisible)
+
+        let restoredController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { restoredController.close() }
+        restoredController.showWindowAndFocus()
+        let restoredWindow = try #require(restoredController.window)
+        restoredWindow.contentView?.layoutSubtreeIfNeeded()
+        let restoredSplitView = try #require(restoredWindow.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
+
+        #expect(restoredSplitView.arrangedSubviews[0].isHidden)
+        #expect(!restoredController.isSourceListVisibleForLibrary)
+        #expect(restoredController.setSourceListVisibleForLibrary(true))
+        restoredWindow.contentView?.layoutSubtreeIfNeeded()
+
+        #expect(abs(restoredSplitView.arrangedSubviews[0].frame.width - desiredSourceWidth) < 1)
+        #expect(abs(restoredSplitView.arrangedSubviews[1].frame.width - desiredNoteWidth) < 1)
+        #expect(store.librarySourceListVisible)
     }
 
     @MainActor
@@ -4157,6 +4232,54 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowDeferredShowSkipsMissingRecentNoteWithoutAlert() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-missing-recent-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-missing-recent-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let existingURL = try store.saveNewNote(title: "Existing Recent", body: "Existing body")
+        let missingURL = store.notesDirectory.appendingPathComponent("Missing Recent.md")
+        defaults.set(
+            [missingURL.path, existingURL.path],
+            forKey: "mudsnote.recentFiles"
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            controller.close()
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        controller.showWindowAndFocus()
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, controller.editorTextView.string != "Existing body" {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        #expect(controller.titleField.stringValue == "Existing Recent")
+        #expect(controller.editorTextView.string == "Existing body")
+        #expect(!store.listRecentFiles(limit: 5).contains { $0.url.standardizedFileURL == missingURL.standardizedFileURL })
+        #expect(NSApp.modalWindow == nil)
     }
 
     @MainActor
