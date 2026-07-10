@@ -3410,8 +3410,22 @@ struct MarkdownRichEditorTests {
             $0.title == "library"
         } == false)
         #expect(tagsHeader.image?.accessibilityDescription == "Tags")
+        #expect(store.libraryTagsSectionCollapsed)
+
+        let reopenedCollapsedTagsController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { reopenedCollapsedTagsController.close() }
+        reopenedCollapsedTagsController.loadSourceTagsForLibrary()
+        #expect(reopenedCollapsedTagsController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "library"
+        } == false)
 
         tagsHeader.performClick(nil)
+        #expect(!store.libraryTagsSectionCollapsed)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "library"
         } == true)
@@ -3526,6 +3540,19 @@ struct MarkdownRichEditorTests {
         })
         collapsedProjectsDisclosure.performClick(nil)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == true)
+        #expect(store.libraryExpandedFolderPaths.contains(projectsFolder.standardizedFileURL.path))
+
+        let reopenedController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { reopenedController.close() }
+        reopenedController.loadSourceFoldersForLibrary()
+        #expect(reopenedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Client"
         } == true)
     }

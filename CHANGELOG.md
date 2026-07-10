@@ -690,6 +690,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a lightweight AppKit-backed HTML/RTF normalizer that maps headings, bold, italic, underline, strikethrough, links, bullets, numbering, and fixed-width runs into the existing rich Markdown model. Exact `Cmd+V` routing now inserts safe paragraph boundaries beside existing text, and rich text wins over incidental image flavors without changing Finder-file or pure-image paste.
 - Lesson: Rich paste should reuse the system document parser for input and the existing Markdown codec for output; installed-app verification must include insertion beside existing text, autosave, and restart reload.
 
+### 118. Persistent sidebar disclosure state
+
+- Problem: Folder and Tags disclosure choices reset whenever the Notes-like library window or app reopened, making repeated navigation less predictable than Apple Notes.
+- Fix: Persisted expanded/collapsed folder paths and folder/tag section state in lightweight preferences, restored them before the source list is built, and kept stored paths synchronized through folder rename and delete lifecycles. Cleaned the content-state visual fixture so weekday metadata is not duplicated by fixture text.
+- Lesson: Navigation state belongs in tiny durable preferences, not the note index; persistence should preserve the user's hierarchy without adding filesystem reads to launch or source navigation.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

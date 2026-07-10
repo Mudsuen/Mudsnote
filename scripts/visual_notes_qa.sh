@@ -143,7 +143,7 @@ try writeNote(
     filename: "项目计划.md",
     title: "项目计划",
     body: """
-    Monday  本周重点
+    本周重点
     整理需求并确定优先级
     完成编辑器交互验证
     检查桌面端与移动端体验

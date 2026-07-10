@@ -67,6 +67,26 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryGroupsNotesByDate) }
     }
 
+    public var libraryCollapsedFolderPaths: Set<String> {
+        get { storedStandardizedPathSet(forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }
+        set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }
+    }
+
+    public var libraryExpandedFolderPaths: Set<String> {
+        get { storedStandardizedPathSet(forKey: NoteStoreDefaultsKey.libraryExpandedFolderPaths) }
+        set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryExpandedFolderPaths) }
+    }
+
+    public var libraryFoldersSectionCollapsed: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryFoldersSectionCollapsed) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryFoldersSectionCollapsed) }
+    }
+
+    public var libraryTagsSectionCollapsed: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryTagsSectionCollapsed) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryTagsSectionCollapsed) }
+    }
+
     public var libraryPinnedNotePaths: [String] {
         let storedPaths = defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? []
         return Array(Set(storedPaths.map {
@@ -114,6 +134,31 @@ extension NoteStore {
             $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
         }
         defaults.set(remainingPaths, forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    func replaceLibraryFolderDisclosurePathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let newPath = newDirectory.standardizedFileURL.path
+        libraryCollapsedFolderPaths = replacingPathPrefix(
+            oldPath,
+            with: newPath,
+            in: libraryCollapsedFolderPaths
+        )
+        libraryExpandedFolderPaths = replacingPathPrefix(
+            oldPath,
+            with: newPath,
+            in: libraryExpandedFolderPaths
+        )
+    }
+
+    func removeLibraryFolderDisclosurePaths(in directory: URL) {
+        let directoryPath = directory.standardizedFileURL.path
+        libraryCollapsedFolderPaths = libraryCollapsedFolderPaths.filter {
+            $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
+        }
+        libraryExpandedFolderPaths = libraryExpandedFolderPaths.filter {
+            $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
+        }
     }
 
     public var aiEnabled: Bool {
@@ -241,6 +286,26 @@ extension NoteStore {
     func storedExtraDirectories() -> [URL] {
         ((defaults.array(forKey: NoteStoreDefaultsKey.extraDirectories) as? [String]) ?? [])
             .map { URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL }
+    }
+
+    private func storedStandardizedPathSet(forKey key: String) -> Set<String> {
+        Set((defaults.stringArray(forKey: key) ?? []).map {
+            URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
+        })
+    }
+
+    private func storeStandardizedPathSet(_ paths: Set<String>, forKey key: String) {
+        let standardized = Set(paths.map {
+            URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
+        })
+        defaults.set(standardized.sorted(), forKey: key)
+    }
+
+    private func replacingPathPrefix(_ oldPath: String, with newPath: String, in paths: Set<String>) -> Set<String> {
+        Set(paths.map { path in
+            guard path == oldPath || path.hasPrefix(oldPath + "/") else { return path }
+            return newPath + String(path.dropFirst(oldPath.count))
+        })
     }
 
     private func readStoredFrame(xKey: String, yKey: String, widthKey: String, heightKey: String) -> StoredWindowFrame? {

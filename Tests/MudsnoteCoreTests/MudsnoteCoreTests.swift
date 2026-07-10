@@ -524,6 +524,10 @@ struct MudsnoteCoreTests {
         #expect(store.spellCheckingEnabled)
         #expect(store.libraryNoteSortOrderRawValue == 0)
         #expect(store.libraryGroupsNotesByDate)
+        #expect(store.libraryCollapsedFolderPaths.isEmpty)
+        #expect(store.libraryExpandedFolderPaths.isEmpty)
+        #expect(!store.libraryFoldersSectionCollapsed)
+        #expect(!store.libraryTagsSectionCollapsed)
         #expect(!store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://localhost:11434")
         #expect(store.aiOllamaModel == "llama3.2")
@@ -533,6 +537,10 @@ struct MudsnoteCoreTests {
         store.spellCheckingEnabled = false
         store.libraryNoteSortOrderRawValue = 1
         store.libraryGroupsNotesByDate = false
+        store.libraryCollapsedFolderPaths = ["/tmp/Notes"]
+        store.libraryExpandedFolderPaths = ["/tmp/Notes/Projects"]
+        store.libraryFoldersSectionCollapsed = true
+        store.libraryTagsSectionCollapsed = true
         store.aiEnabled = true
         store.aiOllamaBaseURLString = "http://127.0.0.1:11434"
         store.aiOllamaModel = "qwen2.5"
@@ -542,9 +550,35 @@ struct MudsnoteCoreTests {
         #expect(!store.spellCheckingEnabled)
         #expect(store.libraryNoteSortOrderRawValue == 1)
         #expect(!store.libraryGroupsNotesByDate)
+        #expect(store.libraryCollapsedFolderPaths == ["/tmp/Notes"])
+        #expect(store.libraryExpandedFolderPaths == ["/tmp/Notes/Projects"])
+        #expect(store.libraryFoldersSectionCollapsed)
+        #expect(store.libraryTagsSectionCollapsed)
         #expect(store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://127.0.0.1:11434")
         #expect(store.aiOllamaModel == "qwen2.5")
+    }
+
+    @Test
+    func folderDisclosurePathsPersistAndFollowFolderLifecycle() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        store.notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let project = try store.createFolder(named: "Project")
+        let client = project.appendingPathComponent("Client", isDirectory: true)
+        try FileManager.default.createDirectory(at: client, withIntermediateDirectories: true)
+
+        store.libraryCollapsedFolderPaths = [project.path]
+        store.libraryExpandedFolderPaths = [client.path]
+
+        let renamed = try store.renamePreferredDirectory(project, to: "Renamed Project")
+        let renamedClient = renamed.appendingPathComponent("Client", isDirectory: true)
+        #expect(store.libraryCollapsedFolderPaths == [renamed.path])
+        #expect(store.libraryExpandedFolderPaths == [renamedClient.path])
+
+        _ = try store.trashFolder(at: renamed)
+        #expect(store.libraryCollapsedFolderPaths.isEmpty)
+        #expect(store.libraryExpandedFolderPaths.isEmpty)
     }
 
     @Test

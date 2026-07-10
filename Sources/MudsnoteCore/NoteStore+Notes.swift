@@ -116,6 +116,7 @@ extension NoteStore {
             try fileManager.moveItem(at: oldDirectory, to: newDirectory)
             replaceRecentPathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryPinnedNotePathPrefix(oldDirectory, with: newDirectory)
+            replaceLibraryFolderDisclosurePathPrefix(oldDirectory, with: newDirectory)
         }
         replacePreferredDirectory(oldDirectory, with: newDirectory)
         return newDirectory
@@ -165,6 +166,7 @@ extension NoteStore {
         removePreferredDirectory(originalDirectory)
         forgetRecentPathPrefix(originalDirectory)
         removeLibraryPinnedNotePaths(in: originalDirectory)
+        removeLibraryFolderDisclosurePaths(in: originalDirectory)
         return trashedDirectory
     }
 

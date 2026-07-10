@@ -1071,6 +1071,10 @@ final class LibraryWindowController: NSWindowController,
         self.onClose = onClose
         self.noteListSortOrder = LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue) ?? .dateEdited
         self.groupsNoteListByDate = noteStore.libraryGroupsNotesByDate
+        self.collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
+        self.expandedFolderPaths = noteStore.libraryExpandedFolderPaths
+        self.sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
+        self.sourceTagsSectionCollapsed = noteStore.libraryTagsSectionCollapsed
 
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: LibraryNotesLayout.initialWindowSize),
@@ -3370,6 +3374,7 @@ final class LibraryWindowController: NSWindowController,
             expandedFolderPaths.insert(folderPath)
         }
 
+        persistSourceDisclosureState()
         reloadSourceFolderRowsForCurrentState()
         reloadNotesForNavigation(loadFirstIfNeeded: true)
     }
@@ -3381,11 +3386,13 @@ final class LibraryWindowController: NSWindowController,
         switch section {
         case .folders:
             sourceFoldersSectionCollapsed.toggle()
+            noteStore.libraryFoldersSectionCollapsed = sourceFoldersSectionCollapsed
             if !sourceFoldersSectionCollapsed {
                 scheduleDeferredSourceFolderLoad()
             }
         case .tags:
             sourceTagsSectionCollapsed.toggle()
+            noteStore.libraryTagsSectionCollapsed = sourceTagsSectionCollapsed
             if !sourceTagsSectionCollapsed {
                 scheduleDeferredSourceTagLoad()
             }
@@ -3398,6 +3405,18 @@ final class LibraryWindowController: NSWindowController,
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         refreshSourceCounts(using: sourceCountSnapshot)
         refreshSourceSelection()
+    }
+
+    private func persistSourceDisclosureState() {
+        noteStore.libraryCollapsedFolderPaths = collapsedFolderPaths
+        noteStore.libraryExpandedFolderPaths = expandedFolderPaths
+    }
+
+    private func reloadPersistedSourceDisclosureState() {
+        collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
+        expandedFolderPaths = noteStore.libraryExpandedFolderPaths
+        sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
+        sourceTagsSectionCollapsed = noteStore.libraryTagsSectionCollapsed
     }
 
     private func scope(for button: NSButton) -> LibraryScope {
@@ -4613,6 +4632,7 @@ final class LibraryWindowController: NSWindowController,
 
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         invalidateMovableNotePathCache()
+        reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
@@ -4626,6 +4646,7 @@ final class LibraryWindowController: NSWindowController,
 
         _ = try noteStore.trashFolder(at: folderURL)
         invalidateMovableNotePathCache()
+        reloadPersistedSourceDisclosureState()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
         reloadSourceFolderRowsForCurrentState()
