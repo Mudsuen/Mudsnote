@@ -766,20 +766,20 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.export",
             "mudsnote.library.toolbar.more"
         ])
-        let shareToolbarButton = try #require(fileActionButtons.first {
+        let exportToolbarButton = try #require(fileActionButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.export"
         })
-        #expect(shareToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.export")
-        #expect(!shareToolbarButton.isBordered)
-        #expect(shareToolbarButton.constraints.contains {
+        #expect(exportToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.export")
+        #expect(!exportToolbarButton.isBordered)
+        #expect(exportToolbarButton.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarMenuButtonWidth
         })
-        #expect(shareToolbarButton.constraints.contains {
+        #expect(exportToolbarButton.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarMenuButtonHeight
         })
-        #expect(shareToolbarButton.image?.accessibilityDescription == "分享与导出")
-        #expect(shareToolbarButton.toolTip == "分享与导出")
-        #expect(controller.makeShareExportMenuForLibrary().items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
+        #expect(exportToolbarButton.image?.accessibilityDescription == "复制与导出")
+        #expect(exportToolbarButton.toolTip == "复制与导出")
+        #expect(controller.makeExportMenuForLibrary().items.map(\.title) == ["复制 Markdown 内容", "导出 Markdown..."])
         let moreToolbarButton = try #require(fileActionButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.more"
         })
@@ -1018,17 +1018,9 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
         })
         #expect(sourcePrimaryStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
-        let sourceSmartStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySourceSmartStack"
-        })
-        #expect(sourceSmartStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
         let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourceTrashStack"
         })
-        let smartSourceTitles = sourceSmartStack.arrangedSubviews
-            .flatMap(\.allSubviews)
-            .compactMap { ($0 as? NSButton)?.title }
-            .filter { !$0.isEmpty }
         let primarySourceTitles = sourcePrimaryStack.arrangedSubviews
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
@@ -1037,11 +1029,10 @@ struct MarkdownRichEditorTests {
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
             .filter { !$0.isEmpty }
-        #expect(smartSourceTitles == ["Call Recordings"])
         #expect(primarySourceTitles == ["All iCloud"])
         #expect(trashSourceTitles == ["Recently Deleted"])
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "最近" || $0.title == "Inbox"
+            $0.title == "最近" || $0.title == "Inbox" || $0.title == "Call Recordings"
         } == false)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
@@ -1212,27 +1203,12 @@ struct MarkdownRichEditorTests {
         #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
         #expect(allSourceButton.layer?.cornerRadius == LibraryNotesLayout.sourceRowCornerRadius)
-        let callRecordingsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Call Recordings"
-        })
-        let expectedCallRecordingsSymbol = try #require(
-            NSImage(systemSymbolName: LibraryNotesLayout.callRecordingsSourceSymbolName, accessibilityDescription: "Call Recordings")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                    pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-                    weight: LibraryNotesLayout.sourceSymbolWeight
-                ))
-        )
-        #expect(LibraryNotesLayout.callRecordingsSourceSymbolName == "phone.and.waveform.fill")
-        #expect(callRecordingsButton.image?.accessibilityDescription == "Call Recordings")
-        #expect(callRecordingsButton.image?.size == expectedCallRecordingsSymbol.size)
-        #expect(callRecordingsButton.contentTintColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
         let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceButton.font))
-        let unselectedSourceWeight = NSFontManager.shared.weight(of: try #require(callRecordingsButton.font))
-        #expect(selectedSourceWeight > unselectedSourceWeight)
-        let callRecordingsCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-4"
-        })
-        #expect(callRecordingsCount.stringValue == "")
+        let expectedSelectedSourceWeight = NSFontManager.shared.weight(of: .systemFont(
+            ofSize: LibraryNotesLayout.sourceButtonFontSize,
+            weight: LibraryNotesLayout.sourceSelectedButtonFontWeight
+        ))
+        #expect(selectedSourceWeight == expectedSelectedSourceWeight)
         let allSourceRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceRow-0"
         } as? LibrarySourceRowView)
@@ -1522,57 +1498,6 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListTitleLabel.stringValue == "最近")
         #expect(controller.noteListCountLabel.stringValue == "0 notes")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
-    }
-
-    @MainActor
-    @Test
-    func libraryCallRecordingsSourceFiltersExistingSnapshot() throws {
-        let suiteName = "mudsnote.library-call-recordings-tests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-library-call-recordings-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-            try? FileManager.default.removeItem(at: root)
-        }
-
-        let store = NoteStore(
-            defaults: defaults,
-            legacyDefaults: nil,
-            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
-        )
-        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
-        let callURL = try store.saveNewNote(title: "Call Recording", body: "1 audio recording")
-        _ = try store.saveNewNote(title: "Reference Note", body: "ordinary body")
-
-        let controller = LibraryWindowController(
-            noteStore: store,
-            onOpenInSeparateWindow: { _ in },
-            onSave: { _ in },
-            onClose: {}
-        )
-        defer { controller.close() }
-
-        let window = try #require(controller.window)
-        let callCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-4"
-        })
-        #expect(callCount.stringValue == "1")
-        #expect(callCount.textColor == panelTertiaryTextColor())
-
-        controller.selectCallRecordingsScopeForLibrary()
-
-        #expect(controller.noteListTitleLabel.stringValue == "Call Recordings")
-        #expect(controller.noteListCountLabel.stringValue == "1 note")
-        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Call Recording"])
-        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == callURL.standardizedFileURL)
-        let callSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Call Recordings"
-        })
-        #expect(callSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
-        #expect(callCount.textColor == LibrarySourceSelectionPalette.selectedCountColor)
     }
 
     @MainActor
@@ -1887,13 +1812,13 @@ struct MarkdownRichEditorTests {
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
-        #expect(normalMoreMenu.items.first { $0.title == "分享..." }?.isEnabled == true)
+        #expect(normalMoreMenu.items.first { $0.title == "分享..." } == nil)
         #expect(normalMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == true)
         #expect(normalMoreMenu.items.first { $0.title == "删除" }?.isEnabled == true)
-        let normalShareMenu = selectedController.makeShareExportMenuForLibrary()
-        #expect(normalShareMenu.items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
-        #expect(normalShareMenu.items.allSatisfy { $0.isEnabled })
+        let normalExportMenu = selectedController.makeExportMenuForLibrary()
+        #expect(normalExportMenu.items.map(\.title) == ["复制 Markdown 内容", "导出 Markdown..."])
+        #expect(normalExportMenu.items.allSatisfy { $0.isEnabled })
 
         try selectedController.deleteSelectedNoteForLibrary()
         let trashButton = try #require(selectedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
@@ -1921,17 +1846,17 @@ struct MarkdownRichEditorTests {
 
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
-        #expect(trashMoreMenu.items.first { $0.title == "分享..." }?.isEnabled == false)
+        #expect(trashMoreMenu.items.first { $0.title == "分享..." } == nil)
         #expect(trashMoreMenu.items.first { $0.title == "复制 Markdown 内容" }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "导出 Markdown..." }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "恢复" }?.isEnabled == true)
         #expect(trashMoreMenu.items.first { $0.title == "永久删除" }?.isEnabled == true)
-        #expect(selectedController.makeShareExportMenuForLibrary().items.allSatisfy { !$0.isEnabled })
+        #expect(selectedController.makeExportMenuForLibrary().items.allSatisfy { !$0.isEnabled })
     }
 
     @MainActor
     @Test
-    func libraryWindowSharesExportsAndDeletesMultipleSelectedNotes() throws {
+    func libraryWindowCopiesExportsAndDeletesMultipleSelectedNotes() throws {
         let suiteName = "mudsnote.library-multi-note-actions-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -1981,13 +1906,12 @@ struct MarkdownRichEditorTests {
         #expect(dragPreview.size.width >= 240)
         #expect(dragPreview.size.height >= 60)
         #expect(controller.noteDragPreviewBadgeTitleForLibrary(rowIndexes: IndexSet(integer: selectableRows[0])) == nil)
-        let shareMenu = controller.makeShareExportMenuForLibrary()
-        #expect(shareMenu.items.map(\.title) == [
-            "分享 2 个 Markdown 文件...",
+        let exportMenu = controller.makeExportMenuForLibrary()
+        #expect(exportMenu.items.map(\.title) == [
             "复制 2 条 Markdown 内容",
             "导出 2 个 Markdown 文件..."
         ])
-        #expect(shareMenu.items.allSatisfy { $0.isEnabled })
+        #expect(exportMenu.items.allSatisfy { $0.isEnabled })
         let moreMenu = controller.makeMoreActionsMenuForLibrary()
         #expect(moreMenu.items.first { $0.title == "独立窗口打开" }?.isEnabled == false)
         #expect(moreMenu.items.contains { $0.title == "移动 2 条笔记到文件夹" })
@@ -2030,9 +1954,6 @@ struct MarkdownRichEditorTests {
         #expect(copiedMarkdown.contains("Multi Two"))
         #expect(copiedMarkdown.contains("Second body"))
         #expect(copiedMarkdown.contains("\n\n---\n\n"))
-
-        let shareURLs = try controller.shareSelectedMarkdownFilesForLibrary()
-        #expect(Set(shareURLs.map(\.path)) == Set(selectedPaths))
 
         let exportDirectory = root.appendingPathComponent("Exports", isDirectory: true)
         let exportedURLs = try controller.exportSelectedMarkdownFilesForLibrary(to: exportDirectory)
@@ -3269,7 +3190,7 @@ struct MarkdownRichEditorTests {
         #expect(moreMenuTitles.contains("移到文件夹"))
         #expect(moreMenuTitles.contains("保存"))
         #expect(moreMenuTitles.contains("在 Finder 中显示"))
-        #expect(moreMenuTitles.contains("分享..."))
+        #expect(!moreMenuTitles.contains("分享..."))
         #expect(moreMenuTitles.contains("复制 Markdown 路径"))
         #expect(moreMenuTitles.contains("复制 Markdown 内容"))
         #expect(moreMenuTitles.contains("导出 Markdown..."))
@@ -3288,13 +3209,13 @@ struct MarkdownRichEditorTests {
         #expect(exportedMarkdown.contains("Trash Seed"))
         #expect(exportedMarkdown.contains("Body line"))
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Shared body",
+            markdown: "Updated body",
             theme: controller.theme,
             baseURL: noteURL
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
-        #expect(try controller.shareSelectedMarkdownFileForLibrary()?.path == noteURL.standardizedFileURL.path)
-        #expect(try store.loadNote(at: noteURL).body == "Shared body")
+        _ = try controller.copySelectedMarkdownContentForLibrary()
+        #expect(try store.loadNote(at: noteURL).body == "Updated body")
 
         try controller.deleteSelectedNoteForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))

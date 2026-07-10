@@ -6,7 +6,6 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 private enum LibraryScope: Equatable, Sendable {
-    case callRecordings
     case all
     case recent
     case inbox
@@ -16,8 +15,6 @@ private enum LibraryScope: Equatable, Sendable {
 
     var buttonTitle: String {
         switch self {
-        case .callRecordings:
-            return "Call Recordings"
         case .all:
             return "All iCloud"
         case .recent:
@@ -44,8 +41,6 @@ private enum LibraryScope: Equatable, Sendable {
 
     var symbolName: String {
         switch self {
-        case .callRecordings:
-            return LibraryNotesLayout.callRecordingsSourceSymbolName
         case .all:
             return "folder"
         case .recent:
@@ -89,8 +84,6 @@ private func librarySearchResults(
     }
 
     switch scope {
-    case .callRecordings:
-        return noteStore.searchNotes(query: query, limit: limit).filter(libraryIsCallRecordingNote)
     case .all, .recent:
         return noteStore.searchNotes(query: query, limit: limit)
     case .inbox:
@@ -138,23 +131,6 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
 private func libraryIsInboxNote(_ note: NoteSearchResult) -> Bool {
     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
         || note.title.localizedCaseInsensitiveContains("Inbox")
-}
-
-private func libraryIsCallRecordingNote(_ note: NoteSearchResult) -> Bool {
-    let searchableText = [
-        note.title,
-        note.snippet,
-        note.url.deletingPathExtension().lastPathComponent
-    ].joined(separator: " ")
-    return searchableText.range(
-        of: "call recording",
-        options: [.caseInsensitive, .diacriticInsensitive]
-    ) != nil
-        || searchableText.range(
-            of: "audio recording",
-            options: [.caseInsensitive, .diacriticInsensitive]
-        ) != nil
-        || searchableText.localizedCaseInsensitiveContains("录音")
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
@@ -278,7 +254,6 @@ enum LibraryNotesLayout {
     static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 19
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
-    static let callRecordingsSourceSymbolName = "phone.and.waveform.fill"
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 44
     static let sourceSectionHeaderHeight: CGFloat = 22
@@ -1017,7 +992,6 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsSectionCollapsed = false
     private weak var librarySplitView: NSSplitView?
     private weak var sourceListView: NSView?
-    private let sourceSmartStack = NSStackView()
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
     private let sourceTrashStack = NSStackView()
@@ -1253,12 +1227,10 @@ final class LibraryWindowController: NSWindowController,
         sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground.cgColor
         sourceListView = sourceList
 
-        configureSourceStack(sourceSmartStack)
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
         configureSourceStack(sourceTrashStack)
         configureSourceStack(sourceTagStack)
-        sourceSmartStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSmartStack")
         sourcePrimaryStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourcePrimaryStack")
         sourceFolderStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFolderStack")
         sourceTrashStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTrashStack")
@@ -1280,7 +1252,6 @@ final class LibraryWindowController: NSWindowController,
         rebuildSourceRows(includeTags: sourceTagsLoaded)
 
         let stack = NSStackView(views: [
-            sourceSmartStack,
             libraryHeader,
             sourcePrimaryStack,
             sourceFolderStack,
@@ -1670,9 +1641,9 @@ final class LibraryWindowController: NSWindowController,
         case Self.exportToolbarItemIdentifier:
             return toolbarMenuButtonItem(
                 identifier: itemIdentifier,
-                label: "分享与导出",
+                label: "复制与导出",
                 symbolName: "square.and.arrow.up",
-                action: #selector(shareExportToolbarMenuPressed(_:))
+                action: #selector(exportToolbarMenuPressed(_:))
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -1925,7 +1896,7 @@ final class LibraryWindowController: NSWindowController,
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = "文件操作"
         item.paletteLabel = "文件操作"
-        item.toolTip = "分享与更多操作"
+        item.toolTip = "复制、导出与更多操作"
         item.visibilityPriority = .high
         item.isBordered = false
 
@@ -1947,9 +1918,9 @@ final class LibraryWindowController: NSWindowController,
         let stack = NSStackView(views: [
             toolbarMenuButton(
                 identifier: Self.exportToolbarItemIdentifier,
-                label: "分享与导出",
+                label: "复制与导出",
                 symbolName: "square.and.arrow.up",
-                action: #selector(shareExportToolbarMenuPressed(_:))
+                action: #selector(exportToolbarMenuPressed(_:))
             ),
             toolbarMenuButton(
                 identifier: Self.moreToolbarItemIdentifier,
@@ -2261,13 +2232,11 @@ final class LibraryWindowController: NSWindowController,
     private func rebuildSourceRows(includeTags: Bool) {
         sourceButtons.removeAll()
         sourceCountLabels.removeAll()
-        removeArrangedSubviews(from: sourceSmartStack)
         removeArrangedSubviews(from: sourcePrimaryStack)
         removeArrangedSubviews(from: sourceFolderStack)
         removeArrangedSubviews(from: sourceTrashStack)
         removeArrangedSubviews(from: sourceTagStack)
 
-        sourceSmartStack.addArrangedSubview(makeScopeRow(.callRecordings, tag: 4))
         sourcePrimaryStack.addArrangedSubview(makeScopeRow(.all, tag: 0))
 
         updateSourceFolderStatus()
@@ -2712,8 +2681,6 @@ final class LibraryWindowController: NSWindowController,
         for button in sourceButtons {
             let count: Int
             switch scope(for: button) {
-            case .callRecordings:
-                count = allNotes.filter(libraryIsCallRecordingNote).count
             case .all:
                 count = allNotes.count
             case .recent:
@@ -2823,8 +2790,6 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.stringValue = "Searching..."
         } else if !query.isEmpty {
             noteListEmptyLabel.stringValue = "No Results"
-        } else if selectedScope == .callRecordings {
-            noteListEmptyLabel.stringValue = "No Call Recordings"
         } else if selectedScope == .trash {
             noteListEmptyLabel.stringValue = "Recently Deleted is empty"
         } else {
@@ -2834,8 +2799,6 @@ final class LibraryWindowController: NSWindowController,
 
     private func notesForSelectedScope(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
         switch selectedScope {
-        case .callRecordings:
-            return Array(allNotes.filter(libraryIsCallRecordingNote).prefix(limit))
         case .all:
             return Array(allNotes.prefix(limit))
         case .recent:
@@ -3392,8 +3355,6 @@ final class LibraryWindowController: NSWindowController,
             return .inbox
         case 3:
             return .trash
-        case 4:
-            return .callRecordings
         case 10..<100:
             let index = button.tag - 10
             guard sourceFolderRows.indices.contains(index) else { return .all }
@@ -3875,24 +3836,6 @@ final class LibraryWindowController: NSWindowController,
             _ = try copySelectedMarkdownContentForLibrary()
         } catch {
             presentErrorAlert(message: "复制失败", details: error.localizedDescription)
-        }
-    }
-
-    @objc
-    private func shareSelectedMarkdownPressed(_ sender: Any?) {
-        do {
-            let sourceURLs = try shareSelectedMarkdownFilesForLibrary()
-            guard !sourceURLs.isEmpty else { return }
-            let picker = NSSharingServicePicker(items: sourceURLs)
-            if let item = sender as? NSToolbarItem,
-               let view = item.view {
-                picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
-            } else if let contentView = window?.contentView {
-                let anchor = NSRect(x: contentView.bounds.midX, y: contentView.bounds.maxY - 44, width: 1, height: 1)
-                picker.show(relativeTo: anchor, of: contentView, preferredEdge: .maxY)
-            }
-        } catch {
-            presentErrorAlert(message: "分享失败", details: error.localizedDescription)
         }
     }
 
@@ -4441,19 +4384,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @discardableResult
-    func shareSelectedMarkdownFileForLibrary() throws -> URL? {
-        (try shareSelectedMarkdownFilesForLibrary()).first
-    }
-
-    @discardableResult
-    func shareSelectedMarkdownFilesForLibrary() throws -> [URL] {
-        guard canExportSelectedNote else { return [] }
-
-        try saveCurrentNoteIfNeeded()
-        return selectedMarkdownFileURLsForLibrary()
-    }
-
-    @discardableResult
     func exportSelectedMarkdownForLibrary(to destinationURL: URL) throws -> URL? {
         guard canExportSelectedNote,
               let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
@@ -4535,11 +4465,6 @@ final class LibraryWindowController: NSWindowController,
 
     func selectRecentScopeForLibrary() {
         selectedScope = .recent
-        reloadNotes(loadFirstIfNeeded: true)
-    }
-
-    func selectCallRecordingsScopeForLibrary() {
-        selectedScope = .callRecordings
         reloadNotes(loadFirstIfNeeded: true)
     }
 
@@ -4911,8 +4836,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func shareExportToolbarMenuPressed(_ sender: Any?) {
-        popToolbarMenu(makeShareExportMenuForLibrary(), from: sender)
+    private func exportToolbarMenuPressed(_ sender: Any?) {
+        popToolbarMenu(makeExportMenuForLibrary(), from: sender)
     }
 
     @objc
@@ -5104,11 +5029,6 @@ final class LibraryWindowController: NSWindowController,
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
-        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
-        shareItem.target = self
-        shareItem.isEnabled = canExportSelectedNote
-        menu.addItem(shareItem)
-
         let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
         copyPathItem.isEnabled = canUseSelectedNote
@@ -5157,14 +5077,9 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(item)
     }
 
-    func makeShareExportMenuForLibrary() -> NSMenu {
+    func makeExportMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
-
-        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
-        shareItem.target = self
-        shareItem.isEnabled = canExportSelectedNote
-        menu.addItem(shareItem)
 
         let copyContentItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 内容", multiple: "复制 %d 条 Markdown 内容", count: selectionCount), action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
         copyContentItem.target = self
@@ -5265,11 +5180,6 @@ final class LibraryWindowController: NSWindowController,
         revealItem.target = self
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
-
-        let shareItem = NSMenuItem(title: noteActionTitle(single: "分享...", multiple: "分享 %d 个 Markdown 文件...", count: selectionCount), action: #selector(shareSelectedMarkdownPressed(_:)), keyEquivalent: "")
-        shareItem.target = self
-        shareItem.isEnabled = canExportSelectedNote
-        menu.addItem(shareItem)
 
         let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
         copyPathItem.target = self
