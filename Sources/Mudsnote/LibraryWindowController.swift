@@ -554,7 +554,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionTrailingInset: CGFloat = 24
     static let selectionVerticalInset: CGFloat = 8
     static let selectionCornerRadius: CGFloat = 10
-    static let selectionFillColor = NSColor(calibratedRed: 0.52, green: 0.38, blue: 0.0, alpha: 0.96)
+    static let selectionFillColor = NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
     static let hoverLeadingInset: CGFloat = 10
     static let hoverTrailingInset: CGFloat = 24
     static let hoverVerticalInset: CGFloat = 6
