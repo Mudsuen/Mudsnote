@@ -460,6 +460,8 @@ struct MudsnoteCoreTests {
         #expect(store.revealSavedNoteInFinder)
         #expect(store.floatingNoteStaysOnTop)
         #expect(store.spellCheckingEnabled)
+        #expect(store.libraryNoteSortOrderRawValue == 0)
+        #expect(store.libraryGroupsNotesByDate)
         #expect(!store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://localhost:11434")
         #expect(store.aiOllamaModel == "llama3.2")
@@ -467,6 +469,8 @@ struct MudsnoteCoreTests {
         store.revealSavedNoteInFinder = false
         store.floatingNoteStaysOnTop = false
         store.spellCheckingEnabled = false
+        store.libraryNoteSortOrderRawValue = 1
+        store.libraryGroupsNotesByDate = false
         store.aiEnabled = true
         store.aiOllamaBaseURLString = "http://127.0.0.1:11434"
         store.aiOllamaModel = "qwen2.5"
@@ -474,6 +478,8 @@ struct MudsnoteCoreTests {
         #expect(!store.revealSavedNoteInFinder)
         #expect(!store.floatingNoteStaysOnTop)
         #expect(!store.spellCheckingEnabled)
+        #expect(store.libraryNoteSortOrderRawValue == 1)
+        #expect(!store.libraryGroupsNotesByDate)
         #expect(store.aiEnabled)
         #expect(store.aiOllamaBaseURLString == "http://127.0.0.1:11434")
         #expect(store.aiOllamaModel == "qwen2.5")

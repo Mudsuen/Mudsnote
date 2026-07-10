@@ -57,6 +57,16 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.spellCheckingEnabled) }
     }
 
+    public var libraryNoteSortOrderRawValue: Int {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryNoteSortOrder) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryNoteSortOrder) }
+    }
+
+    public var libraryGroupsNotesByDate: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryGroupsNotesByDate) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryGroupsNotesByDate) }
+    }
+
     public var aiEnabled: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.aiEnabled) as? Bool ?? false }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiEnabled) }

@@ -71,6 +71,11 @@ private enum LibraryNoteListRow {
     }
 }
 
+enum LibraryNoteSortOrder: Int {
+    case dateEdited
+    case title
+}
+
 private func librarySearchResults(
     noteStore: NoteStore,
     scope: LibraryScope,
@@ -212,7 +217,7 @@ enum LibraryNotesLayout {
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
     static let toolbarMoreSymbolName = "ellipsis"
-    static let toolbarNoteListTitleWidth: CGFloat = 248
+    static let toolbarNoteListTitleWidth: CGFloat = 208
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
@@ -870,6 +875,7 @@ final class LibraryWindowController: NSWindowController,
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
     private static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
+    private static let noteListActionsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-actions")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
@@ -892,6 +898,8 @@ final class LibraryWindowController: NSWindowController,
     private let usesCanonicalWindowSize: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
+    private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
+    private(set) var groupsNoteListByDate = true
     private var sourceCountSnapshot: [NoteSearchResult] = []
     private var selectedURL: URL?
     private var selectedTags: [String] = []
@@ -962,6 +970,8 @@ final class LibraryWindowController: NSWindowController,
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
         self.onSave = onSave
         self.onClose = onClose
+        self.noteListSortOrder = LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue) ?? .dateEdited
+        self.groupsNoteListByDate = noteStore.libraryGroupsNotesByDate
 
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: LibraryNotesLayout.initialWindowSize),
@@ -1454,6 +1464,7 @@ final class LibraryWindowController: NSWindowController,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.noteListTitleToolbarItemIdentifier,
+            Self.noteListActionsToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
             .flexibleSpace,
@@ -1494,6 +1505,13 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
+        case Self.noteListActionsToolbarItemIdentifier:
+            return toolbarMenuButtonItem(
+                identifier: itemIdentifier,
+                label: "列表显示选项",
+                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
+                action: #selector(noteListActionsToolbarMenuPressed(_:))
+            )
         case Self.addFolderToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -1657,6 +1675,16 @@ final class LibraryWindowController: NSWindowController,
         titleStack.orientation = .vertical
         titleStack.alignment = .leading
         titleStack.spacing = 0
+        titleStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let headerStack = NSStackView(views: [titleStack, searchScopeControl])
+        headerStack.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListHeaderStack")
+        headerStack.orientation = .horizontal
+        headerStack.alignment = .centerY
+        headerStack.spacing = 8
+        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
+        searchScopeControl.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let wrapper = NSView(frame: NSRect(
             x: 0,
@@ -1666,21 +1694,14 @@ final class LibraryWindowController: NSWindowController,
         ))
         wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListTitle")
         wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(titleStack)
-        wrapper.addSubview(searchScopeControl)
-        titleStack.translatesAutoresizingMaskIntoConstraints = false
-        searchScopeControl.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(headerStack)
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
             wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight),
-            titleStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
-            titleStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            titleStack.trailingAnchor.constraint(
-                lessThanOrEqualTo: searchScopeControl.leadingAnchor,
-                constant: -8
-            ),
-            searchScopeControl.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
-            searchScopeControl.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
+            headerStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            headerStack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
+            headerStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
         ])
 
         item.view = wrapper
@@ -2532,7 +2553,7 @@ final class LibraryWindowController: NSWindowController,
         notes = query.isEmpty
             ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews, allNotes: allNotes)
             : searchResultsForSelectedScope(query: query, limit: 240)
-        listRows = buildGroupedRows(for: notes)
+        listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
         updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
@@ -2677,18 +2698,85 @@ final class LibraryWindowController: NSWindowController,
             .first(where: { !$0.isEmpty })
     }
 
-    private func buildGroupedRows(for notes: [NoteSearchResult], now: Date = Date()) -> [LibraryNoteListRow] {
-        var rows: [LibraryNoteListRow] = []
-        var currentGroup: String?
-        for note in notes {
-            let group = groupTitle(for: note.modifiedAt, now: now)
-            if group != currentGroup {
-                rows.append(.group(title: group))
-                currentGroup = group
+    private func buildGroupedRows(
+        for notes: [NoteSearchResult],
+        now: Date = Date(),
+        preservesInputOrder: Bool = false
+    ) -> [LibraryNoteListRow] {
+        let orderedNotes = preservesInputOrder ? notes : sortedNotesForCurrentListOrder(notes)
+        guard groupsNoteListByDate else {
+            return orderedNotes.map(LibraryNoteListRow.note)
+        }
+
+        let notesForGrouping: [NoteSearchResult]
+        if !preservesInputOrder, noteListSortOrder == .title {
+            notesForGrouping = notes.sorted { lhs, rhs in
+                if lhs.modifiedAt != rhs.modifiedAt {
+                    return lhs.modifiedAt > rhs.modifiedAt
+                }
+                return lhs.url.standardizedFileURL.path < rhs.url.standardizedFileURL.path
             }
-            rows.append(.note(note))
+        } else {
+            notesForGrouping = orderedNotes
+        }
+
+        var groupOrder: [String] = []
+        var groupedNotes: [String: [NoteSearchResult]] = [:]
+        for note in notesForGrouping {
+            let group = groupTitle(for: note.modifiedAt, now: now)
+            if groupedNotes[group] == nil {
+                groupOrder.append(group)
+            }
+            groupedNotes[group, default: []].append(note)
+        }
+
+        var rows: [LibraryNoteListRow] = []
+        for group in groupOrder {
+            rows.append(.group(title: group))
+            var notesInGroup = groupedNotes[group] ?? []
+            if !preservesInputOrder, noteListSortOrder == .title {
+                notesInGroup = sortedNotesForCurrentListOrder(notesInGroup)
+            }
+            rows.append(contentsOf: notesInGroup.map(LibraryNoteListRow.note))
         }
         return rows
+    }
+
+    private func sortedNotesForCurrentListOrder(_ notes: [NoteSearchResult]) -> [NoteSearchResult] {
+        notes.sorted { lhs, rhs in
+            switch noteListSortOrder {
+            case .dateEdited:
+                if lhs.modifiedAt != rhs.modifiedAt {
+                    return lhs.modifiedAt > rhs.modifiedAt
+                }
+            case .title:
+                let titleComparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+                if titleComparison != .orderedSame {
+                    return titleComparison == .orderedAscending
+                }
+                if lhs.modifiedAt != rhs.modifiedAt {
+                    return lhs.modifiedAt > rhs.modifiedAt
+                }
+            }
+            return lhs.url.standardizedFileURL.path < rhs.url.standardizedFileURL.path
+        }
+    }
+
+    private func rebuildNoteListRowsForDisplayOptions() {
+        let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map { $0.standardizedFileURL.path })
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
+
+        suppressSelectionChanges = true
+        tableView.reloadData()
+        let selectedRows = IndexSet(listRows.indices.filter { row in
+            guard let note = listRows[row].note else { return false }
+            return selectedPaths.contains(note.url.standardizedFileURL.path)
+        })
+        tableView.selectRowIndexes(selectedRows, byExtendingSelection: false)
+        suppressSelectionChanges = false
+        updateNoteListEmptyState(query: query)
+        updateToolbarActionState()
     }
 
     private func rowIndex(for standardizedPath: String) -> Int? {
@@ -3240,7 +3328,7 @@ final class LibraryWindowController: NSWindowController,
     private func applySearchResults(_ results: [NoteSearchResult], query: String, selecting preferredURL: URL?) {
         isSearchResultReloading = false
         notes = results
-        listRows = buildGroupedRows(for: notes)
+        listRows = buildGroupedRows(for: notes, preservesInputOrder: true)
         updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
@@ -3810,12 +3898,20 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func selectNoteForVisualQA(at url: URL) {
+        let standardizedURL = url.standardizedFileURL
         reloadNotes(
-            selecting: url.standardizedFileURL,
+            selecting: standardizedURL,
             loadFirstIfNeeded: true,
             hydratePreviews: true,
             refreshCounts: false
         )
+        if let row = rowIndex(for: standardizedURL.path) {
+            tableView.scrollRowToVisible(row)
+            if row <= 1, let scrollView = tableView.enclosingScrollView {
+                scrollView.contentView.scroll(to: .zero)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
         window?.makeFirstResponder(tableView)
     }
 
@@ -4422,6 +4518,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
+    private func noteListActionsToolbarMenuPressed(_ sender: Any?) {
+        popToolbarMenu(makeNoteListActionsMenuForLibrary(), from: sender)
+    }
+
+    @objc
     private func moreToolbarMenuPressed(_ sender: Any?) {
         popToolbarMenu(makeMoreActionsMenuForLibrary(), from: sender)
     }
@@ -4621,6 +4722,61 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(exportItem)
 
         return menu
+    }
+
+    func makeNoteListActionsMenuForLibrary() -> NSMenu {
+        let menu = NSMenu()
+
+        let listItem = NSMenuItem(title: "显示为列表", action: nil, keyEquivalent: "")
+        listItem.state = .on
+        listItem.isEnabled = false
+        menu.addItem(listItem)
+
+        menu.addItem(.separator())
+
+        let groupingItem = NSMenuItem(
+            title: "按日期分组",
+            action: #selector(noteListGroupingMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        groupingItem.target = self
+        groupingItem.state = groupsNoteListByDate ? .on : .off
+        menu.addItem(groupingItem)
+
+        let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
+        let sortMenu = NSMenu()
+        for (title, order) in [("编辑日期", LibraryNoteSortOrder.dateEdited), ("标题", .title)] {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(noteListSortMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = order.rawValue
+            item.state = noteListSortOrder == order ? .on : .off
+            sortMenu.addItem(item)
+        }
+        sortItem.submenu = sortMenu
+        menu.addItem(sortItem)
+
+        return menu
+    }
+
+    @objc
+    private func noteListGroupingMenuItemPressed(_ sender: NSMenuItem) {
+        groupsNoteListByDate.toggle()
+        noteStore.libraryGroupsNotesByDate = groupsNoteListByDate
+        rebuildNoteListRowsForDisplayOptions()
+    }
+
+    @objc
+    private func noteListSortMenuItemPressed(_ sender: NSMenuItem) {
+        guard let order = LibraryNoteSortOrder(rawValue: sender.tag), order != noteListSortOrder else {
+            return
+        }
+        noteListSortOrder = order
+        noteStore.libraryNoteSortOrderRawValue = order.rawValue
+        rebuildNoteListRowsForDisplayOptions()
     }
 
     func makeMoreActionsMenuForLibrary() -> NSMenu {

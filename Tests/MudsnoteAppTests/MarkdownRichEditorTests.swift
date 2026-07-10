@@ -713,6 +713,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
@@ -772,6 +773,60 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.toolbarMenuButtonHeight == 28)
         #expect(LibraryNotesLayout.toolbarMenuButtonDisabledAlpha == 0.42)
         #expect(LibraryNotesLayout.toolbarMoreSymbolName == "ellipsis")
+        let noteListActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-actions"
+        })
+        let noteListActionsToolbarButton = try #require(noteListActionsToolbarItem.view as? NSButton)
+        #expect(noteListActionsToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.note-list-actions")
+        #expect(!noteListActionsToolbarButton.isBordered)
+        #expect(noteListActionsToolbarButton.image?.accessibilityDescription == "列表显示选项")
+        #expect(noteListActionsToolbarButton.toolTip == "列表显示选项")
+
+        let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
+        let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })
+        let initialSortMenu = try #require(initialListMenu.items.first { $0.title == "排序方式" }?.submenu)
+        #expect(initialListMenu.items.first { $0.title == "显示为列表" }?.state == .on)
+        #expect(initialListMenu.items.first { $0.title == "显示为列表" }?.isEnabled == false)
+        #expect(initialGroupingItem.state == .on)
+        #expect(initialSortMenu.items.first { $0.title == "编辑日期" }?.state == .on)
+        #expect(initialSortMenu.items.first { $0.title == "标题" }?.state == .off)
+        #expect(controller.noteListSortOrder == .dateEdited)
+        #expect(controller.groupsNoteListByDate)
+        #expect(controller.numberOfRows(in: controller.tableView) == 2)
+
+        func listedNoteTitles() -> [String] {
+            (0..<controller.numberOfRows(in: controller.tableView)).compactMap { row in
+                (controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView)?
+                    .titleLabel.stringValue
+            }
+        }
+
+        #expect(listedNoteTitles() == ["Library Seed"])
+        let titleSortItem = try #require(initialSortMenu.items.first { $0.title == "标题" })
+        #expect(NSApp.sendAction(try #require(titleSortItem.action), to: titleSortItem.target, from: titleSortItem))
+        #expect(controller.noteListSortOrder == .title)
+        #expect(listedNoteTitles() == ["Library Seed"])
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+
+        #expect(NSApp.sendAction(try #require(initialGroupingItem.action), to: initialGroupingItem.target, from: initialGroupingItem))
+        #expect(!controller.groupsNoteListByDate)
+        #expect(controller.numberOfRows(in: controller.tableView) == 1)
+        #expect(listedNoteTitles() == ["Library Seed"])
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == noteURL.standardizedFileURL.path)
+
+        let updatedListMenu = controller.makeNoteListActionsMenuForLibrary()
+        #expect(updatedListMenu.items.first { $0.title == "按日期分组" }?.state == .off)
+        #expect(updatedListMenu.items.first { $0.title == "排序方式" }?.submenu?.items.first {
+            $0.title == "标题"
+        }?.state == .on)
+        let updatedGroupingItem = try #require(updatedListMenu.items.first { $0.title == "按日期分组" })
+        let dateSortItem = try #require(updatedListMenu.items.first { $0.title == "排序方式" }?.submenu?.items.first {
+            $0.title == "编辑日期"
+        })
+        #expect(NSApp.sendAction(try #require(updatedGroupingItem.action), to: updatedGroupingItem.target, from: updatedGroupingItem))
+        #expect(NSApp.sendAction(try #require(dateSortItem.action), to: dateSortItem.target, from: dateSortItem))
+        #expect(controller.groupsNoteListByDate)
+        #expect(controller.noteListSortOrder == .dateEdited)
         let toolbarSearchFields = (window.toolbar?.items ?? []).flatMap { item in
             item.view?.allSubviews.compactMap { $0 as? NSSearchField } ?? []
         }
@@ -796,6 +851,14 @@ struct MarkdownRichEditorTests {
         #expect(noteListTitleToolbarView.identifier?.rawValue == "LibraryToolbarNoteListTitle")
         #expect(noteListTitleToolbarView.frame.width == LibraryNotesLayout.toolbarNoteListTitleWidth)
         #expect(noteListTitleToolbarView.frame.height == LibraryNotesLayout.toolbarNoteListTitleHeight)
+        #expect(LibraryNotesLayout.toolbarNoteListTitleWidth == 208)
+        let noteListHeaderStack = try #require(noteListTitleToolbarView.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibraryToolbarNoteListHeaderStack"
+        })
+        #expect(noteListHeaderStack.arrangedSubviews.contains(controller.searchScopeControl))
+        #expect(controller.searchScopeControl.isHidden)
+        noteListTitleToolbarView.layoutSubtreeIfNeeded()
+        #expect(controller.noteListTitleLabel.frame.width + 1 >= controller.noteListTitleLabel.intrinsicContentSize.width)
         let editorToolsItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
         })
@@ -1140,6 +1203,76 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryNoteListActionsSortWithinDateGroupsAndPreserveSelection() throws {
+        let suiteName = "mudsnote-note-list-actions-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-note-list-actions-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let todayURL = try store.saveNewNote(title: "Zulu Today", body: "Today")
+        let bravoURL = try store.saveNewNote(title: "Bravo Yesterday", body: "Yesterday")
+        let alphaURL = try store.saveNewNote(title: "Alpha Yesterday", body: "Yesterday")
+        let now = Date()
+        let yesterday = try #require(Calendar.current.date(byAdding: .day, value: -1, to: now))
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: todayURL.path)
+        try FileManager.default.setAttributes([.modificationDate: yesterday], ofItemAtPath: bravoURL.path)
+        try FileManager.default.setAttributes([.modificationDate: yesterday], ofItemAtPath: alphaURL.path)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        func listedNoteTitles() -> [String] {
+            (0..<controller.numberOfRows(in: controller.tableView)).compactMap { row in
+                (controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView)?
+                    .titleLabel.stringValue
+            }
+        }
+
+        #expect(controller.groupsNoteListByDate)
+        #expect(controller.noteListSortOrder == .dateEdited)
+        #expect(controller.numberOfRows(in: controller.tableView) == 5)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
+
+        let initialMenu = controller.makeNoteListActionsMenuForLibrary()
+        let titleSortItem = try #require(initialMenu.items.first { $0.title == "排序方式" }?.submenu?.items.first {
+            $0.title == "标题"
+        })
+        #expect(NSApp.sendAction(try #require(titleSortItem.action), to: titleSortItem.target, from: titleSortItem))
+        #expect(listedNoteTitles() == ["Zulu Today", "Alpha Yesterday", "Bravo Yesterday"])
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
+
+        let groupingItem = try #require(controller.makeNoteListActionsMenuForLibrary().items.first {
+            $0.title == "按日期分组"
+        })
+        #expect(NSApp.sendAction(try #require(groupingItem.action), to: groupingItem.target, from: groupingItem))
+        #expect(!controller.groupsNoteListByDate)
+        #expect(controller.numberOfRows(in: controller.tableView) == 3)
+        #expect(listedNoteTitles() == ["Alpha Yesterday", "Bravo Yesterday", "Zulu Today"])
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
+        #expect(store.libraryNoteSortOrderRawValue == LibraryNoteSortOrder.title.rawValue)
+        #expect(!store.libraryGroupsNotesByDate)
     }
 
     @MainActor
@@ -3288,6 +3421,13 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.stringValue == "Content Visual")
         #expect(controller.editorTextView.string == "Visible editor body")
         #expect(controller.window?.firstResponder === controller.tableView)
+
+        controller.selectNoteForVisualQA(at: emptyURL)
+        let selectedRow = controller.tableView.selectedRow
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == emptyURL.standardizedFileURL)
+        #expect(selectedRow >= 0)
+        #expect(controller.tableView.visibleRect.intersects(controller.tableView.rect(ofRow: selectedRow)))
+        #expect(controller.tableView.enclosingScrollView?.contentView.bounds.origin.y == 0)
     }
 
     @MainActor
