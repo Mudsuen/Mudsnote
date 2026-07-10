@@ -66,6 +66,59 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func libraryNoteListProjectionPreservesPinnedAndDateGroupOrdering() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_800_014_400)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("List Projection", isDirectory: true)
+        let today = NoteSearchResult(
+            url: root.appendingPathComponent("Zulu.md"),
+            title: "Zulu",
+            snippet: "",
+            modifiedAt: now
+        )
+        let pinned = NoteSearchResult(
+            url: root.appendingPathComponent("Alpha.md"),
+            title: "Alpha",
+            snippet: "",
+            modifiedAt: calendar.date(byAdding: .day, value: -1, to: now)!
+        )
+        let earlier = NoteSearchResult(
+            url: root.appendingPathComponent("Beta.md"),
+            title: "Beta",
+            snippet: "",
+            modifiedAt: calendar.date(byAdding: .day, value: -3, to: now)!
+        )
+
+        let rows = LibraryNoteListProjection.rows(
+            for: [earlier, today, pinned],
+            sortOrder: .title,
+            groupsByDate: true,
+            includesPinnedGroup: true,
+            pinnedPaths: [pinned.url.standardizedFileURL.path],
+            now: now,
+            calendar: calendar
+        )
+        let descriptions = rows.map { row in
+            switch row {
+            case .group(let title):
+                return "group:\(title)"
+            case .note(let note):
+                return "note:\(note.title)"
+            }
+        }
+
+        #expect(descriptions == [
+            "group:Pinned",
+            "note:Alpha",
+            "group:Today",
+            "note:Zulu",
+            "group:Previous 7 Days",
+            "note:Beta"
+        ])
+    }
+
+    @Test
     func richCodecRoundTripsHeadingAndLists() {
         let markdown = """
         # Smoke Title

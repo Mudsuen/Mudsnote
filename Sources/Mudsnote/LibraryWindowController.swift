@@ -57,21 +57,6 @@ private enum LibraryScope: Equatable, Sendable {
     }
 }
 
-private enum LibraryNoteListRow {
-    case group(title: String)
-    case note(NoteSearchResult)
-
-    var note: NoteSearchResult? {
-        guard case .note(let note) = self else { return nil }
-        return note
-    }
-}
-
-enum LibraryNoteSortOrder: Int {
-    case dateEdited
-    case title
-}
-
 private func librarySearchResults(
     noteStore: NoteStore,
     scope: LibraryScope,
@@ -2949,54 +2934,15 @@ final class LibraryWindowController: NSWindowController,
         now: Date = Date(),
         preservesInputOrder: Bool = false
     ) -> [LibraryNoteListRow] {
-        let orderedNotes = preservesInputOrder ? notes : sortedNotesForCurrentListOrder(notes)
-        let canShowPinnedGroup = !preservesInputOrder && selectedScope != .trash
-        let pinnedPaths = canShowPinnedGroup ? Set(noteStore.libraryPinnedNotePaths) : []
-        let pinnedNotes = orderedNotes.filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }
-        let unpinnedNotes = orderedNotes.filter { !pinnedPaths.contains($0.url.standardizedFileURL.path) }
-
-        var rows: [LibraryNoteListRow] = []
-        if !pinnedNotes.isEmpty {
-            rows.append(.group(title: "Pinned"))
-            rows.append(contentsOf: pinnedNotes.map(LibraryNoteListRow.note))
-        }
-
-        guard groupsNoteListByDate else {
-            rows.append(contentsOf: unpinnedNotes.map(LibraryNoteListRow.note))
-            return rows
-        }
-
-        let notesForGrouping: [NoteSearchResult]
-        if !preservesInputOrder, noteListSortOrder == .title {
-            notesForGrouping = unpinnedNotes.sorted { lhs, rhs in
-                if lhs.modifiedAt != rhs.modifiedAt {
-                    return lhs.modifiedAt > rhs.modifiedAt
-                }
-                return lhs.url.standardizedFileURL.path < rhs.url.standardizedFileURL.path
-            }
-        } else {
-            notesForGrouping = unpinnedNotes
-        }
-
-        var groupOrder: [String] = []
-        var groupedNotes: [String: [NoteSearchResult]] = [:]
-        for note in notesForGrouping {
-            let group = groupTitle(for: note.modifiedAt, now: now)
-            if groupedNotes[group] == nil {
-                groupOrder.append(group)
-            }
-            groupedNotes[group, default: []].append(note)
-        }
-
-        for group in groupOrder {
-            rows.append(.group(title: group))
-            var notesInGroup = groupedNotes[group] ?? []
-            if !preservesInputOrder, noteListSortOrder == .title {
-                notesInGroup = sortedNotesForCurrentListOrder(notesInGroup)
-            }
-            rows.append(contentsOf: notesInGroup.map(LibraryNoteListRow.note))
-        }
-        return rows
+        LibraryNoteListProjection.rows(
+            for: notes,
+            sortOrder: noteListSortOrder,
+            groupsByDate: groupsNoteListByDate,
+            includesPinnedGroup: selectedScope != .trash,
+            pinnedPaths: Set(noteStore.libraryPinnedNotePaths),
+            now: now,
+            preservesInputOrder: preservesInputOrder
+        )
     }
 
     @discardableResult
@@ -3007,26 +2953,6 @@ final class LibraryWindowController: NSWindowController,
         urls.forEach { noteStore.setLibraryNotePinned(shouldPin, at: $0) }
         rebuildNoteListRowsForDisplayOptions()
         return shouldPin
-    }
-
-    private func sortedNotesForCurrentListOrder(_ notes: [NoteSearchResult]) -> [NoteSearchResult] {
-        notes.sorted { lhs, rhs in
-            switch noteListSortOrder {
-            case .dateEdited:
-                if lhs.modifiedAt != rhs.modifiedAt {
-                    return lhs.modifiedAt > rhs.modifiedAt
-                }
-            case .title:
-                let titleComparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
-                if titleComparison != .orderedSame {
-                    return titleComparison == .orderedAscending
-                }
-                if lhs.modifiedAt != rhs.modifiedAt {
-                    return lhs.modifiedAt > rhs.modifiedAt
-                }
-            }
-            return lhs.url.standardizedFileURL.path < rhs.url.standardizedFileURL.path
-        }
     }
 
     private func rebuildNoteListRowsForDisplayOptions() {
@@ -3055,27 +2981,6 @@ final class LibraryWindowController: NSWindowController,
     private func note(at row: Int) -> NoteSearchResult? {
         guard listRows.indices.contains(row) else { return nil }
         return listRows[row].note
-    }
-
-    private func groupTitle(for date: Date, now: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return "Today"
-        }
-        if calendar.isDateInYesterday(date) {
-            return "Yesterday"
-        }
-
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfDate = calendar.startOfDay(for: date)
-        let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
-        if (2...7).contains(daysAgo) {
-            return "Previous 7 Days"
-        }
-        if (8...30).contains(daysAgo) {
-            return "Previous 30 Days"
-        }
-        return String(calendar.component(.year, from: date))
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
