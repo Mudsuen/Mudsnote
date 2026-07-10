@@ -201,7 +201,7 @@ enum LibraryNotesLayout {
     static let noteColumnWidth: CGFloat = 304
     static let noteTableInitialWidth: CGFloat = 278
     static let noteTableMinimumWidth: CGFloat = 272
-    static let sourceRowWidth: CGFloat = 272
+    static let sourceRowWidth: CGFloat = 292
     static let toolbarSearchWidth: CGFloat = 340
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 360
@@ -235,20 +235,20 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.40
     static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.22
     static let toolbarSymbolPointSize: CGFloat = 19
-    static let sourceSymbolPointSize: CGFloat = 17
+    static let sourceSymbolPointSize: CGFloat = 19
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let callRecordingsSourceSymbolName = "phone.and.waveform.fill"
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 36
+    static let sourceRowHeight: CGFloat = 44
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
     static let sourceListTopInset: CGFloat = 12
-    static let sourceListLeadingInset: CGFloat = 24
+    static let sourceListLeadingInset: CGFloat = 14
     static let sourceListBottomInset: CGFloat = 14
-    static let sourceListTrailingInset: CGFloat = 24
+    static let sourceListTrailingInset: CGFloat = 14
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 8
-    static let sourceRowCornerRadius: CGFloat = 7
+    static let sourceRowCornerRadius: CGFloat = 10
     static let sourceFolderIndentStep: CGFloat = 14
     static let sourceDisclosureButtonWidth: CGFloat = 14
     static let sourceDisclosureButtonHeight: CGFloat = 18
@@ -257,12 +257,12 @@ enum LibraryNotesLayout {
     static let sourceCountWidth: CGFloat = 38
     static let noteGroupRowHeight: CGFloat = 56
     static let noteRowHeight: CGFloat = 108
-    static let sourceGroupFontSize: CGFloat = 14.5
-    static let sourceButtonFontSize: CGFloat = 16.5
+    static let sourceGroupFontSize: CGFloat = 15.5
+    static let sourceButtonFontSize: CGFloat = 18
     static let sourceSelectedButtonFontWeight: NSFont.Weight = .semibold
     static let sourceUnselectedButtonFontWeight: NSFont.Weight = .medium
     static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
-    static let sourceCountFontSize: CGFloat = 15
+    static let sourceCountFontSize: CGFloat = 16
     static let sourceSymbolWeight: NSFont.Weight = .medium
     static let noteGroupFontSize: CGFloat = 20
     static let noteGroupFontWeight: NSFont.Weight = .bold
@@ -793,6 +793,18 @@ final class LibrarySourceRowView: NSView {
             guard standardized.isFileURL, seenPaths.insert(standardized.path).inserted else { return nil }
             return standardized
         }
+    }
+}
+
+@MainActor
+final class LibrarySourceButtonCell: NSButtonCell {
+    static let contentLeadingInset: CGFloat = 18
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        var drawingRect = super.drawingRect(forBounds: rect)
+        drawingRect.origin.x += Self.contentLeadingInset
+        drawingRect.size.width = max(0, drawingRect.width - Self.contentLeadingInset)
+        return drawingRect
     }
 }
 
@@ -2571,6 +2583,9 @@ final class LibraryWindowController: NSWindowController,
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
         let title = sourceTitle(for: scope)
         let button = NSButton(title: title, target: self, action: #selector(scopeButtonPressed(_:)))
+        button.cell = LibrarySourceButtonCell(textCell: title)
+        button.target = self
+        button.action = #selector(scopeButtonPressed(_:))
         button.tag = tag
         button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
