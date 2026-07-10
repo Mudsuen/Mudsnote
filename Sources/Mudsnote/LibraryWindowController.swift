@@ -952,6 +952,7 @@ final class LibraryWindowController: NSWindowController,
     let noteListEmptyLabel = NSTextField(labelWithString: "")
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
+    let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
     let emptyLabel = NSTextField(labelWithString: "Select or create a note")
 
@@ -1234,6 +1235,7 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
+        attachmentQuickLookController.dismiss()
         cancelSourceSnapshotValidation()
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
@@ -6553,8 +6555,15 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
-        guard textView === editorTextView,
-              event.keyCode == UInt16(kVK_Delete),
+        guard textView === editorTextView else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.keyCode == UInt16(kVK_Space),
+           modifiers.isEmpty,
+           let attachment = textView.fileAttachmentReferenceNearSelection() {
+            return previewAttachmentForLibrary(atPath: attachment.path)
+        }
+
+        guard event.keyCode == UInt16(kVK_Delete),
               event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command] else {
             return false
         }
@@ -6592,6 +6601,11 @@ final class LibraryWindowController: NSWindowController,
     func configureAttachmentContextMenu(_ menu: NSMenu, forAttachmentPath path: String, markdown: String? = nil) -> Bool {
         guard FileManager.default.fileExists(atPath: path) else { return false }
 
+        let previewItem = NSMenuItem(title: "快速查看", action: #selector(previewAttachmentMenuItemPressed(_:)), keyEquivalent: " ")
+        previewItem.keyEquivalentModifierMask = []
+        previewItem.target = self
+        previewItem.representedObject = path
+
         let openItem = NSMenuItem(title: "打开附件", action: #selector(openAttachmentMenuItemPressed(_:)), keyEquivalent: "")
         openItem.target = self
         openItem.representedObject = path
@@ -6612,10 +6626,21 @@ final class LibraryWindowController: NSWindowController,
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }
-        for item in [copyPathItem, copyMarkdownItem, revealItem, openItem] {
+        for item in [copyPathItem, copyMarkdownItem, revealItem, openItem, previewItem] {
             menu.insertItem(item, at: 0)
         }
         return true
+    }
+
+    @objc
+    private func previewAttachmentMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = attachmentURL(from: sender) else { return }
+        attachmentQuickLookController.preview(url)
+    }
+
+    @discardableResult
+    func previewAttachmentForLibrary(atPath path: String) -> Bool {
+        attachmentQuickLookController.preview(URL(fileURLWithPath: path))
     }
 
     @objc

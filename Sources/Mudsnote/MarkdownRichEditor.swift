@@ -322,6 +322,25 @@ final class MarkdownTextView: NSTextView {
         return MarkdownAttachmentReference(path: path, markdown: markdown, metadata: metadata)
     }
 
+    func fileAttachmentReferenceNearSelection() -> MarkdownAttachmentReference? {
+        let selection = selectedRange()
+        if selection.length > 0 {
+            let upperBound = min(NSMaxRange(selection), textStorage?.length ?? 0)
+            for index in selection.location..<upperBound {
+                if let attachment = fileAttachmentReference(atCharacterIndex: index) {
+                    return attachment
+                }
+            }
+        }
+
+        for index in [selection.location, selection.location - 1] where index >= 0 {
+            if let attachment = fileAttachmentReference(atCharacterIndex: index) {
+                return attachment
+            }
+        }
+        return nil
+    }
+
     private func addChecklistCursorRects() {
         guard
             let layoutManager,

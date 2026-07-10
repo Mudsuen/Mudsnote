@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import MudsnoteCore
 
@@ -174,6 +175,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let footerEdgeInset: CGFloat = 2
 
     let editorTextView = MarkdownTextView(frame: .zero)
+    let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
     var toolbarButtons: [HoverToolbarButton] = []
     var toolbarButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
@@ -378,6 +380,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func windowWillClose(_ notification: Notification) {
         didCloseWindow = true
+        attachmentQuickLookController.dismiss()
         rememberCurrentWindowFrame()
         persistDraft(force: true)
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -422,6 +425,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         return commitPendingTagIfNeeded(insertingTrailingText: text)
     }
 
+    func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        guard event.keyCode == UInt16(kVK_Space),
+              modifiers.isEmpty,
+              let attachment = textView.fileAttachmentReferenceNearSelection() else {
+            return false
+        }
+        return previewAttachment(atPath: attachment.path)
+    }
+
     func markdownTextViewToggleBold(_ textView: MarkdownTextView) { toggleInlineFontTrait(.boldFontMask) }
     func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { toggleInlineFontTrait(.italicFontMask) }
     func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { toggleParagraphKind(.heading(level: 1)) }
@@ -453,6 +466,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     func configureAttachmentContextMenu(_ menu: NSMenu, forAttachmentPath path: String, markdown: String? = nil) -> Bool {
         guard FileManager.default.fileExists(atPath: path) else { return false }
 
+        let previewItem = NSMenuItem(title: "快速查看", action: #selector(previewAttachmentMenuItemPressed(_:)), keyEquivalent: " ")
+        previewItem.keyEquivalentModifierMask = []
+        previewItem.target = self
+        previewItem.representedObject = path
+
         let openItem = NSMenuItem(title: "打开附件", action: #selector(openAttachmentMenuItemPressed(_:)), keyEquivalent: "")
         openItem.target = self
         openItem.representedObject = path
@@ -473,10 +491,21 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
         }
-        for item in [copyPathItem, copyMarkdownItem, revealItem, openItem] {
+        for item in [copyPathItem, copyMarkdownItem, revealItem, openItem, previewItem] {
             menu.insertItem(item, at: 0)
         }
         return true
+    }
+
+    @objc
+    private func previewAttachmentMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = attachmentURL(from: sender) else { return }
+        attachmentQuickLookController.preview(url)
+    }
+
+    @discardableResult
+    func previewAttachment(atPath path: String) -> Bool {
+        attachmentQuickLookController.preview(URL(fileURLWithPath: path))
     }
 
     @objc

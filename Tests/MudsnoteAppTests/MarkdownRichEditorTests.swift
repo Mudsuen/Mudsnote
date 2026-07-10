@@ -2193,6 +2193,7 @@ struct MarkdownRichEditorTests {
         var editorAttachmentMarkdowns: [String] = []
         var editorAttachmentFilePaths: [String] = []
         var editorAttachmentMetadata: [String] = []
+        var editorAttachmentRange: NSRange?
         controller.editorTextView.attributedString().enumerateAttribute(
             .qmAttachmentMarkdown,
             in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
@@ -2204,9 +2205,12 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.attributedString().enumerateAttribute(
             .qmAttachmentFilePath,
             in: NSRange(location: 0, length: controller.editorTextView.attributedString().length)
-        ) { value, _, _ in
+        ) { value, range, _ in
             if let value = value as? String {
                 editorAttachmentFilePaths.append(value)
+                if value == copiedAttachment.path {
+                    editorAttachmentRange = range
+                }
             }
         }
         controller.editorTextView.attributedString().enumerateAttribute(
@@ -2227,7 +2231,8 @@ struct MarkdownRichEditorTests {
             forAttachmentPath: copiedAttachment.path,
             markdown: insertedAttachmentMarkdown
         ))
-        #expect(Array(attachmentMenu.items.map(\.title).prefix(4)) == [
+        #expect(Array(attachmentMenu.items.map(\.title).prefix(5)) == [
+            "快速查看",
             "打开附件",
             "在 Finder 中显示",
             "复制 Markdown 链接",
@@ -2235,8 +2240,30 @@ struct MarkdownRichEditorTests {
         ])
         #expect(attachmentMenu.items[0].representedObject as? String == copiedAttachment.path)
         #expect(attachmentMenu.items[1].representedObject as? String == copiedAttachment.path)
-        #expect((attachmentMenu.items[2].representedObject as? String)?.contains("source%20file.pdf") == true)
-        #expect(attachmentMenu.items[3].representedObject as? String == copiedAttachment.path)
+        #expect(attachmentMenu.items[2].representedObject as? String == copiedAttachment.path)
+        #expect((attachmentMenu.items[3].representedObject as? String)?.contains("source%20file.pdf") == true)
+        #expect(attachmentMenu.items[4].representedObject as? String == copiedAttachment.path)
+
+        controller.editorTextView.setSelectedRange(try #require(editorAttachmentRange))
+        #expect(controller.editorTextView.fileAttachmentReferenceNearSelection()?.path == copiedAttachment.path)
+        let spaceEvent = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Space)
+        ))
+        #expect(controller.markdownTextView(controller.editorTextView, handleKeyDown: spaceEvent))
+        #expect(controller.attachmentQuickLookController.previewedURL == copiedAttachment.standardizedFileURL)
+        controller.attachmentQuickLookController.dismiss()
+
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        #expect(!controller.markdownTextView(controller.editorTextView, handleKeyDown: spaceEvent))
 
         _ = try controller.saveCurrentNoteForLibrary()
 
@@ -4035,6 +4062,50 @@ struct MarkdownRichEditorTests {
         let browser = try #require(controller.floatingNoteBrowserController)
         #expect(browser.window?.isVisible == true)
         #expect(browser.window?.canBecomeKey == true)
+    }
+
+    @MainActor
+    @Test
+    func floatingEditorQuickLooksSelectedFileAttachment() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let notesDirectory = harness.store.notesDirectory
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        let noteURL = notesDirectory.appendingPathComponent("Attachment Note.md")
+        let attachmentURL = notesDirectory.appendingPathComponent("preview.pdf")
+        try Data("PDF preview".utf8).write(to: attachmentURL)
+
+        let attributed = MarkdownRichTextCodec.render(
+            markdown: "[Preview](preview.pdf)",
+            theme: controller.theme,
+            baseURL: noteURL
+        )
+        controller.editorTextView.textStorage?.setAttributedString(attributed)
+        var attachmentRange: NSRange?
+        attributed.enumerateAttribute(
+            .qmAttachmentFilePath,
+            in: NSRange(location: 0, length: attributed.length)
+        ) { value, range, _ in
+            if value as? String == attachmentURL.path {
+                attachmentRange = range
+            }
+        }
+
+        controller.editorTextView.setSelectedRange(try #require(attachmentRange))
+        let spaceEvent = try keyEvent(keyCode: UInt16(kVK_Space), modifiers: [], characters: " ")
+        #expect(controller.markdownTextView(controller.editorTextView, handleKeyDown: spaceEvent))
+        #expect(controller.attachmentQuickLookController.previewedURL == attachmentURL.standardizedFileURL)
+
+        let menu = NSMenu()
+        #expect(controller.configureAttachmentContextMenu(
+            menu,
+            forAttachmentPath: attachmentURL.path,
+            markdown: "[Preview](preview.pdf)"
+        ))
+        #expect(menu.items.first?.title == "快速查看")
+        #expect(menu.items.first?.keyEquivalent == " ")
+        controller.attachmentQuickLookController.dismiss()
     }
 
     @MainActor
