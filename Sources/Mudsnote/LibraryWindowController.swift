@@ -210,11 +210,12 @@ enum LibraryNotesLayout {
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
+    static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
     static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 248
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
-    static let toolbarEditorToolsDisabledAlpha: CGFloat = 1.0
+    static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolsBorderWidth: CGFloat = 0
     static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0
     static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0
@@ -1913,6 +1914,13 @@ final class LibraryWindowController: NSWindowController,
         panelPrimaryTextColor().withAlphaComponent(isEnabled
             ? LibraryNotesLayout.toolbarIconEnabledAlpha
             : LibraryNotesLayout.toolbarIconDisabledAlpha
+        )
+    }
+
+    private func toolbarEditorToolIconTintColor(isEnabled: Bool) -> NSColor {
+        panelPrimaryTextColor().withAlphaComponent(isEnabled
+            ? LibraryNotesLayout.toolbarIconEnabledAlpha
+            : LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha
         )
     }
 
@@ -4453,7 +4461,7 @@ final class LibraryWindowController: NSWindowController,
             : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
         view.layer?.borderColor = Self.toolbarEditorToolsBorderColor(isEnabled: isEnabled).cgColor
         view.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: isEnabled).cgColor
-        setControls(in: view, enabled: isEnabled)
+        setEditorToolControls(in: view, enabled: isEnabled)
     }
 
     private static func toolbarEditorToolsBorderColor(isEnabled: Bool) -> NSColor {
@@ -4471,15 +4479,15 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private func setControls(in view: NSView, enabled isEnabled: Bool) {
+    private func setEditorToolControls(in view: NSView, enabled isEnabled: Bool) {
         if let control = view as? NSControl {
             control.isEnabled = isEnabled
         }
         if let button = view as? NSButton {
             button.alphaValue = 1
-            button.contentTintColor = toolbarIconTintColor(isEnabled: isEnabled)
+            button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isEnabled)
         }
-        view.subviews.forEach { setControls(in: $0, enabled: isEnabled) }
+        view.subviews.forEach { setEditorToolControls(in: $0, enabled: isEnabled) }
     }
 
     private func makeFolderContextMenu(for folderURL: URL) -> NSMenu {
