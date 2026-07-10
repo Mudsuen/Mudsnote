@@ -84,8 +84,10 @@ private func librarySearchResults(
     }
 
     switch scope {
-    case .all, .recent:
+    case .all:
         return noteStore.searchNotes(query: query, limit: limit)
+    case .recent:
+        return noteStore.searchRecentNotes(query: query, limit: limit)
     case .inbox:
         return noteStore.searchNotes(query: query, limit: limit).filter(libraryIsInboxNote)
     case .trash:

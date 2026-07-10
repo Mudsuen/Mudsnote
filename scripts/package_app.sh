@@ -60,9 +60,17 @@ cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+xattr -cr "${APP_DIR}" || true
+SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/Apple Development:/ { print $2; exit }')"
+if [[ -z "${SIGN_IDENTITY}" ]]; then
+    SIGN_IDENTITY="-"
+fi
+codesign --force --deep --sign "${SIGN_IDENTITY}" "${APP_DIR}" >/dev/null
+
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_DIR}"
 pkill -f '/Applications/Mudsnote.app/Contents/MacOS/Mudsnote' || true
 sleep 1
 open -a "${APP_DIR}"
 
 echo "Packaged app at: ${APP_DIR}"
+echo "Signed with: ${SIGN_IDENTITY}"

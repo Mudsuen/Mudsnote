@@ -660,6 +660,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a temporary `正在索引...` note-list count state during deferred full-library hydration. The shell remains fast, the first note still opens without focusing search, and the label returns to the normal count after the background snapshot is applied.
 - Lesson: Performance work needs visible progress state; keeping launch asynchronous should not make the library feel silently incomplete.
 
+### 113. Recent-search scope and single-read indexing
+
+- Problem: Search indexing read each Markdown file twice, and the `最近` scope reused full-library search so unopened filesystem notes could appear as recent results. The assembled app bundle was also not signed as a whole, causing strict verification to fail.
+- Fix: Centralized parsing of already-read Markdown text, added a recent-file search path that filters before ranking and limiting, and signed the final app bundle by unique certificate hash with an ad-hoc fallback. Added regression coverage for unopened files in recent search.
+- Lesson: Local-first performance and correctness share the same boundary: read each source file once, then apply explicit scope membership before ranking; verify the final installed bundle rather than only the executable.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

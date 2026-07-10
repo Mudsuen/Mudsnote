@@ -35,6 +35,10 @@ extension NoteStore {
 
     public func loadNote(at url: URL) throws -> (title: String, body: String, tags: [String]) {
         let text = try String(contentsOf: url, encoding: .utf8)
+        return loadedNote(from: text, at: url)
+    }
+
+    func loadedNote(from text: String, at url: URL) -> (title: String, body: String, tags: [String]) {
         let parsed = parseStoredDocument(text)
         let trimmedBody = parsed.body.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = parsed.body.components(separatedBy: .newlines)

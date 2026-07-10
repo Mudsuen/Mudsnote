@@ -95,6 +95,27 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func recentSearchExcludesLibraryFilesThatWereNeverOpened() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        let recentURL = try store.saveNewNote(title: "Recent Alpha", body: "shared search phrase")
+        let externalURL = notesDirectory.appendingPathComponent("External Alpha.md")
+        try "# External Alpha\n\nshared search phrase\n".write(to: externalURL, atomically: true, encoding: .utf8)
+
+        let allResults = store.searchNotes(query: "shared search phrase", limit: 10)
+        let recentResults = store.searchRecentNotes(query: "shared search phrase", limit: 10)
+
+        #expect(Set(allResults.map { $0.url.standardizedFileURL.path }) == Set([
+            recentURL.standardizedFileURL.path,
+            externalURL.standardizedFileURL.path,
+        ]))
+        #expect(recentResults.map { $0.url.standardizedFileURL.path } == [recentURL.standardizedFileURL.path])
+    }
+
+    @Test
     func searchIndexRefreshesWhenMarkdownFileChanges() throws {
         let harness = try TestHarness()
         let store = harness.store

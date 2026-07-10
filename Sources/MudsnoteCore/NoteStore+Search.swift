@@ -41,24 +41,51 @@ extension NoteStore {
     public func searchNotes(query: String, limit: Int = 30, roots: [URL]? = nil) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
-            return listRecentFiles(limit: limit).map { note in
-                let loaded = try? loadNote(at: note.url)
-                return NoteSearchResult(
-                    url: note.url,
-                    title: loaded.map { displayTitle(for: note.url, loadedTitle: $0.title) } ?? note.title,
-                    snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
-                    modifiedAt: note.modifiedAt,
-                    tags: loaded?.tags ?? [],
-                    hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
-                    thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
-                )
-            }
+            return recentSearchResults(limit: limit)
         }
 
-        let loweredQuery = trimmedQuery.lowercased()
+        return rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: indexedEntries(roots: roots)
+        )
+    }
+
+    public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return recentSearchResults(limit: limit)
+        }
+
+        let recentPaths = Set(listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
+        let recentEntries = indexedEntries().filter { recentPaths.contains($0.url.standardizedFileURL.path) }
+        return rankedSearchResults(query: trimmedQuery, limit: limit, entries: recentEntries)
+    }
+
+    private func recentSearchResults(limit: Int) -> [NoteSearchResult] {
+        listRecentFiles(limit: limit).map { note in
+            let loaded = try? loadNote(at: note.url)
+            return NoteSearchResult(
+                url: note.url,
+                title: loaded.map { displayTitle(for: note.url, loadedTitle: $0.title) } ?? note.title,
+                snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
+                modifiedAt: note.modifiedAt,
+                tags: loaded?.tags ?? [],
+                hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
+                thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
+            )
+        }
+    }
+
+    private func rankedSearchResults(
+        query: String,
+        limit: Int,
+        entries: [NoteSearchIndexEntry]
+    ) -> [NoteSearchResult] {
+        let loweredQuery = query.lowercased()
         var scoredResults: [(result: NoteSearchResult, score: Int)] = []
 
-        for entry in indexedEntries(roots: roots) {
+        for entry in entries {
             guard let scored = scoredMatch(for: entry, loweredQuery: loweredQuery) else { continue }
             scoredResults.append(scored)
         }
@@ -198,11 +225,7 @@ extension NoteStore {
         }
 
         let modifiedAt = signature?.modifiedAt ?? Date()
-        let note = (try? loadNote(at: fileURL)) ?? (
-            title: fileURL.deletingPathExtension().lastPathComponent,
-            body: text,
-            tags: []
-        )
+        let note = loadedNote(from: text, at: fileURL)
         let title = displayTitle(for: fileURL, loadedTitle: note.title)
         let snippet = firstMeaningfulLine(from: note.body) ?? ""
 
