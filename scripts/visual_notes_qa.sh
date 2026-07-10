@@ -58,7 +58,7 @@ case "$SELECTED_FIXTURE" in
     SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
     ;;
   content)
-    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/lz合集.md"
+    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
     ;;
   *)
     echo "Unknown MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE '$SELECTED_FIXTURE'. Expected 'empty' or 'content'." >&2
@@ -140,17 +140,16 @@ try writeNote(
 )
 try writeNote(
     directory: notesDirectory,
-    filename: "lz合集.md",
-    title: "lz 合集",
+    filename: "项目计划.md",
+    title: "项目计划",
     body: """
-    Monday  动机
-    人际：身边没有更优秀的人，无法进步
-    节奏：无自由探索时间，风格不符合
-    搬迁：房租成本和创业环境
-    职业：与 ai 太远，发展潜力低
+    Monday  本周重点
+    整理需求并确定优先级
+    完成编辑器交互验证
+    检查桌面端与移动端体验
 
-    1. 换房：安静 隔音 视野开阔 less is more 东西整理
-    2. 灰产了解
+    1. 修复阻塞问题
+    2. 完成发布前检查
     """,
     daysAgo: 3,
     hour: 10,
