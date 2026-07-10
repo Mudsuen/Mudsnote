@@ -486,6 +486,36 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func pinnedNotePathsPersistAndFollowFileLifecycle() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+
+        let noteURL = try store.saveNewNote(title: "Pinned Draft", body: "Body")
+        store.setLibraryNotePinned(true, at: noteURL)
+        #expect(store.isLibraryNotePinned(at: noteURL))
+
+        let renamedURL = try store.updateNote(at: noteURL, title: "Pinned Final", body: "Body")
+        #expect(!store.isLibraryNotePinned(at: noteURL))
+        #expect(store.isLibraryNotePinned(at: renamedURL))
+
+        let projectFolder = try store.createFolder(named: "Project")
+        let movedURL = try store.moveNote(at: renamedURL, to: projectFolder)
+        #expect(!store.isLibraryNotePinned(at: renamedURL))
+        #expect(store.isLibraryNotePinned(at: movedURL))
+
+        let renamedFolder = try store.renamePreferredDirectory(projectFolder, to: "Renamed Project")
+        let folderRenamedURL = renamedFolder.appendingPathComponent(movedURL.lastPathComponent)
+        #expect(!store.isLibraryNotePinned(at: movedURL))
+        #expect(store.isLibraryNotePinned(at: folderRenamedURL))
+
+        _ = try store.trashNote(at: folderRenamedURL)
+        #expect(!store.isLibraryNotePinned(at: folderRenamedURL))
+        #expect(store.libraryPinnedNotePaths.isEmpty)
+    }
+
+    @Test
     func aiPromptBuilderKeepsSelectionScopeExplicit() throws {
         let request = AIRequest(
             actionID: .fix,

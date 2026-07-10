@@ -67,6 +67,55 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryGroupsNotesByDate) }
     }
 
+    public var libraryPinnedNotePaths: [String] {
+        let storedPaths = defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? []
+        return Array(Set(storedPaths.map {
+            URL(fileURLWithPath: $0).standardizedFileURL.path
+        })).sorted()
+    }
+
+    public func isLibraryNotePinned(at url: URL) -> Bool {
+        libraryPinnedNotePaths.contains(url.standardizedFileURL.path)
+    }
+
+    public func setLibraryNotePinned(_ isPinned: Bool, at url: URL) {
+        var paths = Set(libraryPinnedNotePaths)
+        let path = url.standardizedFileURL.path
+        if isPinned {
+            paths.insert(path)
+        } else {
+            paths.remove(path)
+        }
+        defaults.set(paths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    func replaceLibraryPinnedNotePath(_ oldURL: URL, with newURL: URL) {
+        let oldPath = oldURL.standardizedFileURL.path
+        guard libraryPinnedNotePaths.contains(oldPath) else { return }
+        var paths = Set(libraryPinnedNotePaths)
+        paths.remove(oldPath)
+        paths.insert(newURL.standardizedFileURL.path)
+        defaults.set(paths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    func replaceLibraryPinnedNotePathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let newPath = newDirectory.standardizedFileURL.path
+        let updatedPaths = libraryPinnedNotePaths.map { path in
+            guard path.hasPrefix(oldPath + "/") else { return path }
+            return newPath + String(path.dropFirst(oldPath.count))
+        }
+        defaults.set(Array(Set(updatedPaths)).sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    func removeLibraryPinnedNotePaths(in directory: URL) {
+        let directoryPath = directory.standardizedFileURL.path
+        let remainingPaths = libraryPinnedNotePaths.filter {
+            $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
+        }
+        defaults.set(remainingPaths, forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
     public var aiEnabled: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.aiEnabled) as? Bool ?? false }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiEnabled) }

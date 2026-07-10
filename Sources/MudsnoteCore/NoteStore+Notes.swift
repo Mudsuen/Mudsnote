@@ -84,6 +84,9 @@ extension NoteStore {
 
         try writeNote(to: desiredURL, title: title, body: body, tags: tags)
         rememberRecentFile(desiredURL, replacing: desiredURL == url ? nil : url)
+        if desiredURL.standardizedFileURL != url.standardizedFileURL {
+            replaceLibraryPinnedNotePath(url, with: desiredURL)
+        }
         return desiredURL
     }
 
@@ -108,6 +111,7 @@ extension NoteStore {
         if oldDirectory != newDirectory {
             try fileManager.moveItem(at: oldDirectory, to: newDirectory)
             replaceRecentPathPrefix(oldDirectory, with: newDirectory)
+            replaceLibraryPinnedNotePathPrefix(oldDirectory, with: newDirectory)
         }
         replacePreferredDirectory(oldDirectory, with: newDirectory)
         return newDirectory
@@ -128,6 +132,7 @@ extension NoteStore {
         )
         try fileManager.moveItem(at: sourceURL, to: movedURL)
         rememberRecentFile(movedURL, replacing: sourceURL)
+        replaceLibraryPinnedNotePath(sourceURL, with: movedURL)
         return movedURL
     }
 
@@ -155,6 +160,7 @@ extension NoteStore {
         storeTrashedNotesMetadata(metadata)
         removePreferredDirectory(originalDirectory)
         forgetRecentPathPrefix(originalDirectory)
+        removeLibraryPinnedNotePaths(in: originalDirectory)
         return trashedDirectory
     }
 
@@ -206,6 +212,7 @@ extension NoteStore {
             deletedAt: Date()
         )
         storeTrashedNotesMetadata(metadata)
+        setLibraryNotePinned(false, at: standardizedURL)
         return trashedURL
     }
 
@@ -236,6 +243,7 @@ extension NoteStore {
         metadata.removeValue(forKey: metadataKey(for: standardizedURL))
         storeTrashedNotesMetadata(metadata)
         forgetRecentFile(standardizedURL)
+        setLibraryNotePinned(false, at: standardizedURL)
     }
 
     func markdownFiles(in root: URL) -> [URL] {

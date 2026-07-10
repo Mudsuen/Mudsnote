@@ -114,6 +114,7 @@ enum NoteStoreDefaultsKey {
     static let spellCheckingEnabled = "mudsnote.spellCheckingEnabled"
     static let libraryNoteSortOrder = "mudsnote.library.noteSortOrder"
     static let libraryGroupsNotesByDate = "mudsnote.library.groupsNotesByDate"
+    static let libraryPinnedNotePaths = "mudsnote.library.pinnedNotePaths"
     static let aiEnabled = "mudsnote.ai.enabled"
     static let aiOllamaBaseURL = "mudsnote.ai.ollamaBaseURL"
     static let aiOllamaModel = "mudsnote.ai.ollamaModel"

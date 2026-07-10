@@ -1341,6 +1341,75 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryPinnedNotesGroupAndMenusMatchSelectionState() throws {
+        let suiteName = "mudsnote-pinned-note-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-pinned-note-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let firstURL = try store.saveNewNote(title: "First", body: "Body")
+        let secondURL = try store.saveNewNote(title: "Second", body: "Body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let initialMoreMenu = controller.makeMoreActionsMenuForLibrary()
+        let pinItem = try #require(initialMoreMenu.items.first { $0.title == "置顶笔记" })
+        #expect(NSApp.sendAction(try #require(pinItem.action), to: pinItem.target, from: pinItem))
+        let pinnedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        #expect(store.isLibraryNotePinned(at: pinnedURL))
+        let pinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
+        #expect(pinnedHeader.titleLabel.stringValue == "Pinned")
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == pinnedURL.standardizedFileURL.path)
+        #expect(controller.makeMoreActionsMenuForLibrary().items.contains { $0.title == "取消置顶" })
+
+        let groupingItem = try #require(controller.makeNoteListActionsMenuForLibrary().items.first { $0.title == "按日期分组" })
+        #expect(NSApp.sendAction(try #require(groupingItem.action), to: groupingItem.target, from: groupingItem))
+        #expect(!controller.groupsNoteListByDate)
+        #expect(controller.tableView.numberOfRows == 3)
+        let ungroupedPinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
+        #expect(ungroupedPinnedHeader.titleLabel.stringValue == "Pinned")
+
+        let noteRows = (0..<controller.tableView.numberOfRows).filter { row in
+            controller.tableView(controller.tableView, pasteboardWriterForRow: row) is NSURL
+        }
+        #expect(noteRows.count == 2)
+        controller.tableView.selectRowIndexes(IndexSet(noteRows), byExtendingSelection: false)
+        let multiPinItem = try #require(controller.makeMoreActionsMenuForLibrary().items.first { $0.title == "置顶 2 条笔记" })
+        #expect(NSApp.sendAction(try #require(multiPinItem.action), to: multiPinItem.target, from: multiPinItem))
+        #expect(store.isLibraryNotePinned(at: firstURL))
+        #expect(store.isLibraryNotePinned(at: secondURL))
+
+        let repinnedRows = (0..<controller.tableView.numberOfRows).filter { row in
+            controller.tableView(controller.tableView, pasteboardWriterForRow: row) is NSURL
+        }
+        controller.tableView.selectRowIndexes(IndexSet(repinnedRows), byExtendingSelection: false)
+        let unpinItem = try #require(controller.makeMoreActionsMenuForLibrary().items.first { $0.title == "取消置顶 2 条笔记" })
+        #expect(NSApp.sendAction(try #require(unpinItem.action), to: unpinItem.target, from: unpinItem))
+        #expect(store.libraryPinnedNotePaths.isEmpty)
+        #expect(controller.tableView.numberOfRows == 2)
+        #expect(controller.tableView(controller.tableView, viewFor: nil, row: 0) is LibraryNoteCellView)
+    }
+
+    @MainActor
+    @Test
     func libraryNoteListAvoidsDuplicatingWeekdayPrefixInSnippet() throws {
         let suiteName = "mudsnote-note-list-weekday-snippet-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

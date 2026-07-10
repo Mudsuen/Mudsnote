@@ -2925,20 +2925,32 @@ final class LibraryWindowController: NSWindowController,
         preservesInputOrder: Bool = false
     ) -> [LibraryNoteListRow] {
         let orderedNotes = preservesInputOrder ? notes : sortedNotesForCurrentListOrder(notes)
+        let canShowPinnedGroup = !preservesInputOrder && selectedScope != .trash
+        let pinnedPaths = canShowPinnedGroup ? Set(noteStore.libraryPinnedNotePaths) : []
+        let pinnedNotes = orderedNotes.filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }
+        let unpinnedNotes = orderedNotes.filter { !pinnedPaths.contains($0.url.standardizedFileURL.path) }
+
+        var rows: [LibraryNoteListRow] = []
+        if !pinnedNotes.isEmpty {
+            rows.append(.group(title: "Pinned"))
+            rows.append(contentsOf: pinnedNotes.map(LibraryNoteListRow.note))
+        }
+
         guard groupsNoteListByDate else {
-            return orderedNotes.map(LibraryNoteListRow.note)
+            rows.append(contentsOf: unpinnedNotes.map(LibraryNoteListRow.note))
+            return rows
         }
 
         let notesForGrouping: [NoteSearchResult]
         if !preservesInputOrder, noteListSortOrder == .title {
-            notesForGrouping = notes.sorted { lhs, rhs in
+            notesForGrouping = unpinnedNotes.sorted { lhs, rhs in
                 if lhs.modifiedAt != rhs.modifiedAt {
                     return lhs.modifiedAt > rhs.modifiedAt
                 }
                 return lhs.url.standardizedFileURL.path < rhs.url.standardizedFileURL.path
             }
         } else {
-            notesForGrouping = orderedNotes
+            notesForGrouping = unpinnedNotes
         }
 
         var groupOrder: [String] = []
@@ -2951,7 +2963,6 @@ final class LibraryWindowController: NSWindowController,
             groupedNotes[group, default: []].append(note)
         }
 
-        var rows: [LibraryNoteListRow] = []
         for group in groupOrder {
             rows.append(.group(title: group))
             var notesInGroup = groupedNotes[group] ?? []
@@ -2961,6 +2972,16 @@ final class LibraryWindowController: NSWindowController,
             rows.append(contentsOf: notesInGroup.map(LibraryNoteListRow.note))
         }
         return rows
+    }
+
+    @discardableResult
+    func togglePinnedStateForSelectedNotesForLibrary() -> Bool {
+        let urls = selectedMarkdownFileURLsForLibrary()
+        guard selectedScope != .trash, !urls.isEmpty else { return false }
+        let shouldPin = !urls.allSatisfy { noteStore.isLibraryNotePinned(at: $0) }
+        urls.forEach { noteStore.setLibraryNotePinned(shouldPin, at: $0) }
+        rebuildNoteListRowsForDisplayOptions()
+        return shouldPin
     }
 
     private func sortedNotesForCurrentListOrder(_ notes: [NoteSearchResult]) -> [NoteSearchResult] {
@@ -3786,6 +3807,11 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
         }
+    }
+
+    @objc
+    private func togglePinnedNotesPressed() {
+        _ = togglePinnedStateForSelectedNotesForLibrary()
     }
 
     @objc
@@ -5064,6 +5090,9 @@ final class LibraryWindowController: NSWindowController,
             return menu
         }
 
+        addPinNoteItem(to: menu, selectionCount: selectionCount)
+        menu.addItem(.separator())
+
         let moveItem = NSMenuItem(title: noteActionTitle(single: "移到文件夹", multiple: "移动 %d 条笔记到文件夹", count: selectionCount), action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
         moveItem.isEnabled = canMoveSelectedNote
@@ -5114,6 +5143,18 @@ final class LibraryWindowController: NSWindowController,
         permanentlyDeleteItem.target = self
         permanentlyDeleteItem.isEnabled = canUseSelectedNote
         menu.addItem(permanentlyDeleteItem)
+    }
+
+    private func addPinNoteItem(to menu: NSMenu, selectionCount: Int) {
+        let urls = selectedMarkdownFileURLsForLibrary()
+        let allPinned = !urls.isEmpty && urls.allSatisfy { noteStore.isLibraryNotePinned(at: $0) }
+        let title = allPinned
+            ? noteActionTitle(single: "取消置顶", multiple: "取消置顶 %d 条笔记", count: selectionCount)
+            : noteActionTitle(single: "置顶笔记", multiple: "置顶 %d 条笔记", count: selectionCount)
+        let item = NSMenuItem(title: title, action: #selector(togglePinnedNotesPressed), keyEquivalent: "")
+        item.target = self
+        item.isEnabled = canUseSelectedNote && selectedScope != .trash
+        menu.addItem(item)
     }
 
     func makeShareExportMenuForLibrary() -> NSMenu {
@@ -5202,6 +5243,10 @@ final class LibraryWindowController: NSWindowController,
         openItem.target = self
         openItem.isEnabled = canUseSingleSelectedNote
         menu.addItem(openItem)
+
+        if !isTrashScope {
+            addPinNoteItem(to: menu, selectionCount: selectionCount)
+        }
 
         let moveItem = NSMenuItem(title: noteActionTitle(single: "移到文件夹", multiple: "移动 %d 条笔记到文件夹", count: selectionCount), action: nil, keyEquivalent: "")
         moveItem.submenu = makeMoveNoteMenu()
