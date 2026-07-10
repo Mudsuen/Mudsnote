@@ -457,6 +457,91 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         return true
     }
 
+    func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool {
+        guard let link = textView.linkReference(atCharacterIndex: index) else { return false }
+        return openMarkdownLink(link)
+    }
+
+    @discardableResult
+    func configureLinkContextMenu(_ menu: NSMenu, for link: MarkdownLinkReference) -> Bool {
+        let openItem = NSMenuItem(title: "打开链接", action: #selector(openLinkMenuItemPressed(_:)), keyEquivalent: "")
+        openItem.target = self
+        openItem.representedObject = link
+        openItem.isEnabled = openableMarkdownLinkURL(link.url) != nil
+
+        let editItem = NSMenuItem(title: "编辑链接...", action: #selector(editLinkMenuItemPressed(_:)), keyEquivalent: "")
+        editItem.target = self
+        editItem.representedObject = link
+
+        let copyItem = NSMenuItem(title: "复制链接", action: #selector(copyLinkMenuItemPressed(_:)), keyEquivalent: "")
+        copyItem.target = self
+        copyItem.representedObject = link
+
+        let removeItem = NSMenuItem(title: "移除链接", action: #selector(removeLinkMenuItemPressed(_:)), keyEquivalent: "")
+        removeItem.target = self
+        removeItem.representedObject = link
+
+        if !menu.items.isEmpty {
+            menu.insertItem(.separator(), at: 0)
+        }
+        for item in [openItem, editItem, copyItem, removeItem].reversed() {
+            menu.insertItem(item, at: 0)
+        }
+        return true
+    }
+
+    @objc
+    private func openLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        _ = openMarkdownLink(link)
+    }
+
+    @objc
+    private func editLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference,
+              let url = promptForEditedLinkURL(currentValue: link.url) else {
+            return
+        }
+        applyLinkURL(url, to: link)
+    }
+
+    @objc
+    private func copyLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link.url, forType: .string)
+    }
+
+    @objc
+    private func removeLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        applyLinkURL(nil, to: link)
+    }
+
+    @discardableResult
+    private func openMarkdownLink(_ link: MarkdownLinkReference) -> Bool {
+        guard let url = openableMarkdownLinkURL(link.url) else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    private func promptForEditedLinkURL(currentValue: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = "编辑链接"
+        alert.informativeText = "更新链接地址。"
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+
+        let field = NSTextField(string: currentValue)
+        field.placeholderString = "https://example.com"
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 28)
+        alert.accessoryView = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     @discardableResult
     func configureAttachmentContextMenu(_ menu: NSMenu, forAttachment attachment: MarkdownAttachmentReference) -> Bool {
         configureAttachmentContextMenu(menu, forAttachmentPath: attachment.path, markdown: attachment.markdown)

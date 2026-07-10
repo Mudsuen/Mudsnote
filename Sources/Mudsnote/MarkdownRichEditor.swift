@@ -32,6 +32,32 @@ final class MarkdownAttachmentReference: NSObject {
     }
 }
 
+final class MarkdownLinkReference: NSObject {
+    let range: NSRange
+    let label: String
+    let url: String
+
+    init(range: NSRange, label: String, url: String) {
+        self.range = range
+        self.label = label
+        self.url = url
+    }
+}
+
+func openableMarkdownLinkURL(_ rawValue: String) -> URL? {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    if let url = URL(string: trimmed),
+       let scheme = url.scheme?.lowercased(),
+       ["http", "https", "mailto", "tel"].contains(scheme) {
+        return url
+    }
+
+    guard !trimmed.contains(":") else { return nil }
+    return URL(string: "https://\(trimmed)")
+}
+
 let markdownItalicObliqueness: CGFloat = 0.16
 
 enum MarkdownParagraphKind: Equatable {
@@ -157,6 +183,7 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool
+    func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool
 }
 
 extension MarkdownTextViewCommands {
@@ -165,6 +192,10 @@ extension MarkdownTextViewCommands {
     }
 
     func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool {
+        false
+    }
+
+    func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool {
         false
     }
 }
@@ -190,7 +221,8 @@ final class MarkdownTextView: NSTextView {
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
         if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer)
-            || fileAttachmentReference(atCharacterIndex: characterIndex) != nil {
+            || fileAttachmentReference(atCharacterIndex: characterIndex) != nil
+            || linkReference(atCharacterIndex: characterIndex) != nil {
             NSCursor.pointingHand.set()
         } else {
             NSCursor.iBeam.set()
@@ -284,6 +316,12 @@ final class MarkdownTextView: NSTextView {
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command],
+           linkReference(atCharacterIndex: characterIndex) != nil,
+           commandDelegate?.markdownTextView(self, didCommandClickLinkAt: characterIndex) == true {
+            return
+        }
+
         if event.clickCount >= 2,
            fileAttachmentReference(atCharacterIndex: characterIndex) != nil,
            commandDelegate?.markdownTextView(self, didDoubleClickAttachmentAt: characterIndex) == true {
@@ -305,6 +343,31 @@ final class MarkdownTextView: NSTextView {
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
         guard let characterIndex = characterIndex(at: event) else { return nil }
         return fileAttachmentReference(atCharacterIndex: characterIndex)
+    }
+
+    func linkReference(at event: NSEvent) -> MarkdownLinkReference? {
+        guard let characterIndex = characterIndex(at: event) else { return nil }
+        return linkReference(atCharacterIndex: characterIndex)
+    }
+
+    func linkReference(atCharacterIndex characterIndex: Int) -> MarkdownLinkReference? {
+        guard let textStorage,
+              characterIndex >= 0,
+              characterIndex < textStorage.length else {
+            return nil
+        }
+
+        var effectiveRange = NSRange(location: 0, length: 0)
+        guard let url = textStorage.attribute(
+            .qmLinkURL,
+            at: characterIndex,
+            effectiveRange: &effectiveRange
+        ) as? String,
+        effectiveRange.length > 0 else {
+            return nil
+        }
+        let label = (textStorage.string as NSString).substring(with: effectiveRange)
+        return MarkdownLinkReference(range: effectiveRange, label: label, url: url)
     }
 
     func characterIndex(at event: NSEvent) -> Int? {

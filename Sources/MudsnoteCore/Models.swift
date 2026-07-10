@@ -93,6 +93,13 @@ public struct StoredWindowFrame: Codable, Equatable, Sendable {
 }
 
 public struct MarkdownEditorDocument: Equatable, Sendable {
+    private static let previewListPrefixRegex = try! NSRegularExpression(
+        pattern: #"^\s*(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+\.\s+|(?:\[\s?\]|【】)\s*)"#
+    )
+    private static let previewLinkRegex = try! NSRegularExpression(
+        pattern: #"!?\[([^\]]*)\]\([^)]+\)"#
+    )
+
     public let title: String
     public let body: String
     public let tags: [String]
@@ -166,7 +173,9 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
     public static func previewText(fromMarkdownLine line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return trimmed }
+        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else {
+            return plainPreviewText(from: trimmed)
+        }
 
         let cells = trimmed
             .split(separator: "|", omittingEmptySubsequences: false)
@@ -180,7 +189,30 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
         }
         guard !isSeparator else { return nil }
-        return cells.filter { !$0.isEmpty }.joined(separator: "  ")
+        return cells
+            .compactMap(plainPreviewText(from:))
+            .filter { !$0.isEmpty }
+            .joined(separator: "  ")
+    }
+
+    private static func plainPreviewText(from source: String) -> String? {
+        var preview = source
+        let fullRange = NSRange(location: 0, length: (preview as NSString).length)
+        preview = previewListPrefixRegex.stringByReplacingMatches(
+            in: preview,
+            range: fullRange,
+            withTemplate: ""
+        )
+        preview = previewLinkRegex.stringByReplacingMatches(
+            in: preview,
+            range: NSRange(location: 0, length: (preview as NSString).length),
+            withTemplate: "$1"
+        )
+        for marker in ["**", "__", "~~", "`", "<u>", "</u>"] {
+            preview = preview.replacingOccurrences(of: marker, with: "")
+        }
+        let trimmed = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     public static func firstLocalImageURL(in body: String, relativeTo noteURL: URL) -> URL? {

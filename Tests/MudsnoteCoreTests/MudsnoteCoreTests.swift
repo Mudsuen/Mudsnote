@@ -97,6 +97,12 @@ struct MudsnoteCoreTests {
         #expect(result.snippet == "Name  Status")
         #expect(!result.snippet.contains("|"))
         #expect(store.searchNotes(query: "Mudsnote", limit: 10).first?.snippet == "Mudsnote  Active")
+        #expect(MarkdownEditorDocument.previewText(
+            fromMarkdownLine: "- [ ] Review **Mudsnote** at [site](https://muds.top)"
+        ) == "Review Mudsnote at site")
+        #expect(MarkdownEditorDocument.previewText(
+            fromMarkdownLine: "1. Use `Command-K` and ~~old text~~"
+        ) == "Use Command-K and old text")
     }
 
     @Test

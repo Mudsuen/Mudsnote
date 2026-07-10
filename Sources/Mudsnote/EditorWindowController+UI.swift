@@ -31,6 +31,9 @@ extension EditorWindowController {
             if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
                 self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
             }
+            if let link = self?.editorTextView.linkReference(at: event) {
+                self?.configureLinkContextMenu(menu, for: link)
+            }
             self?.configureAIContextMenu(menu)
         }
         editorTextView.onTextInputStateChanged = { [weak self] in

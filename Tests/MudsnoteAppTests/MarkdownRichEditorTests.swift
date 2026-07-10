@@ -2281,6 +2281,104 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryAndFloatingEditorsManageMarkdownLinks() throws {
+        let suiteName = "mudsnote.link-management-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-link-management-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Links", body: "[Muds](https://muds.top)")
+
+        let libraryController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { libraryController.close() }
+
+        let linkLocation = (libraryController.editorTextView.string as NSString).range(of: "Muds").location
+        let libraryLink = try #require(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation))
+        #expect(libraryLink.range == NSRange(location: linkLocation, length: 4))
+        #expect(libraryLink.label == "Muds")
+        #expect(libraryLink.url == "https://muds.top")
+        #expect(openableMarkdownLinkURL("muds.top")?.absoluteString == "https://muds.top")
+        #expect(openableMarkdownLinkURL("custom-scheme:value") == nil)
+
+        let libraryMenu = NSMenu()
+        #expect(libraryController.configureLinkContextMenuForLibrary(libraryMenu, for: libraryLink))
+        #expect(libraryMenu.items.map(\.title) == ["打开链接", "编辑链接...", "复制链接", "移除链接"])
+        let copyItem = try #require(libraryMenu.items.dropFirst(2).first)
+        #expect(NSApp.sendAction(try #require(copyItem.action), to: copyItem.target, from: copyItem))
+        #expect(NSPasteboard.general.string(forType: .string) == "https://muds.top")
+
+        libraryController.updateLinkForLibrary(libraryLink, url: "https://example.com")
+        #expect(MarkdownRichTextCodec.serialize(
+            libraryController.editorTextView.attributedString(),
+            theme: libraryController.theme
+        ) == "[Muds](https://example.com)")
+
+        let updatedLibraryLink = try #require(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation))
+        libraryController.updateLinkForLibrary(updatedLibraryLink, url: nil)
+        #expect(MarkdownRichTextCodec.serialize(
+            libraryController.editorTextView.attributedString(),
+            theme: libraryController.theme
+        ) == "Muds")
+        #expect(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation) == nil)
+
+        let harness = try makeEditorControllerHarness(draftID: "link-management", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let floatingController = harness.controller
+        floatingController.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "[OpenAI](https://openai.com)",
+            theme: floatingController.theme
+        ))
+        let floatingLink = try #require(floatingController.editorTextView.linkReference(atCharacterIndex: 0))
+        let floatingMenu = NSMenu()
+        #expect(floatingController.configureLinkContextMenu(floatingMenu, for: floatingLink))
+        #expect(floatingMenu.items.map(\.title) == ["打开链接", "编辑链接...", "复制链接", "移除链接"])
+
+        floatingController.applyLinkURL("https://platform.openai.com", to: floatingLink)
+        #expect(MarkdownRichTextCodec.serialize(
+            floatingController.editorTextView.attributedString(),
+            theme: floatingController.theme
+        ) == "[OpenAI](https://platform.openai.com)")
+
+        let undoManager = try #require(floatingController.editorTextView.undoManager)
+        #expect(undoManager.canUndo)
+        undoManager.undo()
+        #expect(MarkdownRichTextCodec.serialize(
+            floatingController.editorTextView.attributedString(),
+            theme: floatingController.theme
+        ) == "[OpenAI](https://openai.com)")
+        undoManager.redo()
+        #expect(MarkdownRichTextCodec.serialize(
+            floatingController.editorTextView.attributedString(),
+            theme: floatingController.theme
+        ) == "[OpenAI](https://platform.openai.com)")
+
+        let updatedFloatingLink = try #require(floatingController.editorTextView.linkReference(atCharacterIndex: 0))
+        floatingController.applyLinkURL(nil, to: updatedFloatingLink)
+        #expect(MarkdownRichTextCodec.serialize(
+            floatingController.editorTextView.attributedString(),
+            theme: floatingController.theme
+        ) == "OpenAI")
+    }
+
+    @MainActor
+    @Test
     func markdownTablesRenderAsNativeGridsAndRoundTrip() throws {
         let markdown = """
         Before

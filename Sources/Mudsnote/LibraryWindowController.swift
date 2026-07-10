@@ -2193,6 +2193,9 @@ final class LibraryWindowController: NSWindowController,
             if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
                 self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
             }
+            if let link = self?.editorTextView.linkReference(at: event) {
+                self?.configureLinkContextMenuForLibrary(menu, for: link)
+            }
             if let characterIndex = self?.editorTextView.characterIndex(at: event) {
                 self?.configureMarkdownTableContextMenuForLibrary(menu, atCharacterIndex: characterIndex)
             }
@@ -5360,6 +5363,102 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @discardableResult
+    func configureLinkContextMenuForLibrary(_ menu: NSMenu, for link: MarkdownLinkReference) -> Bool {
+        let openItem = NSMenuItem(title: "打开链接", action: #selector(openLinkMenuItemPressed(_:)), keyEquivalent: "")
+        openItem.target = self
+        openItem.representedObject = link
+        openItem.isEnabled = openableMarkdownLinkURL(link.url) != nil
+
+        let editItem = NSMenuItem(title: "编辑链接...", action: #selector(editLinkMenuItemPressed(_:)), keyEquivalent: "")
+        editItem.target = self
+        editItem.representedObject = link
+        editItem.isEnabled = canEditCurrentDocument
+
+        let copyItem = NSMenuItem(title: "复制链接", action: #selector(copyLinkMenuItemPressed(_:)), keyEquivalent: "")
+        copyItem.target = self
+        copyItem.representedObject = link
+
+        let removeItem = NSMenuItem(title: "移除链接", action: #selector(removeLinkMenuItemPressed(_:)), keyEquivalent: "")
+        removeItem.target = self
+        removeItem.representedObject = link
+        removeItem.isEnabled = canEditCurrentDocument
+
+        if !menu.items.isEmpty {
+            menu.insertItem(.separator(), at: 0)
+        }
+        for item in [openItem, editItem, copyItem, removeItem].reversed() {
+            menu.insertItem(item, at: 0)
+        }
+        return true
+    }
+
+    @objc
+    private func openLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        _ = openMarkdownLinkForLibrary(link)
+    }
+
+    @objc
+    private func editLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference,
+              let url = promptForText(
+                title: "编辑链接",
+                message: "更新链接地址。",
+                placeholder: "https://example.com",
+                defaultValue: link.url
+              ) else {
+            return
+        }
+        updateLinkForLibrary(link, url: url)
+    }
+
+    @objc
+    private func copyLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link.url, forType: .string)
+    }
+
+    @objc
+    private func removeLinkMenuItemPressed(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        updateLinkForLibrary(link, url: nil)
+    }
+
+    @discardableResult
+    private func openMarkdownLinkForLibrary(_ link: MarkdownLinkReference) -> Bool {
+        guard let url = openableMarkdownLinkURL(link.url) else { return false }
+        NSWorkspace.shared.open(url)
+        return true
+    }
+
+    func updateLinkForLibrary(_ link: MarkdownLinkReference, url: String?) {
+        guard canEditCurrentDocument,
+              let storage = editorTextView.textStorage,
+              link.range.location >= 0,
+              NSMaxRange(link.range) <= storage.length,
+              storage.attribute(.qmLinkURL, at: link.range.location, effectiveRange: nil) != nil else {
+            return
+        }
+
+        suppressEditorChanges = true
+        storage.beginEditing()
+        if let url {
+            storage.addAttribute(.qmLinkURL, value: url, range: link.range)
+        } else {
+            storage.removeAttribute(.qmLinkURL, range: link.range)
+            storage.removeAttribute(.underlineStyle, range: link.range)
+            storage.addAttribute(.foregroundColor, value: theme.textColor, range: link.range)
+        }
+        storage.endEditing()
+        suppressEditorChanges = false
+
+        editorTextView.setSelectedRange(link.range)
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
+    }
+
+    @discardableResult
     func configureMarkdownTableContextMenuForLibrary(_ menu: NSMenu, atCharacterIndex characterIndex: Int) -> Bool {
         guard canEditCurrentDocument else {
             return false
@@ -6856,6 +6955,11 @@ final class LibraryWindowController: NSWindowController,
         else { return false }
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
         return true
+    }
+
+    func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool {
+        guard let link = textView.linkReference(atCharacterIndex: index) else { return false }
+        return openMarkdownLinkForLibrary(link)
     }
 
     @discardableResult

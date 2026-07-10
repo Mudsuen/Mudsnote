@@ -151,6 +151,33 @@ extension EditorWindowController {
 
     // MARK: - Inline font traits
 
+    func applyLinkURL(_ url: String?, to reference: MarkdownLinkReference) {
+        guard let storage = editorTextView.textStorage,
+              reference.range.location >= 0,
+              NSMaxRange(reference.range) <= storage.length,
+              storage.attribute(.qmLinkURL, at: reference.range.location, effectiveRange: nil) != nil else {
+            return
+        }
+
+        let undoSnapshot = formattingUndoSnapshot()
+        suppressTextDidChange = true
+        storage.beginEditing()
+        if let url {
+            storage.addAttribute(.qmLinkURL, value: url, range: reference.range)
+        } else {
+            storage.removeAttribute(.qmLinkURL, range: reference.range)
+            storage.removeAttribute(.underlineStyle, range: reference.range)
+            storage.addAttribute(.foregroundColor, value: theme.textColor, range: reference.range)
+        }
+        storage.endEditing()
+        suppressTextDidChange = false
+
+        editorTextView.setSelectedRange(reference.range)
+        updateTypingAttributesFromInsertionPoint()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: url == nil ? "移除链接" : "编辑链接")
+        userDidEdit()
+    }
+
     func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
         if trait.contains(.italicFontMask) {
             toggleItalicFormatting()

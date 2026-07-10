@@ -96,7 +96,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot

@@ -672,6 +672,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Rendered Markdown table blocks as native AppKit grids, kept lossless Markdown serialization, and moved Tab navigation plus row/column insert/delete actions onto explicit cell metadata. Empty cells remain editable and serializable, table-end structural newlines no longer leak into saved Markdown, and note-list previews show readable cell text instead of pipe syntax. Added installed-app editing, autosave, restart, and visual verification plus regression coverage.
 - Lesson: Rich local-first editing should hide storage syntax without replacing it; native presentation and explicit interaction metadata can sit on top of plain Markdown as long as round-trip behavior remains the contract.
 
+### 115. Native link management and clean previews
+
+- Problem: Rich links could be inserted but not managed afterward, and note-list previews still exposed raw `[label](url)` plus other Markdown markers instead of Apple Notes-like readable text.
+- Fix: Added native link context actions for open, edit address, copy, and remove in both library and floating editors, plus pure Command-click opening and undo-aware floating-editor updates. Link labels remain unchanged while standard Markdown URLs update on disk. Preview generation now strips link, emphasis, code, heading, checklist, and list syntax through cached lightweight regular expressions, with a disposable search-index schema bump so stale raw previews rebuild automatically.
+- Lesson: Notes-like rich editing does not require a proprietary document model; keep semantic attributes in the editor, plain Markdown on disk, and derived list previews cheap and disposable.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
