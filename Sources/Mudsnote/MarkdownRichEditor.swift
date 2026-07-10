@@ -210,6 +210,7 @@ final class MarkdownTextView: NSTextView {
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
     var pasteboardForPaste: () -> NSPasteboard = { .general }
+    var markdownPasteTheme: MarkdownEditorTheme?
 
     private func updateHoverCursor(with event: NSEvent) {
         guard let layoutManager, let textContainer else {
@@ -311,9 +312,33 @@ final class MarkdownTextView: NSTextView {
         if commandDelegate?.markdownTextView(self, pasteAttachmentsFrom: pasteboard) == true {
             return true
         }
+        if let markdownPasteTheme,
+           let importedMarkdown = MarkdownRichPasteNormalizer.markdown(from: pasteboard, theme: markdownPasteTheme) {
+            let markdown = markdownWithInsertionBoundaries(importedMarkdown)
+            let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: markdownPasteTheme)
+            insertText(rendered, replacementRange: selectedRange())
+            return true
+        }
         guard let string = pasteboard.string(forType: .string) else { return false }
         insertText(string, replacementRange: selectedRange())
         return true
+    }
+
+    private func markdownWithInsertionBoundaries(_ markdown: String) -> String {
+        let selection = selectedRange()
+        let current = string as NSString
+        var result = markdown
+
+        if selection.location > 0,
+           current.substring(with: NSRange(location: selection.location - 1, length: 1)) != "\n" {
+            result = "\n" + result
+        }
+        if NSMaxRange(selection) < current.length,
+           current.substring(with: NSRange(location: NSMaxRange(selection), length: 1)) != "\n",
+           !result.hasSuffix("\n") {
+            result += "\n"
+        }
+        return result
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

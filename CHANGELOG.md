@@ -684,6 +684,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Routed standard `Cmd+V` through the Markdown editor, normalized Finder file URLs and clipboard images into shared local attachment storage, inserted native image/file previews, and saved stable relative Markdown links. Internal `Attachments` directories are now excluded from source navigation and note indexing.
 - Lesson: Paste behavior must be verified through the installed app's real keyboard path; parser-only tests cannot prove that AppKit command routing reaches the local-first persistence layer.
 
+### 117. Portable HTML and RTF paste
+
+- Problem: Copying formatted content from a browser, TextEdit, or another notes app collapsed to plain text, so headings, emphasis, links, and lists were lost before they reached the Markdown document.
+- Fix: Added a lightweight AppKit-backed HTML/RTF normalizer that maps headings, bold, italic, underline, strikethrough, links, bullets, numbering, and fixed-width runs into the existing rich Markdown model. Exact `Cmd+V` routing now inserts safe paragraph boundaries beside existing text, and rich text wins over incidental image flavors without changing Finder-file or pure-image paste.
+- Lesson: Rich paste should reuse the system document parser for input and the existing Markdown codec for output; installed-app verification must include insertion beside existing text, autosave, and restart reload.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

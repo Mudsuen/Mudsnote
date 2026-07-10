@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import MudsnoteCore
 
-enum MarkdownPasteAttachmentPayload {
+enum MarkdownPasteAttachmentPayload: Equatable {
     case files([URL])
     case imagePNG(Data)
 }
@@ -21,6 +21,10 @@ enum MarkdownAttachmentStorage {
             }
         if !fileURLs.isEmpty {
             return .files(fileURLs)
+        }
+
+        if pasteboard.availableType(from: [.html, .rtf, .rtfd]) != nil {
+            return nil
         }
 
         if let pngData = pasteboard.data(forType: .png), !pngData.isEmpty {

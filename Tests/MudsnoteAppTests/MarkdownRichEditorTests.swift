@@ -2399,6 +2399,65 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func commandPasteNormalizesHTMLFormattingIntoPortableMarkdown() throws {
+        let html = """
+        <h1>Release Plan</h1>
+        <p>Keep <strong>bold</strong>, <em>italic</em>, and <a href="https://example.com">links</a>.</p>
+        <ul><li>First task</li><li>Second task</li></ul>
+        <ol><li>Review</li><li>Ship</li></ol>
+        """
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.clearContents()
+        #expect(pasteboard.setData(Data(html.utf8), forType: .html))
+        let imageData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        #expect(pasteboard.setData(imageData, forType: .png))
+        #expect(MarkdownAttachmentStorage.pastePayload(from: pasteboard) == nil)
+
+        let normalized = try #require(MarkdownRichPasteNormalizer.markdown(from: pasteboard, theme: theme))
+        #expect(normalized.contains("# Release Plan"))
+        #expect(normalized.contains("Keep **bold**, *italic*, and [links](https://example.com/)."))
+        #expect(normalized.contains("- First task\n- Second task"))
+        #expect(normalized.contains("1. Review\n2. Ship"))
+
+        let importedHTML = try NSAttributedString(
+            data: Data(html.utf8),
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ],
+            documentAttributes: nil
+        )
+        let rtfData = try importedHTML.data(
+            from: NSRange(location: 0, length: importedHTML.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let rtfPasteboard = NSPasteboard.withUniqueName()
+        rtfPasteboard.clearContents()
+        #expect(rtfPasteboard.setData(rtfData, forType: .rtf))
+        #expect(MarkdownRichPasteNormalizer.markdown(from: rtfPasteboard, theme: theme) == normalized)
+
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        textView.isRichText = true
+        textView.markdownPasteTheme = theme
+        textView.pasteboardForPaste = { pasteboard }
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Paste below:",
+            theme: theme
+        ))
+        textView.setSelectedRange(NSRange(location: textView.attributedString().length, length: 0))
+        let pasteEvent = try keyEvent(
+            keyCode: UInt16(kVK_ANSI_V),
+            modifiers: [.command],
+            characters: "v"
+        )
+
+        #expect(textView.performKeyEquivalent(with: pasteEvent))
+        let serialized = MarkdownRichTextCodec.serialize(textView.attributedString(), theme: theme)
+        #expect(serialized == "Paste below:\n\(normalized)")
+    }
+
+    @MainActor
+    @Test
     func libraryAndFloatingEditorsManageMarkdownLinks() throws {
         let suiteName = "mudsnote.link-management-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

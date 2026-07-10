@@ -2189,6 +2189,7 @@ final class LibraryWindowController: NSWindowController,
     private func configureEditorTextView() {
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
+        editorTextView.markdownPasteTheme = theme
         editorTextView.configureContextMenu = { [weak self] menu, event in
             if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
                 self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
