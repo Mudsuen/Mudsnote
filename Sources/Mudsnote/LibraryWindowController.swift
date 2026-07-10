@@ -145,7 +145,7 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
-struct LibrarySourceCountIndex {
+struct LibrarySourceCountIndex: Sendable {
     let inboxCount: Int
     private let folderCounts: [String: Int]
     private let tagCounts: [String: Int]
@@ -1211,16 +1211,21 @@ final class LibraryWindowController: NSWindowController,
         updateNoteListHeader(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let noteStore = noteStore
         let snapshotLimit = Self.sourceCountSnapshotLimit
+        let sourceFolderPaths = currentSourceFolderPaths()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
+                let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
+                    ? countIndex
+                    : nil
                 let currentQuery = self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !currentQuery.isEmpty {
                     self.sourceCountSnapshot = allNotes
-                    self.refreshSourceCounts(using: allNotes)
+                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
                     self.updateNoteListHeader(query: currentQuery)
                     return
                 }
@@ -1228,7 +1233,8 @@ final class LibraryWindowController: NSWindowController,
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
-                    allNotesSnapshot: allNotes
+                    allNotesSnapshot: allNotes,
+                    sourceCountIndex: reusableCountIndex
                 )
             }
         }
@@ -2725,10 +2731,19 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func refreshSourceCounts(using allNotes: [NoteSearchResult]) {
+    private func currentSourceFolderPaths() -> Set<String> {
+        Set(sourceFolderRows.map { $0.url.standardizedFileURL.path })
+    }
+
+    private func refreshSourceCounts(
+        using allNotes: [NoteSearchResult],
+        countIndex precomputedCountIndex: LibrarySourceCountIndex? = nil
+    ) {
         let recentCount = noteStore.listRecentFiles(limit: 80).count
-        let folderPaths = Set(sourceFolderRows.map { $0.url.standardizedFileURL.path })
-        let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: folderPaths)
+        let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
+            notes: allNotes,
+            folderPaths: currentSourceFolderPaths()
+        )
         let trashCount = noteStore.trashedNoteCount()
 
         for button in sourceButtons {
@@ -2764,6 +2779,7 @@ final class LibraryWindowController: NSWindowController,
         selecting preferredURL: URL? = nil,
         loadFirstIfNeeded: Bool,
         allNotesSnapshot: [NoteSearchResult]? = nil,
+        sourceCountIndex: LibrarySourceCountIndex? = nil,
         refreshCounts: Bool = true
     ) {
         cancelActiveSearchResultReload()
@@ -2805,7 +2821,7 @@ final class LibraryWindowController: NSWindowController,
         }
         if refreshCounts {
             sourceCountSnapshot = allNotes
-            refreshSourceCounts(using: allNotes)
+            refreshSourceCounts(using: allNotes, countIndex: sourceCountIndex)
         }
         refreshSourceSelection()
         updateToolbarActionState()
