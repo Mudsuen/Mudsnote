@@ -226,6 +226,17 @@ open -n "$APP_PATH" --args \
   --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR" \
   --visual-qa-select-note "$SELECTED_NOTE_PATH" \
   --visual-qa-canonical-window-size
+
+cleanup_failed_visual_qa() {
+  local status=$?
+  trap - EXIT
+  if (( status != 0 )); then
+    pkill -x Mudsnote >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+trap cleanup_failed_visual_qa EXIT
+
 activate_mudsnote_for_capture
 sleep "${MUDSNOTE_VISUAL_QA_LAUNCH_DELAY:-4}"
 activate_mudsnote_for_capture
@@ -285,12 +296,15 @@ FRONTMOST_BEFORE_CAPTURE="$(frontmost_application_name || true)"
 APP_SCREENSHOT="$OUTPUT_DIR/mudsnote-library.png"
 PAIR_SCREENSHOT="$OUTPUT_DIR/apple-notes-vs-mudsnote.png"
 METADATA_PATH="$OUTPUT_DIR/visual-qa-metadata.txt"
+CAPTURE_SOURCE="$OUTPUT_DIR/mudsnote-capture-source.png"
 
-if ! screencapture -x -l "$WINDOW_ID" "$APP_SCREENSHOT" 2>/dev/null; then
-  echo "Window capture unavailable; falling back to full-screen crop." >&2
-  FULL_SCREENSHOT="$OUTPUT_DIR/mudsnote-fullscreen.png"
-  screencapture -x "$FULL_SCREENSHOT"
-  /usr/bin/swift - "$WINDOW_ID" "$FULL_SCREENSHOT" "$APP_SCREENSHOT" <<'SWIFT'
+rm -f "$APP_SCREENSHOT" "$CAPTURE_SOURCE"
+screencapture -x -o -l "$WINDOW_ID" "$CAPTURE_SOURCE" >/dev/null 2>&1 || true
+if [[ ! -s "$CAPTURE_SOURCE" ]]; then
+  screencapture -x "$CAPTURE_SOURCE"
+fi
+
+CAPTURE_MODE="$(/usr/bin/swift - "$WINDOW_ID" "$CAPTURE_SOURCE" "$APP_SCREENSHOT" <<'SWIFT'
 import AppKit
 import CoreGraphics
 
@@ -312,39 +326,60 @@ guard
     let y = bounds["Y"] as? Double,
     let width = bounds["Width"] as? Double,
     let height = bounds["Height"] as? Double,
-    let fullData = try? Data(contentsOf: fullURL),
-    let source = NSBitmapImageRep(data: fullData),
+    let sourceData = try? Data(contentsOf: fullURL),
+    let source = NSBitmapImageRep(data: sourceData),
     let cgImage = source.cgImage
 else {
-    fputs("Could not crop Mudsnote window from full screenshot\n", stderr)
+    fputs("Could not load Mudsnote window capture source\n", stderr)
     exit(2)
 }
 
-let screenFrame = NSScreen.screens.reduce(CGRect.null) { partial, screen in
-    partial.union(screen.frame)
-}
-let scaleX = CGFloat(source.pixelsWide) / max(screenFrame.width, 1)
-let scaleY = CGFloat(source.pixelsHigh) / max(screenFrame.height, 1)
-let cropRect = CGRect(
-    x: CGFloat(x) * scaleX,
-    y: CGFloat(y) * scaleY,
-    width: CGFloat(width) * scaleX,
-    height: CGFloat(height) * scaleY
-).integral.intersection(CGRect(x: 0, y: 0, width: source.pixelsWide, height: source.pixelsHigh))
+let windowAspect = CGFloat(width) / max(CGFloat(height), 1)
+let sourceAspect = CGFloat(source.pixelsWide) / max(CGFloat(source.pixelsHigh), 1)
+let sourceScaleX = CGFloat(source.pixelsWide) / max(CGFloat(width), 1)
+let sourceScaleY = CGFloat(source.pixelsHigh) / max(CGFloat(height), 1)
+let isDirectWindowCapture = abs(sourceAspect - windowAspect) < 0.01
+    && abs(sourceScaleX - sourceScaleY) < 0.02
 
-guard let cropped = cgImage.cropping(to: cropRect), cropRect.width > 0, cropRect.height > 0 else {
-    fputs("Could not create cropped Mudsnote window image\n", stderr)
-    exit(2)
+let outputImage: CGImage
+let captureMode: String
+if isDirectWindowCapture {
+    outputImage = cgImage
+    captureMode = "direct-window"
+} else {
+    let screenFrame = NSScreen.screens.reduce(CGRect.null) { partial, screen in
+        partial.union(screen.frame)
+    }
+    let scaleX = CGFloat(source.pixelsWide) / max(screenFrame.width, 1)
+    let scaleY = CGFloat(source.pixelsHigh) / max(screenFrame.height, 1)
+    let windowTop = screenFrame.maxY - (CGFloat(y) + CGFloat(height))
+    let cropRect = CGRect(
+        x: CGFloat(x - Double(screenFrame.minX)) * scaleX,
+        y: (windowTop - screenFrame.minY) * scaleY,
+        width: CGFloat(width) * scaleX,
+        height: CGFloat(height) * scaleY
+    ).integral.intersection(CGRect(x: 0, y: 0, width: source.pixelsWide, height: source.pixelsHigh))
+
+    guard cropRect.width > 0,
+          cropRect.height > 0,
+          let cropped = cgImage.cropping(to: cropRect) else {
+        fputs("Could not crop Mudsnote window from screen capture\n", stderr)
+        exit(2)
+    }
+    outputImage = cropped
+    captureMode = "screen-crop"
 }
 
-let bitmap = NSBitmapImageRep(cgImage: cropped)
+let bitmap = NSBitmapImageRep(cgImage: outputImage)
+bitmap.size = NSSize(width: width, height: height)
 guard let png = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else {
-    fputs("Could not encode cropped Mudsnote window image\n", stderr)
+    fputs("Could not encode Mudsnote window image\n", stderr)
     exit(2)
 }
 try png.write(to: outputURL)
+print(captureMode)
 SWIFT
-fi
+)"
 
 /usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" "$WINDOW_ID" <<'SWIFT'
 import AppKit
@@ -555,9 +590,11 @@ SWIFT
   echo "selected_fixture=$SELECTED_FIXTURE"
   echo "selected_note_path=$SELECTED_NOTE_PATH"
   echo "frontmost_before_capture=$FRONTMOST_BEFORE_CAPTURE"
+  echo "capture_mode=$CAPTURE_MODE"
 } >> "$METADATA_PATH"
 
 echo "Reference: $REFERENCE_PATH"
 echo "Mudsnote:  $APP_SCREENSHOT"
 echo "Compare:   $PAIR_SCREENSHOT"
 echo "Metadata:  $METADATA_PATH"
+trap - EXIT
