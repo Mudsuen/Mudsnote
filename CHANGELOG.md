@@ -708,6 +708,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Missing-file failures during asynchronous initial hydration now remove only the stale recent reference, rebuild the current lightweight rows, and continue loading the next note. Other load failures still surface normally, and recent-list construction remains free of synchronous metadata reads.
 - Lesson: Fast launch snapshots must tolerate stale derived state; repair the disposable reference on confirmed `ENOENT` instead of turning an expected external-file change into a modal startup failure.
 
+### 121. Durable iOS pending capture recovery
+
+- Problem: A non-empty iOS pending queue encoded dates as ISO-8601 but restored them with the default decoder, and replay after a successful write could append the same memo twice if queue cleanup had been interrupted.
+- Fix: Matched the queue decoder to its persisted format, automatically replayed queued captures, made coordinated Markdown writes idempotent with hidden markers, preserved those markers through Inbox actions without exposing them in memo text, and added App Store privacy declarations plus regression coverage.
+- Lesson: A capture is only durable when restart recovery is both readable and safe to repeat; recovery metadata must survive user actions while remaining invisible in portable Markdown rendering.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -31,8 +31,12 @@ actor PendingWriteQueue {
                 return
             }
             let data = try Data(contentsOf: queueURL)
-            items = try JSONDecoder().decode([PendingWrite].self, from: data)
+            items = try JSONDecoder.pendingWrites.decode([PendingWrite].self, from: data)
         }
+    }
+
+    func pendingCount() -> Int {
+        items.count
     }
 
     func enqueue(_ item: PendingWrite) throws {
@@ -80,5 +84,13 @@ extension JSONEncoder {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
+    }
+}
+
+extension JSONDecoder {
+    static var pendingWrites: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }

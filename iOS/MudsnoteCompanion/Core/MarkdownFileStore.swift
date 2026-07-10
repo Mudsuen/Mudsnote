@@ -55,12 +55,7 @@ actor MarkdownFileStore {
             try "# \(target.deletingPathExtension().lastPathComponent)\n\n".write(to: target, atomically: true, encoding: .utf8)
         }
 
-        let handle = try FileHandle(forWritingTo: target)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        if let data = pending.markdownBlock.data(using: .utf8) {
-            try handle.write(contentsOf: data)
-        }
+        try appendPendingWriteIfNeeded(pending, to: target)
     }
 
     static func recentFiles(in root: URL) throws -> [RecentMarkdownFile] {
@@ -134,6 +129,35 @@ actor MarkdownFileStore {
             let suffix = attachments.count > 1 ? "-\(index + 1)" : ""
             let fileName = "\(attachment.filePrefix)-\(timestamp)\(suffix).\(attachment.preferredExtension)"
             return ("Attachments/\(month)/\(fileName)", attachment.data)
+        }
+    }
+
+    private func appendPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
+        let marker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
+        let block = pending.markdownBlock + marker + "\n"
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var writeError: Error?
+
+        coordinator.coordinate(writingItemAt: target, options: .forMerging, error: &coordinationError) { coordinatedURL in
+            do {
+                var existing = try Data(contentsOf: coordinatedURL)
+                if let markerData = marker.data(using: .utf8), existing.range(of: markerData) != nil {
+                    return
+                }
+                guard let blockData = block.data(using: .utf8) else { return }
+                existing.append(blockData)
+                try existing.write(to: coordinatedURL, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+
+        if let coordinationError {
+            throw coordinationError
+        }
+        if let writeError {
+            throw writeError
         }
     }
 

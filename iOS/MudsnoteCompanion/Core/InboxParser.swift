@@ -5,6 +5,7 @@ struct MemoBlock: Identifiable, Equatable {
     var dateText: String
     var body: String
     var tags: [String]
+    var writeMarker: String? = nil
 
     var preview: String {
         let compact = body
@@ -28,6 +29,7 @@ enum InboxParser {
         var blocks: [MemoBlock] = []
         var currentDate: String?
         var currentLines: [String] = []
+        var currentWriteMarker: String?
 
         func flush() {
             guard let currentDate else { return }
@@ -37,7 +39,13 @@ enum InboxParser {
                 .map(String.init)
                 .filter { $0.hasPrefix("#") }
             let id = "\(currentDate)-\(blocks.count)"
-            blocks.append(MemoBlock(id: id, dateText: currentDate, body: body, tags: tags))
+            blocks.append(MemoBlock(
+                id: id,
+                dateText: currentDate,
+                body: body,
+                tags: tags,
+                writeMarker: currentWriteMarker
+            ))
         }
 
         for line in lines {
@@ -45,6 +53,9 @@ enum InboxParser {
                 flush()
                 currentDate = String(line.dropFirst(3))
                 currentLines = []
+                currentWriteMarker = nil
+            } else if currentDate != nil, isWriteMarker(line) {
+                currentWriteMarker = line
             } else if currentDate != nil {
                 currentLines.append(line)
             }
@@ -55,5 +66,12 @@ enum InboxParser {
 
     private static func isMemoHeading(_ value: String) -> Bool {
         value.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$"#, options: .regularExpression) != nil
+    }
+
+    private static func isWriteMarker(_ value: String) -> Bool {
+        value.range(
+            of: #"^<!-- mudsnote-write:[0-9a-fA-F-]{36} -->$"#,
+            options: .regularExpression
+        ) != nil
     }
 }

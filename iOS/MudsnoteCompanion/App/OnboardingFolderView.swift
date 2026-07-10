@@ -30,7 +30,7 @@ struct OnboardingFolderView: View {
             VStack(spacing: 8) {
                 RequirementRow(icon: "tray.fill", text: "初始化 Inbox.md")
                 RequirementRow(icon: "calendar", text: "创建 Daily 与 Attachments")
-                RequirementRow(icon: "arrow.triangle.2.circlepath", text: "启用 pending queue")
+                RequirementRow(icon: "arrow.triangle.2.circlepath", text: "启用可靠的待写队列")
             }
 
             Spacer()

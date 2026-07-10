@@ -32,6 +32,7 @@
 		F6AE932DD4F742368DDBC04F /* MudsnoteCompanionWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1E250D728D6484790D74691 /* Assets.xcassets */; };
 		A10000000000000000000001 /* MudsnoteCompanionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* MudsnoteCompanionTests.swift */; };
+		B20000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 		F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/MudsnoteAppIntents.swift; sourceTree = "<group>"; };
 		1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/ShareExtensionReference.swift; sourceTree = "<group>"; };
 		A1E250D728D6484790D74691 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MudsnoteCompanion/Assets.xcassets; sourceTree = "<group>"; };
+		B20000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = MudsnoteCompanion/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -154,6 +156,7 @@
 			isa = PBXGroup;
 			children = (
 				DC39EAC6ECA443EAA75D1AAC /* Info.plist */,
+				B20000000000000000000002 /* PrivacyInfo.xcprivacy */,
 				B281677F4F1A49248075689A /* MudsnoteCompanionApp.swift */,
 				412CBF43604B493EA56023BB /* AppModel.swift */,
 				CE171B25E9844F44907B421D /* RootView.swift */,
@@ -294,6 +297,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */,
+				B20000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

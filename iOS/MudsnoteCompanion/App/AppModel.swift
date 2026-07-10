@@ -103,8 +103,13 @@ final class AppModel: ObservableObject {
                 statusToast = .saved(continueCapturing ? "Saved. Ready for next" : "Saved")
                 await refreshInbox()
             } catch {
-                syncStatus = .pending
-                statusToast = .pending("Saved to pending queue")
+                let pendingCount = await queue?.pendingCount() ?? 0
+                if pendingCount > 0 {
+                    syncStatus = .pending
+                    statusToast = .pending("Saved to pending queue")
+                } else {
+                    statusToast = .error("Could not save. Draft kept open")
+                }
             }
         }
     }
@@ -268,7 +273,14 @@ final class AppModel: ObservableObject {
             )
             tagSummaries = Self.tagSummaries(from: inboxItems)
             conflictWarnings = try MarkdownFileStore.conflictWarnings(in: root)
-            syncStatus = conflictWarnings.isEmpty ? .idle : .conflict
+            let pendingCount = await queue?.pendingCount() ?? 0
+            if conflictWarnings.isEmpty == false {
+                syncStatus = .conflict
+            } else if pendingCount > 0 {
+                syncStatus = .pending
+            } else {
+                syncStatus = .idle
+            }
         } catch {
             statusToast = .error("Inbox refresh failed")
         }
@@ -282,6 +294,14 @@ final class AppModel: ObservableObject {
         queue = PendingWriteQueue(root: root)
         folderStatus = .ready(root)
         try await queue?.load()
+        do {
+            try await queue?.replay { [fileStore] item in
+                try await fileStore.performPendingWrite(item)
+            }
+        } catch {
+            syncStatus = .pending
+            statusToast = .pending("Pending captures need attention")
+        }
         await refreshInbox()
     }
 
@@ -336,12 +356,16 @@ final class AppModel: ObservableObject {
             }
     }
 
-    private static func inboxMarkdown(forDisplayItems items: [MemoBlock]) -> String {
+    static func inboxMarkdown(forDisplayItems items: [MemoBlock]) -> String {
         var output = "# Inbox\n\n"
         for memo in items.reversed() {
             output += "## \(memo.dateText)\n\n"
             output += memo.body.trimmingCharacters(in: .whitespacesAndNewlines)
             output += "\n\n"
+            if let writeMarker = memo.writeMarker {
+                output += writeMarker
+                output += "\n\n"
+            }
         }
         return output
     }
