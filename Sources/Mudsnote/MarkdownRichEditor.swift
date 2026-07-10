@@ -184,6 +184,7 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didDoubleClickAttachmentAt index: Int) -> Bool
     func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool
+    func markdownTextView(_ textView: MarkdownTextView, pasteAttachmentsFrom pasteboard: NSPasteboard) -> Bool
 }
 
 extension MarkdownTextViewCommands {
@@ -198,12 +199,17 @@ extension MarkdownTextViewCommands {
     func markdownTextView(_ textView: MarkdownTextView, didCommandClickLinkAt index: Int) -> Bool {
         false
     }
+
+    func markdownTextView(_ textView: MarkdownTextView, pasteAttachmentsFrom pasteboard: NSPasteboard) -> Bool {
+        false
+    }
 }
 
 final class MarkdownTextView: NSTextView {
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
+    var pasteboardForPaste: () -> NSPasteboard = { .general }
 
     private func updateHoverCursor(with event: NSEvent) {
         guard let layoutManager, let textContainer else {
@@ -260,6 +266,15 @@ final class MarkdownTextView: NSTextView {
         super.keyDown(with: event)
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == [.command], event.keyCode == 9,
+           pasteContents(from: pasteboardForPaste()) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func insertNewline(_ sender: Any?) {
         commandDelegate?.markdownTextViewInsertNewline(self)
     }
@@ -286,13 +301,19 @@ final class MarkdownTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
-        let pasteboard = NSPasteboard.general
-        guard let string = pasteboard.string(forType: .string) else {
+        if !pasteContents(from: pasteboardForPaste()) {
             super.paste(sender)
-            return
         }
+    }
 
+    @discardableResult
+    func pasteContents(from pasteboard: NSPasteboard) -> Bool {
+        if commandDelegate?.markdownTextView(self, pasteAttachmentsFrom: pasteboard) == true {
+            return true
+        }
+        guard let string = pasteboard.string(forType: .string) else { return false }
         insertText(string, replacementRange: selectedRange())
+        return true
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

@@ -2281,6 +2281,124 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryAndFloatingEditorsPasteFilesAndImagesAsLocalMarkdownAttachments() throws {
+        let suiteName = "mudsnote.attachment-paste-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-attachment-paste-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Paste Attachments", body: "Start")
+        let sourceFile = root.appendingPathComponent("source file.pdf")
+        try "PDF fixture".write(to: sourceFile, atomically: true, encoding: .utf8)
+        let pngData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+
+        let filePasteboard = NSPasteboard.withUniqueName()
+        filePasteboard.clearContents()
+        #expect(filePasteboard.writeObjects([sourceFile as NSURL]))
+        guard case .files(let pastedFileURLs) = MarkdownAttachmentStorage.pastePayload(from: filePasteboard) else {
+            Issue.record("Expected file paste payload")
+            return
+        }
+        #expect(pastedFileURLs == [sourceFile])
+
+        let imagePasteboard = NSPasteboard.withUniqueName()
+        imagePasteboard.clearContents()
+        #expect(imagePasteboard.setData(pngData, forType: .png))
+        guard case .imagePNG(let pastedPNGData) = MarkdownAttachmentStorage.pastePayload(from: imagePasteboard) else {
+            Issue.record("Expected image paste payload")
+            return
+        }
+        #expect(pastedPNGData == pngData)
+
+        let libraryController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { libraryController.close() }
+        libraryController.editorTextView.setSelectedRange(NSRange(
+            location: libraryController.editorTextView.attributedString().length,
+            length: 0
+        ))
+        libraryController.editorTextView.pasteboardForPaste = { filePasteboard }
+        let pasteEvent = try keyEvent(
+            keyCode: UInt16(kVK_ANSI_V),
+            modifiers: [.command],
+            characters: "v"
+        )
+        #expect(libraryController.editorTextView.performKeyEquivalent(with: pasteEvent))
+        #expect(libraryController.editorTextView.pasteContents(from: imagePasteboard))
+
+        let libraryMarkdown = MarkdownRichTextCodec.serialize(
+            libraryController.editorTextView.attributedString(),
+            theme: libraryController.theme
+        )
+        #expect(libraryMarkdown.contains("[source file](Attachments/"))
+        #expect(libraryMarkdown.contains("source%20file.pdf"))
+        #expect(libraryMarkdown.contains("![Image](Attachments/"))
+        var pastedImageMarkdown: String?
+        libraryController.editorTextView.attributedString().enumerateAttribute(
+            .qmImageMarkdown,
+            in: NSRange(location: 0, length: libraryController.editorTextView.attributedString().length)
+        ) { value, _, stop in
+            if let value = value as? String {
+                pastedImageMarkdown = value
+                stop.pointee = true
+            }
+        }
+        #expect(pastedImageMarkdown?.contains("Attachments/") == true)
+
+        _ = try libraryController.saveCurrentNoteForLibrary()
+        let saved = try store.loadNote(at: noteURL)
+        #expect(saved.body.contains("[source file](Attachments/"))
+        #expect(saved.body.contains("![Image](Attachments/"))
+
+        let storedAttachments = FileManager.default.enumerator(
+            at: store.notesDirectory.appendingPathComponent("Attachments", isDirectory: true),
+            includingPropertiesForKeys: [.isRegularFileKey]
+        )?.allObjects.compactMap { $0 as? URL } ?? []
+        #expect(storedAttachments.contains { $0.lastPathComponent == "source file.pdf" })
+        #expect(storedAttachments.contains { $0.pathExtension.lowercased() == "png" })
+
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-attachment-paste",
+            showsSaveButton: false,
+            configureStore: { configuredStore in
+                configuredStore.notesDirectory = root.appendingPathComponent("Floating Notes", isDirectory: true)
+            }
+        )
+        defer { harness.tearDown() }
+        let floatingController = harness.controller
+        floatingController.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Floating",
+            theme: floatingController.theme
+        ))
+        floatingController.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
+        #expect(floatingController.editorTextView.pasteContents(from: imagePasteboard))
+        let floatingMarkdown = MarkdownRichTextCodec.serialize(
+            floatingController.editorTextView.attributedString(),
+            theme: floatingController.theme
+        )
+        #expect(floatingMarkdown.contains("![Image](Attachments/"))
+        #expect(FileManager.default.fileExists(atPath: floatingController.selectedDirectoryURL
+            .appendingPathComponent("Attachments", isDirectory: true).path))
+    }
+
+    @MainActor
+    @Test
     func libraryAndFloatingEditorsManageMarkdownLinks() throws {
         let suiteName = "mudsnote.link-management-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -3270,6 +3388,10 @@ struct MarkdownRichEditorTests {
         let projectsFolder = try store.createFolder(named: "Projects")
         let clientFolder = projectsFolder.appendingPathComponent("Client", isDirectory: true)
         try FileManager.default.createDirectory(at: clientFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: store.notesDirectory.appendingPathComponent(NoteStore.attachmentDirectoryName, isDirectory: true),
+            withIntermediateDirectories: true
+        )
         _ = try store.saveNewNote(title: "Client Seed", body: "Nested body", in: clientFolder)
 
         let controller = LibraryWindowController(
@@ -3297,6 +3419,9 @@ struct MarkdownRichEditorTests {
         } == true)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Client"
+        } == false)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == NoteStore.attachmentDirectoryName
         } == false)
 
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {

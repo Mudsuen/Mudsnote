@@ -8,6 +8,7 @@ public final class NoteStore: @unchecked Sendable {
     public static let minimumPanelOpacity = 0.62
     public static let maximumPanelOpacity = 0.96
     public static let defaultPanelOpacity = 0.78
+    public static let attachmentDirectoryName = "Attachments"
 
     let defaults: UserDefaults
     let fileManager: FileManager

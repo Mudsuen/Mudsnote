@@ -2539,7 +2539,9 @@ final class LibraryWindowController: NSWindowController,
 
         return children.filter { url in
             guard let values = try? url.resourceValues(forKeys: Set(keys)) else { return false }
-            return values.isDirectory == true && values.isHidden != true
+            return values.isDirectory == true
+                && values.isHidden != true
+                && url.lastPathComponent.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) != .orderedSame
         }
         .sorted {
             $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
@@ -6776,17 +6778,41 @@ final class LibraryWindowController: NSWindowController,
     func insertAttachmentReferenceForLibrary(from fileURL: URL) throws -> URL {
         guard selectedScope != .trash else { return fileURL }
         let noteDirectory = targetDirectoryForAttachment()
-        let copiedURL = try copyAttachment(fileURL, intoNoteDirectory: noteDirectory)
-        let relativePath = relativeMarkdownPath(for: copiedURL, from: noteDirectory)
-        let markdown: String
-        if isImageAttachment(copiedURL) {
-            markdown = "![Image](\(relativePath))"
-        } else {
-            let label = copiedURL.deletingPathExtension().lastPathComponent
-            markdown = "[\(escapedMarkdownLabel(label.isEmpty ? "Attachment" : label))](\(relativePath))"
-        }
-        insertMarkdownBlockForLibrary(markdown)
+        let copiedURL = try MarkdownAttachmentStorage.storeFile(fileURL, in: noteDirectory)
+        insertStoredAttachmentForLibrary(copiedURL, relativeTo: noteDirectory)
         return copiedURL
+    }
+
+    func markdownTextView(_ textView: MarkdownTextView, pasteAttachmentsFrom pasteboard: NSPasteboard) -> Bool {
+        guard textView === editorTextView,
+              canEditCurrentDocument,
+              let payload = MarkdownAttachmentStorage.pastePayload(from: pasteboard) else {
+            return false
+        }
+
+        let noteDirectory = targetDirectoryForAttachment()
+        do {
+            switch payload {
+            case .files(let fileURLs):
+                for fileURL in fileURLs {
+                    let storedURL = try MarkdownAttachmentStorage.storeFile(fileURL, in: noteDirectory)
+                    insertStoredAttachmentForLibrary(storedURL, relativeTo: noteDirectory)
+                }
+            case .imagePNG(let data):
+                let storedURL = try MarkdownAttachmentStorage.storePastedPNG(data, in: noteDirectory)
+                insertStoredAttachmentForLibrary(storedURL, relativeTo: noteDirectory)
+            }
+        } catch {
+            presentErrorAlert(message: "粘贴附件失败", details: error.localizedDescription)
+        }
+        return true
+    }
+
+    private func insertStoredAttachmentForLibrary(_ fileURL: URL, relativeTo noteDirectory: URL) {
+        let markdown = MarkdownAttachmentStorage.markdownReference(for: fileURL, relativeTo: noteDirectory)
+        let renderingBaseURL = selectedURL
+            ?? noteDirectory.appendingPathComponent(".mudsnote-unsaved.md")
+        insertMarkdownBlockForLibrary(markdown, renderingBaseURL: renderingBaseURL)
     }
 
     private func selectedTextForLinkDefault() -> String {
@@ -6797,7 +6823,7 @@ final class LibraryWindowController: NSWindowController,
         return (editorTextView.string as NSString).substring(with: selection)
     }
 
-    private func insertMarkdownBlockForLibrary(_ markdown: String) {
+    private func insertMarkdownBlockForLibrary(_ markdown: String, renderingBaseURL: URL? = nil) {
         guard selectedScope != .trash else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
@@ -6813,14 +6839,18 @@ final class LibraryWindowController: NSWindowController,
             block += "\n"
         }
 
-        replaceSelectionWithRenderedMarkdown(block)
+        replaceSelectionWithRenderedMarkdown(block, renderingBaseURL: renderingBaseURL)
     }
 
-    private func replaceSelectionWithRenderedMarkdown(_ markdown: String) {
+    private func replaceSelectionWithRenderedMarkdown(_ markdown: String, renderingBaseURL: URL? = nil) {
         guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
-        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: selectedURL)
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: theme,
+            baseURL: renderingBaseURL ?? selectedURL
+        )
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: selection, with: rendered)
@@ -6836,63 +6866,6 @@ final class LibraryWindowController: NSWindowController,
             return selectedURL.deletingLastPathComponent()
         }
         return targetDirectoryForNewNote()
-    }
-
-    private func copyAttachment(_ sourceURL: URL, intoNoteDirectory noteDirectory: URL) throws -> URL {
-        let components = Calendar.current.dateComponents([.year, .month], from: Date())
-        let year = String(components.year ?? 1970)
-        let month = String(format: "%02d", components.month ?? 1)
-        let attachmentDirectory = noteDirectory
-            .appendingPathComponent("Attachments", isDirectory: true)
-            .appendingPathComponent(year, isDirectory: true)
-            .appendingPathComponent(month, isDirectory: true)
-        try FileManager.default.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
-
-        let destination = uniqueAttachmentDestination(for: sourceURL, in: attachmentDirectory)
-        if sourceURL.standardizedFileURL.path != destination.standardizedFileURL.path {
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-        }
-        return destination
-    }
-
-    private func uniqueAttachmentDestination(for sourceURL: URL, in directory: URL) -> URL {
-        let fileName = sourceURL.lastPathComponent.isEmpty ? "Attachment" : sourceURL.lastPathComponent
-        let fileExtension = sourceURL.pathExtension
-        let baseName = fileExtension.isEmpty
-            ? fileName
-            : sourceURL.deletingPathExtension().lastPathComponent
-        var candidate = directory.appendingPathComponent(fileName)
-        var copyIndex = 2
-
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            let candidateName = fileExtension.isEmpty
-                ? "\(baseName)-\(copyIndex)"
-                : "\(baseName)-\(copyIndex).\(fileExtension)"
-            candidate = directory.appendingPathComponent(candidateName)
-            copyIndex += 1
-        }
-        return candidate
-    }
-
-    private func relativeMarkdownPath(for fileURL: URL, from noteDirectory: URL) -> String {
-        let filePath = fileURL.standardizedFileURL.path
-        let basePath = noteDirectory.standardizedFileURL.path
-        let relativePath: String
-        if filePath.hasPrefix(basePath + "/") {
-            relativePath = String(filePath.dropFirst(basePath.count + 1))
-        } else {
-            relativePath = fileURL.lastPathComponent
-        }
-        return relativePath
-            .split(separator: "/", omittingEmptySubsequences: false)
-            .map { component in
-                String(component).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String(component)
-            }
-            .joined(separator: "/")
-    }
-
-    private func isImageAttachment(_ url: URL) -> Bool {
-        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff"].contains(url.pathExtension.lowercased())
     }
 
     private func escapedMarkdownLabel(_ label: String) -> String {

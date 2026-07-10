@@ -678,6 +678,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added native link context actions for open, edit address, copy, and remove in both library and floating editors, plus pure Command-click opening and undo-aware floating-editor updates. Link labels remain unchanged while standard Markdown URLs update on disk. Preview generation now strips link, emphasis, code, heading, checklist, and list syntax through cached lightweight regular expressions, with a disposable search-index schema bump so stale raw previews rebuild automatically.
 - Lesson: Notes-like rich editing does not require a proprietary document model; keep semantic attributes in the editor, plain Markdown on disk, and derived list previews cheap and disposable.
 
+### 116. Local Finder and image paste
+
+- Problem: Pasting Finder files into the rich editor still followed AppKit's transient attachment path, so pasted content could appear in memory without being copied into the local note library or serialized as portable Markdown.
+- Fix: Routed standard `Cmd+V` through the Markdown editor, normalized Finder file URLs and clipboard images into shared local attachment storage, inserted native image/file previews, and saved stable relative Markdown links. Internal `Attachments` directories are now excluded from source navigation and note indexing.
+- Lesson: Paste behavior must be verified through the installed app's real keyboard path; parser-only tests cannot prove that AppKit command routing reaches the local-first persistence layer.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

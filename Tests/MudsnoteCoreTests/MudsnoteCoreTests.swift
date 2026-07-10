@@ -277,6 +277,13 @@ struct MudsnoteCoreTests {
 
         let oldURL = try store.saveNewNote(title: "Older", body: "first", in: notesDirectory)
         let newURL = try store.saveNewNote(title: "Newer", body: "second", tags: ["work"], in: projectDirectory)
+        let attachmentDirectory = notesDirectory.appendingPathComponent(NoteStore.attachmentDirectoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
+        try "# Not a note\n".write(
+            to: attachmentDirectory.appendingPathComponent("pasted-markdown.md"),
+            atomically: true,
+            encoding: .utf8
+        )
         let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
         let newDate = Date(timeIntervalSince1970: 1_700_000_200)
         try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: oldURL.path)
@@ -285,6 +292,7 @@ struct MudsnoteCoreTests {
         let notes = store.listNotes(limit: 10)
 
         #expect(Array(notes.map(\.title).prefix(2)) == ["Newer", "Older"])
+        #expect(notes.count == 2)
         #expect(notes.first?.tags == ["work"])
         #expect(notes.first?.snippet == "second")
     }

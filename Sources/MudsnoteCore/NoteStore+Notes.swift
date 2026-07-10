@@ -256,7 +256,7 @@ extension NoteStore {
 
     func markdownFiles(in root: URL) -> [URL] {
         guard fileManager.fileExists(atPath: root.path) else { return [] }
-        let resourceKeys: [URLResourceKey] = [.isRegularFileKey]
+        let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
 
         let enumerator = fileManager.enumerator(
             at: root,
@@ -266,10 +266,16 @@ extension NoteStore {
 
         var results: [URL] = []
         while let url = enumerator?.nextObject() as? URL {
-            guard let values = try? url.resourceValues(forKeys: Set(resourceKeys)),
-                  values.isRegularFile == true else {
+            guard let values = try? url.resourceValues(forKeys: Set(resourceKeys)) else {
                 continue
             }
+            if values.isDirectory == true {
+                if url.lastPathComponent.caseInsensitiveCompare(Self.attachmentDirectoryName) == .orderedSame {
+                    enumerator?.skipDescendants()
+                }
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
 
             let ext = url.pathExtension.lowercased()
             if ["md", "markdown", "txt"].contains(ext) {
