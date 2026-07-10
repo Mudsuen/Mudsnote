@@ -255,8 +255,8 @@ enum LibraryNotesLayout {
     static let sourceDisclosureToButtonSpacing: CGFloat = 1
     static let sourceCountTrailingInset: CGFloat = 8
     static let sourceCountWidth: CGFloat = 38
-    static let noteGroupRowHeight: CGFloat = 48
-    static let noteRowHeight: CGFloat = 96
+    static let noteGroupRowHeight: CGFloat = 56
+    static let noteRowHeight: CGFloat = 108
     static let sourceGroupFontSize: CGFloat = 14.5
     static let sourceButtonFontSize: CGFloat = 16.5
     static let sourceSelectedButtonFontWeight: NSFont.Weight = .semibold
@@ -392,9 +392,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 10
-    static let contentLeadingInset: CGFloat = 28
+    static let contentLeadingInset: CGFloat = 46
     static let contentBottomInset: CGFloat = 10
-    static let contentTrailingInset: CGFloat = 12
+    static let contentTrailingInset: CGFloat = 18
     static let textRowSpacing: CGFloat = 2
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -497,16 +497,18 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionHorizontalInset: CGFloat = 10
-    static let selectionVerticalInset: CGFloat = 6
-    static let selectionCornerRadius: CGFloat = 7
+    static let selectionLeadingInset: CGFloat = 10
+    static let selectionTrailingInset: CGFloat = 24
+    static let selectionVerticalInset: CGFloat = 8
+    static let selectionCornerRadius: CGFloat = 10
     static let selectionFillColor = NSColor(calibratedRed: 0.52, green: 0.38, blue: 0.0, alpha: 0.96)
-    static let hoverHorizontalInset: CGFloat = 10
+    static let hoverLeadingInset: CGFloat = 10
+    static let hoverTrailingInset: CGFloat = 24
     static let hoverVerticalInset: CGFloat = 6
-    static let hoverCornerRadius: CGFloat = 7
+    static let hoverCornerRadius: CGFloat = 10
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 42
-    static let separatorTrailingInset: CGFloat = 16
+    static let separatorLeadingInset: CGFloat = 46
+    static let separatorTrailingInset: CGFloat = 24
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
@@ -573,9 +575,10 @@ final class LibraryNoteRowView: NSTableRowView {
 
         guard isPointerHovered, !isSelected else { return }
 
-        let hoverRect = bounds.insetBy(
-            dx: Self.hoverHorizontalInset,
-            dy: Self.hoverVerticalInset
+        let hoverRect = insetRect(
+            leading: Self.hoverLeadingInset,
+            trailing: Self.hoverTrailingInset,
+            vertical: Self.hoverVerticalInset
         )
         let path = NSBezierPath(
             roundedRect: hoverRect,
@@ -588,9 +591,10 @@ final class LibraryNoteRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
-        let selectionRect = bounds.insetBy(
-            dx: Self.selectionHorizontalInset,
-            dy: Self.selectionVerticalInset
+        let selectionRect = insetRect(
+            leading: Self.selectionLeadingInset,
+            trailing: Self.selectionTrailingInset,
+            vertical: Self.selectionVerticalInset
         )
         let path = NSBezierPath(
             roundedRect: selectionRect,
@@ -599,6 +603,15 @@ final class LibraryNoteRowView: NSTableRowView {
         )
         Self.selectionFillColor.setFill()
         path.fill()
+    }
+
+    private func insetRect(leading: CGFloat, trailing: CGFloat, vertical: CGFloat) -> NSRect {
+        NSRect(
+            x: bounds.minX + leading,
+            y: bounds.minY + vertical,
+            width: max(0, bounds.width - leading - trailing),
+            height: max(0, bounds.height - vertical * 2)
+        )
     }
 }
 
