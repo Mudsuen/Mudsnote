@@ -157,6 +157,32 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             || loweredBody.contains("![") && loweredBody.contains("(attachments/")
     }
 
+    public static func firstPreviewLine(in body: String) -> String? {
+        body.components(separatedBy: .newlines)
+            .compactMap(previewText(fromMarkdownLine:))
+            .first(where: { !$0.isEmpty })
+    }
+
+    public static func previewText(fromMarkdownLine line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return trimmed }
+
+        let cells = trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .dropFirst()
+            .dropLast()
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard cells.count >= 2 else { return trimmed }
+
+        let isSeparator = cells.allSatisfy { cell in
+            let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
+        }
+        guard !isSeparator else { return nil }
+        return cells.filter { !$0.isEmpty }.joined(separator: "  ")
+    }
+
     public static func firstLocalImageURL(in body: String, relativeTo noteURL: URL) -> URL? {
         let pattern = #"!?\[[^\]]*\]\(([^)\s]+)\)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }

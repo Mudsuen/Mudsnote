@@ -187,7 +187,7 @@ extension NoteStore {
             notes.append(NoteSearchResult(
                 url: fileURL,
                 title: note.title,
-                snippet: firstMeaningfulStoredLine(from: note.body) ?? "",
+                snippet: MarkdownEditorDocument.firstPreviewLine(in: note.body) ?? "",
                 modifiedAt: modifiedAt,
                 tags: note.tags,
                 hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
@@ -541,12 +541,6 @@ extension NoteStore {
     private func fileModificationDate(for url: URL) -> Date? {
         let attrs = try? fileManager.attributesOfItem(atPath: url.path)
         return attrs?[.modificationDate] as? Date
-    }
-
-    private func firstMeaningfulStoredLine(from body: String) -> String? {
-        body.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty })
     }
 
     private func storedTrashedNotesMetadata() -> [String: TrashedNoteMetadata] {

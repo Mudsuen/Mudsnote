@@ -2281,6 +2281,41 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func markdownTablesRenderAsNativeGridsAndRoundTrip() throws {
+        let markdown = """
+        Before
+        | Name | Status |
+        | --- | --- |
+        | Alpha | Todo |
+        After
+        """
+
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        #expect(!rendered.string.contains("|"))
+        #expect(!rendered.string.contains("---"))
+        #expect(rendered.string.contains("Name\nStatus\nAlpha\nTodo"))
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+
+        let nameLocation = (rendered.string as NSString).range(of: "Name").location
+        let paragraphStyle = try #require(rendered.attribute(.paragraphStyle, at: nameLocation, effectiveRange: nil) as? NSParagraphStyle)
+        #expect(paragraphStyle.textBlocks.first is NSTextTableBlock)
+        #expect((rendered.attribute(.qmTableRow, at: nameLocation, effectiveRange: nil) as? Int) == 0)
+        #expect((rendered.attribute(.qmTableColumn, at: nameLocation, effectiveRange: nil) as? Int) == 0)
+
+        let editable = NSMutableAttributedString(attributedString: rendered)
+        let todoRange = (editable.string as NSString).range(of: "Todo")
+        editable.deleteCharacters(in: todoRange)
+        #expect(MarkdownRichTextCodec.serialize(editable, theme: theme) == """
+        Before
+        | Name | Status |
+        | --- | --- |
+        | Alpha |  |
+        After
+        """)
+    }
+
+    @MainActor
+    @Test
     func libraryTableButtonAddsRowsInsideExistingMarkdownTables() throws {
         let suiteName = "mudsnote.library-table-editing-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2326,7 +2361,7 @@ struct MarkdownRichEditorTests {
             "| Name | Status |",
             "| --- | --- |",
             "| Alpha | Todo |",
-            "|   |   |"
+            "|  |  |"
         ])
 
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
@@ -2346,7 +2381,7 @@ struct MarkdownRichEditorTests {
         #expect(tableMarkdown.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
-            "|   |   |",
+            "|  |  |",
             "| Alpha | Todo |"
         ])
 
@@ -2407,6 +2442,8 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(NSRange(location: alphaLocation, length: 0))
         #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertTab(_:))))
         #expect(controller.editorTextView.selectedRange().location == todoLocation)
+        #expect(controller.editorTextView.typingAttributes[.qmTableID] != nil)
+        #expect(controller.editorTextView.typingAttributes[.qmTablePlaceholder] == nil)
 
         #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertBacktab(_:))))
         #expect(controller.editorTextView.selectedRange().location == alphaLocation)
@@ -2418,11 +2455,12 @@ struct MarkdownRichEditorTests {
             "| Name | Status |",
             "| --- | --- |",
             "| Alpha | Todo |",
-            "|   |   |"
+            "|  |  |"
         ])
-        let insertedRowStart = (controller.editorTextView.string as NSString).range(of: "|   |   |").location
-        #expect(insertedRowStart != NSNotFound)
-        #expect(controller.editorTextView.selectedRange().location == insertedRowStart + 2)
+        let insertedRowRange = try #require(tableCellRange(row: 2, column: 0, in: controller.editorTextView.attributedString()))
+        #expect(controller.editorTextView.selectedRange().location == insertedRowRange.location)
+        #expect(controller.editorTextView.typingAttributes[.qmTableID] != nil)
+        #expect(controller.editorTextView.typingAttributes[.qmTablePlaceholder] == nil)
 
         #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertBacktab(_:))))
         #expect(controller.editorTextView.selectedRange().location == todoLocation)
@@ -2476,9 +2514,7 @@ struct MarkdownRichEditorTests {
         let deleteEvent = try keyEvent(keyCode: UInt16(kVK_Delete), modifiers: [.command], characters: "\u{7F}")
         var text = controller.editorTextView.string as NSString
         let alphaLocation = text.range(of: "Alpha").location
-        let alphaRowLocation = text.range(of: "| Alpha | Todo |").location
         #expect(alphaLocation != NSNotFound)
-        #expect(alphaRowLocation != NSNotFound)
         controller.editorTextView.setSelectedRange(NSRange(location: alphaLocation, length: 0))
         controller.editorTextView.keyDown(with: deleteEvent)
 
@@ -2488,7 +2524,9 @@ struct MarkdownRichEditorTests {
             "| --- | --- |",
             "| Beta | Done |"
         ])
-        #expect(controller.editorTextView.selectedRange().location == alphaRowLocation)
+        let remainingBetaLocation = (controller.editorTextView.string as NSString).range(of: "Beta").location
+        #expect(remainingBetaLocation != NSNotFound)
+        #expect(controller.editorTextView.selectedRange().location == remainingBetaLocation)
 
         text = controller.editorTextView.string as NSString
         let betaLocation = text.range(of: "Beta").location
@@ -2581,7 +2619,7 @@ struct MarkdownRichEditorTests {
             "| --- | --- | --- |",
             "| Alpha |  | Todo |"
         ])
-        let insertedColumnLocation = (controller.editorTextView.string as NSString).range(of: "| Name |  | Status |").location + 9
+        let insertedColumnLocation = try #require(tableCellRange(row: 0, column: 1, in: controller.editorTextView.attributedString())).location
         let columnMenu = NSMenu()
         #expect(controller.configureMarkdownTableContextMenuForLibrary(columnMenu, atCharacterIndex: insertedColumnLocation))
         #expect(columnMenu.items.map(\.title) == ["插入表格行", "插入右侧列", "删除表格行", "删除表格列"])
@@ -2602,7 +2640,7 @@ struct MarkdownRichEditorTests {
         #expect(tableMarkdown.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
-            "|   |   |",
+            "|  |  |",
             "| Alpha | Todo |"
         ])
 
@@ -2623,7 +2661,7 @@ struct MarkdownRichEditorTests {
         #expect(tableMarkdown.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
-            "|   |   |"
+            "|  |  |"
         ])
 
         let paragraphLocation = (controller.editorTextView.string as NSString).length
@@ -4245,6 +4283,25 @@ struct MarkdownRichEditorTests {
 
         let storage = try #require(controller.editorTextView.textStorage)
         return MarkdownRichTextCodec.paragraphKind(at: NSRange(location: 0, length: storage.length), in: storage)
+    }
+
+    private func tableCellRange(row: Int, column: Int, in attributedString: NSAttributedString) -> NSRange? {
+        guard attributedString.length > 0 else { return nil }
+        var matchingRange: NSRange?
+        attributedString.enumerateAttribute(
+            .qmTableColumn,
+            in: NSRange(location: 0, length: attributedString.length),
+            options: []
+        ) { value, range, stop in
+            let storedColumn = (value as? Int) ?? (value as? NSNumber)?.intValue
+            let rowValue = attributedString.attribute(.qmTableRow, at: range.location, effectiveRange: nil)
+            let storedRow = (rowValue as? Int) ?? (rowValue as? NSNumber)?.intValue
+            if storedRow == row, storedColumn == column {
+                matchingRange = range
+                stop.pointee = true
+            }
+        }
+        return matchingRange
     }
 }
 

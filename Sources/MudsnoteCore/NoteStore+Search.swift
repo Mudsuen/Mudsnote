@@ -68,7 +68,7 @@ extension NoteStore {
             return NoteSearchResult(
                 url: note.url,
                 title: loaded.map { displayTitle(for: note.url, loadedTitle: $0.title) } ?? note.title,
-                snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
+                snippet: loaded.flatMap { MarkdownEditorDocument.firstPreviewLine(in: $0.body) } ?? "",
                 modifiedAt: note.modifiedAt,
                 tags: loaded?.tags ?? [],
                 hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
@@ -227,7 +227,7 @@ extension NoteStore {
         let modifiedAt = signature?.modifiedAt ?? Date()
         let note = loadedNote(from: text, at: fileURL)
         let title = displayTitle(for: fileURL, loadedTitle: note.title)
-        let snippet = firstMeaningfulLine(from: note.body) ?? ""
+        let snippet = MarkdownEditorDocument.firstPreviewLine(in: note.body) ?? ""
 
         return NoteSearchIndexEntry(
             url: fileURL,
@@ -249,15 +249,9 @@ extension NoteStore {
             .filter { !$0.isEmpty }
 
         if let match = lines.first(where: { $0.lowercased().contains(query) }) {
-            return match
+            return MarkdownEditorDocument.previewText(fromMarkdownLine: match) ?? ""
         }
 
-        return lines.first ?? ""
-    }
-
-    private func firstMeaningfulLine(from body: String) -> String? {
-        body.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty })
+        return MarkdownEditorDocument.firstPreviewLine(in: body) ?? ""
     }
 }

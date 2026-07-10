@@ -11,6 +11,12 @@ extension NSAttributedString.Key {
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
     static let qmAttachmentFilePath = NSAttributedString.Key("MudsnoteAttachmentFilePath")
     static let qmAttachmentMetadata = NSAttributedString.Key("MudsnoteAttachmentMetadata")
+    static let qmTableID = NSAttributedString.Key("MudsnoteTableID")
+    static let qmTableRow = NSAttributedString.Key("MudsnoteTableRow")
+    static let qmTableColumn = NSAttributedString.Key("MudsnoteTableColumn")
+    static let qmTableColumnCount = NSAttributedString.Key("MudsnoteTableColumnCount")
+    static let qmTablePlaceholder = NSAttributedString.Key("MudsnoteTablePlaceholder")
+    static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
 }
 
@@ -687,17 +693,38 @@ private final class FileAttachmentPreviewCell: NSTextAttachmentCell {
 }
 
 enum MarkdownRichTextCodec {
+    private static let tablePlaceholder = "\u{200B}"
+
+    private struct ParsedMarkdownTable {
+        let rows: [[String]]
+        let consumedLineCount: Int
+    }
+
     @MainActor
     static func render(markdown: String, theme: MarkdownEditorTheme, baseURL: URL? = nil) -> NSMutableAttributedString {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         let output = NSMutableAttributedString()
 
-        for (index, line) in lines.enumerated() {
-            output.append(renderLine(line, theme: theme, baseURL: baseURL))
-            if index < lines.count - 1 {
+        var lineIndex = 0
+        while lineIndex < lines.count {
+            if let table = parsedMarkdownTable(in: lines, startingAt: lineIndex) {
+                let nextLineIndex = lineIndex + table.consumedLineCount
+                output.append(renderTable(
+                    rows: table.rows,
+                    representsFollowingMarkdownLine: nextLineIndex < lines.count,
+                    theme: theme,
+                    baseURL: baseURL
+                ))
+                lineIndex = nextLineIndex
+                continue
+            }
+
+            output.append(renderLine(lines[lineIndex], theme: theme, baseURL: baseURL))
+            if lineIndex < lines.count - 1 {
                 output.append(NSAttributedString(string: "\n", attributes: theme.baseAttributes(for: .paragraph)))
             }
+            lineIndex += 1
         }
 
         return output
@@ -733,6 +760,12 @@ enum MarkdownRichTextCodec {
         var location = 0
 
         while location < nsString.length {
+            if let table = serializedTable(startingAt: location, in: attributedString, theme: theme) {
+                lines.append(table.markdown)
+                location = table.endLocation
+                continue
+            }
+
             let paragraphRange = nsString.paragraphRange(for: NSRange(location: location, length: 0))
             let hasTrailingNewline = nsString.substring(with: paragraphRange).hasSuffix("\n")
             let lineRange = NSRange(
@@ -749,10 +782,195 @@ enum MarkdownRichTextCodec {
         }
 
         if attributedString.string.hasSuffix("\n") {
+            let finalLocation = attributedString.length - 1
+            if attributedString.attribute(.qmTableID, at: finalLocation, effectiveRange: nil) != nil,
+               attributedString.attribute(.qmTableTerminalNewline, at: finalLocation, effectiveRange: nil) == nil {
+                return lines.joined(separator: "\n")
+            }
             return lines.joined(separator: "\n") + "\n"
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    @MainActor
+    private static func renderTable(
+        rows: [[String]],
+        representsFollowingMarkdownLine: Bool,
+        theme: MarkdownEditorTheme,
+        baseURL: URL?
+    ) -> NSAttributedString {
+        guard let columnCount = rows.first?.count, columnCount >= 2 else {
+            return NSAttributedString()
+        }
+
+        let tableID = UUID().uuidString
+        let table = NSTextTable()
+        table.numberOfColumns = columnCount
+        table.layoutAlgorithm = .automaticLayoutAlgorithm
+        table.collapsesBorders = true
+        table.hidesEmptyCells = false
+        table.setContentWidth(100, type: .percentageValueType)
+
+        let output = NSMutableAttributedString()
+        for (rowIndex, row) in rows.enumerated() {
+            for columnIndex in 0..<columnCount {
+                let block = NSTextTableBlock(
+                    table: table,
+                    startingRow: rowIndex,
+                    rowSpan: 1,
+                    startingColumn: columnIndex,
+                    columnSpan: 1
+                )
+                block.setWidth(1, type: .absoluteValueType, for: .border)
+                block.setBorderColor(panelSeparatorColor(alpha: 0.5))
+                block.setWidth(9, type: .absoluteValueType, for: .padding, edge: .minX)
+                block.setWidth(9, type: .absoluteValueType, for: .padding, edge: .maxX)
+                block.setWidth(6, type: .absoluteValueType, for: .padding, edge: .minY)
+                block.setWidth(6, type: .absoluteValueType, for: .padding, edge: .maxY)
+                if rowIndex == 0 {
+                    block.backgroundColor = panelPrimaryTextColor().withAlphaComponent(0.09)
+                }
+
+                let paragraphStyle = theme.paragraphStyle(for: .paragraph).mutableCopy() as? NSMutableParagraphStyle
+                    ?? NSMutableParagraphStyle()
+                paragraphStyle.textBlocks = [block]
+                paragraphStyle.paragraphSpacing = 0
+                paragraphStyle.lineSpacing = 0
+
+                let rawContent = row.indices.contains(columnIndex) ? row[columnIndex] : ""
+                let isPlaceholder = rawContent.isEmpty
+                let visibleContent = isPlaceholder ? tablePlaceholder : rawContent
+                let cell = parseInlineMarkdown(
+                    visibleContent,
+                    paragraphKind: .paragraph,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+                let cellRange = NSRange(location: 0, length: cell.length)
+                cell.addAttributes([
+                    .paragraphStyle: paragraphStyle,
+                    .qmParagraphKind: MarkdownParagraphKind.paragraph.encodedValue,
+                    .qmTableID: tableID,
+                    .qmTableRow: rowIndex,
+                    .qmTableColumn: columnIndex,
+                    .qmTableColumnCount: columnCount
+                ], range: cellRange)
+                if isPlaceholder {
+                    cell.addAttribute(.qmTablePlaceholder, value: true, range: cellRange)
+                }
+                output.append(cell)
+
+                let newlineAttributes = cell.length > 0
+                    ? cell.attributes(at: max(cell.length - 1, 0), effectiveRange: nil)
+                    : theme.baseAttributes(for: .paragraph)
+                output.append(NSAttributedString(string: "\n", attributes: newlineAttributes))
+            }
+        }
+        if representsFollowingMarkdownLine, output.length > 0 {
+            output.addAttribute(
+                .qmTableTerminalNewline,
+                value: true,
+                range: NSRange(location: output.length - 1, length: 1)
+            )
+        }
+        return output
+    }
+
+    private static func parsedMarkdownTable(in lines: [String], startingAt index: Int) -> ParsedMarkdownTable? {
+        guard index + 1 < lines.count,
+              let header = markdownTableCells(in: lines[index]),
+              let separator = markdownTableCells(in: lines[index + 1]),
+              header.count == separator.count,
+              separator.allSatisfy(isMarkdownTableSeparatorCell) else {
+            return nil
+        }
+
+        var rows = [header]
+        var nextIndex = index + 2
+        while nextIndex < lines.count,
+              let row = markdownTableCells(in: lines[nextIndex]),
+              row.count == header.count,
+              !row.allSatisfy(isMarkdownTableSeparatorCell) {
+            rows.append(row)
+            nextIndex += 1
+        }
+        return ParsedMarkdownTable(rows: rows, consumedLineCount: nextIndex - index)
+    }
+
+    private static func markdownTableCells(in line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
+        let cells = trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .dropFirst()
+            .dropLast()
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return cells.count >= 2 ? cells : nil
+    }
+
+    private static func isMarkdownTableSeparatorCell(_ cell: String) -> Bool {
+        let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+        return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
+    }
+
+    private static func serializedTable(
+        startingAt location: Int,
+        in attributedString: NSAttributedString,
+        theme: MarkdownEditorTheme
+    ) -> (markdown: String, endLocation: Int)? {
+        guard location >= 0, location < attributedString.length,
+              let tableID = attributedString.attribute(.qmTableID, at: location, effectiveRange: nil) as? String else {
+            return nil
+        }
+
+        let nsString = attributedString.string as NSString
+        var rows: [Int: [Int: String]] = [:]
+        var columnCount = 0
+        var cursor = location
+
+        while cursor < nsString.length {
+            let paragraphRange = nsString.paragraphRange(for: NSRange(location: cursor, length: 0))
+            let contentLength = max(
+                paragraphRange.length - (nsString.substring(with: paragraphRange).hasSuffix("\n") ? 1 : 0),
+                0
+            )
+            let contentRange = NSRange(location: paragraphRange.location, length: contentLength)
+            let metadataLocation = contentRange.length > 0 ? contentRange.location : paragraphRange.location
+            guard metadataLocation < attributedString.length,
+                  attributedString.attribute(.qmTableID, at: metadataLocation, effectiveRange: nil) as? String == tableID,
+                  let row = attributedString.attribute(.qmTableRow, at: metadataLocation, effectiveRange: nil) as? Int,
+                  let column = attributedString.attribute(.qmTableColumn, at: metadataLocation, effectiveRange: nil) as? Int else {
+                break
+            }
+
+            columnCount = max(
+                columnCount,
+                attributedString.attribute(.qmTableColumnCount, at: metadataLocation, effectiveRange: nil) as? Int ?? 0
+            )
+            let markdown = serializeInline(
+                range: contentRange,
+                in: attributedString,
+                paragraphKind: .paragraph,
+                theme: theme
+            )
+                .replacingOccurrences(of: tablePlaceholder, with: "")
+                .replacingOccurrences(of: "|", with: "\\|")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            rows[row, default: [:]][column] = markdown
+            cursor = NSMaxRange(paragraphRange)
+        }
+
+        guard columnCount >= 2, let maximumRow = rows.keys.max() else { return nil }
+        var markdownLines: [String] = []
+        for row in 0...maximumRow {
+            let cells = (0..<columnCount).map { rows[row]?[$0] ?? "" }
+            markdownLines.append("| " + cells.joined(separator: " | ") + " |")
+            if row == 0 {
+                markdownLines.append("| " + Array(repeating: "---", count: columnCount).joined(separator: " | ") + " |")
+            }
+        }
+        return (markdownLines.joined(separator: "\n"), cursor)
     }
 
     static func paragraphKind(at range: NSRange, in attributedString: NSAttributedString) -> MarkdownParagraphKind {

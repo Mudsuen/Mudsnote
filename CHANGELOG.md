@@ -666,6 +666,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Centralized parsing of already-read Markdown text, added a recent-file search path that filters before ranking and limiting, and signed the final app bundle by unique certificate hash with an ad-hoc fallback. Added regression coverage for unopened files in recent search.
 - Lesson: Local-first performance and correctness share the same boundary: read each source file once, then apply explicit scope membership before ranking; verify the final installed bundle rather than only the executable.
 
+### 114. Native editable Markdown tables
+
+- Problem: Table insertion still exposed raw Markdown pipes and separator rows in the editor, so the visible result remained far from Apple Notes even though the saved format was portable.
+- Fix: Rendered Markdown table blocks as native AppKit grids, kept lossless Markdown serialization, and moved Tab navigation plus row/column insert/delete actions onto explicit cell metadata. Empty cells remain editable and serializable, table-end structural newlines no longer leak into saved Markdown, and note-list previews show readable cell text instead of pipe syntax. Added installed-app editing, autosave, restart, and visual verification plus regression coverage.
+- Lesson: Rich local-first editing should hide storage syntax without replacing it; native presentation and explicit interaction metadata can sit on top of plain Markdown as long as round-trip behavior remains the contract.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

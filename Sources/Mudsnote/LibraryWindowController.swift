@@ -106,7 +106,9 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
         return NoteSearchResult(
             url: note.url,
             title: loaded.title,
-            snippet: matchingLine ?? libraryFirstMeaningfulLine(from: loaded.body) ?? "",
+            snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
+                ?? libraryFirstMeaningfulLine(from: loaded.body)
+                ?? "",
             modifiedAt: note.modifiedAt,
             tags: loaded.tags,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
@@ -121,9 +123,7 @@ private func libraryIsInboxNote(_ note: NoteSearchResult) -> Bool {
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
-    body.components(separatedBy: .newlines)
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .first(where: { !$0.isEmpty })
+    MarkdownEditorDocument.firstPreviewLine(in: body)
 }
 
 private struct LibraryFolderRow: Equatable, Sendable {
@@ -5366,9 +5366,13 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let string = editorTextView.string as NSString
-        guard let tableLocation = markdownTableLocation(atCharacterIndex: characterIndex, in: string) else {
+        let richLocation = richMarkdownTableLocation(atCharacterIndex: characterIndex)
+        let plainLocation = markdownTableLocation(atCharacterIndex: characterIndex, in: string)
+        guard richLocation != nil || plainLocation != nil else {
             return false
         }
+        let columnCount = richLocation?.snapshot.columnCount ?? plainLocation?.columnCount ?? 0
+        let isDataRow = richLocation.map { $0.row > 0 } ?? isMarkdownTableDataRow(atCharacterIndex: characterIndex)
 
         let insertRowItem = NSMenuItem(title: "插入表格行", action: #selector(insertMarkdownTableRowMenuItemPressed(_:)), keyEquivalent: "")
         insertRowItem.target = self
@@ -5383,12 +5387,12 @@ final class LibraryWindowController: NSWindowController,
         deleteRowItem.representedObject = characterIndex
         deleteRowItem.keyEquivalent = "\u{7F}"
         deleteRowItem.keyEquivalentModifierMask = [.command]
-        deleteRowItem.isEnabled = isMarkdownTableDataRow(atCharacterIndex: characterIndex)
+        deleteRowItem.isEnabled = isDataRow
 
         let deleteColumnItem = NSMenuItem(title: "删除表格列", action: #selector(deleteMarkdownTableColumnMenuItemPressed(_:)), keyEquivalent: "")
         deleteColumnItem.target = self
         deleteColumnItem.representedObject = characterIndex
-        deleteColumnItem.isEnabled = tableLocation.columnCount > 2
+        deleteColumnItem.isEnabled = columnCount > 2
 
         if !menu.items.isEmpty {
             menu.insertItem(.separator(), at: 0)
@@ -5549,7 +5553,22 @@ final class LibraryWindowController: NSWindowController,
         let location = max(min(selection.location, storage.length), 0)
 
         if storage.length == 0 || location == 0 {
+            if storage.length > 0,
+               storage.attribute(.qmTableID, at: 0, effectiveRange: nil) != nil {
+                var attributes = storage.attributes(at: 0, effectiveRange: nil)
+                attributes.removeValue(forKey: .qmTablePlaceholder)
+                editorTextView.typingAttributes = attributes
+                return
+            }
             editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+            return
+        }
+
+        let tableProbeLocation = min(location, storage.length - 1)
+        if storage.attribute(.qmTableID, at: tableProbeLocation, effectiveRange: nil) != nil {
+            var attributes = storage.attributes(at: tableProbeLocation, effectiveRange: nil)
+            attributes.removeValue(forKey: .qmTablePlaceholder)
+            editorTextView.typingAttributes = attributes
             return
         }
 
@@ -5937,11 +5956,52 @@ final class LibraryWindowController: NSWindowController,
         let columnCount: Int
     }
 
+    private struct RichMarkdownTableSnapshot {
+        let tableRange: NSRange
+        let rows: [[String]]
+        let cellRanges: [[NSRange]]
+        let columnCount: Int
+    }
+
+    private struct RichMarkdownTableLocation {
+        let snapshot: RichMarkdownTableSnapshot
+        let row: Int
+        let column: Int
+    }
+
     private func moveMarkdownTableCellSelectionForLibrary(_ direction: MarkdownTableCellDirection) -> Bool {
         guard selectedScope != .trash,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
+        }
+
+        if let location = richMarkdownTableLocation(atCharacterIndex: editorTextView.selectedRange().location) {
+            let flatIndex = location.row * location.snapshot.columnCount + location.column
+            switch direction {
+            case .next:
+                let cellCount = location.snapshot.rows.count * location.snapshot.columnCount
+                if flatIndex + 1 < cellCount {
+                    let nextIndex = flatIndex + 1
+                    moveEditorSelection(to: location.snapshot.cellRanges[nextIndex / location.snapshot.columnCount][nextIndex % location.snapshot.columnCount].location)
+                    return true
+                }
+
+                var rows = location.snapshot.rows
+                rows.append(Array(repeating: "", count: location.snapshot.columnCount))
+                replaceRichMarkdownTable(
+                    location.snapshot,
+                    rows: rows,
+                    selectedRow: rows.count - 1,
+                    selectedColumn: 0
+                )
+                return true
+
+            case .previous:
+                let previousIndex = max(flatIndex - 1, 0)
+                moveEditorSelection(to: location.snapshot.cellRanges[previousIndex / location.snapshot.columnCount][previousIndex % location.snapshot.columnCount].location)
+                return true
+            }
         }
 
         let string = editorTextView.string as NSString
@@ -6010,6 +6070,19 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
 
+        if let location = richMarkdownTableLocation(atCharacterIndex: editorTextView.selectedRange().location) {
+            var rows = location.snapshot.rows
+            let insertionRow = min(location.row + 1, rows.count)
+            rows.insert(Array(repeating: "", count: location.snapshot.columnCount), at: insertionRow)
+            replaceRichMarkdownTable(
+                location.snapshot,
+                rows: rows,
+                selectedRow: insertionRow,
+                selectedColumn: min(location.column, location.snapshot.columnCount - 1)
+            )
+            return true
+        }
+
         let string = editorTextView.string as NSString
         guard string.length > 0 else { return false }
 
@@ -6052,6 +6125,19 @@ final class LibraryWindowController: NSWindowController,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
+        }
+
+        if let location = richMarkdownTableLocation(atCharacterIndex: editorTextView.selectedRange().location) {
+            guard location.row > 0 else { return false }
+            var rows = location.snapshot.rows
+            rows.remove(at: location.row)
+            replaceRichMarkdownTable(
+                location.snapshot,
+                rows: rows,
+                selectedRow: min(location.row, rows.count - 1),
+                selectedColumn: min(location.column, location.snapshot.columnCount - 1)
+            )
+            return true
         }
 
         let string = editorTextView.string as NSString
@@ -6100,6 +6186,31 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope != .trash,
               let storage = editorTextView.textStorage else {
             return false
+        }
+
+        if let location = richMarkdownTableLocation(atCharacterIndex: characterIndex) {
+            guard operation != .delete || location.snapshot.columnCount > 2 else { return false }
+            var rows = location.snapshot.rows
+            let selectedColumn: Int
+            switch operation {
+            case .insertAfter:
+                selectedColumn = location.column + 1
+                for rowIndex in rows.indices {
+                    rows[rowIndex].insert("", at: selectedColumn)
+                }
+            case .delete:
+                selectedColumn = min(location.column, location.snapshot.columnCount - 2)
+                for rowIndex in rows.indices {
+                    rows[rowIndex].remove(at: location.column)
+                }
+            }
+            replaceRichMarkdownTable(
+                location.snapshot,
+                rows: rows,
+                selectedRow: location.row,
+                selectedColumn: selectedColumn
+            )
+            return true
         }
 
         let string = editorTextView.string as NSString
@@ -6165,6 +6276,161 @@ final class LibraryWindowController: NSWindowController,
             moveEditorSelection(to: firstRange.location)
         }
         return true
+    }
+
+    private func richMarkdownTableLocation(atCharacterIndex characterIndex: Int) -> RichMarkdownTableLocation? {
+        guard let storage = editorTextView.textStorage,
+              storage.length > 0 else {
+            return nil
+        }
+
+        let probeLocation = max(0, min(characterIndex, storage.length - 1))
+        guard tableAttributeString(.qmTableID, at: probeLocation, in: storage) != nil,
+              let row = tableAttributeInteger(.qmTableRow, at: probeLocation, in: storage),
+              let column = tableAttributeInteger(.qmTableColumn, at: probeLocation, in: storage),
+              let snapshot = richMarkdownTableSnapshot(atCharacterIndex: probeLocation, in: storage),
+              snapshot.rows.indices.contains(row),
+              snapshot.cellRanges[row].indices.contains(column) else {
+            return nil
+        }
+        return RichMarkdownTableLocation(snapshot: snapshot, row: row, column: column)
+    }
+
+    private func richMarkdownTableSnapshot(
+        atCharacterIndex characterIndex: Int,
+        in storage: NSTextStorage
+    ) -> RichMarkdownTableSnapshot? {
+        guard storage.length > 0 else { return nil }
+        let probeLocation = max(0, min(characterIndex, storage.length - 1))
+        var tableRange = NSRange(location: 0, length: 0)
+        guard let tableID = storage.attribute(
+            .qmTableID,
+            at: probeLocation,
+            longestEffectiveRange: &tableRange,
+            in: NSRange(location: 0, length: storage.length)
+        ) as? String else {
+            return nil
+        }
+
+        let string = storage.string as NSString
+        var markdownByRow: [Int: [Int: String]] = [:]
+        var rangesByRow: [Int: [Int: NSRange]] = [:]
+        var columnCount = 0
+        var cursor = tableRange.location
+        while cursor < NSMaxRange(tableRange) {
+            let paragraphRange = string.paragraphRange(for: NSRange(location: cursor, length: 0))
+            let clippedParagraphRange = NSIntersectionRange(paragraphRange, tableRange)
+            let hasTrailingNewline = clippedParagraphRange.length > 0
+                && string.substring(with: clippedParagraphRange).hasSuffix("\n")
+            let cellRange = NSRange(
+                location: clippedParagraphRange.location,
+                length: max(clippedParagraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
+            )
+            let metadataLocation = cellRange.length > 0 ? cellRange.location : clippedParagraphRange.location
+            guard metadataLocation < storage.length,
+                  tableAttributeString(.qmTableID, at: metadataLocation, in: storage) == tableID,
+                  let row = tableAttributeInteger(.qmTableRow, at: metadataLocation, in: storage),
+                  let column = tableAttributeInteger(.qmTableColumn, at: metadataLocation, in: storage) else {
+                break
+            }
+
+            columnCount = max(
+                columnCount,
+                tableAttributeInteger(.qmTableColumnCount, at: metadataLocation, in: storage) ?? 0
+            )
+            let cellMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+                range: cellRange,
+                in: storage,
+                paragraphKind: .paragraph,
+                theme: theme
+            )
+                .replacingOccurrences(of: "\u{200B}", with: "")
+                .replacingOccurrences(of: "|", with: "\\|")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            markdownByRow[row, default: [:]][column] = cellMarkdown
+            rangesByRow[row, default: [:]][column] = cellRange
+            cursor = NSMaxRange(clippedParagraphRange)
+        }
+
+        guard columnCount >= 2,
+              let maximumRow = markdownByRow.keys.max(),
+              maximumRow >= 0 else {
+            return nil
+        }
+
+        var rows: [[String]] = []
+        var cellRanges: [[NSRange]] = []
+        for row in 0...maximumRow {
+            guard let rowMarkdown = markdownByRow[row],
+                  let rowRanges = rangesByRow[row],
+                  rowMarkdown.count == columnCount,
+                  rowRanges.count == columnCount else {
+                return nil
+            }
+            rows.append((0..<columnCount).map { rowMarkdown[$0] ?? "" })
+            cellRanges.append((0..<columnCount).compactMap { rowRanges[$0] })
+        }
+
+        return RichMarkdownTableSnapshot(
+            tableRange: tableRange,
+            rows: rows,
+            cellRanges: cellRanges,
+            columnCount: columnCount
+        )
+    }
+
+    private func replaceRichMarkdownTable(
+        _ snapshot: RichMarkdownTableSnapshot,
+        rows: [[String]],
+        selectedRow: Int,
+        selectedColumn: Int
+    ) {
+        guard let storage = editorTextView.textStorage,
+              !rows.isEmpty,
+              rows.allSatisfy({ $0.count == rows[0].count }),
+              rows[0].count >= 2 else {
+            return
+        }
+
+        let lines = rows.enumerated().flatMap { rowIndex, row -> [String] in
+            let rowLine = markdownTableLine(cells: row)
+            guard rowIndex == 0 else { return [rowLine] }
+            return [rowLine, markdownTableLine(cells: Array(repeating: "---", count: row.count))]
+        }
+        let source = lines.joined(separator: "\n")
+        let rendered = MarkdownRichTextCodec.render(markdown: source, theme: theme, baseURL: selectedURL)
+
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: snapshot.tableRange, with: rendered)
+        suppressEditorChanges = false
+        markDirty()
+
+        if let replacement = richMarkdownTableSnapshot(atCharacterIndex: snapshot.tableRange.location, in: storage),
+           replacement.cellRanges.indices.contains(selectedRow),
+           replacement.cellRanges[selectedRow].indices.contains(selectedColumn) {
+            moveEditorSelection(to: replacement.cellRanges[selectedRow][selectedColumn].location)
+        } else {
+            moveEditorSelection(to: snapshot.tableRange.location)
+        }
+    }
+
+    private func tableAttributeString(
+        _ key: NSAttributedString.Key,
+        at location: Int,
+        in attributedString: NSAttributedString
+    ) -> String? {
+        attributedString.attribute(key, at: location, effectiveRange: nil) as? String
+    }
+
+    private func tableAttributeInteger(
+        _ key: NSAttributedString.Key,
+        at location: Int,
+        in attributedString: NSAttributedString
+    ) -> Int? {
+        if let value = attributedString.attribute(key, at: location, effectiveRange: nil) as? Int {
+            return value
+        }
+        return (attributedString.attribute(key, at: location, effectiveRange: nil) as? NSNumber)?.intValue
     }
 
     private func moveEditorSelection(to location: Int) {

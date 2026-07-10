@@ -78,6 +78,28 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func tableNotesUseReadableListPreviewText() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+
+        _ = try store.saveNewNote(
+            title: "Table Preview",
+            body: """
+            | Name | Status |
+            | --- | --- |
+            | Mudsnote | Active |
+            """
+        )
+
+        let result = try #require(store.listNotes(limit: 10).first)
+        #expect(result.snippet == "Name  Status")
+        #expect(!result.snippet.contains("|"))
+        #expect(store.searchNotes(query: "Mudsnote", limit: 10).first?.snippet == "Mudsnote  Active")
+    }
+
+    @Test
     func searchFindsNotesAcrossKnownRoots() throws {
         let harness = try TestHarness()
         let store = harness.store
