@@ -722,8 +722,9 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.export"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.file-actions"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.export"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.save"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
@@ -742,13 +743,33 @@ struct MarkdownRichEditorTests {
             #expect(item.image != nil)
             #expect(item.toolTip == item.label)
         }
-        let shareToolbarItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.export"
+        let fileActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.file-actions"
         })
-        #expect(shareToolbarItem.label == "分享与导出")
-        #expect(!(shareToolbarItem is NSMenuToolbarItem))
-        #expect(!shareToolbarItem.isBordered)
-        let shareToolbarButton = try #require(shareToolbarItem.view as? NSButton)
+        #expect(fileActionsToolbarItem.label == "文件操作")
+        #expect(!fileActionsToolbarItem.isBordered)
+        let fileActionsView = try #require(fileActionsToolbarItem.view)
+        #expect(fileActionsView.identifier?.rawValue == "LibraryToolbarFileActions")
+        #expect(fileActionsView.frame.width == LibraryNotesLayout.toolbarFileActionsWidth)
+        #expect(fileActionsView.frame.height == LibraryNotesLayout.toolbarFileActionsHeight)
+        #expect((fileActionsView as? NSVisualEffectView) == nil)
+        #expect(fileActionsView.layer?.cornerRadius == LibraryNotesLayout.toolbarFileActionsHeight / 2)
+        #expect(fileActionsView.layer?.masksToBounds == true)
+        #expect(fileActionsView.layer?.borderWidth == LibraryNotesLayout.toolbarFileActionsBorderWidth)
+        #expect(fileActionsView.layer?.borderColor?.alpha == 0)
+        #expect(abs((fileActionsView.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarFileActionsFillAlpha) < 0.001)
+        #expect(LibraryNotesLayout.toolbarFileActionsWidth == 72)
+        #expect(LibraryNotesLayout.toolbarFileActionsHeight == 32)
+        #expect(LibraryNotesLayout.toolbarFileActionsBorderWidth == 0)
+
+        let fileActionButtons = fileActionsView.allSubviews.compactMap { $0 as? NSButton }
+        #expect(Set(fileActionButtons.compactMap { $0.identifier?.rawValue }) == [
+            "mudsnote.library.toolbar.export",
+            "mudsnote.library.toolbar.more"
+        ])
+        let shareToolbarButton = try #require(fileActionButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.export"
+        })
         #expect(shareToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.export")
         #expect(!shareToolbarButton.isBordered)
         #expect(shareToolbarButton.constraints.contains {
@@ -760,12 +781,9 @@ struct MarkdownRichEditorTests {
         #expect(shareToolbarButton.image?.accessibilityDescription == "分享与导出")
         #expect(shareToolbarButton.toolTip == "分享与导出")
         #expect(controller.makeShareExportMenuForLibrary().items.map(\.title) == ["分享...", "复制 Markdown 内容", "导出 Markdown..."])
-        let moreToolbarItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.more"
+        let moreToolbarButton = try #require(fileActionButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.more"
         })
-        #expect(!(moreToolbarItem is NSMenuToolbarItem))
-        #expect(!moreToolbarItem.isBordered)
-        let moreToolbarButton = try #require(moreToolbarItem.view as? NSButton)
         #expect(moreToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.more")
         #expect(!moreToolbarButton.isBordered)
         #expect(moreToolbarButton.image?.accessibilityDescription == "更多")
@@ -1635,9 +1653,15 @@ struct MarkdownRichEditorTests {
         }
 
         func visibleToolbarButton(in controller: LibraryWindowController, rawValue: String) throws -> NSButton {
-            try #require((controller.window?.toolbar?.items ?? []).first {
-                $0.itemIdentifier.rawValue == rawValue
-            }?.view as? NSButton)
+            let buttons = (controller.window?.toolbar?.items ?? []).flatMap { item -> [NSButton] in
+                guard let view = item.view else { return [] }
+                var result = view.allSubviews.compactMap { $0 as? NSButton }
+                if let button = view as? NSButton {
+                    result.append(button)
+                }
+                return result
+            }
+            return try #require(buttons.first { $0.identifier?.rawValue == rawValue })
         }
 
         func tintAlpha(_ button: NSButton) throws -> CGFloat {

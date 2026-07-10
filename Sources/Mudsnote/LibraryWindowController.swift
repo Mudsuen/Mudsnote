@@ -210,8 +210,12 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 35
     static let toolbarEditorToolButtonHeight: CGFloat = 26
+    static let toolbarFileActionsWidth: CGFloat = 72
+    static let toolbarFileActionsHeight: CGFloat = 32
     static let toolbarMenuButtonWidth: CGFloat = 30
     static let toolbarMenuButtonHeight: CGFloat = 28
+    static let toolbarFileActionsFillAlpha: CGFloat = 0.40
+    static let toolbarFileActionsBorderWidth: CGFloat = 0
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -888,6 +892,7 @@ final class LibraryWindowController: NSWindowController,
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
     private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
+    private static let fileActionsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.file-actions")
     private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
@@ -898,6 +903,7 @@ final class LibraryWindowController: NSWindowController,
     private let usesCanonicalWindowSize: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
+    private var visualQASelectedURL: URL?
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
     private var sourceCountSnapshot: [NoteSearchResult] = []
@@ -1470,8 +1476,7 @@ final class LibraryWindowController: NSWindowController,
             .flexibleSpace,
             Self.editorToolsToolbarItemIdentifier,
             .space,
-            Self.exportToolbarItemIdentifier,
-            Self.moreToolbarItemIdentifier,
+            Self.fileActionsToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }
@@ -1489,7 +1494,9 @@ final class LibraryWindowController: NSWindowController,
             Self.checklistToolbarItemIdentifier,
             Self.tableToolbarItemIdentifier,
             Self.linkToolbarItemIdentifier,
-            Self.attachmentToolbarItemIdentifier
+            Self.attachmentToolbarItemIdentifier,
+            Self.exportToolbarItemIdentifier,
+            Self.moreToolbarItemIdentifier
         ]
     }
 
@@ -1543,6 +1550,8 @@ final class LibraryWindowController: NSWindowController,
             )
         case Self.editorToolsToolbarItemIdentifier:
             return toolbarEditorToolsItem(identifier: itemIdentifier)
+        case Self.fileActionsToolbarItemIdentifier:
+            return toolbarFileActionsItem(identifier: itemIdentifier)
         case Self.formatToolbarItemIdentifier:
             let item = toolbarImageItem(
                 identifier: itemIdentifier,
@@ -1833,6 +1842,63 @@ final class LibraryWindowController: NSWindowController,
         return item
     }
 
+    private func toolbarFileActionsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "文件操作"
+        item.paletteLabel = "文件操作"
+        item.toolTip = "分享与更多操作"
+        item.visibilityPriority = .high
+        item.isBordered = false
+
+        let capsule = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarFileActionsWidth,
+            height: LibraryNotesLayout.toolbarFileActionsHeight
+        ))
+        capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarFileActions")
+        capsule.wantsLayer = true
+        capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarFileActionsHeight / 2
+        capsule.layer?.masksToBounds = true
+        capsule.layer?.borderWidth = LibraryNotesLayout.toolbarFileActionsBorderWidth
+        capsule.layer?.borderColor = NSColor.clear.cgColor
+        capsule.layer?.backgroundColor = Self.toolbarFileActionsFillColor().cgColor
+        capsule.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [
+            toolbarMenuButton(
+                identifier: Self.exportToolbarItemIdentifier,
+                label: "分享与导出",
+                symbolName: "square.and.arrow.up",
+                action: #selector(shareExportToolbarMenuPressed(_:))
+            ),
+            toolbarMenuButton(
+                identifier: Self.moreToolbarItemIdentifier,
+                label: "更多",
+                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
+                action: #selector(moreToolbarMenuPressed(_:))
+            )
+        ])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.distribution = .fillEqually
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        capsule.addSubview(stack)
+        NSLayoutConstraint.activate([
+            capsule.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarFileActionsWidth),
+            capsule.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarFileActionsHeight),
+            stack.centerXAnchor.constraint(equalTo: capsule.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
+            stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight)
+        ])
+
+        item.view = capsule
+        setFileActionsToolbarGroupState(in: item)
+        return item
+    }
+
     private func toolbarEditorToolButton(
         identifier: NSToolbarItem.Identifier,
         label: String,
@@ -1900,9 +1966,26 @@ final class LibraryWindowController: NSWindowController,
         item.visibilityPriority = visibilityPriority
         item.isBordered = false
 
+        let button = toolbarMenuButton(
+            identifier: identifier,
+            label: label,
+            symbolName: symbolName,
+            action: action
+        )
+        item.image = button.image
+        item.view = button
+        setToolbarMenuButtonEnabled(validateToolbarItem(item), in: item)
+        return item
+    }
+
+    private func toolbarMenuButton(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSButton {
         let image = toolbarSymbolImage(symbolName: symbolName, label: label)
         image?.isTemplate = true
-        item.image = image
         let button = NSButton(image: image ?? NSImage(), target: self, action: action)
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
@@ -1918,9 +2001,7 @@ final class LibraryWindowController: NSWindowController,
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonWidth).isActive = true
         button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight).isActive = true
-        item.view = button
-        setToolbarMenuButtonEnabled(validateToolbarItem(item), in: item)
-        return item
+        return button
     }
 
     private func toolbarSymbolImage(symbolName: String, label: String) -> NSImage? {
@@ -2575,6 +2656,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         suppressSelectionChanges = false
+        stabilizeVisualQASelectionIfNeeded()
 
         if loadFirstIfNeeded, let noteToLoad {
             load(note: noteToLoad)
@@ -3899,20 +3981,29 @@ final class LibraryWindowController: NSWindowController,
 
     func selectNoteForVisualQA(at url: URL) {
         let standardizedURL = url.standardizedFileURL
+        visualQASelectedURL = standardizedURL
         reloadNotes(
             selecting: standardizedURL,
             loadFirstIfNeeded: true,
             hydratePreviews: true,
             refreshCounts: false
         )
-        if let row = rowIndex(for: standardizedURL.path) {
-            tableView.scrollRowToVisible(row)
-            if row <= 1, let scrollView = tableView.enclosingScrollView {
-                scrollView.contentView.scroll(to: .zero)
-                scrollView.reflectScrolledClipView(scrollView.contentView)
-            }
-        }
         window?.makeFirstResponder(tableView)
+    }
+
+    private func stabilizeVisualQASelectionIfNeeded() {
+        guard let visualQASelectedURL,
+              let row = rowIndex(for: visualQASelectedURL.path) else {
+            return
+        }
+        suppressSelectionChanges = true
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        suppressSelectionChanges = false
+        tableView.scrollRowToVisible(row)
+        if row <= 1, let scrollView = tableView.enclosingScrollView {
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
@@ -4489,6 +4580,8 @@ final class LibraryWindowController: NSWindowController,
                 setToolbarMenuButtonEnabled(canExportSelectedNote, in: item)
             case Self.moreToolbarItemIdentifier:
                 setToolbarMenuButtonEnabled(canShowMoreActions, in: item)
+            case Self.fileActionsToolbarItemIdentifier:
+                setFileActionsToolbarGroupState(in: item)
             case Self.editorToolsToolbarItemIdentifier:
                 setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
             default:
@@ -4543,9 +4636,44 @@ final class LibraryWindowController: NSWindowController,
     private func setToolbarMenuButtonEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
         item.isEnabled = isEnabled
         guard let button = item.view as? NSButton else { return }
+        setToolbarMenuButtonEnabled(isEnabled, button: button)
+    }
+
+    private func setToolbarMenuButtonEnabled(_ isEnabled: Bool, button: NSButton) {
         button.isEnabled = isEnabled
         button.alphaValue = 1
         button.contentTintColor = toolbarIconTintColor(isEnabled: isEnabled)
+    }
+
+    private func setFileActionsToolbarGroupState(in item: NSToolbarItem) {
+        item.isEnabled = true
+        guard let view = item.view else { return }
+        view.layer?.backgroundColor = Self.toolbarFileActionsFillColor().cgColor
+        for button in toolbarButtons(in: view) {
+            switch button.identifier?.rawValue {
+            case Self.exportToolbarItemIdentifier.rawValue:
+                setToolbarMenuButtonEnabled(canExportSelectedNote, button: button)
+            case Self.moreToolbarItemIdentifier.rawValue:
+                setToolbarMenuButtonEnabled(canShowMoreActions, button: button)
+            default:
+                continue
+            }
+        }
+    }
+
+    private func toolbarButtons(in view: NSView) -> [NSButton] {
+        var buttons = view.subviews.compactMap { $0 as? NSButton }
+        for subview in view.subviews {
+            buttons.append(contentsOf: toolbarButtons(in: subview))
+        }
+        return buttons
+    }
+
+    private static func toolbarFileActionsFillColor() -> NSColor {
+        NSColor(
+            calibratedWhite: 0.18,
+            alpha: LibraryNotesLayout.toolbarFileActionsFillAlpha
+        )
     }
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {
