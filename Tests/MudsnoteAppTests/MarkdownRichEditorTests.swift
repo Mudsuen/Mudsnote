@@ -732,8 +732,7 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
-            "mudsnote.library.toolbar.toggle-sidebar",
-            "mudsnote.library.toolbar.new-note"
+            "mudsnote.library.toolbar.toggle-sidebar"
         ] {
             let item = try #require((window.toolbar?.items ?? []).first {
                 $0.itemIdentifier.rawValue == toolbarButtonID
@@ -799,6 +798,43 @@ struct MarkdownRichEditorTests {
         #expect(!noteListActionsToolbarButton.isBordered)
         #expect(noteListActionsToolbarButton.image?.accessibilityDescription == "列表显示选项")
         #expect(noteListActionsToolbarButton.toolTip == "列表显示选项")
+        #expect(noteListActionsToolbarButton.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
+        })
+        #expect(noteListActionsToolbarButton.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
+        })
+        #expect(noteListActionsToolbarButton.layer?.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
+        #expect(noteListActionsToolbarButton.layer?.masksToBounds == true)
+        #expect(noteListActionsToolbarButton.layer?.borderWidth == LibraryNotesLayout.toolbarCircularButtonBorderWidth)
+        #expect(noteListActionsToolbarButton.layer?.borderColor?.alpha == 0)
+        #expect(abs((noteListActionsToolbarButton.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarCircularButtonFillAlpha) < 0.001)
+
+        let newNoteToolbarItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
+        })
+        let newNoteToolbarButton = try #require(newNoteToolbarItem.view as? NSButton)
+        #expect(!newNoteToolbarItem.isBordered)
+        #expect(newNoteToolbarItem.target === controller)
+        #expect(newNoteToolbarItem.action != nil)
+        #expect(newNoteToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.new-note")
+        #expect(!newNoteToolbarButton.isBordered)
+        #expect(newNoteToolbarButton.image?.accessibilityDescription == "新建笔记")
+        #expect(newNoteToolbarButton.toolTip == "新建笔记")
+        #expect(newNoteToolbarButton.constraints.contains {
+            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
+        })
+        #expect(newNoteToolbarButton.constraints.contains {
+            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
+        })
+        #expect(newNoteToolbarButton.layer?.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
+        #expect(newNoteToolbarButton.layer?.masksToBounds == true)
+        #expect(newNoteToolbarButton.layer?.borderWidth == LibraryNotesLayout.toolbarCircularButtonBorderWidth)
+        #expect(newNoteToolbarButton.layer?.borderColor?.alpha == 0)
+        #expect(abs((newNoteToolbarButton.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarCircularButtonFillAlpha) < 0.001)
+        #expect(LibraryNotesLayout.toolbarCircularButtonSize == 30)
+        #expect(LibraryNotesLayout.toolbarCircularButtonSymbolPointSize == 16)
+        #expect(LibraryNotesLayout.toolbarCircularButtonBorderWidth == 0)
 
         let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
         let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })

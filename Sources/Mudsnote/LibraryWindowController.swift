@@ -214,6 +214,10 @@ enum LibraryNotesLayout {
     static let toolbarFileActionsHeight: CGFloat = 32
     static let toolbarMenuButtonWidth: CGFloat = 30
     static let toolbarMenuButtonHeight: CGFloat = 28
+    static let toolbarCircularButtonSize: CGFloat = 30
+    static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
+    static let toolbarCircularButtonFillAlpha: CGFloat = 0.40
+    static let toolbarCircularButtonBorderWidth: CGFloat = 0
     static let toolbarFileActionsFillAlpha: CGFloat = 0.40
     static let toolbarFileActionsBorderWidth: CGFloat = 0
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
@@ -1513,7 +1517,7 @@ final class LibraryWindowController: NSWindowController,
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
         case Self.noteListActionsToolbarItemIdentifier:
-            return toolbarMenuButtonItem(
+            return toolbarCircularButtonItem(
                 identifier: itemIdentifier,
                 label: "列表显示选项",
                 symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
@@ -1534,7 +1538,7 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(toggleSourceListPressed)
             )
         case Self.newNoteToolbarItemIdentifier:
-            return toolbarButtonItem(
+            return toolbarCircularButtonItem(
                 identifier: itemIdentifier,
                 label: "新建笔记",
                 symbolName: "square.and.pencil",
@@ -1975,6 +1979,54 @@ final class LibraryWindowController: NSWindowController,
         item.image = button.image
         item.view = button
         setToolbarMenuButtonEnabled(validateToolbarItem(item), in: item)
+        return item
+    }
+
+    private func toolbarCircularButtonItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.target = self
+        item.action = action
+        item.isBordered = false
+
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        let configuredImage = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.toolbarCircularButtonSymbolPointSize,
+            weight: .regular
+        )) ?? image
+        configuredImage?.isTemplate = true
+
+        let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
+        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.focusRingType = .none
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
+        button.wantsLayer = true
+        button.layer?.cornerRadius = LibraryNotesLayout.toolbarCircularButtonSize / 2
+        button.layer?.masksToBounds = true
+        button.layer?.borderWidth = LibraryNotesLayout.toolbarCircularButtonBorderWidth
+        button.layer?.borderColor = NSColor.clear.cgColor
+        button.layer?.backgroundColor = Self.toolbarCircularButtonFillColor().cgColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
+        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
+
+        item.image = configuredImage
+        item.view = button
         return item
     }
 
@@ -4673,6 +4725,13 @@ final class LibraryWindowController: NSWindowController,
         NSColor(
             calibratedWhite: 0.18,
             alpha: LibraryNotesLayout.toolbarFileActionsFillAlpha
+        )
+    }
+
+    private static func toolbarCircularButtonFillColor() -> NSColor {
+        NSColor(
+            calibratedWhite: 0.18,
+            alpha: LibraryNotesLayout.toolbarCircularButtonFillAlpha
         )
     }
 
