@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import ImageIO
 import MudsnoteCore
 import UniformTypeIdentifiers
 
@@ -199,6 +200,14 @@ private final class LoadedLibraryNoteCache: @unchecked Sendable {
 
     func removeEntry(forKey key: NSString) {
         storage.removeObject(forKey: key)
+    }
+}
+
+private final class LibraryThumbnailCacheEntry: NSObject {
+    let image: NSImage?
+
+    init(image: NSImage?) {
+        self.image = image
     }
 }
 
@@ -991,6 +1000,13 @@ final class LibraryWindowController: NSWindowController,
     private var collapsedFolderPaths = Set<String>()
     private var expandedFolderPaths = Set<String>()
     private let loadedNoteCache = LoadedLibraryNoteCache(countLimit: 32)
+    private let thumbnailImageCache: NSCache<NSString, LibraryThumbnailCacheEntry> = {
+        let cache = NSCache<NSString, LibraryThumbnailCacheEntry>()
+        cache.countLimit = 96
+        cache.totalCostLimit = 96 * 88 * 88 * 4
+        return cache
+    }()
+    private(set) var thumbnailImageDecodeCountForLibrary = 0
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
@@ -1062,13 +1078,12 @@ final class LibraryWindowController: NSWindowController,
         if defersInitialNoteHydration {
             reloadNotes(
                 loadFirstIfNeeded: false,
-                hydratePreviews: false,
-                allNotesSnapshot: recentNoteResults(limit: 240, hydratePreview: false),
+                allNotesSnapshot: recentShellNoteResults(limit: 240),
                 refreshCounts: true
             )
         } else {
             hasHydratedInitialNoteList = true
-            reloadNotes(loadFirstIfNeeded: true, hydratePreviews: true)
+            reloadNotes(loadFirstIfNeeded: true)
         }
     }
 
@@ -1189,7 +1204,6 @@ final class LibraryWindowController: NSWindowController,
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
-                    hydratePreviews: false,
                     allNotesSnapshot: allNotes
                 )
             }
@@ -2738,7 +2752,6 @@ final class LibraryWindowController: NSWindowController,
     private func reloadNotes(
         selecting preferredURL: URL? = nil,
         loadFirstIfNeeded: Bool,
-        hydratePreviews: Bool = true,
         allNotesSnapshot: [NoteSearchResult]? = nil,
         refreshCounts: Bool = true
     ) {
@@ -2748,7 +2761,7 @@ final class LibraryWindowController: NSWindowController,
         let allNotes = allNotesSnapshot ?? (needsAllNotes ? allNoteResults(limit: Self.sourceCountSnapshotLimit) : [])
         searchScopeControl.isHidden = query.isEmpty
         notes = query.isEmpty
-            ? notesForSelectedScope(limit: 240, hydratePreviews: hydratePreviews, allNotes: allNotes)
+            ? notesForSelectedScope(limit: 240, allNotes: allNotes)
             : searchResultsForSelectedScope(query: query, limit: 240)
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
         updateNoteListHeader(query: query)
@@ -2819,14 +2832,14 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func notesForSelectedScope(limit: Int, hydratePreviews: Bool = true, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
+    private func notesForSelectedScope(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
         switch selectedScope {
         case .callRecordings:
             return Array(allNotes.filter(libraryIsCallRecordingNote).prefix(limit))
         case .all:
             return Array(allNotes.prefix(limit))
         case .recent:
-            return recentNoteResults(limit: min(limit, 80), hydratePreview: hydratePreviews)
+            return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .inbox:
             return Array(allNotes.filter { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
@@ -2875,25 +2888,35 @@ final class LibraryWindowController: NSWindowController,
         noteStore.listNotes(limit: limit)
     }
 
-    private func recentNoteResults(limit: Int, hydratePreview: Bool) -> [NoteSearchResult] {
-        noteStore.listRecentFiles(limit: limit).enumerated().map { index, note in
-            let loaded = hydratePreview && index < 80 ? try? noteStore.loadNote(at: note.url) : nil
-            return NoteSearchResult(
+    private func recentShellNoteResults(limit: Int) -> [NoteSearchResult] {
+        noteStore.listRecentFiles(limit: limit).map { note in
+            NoteSearchResult(
                 url: note.url,
-                title: loaded?.title ?? note.title,
-                snippet: loaded.flatMap { firstMeaningfulLine(from: $0.body) } ?? "",
+                title: note.title,
+                snippet: "",
                 modifiedAt: note.modifiedAt,
-                tags: loaded?.tags ?? [],
-                hasAttachments: loaded.map { MarkdownEditorDocument.containsAttachmentReference(in: $0.body) } ?? false,
-                thumbnailURL: loaded.flatMap { MarkdownEditorDocument.firstLocalImageURL(in: $0.body, relativeTo: note.url) }
+                tags: [],
+                hasAttachments: false,
+                thumbnailURL: nil
             )
         }
     }
 
-    private func firstMeaningfulLine(from body: String) -> String? {
-        body.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty })
+    private func recentNoteResults(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
+        let resultsByPath = Dictionary(uniqueKeysWithValues: allNotes.map {
+            ($0.url.standardizedFileURL.path, $0)
+        })
+        return noteStore.listRecentFiles(limit: limit).map { note in
+            resultsByPath[note.url.standardizedFileURL.path] ?? NoteSearchResult(
+                url: note.url,
+                title: note.title,
+                snippet: "",
+                modifiedAt: note.modifiedAt,
+                tags: [],
+                hasAttachments: false,
+                thumbnailURL: nil
+            )
+        }
     }
 
     private func buildGroupedRows(
@@ -3071,11 +3094,37 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func thumbnailImage(for note: NoteSearchResult) -> NSImage? {
-        guard let thumbnailURL = note.thumbnailURL,
-              FileManager.default.fileExists(atPath: thumbnailURL.path) else {
+        guard let thumbnailURL = note.thumbnailURL else {
             return nil
         }
-        return NSImage(contentsOf: thumbnailURL)
+        let key = thumbnailURL.standardizedFileURL.path as NSString
+        if let cached = thumbnailImageCache.object(forKey: key) {
+            return cached.image
+        }
+
+        thumbnailImageDecodeCountForLibrary += 1
+        let image = makeListThumbnailImage(at: thumbnailURL)
+        let pixelCost = image == nil ? 1 : 88 * 88 * 4
+        thumbnailImageCache.setObject(
+            LibraryThumbnailCacheEntry(image: image),
+            forKey: key,
+            cost: pixelCost
+        )
+        return image
+    }
+
+    private func makeListThumbnailImage(at url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 88,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: thumbnail, size: NSSize(width: 44, height: 44))
     }
 
     func highlightedSearchString(
@@ -4216,7 +4265,6 @@ final class LibraryWindowController: NSWindowController,
         reloadNotes(
             selecting: standardizedURL,
             loadFirstIfNeeded: true,
-            hydratePreviews: true,
             refreshCounts: false
         )
         window?.makeFirstResponder(tableView)

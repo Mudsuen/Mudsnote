@@ -2562,6 +2562,12 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        let decodeCountAfterFirstCell = controller.thumbnailImageDecodeCountForLibrary
+        let reusedThumbnailCell = try #require(controller.tableView(
+            controller.tableView,
+            viewFor: nil,
+            row: 1
+        ) as? LibraryNoteCellView)
 
         #expect(controller.noteListSearchResultsForLibrary().first?.thumbnailURL?.path == imageURL.standardizedFileURL.path)
         #expect(!cell.thumbnailImageView.isHidden)
@@ -2573,6 +2579,9 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == 44
         })
         #expect(cell.attachmentImageView.isHidden)
+        #expect(reusedThumbnailCell.thumbnailImageView.image != nil)
+        #expect(controller.thumbnailImageDecodeCountForLibrary == decodeCountAfterFirstCell)
+        #expect(decodeCountAfterFirstCell == 1)
 
         var editorHasImagePreview = false
         let editorContent = controller.editorTextView.attributedString()
