@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ImageIO
 import MudsnoteCore
 import Testing
 @testable import Mudsnote
@@ -3141,6 +3142,79 @@ struct MarkdownRichEditorTests {
         }
         #expect(editorHasImagePreview)
         #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "![Preview](Attachments/thumb.png)")
+    }
+
+    @MainActor
+    @Test
+    func visibleLibraryDecodesThumbnailOffMainAndDeduplicatesRequests() async throws {
+        let suiteName = "mudsnote.library-async-thumbnail-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-async-thumbnail-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(
+            title: "Async Thumbnail",
+            body: "![Preview](Attachments/async-thumb.png)"
+        )
+        let imageURL = noteURL.deletingLastPathComponent()
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("async-thumb.png")
+        try FileManager.default.createDirectory(at: imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let pngData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        try pngData.write(to: imageURL)
+
+        let decodeGate = DispatchSemaphore(value: 0)
+        defer { decodeGate.signal() }
+        let controller = LibraryWindowController(
+            noteStore: store,
+            thumbnailDecoder: { url in
+                decodeGate.wait()
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                return CGImageSourceCreateImageAtIndex(source, 0, nil)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+
+        let firstCell = try #require(controller.tableView(
+            controller.tableView,
+            viewFor: nil,
+            row: 1
+        ) as? LibraryNoteCellView)
+        _ = controller.tableView(controller.tableView, viewFor: nil, row: 1)
+
+        #expect(firstCell.thumbnailImageView.image == nil)
+        #expect(firstCell.thumbnailImageView.isHidden)
+        #expect(!firstCell.attachmentImageView.isHidden)
+        #expect(controller.thumbnailImageDecodeCountForLibrary == 1)
+
+        decodeGate.signal()
+        await controller.waitForThumbnailLoadsForLibrary()
+        let loadedCell = try #require(controller.tableView(
+            controller.tableView,
+            viewFor: nil,
+            row: 1
+        ) as? LibraryNoteCellView)
+
+        #expect(loadedCell.thumbnailImageView.image != nil)
+        #expect(!loadedCell.thumbnailImageView.isHidden)
+        #expect(loadedCell.attachmentImageView.isHidden)
+        #expect(controller.thumbnailImageDecodeCountForLibrary == 1)
     }
 
     @MainActor

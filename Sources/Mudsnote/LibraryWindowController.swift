@@ -224,6 +224,14 @@ private final class LibraryThumbnailCacheEntry: NSObject {
     }
 }
 
+private final class LibraryThumbnailDecodeResult: @unchecked Sendable {
+    let image: CGImage?
+
+    init(image: CGImage?) {
+        self.image = image
+    }
+}
+
 private enum LibrarySourceSection: Int {
     case folders = 0
     case tags = 1
@@ -998,6 +1006,7 @@ final class LibraryWindowController: NSWindowController,
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
+    private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let usesCanonicalWindowSize: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
@@ -1023,6 +1032,7 @@ final class LibraryWindowController: NSWindowController,
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
     private var hasCenteredWindow = false
+    private var hasRequestedWindowPresentation = false
     private var hasHydratedInitialNoteList = false
     private var selectedScope: LibraryScope = .all
     private var sourceButtons: [NSButton] = []
@@ -1038,6 +1048,7 @@ final class LibraryWindowController: NSWindowController,
         cache.totalCostLimit = 96 * 88 * 88 * 4
         return cache
     }()
+    private var thumbnailImageLoadTasks: [String: Task<Void, Never>] = [:]
     private(set) var thumbnailImageDecodeCountForLibrary = 0
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
@@ -1080,12 +1091,14 @@ final class LibraryWindowController: NSWindowController,
         defersInitialNoteHydration: Bool = false,
         usesCanonicalWindowSize: Bool = false,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
+        thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
+        self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
         self.onSave = onSave
@@ -1132,6 +1145,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func showWindowAndFocus() {
+        hasRequestedWindowPresentation = true
         showWindow(nil)
         guard let window else { return }
         if !hasCenteredWindow {
@@ -1314,6 +1328,8 @@ final class LibraryWindowController: NSWindowController,
         cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
+        thumbnailImageLoadTasks.values.forEach { $0.cancel() }
+        thumbnailImageLoadTasks.removeAll()
         attachmentQuickLookController.dismiss()
         cancelSourceSnapshotValidation()
         searchReloadWorkItem?.cancel()
@@ -3220,23 +3236,70 @@ final class LibraryWindowController: NSWindowController,
         guard let thumbnailURL = note.thumbnailURL else {
             return nil
         }
-        let key = thumbnailURL.standardizedFileURL.path as NSString
-        if let cached = thumbnailImageCache.object(forKey: key) {
+        let key = thumbnailURL.standardizedFileURL.path
+        if let cached = thumbnailImageCache.object(forKey: key as NSString) {
             return cached.image
         }
 
+        guard hasRequestedWindowPresentation else {
+            return decodeThumbnailImageSynchronously(at: thumbnailURL, key: key)
+        }
+
+        scheduleThumbnailImageLoad(at: thumbnailURL, key: key)
+        return nil
+    }
+
+    private func decodeThumbnailImageSynchronously(at url: URL, key: String) -> NSImage? {
         thumbnailImageDecodeCountForLibrary += 1
-        let image = makeListThumbnailImage(at: thumbnailURL)
-        let pixelCost = image == nil ? 1 : 88 * 88 * 4
-        thumbnailImageCache.setObject(
-            LibraryThumbnailCacheEntry(image: image),
-            forKey: key,
-            cost: pixelCost
-        )
+        let image = thumbnailDecoder(url).map {
+            NSImage(cgImage: $0, size: NSSize(width: 44, height: 44))
+        }
+        cacheThumbnailImage(image, key: key)
         return image
     }
 
-    private func makeListThumbnailImage(at url: URL) -> NSImage? {
+    private func scheduleThumbnailImageLoad(at url: URL, key: String) {
+        guard thumbnailImageLoadTasks[key] == nil else { return }
+
+        thumbnailImageDecodeCountForLibrary += 1
+        let thumbnailDecoder = thumbnailDecoder
+        let task = Task.detached(priority: .utility) { [weak self] in
+            let decoded = LibraryThumbnailDecodeResult(image: thumbnailDecoder(url))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.thumbnailImageLoadTasks[key] = nil
+                guard !Task.isCancelled else { return }
+
+                let image = decoded.image.map {
+                    NSImage(cgImage: $0, size: NSSize(width: 44, height: 44))
+                }
+                self.cacheThumbnailImage(image, key: key)
+                guard self.window?.isVisible == true else { return }
+
+                let matchingRows = IndexSet(self.listRows.indices.filter { row in
+                    self.listRows[row].note?.thumbnailURL?.standardizedFileURL.path == key
+                })
+                guard !matchingRows.isEmpty else { return }
+                self.tableView.reloadData(
+                    forRowIndexes: matchingRows,
+                    columnIndexes: IndexSet(integer: 0)
+                )
+            }
+        }
+        thumbnailImageLoadTasks[key] = task
+    }
+
+    private func cacheThumbnailImage(_ image: NSImage?, key: String) {
+        let pixelCost = image == nil ? 1 : 88 * 88 * 4
+        thumbnailImageCache.setObject(
+            LibraryThumbnailCacheEntry(image: image),
+            forKey: key as NSString,
+            cost: pixelCost
+        )
+    }
+
+    nonisolated private static func makeListThumbnailCGImage(at url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -3244,10 +3307,14 @@ final class LibraryWindowController: NSWindowController,
             kCGImageSourceThumbnailMaxPixelSize: 88,
             kCGImageSourceShouldCacheImmediately: true
         ]
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return nil
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    func waitForThumbnailLoadsForLibrary() async {
+        let tasks = Array(thumbnailImageLoadTasks.values)
+        for task in tasks {
+            await task.value
         }
-        return NSImage(cgImage: thumbnail, size: NSSize(width: 44, height: 44))
     }
 
     func highlightedSearchString(
