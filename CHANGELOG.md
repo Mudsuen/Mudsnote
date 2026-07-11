@@ -720,6 +720,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added one file-store actor inventory for Inbox, exact Markdown counts, recent files, attachments, and conflicts, then made delete, pin, and tag coordinate a fresh read-modify-write against the current Inbox. Added large-library and external-append regression coverage.
 - Lesson: Local-first UI state is a view of the filesystem, not an authority; inventory once off the UI actor and re-read coordinated content immediately before destructive mutations.
 
+### 123. Nonblocking uncached note selection
+
+- Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.
+- Fix: Visible-window cache misses now show a lightweight title/date shell, load Markdown in a cancellable user-initiated task, and apply results only when their generation and selected path are still current. Active selection cancels lower-priority adjacent prefetch, while hidden test windows and deterministic visual-QA selection retain synchronous behavior.
+- Lesson: Notes-grade navigation needs latest-request-wins scheduling around the existing bounded cache; derived prefetch must never compete with or overwrite the user's active selection.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

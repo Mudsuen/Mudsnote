@@ -203,6 +203,7 @@ Objective: make retrieval feel Notes-grade.
 - lightweight local index cache
 - recent access and pinned notes
 - stale recent-file references self-heal during asynchronous launch hydration without adding a synchronous filesystem scan
+- visible uncached-note selection reads Markdown off the main thread, cancels stale requests, and keeps adjacent prefetch lower priority than the active selection
 
 Exit criteria: searching and returning to old notes is faster than manually navigating folders.
 

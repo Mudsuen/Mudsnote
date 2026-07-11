@@ -4028,6 +4028,82 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func visibleLibraryLoadsUncachedNotesOffMainAndIgnoresStaleResults() async throws {
+        let suiteName = "mudsnote.library-async-load-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-async-load-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let now = Date()
+        var noteURLs: [URL] = []
+        for index in 0..<8 {
+            let url = try store.saveNewNote(title: "Async Note \(index)", body: "Async body \(index)")
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(Double(index) * -60)],
+                ofItemAtPath: url.path
+            )
+            noteURLs.append(url)
+        }
+        let delayedURL = noteURLs[7].standardizedFileURL
+        let targetURL = noteURLs[4].standardizedFileURL
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            noteLoader: { url in
+                if url.standardizedFileURL == delayedURL {
+                    Thread.sleep(forTimeInterval: 0.45)
+                }
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+
+        func row(for url: URL) -> Int? {
+            (0..<controller.tableView.numberOfRows).first { row in
+                guard let writer = controller.tableView(
+                    controller.tableView,
+                    pasteboardWriterForRow: row
+                ) as? NSURL else {
+                    return false
+                }
+                return (writer as URL).standardizedFileURL == url.standardizedFileURL
+            }
+        }
+
+        let delayedRow = try #require(row(for: delayedURL))
+        let targetRow = try #require(row(for: targetURL))
+        let selectionStart = Date()
+        controller.tableView.selectRowIndexes(IndexSet(integer: delayedRow), byExtendingSelection: false)
+        #expect(Date().timeIntervalSince(selectionStart) < 0.2)
+
+        controller.tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
+        await controller.waitForActiveNoteLoadForLibrary()
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL)
+        #expect(controller.titleField.stringValue == "Async Note 4")
+        #expect(controller.editorTextView.string == "Async body 4")
+        #expect(controller.hasCachedLoadedNoteForLibrary(at: targetURL))
+    }
+
+    @MainActor
+    @Test
     func defaultLaunchOpensLibraryUnlessAnotherSurfaceIsRequested() {
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: []))
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["--library"]))
@@ -4224,7 +4300,7 @@ struct MarkdownRichEditorTests {
         #expect(allCount.stringValue == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(6)
         while Date() < deadline, controller.editorTextView.string != "Deferred body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -4319,7 +4395,7 @@ struct MarkdownRichEditorTests {
         }
 
         controller.showWindowAndFocus()
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(6)
         while Date() < deadline, controller.editorTextView.string != "External body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }

@@ -997,6 +997,7 @@ final class LibraryWindowController: NSWindowController,
     private let onOpenInSeparateWindow: (URL) -> Void
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
+    private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
     private let usesCanonicalWindowSize: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
@@ -1008,6 +1009,8 @@ final class LibraryWindowController: NSWindowController,
     private var selectedTags: [String] = []
     private var isDirty = false
     private var autosaveTask: Task<Void, Never>?
+    private var noteLoadTask: Task<Void, Never>?
+    private var noteLoadGeneration = 0
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
@@ -1076,11 +1079,13 @@ final class LibraryWindowController: NSWindowController,
         noteStore: NoteStore,
         defersInitialNoteHydration: Bool = false,
         usesCanonicalWindowSize: Bool = false,
+        noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
+        self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
         self.onSave = onSave
@@ -1306,6 +1311,7 @@ final class LibraryWindowController: NSWindowController,
     func windowWillClose(_ notification: Notification) {
         autosaveTask?.cancel()
         autosaveTask = nil
+        cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
         attachmentQuickLookController.dismiss()
@@ -3544,6 +3550,7 @@ final class LibraryWindowController: NSWindowController,
             if selectedScope == .trash {
                 selectedScope = .all
             }
+            cancelActiveNoteLoad()
             isLoadingInitialNote = false
             selectedURL = nil
             selectedTags = []
@@ -4045,17 +4052,55 @@ final class LibraryWindowController: NSWindowController,
 
     private func load(note: NoteSearchResult) {
         isLoadingInitialNote = false
+        cancelActiveNoteLoad()
+        notePrefetchTask?.cancel()
+        notePrefetchTask = nil
         if let cached = cachedLoadedNote(for: note) {
             applyLoadedNote(cached, for: note)
             return
         }
 
+        guard window?.isVisible == true,
+              visualQASelectedURL == nil else {
+            loadNoteSynchronously(note)
+            return
+        }
+
+        showInitialNoteLoadingShell(for: note)
+        let generation = noteLoadGeneration
+        let noteLoader = noteLoader
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result<LoadedLibraryNote, Error> {
+                try noteLoader(note.url)
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      !Task.isCancelled,
+                      generation == self.noteLoadGeneration,
+                      self.selectedNoteStillMatchesInitialLoad(note) else {
+                    return
+                }
+                self.noteLoadTask = nil
+                self.applyLoadedNoteResult(result, for: note)
+            }
+        }
+        noteLoadTask = task
+    }
+
+    private func loadNoteSynchronously(_ note: NoteSearchResult) {
         do {
-            let loaded = try noteStore.loadNote(at: note.url)
+            let loaded = try noteLoader(note.url)
             applyLoadedNoteResult(.success(loaded), for: note)
         } catch {
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
+    }
+
+    private func cancelActiveNoteLoad() {
+        noteLoadTask?.cancel()
+        noteLoadTask = nil
+        noteLoadGeneration += 1
     }
 
     private func applyLoadedNoteResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
@@ -4192,6 +4237,11 @@ final class LibraryWindowController: NSWindowController,
 
     func hasCachedLoadedNoteForLibrary(at url: URL) -> Bool {
         loadedNoteCache.entry(forKey: loadedNoteCacheKey(for: url)) != nil
+    }
+
+    func waitForActiveNoteLoadForLibrary() async {
+        let task = noteLoadTask
+        await task?.value
     }
 
     func applyEditorSearchHighlightsForCurrentQuery() {
@@ -4959,6 +5009,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func clearCurrentDocumentAfterRemoval() {
+        cancelActiveNoteLoad()
         isLoadingInitialNote = false
         selectedURL = nil
         selectedTags = []
