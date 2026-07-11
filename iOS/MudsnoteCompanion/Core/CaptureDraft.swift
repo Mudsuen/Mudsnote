@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 struct CaptureDraft: Equatable {
     var body: String = ""
@@ -101,6 +103,93 @@ enum CaptureAttachment: Equatable {
         case .audio:
             return .audio
         }
+    }
+
+    static func validatedImage(data: Data, suggestedExtension: String? = nil) throws -> CaptureAttachment {
+        guard data.isEmpty == false else { throw CaptureAttachmentError.empty }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let typeIdentifier = CGImageSourceGetType(source) as String?,
+              let type = UTType(typeIdentifier),
+              type.conforms(to: .image) else {
+            throw CaptureAttachmentError.unsupportedImage
+        }
+        let detectedExtension = type.preferredFilenameExtension
+            ?? suggestedExtension?.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            ?? "img"
+        return .image(
+            data: data,
+            preferredExtension: detectedExtension.lowercased() == "jpeg" ? "jpg" : detectedExtension.lowercased()
+        )
+    }
+
+    static func validatedAudio(data: Data, preferredExtension: String = "m4a") throws -> CaptureAttachment {
+        guard data.isEmpty == false else { throw CaptureAttachmentError.empty }
+        return .audio(
+            data: data,
+            preferredExtension: preferredExtension.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()
+        )
+    }
+}
+
+enum CaptureAttachmentPolicy {
+    static let maximumAttachmentCount = 8
+    static let maximumImageBytes = 15 * 1_024 * 1_024
+    static let maximumAudioBytes = 25 * 1_024 * 1_024
+    static let maximumDraftBytes = 32 * 1_024 * 1_024
+
+    static func validateAppending(_ attachment: CaptureAttachment, to existing: [CaptureAttachment]) throws {
+        guard existing.count < maximumAttachmentCount else {
+            throw CaptureAttachmentError.tooMany(maximum: maximumAttachmentCount)
+        }
+        let individualLimit: Int
+        switch attachment {
+        case .image:
+            individualLimit = maximumImageBytes
+        case .audio:
+            individualLimit = maximumAudioBytes
+        }
+        guard attachment.data.count <= individualLimit else {
+            throw CaptureAttachmentError.tooLarge(maximumBytes: individualLimit)
+        }
+        let totalBytes = existing.reduce(attachment.data.count) { $0 + $1.data.count }
+        guard totalBytes <= maximumDraftBytes else {
+            throw CaptureAttachmentError.draftTooLarge(maximumBytes: maximumDraftBytes)
+        }
+    }
+
+    static func validate(_ attachments: [CaptureAttachment]) throws {
+        var accepted: [CaptureAttachment] = []
+        for attachment in attachments {
+            try validateAppending(attachment, to: accepted)
+            accepted.append(attachment)
+        }
+    }
+}
+
+enum CaptureAttachmentError: LocalizedError, Equatable {
+    case empty
+    case unsupportedImage
+    case tooMany(maximum: Int)
+    case tooLarge(maximumBytes: Int)
+    case draftTooLarge(maximumBytes: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .empty:
+            return "The attachment is empty."
+        case .unsupportedImage:
+            return "Choose a supported image file."
+        case .tooMany(let maximum):
+            return "Add up to \(maximum) attachments per memo."
+        case .tooLarge(let maximumBytes):
+            return "This attachment exceeds the \(Self.megabytes(maximumBytes)) MB limit."
+        case .draftTooLarge(let maximumBytes):
+            return "Attachments exceed the \(Self.megabytes(maximumBytes)) MB memo limit."
+        }
+    }
+
+    private static func megabytes(_ bytes: Int) -> Int {
+        bytes / 1_024 / 1_024
     }
 }
 

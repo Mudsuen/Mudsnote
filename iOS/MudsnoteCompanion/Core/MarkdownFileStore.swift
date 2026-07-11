@@ -123,6 +123,7 @@ actor MarkdownFileStore {
     }
 
     func preparePendingWrite(for draft: CaptureDraft, root: URL, now: Date = Date()) async throws -> PendingWrite {
+        try CaptureAttachmentPolicy.validate(draft.attachments)
         let attachmentWrites = try attachmentWrites(for: draft.attachments, root: root, now: now)
         let markdown = Self.markdownBlock(
             body: draft.body,

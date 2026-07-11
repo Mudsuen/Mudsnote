@@ -720,6 +720,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added one file-store actor inventory for Inbox, exact Markdown counts, recent files, attachments, and conflicts, then made delete, pin, and tag coordinate a fresh read-modify-write against the current Inbox. Added large-library and external-append regression coverage.
 - Lesson: Local-first UI state is a view of the filesystem, not an authority; inventory once off the UI actor and re-read coordinated content immediately before destructive mutations.
 
+### 123. Bounded and type-safe iOS attachments
+
+- Problem: Photo imports always used a `.jpg` suffix regardless of their real bytes, individual and combined attachments were unbounded, and repeated failed writes could grow the base64 pending queue without a cap.
+- Fix: Detect image content with ImageIO and UTType, enforce attachment count and image/audio/draft size limits before persistence, preflight file sizes before loading imports, and cap pending queue items plus encoded attachment volume. Queue rejection now explicitly keeps the current draft open instead of implying that another pending item made it durable.
+- Lesson: Attachment safety needs defense at import, draft preparation, and recovery persistence; a queued-state message is valid only when the current capture actually reached durable storage.
+
 ### 123. Nonblocking uncached note selection
 
 - Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.

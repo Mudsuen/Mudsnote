@@ -103,6 +103,10 @@ final class AppModel: ObservableObject {
                 statusToast = .saved(continueCapturing ? "Saved. Ready for next" : "Saved")
                 await refreshInbox()
             } catch {
+                if let draftSaveError = error as? DraftSaveError {
+                    statusToast = .error(draftSaveError.localizedDescription)
+                    return
+                }
                 let pendingCount = await queue?.pendingCount() ?? 0
                 if pendingCount > 0 {
                     syncStatus = .pending
@@ -122,10 +126,11 @@ final class AppModel: ObservableObject {
                     statusToast = .error("Image data unavailable")
                     return
                 }
-                draft.attachments.append(.image(data: data, preferredExtension: "jpg"))
+                let attachment = try CaptureAttachment.validatedImage(data: data)
+                try appendAttachment(attachment)
                 statusToast = .saved("Image attached")
             } catch {
-                statusToast = .error("Image import failed")
+                statusToast = .error(error.localizedDescription)
             }
         }
     }
@@ -137,12 +142,21 @@ final class AppModel: ObservableObject {
                 defer {
                     if accessed { url.stopAccessingSecurityScopedResource() }
                 }
+                if let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                   fileSize > CaptureAttachmentPolicy.maximumImageBytes {
+                    throw CaptureAttachmentError.tooLarge(
+                        maximumBytes: CaptureAttachmentPolicy.maximumImageBytes
+                    )
+                }
                 let data = try Data(contentsOf: url)
-                let preferredExtension = url.pathExtension.isEmpty ? "jpg" : url.pathExtension.lowercased()
-                draft.attachments.append(.image(data: data, preferredExtension: preferredExtension))
+                let attachment = try CaptureAttachment.validatedImage(
+                    data: data,
+                    suggestedExtension: url.pathExtension
+                )
+                try appendAttachment(attachment)
                 statusToast = .saved("Image attached")
             } catch {
-                statusToast = .error("Image import failed")
+                statusToast = .error(error.localizedDescription)
             }
         }
     }
@@ -152,10 +166,17 @@ final class AppModel: ObservableObject {
             do {
                 if audioRecorder.isRecording {
                     if let recording = try audioRecorder.stop() {
+                        let attachment: CaptureAttachment
+                        do {
+                            attachment = try CaptureAttachment.validatedAudio(data: recording.data)
+                            try appendAttachment(attachment)
+                        } catch {
+                            try? FileManager.default.removeItem(at: recording.temporaryURL)
+                            throw error
+                        }
                         if draft.body.isEmpty {
                             draft.body = "转写中..."
                         }
-                        draft.attachments.append(.audio(data: recording.data, preferredExtension: "m4a"))
                         statusToast = .saved("Audio attached")
                         Task {
                             await transcribe(recording)
@@ -166,9 +187,14 @@ final class AppModel: ObservableObject {
                     statusToast = .pending("Recording")
                 }
             } catch {
-                statusToast = .error("Audio recording failed")
+                statusToast = .error(error.localizedDescription)
             }
         }
+    }
+
+    private func appendAttachment(_ attachment: CaptureAttachment) throws {
+        try CaptureAttachmentPolicy.validateAppending(attachment, to: draft.attachments)
+        draft.attachments.append(attachment)
     }
 
     private func transcribe(_ recording: RecordedAudio) async {
@@ -297,7 +323,11 @@ final class AppModel: ObservableObject {
         }
 
         let pending = try await fileStore.preparePendingWrite(for: draft, root: root)
-        try await queue.enqueue(pending)
+        do {
+            try await queue.enqueue(pending)
+        } catch {
+            throw DraftSaveError.pendingQueueRejected(error.localizedDescription)
+        }
         try await fileStore.performPendingWrite(pending)
         try await queue.remove(id: pending.id)
     }
@@ -332,6 +362,17 @@ final class AppModel: ObservableObject {
             }
     }
 
+}
+
+enum DraftSaveError: LocalizedError {
+    case pendingQueueRejected(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .pendingQueueRejected(let reason):
+            return "Draft kept open. \(reason)"
+        }
+    }
 }
 
 struct TagSummary: Equatable, Identifiable {

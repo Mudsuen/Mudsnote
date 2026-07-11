@@ -86,6 +86,83 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(draft.canSend)
     }
 
+    func testImageAttachmentUsesDetectedContentTypeInsteadOfMisleadingSuffix() throws {
+        let pngData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        let attachment = try CaptureAttachment.validatedImage(
+            data: pngData,
+            suggestedExtension: "jpg"
+        )
+
+        XCTAssertEqual(attachment.preferredExtension, "png")
+    }
+
+    func testImageAttachmentRejectsNonImageData() {
+        XCTAssertThrowsError(
+            try CaptureAttachment.validatedImage(data: Data("not-an-image".utf8))
+        ) { error in
+            XCTAssertEqual(error as? CaptureAttachmentError, .unsupportedImage)
+        }
+    }
+
+    func testAttachmentPolicyBoundsCountAndCombinedDraftSize() throws {
+        let tinyAudio = try CaptureAttachment.validatedAudio(data: Data([0x01]))
+        let existing = Array(
+            repeating: tinyAudio,
+            count: CaptureAttachmentPolicy.maximumAttachmentCount
+        )
+        XCTAssertThrowsError(
+            try CaptureAttachmentPolicy.validateAppending(tinyAudio, to: existing)
+        ) { error in
+            XCTAssertEqual(
+                error as? CaptureAttachmentError,
+                .tooMany(maximum: CaptureAttachmentPolicy.maximumAttachmentCount)
+            )
+        }
+
+        let largeAudio = try CaptureAttachment.validatedAudio(
+            data: Data(count: CaptureAttachmentPolicy.maximumAudioBytes)
+        )
+        XCTAssertThrowsError(
+            try CaptureAttachmentPolicy.validateAppending(largeAudio, to: [largeAudio])
+        ) { error in
+            XCTAssertEqual(
+                error as? CaptureAttachmentError,
+                .draftTooLarge(maximumBytes: CaptureAttachmentPolicy.maximumDraftBytes)
+            )
+        }
+    }
+
+    func testPendingQueuePolicyRejectsUnboundedGrowth() {
+        let pending = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "memo",
+            attachments: [PendingAttachment(relativePath: "Attachments/test", base64Data: "12345")]
+        )
+
+        XCTAssertThrowsError(
+            try PendingWriteQueuePolicy.validate(
+                existing: [pending],
+                appending: pending,
+                maximumItems: 10,
+                maximumEncodedBytes: 9
+            )
+        ) { error in
+            XCTAssertEqual(error as? PendingWriteQueueError, .tooLarge)
+        }
+        XCTAssertThrowsError(
+            try PendingWriteQueuePolicy.validate(
+                existing: [pending],
+                appending: pending,
+                maximumItems: 1,
+                maximumEncodedBytes: 100
+            )
+        ) { error in
+            XCTAssertEqual(error as? PendingWriteQueueError, .tooManyItems(maximum: 1))
+        }
+    }
+
     func testPendingQueueRoundTripsISO8601Dates() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -218,4 +295,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }
+
+    private static let onePixelPNG =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
 }

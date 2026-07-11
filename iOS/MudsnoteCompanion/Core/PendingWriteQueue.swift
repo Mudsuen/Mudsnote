@@ -41,6 +41,7 @@ actor PendingWriteQueue {
 
     func enqueue(_ item: PendingWrite) throws {
         if !items.contains(where: { $0.id == item.id }) {
+            try PendingWriteQueuePolicy.validate(existing: items, appending: item)
             items.append(item)
             try persist()
         }
@@ -75,6 +76,42 @@ actor PendingWriteQueue {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
         return try work()
+    }
+}
+
+enum PendingWriteQueuePolicy {
+    static let maximumItemCount = 50
+    static let maximumEncodedAttachmentBytes = 96 * 1_024 * 1_024
+
+    static func validate(
+        existing: [PendingWrite],
+        appending item: PendingWrite,
+        maximumItems: Int = maximumItemCount,
+        maximumEncodedBytes: Int = maximumEncodedAttachmentBytes
+    ) throws {
+        guard existing.count < maximumItems else {
+            throw PendingWriteQueueError.tooManyItems(maximum: maximumItems)
+        }
+        let encodedBytes = (existing + [item]).reduce(into: 0) { total, pending in
+            total += pending.attachments.reduce(into: 0) { $0 += $1.base64Data.utf8.count }
+        }
+        guard encodedBytes <= maximumEncodedBytes else {
+            throw PendingWriteQueueError.tooLarge
+        }
+    }
+}
+
+enum PendingWriteQueueError: LocalizedError, Equatable {
+    case tooManyItems(maximum: Int)
+    case tooLarge
+
+    var errorDescription: String? {
+        switch self {
+        case .tooManyItems(let maximum):
+            return "Pending capture limit reached (\(maximum)). Reconnect the folder and retry."
+        case .tooLarge:
+            return "Pending attachments are full. Reconnect the folder before adding more."
+        }
     }
 }
 

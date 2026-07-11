@@ -22,8 +22,8 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Markdown writes use file coordination plus atomic replacement.
 - [x] Delete, pin, and tag coordinate against the latest Inbox contents, preserving external/iCloud appends and hidden recovery markers.
 - [ ] Add user-facing iCloud conflict resolution instead of warning-only detection.
-- [ ] Bound image/audio attachment sizes and avoid unbounded base64 queue growth.
-- [ ] Verify Photos content type so HEIC/PNG data never receives a misleading `.jpg` extension.
+- [x] Image/audio count, per-file size, combined draft size, and encoded pending-queue growth are bounded with user-facing rejection while the draft remains open.
+- [x] Image imports derive their extension from ImageIO/UTType content detection, so PNG/HEIC/JPEG data keeps a matching filename.
 
 ## Performance
 
@@ -48,7 +48,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
-- [x] Nine current unit tests pass on the iPhone 17 simulator.
+- [x] Thirteen current unit tests pass on the iPhone 17 simulator.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.
