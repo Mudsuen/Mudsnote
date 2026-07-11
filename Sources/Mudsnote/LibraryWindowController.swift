@@ -59,28 +59,29 @@ private enum LibraryScope: Equatable, Sendable {
 
 private func librarySearchResults(
     noteStore: NoteStore,
+    searchSession: NoteSearchSession,
     scope: LibraryScope,
     query: String,
     limit: Int,
     searchesAllNotes: Bool
 ) -> [NoteSearchResult] {
     if searchesAllNotes {
-        return noteStore.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(query: query, limit: limit)
     }
 
     switch scope {
     case .all:
-        return noteStore.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(query: query, limit: limit)
     case .recent:
-        return noteStore.searchRecentNotes(query: query, limit: limit)
+        return searchSession.searchRecentNotes(query: query, limit: limit)
     case .inbox:
-        return noteStore.searchInboxNotes(query: query, limit: limit)
+        return searchSession.searchInboxNotes(query: query, limit: limit)
     case .trash:
         return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
     case .folder(let url):
-        return noteStore.searchNotes(query: query, limit: limit, in: url)
+        return searchSession.searchNotes(query: query, limit: limit, in: url)
     case .tag(let tag):
-        return noteStore.searchNotes(query: query, limit: limit, tagged: tag)
+        return searchSession.searchNotes(query: query, limit: limit, tagged: tag)
     }
 }
 
@@ -1022,6 +1023,7 @@ final class LibraryWindowController: NSWindowController,
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
     private var searchResultsGeneration = 0
+    private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
     private var sourceSnapshotValidationGeneration = 0
     private var hasPendingSearchReload = false
@@ -3073,8 +3075,11 @@ final class LibraryWindowController: NSWindowController,
         limit: Int,
         searchesAllNotes: Bool
     ) -> [NoteSearchResult] {
-        librarySearchResults(
+        let searchSession = activeSearchSession ?? noteStore.makeSearchSession()
+        activeSearchSession = searchSession
+        return librarySearchResults(
             noteStore: noteStore,
+            searchSession: searchSession,
             scope: scope,
             query: query,
             limit: limit,
@@ -3648,6 +3653,10 @@ final class LibraryWindowController: NSWindowController,
 
     func focusSearchForLibrary() {
         window?.makeFirstResponder(searchField)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(self.searchField)
+        }
     }
 
     @objc
@@ -3690,6 +3699,7 @@ final class LibraryWindowController: NSWindowController,
     private func clearSearchFromKeyboard() -> Bool {
         guard !searchField.stringValue.isEmpty else { return false }
         searchField.stringValue = ""
+        activeSearchSession = nil
         cancelPendingSearchReload()
         performSearchReload()
         removeEditorSearchHighlights()
@@ -3701,6 +3711,7 @@ final class LibraryWindowController: NSWindowController,
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
+            activeSearchSession = nil
             hasPendingSearchReload = false
             performSearchReload(synchronously: true)
             removeEditorSearchHighlights()
@@ -3744,6 +3755,7 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
+            activeSearchSession = nil
             reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
             applyEditorSearchHighlightsForCurrentQuery()
         } else if synchronously {
@@ -3760,15 +3772,18 @@ final class LibraryWindowController: NSWindowController,
         let scope = selectedScope
         let searchesAllNotes = searchScopeControl.selectedSegment == 1
         let noteStore = noteStore
+        let existingSearchSession = activeSearchSession
         isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
 
-        let task = Task.detached(priority: .userInitiated) { [noteStore, scope, query, searchesAllNotes, generation, preferredURL] in
+        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, scope, query, searchesAllNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
+            let searchSession = existingSearchSession ?? noteStore.makeSearchSession()
             let results = librarySearchResults(
                 noteStore: noteStore,
+                searchSession: searchSession,
                 scope: scope,
                 query: query,
                 limit: 240,
@@ -3783,6 +3798,7 @@ final class LibraryWindowController: NSWindowController,
                       (self.searchScopeControl.selectedSegment == 1) == searchesAllNotes else {
                     return
                 }
+                self.activeSearchSession = searchSession
                 self.applySearchResults(results, query: query, selecting: preferredURL)
             }
         }
@@ -4445,6 +4461,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         selectedURL = savedURL
+        activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
         let savedAt = Date()
@@ -4524,6 +4541,7 @@ final class LibraryWindowController: NSWindowController,
                 _ = try noteStore.trashNote(at: url)
             }
         }
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -4536,6 +4554,7 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope == .trash, !urls.isEmpty else { return nil }
         let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
         let restoredURL = restoredURLs.first
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
@@ -4801,6 +4820,10 @@ final class LibraryWindowController: NSWindowController,
         notes
     }
 
+    func activeSearchSessionForLibrary() -> NoteSearchSession? {
+        activeSearchSession
+    }
+
     var isSourceListVisibleForLibrary: Bool {
         sourceListView?.isHidden == false
     }
@@ -4942,6 +4965,7 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func createLibraryFolder(named name: String) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedScope = .folder(folderURL)
         reloadSourceFolderRowsForCurrentState()
@@ -4956,6 +4980,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
@@ -4970,6 +4995,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         _ = try noteStore.trashFolder(at: folderURL)
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
         selectedScope = .all
@@ -5001,6 +5027,7 @@ final class LibraryWindowController: NSWindowController,
         let movedURLs = try sourceURLs.map { sourceURL in
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
@@ -5057,6 +5084,7 @@ final class LibraryWindowController: NSWindowController,
         let movedURLs = try sourceURLs.map { sourceURL in
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
+        activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)

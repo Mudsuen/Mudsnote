@@ -186,6 +186,40 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func searchSessionValidatesSignaturesOnceAcrossQueriesAndScopes() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        let alphaURL = try store.saveNewNote(
+            title: "Alpha Inbox",
+            body: "shared phrase alpha",
+            tags: ["focus"],
+            in: notesDirectory
+        )
+        let betaURL = try store.saveNewNote(
+            title: "Beta",
+            body: "shared phrase beta",
+            tags: ["other"],
+            in: projectDirectory
+        )
+
+        #expect(store.prewarmSearchIndex() == 2)
+        store.searchIndexSignatureReadCountForTesting = 0
+        let session = store.makeSearchSession()
+        #expect(store.searchIndexSignatureReadCountForTesting == 2)
+
+        #expect(session.searchNotes(query: "shared phrase", limit: 10).count == 2)
+        #expect(session.searchNotes(query: "beta", limit: 10, in: projectDirectory).first?.url == betaURL)
+        #expect(session.searchNotes(query: "alpha", limit: 10, tagged: "focus").first?.url == alphaURL)
+        #expect(session.searchInboxNotes(query: "alpha", limit: 10).first?.url == alphaURL)
+        #expect(session.searchRecentNotes(query: "shared phrase", limit: 10).count == 2)
+        #expect(store.searchIndexSignatureReadCountForTesting == 2)
+    }
+
+    @Test
     func searchIndexRefreshesWhenMarkdownFileChanges() throws {
         let harness = try TestHarness()
         let store = harness.store

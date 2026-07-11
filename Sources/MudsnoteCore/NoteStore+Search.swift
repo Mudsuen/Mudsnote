@@ -1,5 +1,76 @@
 import Foundation
 
+public final class NoteSearchSession: @unchecked Sendable {
+    private let noteStore: NoteStore
+    private let entries: [NoteSearchIndexEntry]
+    private let entriesByPath: [String: NoteSearchIndexEntry]
+
+    fileprivate init(noteStore: NoteStore, entries: [NoteSearchIndexEntry]) {
+        self.noteStore = noteStore
+        self.entries = entries
+        self.entriesByPath = entries.reduce(into: [:]) {
+            $0[$1.url.standardizedFileURL.path] = $1
+        }
+    }
+
+    public func searchNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return recentResults(limit: limit) }
+        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: entries)
+    }
+
+    public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        let recentPaths = Set(noteStore.listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
+        let recentEntries = entries.filter { recentPaths.contains($0.url.standardizedFileURL.path) }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return recentResults(limit: limit) }
+        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: recentEntries)
+    }
+
+    public func searchNotes(query: String, limit: Int = 30, in directory: URL) -> [NoteSearchResult] {
+        let directoryPath = directory.standardizedFileURL.path
+        return scopedSearchResults(query: query, limit: limit) { entry in
+            let noteDirectoryPath = entry.url.deletingLastPathComponent().standardizedFileURL.path
+            return noteDirectoryPath == directoryPath || noteDirectoryPath.hasPrefix(directoryPath + "/")
+        }
+    }
+
+    public func searchNotes(query: String, limit: Int = 30, tagged tag: String) -> [NoteSearchResult] {
+        scopedSearchResults(query: query, limit: limit) { entry in
+            entry.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+        }
+    }
+
+    public func searchInboxNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        scopedSearchResults(query: query, limit: limit) { entry in
+            entry.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+                || entry.title.localizedCaseInsensitiveContains("Inbox")
+        }
+    }
+
+    private func scopedSearchResults(
+        query: String,
+        limit: Int,
+        matching predicate: (NoteSearchIndexEntry) -> Bool
+    ) -> [NoteSearchResult] {
+        let scopedEntries = entries.filter(predicate)
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return scopedEntries
+                .sorted { $0.modifiedAt > $1.modifiedAt }
+                .prefix(limit)
+                .map(\.result)
+        }
+        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: scopedEntries)
+    }
+
+    private func recentResults(limit: Int) -> [NoteSearchResult] {
+        noteStore.listRecentFiles(limit: limit).compactMap {
+            entriesByPath[$0.url.standardizedFileURL.path]?.result
+        }
+    }
+}
+
 extension NoteStore {
     public func knownSearchRoots() -> [URL] {
         let recentDirectories = listRecentFiles(limit: 50).map { $0.url.deletingLastPathComponent() }
@@ -9,6 +80,10 @@ extension NoteStore {
     @discardableResult
     public func prewarmSearchIndex(roots: [URL]? = nil) -> Int {
         indexedEntries(roots: roots).count
+    }
+
+    public func makeSearchSession() -> NoteSearchSession {
+        NoteSearchSession(noteStore: self, entries: indexedEntries())
     }
 
     public func knownTags(limit: Int = 200) -> [String] {
@@ -98,7 +173,7 @@ extension NoteStore {
         }
     }
 
-    private func rankedSearchResults(
+    fileprivate func rankedSearchResults(
         query: String,
         limit: Int,
         entries: [NoteSearchIndexEntry]
@@ -257,6 +332,7 @@ extension NoteStore {
     }
 
     private func fileSignature(for fileURL: URL) -> NoteSearchFileSignature? {
+        searchIndexSignatureReadCountForTesting += 1
         guard let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
               let modifiedAt = attrs[.modificationDate] as? Date else {
             return nil

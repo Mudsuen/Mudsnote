@@ -780,6 +780,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added directory, exact-tag, and Inbox search APIs that filter full-library index entries before ranking and limiting. Library scopes now use those APIs instead of alternate index roots or post-limit filtering, preserving the full snapshot in memory and on disk while returning the correct top results within each scope.
 - Lesson: Search scope is a query predicate, not an index ownership boundary. Keep one authoritative local-library snapshot and apply scope before ranking so performance and result completeness reinforce each other.
 
+### 129. One-validation active search sessions
+
+- Problem: Even after preserving one full-library index, every debounced search-field query still enumerated the library and reread every file signature before scoring. Fast typing therefore repeated the same filesystem validation for each accepted character, and `Command-F` could lose search focus when menu tracking ended.
+- Fix: Added immutable `NoteSearchSession` snapshots that validate the full index once, then serve all-notes, recent, directory, exact-tag, and Inbox queries entirely in memory across character changes and scope switches. The library releases the session when search clears and invalidates it after saves, deletes, restores, folder mutations, or moves. Search focus is reasserted on the next main-loop turn after native menu dismissal.
+- Lesson: Search freshness and query evaluation have different lifetimes. Validate once at session entry, invalidate on authoritative mutations, and keep interactive ranking free of repeated filesystem work.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

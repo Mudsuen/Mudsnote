@@ -3269,6 +3269,7 @@ struct MarkdownRichEditorTests {
         projectsButton.performClick(nil)
 
         controller.searchForLibrary(query: "alpha", allNotes: false)
+        let scopedSearchSession = try #require(controller.activeSearchSessionForLibrary())
         #expect(!scopeControl.isHidden)
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
@@ -3302,9 +3303,11 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)
+        #expect(controller.activeSearchSessionForLibrary() == nil)
         #expect(controller.editorTextView.attributedString().attribute(.qmSearchHighlight, at: editorMatchRange.location, effectiveRange: nil) == nil)
 
         controller.searchForLibrary(query: "alpha", allNotes: true)
+        let allNotesSearchSession = try #require(controller.activeSearchSessionForLibrary())
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
@@ -3312,6 +3315,8 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListCountLabel.stringValue == "2 results")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
+        #expect(controller.activeSearchSessionForLibrary() === allNotesSearchSession)
+        #expect(scopedSearchSession !== allNotesSearchSession)
         let emptyLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
