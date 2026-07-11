@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CoreServices
 import ImageIO
 import MudsnoteCore
 import Testing
@@ -8,6 +9,18 @@ import Testing
 private extension NSView {
     var allSubviews: [NSView] {
         subviews + subviews.flatMap(\.allSubviews)
+    }
+}
+
+private actor LibraryFileSystemChangeRecorder {
+    private var changes: Set<LibraryFileSystemChange> = []
+
+    func append(_ newChanges: Set<LibraryFileSystemChange>) {
+        changes.formUnion(newChanges)
+    }
+
+    func snapshot() -> Set<LibraryFileSystemChange> {
+        changes
     }
 }
 
@@ -1716,6 +1729,199 @@ struct MarkdownRichEditorTests {
 
         await controller.waitForSourceSnapshotValidationForLibrary()
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == ["Cached Note", "External Note"])
+    }
+
+    @Test
+    func libraryFileSystemMonitorReportsExternalMarkdownCreation() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-file-monitor-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let recorder = LibraryFileSystemChangeRecorder()
+        let monitor = LibraryFileSystemMonitor(
+            roots: [root],
+            latency: 0.02,
+            debounceInterval: .milliseconds(20)
+        ) { changes in
+            Task {
+                await recorder.append(changes)
+            }
+        }
+        #expect(monitor.start())
+        defer { monitor.stop() }
+        try await Task.sleep(for: .milliseconds(120))
+
+        let externalURL = root.appendingPathComponent("External Event.md")
+        try "# External Event\n\nWritten outside Mudsnote\n".write(
+            to: externalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        var observedChanges: Set<LibraryFileSystemChange> = []
+        for _ in 0..<80 {
+            observedChanges = await recorder.snapshot()
+            if observedChanges.contains(where: {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
+                    && $0.isMarkdownFile
+            }) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        #expect(observedChanges.contains(where: {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
+                && $0.isMarkdownFile
+        }))
+    }
+
+    @Test
+    func externalMarkdownEventInvalidatesActiveSearchSession() async throws {
+        let suiteName = "mudsnote.library-external-search-event-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-external-search-event-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        _ = try store.saveNewNote(title: "Existing", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.searchForLibrary(query: "External", allNotes: true)
+        let initialSession = try #require(controller.activeSearchSessionForLibrary())
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+
+        let externalURL = notesDirectory.appendingPathComponent("External Search.md")
+        try "# External Search\n\nAdded from Finder\n".write(
+            to: externalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: externalURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        let refreshedSession = try #require(controller.activeSearchSessionForLibrary())
+        #expect(refreshedSession !== initialSession)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["External Search"])
+    }
+
+    @Test
+    func externalMarkdownEventReloadsCleanSelectedNote() async throws {
+        let suiteName = "mudsnote.library-external-selected-event-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-external-selected-event-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let selectedURL = try store.saveNewNote(title: "Selected", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        #expect(controller.editorTextView.string == "Initial body")
+
+        try "# Selected externally\n\nUpdated outside Mudsnote\n".write(
+            to: selectedURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: selectedURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        #expect(controller.titleField.stringValue == "Selected externally")
+        #expect(controller.editorTextView.string == "Updated outside Mudsnote")
+    }
+
+    @Test
+    func internalSaveEventDoesNotRebuildActiveSearchSession() throws {
+        let suiteName = "mudsnote.library-internal-save-event-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-internal-save-event-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let selectedURL = try store.saveNewNote(title: "Existing", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        _ = try controller.saveCurrentNoteForLibrary()
+        controller.searchForLibrary(query: "Existing", allNotes: true)
+        let activeSession = try #require(controller.activeSearchSessionForLibrary())
+
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: selectedURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+
+        #expect(controller.activeSearchSessionForLibrary() === activeSession)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Existing"])
     }
 
     @MainActor

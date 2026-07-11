@@ -1054,9 +1054,12 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceTagsLoaded = false
+    private var sourceTagsLoading = false
     private var fullLibrarySnapshotReloadScheduled = false
     private var isFullLibrarySnapshotLoading = false
     private var movableNotePathCache: Set<String>?
+    private var fileSystemMonitor: LibraryFileSystemMonitor?
+    private var internallyMutatedPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
     private var isApplyingStoredSplitLayout = false
@@ -1175,6 +1178,7 @@ final class LibraryWindowController: NSWindowController,
         scheduleDeferredSourceFolderLoad()
         scheduleDeferredSourceTagLoad()
         hydrateInitialNoteListIfNeeded()
+        startLibraryFileSystemMonitorIfNeeded()
     }
 
     private func hydrateInitialNoteListIfNeeded() {
@@ -1332,6 +1336,9 @@ final class LibraryWindowController: NSWindowController,
         notePrefetchTask = nil
         thumbnailImageLoadTasks.values.forEach { $0.cancel() }
         thumbnailImageLoadTasks.removeAll()
+        fileSystemMonitor?.stop()
+        fileSystemMonitor = nil
+        internallyMutatedPaths.removeAll()
         attachmentQuickLookController.dismiss()
         cancelSourceSnapshotValidation()
         searchReloadWorkItem?.cancel()
@@ -1343,6 +1350,83 @@ final class LibraryWindowController: NSWindowController,
         persistLibrarySplitLayoutForLibrary()
         try? saveCurrentNoteIfNeeded()
         onClose()
+    }
+
+    private func startLibraryFileSystemMonitorIfNeeded() {
+        guard fileSystemMonitor == nil else { return }
+        let monitor = LibraryFileSystemMonitor(roots: noteStore.preferredDirectories) { [weak self] changes in
+            Task { @MainActor [weak self] in
+                self?.handleLibraryFileSystemChanges(changes)
+            }
+        }
+        guard monitor.start() else { return }
+        fileSystemMonitor = monitor
+    }
+
+    private func handleLibraryFileSystemChanges(
+        _ changes: Set<LibraryFileSystemChange>,
+        requiresVisibleWindow: Bool = true
+    ) {
+        guard !requiresVisibleWindow || window?.isVisible == true else { return }
+        let externalChanges = changes.filter { !isSuppressedInternalChange($0) }
+        guard !externalChanges.isEmpty else { return }
+
+        let markdownPaths = Set(externalChanges.filter(\.isMarkdownFile).map {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path
+        })
+        let hasFolderStructureChange = externalChanges.contains(where: \.changesDirectoryStructure)
+        activeSearchSession = nil
+        invalidateMovableNotePathCache()
+
+        for path in markdownPaths {
+            loadedNoteCache.removeEntry(forKey: path as NSString)
+        }
+
+        if let selectedURL,
+           markdownPaths.contains(selectedURL.standardizedFileURL.path),
+           !isDirty,
+           FileManager.default.fileExists(atPath: selectedURL.path),
+           let selectedNote = notes.first(where: {
+               $0.url.standardizedFileURL.path == selectedURL.standardizedFileURL.path
+           }) {
+            load(note: selectedNote)
+        }
+
+        if hasFolderStructureChange {
+            sourceFoldersLoaded = false
+            scheduleDeferredSourceFolderLoad()
+        }
+
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: selectedURL == nil)
+        } else {
+            performSearchReload()
+        }
+    }
+
+    private func recordInternalFileSystemChanges(for urls: [URL]) {
+        let expiration = Date().addingTimeInterval(2)
+        for url in urls {
+            internallyMutatedPaths[url.standardizedFileURL.path] = expiration
+        }
+    }
+
+    private func isSuppressedInternalChange(_ change: LibraryFileSystemChange) -> Bool {
+        let now = Date()
+        internallyMutatedPaths = internallyMutatedPaths.filter { $0.value > now }
+        let path = URL(fileURLWithPath: change.path).standardizedFileURL.path
+        return internallyMutatedPaths[path].map { $0 > now } ?? false
+    }
+
+    func handleLibraryFileSystemChangesForTesting(_ changes: Set<LibraryFileSystemChange>) {
+        handleLibraryFileSystemChanges(changes, requiresVisibleWindow: false)
+    }
+
+    func waitForExternalLibraryRefreshForTesting() async {
+        await sourceSnapshotValidationTask?.value
+        await searchResultsTask?.value
+        await noteLoadTask?.value
     }
 
     private func buildUI() {
@@ -2489,19 +2573,22 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func scheduleDeferredSourceTagLoad() {
-        guard !sourceTagsLoaded else { return }
+        guard !sourceTagsLoaded, !sourceTagsLoading else { return }
+        sourceTagsLoading = true
         let noteStore = noteStore
         DispatchQueue.global(qos: .utility).async { [weak self] in
             noteStore.prewarmSearchIndex()
             let tags = noteStore.knownTags(limit: 12)
             DispatchQueue.main.async {
-                self?.applySourceTagsForLibrary(tags)
+                guard let self else { return }
+                self.sourceTagsLoading = false
+                self.applySourceTagsForLibrary(tags)
             }
         }
     }
 
     func loadSourceTagsForLibrary() {
-        guard !sourceTagsLoaded else { return }
+        guard !sourceTagsLoaded, !sourceTagsLoading else { return }
         applySourceTagsForLibrary(noteStore.knownTags(limit: 12))
     }
 
@@ -4460,6 +4547,7 @@ final class LibraryWindowController: NSWindowController,
             )
         }
 
+        recordInternalFileSystemChanges(for: [previousURL, savedURL].compactMap { $0 })
         selectedURL = savedURL
         activeSearchSession = nil
         isCreatingNewNote = false
@@ -4541,6 +4629,7 @@ final class LibraryWindowController: NSWindowController,
                 _ = try noteStore.trashNote(at: url)
             }
         }
+        recordInternalFileSystemChanges(for: urls)
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         clearCurrentDocumentAfterRemoval()
@@ -4554,6 +4643,7 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope == .trash, !urls.isEmpty else { return nil }
         let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
         let restoredURL = restoredURLs.first
+        recordInternalFileSystemChanges(for: urls + restoredURLs)
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedScope = .all
@@ -4965,6 +5055,7 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func createLibraryFolder(named name: String) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
+        recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedScope = .folder(folderURL)
@@ -4980,6 +5071,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
+        recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
@@ -4995,6 +5087,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         _ = try noteStore.trashFolder(at: folderURL)
+        recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
@@ -5027,6 +5120,7 @@ final class LibraryWindowController: NSWindowController,
         let movedURLs = try sourceURLs.map { sourceURL in
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
+        recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedURL = movedURLs.first
@@ -5084,6 +5178,7 @@ final class LibraryWindowController: NSWindowController,
         let movedURLs = try sourceURLs.map { sourceURL in
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
+        recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         activeSearchSession = nil
         invalidateMovableNotePathCache()
         selectedURL = movedURLs.first

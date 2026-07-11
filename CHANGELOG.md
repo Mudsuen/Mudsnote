@@ -786,6 +786,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added immutable `NoteSearchSession` snapshots that validate the full index once, then serve all-notes, recent, directory, exact-tag, and Inbox queries entirely in memory across character changes and scope switches. The library releases the session when search clears and invalidates it after saves, deletes, restores, folder mutations, or moves. Search focus is reasserted on the next main-loop turn after native menu dismissal.
 - Lesson: Search freshness and query evaluation have different lifetimes. Validate once at session entry, invalidate on authoritative mutations, and keep interactive ranking free of repeated filesystem work.
 
+### 130. Event-driven external Markdown refresh
+
+- Problem: Markdown files edited, created, moved, or deleted outside Mudsnote stayed invisible until the user changed source scope, cleared search, or restarted the app; an active search session could therefore remain stale.
+- Fix: Added a recursive, coalesced FSEvents monitor for configured note roots. External Markdown changes now invalidate the active search session, refresh list metadata and source counts, and reload a clean selected note without polling. Mudsnote records its own save/move/delete paths briefly so autosave events do not cause a second editor reload or move the caret.
+- Lesson: A local-first editor should react to filesystem events rather than poll, but it must distinguish its own writes from external ones or correctness work becomes an interaction regression.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
