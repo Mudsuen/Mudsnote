@@ -242,6 +242,26 @@ extension NoteStore {
         }
     }
 
+    public var libraryWindowFrame: StoredWindowFrame? {
+        get {
+            readStoredFrame(
+                xKey: NoteStoreDefaultsKey.libraryFrameX,
+                yKey: NoteStoreDefaultsKey.libraryFrameY,
+                widthKey: NoteStoreDefaultsKey.libraryFrameWidth,
+                heightKey: NoteStoreDefaultsKey.libraryFrameHeight
+            )
+        }
+        set {
+            writeStoredFrame(
+                newValue,
+                xKey: NoteStoreDefaultsKey.libraryFrameX,
+                yKey: NoteStoreDefaultsKey.libraryFrameY,
+                widthKey: NoteStoreDefaultsKey.libraryFrameWidth,
+                heightKey: NoteStoreDefaultsKey.libraryFrameHeight
+            )
+        }
+    }
+
     public var quickCaptureWindowOrigin: StoredWindowOrigin? {
         get {
             guard let frame = quickCaptureWindowFrame else { return nil }

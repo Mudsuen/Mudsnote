@@ -735,6 +735,7 @@ func clampedPanelFrame(
     _ frame: NSRect,
     fallbackSize: NSSize,
     visibleFrames: [NSRect],
+    minimumSize: NSSize = .zero,
     padding: CGFloat = 12
 ) -> NSRect {
     guard let targetVisibleFrame = nearestVisibleFrame(to: frame, in: visibleFrames) else {
@@ -743,8 +744,8 @@ func clampedPanelFrame(
 
     let maxWidth = max(targetVisibleFrame.width - (padding * 2), 1)
     let maxHeight = max(targetVisibleFrame.height - (padding * 2), 1)
-    let proposedWidth = frame.width > 0 ? frame.width : fallbackSize.width
-    let proposedHeight = frame.height > 0 ? frame.height : fallbackSize.height
+    let proposedWidth = max(frame.width > 0 ? frame.width : fallbackSize.width, minimumSize.width)
+    let proposedHeight = max(frame.height > 0 ? frame.height : fallbackSize.height, minimumSize.height)
     let width = min(proposedWidth, maxWidth)
     let height = min(proposedHeight, maxHeight)
     let minX = targetVisibleFrame.minX + padding

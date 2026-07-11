@@ -1065,6 +1065,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsSectionCollapsed = false
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
+    private var windowFramePersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
@@ -1156,15 +1157,30 @@ final class LibraryWindowController: NSWindowController,
         guard let window else { return }
         if !hasCenteredWindow {
             let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            let targetSize = LibraryNotesLayout.presentedWindowSize(
-                in: visibleFrame,
-                usesCanonicalSize: usesCanonicalWindowSize
-            )
-            let targetOrigin = NSPoint(
-                x: visibleFrame.midX - targetSize.width / 2,
-                y: visibleFrame.midY - targetSize.height / 2
-            )
-            window.setFrame(NSRect(origin: targetOrigin, size: targetSize), display: true)
+            if !usesCanonicalWindowSize, let storedFrame = noteStore.libraryWindowFrame {
+                let restoredFrame = clampedPanelFrame(
+                    NSRect(
+                        x: storedFrame.x,
+                        y: storedFrame.y,
+                        width: storedFrame.width,
+                        height: storedFrame.height
+                    ),
+                    fallbackSize: LibraryNotesLayout.presentedWindowSize,
+                    visibleFrames: NSScreen.screens.map(\.visibleFrame),
+                    minimumSize: LibraryNotesLayout.minimumWindowSize
+                )
+                window.setFrame(restoredFrame, display: true)
+            } else {
+                let targetSize = LibraryNotesLayout.presentedWindowSize(
+                    in: visibleFrame,
+                    usesCanonicalSize: usesCanonicalWindowSize
+                )
+                let targetOrigin = NSPoint(
+                    x: visibleFrame.midX - targetSize.width / 2,
+                    y: visibleFrame.midY - targetSize.height / 2
+                )
+                window.setFrame(NSRect(origin: targetOrigin, size: targetSize), display: true)
+            }
             hasCenteredWindow = true
         }
         window.contentView?.layoutSubtreeIfNeeded()
@@ -1349,9 +1365,55 @@ final class LibraryWindowController: NSWindowController,
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
         splitLayoutPersistenceWorkItem = nil
+        windowFramePersistenceWorkItem?.cancel()
+        windowFramePersistenceWorkItem = nil
+        persistLibraryWindowFrameForLibrary()
         persistLibrarySplitLayoutForLibrary()
         try? saveCurrentNoteIfNeeded()
         onClose()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        scheduleLibraryWindowFramePersistence()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        scheduleLibraryWindowFramePersistence()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        windowFramePersistenceWorkItem?.cancel()
+        windowFramePersistenceWorkItem = nil
+        persistLibraryWindowFrameForLibrary()
+    }
+
+    private func scheduleLibraryWindowFramePersistence() {
+        guard !usesCanonicalWindowSize,
+              hasRequestedWindowPresentation,
+              hasCenteredWindow else {
+            return
+        }
+        windowFramePersistenceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.windowFramePersistenceWorkItem = nil
+            self?.persistLibraryWindowFrameForLibrary()
+        }
+        windowFramePersistenceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(180), execute: workItem)
+    }
+
+    func persistLibraryWindowFrameForLibrary() {
+        guard !usesCanonicalWindowSize,
+              hasCenteredWindow,
+              let frame = window?.frame else {
+            return
+        }
+        noteStore.libraryWindowFrame = StoredWindowFrame(
+            x: frame.origin.x,
+            y: frame.origin.y,
+            width: frame.width,
+            height: frame.height
+        )
     }
 
     private func startLibraryFileSystemMonitorIfNeeded() {

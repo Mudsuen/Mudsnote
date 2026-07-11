@@ -634,6 +634,20 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func libraryWindowFramePersists() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+
+        #expect(store.libraryWindowFrame == nil)
+        let frame = StoredWindowFrame(x: 180, y: 140, width: 1120, height: 760)
+        store.libraryWindowFrame = frame
+        #expect(store.libraryWindowFrame == frame)
+
+        store.libraryWindowFrame = nil
+        #expect(store.libraryWindowFrame == nil)
+    }
+
+    @Test
     func floatingShortcutAndFrameSettingsPersist() throws {
         let harness = try TestHarness()
         let store = harness.store

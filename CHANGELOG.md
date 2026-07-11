@@ -798,6 +798,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Restored a compact `1080x720` default shell, rebalanced the source/list columns to `250/250pt`, reduced source and note rows to `36/76pt`, returned list and editor typography to native Notes-like sizes, narrowed editor/search insets, and retained the approved no-rim toolbar groups. Added a one-time layout-scale migration so stored `320/304` pane widths cannot re-expand the new shell.
 - Lesson: Visual parity must compare both normalized screenshots and native point geometry. Scaling a larger implementation down for presentation can hide the exact size regression the user experiences.
 
+### 132. Persistent Notes workspace frame
+
+- Problem: Mudsnote remembered source/list divider widths but forced the main window back to the centered default size on every launch, unlike a normal Notes workspace.
+- Fix: Persisted the library window position and size through the existing lightweight frame model, coalesced move/resize notifications before writing, restored the frame across launches, clamped stale frames back onto the nearest visible display with the current minimum size, and kept canonical visual QA isolated from personal window state.
+- Lesson: Window geometry is part of desktop document state. Persist it cheaply, but keep deterministic visual tests and offscreen-display recovery as explicit boundaries.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

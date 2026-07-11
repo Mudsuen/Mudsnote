@@ -517,6 +517,15 @@ struct MarkdownRichEditorTests {
         #expect(clamped.origin.y >= visible.minY)
         #expect(visible.contains(NSPoint(x: clamped.midX, y: clamped.midY)))
         #expect(clamped.size == offscreen.size)
+
+        let minimumSized = clampedPanelFrame(
+            NSRect(x: -900, y: -700, width: 200, height: 100),
+            fallbackSize: NSSize(width: 1080, height: 720),
+            visibleFrames: [visible],
+            minimumSize: NSSize(width: 1040, height: 620)
+        )
+        #expect(minimumSized.size == NSSize(width: 1040, height: 620))
+        #expect(visible.contains(NSPoint(x: minimumSized.midX, y: minimumSized.midY)))
     }
 
     @MainActor
@@ -1364,7 +1373,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func librarySplitLayoutPersistsAcrossWindows() throws {
+    func librarySplitLayoutPersistsAcrossWindows() async throws {
         let suiteName = "mudsnote-library-split-layout-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -1405,8 +1414,24 @@ struct MarkdownRichEditorTests {
         firstSplitView.layoutSubtreeIfNeeded()
         firstController.persistLibrarySplitLayoutForLibrary()
 
+        let visibleFrame = try #require((firstWindow.screen ?? NSScreen.main)?.visibleFrame)
+        let desiredWindowFrame = NSRect(
+            x: visibleFrame.minX + 24,
+            y: visibleFrame.minY + 24,
+            width: min(1120, visibleFrame.width - 48),
+            height: min(760, visibleFrame.height - 48)
+        )
+        firstWindow.setFrame(desiredWindowFrame, display: false)
+        try await Task.sleep(for: .milliseconds(260))
+
         #expect(abs((store.librarySourceColumnWidth ?? 0) - Double(desiredSourceWidth)) < 1)
         #expect(abs((store.libraryNoteColumnWidth ?? 0) - Double(desiredNoteWidth)) < 1)
+        #expect(store.libraryWindowFrame == StoredWindowFrame(
+            x: desiredWindowFrame.origin.x,
+            y: desiredWindowFrame.origin.y,
+            width: desiredWindowFrame.width,
+            height: desiredWindowFrame.height
+        ))
         #expect(firstController.setSourceListVisibleForLibrary(false) == false)
         #expect(!store.librarySourceListVisible)
 
@@ -1429,7 +1454,47 @@ struct MarkdownRichEditorTests {
 
         #expect(abs(restoredSplitView.arrangedSubviews[0].frame.width - desiredSourceWidth) < 1)
         #expect(abs(restoredSplitView.arrangedSubviews[1].frame.width - desiredNoteWidth) < 1)
+        #expect(abs(restoredWindow.frame.origin.x - desiredWindowFrame.origin.x) < 1)
+        #expect(abs(restoredWindow.frame.origin.y - desiredWindowFrame.origin.y) < 1)
+        #expect(abs(restoredWindow.frame.width - desiredWindowFrame.width) < 1)
+        #expect(abs(restoredWindow.frame.height - desiredWindowFrame.height) < 1)
         #expect(store.librarySourceListVisible)
+    }
+
+    @MainActor
+    @Test
+    func visualQACanonicalWindowIgnoresStoredLibraryFrame() throws {
+        let suiteName = "mudsnote-library-canonical-frame-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-canonical-frame-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.libraryWindowFrame = StoredWindowFrame(x: 20, y: 20, width: 1400, height: 900)
+        _ = try store.saveNewNote(title: "Canonical", body: "Body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            usesCanonicalWindowSize: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+
+        #expect(controller.window?.frame.size == LibraryNotesLayout.presentedWindowSize)
+        #expect(store.libraryWindowFrame == StoredWindowFrame(x: 20, y: 20, width: 1400, height: 900))
     }
 
     @MainActor
