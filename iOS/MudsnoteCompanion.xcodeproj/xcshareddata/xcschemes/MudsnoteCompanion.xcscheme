@@ -35,6 +35,20 @@
                ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C40000000000000000000007"
+               BuildableName = "MudsnoteCompanionUITests.xctest"
+               BlueprintName = "MudsnoteCompanionUITests"
+               ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -51,6 +65,17 @@
                BlueprintIdentifier = "A10000000000000000000007"
                BuildableName = "MudsnoteCompanionTests.xctest"
                BlueprintName = "MudsnoteCompanionTests"
+               ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C40000000000000000000007"
+               BuildableName = "MudsnoteCompanionUITests.xctest"
+               BlueprintName = "MudsnoteCompanionUITests"
                ReferencedContainer = "container:MudsnoteCompanion.xcodeproj">
             </BuildableReference>
          </TestableReference>

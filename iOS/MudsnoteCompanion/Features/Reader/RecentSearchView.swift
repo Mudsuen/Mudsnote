@@ -392,6 +392,7 @@ struct NotesBottomCommandBar: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("New note")
+            .accessibilityIdentifier("new-note-button")
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)

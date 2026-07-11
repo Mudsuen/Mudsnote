@@ -65,6 +65,7 @@ struct OnboardingFolderView: View {
                 .minimumScaleFactor(0.7)
         }
         .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
+        .accessibilityIdentifier("choose-folder-button")
     }
 }
 

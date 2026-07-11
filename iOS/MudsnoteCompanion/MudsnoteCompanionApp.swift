@@ -2,10 +2,12 @@ import SwiftUI
 
 @main
 struct MudsnoteCompanionApp: App {
-    @StateObject private var appModel = AppModel()
+    @StateObject private var appModel: AppModel
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
+        _appModel = StateObject(wrappedValue: AppModel())
         AppShortcuts.updateAppShortcutParameters()
     }
 
@@ -26,5 +28,38 @@ struct MudsnoteCompanionApp: App {
                 }
                 .preferredColorScheme(.dark)
         }
+    }
+}
+
+private enum MudsnoteUITestLaunchConfiguration {
+    private static let resetArgument = "-ui-testing-reset"
+    private static let fixtureFolderArgument = "-ui-testing-fixture-folder"
+    private static let fixtureFolderName = "MudsnoteUITestLibrary"
+
+    static func prepareIfNeeded() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains(resetArgument) || arguments.contains(fixtureFolderArgument) else { return }
+
+        let access = FolderAccessService()
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(fixtureFolderName, isDirectory: true)
+
+        if arguments.contains(resetArgument) {
+            access.forgetPersistedFolder()
+            UserDefaults.standard.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        if arguments.contains(fixtureFolderArgument) {
+            do {
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                try FolderInitializer.initialize(root)
+                try access.persistFolder(root)
+            } catch {
+                assertionFailure("Could not prepare the Mudsnote UI-test library: \(error)")
+            }
+        }
+        #endif
     }
 }

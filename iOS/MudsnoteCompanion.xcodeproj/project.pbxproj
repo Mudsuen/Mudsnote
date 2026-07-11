@@ -34,10 +34,18 @@
 		B20000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* PrivacyInfo.xcprivacy */; };
 		B30000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
 		B30000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
+		C40000000000000000000001 /* MudsnoteCompanionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000002 /* MudsnoteCompanionUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		A10000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 396D4DE4F5EC406CA591B3BA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 32DC356C0D9E4A94A977B96B;
+			remoteInfo = MudsnoteCompanion;
+		};
+		C40000000000000000000004 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 396D4DE4F5EC406CA591B3BA /* Project object */;
 			proxyType = 1;
@@ -98,6 +106,8 @@
 		A1E250D728D6484790D74691 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MudsnoteCompanion/Assets.xcassets; sourceTree = "<group>"; };
 		B20000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = MudsnoteCompanion/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B30000000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		C40000000000000000000002 /* MudsnoteCompanionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanionUITests/MudsnoteCompanionUITests.swift; sourceTree = "<group>"; };
+		C40000000000000000000003 /* MudsnoteCompanionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MudsnoteCompanionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +132,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C40000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -132,6 +149,7 @@
 				8487784FC7F84F59B833A785 /* MudsnoteCompanion */,
 				12C606D4B69C4E55AD711A94 /* MudsnoteCompanionWidget */,
 				A10000000000000000000006 /* MudsnoteCompanionTests */,
+				C40000000000000000000006 /* MudsnoteCompanionUITests */,
 				BB021710C229422095254580 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -142,6 +160,14 @@
 				A10000000000000000000002 /* MudsnoteCompanionTests.swift */,
 			);
 			name = MudsnoteCompanionTests;
+			sourceTree = "<group>";
+		};
+		C40000000000000000000006 /* MudsnoteCompanionUITests */ = {
+			isa = PBXGroup;
+			children = (
+				C40000000000000000000002 /* MudsnoteCompanionUITests.swift */,
+			);
+			name = MudsnoteCompanionUITests;
 			sourceTree = "<group>";
 		};
 		12C606D4B69C4E55AD711A94 /* MudsnoteCompanionWidget */ = {
@@ -189,6 +215,7 @@
 				544C01C4630F41D6BA966C0F /* MudsnoteCompanion.app */,
 				260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */,
 				A10000000000000000000004 /* MudsnoteCompanionTests.xctest */,
+				C40000000000000000000003 /* MudsnoteCompanionUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -250,6 +277,24 @@
 			productReference = A10000000000000000000004 /* MudsnoteCompanionTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		C40000000000000000000007 /* MudsnoteCompanionUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C4000000000000000000000D /* Build configuration list for PBXNativeTarget "MudsnoteCompanionUITests" */;
+			buildPhases = (
+				C40000000000000000000008 /* Sources */,
+				C40000000000000000000005 /* Frameworks */,
+				C40000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C4000000000000000000000A /* PBXTargetDependency */,
+			);
+			name = MudsnoteCompanionUITests;
+			productName = MudsnoteCompanionUITests;
+			productReference = C40000000000000000000003 /* MudsnoteCompanionUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -267,6 +312,10 @@
 						CreatedOnToolsVersion = 26.5;
 					};
 					A10000000000000000000007 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 32DC356C0D9E4A94A977B96B;
+					};
+					C40000000000000000000007 = {
 						CreatedOnToolsVersion = 26.5;
 						TestTargetID = 32DC356C0D9E4A94A977B96B;
 					};
@@ -289,6 +338,7 @@
 				32DC356C0D9E4A94A977B96B /* MudsnoteCompanion */,
 				D5F31F2750CD4BB488597A00 /* MudsnoteCompanionWidget */,
 				A10000000000000000000007 /* MudsnoteCompanionTests */,
+				C40000000000000000000007 /* MudsnoteCompanionUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -313,6 +363,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A1000000000000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C40000000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -365,6 +422,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C40000000000000000000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C40000000000000000000001 /* MudsnoteCompanionUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -372,6 +437,11 @@
 			isa = PBXTargetDependency;
 			target = 32DC356C0D9E4A94A977B96B /* MudsnoteCompanion */;
 			targetProxy = A10000000000000000000003 /* PBXContainerItemProxy */;
+		};
+		C4000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 32DC356C0D9E4A94A977B96B /* MudsnoteCompanion */;
+			targetProxy = C40000000000000000000004 /* PBXContainerItemProxy */;
 		};
 		C19504165AE34B47AC61AEEF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -663,6 +733,42 @@
 			};
 			name = Release;
 		};
+		C4000000000000000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3JA29GL46S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = app.mudsnote.companion.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MudsnoteCompanion;
+			};
+			name = Debug;
+		};
+		C4000000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3JA29GL46S;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = app.mudsnote.companion.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MudsnoteCompanion;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -698,6 +804,15 @@
 			buildConfigurations = (
 				A1000000000000000000000C /* Debug */,
 				A1000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C4000000000000000000000D /* Build configuration list for PBXNativeTarget "MudsnoteCompanionUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C4000000000000000000000B /* Debug */,
+				C4000000000000000000000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

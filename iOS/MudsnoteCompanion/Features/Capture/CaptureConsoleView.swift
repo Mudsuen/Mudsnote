@@ -60,6 +60,7 @@ struct CaptureConsoleView: View {
                 .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
                 .disabled(!appModel.draft.canSend || appModel.isSendingDraft)
                 .accessibilityLabel("Save memo")
+                .accessibilityIdentifier("save-memo-button")
             }
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
@@ -103,6 +104,7 @@ struct CaptureConsoleView: View {
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
                 .background(MudsnoteColors.panel)
+                .accessibilityIdentifier("capture-body-editor")
 
             if appModel.draft.body.isEmpty {
                 HStack(spacing: 9) {

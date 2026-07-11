@@ -52,6 +52,8 @@ struct TargetMenuView: View {
                 appModel.draft.target.compactLabel
             )
         )
+        .accessibilityValue(appModel.draft.target.compactLabel)
+        .accessibilityIdentifier("capture-target-menu")
     }
 }
 
