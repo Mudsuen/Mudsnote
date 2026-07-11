@@ -744,6 +744,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a shared English and Simplified Chinese String Catalog to both App and Widget targets, standardized source copy on English, localized dynamic strings with stable format keys, and added runtime bundle coverage for Chinese lookup and formatted limits.
 - Lesson: Localization must include non-view state and error paths; translating only SwiftUI literals leaves the most important recovery messages inconsistent.
 
+### 127. Scrollable accessibility onboarding
+
+- Problem: At the largest accessibility Dynamic Type size, the fixed onboarding stack compressed its title, explanation, requirements, and button into truncated single-line fragments.
+- Fix: Added a dedicated scrollable accessibility-size layout, preserved the standard centered composition at normal sizes, allowed requirement rows to grow vertically, and kept the primary folder action reachable.
+- Lesson: A screen that technically uses semantic fonts can still fail Dynamic Type; verify the maximum category on the installed app and provide scroll rather than allowing layout compression.
+
 ### 123. Nonblocking uncached note selection
 
 - Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.

@@ -34,6 +34,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 ## Accessibility and visual quality
 
 - [x] Current onboarding and primary dark surfaces render correctly on iPhone 17 / iOS 26.5.
+- [x] Onboarding switches to a scrollable accessibility layout at Dynamic Type accessibility sizes; AX XXXL keeps complete text and the folder action reachable.
 - [ ] Run VoiceOver labels, Dynamic Type, contrast, Reduce Motion, and landscape/iPad audits.
 - [ ] Add UI tests for onboarding, folder recovery, continuous capture, target switching, and error states.
 

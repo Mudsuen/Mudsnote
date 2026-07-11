@@ -1,12 +1,34 @@
 import SwiftUI
 
 struct OnboardingFolderView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var chooseFolder: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        if dynamicTypeSize.isAccessibilitySize {
+            ScrollView {
+                VStack(spacing: 24) {
+                    onboardingContent
+                    chooseButton
+                }
+                .padding(.vertical, 24)
+                .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+            }
+        } else {
+            VStack(spacing: 24) {
+                Spacer()
+                onboardingContent
+                Spacer()
+                chooseButton
+                    .padding(.bottom, 28)
+            }
+            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+        }
+    }
 
+    private var onboardingContent: some View {
+        VStack(spacing: 24) {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 44, weight: .semibold))
                 .foregroundStyle(MudsnoteColors.text)
@@ -25,6 +47,7 @@ struct OnboardingFolderView: View {
                     .foregroundStyle(MudsnoteColors.muted)
                     .multilineTextAlignment(.center)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: 310)
 
             VStack(spacing: 8) {
@@ -32,14 +55,16 @@ struct OnboardingFolderView: View {
                 RequirementRow(icon: "calendar", text: String(localized: "Create Daily and Attachments"))
                 RequirementRow(icon: "arrow.triangle.2.circlepath", text: String(localized: "Enable the durable pending queue"))
             }
-
-            Spacer()
-
-            Button("Choose Folder", action: chooseFolder)
-                .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
-                .padding(.bottom, 28)
         }
-        .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+    }
+
+    private var chooseButton: some View {
+        Button(action: chooseFolder) {
+            Text("Choose Folder")
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
     }
 }
 
@@ -52,6 +77,7 @@ struct RequirementRow: View {
             .font(.system(.callout, design: .rounded))
             .foregroundStyle(MudsnoteColors.muted)
             .frame(maxWidth: 310, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 4)
     }
 }
