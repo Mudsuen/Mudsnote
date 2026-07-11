@@ -17,10 +17,10 @@ struct OnboardingFolderView: View {
                 }
 
             VStack(spacing: 8) {
-                Text("选择 Markdown 文件夹")
+                Text("Choose a Markdown Folder")
                     .font(.system(.title3, design: .rounded, weight: .semibold))
                     .foregroundStyle(MudsnoteColors.text)
-                Text("Mudsnote iOS 只写入你授权的 iCloud Drive 文件夹。Markdown 和附件都保留为普通文件。")
+                Text("Mudsnote only writes to the iCloud Drive folder you authorize. Markdown and attachments remain ordinary files.")
                     .font(.system(.callout, design: .rounded))
                     .foregroundStyle(MudsnoteColors.muted)
                     .multilineTextAlignment(.center)
@@ -28,14 +28,14 @@ struct OnboardingFolderView: View {
             .frame(maxWidth: 310)
 
             VStack(spacing: 8) {
-                RequirementRow(icon: "tray.fill", text: "初始化 Inbox.md")
-                RequirementRow(icon: "calendar", text: "创建 Daily 与 Attachments")
-                RequirementRow(icon: "arrow.triangle.2.circlepath", text: "启用可靠的待写队列")
+                RequirementRow(icon: "tray.fill", text: String(localized: "Initialize Inbox.md"))
+                RequirementRow(icon: "calendar", text: String(localized: "Create Daily and Attachments"))
+                RequirementRow(icon: "arrow.triangle.2.circlepath", text: String(localized: "Enable the durable pending queue"))
             }
 
             Spacer()
 
-            Button("选择文件夹", action: chooseFolder)
+            Button("Choose Folder", action: chooseFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
                 .padding(.bottom, 28)
         }
@@ -51,7 +51,7 @@ struct RequirementRow: View {
         Label(text, systemImage: icon)
             .font(.system(.callout, design: .rounded))
             .foregroundStyle(MudsnoteColors.muted)
-            .frame(maxWidth: 260, alignment: .leading)
+            .frame(maxWidth: 310, alignment: .leading)
             .padding(.vertical, 4)
     }
 }
@@ -66,16 +66,16 @@ struct FolderErrorView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36, weight: .semibold))
                 .foregroundStyle(MudsnoteColors.text)
-            Text("无法访问文件夹")
+            Text("Folder Unavailable")
                 .font(.headline)
                 .foregroundStyle(MudsnoteColors.text)
             Text(message)
                 .font(.callout)
                 .foregroundStyle(MudsnoteColors.muted)
                 .multilineTextAlignment(.center)
-            Button("重新选择", action: chooseFolder)
+            Button("Choose Again", action: chooseFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
-            Button("清除旧授权", action: forgetFolder)
+            Button("Clear Old Permission", action: forgetFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: false))
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)

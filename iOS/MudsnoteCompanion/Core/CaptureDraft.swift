@@ -33,9 +33,13 @@ enum CaptureTarget: Equatable, Identifiable {
     var label: String {
         switch self {
         case .inbox:
-            return "Inbox"
+            return String(localized: "Inbox")
         case .daily(let date):
-            return "Daily \(Self.dayFormatter.string(from: date))"
+            return String(
+                format: String(localized: "daily.with_date.format"),
+                locale: .current,
+                Self.dayFormatter.string(from: date)
+            )
         case .recent(let path):
             return URL(fileURLWithPath: path).lastPathComponent
         }
@@ -176,15 +180,27 @@ enum CaptureAttachmentError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .empty:
-            return "The attachment is empty."
+            return String(localized: "The attachment is empty.")
         case .unsupportedImage:
-            return "Choose a supported image file."
+            return String(localized: "Choose a supported image file.")
         case .tooMany(let maximum):
-            return "Add up to \(maximum) attachments per memo."
+            return String(
+                format: String(localized: "attachment.maximum_count.format"),
+                locale: .current,
+                maximum
+            )
         case .tooLarge(let maximumBytes):
-            return "This attachment exceeds the \(Self.megabytes(maximumBytes)) MB limit."
+            return String(
+                format: String(localized: "attachment.maximum_size.format"),
+                locale: .current,
+                Self.megabytes(maximumBytes)
+            )
         case .draftTooLarge(let maximumBytes):
-            return "Attachments exceed the \(Self.megabytes(maximumBytes)) MB memo limit."
+            return String(
+                format: String(localized: "attachment.maximum_draft_size.format"),
+                locale: .current,
+                Self.megabytes(maximumBytes)
+            )
         }
     }
 

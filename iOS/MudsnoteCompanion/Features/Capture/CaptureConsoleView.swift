@@ -32,7 +32,7 @@ struct CaptureConsoleView: View {
                     Image(systemName: "photo")
                 }
                 .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
-                .accessibilityLabel("添加图片")
+                .accessibilityLabel("Add image")
 
                 Button {
                     selectedRoute = .audio
@@ -41,7 +41,9 @@ struct CaptureConsoleView: View {
                     Image(systemName: appModel.audioRecorder.isRecording ? "stop.fill" : "waveform")
                 }
                 .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
-                .accessibilityLabel(appModel.audioRecorder.isRecording ? "停止录音" : "录制语音")
+                .accessibilityLabel(
+                    Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
+                )
 
                 TargetMenuView()
 
@@ -107,7 +109,11 @@ struct CaptureConsoleView: View {
                     Rectangle()
                         .fill(MudsnoteColors.primary)
                         .frame(width: 3, height: 28)
-                    Text(selectedRoute == .audio ? "转写内容会出现在这里..." : "现在的想法是...")
+                    Text(LocalizedStringKey(
+                        selectedRoute == .audio
+                            ? "Transcription appears here..."
+                            : "What's on your mind?"
+                    ))
                         .font(.body)
                         .foregroundStyle(MudsnoteColors.muted)
                 }
@@ -135,7 +141,7 @@ struct CaptureConsoleView: View {
                     .frame(width: 44, height: 36)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("从相册添加图片")
+            .accessibilityLabel("Add image from Photos")
 
             Divider().frame(height: 28).padding(.horizontal, 10)
 
@@ -146,7 +152,7 @@ struct CaptureConsoleView: View {
                     .frame(width: 44, height: 36)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("加粗")
+            .accessibilityLabel("Bold")
 
             Divider().frame(height: 28).padding(.horizontal, 10)
 
@@ -157,7 +163,7 @@ struct CaptureConsoleView: View {
                     .frame(width: 44, height: 36)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("列表")
+            .accessibilityLabel("List")
 
             Divider().frame(height: 28).padding(.horizontal, 10)
 
@@ -170,7 +176,7 @@ struct CaptureConsoleView: View {
                     .frame(width: 44, height: 36)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("更多格式")
+            .accessibilityLabel("More formatting")
         }
         .font(.system(size: 22, weight: .semibold))
         .foregroundStyle(MudsnoteColors.text)
@@ -217,9 +223,9 @@ struct CaptureConsoleView: View {
     private func attachmentLabel(_ attachment: CaptureAttachment) -> String {
         switch attachment {
         case .image:
-            return "Image"
+            return String(localized: "Image")
         case .audio:
-            return "Audio"
+            return String(localized: "Audio")
         }
     }
 

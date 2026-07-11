@@ -23,22 +23,22 @@ struct SettingsRulesView: View {
                 }
 
                 Section("Write rules") {
-                    SettingRow(title: "Default target", value: "Inbox.md")
-                    SettingRow(title: "Daily path", value: "Daily/yyyy-MM-dd.md")
-                    SettingRow(title: "Attachment path", value: "Attachments/yyyy/MM")
-                    SettingRow(title: "Image reference", value: "![Image](path)")
-                    SettingRow(title: "Audio reference", value: "[Audio](path)")
-                    SettingRow(title: "Audio transcription", value: "Placeholder fallback")
+                    SettingRow(title: String(localized: "Default target"), value: "Inbox.md")
+                    SettingRow(title: String(localized: "Daily path"), value: "Daily/yyyy-MM-dd.md")
+                    SettingRow(title: String(localized: "Attachment path"), value: "Attachments/yyyy/MM")
+                    SettingRow(title: String(localized: "Image reference"), value: "![Image](path)")
+                    SettingRow(title: String(localized: "Audio reference"), value: "[Audio](path)")
+                    SettingRow(title: String(localized: "Audio transcription"), value: String(localized: "Placeholder fallback"))
                 }
 
                 Section("Sync status") {
                     switch appModel.syncStatus {
                     case .idle:
-                        SettingRow(title: "Status", value: "Saved")
+                        SettingRow(title: String(localized: "Status"), value: String(localized: "Saved"))
                     case .pending:
-                        SettingRow(title: "Status", value: "Pending")
+                        SettingRow(title: String(localized: "Status"), value: String(localized: "Pending"))
                     case .conflict:
-                        SettingRow(title: "Status", value: "Conflict")
+                        SettingRow(title: String(localized: "Status"), value: String(localized: "Conflict"))
                     }
 
                     ForEach(appModel.conflictWarnings, id: \.self) { warning in

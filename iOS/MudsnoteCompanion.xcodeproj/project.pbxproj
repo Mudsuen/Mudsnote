@@ -32,6 +32,8 @@
 		D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1E250D728D6484790D74691 /* Assets.xcassets */; };
 		A10000000000000000000001 /* MudsnoteCompanionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* MudsnoteCompanionTests.swift */; };
 		B20000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* PrivacyInfo.xcprivacy */; };
+		B30000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
+		B30000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +97,7 @@
 		F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/MudsnoteAppIntents.swift; sourceTree = "<group>"; };
 		A1E250D728D6484790D74691 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MudsnoteCompanion/Assets.xcassets; sourceTree = "<group>"; };
 		B20000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = MudsnoteCompanion/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B30000000000000000000003 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +128,7 @@
 		6431870D540048FE90D60906 = {
 			isa = PBXGroup;
 			children = (
+				B30000000000000000000003 /* Localizable.xcstrings */,
 				8487784FC7F84F59B833A785 /* MudsnoteCompanion */,
 				12C606D4B69C4E55AD711A94 /* MudsnoteCompanionWidget */,
 				A10000000000000000000006 /* MudsnoteCompanionTests */,
@@ -274,6 +278,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 6431870D540048FE90D60906;
@@ -295,6 +300,7 @@
 			files = (
 				D21DB7791A2C4F4EB69B7D01 /* Assets.xcassets in Resources */,
 				B20000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */,
+				B30000000000000000000001 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +308,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B30000000000000000000002 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -158,10 +158,10 @@ struct QuickCaptureWidget: Widget {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Mudsnote")
                     .font(.headline)
-                Text("现在的想法是...")
+                Text("What's on your mind?")
                     .foregroundStyle(.secondary)
                 HStack {
-                    Button("快记", intent: CaptureMemoIntent())
+                    Button("Quick Note", intent: CaptureMemoIntent())
                     Button("Daily", intent: CaptureMemoIntent())
                 }
             }

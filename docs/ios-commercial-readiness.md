@@ -12,7 +12,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
-- [ ] Replace hard-coded mixed-language strings with reviewed `String Catalog` localization.
+- [x] App and Widget ship one reviewed English/Simplified Chinese String Catalog; dynamic status, recovery, attachment, transcription, and accessibility copy use localized runtime strings.
 
 ## Stability and data safety
 
@@ -48,7 +48,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
-- [x] Fifteen current unit tests pass on the iPhone 17 simulator.
+- [x] Sixteen current unit tests pass on the iPhone 17 simulator.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.

@@ -108,9 +108,13 @@ enum PendingWriteQueueError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .tooManyItems(let maximum):
-            return "Pending capture limit reached (\(maximum)). Reconnect the folder and retry."
+            return String(
+                format: String(localized: "pending.maximum_count.format"),
+                locale: .current,
+                maximum
+            )
         case .tooLarge:
-            return "Pending attachments are full. Reconnect the folder before adding more."
+            return String(localized: "Pending attachments are full. Reconnect the folder before adding more.")
         }
     }
 }

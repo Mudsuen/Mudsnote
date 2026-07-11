@@ -738,6 +738,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Removed the dead placeholder and its Xcode project references; the first commercial scope now explicitly consists of the app, Quick Capture widget, deep links, and App Intents.
 - Lesson: Release scope should describe shipped capabilities only; future integration notes belong in product planning, not in the production binary.
 
+### 126. Bilingual iOS String Catalog
+
+- Problem: The iOS app mixed hard-coded English and Chinese, while dynamic status, recovery, attachment, and transcription strings bypassed SwiftUI localization entirely.
+- Fix: Added a shared English and Simplified Chinese String Catalog to both App and Widget targets, standardized source copy on English, localized dynamic strings with stable format keys, and added runtime bundle coverage for Chinese lookup and formatted limits.
+- Lesson: Localization must include non-view state and error paths; translating only SwiftUI literals leaves the most important recovery messages inconsistent.
+
 ### 123. Nonblocking uncached note selection
 
 - Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.

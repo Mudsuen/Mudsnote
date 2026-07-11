@@ -8,8 +8,8 @@ struct InboxStreamView: View {
             List {
                 if appModel.inboxItems.isEmpty {
                     EmptyReaderStateView(
-                        title: "还没有记录",
-                        message: "点击右下角 +，第一条 memo 会写入 Inbox.md。"
+                        title: String(localized: "No Memos Yet"),
+                        message: String(localized: "Tap the add button to write your first memo to Inbox.md.")
                     )
                     .frame(maxWidth: .infinity)
                     .listRowBackground(MudsnoteColors.canvas)

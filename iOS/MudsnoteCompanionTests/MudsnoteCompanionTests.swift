@@ -196,6 +196,24 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
     }
 
+    func testSimplifiedChineseCatalogIsEmbeddedAndFormatsDynamicCopy() throws {
+        let localizationPath = try XCTUnwrap(
+            Bundle.main.path(forResource: "zh-Hans", ofType: "lproj")
+        )
+        let bundle = try XCTUnwrap(Bundle(path: localizationPath))
+
+        XCTAssertEqual(
+            bundle.localizedString(forKey: "Choose a Markdown Folder", value: nil, table: nil),
+            "选择 Markdown 文件夹"
+        )
+        let format = bundle.localizedString(
+            forKey: "attachment.maximum_count.format",
+            value: nil,
+            table: nil
+        )
+        XCTAssertEqual(String(format: format, locale: Locale(identifier: "zh-Hans"), 8), "每条记录最多添加 8 个附件。")
+    }
+
     func testPendingQueueRoundTripsISO8601Dates() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -48,7 +48,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             folderStatus = .error(error.localizedDescription)
-            statusToast = .error("Folder access failed")
+            statusToast = .error(String(localized: "Folder access failed"))
         }
     }
 
@@ -57,10 +57,10 @@ final class AppModel: ObservableObject {
             do {
                 try folderAccess.persistFolder(url)
                 try await configureFolder(url)
-                statusToast = .saved("Folder ready")
+                statusToast = .saved(String(localized: "Folder ready"))
             } catch {
                 folderStatus = .error(error.localizedDescription)
-                statusToast = .error("Could not prepare folder")
+                statusToast = .error(String(localized: "Could not prepare folder"))
             }
         }
     }
@@ -111,7 +111,11 @@ final class AppModel: ObservableObject {
                 if !continueCapturing {
                     isCapturePresented = false
                 }
-                statusToast = .saved(continueCapturing ? "Saved. Ready for next" : "Saved")
+                statusToast = .saved(
+                    continueCapturing
+                        ? String(localized: "Saved. Ready for next")
+                        : String(localized: "Saved")
+                )
                 await refreshInbox()
             } catch {
                 if let draftSaveError = error as? DraftSaveError {
@@ -121,9 +125,9 @@ final class AppModel: ObservableObject {
                 let pendingCount = await queue?.pendingCount() ?? 0
                 if pendingCount > 0 {
                     syncStatus = .pending
-                    statusToast = .pending("Saved to pending queue")
+                    statusToast = .pending(String(localized: "Saved to pending queue"))
                 } else {
-                    statusToast = .error("Could not save. Draft kept open")
+                    statusToast = .error(String(localized: "Could not save. Draft kept open"))
                 }
             }
         }
@@ -134,12 +138,12 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
-                    statusToast = .error("Image data unavailable")
+                    statusToast = .error(String(localized: "Image data unavailable"))
                     return
                 }
                 let attachment = try CaptureAttachment.validatedImage(data: data)
                 try appendAttachment(attachment)
-                statusToast = .saved("Image attached")
+                statusToast = .saved(String(localized: "Image attached"))
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
@@ -165,7 +169,7 @@ final class AppModel: ObservableObject {
                     suggestedExtension: url.pathExtension
                 )
                 try appendAttachment(attachment)
-                statusToast = .saved("Image attached")
+                statusToast = .saved(String(localized: "Image attached"))
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
@@ -186,16 +190,16 @@ final class AppModel: ObservableObject {
                             throw error
                         }
                         if draft.body.isEmpty {
-                            draft.body = "转写中..."
+                            draft.body = String(localized: "Transcribing...")
                         }
-                        statusToast = .saved("Audio attached")
+                        statusToast = .saved(String(localized: "Audio attached"))
                         Task {
                             await transcribe(recording)
                         }
                     }
                 } else {
                     try audioRecorder.start()
-                    statusToast = .pending("Recording")
+                    statusToast = .pending(String(localized: "Recording"))
                 }
             } catch {
                 statusToast = .error(error.localizedDescription)
@@ -217,23 +221,24 @@ final class AppModel: ObservableObject {
             let text = try await audioRecorder.transcribe(url: recording.temporaryURL)
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                if draft.body == "转写中..." {
-                    draft.body = "转写：未识别到语音。"
+                if draft.body == String(localized: "Transcribing...") {
+                    draft.body = String(localized: "Transcription: No speech detected.")
                 }
                 return
             }
 
-            if draft.body == "转写中..." || draft.body == "转写：未识别到语音。" {
+            if draft.body == String(localized: "Transcribing...")
+                || draft.body == String(localized: "Transcription: No speech detected.") {
                 draft.body = trimmed
             } else {
                 draft.body += "\n\n\(trimmed)"
             }
-            statusToast = .saved("Transcribed")
+            statusToast = .saved(String(localized: "Transcribed"))
         } catch {
-            if draft.body == "转写中..." {
-                draft.body = "转写：语音转写不可用，请在真机授权后重试。"
+            if draft.body == String(localized: "Transcribing...") {
+                draft.body = String(localized: "Transcription unavailable. Check permission and try again.")
             }
-            statusToast = .error("Transcription unavailable")
+            statusToast = .error(String(localized: "Transcription unavailable"))
         }
     }
 
@@ -243,10 +248,10 @@ final class AppModel: ObservableObject {
                 try await queue?.replay { [fileStore] item in
                     try await fileStore.performPendingWrite(item)
                 }
-                statusToast = .saved("Pending queue replayed")
+                statusToast = .saved(String(localized: "Pending queue replayed"))
                 await refreshInbox()
             } catch {
-                statusToast = .error("Queue replay failed")
+                statusToast = .error(String(localized: "Queue replay failed"))
             }
         }
     }
@@ -255,10 +260,10 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await fileStore.applyInboxMutation(.delete(memoID: memo.id))
-                statusToast = .saved("Deleted")
+                statusToast = .saved(String(localized: "Deleted"))
                 await refreshInbox()
             } catch {
-                statusToast = .error("Delete failed")
+                statusToast = .error(String(localized: "Delete failed"))
             }
         }
     }
@@ -267,10 +272,10 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await fileStore.applyInboxMutation(.pin(memoID: memo.id))
-                statusToast = .saved("Pinned")
+                statusToast = .saved(String(localized: "Pinned"))
                 await refreshInbox()
             } catch {
-                statusToast = .error("Pin failed")
+                statusToast = .error(String(localized: "Pin failed"))
             }
         }
     }
@@ -279,10 +284,10 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await fileStore.applyInboxMutation(.addTag(memoID: memo.id, tag: "#tag"))
-                statusToast = .saved("Tagged")
+                statusToast = .saved(String(localized: "Tagged"))
                 await refreshInbox()
             } catch {
-                statusToast = .error("Tag failed")
+                statusToast = .error(String(localized: "Tag failed"))
             }
         }
     }
@@ -305,7 +310,7 @@ final class AppModel: ObservableObject {
                 syncStatus = .idle
             }
         } catch {
-            statusToast = .error("Inbox refresh failed")
+            statusToast = .error(String(localized: "Inbox refresh failed"))
         }
     }
 
@@ -323,7 +328,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             syncStatus = .pending
-            statusToast = .pending("Pending captures need attention")
+            statusToast = .pending(String(localized: "Pending captures need attention"))
         }
         await refreshInbox()
     }
@@ -381,7 +386,11 @@ enum DraftSaveError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .pendingQueueRejected(let reason):
-            return "Draft kept open. \(reason)"
+            return String(
+                format: String(localized: "draft.kept_open.format"),
+                locale: .current,
+                reason
+            )
         }
     }
 }

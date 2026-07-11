@@ -313,7 +313,7 @@ enum InboxMutationError: LocalizedError {
     case memoNotFound
 
     var errorDescription: String? {
-        "The memo changed before this action completed. Refresh and try again."
+        String(localized: "The memo changed before this action completed. Refresh and try again.")
     }
 }
 

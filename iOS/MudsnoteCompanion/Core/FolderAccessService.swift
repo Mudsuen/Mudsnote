@@ -9,13 +9,13 @@ enum FolderAccessError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingFolder:
-            return "Choose an iCloud Drive Markdown folder first."
+            return String(localized: "Choose an iCloud Drive Markdown folder first.")
         case .bookmarkResolutionFailed:
-            return "The saved folder permission is no longer valid. Choose the folder again."
+            return String(localized: "The saved folder permission is no longer valid. Choose the folder again.")
         case .folderUnavailable:
-            return "The saved folder was moved, removed, or is not downloaded. Choose its current location."
+            return String(localized: "The saved folder was moved, removed, or is not downloaded. Choose its current location.")
         case .notDirectory:
-            return "Choose a folder, not an individual file."
+            return String(localized: "Choose a folder, not an individual file.")
         }
     }
 }

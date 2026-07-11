@@ -62,7 +62,7 @@ struct LibraryHomeView: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("选择资料库文件夹")
+                    .accessibilityLabel("Choose library folder")
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -82,7 +82,7 @@ struct LibraryHomeView: View {
                 InboxStreamView()
             } label: {
                 NotesFolderRow(
-                    title: "Quick Notes",
+                    title: String(localized: "Quick Notes"),
                     systemImage: "waveform.path.ecg.rectangle",
                     iconTint: .red,
                     count: appModel.librarySummary.inboxCount
@@ -93,7 +93,7 @@ struct LibraryHomeView: View {
                 TagMemoListView(tag: "#语音")
             } label: {
                 NotesFolderRow(
-                    title: "Call Recordings",
+                    title: String(localized: "Call Recordings"),
                     systemImage: "phone.waveform",
                     iconTint: .green,
                     count: appModel.tagSummaries.first(where: { $0.name == "#语音" })?.count ?? 0
@@ -109,45 +109,45 @@ struct LibraryHomeView: View {
 
             notesCard {
                 NavigationLink {
-                    FolderNotesListView(title: "All Notes", files: appModel.recentFiles)
+                    FolderNotesListView(title: String(localized: "All Notes"), files: appModel.recentFiles)
                 } label: {
-                    NotesFolderRow(title: "All Notes", systemImage: "folder", count: appModel.librarySummary.allNotesCount)
+                    NotesFolderRow(title: String(localized: "All Notes"), systemImage: "folder", count: appModel.librarySummary.allNotesCount)
                 }
 
                 NavigationLink {
                     InboxStreamView()
                 } label: {
-                    NotesFolderRow(title: "Inbox", systemImage: "folder", count: appModel.librarySummary.inboxCount)
+                    NotesFolderRow(title: String(localized: "Inbox"), systemImage: "folder", count: appModel.librarySummary.inboxCount)
                 }
 
                 NavigationLink {
                     FolderNotesListView(
-                        title: "Daily",
+                        title: String(localized: "Daily"),
                         files: appModel.recentFiles.filter { $0.relativePath.hasPrefix("Daily/") }
                     )
                 } label: {
-                    NotesFolderRow(title: "Daily", systemImage: "folder", count: appModel.librarySummary.dailyCount)
+                    NotesFolderRow(title: String(localized: "Daily"), systemImage: "folder", count: appModel.librarySummary.dailyCount)
                 }
 
                 NavigationLink {
                     FolderNotesListView(
-                        title: "Templates",
+                        title: String(localized: "Templates"),
                         files: appModel.recentFiles.filter { $0.relativePath.hasPrefix("Templates/") }
                     )
                 } label: {
-                    NotesFolderRow(title: "Templates", systemImage: "folder", count: appModel.librarySummary.templateCount)
+                    NotesFolderRow(title: String(localized: "Templates"), systemImage: "folder", count: appModel.librarySummary.templateCount)
                 }
 
                 NavigationLink {
                     AttachmentLibraryView(count: appModel.librarySummary.attachmentCount)
                 } label: {
-                    NotesFolderRow(title: "Attachments", systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
+                    NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
                 }
 
                 NavigationLink {
                     SettingsRulesView(chooseFolder: chooseFolder)
                 } label: {
-                    NotesFolderRow(title: "Settings", systemImage: "gearshape", count: nil)
+                    NotesFolderRow(title: String(localized: "Settings"), systemImage: "gearshape", count: nil)
                 }
             }
         }
@@ -156,9 +156,9 @@ struct LibraryHomeView: View {
     @ViewBuilder
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: "Tags")
+            NotesSectionHeader(title: String(localized: "Tags"))
             FlowLayout(spacing: 10, rowSpacing: 10) {
-                TagChip(title: "All Tags")
+                TagChip(title: String(localized: "All Tags"))
                 ForEach(appModel.tagSummaries) { tag in
                     NavigationLink {
                         TagMemoListView(tag: tag.name)
@@ -230,18 +230,18 @@ struct FolderNotesListView: View {
                     RecentFileRow(file: file)
                         .swipeActions(edge: .leading, allowsFullSwipe: false) {
                             Button("Tag") {
-                                appModel.statusToast = .pending("Tag applies to Inbox memo cards")
+                    appModel.statusToast = .pending(String(localized: "Tag applies to Inbox memo cards"))
                             }
                             .tint(.blue)
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                appModel.statusToast = .pending("Delete is not enabled for Markdown source yet")
+                                appModel.statusToast = .pending(String(localized: "Delete is not enabled for Markdown source yet"))
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                             Button {
-                                appModel.statusToast = .pending("Pinned")
+                                appModel.statusToast = .pending(String(localized: "Pinned"))
                             } label: {
                                 Label("Pin", systemImage: "pin")
                             }
@@ -363,14 +363,14 @@ struct NotesBottomCommandBar: View {
                             .font(.system(size: 18, weight: .semibold))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("清除搜索")
+                    .accessibilityLabel("Clear search")
                 }
                 Button(action: record) {
                     Image(systemName: "mic")
                         .font(.system(size: 21, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("语音输入")
+                .accessibilityLabel("Voice input")
             }
             .foregroundStyle(MudsnoteColors.text)
             .padding(.horizontal, 16)
@@ -391,7 +391,7 @@ struct NotesBottomCommandBar: View {
                     }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("新建笔记")
+            .accessibilityLabel("New note")
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)
@@ -464,7 +464,14 @@ struct TagMemoListView: View {
     var body: some View {
         List {
             if memos.isEmpty {
-                EmptyReaderStateView(title: "No Notes", message: "No notes currently use \(tag).")
+                EmptyReaderStateView(
+                    title: String(localized: "No Notes"),
+                    message: String(
+                        format: String(localized: "notes.none_for_tag.format"),
+                        locale: .current,
+                        tag
+                    )
+                )
                     .frame(maxWidth: .infinity)
                     .listRowBackground(MudsnoteColors.canvas)
                     .listRowSeparator(.hidden)
@@ -606,7 +613,10 @@ struct RecentSearchView: View {
         NavigationStack {
             Group {
                 if filteredFiles.isEmpty {
-                    EmptyReaderStateView(title: "没有最近文件", message: "初始化文件夹后，Inbox 和 Daily 会出现在这里。")
+                    EmptyReaderStateView(
+                        title: String(localized: "No Recent Files"),
+                        message: String(localized: "Inbox and Daily files appear here after the folder is initialized.")
+                    )
                 } else {
                     List(filteredFiles) { file in
                         RecentFileRow(file: file)

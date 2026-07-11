@@ -45,7 +45,13 @@ struct TargetMenuView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("保存目标 \(appModel.draft.target.compactLabel)")
+        .accessibilityLabel(
+            String(
+                format: String(localized: "capture.destination.format"),
+                locale: .current,
+                appModel.draft.target.compactLabel
+            )
+        )
     }
 }
 
@@ -53,9 +59,9 @@ private extension CaptureTarget {
     var compactLabel: String {
         switch self {
         case .inbox:
-            return "Inbox"
+            return String(localized: "Inbox")
         case .daily:
-            return "Daily"
+            return String(localized: "Daily")
         case .recent(let path):
             return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         }
