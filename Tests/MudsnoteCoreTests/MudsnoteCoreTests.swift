@@ -249,6 +249,50 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func searchIndexRefreshReadsOnlyChangedMarkdownFiles() throws {
+        let harness = try TestHarness()
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        harness.store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+
+        let alphaURL = try harness.store.saveNewNote(title: "Alpha", body: "alpha body")
+        let betaURL = try harness.store.saveNewNote(title: "Beta", body: "beta body")
+        let gammaURL = try harness.store.saveNewNote(title: "Gamma", body: "gamma body")
+
+        #expect(harness.store.prewarmSearchIndex() == 3)
+        #expect(harness.store.searchIndexEntryReadCountForTesting == 3)
+
+        harness.store.searchIndexEntryReadCountForTesting = 0
+        _ = try harness.store.updateNote(
+            at: betaURL,
+            title: "Beta",
+            body: "beta body changed with a different size"
+        )
+
+        #expect(harness.store.prewarmSearchIndex() == 3)
+        #expect(harness.store.searchIndexEntryReadCountForTesting == 1)
+        #expect(harness.store.searchNotes(query: "different size", limit: 10).first?.url.standardizedFileURL.path == betaURL.path)
+        #expect(harness.store.searchNotes(query: "alpha body", limit: 10).first?.url.standardizedFileURL.path == alphaURL.path)
+
+        _ = try harness.store.updateNote(
+            at: gammaURL,
+            title: "Gamma",
+            body: "gamma body changed after the disk snapshot"
+        )
+        let reloadedStore = NoteStore(
+            defaults: harness.defaults,
+            legacyDefaults: nil,
+            fileManager: FileManager.default,
+            appSupportDirectory: harness.store.appSupportDirectory
+        )
+        reloadedStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+
+        #expect(reloadedStore.prewarmSearchIndex() == 3)
+        #expect(reloadedStore.searchIndexEntryReadCountForTesting == 1)
+        #expect(reloadedStore.searchNotes(query: "after the disk snapshot", limit: 10).first?.url.standardizedFileURL.path == gammaURL.path)
+        #expect(reloadedStore.searchNotes(query: "alpha body", limit: 10).first?.url.standardizedFileURL.path == alphaURL.path)
+    }
+
+    @Test
     func corruptSearchIndexDiskCacheIsIgnoredAndRebuilt() throws {
         let harness = try TestHarness()
         let store = harness.store

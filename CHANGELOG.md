@@ -750,6 +750,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Visible library windows now deduplicate thumbnail requests by standardized path, decode them on a utility task, preserve both positive and negative cache entries, and reload only rows still referencing the completed image. Closing the window cancels outstanding work, while hidden test windows retain deterministic synchronous loading.
 - Lesson: A window's first layout can occur before `isVisible` becomes true, so presentation intent must be recorded before `showWindow`; visibility alone is not a reliable boundary for keeping first-frame I/O off the main thread.
 
+### 126. Incremental Markdown search-index refresh
+
+- Problem: The persistent search index skipped all Markdown reads only while every file signature matched. Editing one note invalidated that equality check and reparsed the entire library even though nearly every cached entry was still current.
+- Fix: Index refresh now reuses unchanged entries from the same-root in-memory or disk snapshot by standardized path and modification-date-plus-size signature, reparsing only added or changed Markdown files while naturally dropping removed paths. Added regression coverage proving a one-file change in a three-note library performs one content read through both memory and relaunch-style disk refresh paths.
+- Lesson: A disposable filesystem index should validate the whole namespace but rebuild only the changed records; snapshot invalidation does not need to imply full content rehydration.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

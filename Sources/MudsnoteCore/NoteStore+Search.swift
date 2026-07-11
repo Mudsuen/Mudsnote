@@ -150,18 +150,29 @@ extension NoteStore {
             }
         }
 
-        if let snapshot = searchIndexSnapshot,
-           snapshot.rootsKey == rootsKey,
-           snapshot.fileSignatures == signatures {
-            return snapshot.entries
+        let reusableSnapshot: NoteSearchIndexSnapshot?
+        if let snapshot = searchIndexSnapshot, snapshot.rootsKey == rootsKey {
+            reusableSnapshot = snapshot
+        } else {
+            reusableSnapshot = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
         }
 
-        if let snapshot = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey, fileSignatures: signatures) {
-            searchIndexSnapshot = snapshot
-            return snapshot.entries
+        if let reusableSnapshot, reusableSnapshot.fileSignatures == signatures {
+            searchIndexSnapshot = reusableSnapshot
+            return reusableSnapshot.entries
         }
 
-        let entries = fileURLs.compactMap { indexedEntry(for: $0, signature: signatures[$0.path]) }
+        let reusableEntriesByPath = reusableSnapshot?.entries.reduce(into: [String: NoteSearchIndexEntry]()) {
+            $0[$1.url.standardizedFileURL.path] = $1
+        } ?? [:]
+        let reusableSignatures = reusableSnapshot?.fileSignatures ?? [:]
+        let entries = fileURLs.compactMap { fileURL -> NoteSearchIndexEntry? in
+            let path = fileURL.path
+            if reusableSignatures[path] == signatures[path], let entry = reusableEntriesByPath[path] {
+                return entry
+            }
+            return indexedEntry(for: fileURL, signature: signatures[path])
+        }
         let snapshot = NoteSearchIndexSnapshot(
             rootsKey: rootsKey,
             fileSignatures: signatures,
@@ -172,7 +183,7 @@ extension NoteStore {
         return entries
     }
 
-    func readSearchIndexSnapshotFromDisk(rootsKey: [String], fileSignatures: [String: NoteSearchFileSignature]) -> NoteSearchIndexSnapshot? {
+    func readSearchIndexSnapshotFromDisk(rootsKey: [String]) -> NoteSearchIndexSnapshot? {
         guard let data = try? Data(contentsOf: searchIndexCacheURL) else {
             return nil
         }
@@ -180,8 +191,7 @@ extension NoteStore {
         do {
             let cache = try JSONDecoder().decode(NoteSearchIndexDiskCache.self, from: data)
             guard cache.schemaVersion == NoteSearchIndexDiskCache.currentSchemaVersion,
-                  cache.snapshot.rootsKey == rootsKey,
-                  cache.snapshot.fileSignatures == fileSignatures else {
+                  cache.snapshot.rootsKey == rootsKey else {
                 return nil
             }
             return cache.snapshot
@@ -220,6 +230,7 @@ extension NoteStore {
     }
 
     private func indexedEntry(for fileURL: URL, signature: NoteSearchFileSignature?) -> NoteSearchIndexEntry? {
+        searchIndexEntryReadCountForTesting += 1
         guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else {
             return nil
         }

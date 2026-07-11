@@ -15,6 +15,7 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
+    var searchIndexEntryReadCountForTesting = 0
     var searchIndexCacheURL: URL {
         appSupportDirectory
             .appendingPathComponent("SearchIndex", isDirectory: true)
