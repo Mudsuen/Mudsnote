@@ -217,7 +217,7 @@ final class AppModel: ObservableObject {
     func deleteMemo(_ memo: MemoBlock) {
         Task {
             do {
-                try await rewriteInboxItems(inboxItems.filter { $0.id != memo.id })
+                try await fileStore.applyInboxMutation(.delete(memoID: memo.id))
                 statusToast = .saved("Deleted")
                 await refreshInbox()
             } catch {
@@ -229,8 +229,7 @@ final class AppModel: ObservableObject {
     func pinMemo(_ memo: MemoBlock) {
         Task {
             do {
-                let remaining = inboxItems.filter { $0.id != memo.id }
-                try await rewriteInboxItems([memo] + remaining)
+                try await fileStore.applyInboxMutation(.pin(memoID: memo.id))
                 statusToast = .saved("Pinned")
                 await refreshInbox()
             } catch {
@@ -242,15 +241,7 @@ final class AppModel: ObservableObject {
     func addDefaultTag(to memo: MemoBlock) {
         Task {
             do {
-                let updated = inboxItems.map { item in
-                    guard item.id == memo.id else { return item }
-                    var copy = item
-                    if !copy.body.split(whereSeparator: \.isWhitespace).contains("#tag") {
-                        copy.body += copy.body.isEmpty ? "#tag" : "\n\n#tag"
-                    }
-                    return copy
-                }
-                try await rewriteInboxItems(updated)
+                try await fileStore.applyInboxMutation(.addTag(memoID: memo.id, tag: "#tag"))
                 statusToast = .saved("Tagged")
                 await refreshInbox()
             } catch {
@@ -260,19 +251,14 @@ final class AppModel: ObservableObject {
     }
 
     func refreshInbox() async {
-        guard let root = folderAccess.currentRoot else { return }
+        guard folderAccess.currentRoot != nil else { return }
         do {
-            let inbox = root.appendingPathComponent("Inbox.md")
-            let body = try String(contentsOf: inbox, encoding: .utf8)
-            inboxItems = InboxParser.parse(body)
-            recentFiles = try MarkdownFileStore.recentFiles(in: root)
-            librarySummary = try MarkdownFileStore.librarySummary(
-                in: root,
-                inboxCount: inboxItems.count,
-                allNotesCount: recentFiles.count
-            )
+            let snapshot = try await fileStore.loadLibrarySnapshot()
+            inboxItems = snapshot.inboxItems
+            recentFiles = snapshot.recentFiles
+            librarySummary = snapshot.summary
             tagSummaries = Self.tagSummaries(from: inboxItems)
-            conflictWarnings = try MarkdownFileStore.conflictWarnings(in: root)
+            conflictWarnings = snapshot.conflictWarnings
             let pendingCount = await queue?.pendingCount() ?? 0
             if conflictWarnings.isEmpty == false {
                 syncStatus = .conflict
@@ -316,16 +302,6 @@ final class AppModel: ObservableObject {
         try await queue.remove(id: pending.id)
     }
 
-    private func rewriteInboxItems(_ items: [MemoBlock]) async throws {
-        guard let root = folderAccess.currentRoot else {
-            throw FolderAccessError.missingFolder
-        }
-        try folderAccess.withAccess(to: root) {
-            let markdown = Self.inboxMarkdown(forDisplayItems: items)
-            try markdown.write(to: root.appendingPathComponent("Inbox.md"), atomically: true, encoding: .utf8)
-        }
-    }
-
     private func openSystemCapture(_ route: CaptureRoute) {
         showCapture(route)
     }
@@ -356,27 +332,6 @@ final class AppModel: ObservableObject {
             }
     }
 
-    static func inboxMarkdown(forDisplayItems items: [MemoBlock]) -> String {
-        var output = "# Inbox\n\n"
-        for memo in items.reversed() {
-            output += "## \(memo.dateText)\n\n"
-            output += memo.body.trimmingCharacters(in: .whitespacesAndNewlines)
-            output += "\n\n"
-            if let writeMarker = memo.writeMarker {
-                output += writeMarker
-                output += "\n\n"
-            }
-        }
-        return output
-    }
-}
-
-struct LibrarySummary: Equatable {
-    var allNotesCount = 0
-    var inboxCount = 0
-    var dailyCount = 0
-    var templateCount = 0
-    var attachmentCount = 0
 }
 
 struct TagSummary: Equatable, Identifiable {

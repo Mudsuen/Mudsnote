@@ -714,6 +714,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Matched the queue decoder to its persisted format, automatically replayed queued captures, made coordinated Markdown writes idempotent with hidden markers, preserved those markers through Inbox actions without exposing them in memo text, and added App Store privacy declarations plus regression coverage.
 - Lesson: A capture is only durable when restart recovery is both readable and safe to repeat; recovery metadata must survive user actions while remaining invisible in portable Markdown rendering.
 
+### 122. Coordinated iOS library snapshots and Inbox actions
+
+- Problem: The iOS reader recursively scanned the same folder several times from its main-actor refresh path, reported only the 24 recent files as the total note count, and rewrote Inbox actions from a potentially stale UI snapshot that could discard external or iCloud appends.
+- Fix: Added one file-store actor inventory for Inbox, exact Markdown counts, recent files, attachments, and conflicts, then made delete, pin, and tag coordinate a fresh read-modify-write against the current Inbox. Added large-library and external-append regression coverage.
+- Lesson: Local-first UI state is a view of the filesystem, not an authority; inventory once off the UI actor and re-read coordinated content immediately before destructive mutations.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

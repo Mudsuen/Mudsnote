@@ -20,14 +20,14 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Queue replay is automatic and idempotent; a replayed write does not duplicate a memo.
 - [x] Failed writes keep the draft visible unless a durable queue item exists.
 - [x] Markdown writes use file coordination plus atomic replacement.
-- [ ] Coordinate the destructive Inbox rewrite actions used by delete, pin, and tag; hidden recovery markers are already preserved across rewrites.
+- [x] Delete, pin, and tag coordinate against the latest Inbox contents, preserving external/iCloud appends and hidden recovery markers.
 - [ ] Add user-facing iCloud conflict resolution instead of warning-only detection.
 - [ ] Bound image/audio attachment sizes and avoid unbounded base64 queue growth.
 - [ ] Verify Photos content type so HEIC/PNG data never receives a misleading `.jpg` extension.
 
 ## Performance
 
-- [ ] Move recursive recent-file, summary, tag, and conflict scans off the main actor.
+- [x] Build recent files, exact summary counts, and conflict warnings in one file-store actor inventory instead of recursive main-actor scans.
 - [ ] Add performance fixtures for large libraries and large attachments.
 - [ ] Avoid rescanning the whole library after every capture when only Inbox changed.
 
@@ -48,7 +48,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
-- [x] Seven current unit tests pass on the iPhone 17 simulator.
+- [x] Nine current unit tests pass on the iPhone 17 simulator.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.

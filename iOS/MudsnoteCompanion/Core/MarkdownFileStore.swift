@@ -8,6 +8,120 @@ actor MarkdownFileStore {
         self.root = root
     }
 
+    func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
+        let inboxItems = InboxParser.parse(inboxMarkdown)
+        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+        var markdownFiles: [RecentMarkdownFile] = []
+        var dailyCount = 0
+        var templateCount = 0
+        var attachmentCount = 0
+        var conflictWarnings: [String] = []
+
+        if let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let url as URL in enumerator {
+                let relativePath = Self.relativePath(for: url, root: root)
+                let lowercasedName = url.lastPathComponent.lowercased()
+                if lowercasedName.contains("conflict") || lowercasedName.contains("conflicted copy") {
+                    conflictWarnings.append(relativePath)
+                }
+
+                guard let values = try? url.resourceValues(forKeys: resourceKeys),
+                      values.isRegularFile == true else {
+                    continue
+                }
+
+                if relativePath.hasPrefix("Attachments/") {
+                    attachmentCount += 1
+                }
+                guard url.pathExtension.lowercased() == "md" else { continue }
+                if relativePath.hasPrefix("Daily/") {
+                    dailyCount += 1
+                }
+                if relativePath.hasPrefix("Templates/") {
+                    templateCount += 1
+                }
+                markdownFiles.append(RecentMarkdownFile(
+                    id: relativePath,
+                    relativePath: relativePath,
+                    title: url.deletingPathExtension().lastPathComponent,
+                    modifiedAt: values.contentModificationDate ?? .distantPast
+                ))
+            }
+        }
+
+        let recentFiles = markdownFiles
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(24)
+            .map { $0 }
+        return MarkdownLibrarySnapshot(
+            inboxItems: inboxItems,
+            recentFiles: recentFiles,
+            summary: LibrarySummary(
+                allNotesCount: markdownFiles.count,
+                inboxCount: inboxItems.count,
+                dailyCount: dailyCount,
+                templateCount: templateCount,
+                attachmentCount: attachmentCount
+            ),
+            conflictWarnings: conflictWarnings.sorted()
+        )
+    }
+
+    func applyInboxMutation(_ mutation: InboxMutation) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var mutationError: Error?
+        coordinator.coordinate(writingItemAt: inboxURL, options: .forMerging, error: &coordinationError) { coordinatedURL in
+            do {
+                let markdown = try String(contentsOf: coordinatedURL, encoding: .utf8)
+                var items = InboxParser.parse(markdown)
+                guard let index = items.firstIndex(where: { $0.id == mutation.memoID }) else {
+                    throw InboxMutationError.memoNotFound
+                }
+
+                switch mutation {
+                case .delete:
+                    items.remove(at: index)
+                case .pin:
+                    let item = items.remove(at: index)
+                    items.insert(item, at: 0)
+                case .addTag(_, let tag):
+                    let normalizedTag = tag.hasPrefix("#") ? tag : "#\(tag)"
+                    if items[index].body.split(whereSeparator: \.isWhitespace).contains(Substring(normalizedTag)) == false {
+                        items[index].body += items[index].body.isEmpty ? normalizedTag : "\n\n\(normalizedTag)"
+                    }
+                }
+
+                let updatedMarkdown = InboxParser.markdown(forDisplayItems: items)
+                try updatedMarkdown.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+            } catch {
+                mutationError = error
+            }
+        }
+
+        if let coordinationError { throw coordinationError }
+        if let mutationError { throw mutationError }
+    }
+
     func preparePendingWrite(for draft: CaptureDraft, root: URL, now: Date = Date()) async throws -> PendingWrite {
         let attachmentWrites = try attachmentWrites(for: draft.attachments, root: root, now: now)
         let markdown = Self.markdownBlock(
@@ -58,70 +172,6 @@ actor MarkdownFileStore {
         try appendPendingWriteIfNeeded(pending, to: target)
     }
 
-    static func recentFiles(in root: URL) throws -> [RecentMarkdownFile] {
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { root.stopAccessingSecurityScopedResource() }
-        }
-
-        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        return try enumerator.compactMap { item -> RecentMarkdownFile? in
-            guard let url = item as? URL, url.pathExtension == "md" else { return nil }
-            let values = try url.resourceValues(forKeys: resourceKeys)
-            guard values.isRegularFile == true else { return nil }
-            let relative = String(url.path.dropFirst(root.path.count + 1))
-            return RecentMarkdownFile(
-                id: relative,
-                relativePath: relative,
-                title: url.deletingPathExtension().lastPathComponent,
-                modifiedAt: values.contentModificationDate ?? .distantPast
-            )
-        }
-        .sorted { $0.modifiedAt > $1.modifiedAt }
-        .prefix(24)
-        .map { $0 }
-    }
-
-    static func conflictWarnings(in root: URL) throws -> [String] {
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { root.stopAccessingSecurityScopedResource() }
-        }
-
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
-            return []
-        }
-        return enumerator.compactMap { item in
-            guard let url = item as? URL else { return nil }
-            let name = url.lastPathComponent.lowercased()
-            guard name.contains("conflict") || name.contains("conflicted copy") else { return nil }
-            return String(url.path.dropFirst(root.path.count + 1))
-        }
-    }
-
-    static func librarySummary(in root: URL, inboxCount: Int, allNotesCount: Int) throws -> LibrarySummary {
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { root.stopAccessingSecurityScopedResource() }
-        }
-
-        return LibrarySummary(
-            allNotesCount: allNotesCount,
-            inboxCount: inboxCount,
-            dailyCount: countFiles(in: root.appendingPathComponent("Daily"), extensions: ["md"]),
-            templateCount: countFiles(in: root.appendingPathComponent("Templates"), extensions: ["md"]),
-            attachmentCount: countFiles(in: root.appendingPathComponent("Attachments"), extensions: nil)
-        )
-    }
-
     private func attachmentWrites(for attachments: [CaptureAttachment], root: URL, now: Date) throws -> [(relativePath: String, data: Data)] {
         let month = Self.monthFormatter.string(from: now)
         let timestamp = Self.attachmentFormatter.string(from: now)
@@ -161,24 +211,8 @@ actor MarkdownFileStore {
         }
     }
 
-    private static func countFiles(in folder: URL, extensions allowedExtensions: Set<String>?) -> Int {
-        guard let enumerator = FileManager.default.enumerator(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return 0
-        }
-
-        return enumerator.reduce(into: 0) { count, item in
-            guard let url = item as? URL else { return }
-            if let allowedExtensions, !allowedExtensions.contains(url.pathExtension.lowercased()) {
-                return
-            }
-            if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
-                count += 1
-            }
-        }
+    private static func relativePath(for url: URL, root: URL) -> String {
+        String(url.path.dropFirst(root.path.count + 1))
     }
 
     static func markdownBlock(
@@ -245,6 +279,41 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var relativePath: String
     var title: String
     var modifiedAt: Date
+}
+
+struct MarkdownLibrarySnapshot: Equatable {
+    var inboxItems: [MemoBlock]
+    var recentFiles: [RecentMarkdownFile]
+    var summary: LibrarySummary
+    var conflictWarnings: [String]
+}
+
+struct LibrarySummary: Equatable {
+    var allNotesCount = 0
+    var inboxCount = 0
+    var dailyCount = 0
+    var templateCount = 0
+    var attachmentCount = 0
+}
+
+enum InboxMutation: Equatable {
+    case delete(memoID: String)
+    case pin(memoID: String)
+    case addTag(memoID: String, tag: String)
+
+    var memoID: String {
+        switch self {
+        case .delete(let memoID), .pin(let memoID), .addTag(let memoID, _): memoID
+        }
+    }
+}
+
+enum InboxMutationError: LocalizedError {
+    case memoNotFound
+
+    var errorDescription: String? {
+        "The memo changed before this action completed. Refresh and try again."
+    }
 }
 
 extension MarkdownAttachmentReference {

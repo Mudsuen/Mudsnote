@@ -64,6 +64,20 @@ enum InboxParser {
         return blocks.reversed()
     }
 
+    static func markdown(forDisplayItems items: [MemoBlock]) -> String {
+        var output = "# Inbox\n\n"
+        for memo in items.reversed() {
+            output += "## \(memo.dateText)\n\n"
+            output += memo.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            output += "\n\n"
+            if let writeMarker = memo.writeMarker {
+                output += writeMarker
+                output += "\n\n"
+            }
+        }
+        return output
+    }
+
     private static func isMemoHeading(_ value: String) -> Bool {
         value.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$"#, options: .regularExpression) != nil
     }

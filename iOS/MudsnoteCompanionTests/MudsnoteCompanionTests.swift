@@ -62,7 +62,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             writeMarker: marker
         )
 
-        let rewritten = AppModel.inboxMarkdown(forDisplayItems: [memo])
+        let rewritten = InboxParser.markdown(forDisplayItems: [memo])
         XCTAssertTrue(rewritten.contains(marker))
         let reparsed = InboxParser.parse(rewritten)
         XCTAssertEqual(reparsed.first?.body, "Visible body")
@@ -132,6 +132,84 @@ final class MudsnoteCompanionTests: XCTestCase {
         let markdown = try String(contentsOf: root.appendingPathComponent("Inbox.md"), encoding: .utf8)
         XCTAssertEqual(markdown.components(separatedBy: "Write once").count - 1, 1)
         XCTAssertEqual(markdown.components(separatedBy: "mudsnote-write:").count - 1, 1)
+    }
+
+    func testLibrarySnapshotUsesOneExactInventoryBeyondRecentLimit() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        for index in 0..<30 {
+            try "# Note \(index)\n".write(
+                to: projects.appendingPathComponent("note-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        try Data([0x01]).write(
+            to: root.appendingPathComponent("Attachments/image.png"),
+            options: .atomic
+        )
+        try "# Conflict\n".write(
+            to: projects.appendingPathComponent("note conflicted copy.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+
+        XCTAssertEqual(snapshot.summary.allNotesCount, 36)
+        XCTAssertEqual(snapshot.summary.dailyCount, 1)
+        XCTAssertEqual(snapshot.summary.templateCount, 3)
+        XCTAssertEqual(snapshot.summary.attachmentCount, 1)
+        XCTAssertEqual(snapshot.recentFiles.count, 24)
+        XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
+    }
+
+    func testInboxMutationRereadsDiskAndPreservesExternalAppend() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let inbox = root.appendingPathComponent("Inbox.md")
+        let original = """
+        # Inbox
+
+        ## 2026-07-11 09:00
+
+        Original memo
+
+        <!-- mudsnote-write:1e989c6a-2aae-47c5-a8e7-4c7d854cb2d8 -->
+
+        """
+        try original.write(to: inbox, atomically: true, encoding: .utf8)
+        let staleMemo = try XCTUnwrap(InboxParser.parse(original).first)
+
+        let externalAppend = """
+        ## 2026-07-11 09:01
+
+        Added outside the app
+
+        """
+        try (original + externalAppend).write(to: inbox, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.applyInboxMutation(.addTag(memoID: staleMemo.id, tag: "review"))
+
+        let updated = try String(contentsOf: inbox, encoding: .utf8)
+        let memos = InboxParser.parse(updated)
+        XCTAssertEqual(memos.count, 2)
+        XCTAssertTrue(memos.contains { $0.body.contains("Added outside the app") })
+        let originalMemo = try XCTUnwrap(memos.first { $0.body.contains("Original memo") })
+        XCTAssertTrue(originalMemo.body.contains("#review"))
+        XCTAssertEqual(
+            originalMemo.writeMarker,
+            "<!-- mudsnote-write:1e989c6a-2aae-47c5-a8e7-4c7d854cb2d8 -->"
+        )
     }
 
     private func temporaryRoot() throws -> URL {
