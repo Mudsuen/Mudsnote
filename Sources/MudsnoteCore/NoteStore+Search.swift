@@ -51,6 +51,27 @@ extension NoteStore {
         )
     }
 
+    public func searchNotes(query: String, limit: Int = 30, in directory: URL) -> [NoteSearchResult] {
+        let directoryPath = directory.standardizedFileURL.path
+        return scopedSearchResults(query: query, limit: limit) { entry in
+            let noteDirectoryPath = entry.url.deletingLastPathComponent().standardizedFileURL.path
+            return noteDirectoryPath == directoryPath || noteDirectoryPath.hasPrefix(directoryPath + "/")
+        }
+    }
+
+    public func searchNotes(query: String, limit: Int = 30, tagged tag: String) -> [NoteSearchResult] {
+        scopedSearchResults(query: query, limit: limit) { entry in
+            entry.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+        }
+    }
+
+    public func searchInboxNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        scopedSearchResults(query: query, limit: limit) { entry in
+            entry.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+                || entry.title.localizedCaseInsensitiveContains("Inbox")
+        }
+    }
+
     public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
@@ -99,6 +120,22 @@ extension NoteStore {
             }
             .prefix(limit)
             .map(\.result)
+    }
+
+    private func scopedSearchResults(
+        query: String,
+        limit: Int,
+        matching predicate: (NoteSearchIndexEntry) -> Bool
+    ) -> [NoteSearchResult] {
+        let entries = indexedEntries().filter(predicate)
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return entries
+                .sorted { $0.modifiedAt > $1.modifiedAt }
+                .prefix(limit)
+                .map(\.result)
+        }
+        return rankedSearchResults(query: trimmedQuery, limit: limit, entries: entries)
     }
 
     private func scoredMatch(for entry: NoteSearchIndexEntry, loweredQuery: String) -> (result: NoteSearchResult, score: Int)? {

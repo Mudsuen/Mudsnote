@@ -768,6 +768,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a compact native app/File/Edit/View/Window menu with responder-chain editing commands, `Command-N` library note creation, `Command-F` library search focus, sidebar toggling, settings, close, minimize, and zoom. New unsaved notes now have an explicit editing state, current-date header, hidden no-selection overlay, enabled tools, and next-run-loop title focus without opening the quick-capture window.
 - Lesson: A blank document is not an empty selection. Native command routing and explicit document state must agree, or a visually correct editor still feels inert after a standard shortcut.
 
+### 128. Stable full-library index for scoped search
+
+- Problem: Searching inside a folder rebuilt the search index with that folder as the root and replaced the persisted full-library snapshot. Returning to All iCloud then rescanned the whole library. Inbox and tag search also applied their scope after the global result limit, so valid scoped matches could disappear behind higher-ranked notes elsewhere.
+- Fix: Added directory, exact-tag, and Inbox search APIs that filter full-library index entries before ranking and limiting. Library scopes now use those APIs instead of alternate index roots or post-limit filtering, preserving the full snapshot in memory and on disk while returning the correct top results within each scope.
+- Lesson: Search scope is a query predicate, not an index ownership boundary. Keep one authoritative local-library snapshot and apply scope before ranking so performance and result completeness reinforce each other.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

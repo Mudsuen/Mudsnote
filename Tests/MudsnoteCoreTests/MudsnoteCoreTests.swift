@@ -147,6 +147,45 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func scopedSearchFiltersBeforeLimitingAndPreservesFullLibraryIndexRoots() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
+
+        for index in 0..<4 {
+            _ = try store.saveNewNote(
+                title: "Needle \(index)",
+                body: "needle needle needle",
+                tags: ["other"],
+                in: notesDirectory
+            )
+        }
+        let folderMatch = try store.saveNewNote(
+            title: "Project Result",
+            body: "one needle",
+            tags: ["focus"],
+            in: projectDirectory
+        )
+        let inboxMatch = try store.saveNewNote(
+            title: "Inbox Follow Up",
+            body: "one needle",
+            tags: ["inbox"],
+            in: projectDirectory
+        )
+
+        #expect(store.prewarmSearchIndex() == 6)
+        let fullRoots = try #require(store.searchIndexSnapshot?.rootsKey)
+
+        #expect(store.searchNotes(query: "needle", limit: 1, in: projectDirectory).first?.url == inboxMatch)
+        #expect(store.searchNotes(query: "needle", limit: 1, tagged: "focus").first?.url == folderMatch)
+        #expect(store.searchInboxNotes(query: "needle", limit: 1).first?.url == inboxMatch)
+        #expect(store.searchIndexSnapshot?.rootsKey == fullRoots)
+        #expect(Set(store.listNotes(limit: 20).map { $0.url.standardizedFileURL.path }).count == 6)
+    }
+
+    @Test
     func searchIndexRefreshesWhenMarkdownFileChanges() throws {
         let harness = try TestHarness()
         let store = harness.store

@@ -74,15 +74,13 @@ private func librarySearchResults(
     case .recent:
         return noteStore.searchRecentNotes(query: query, limit: limit)
     case .inbox:
-        return noteStore.searchNotes(query: query, limit: limit).filter(libraryIsInboxNote)
+        return noteStore.searchInboxNotes(query: query, limit: limit)
     case .trash:
         return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
     case .folder(let url):
-        return noteStore.searchNotes(query: query, limit: limit, roots: [url])
+        return noteStore.searchNotes(query: query, limit: limit, in: url)
     case .tag(let tag):
-        return noteStore.searchNotes(query: query, limit: limit).filter { note in
-            note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-        }
+        return noteStore.searchNotes(query: query, limit: limit, tagged: tag)
     }
 }
 
