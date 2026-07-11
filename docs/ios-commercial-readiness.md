@@ -52,6 +52,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
 - [x] Nineteen tests pass on the iPhone 17 simulator: sixteen unit tests plus three end-to-end UI tests.
+- [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.
