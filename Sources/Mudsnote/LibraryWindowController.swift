@@ -255,22 +255,23 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let initialWindowSize = NSSize(width: 1420, height: 820)
-    static let presentedWindowSize = NSSize(width: 1420, height: 860)
+    static let storedLayoutScaleVersion = 2
+    static let initialWindowSize = NSSize(width: 1080, height: 680)
+    static let presentedWindowSize = NSSize(width: 1080, height: 720)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
-    static let sourceColumnWidth: CGFloat = 320
-    static let noteColumnWidth: CGFloat = 304
-    static let sourceColumnMinimumWidth: CGFloat = 320
-    static let sourceColumnMaximumWidth: CGFloat = 440
-    static let noteColumnMinimumWidth: CGFloat = 304
-    static let noteColumnMaximumWidth: CGFloat = 480
-    static let editorColumnMinimumWidth: CGFloat = 360
-    static let noteTableInitialWidth: CGFloat = 278
-    static let noteTableMinimumWidth: CGFloat = 272
-    static let sourceRowWidth: CGFloat = 292
-    static let toolbarSearchWidth: CGFloat = 340
+    static let sourceColumnWidth: CGFloat = 250
+    static let noteColumnWidth: CGFloat = 250
+    static let sourceColumnMinimumWidth: CGFloat = 220
+    static let sourceColumnMaximumWidth: CGFloat = 320
+    static let noteColumnMinimumWidth: CGFloat = 220
+    static let noteColumnMaximumWidth: CGFloat = 320
+    static let editorColumnMinimumWidth: CGFloat = 480
+    static let noteTableInitialWidth: CGFloat = 224
+    static let noteTableMinimumWidth: CGFloat = 194
+    static let sourceRowWidth: CGFloat = 222
+    static let toolbarSearchWidth: CGFloat = 210
     static let toolbarSearchHeight: CGFloat = 32
-    static let toolbarSearchWrapperWidth: CGFloat = 360
+    static let toolbarSearchWrapperWidth: CGFloat = 230
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let toolbarEditorToolsWidth: CGFloat = 184
     static let toolbarEditorToolsHeight: CGFloat = 32
@@ -291,7 +292,7 @@ enum LibraryNotesLayout {
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
     static let toolbarMoreSymbolName = "ellipsis"
-    static let toolbarNoteListTitleWidth: CGFloat = 208
+    static let toolbarNoteListTitleWidth: CGFloat = 160
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
@@ -301,10 +302,10 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.40
     static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.22
     static let toolbarSymbolPointSize: CGFloat = 19
-    static let sourceSymbolPointSize: CGFloat = 19
+    static let sourceSymbolPointSize: CGFloat = 16
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 44
+    static let sourceRowHeight: CGFloat = 36
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
     static let sourceListTopInset: CGFloat = 12
@@ -312,49 +313,49 @@ enum LibraryNotesLayout {
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 14
     static let sourceInnerRowSpacing: CGFloat = 1
-    static let sourceSectionSpacing: CGFloat = 8
-    static let sourceRowCornerRadius: CGFloat = 10
+    static let sourceSectionSpacing: CGFloat = 6
+    static let sourceRowCornerRadius: CGFloat = 8
     static let sourceFolderIndentStep: CGFloat = 14
     static let sourceDisclosureButtonWidth: CGFloat = 14
     static let sourceDisclosureButtonHeight: CGFloat = 18
     static let sourceDisclosureToButtonSpacing: CGFloat = 1
-    static let sourceCountTrailingInset: CGFloat = 8
-    static let sourceCountWidth: CGFloat = 38
-    static let noteGroupRowHeight: CGFloat = 56
-    static let noteRowHeight: CGFloat = 108
-    static let sourceGroupFontSize: CGFloat = 15.5
-    static let sourceButtonFontSize: CGFloat = 18
+    static let sourceCountTrailingInset: CGFloat = 6
+    static let sourceCountWidth: CGFloat = 32
+    static let noteGroupRowHeight: CGFloat = 48
+    static let noteRowHeight: CGFloat = 76
+    static let sourceGroupFontSize: CGFloat = 13.5
+    static let sourceButtonFontSize: CGFloat = 15
     static let sourceSelectedButtonFontWeight: NSFont.Weight = .semibold
     static let sourceUnselectedButtonFontWeight: NSFont.Weight = .medium
     static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
-    static let sourceCountFontSize: CGFloat = 16
+    static let sourceCountFontSize: CGFloat = 13
     static let sourceSymbolWeight: NSFont.Weight = .medium
-    static let noteGroupFontSize: CGFloat = 20
+    static let noteGroupFontSize: CGFloat = 16
     static let noteGroupFontWeight: NSFont.Weight = .bold
-    static let noteTitleFontSize: CGFloat = 18
+    static let noteTitleFontSize: CGFloat = 14
     static let noteTitleFontWeight: NSFont.Weight = .bold
-    static let noteSnippetFontSize: CGFloat = 15.5
-    static let noteSnippetFontWeight: NSFont.Weight = .medium
-    static let noteMetaFontSize: CGFloat = 13
+    static let noteSnippetFontSize: CGFloat = 12
+    static let noteSnippetFontWeight: NSFont.Weight = .regular
+    static let noteMetaFontSize: CGFloat = 11
     static let noteMetaFontWeight: NSFont.Weight = .medium
-    static let noteListHeaderTitleFontSize: CGFloat = 25
-    static let noteListHeaderCountFontSize: CGFloat = 15
+    static let noteListHeaderTitleFontSize: CGFloat = 18
+    static let noteListHeaderCountFontSize: CGFloat = 12
     static let noteListLeadingInset: CGFloat = 14
     static let noteListTrailingInset: CGFloat = 12
     static let noteListTopInset: CGFloat = 4
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 12
-    static let editorHorizontalInset: CGFloat = 44
+    static let editorHorizontalInset: CGFloat = 24
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 42
+    static let editorDateToTitleSpacing: CGFloat = 34
     static let editorTitleToBodySpacing: CGFloat = 8
-    static let editorStatusFontSize: CGFloat = 14
-    static let editorTitleFontSize: CGFloat = 34
-    static let editorBodyFontSize: CGFloat = 17
-    static let editorCodeFontSize: CGFloat = 16
-    static let editorLineSpacing: CGFloat = 3.5
-    static let editorParagraphSpacing: CGFloat = 8
+    static let editorStatusFontSize: CGFloat = 13
+    static let editorTitleFontSize: CGFloat = 30
+    static let editorBodyFontSize: CGFloat = 15
+    static let editorCodeFontSize: CGFloat = 14
+    static let editorLineSpacing: CGFloat = 2.5
+    static let editorParagraphSpacing: CGFloat = 6
 
     static func presentedWindowSize(in visibleFrame: NSRect) -> NSSize {
         let availableWidth = max(minimumWindowSize.width, visibleFrame.width - windowScreenMargin)
@@ -433,8 +434,8 @@ private enum LibraryFormatCommand: Int {
 
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
-    static let titleLeadingInset: CGFloat = 16
-    static let titleTrailingInset: CGFloat = 12
+    static let titleLeadingInset: CGFloat = 10
+    static let titleTrailingInset: CGFloat = 10
 
     let titleLabel = NSTextField(labelWithString: "")
 
@@ -464,11 +465,11 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
-    static let contentTopInset: CGFloat = 10
-    static let contentLeadingInset: CGFloat = 46
-    static let contentBottomInset: CGFloat = 10
-    static let contentTrailingInset: CGFloat = 18
-    static let textRowSpacing: CGFloat = 2
+    static let contentTopInset: CGFloat = 6
+    static let contentLeadingInset: CGFloat = 36
+    static let contentBottomInset: CGFloat = 6
+    static let contentTrailingInset: CGFloat = 14
+    static let textRowSpacing: CGFloat = 1
 
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
@@ -572,15 +573,15 @@ final class LibraryNoteCellView: NSTableCellView {
 final class LibraryNoteRowView: NSTableRowView {
     static let selectionLeadingInset: CGFloat = 10
     static let selectionTrailingInset: CGFloat = 24
-    static let selectionVerticalInset: CGFloat = 8
-    static let selectionCornerRadius: CGFloat = 10
+    static let selectionVerticalInset: CGFloat = 4
+    static let selectionCornerRadius: CGFloat = 8
     static let selectionFillColor = NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
     static let hoverLeadingInset: CGFloat = 10
     static let hoverTrailingInset: CGFloat = 24
-    static let hoverVerticalInset: CGFloat = 6
-    static let hoverCornerRadius: CGFloat = 10
+    static let hoverVerticalInset: CGFloat = 3
+    static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 46
+    static let separatorLeadingInset: CGFloat = 36
     static let separatorTrailingInset: CGFloat = 24
     static let separatorAlpha: CGFloat = 0.28
 
@@ -1101,6 +1102,7 @@ final class LibraryWindowController: NSWindowController,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
+        noteStore.migrateLibraryLayoutScaleIfNeeded(to: LibraryNotesLayout.storedLayoutScaleVersion)
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize

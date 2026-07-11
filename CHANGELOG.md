@@ -792,6 +792,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a recursive, coalesced FSEvents monitor for configured note roots. External Markdown changes now invalidate the active search session, refresh list metadata and source counts, and reload a clean selected note without polling. Mudsnote records its own save/move/delete paths briefly so autosave events do not cause a second editor reload or move the caret.
 - Lesson: A local-first editor should react to filesystem events rather than poll, but it must distinguish its own writes from external ones or correctness work becomes an interaction regression.
 
+### 131. Reference-scale Notes library
+
+- Problem: The visual harness downscaled Mudsnote's `1420x860` window beside a `931x623pt` Apple Notes reference, making oversized columns, rows, and typography look deceptively close; at native point size the app still felt substantially larger than the earlier preferred version.
+- Fix: Restored a compact `1080x720` default shell, rebalanced the source/list columns to `250/250pt`, reduced source and note rows to `36/76pt`, returned list and editor typography to native Notes-like sizes, narrowed editor/search insets, and retained the approved no-rim toolbar groups. Added a one-time layout-scale migration so stored `320/304` pane widths cannot re-expand the new shell.
+- Lesson: Visual parity must compare both normalized screenshots and native point geometry. Scaling a larger implementation down for presentation can hide the exact size regression the user experiences.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

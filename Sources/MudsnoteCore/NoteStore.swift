@@ -125,6 +125,7 @@ enum NoteStoreDefaultsKey {
     static let librarySourceColumnWidth = "mudsnote.library.sourceColumnWidth"
     static let libraryNoteColumnWidth = "mudsnote.library.noteColumnWidth"
     static let librarySourceListVisible = "mudsnote.library.sourceListVisible"
+    static let libraryLayoutScaleVersion = "mudsnote.library.layoutScaleVersion"
     static let aiEnabled = "mudsnote.ai.enabled"
     static let aiOllamaBaseURL = "mudsnote.ai.ollamaBaseURL"
     static let aiOllamaModel = "mudsnote.ai.ollamaModel"

@@ -102,6 +102,17 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.librarySourceListVisible) }
     }
 
+    @discardableResult
+    public func migrateLibraryLayoutScaleIfNeeded(to version: Int) -> Bool {
+        guard defaults.integer(forKey: NoteStoreDefaultsKey.libraryLayoutScaleVersion) < version else {
+            return false
+        }
+        defaults.removeObject(forKey: NoteStoreDefaultsKey.librarySourceColumnWidth)
+        defaults.removeObject(forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth)
+        defaults.set(version, forKey: NoteStoreDefaultsKey.libraryLayoutScaleVersion)
+        return true
+    }
+
     public var libraryPinnedNotePaths: [String] {
         let storedPaths = defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? []
         return Array(Set(storedPaths.map {

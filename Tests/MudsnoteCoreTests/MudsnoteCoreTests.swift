@@ -52,6 +52,23 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func libraryLayoutScaleMigrationResetsOnlyLegacyPaneWidthsOnce() throws {
+        let harness = try TestHarness()
+        harness.store.librarySourceColumnWidth = 320
+        harness.store.libraryNoteColumnWidth = 304
+
+        #expect(harness.store.migrateLibraryLayoutScaleIfNeeded(to: 2))
+        #expect(harness.store.librarySourceColumnWidth == nil)
+        #expect(harness.store.libraryNoteColumnWidth == nil)
+
+        harness.store.librarySourceColumnWidth = 270
+        harness.store.libraryNoteColumnWidth = 320
+        #expect(!harness.store.migrateLibraryLayoutScaleIfNeeded(to: 2))
+        #expect(harness.store.librarySourceColumnWidth == 270)
+        #expect(harness.store.libraryNoteColumnWidth == 320)
+    }
+
+    @Test
     func emptyMarkdownFileKeepsEditorTitleEmptyButListsByFilename() throws {
         let harness = try TestHarness()
         let store = harness.store
