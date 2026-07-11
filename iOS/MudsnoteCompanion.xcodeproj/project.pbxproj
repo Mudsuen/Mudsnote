@@ -26,7 +26,6 @@
 		049C12E525C24569B9321186 /* EmptyReaderStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9423651A7544A8B8FC0F281 /* EmptyReaderStateView.swift */; };
 		FA547B9F78274AE09A4CD50D /* SettingsRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B7FF6FD8F74113B8A31644 /* SettingsRulesView.swift */; };
 		14408D328D4F4639A5BF230D /* MudsnoteAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */; };
-		4C08E1C1B38A4A3381CBDFED /* ShareExtensionReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */; };
 		12234E9A5EF047D1ADB5F2CD /* MudsnoteCompanionWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 230C88C96F6142B1B6262AFC /* MudsnoteCompanionWidgetBundle.swift */; };
 		67EE42D2D69B47DCA0323D62 /* QuickCaptureWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF93F767020491CAC9AAF7F /* QuickCaptureWidget.swift */; };
 		F6AE932DD4F742368DDBC04F /* MudsnoteCompanionWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 260961C19228437F9B375682 /* MudsnoteCompanionWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -94,7 +93,6 @@
 		B9423651A7544A8B8FC0F281 /* EmptyReaderStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/EmptyReaderStateView.swift; sourceTree = "<group>"; };
 		41B7FF6FD8F74113B8A31644 /* SettingsRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/SettingsRulesView.swift; sourceTree = "<group>"; };
 		F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/MudsnoteAppIntents.swift; sourceTree = "<group>"; };
-		1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/SystemIntegrations/ShareExtensionReference.swift; sourceTree = "<group>"; };
 		A1E250D728D6484790D74691 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MudsnoteCompanion/Assets.xcassets; sourceTree = "<group>"; };
 		B20000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = MudsnoteCompanion/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -176,7 +174,6 @@
 				B9423651A7544A8B8FC0F281 /* EmptyReaderStateView.swift */,
 				41B7FF6FD8F74113B8A31644 /* SettingsRulesView.swift */,
 				F69033F14AA546B19DA05422 /* MudsnoteAppIntents.swift */,
-				1D62FF7F55E5441686427EF6 /* ShareExtensionReference.swift */,
 				A1E250D728D6484790D74691 /* Assets.xcassets */,
 			);
 			name = MudsnoteCompanion;
@@ -341,7 +338,6 @@
 				049C12E525C24569B9321186 /* EmptyReaderStateView.swift in Sources */,
 				FA547B9F78274AE09A4CD50D /* SettingsRulesView.swift in Sources */,
 				14408D328D4F4639A5BF230D /* MudsnoteAppIntents.swift in Sources */,
-				4C08E1C1B38A4A3381CBDFED /* ShareExtensionReference.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

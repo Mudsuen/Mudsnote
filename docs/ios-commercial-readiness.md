@@ -10,7 +10,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Inbox, Daily, recent-file targets, text, photo, and audio capture exist.
 - [x] Quick Capture widget and App Intents build into the app bundle.
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
-- [ ] Complete the Share Extension as a real target or remove the reference-only surface from release scope.
+- [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
 - [ ] Replace hard-coded mixed-language strings with reviewed `String Catalog` localization.
 

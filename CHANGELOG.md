@@ -732,6 +732,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Classify bookmark corruption, unavailable targets, and non-folder selections, validate reachability before accepting restored access, clear stale in-memory roots on failure, and provide both reselect and clear-old-authorization actions in the recovery screen.
 - Lesson: A security-scoped bookmark is only a locator and permission hint; every launch must validate the current resource and keep an explicit path back to folder selection.
 
+### 125. Honest iOS integration scope
+
+- Problem: The main app compiled a `ShareExtensionReference` string describing a future extension even though no Share Extension target or usable share-sheet flow existed.
+- Fix: Removed the dead placeholder and its Xcode project references; the first commercial scope now explicitly consists of the app, Quick Capture widget, deep links, and App Intents.
+- Lesson: Release scope should describe shipped capabilities only; future integration notes belong in product planning, not in the production binary.
+
 ### 123. Nonblocking uncached note selection
 
 - Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.
