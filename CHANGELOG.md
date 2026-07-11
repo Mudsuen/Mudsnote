@@ -762,6 +762,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Index refresh now reuses unchanged entries from the same-root in-memory or disk snapshot by standardized path and modification-date-plus-size signature, reparsing only added or changed Markdown files while naturally dropping removed paths. Added regression coverage proving a one-file change in a three-note library performs one content read through both memory and relaunch-style disk refresh paths.
 - Lesson: A disposable filesystem index should validate the whole namespace but rebuild only the changed records; snapshot invalidation does not need to imply full content rehydration.
 
+### 127. Notes-like macOS menu commands and new-note state
+
+- Problem: The desktop app had no deliberate native main-menu structure, the status-item menu misleadingly displayed `Command-N` for quick capture, and creating an unsaved blank library note could still show the no-selection overlay with disabled editing tools. Menu dismissal could also restore focus to the list instead of the new title.
+- Fix: Added a compact native app/File/Edit/View/Window menu with responder-chain editing commands, `Command-N` library note creation, `Command-F` library search focus, sidebar toggling, settings, close, minimize, and zoom. New unsaved notes now have an explicit editing state, current-date header, hidden no-selection overlay, enabled tools, and next-run-loop title focus without opening the quick-capture window.
+- Lesson: A blank document is not an empty selection. Native command routing and explicit document state must agree, or a visually correct editor still feels inert after a standard shortcut.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

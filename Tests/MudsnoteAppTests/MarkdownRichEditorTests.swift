@@ -1987,6 +1987,9 @@ struct MarkdownRichEditorTests {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
         #expect(NSApp.sendAction(try #require(visibleNewItem.action), to: visibleNewItem.target, from: visibleNewItem))
+        #expect(emptyController.emptyLabel.isHidden)
+        #expect(emptyController.statusLabel.stringValue != "新笔记")
+        #expect(emptyController.window?.firstResponder === emptyController.titleField.currentEditor())
         #expect(emptyController.validateToolbarItem(formatItem))
         #expect(emptyController.validateToolbarItem(checklistItem))
         #expect(emptyController.validateToolbarItem(editorToolsItem))
@@ -4191,6 +4194,36 @@ struct MarkdownRichEditorTests {
             "--visual-qa-canonical-window-size"
         ]))
         #expect(!AppController.usesCanonicalVisualQAWindowSize(arguments: ["--library"]))
+    }
+
+    @MainActor
+    @Test
+    func applicationMainMenuProvidesNotesLikeCoreCommands() throws {
+        let controller = AppController()
+        let mainMenu = controller.makeMainMenuForApplication()
+
+        #expect(mainMenu.items.map(\.title) == [MudsnoteBrand.appName, "文件", "编辑", "显示", "窗口"])
+
+        let fileMenu = try #require(mainMenu.items.first { $0.title == "文件" }?.submenu)
+        let newNoteItem = try #require(fileMenu.items.first { $0.title == "新建笔记" })
+        #expect(newNoteItem.target === controller)
+        #expect(newNoteItem.action == #selector(AppController.newNoteFromMainMenu))
+        #expect(newNoteItem.keyEquivalent == "n")
+        #expect(newNoteItem.keyEquivalentModifierMask == [.command])
+        #expect(fileMenu.items.first { $0.title == "关闭窗口" }?.keyEquivalent == "w")
+
+        let editMenu = try #require(mainMenu.items.first { $0.title == "编辑" }?.submenu)
+        #expect(editMenu.items.contains { $0.title == "撤销" && $0.keyEquivalent == "z" })
+        #expect(editMenu.items.contains { $0.title == "粘贴" && $0.keyEquivalent == "v" })
+        #expect(editMenu.items.contains { $0.title == "全选" && $0.keyEquivalent == "a" })
+
+        let viewMenu = try #require(mainMenu.items.first { $0.title == "显示" }?.submenu)
+        let searchItem = try #require(viewMenu.items.first { $0.title == "搜索笔记" })
+        #expect(searchItem.target === controller)
+        #expect(searchItem.action == #selector(AppController.focusLibrarySearchFromMainMenu))
+        #expect(searchItem.keyEquivalent == "f")
+        #expect(searchItem.keyEquivalentModifierMask == [.command])
+        #expect(viewMenu.items.first { $0.title == "显示或隐藏资料库" }?.keyEquivalentModifierMask == [.command, .control])
     }
 
     @MainActor

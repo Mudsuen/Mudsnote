@@ -43,6 +43,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             presentErrorAlert(message: "无法准备笔记文件夹", details: error.localizedDescription)
         }
 
+        setupMainMenu()
         setupStatusItem()
         registerHotKeysIfNeeded()
 
@@ -151,10 +152,126 @@ final class AppController: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
+    private func setupMainMenu() {
+        let application = NSApplication.shared
+        let mainMenu = makeMainMenuForApplication()
+        application.mainMenu = mainMenu
+        application.windowsMenu = mainMenu.items.first { $0.title == "窗口" }?.submenu
+    }
+
+    func makeMainMenuForApplication() -> NSMenu {
+        let mainMenu = NSMenu(title: "Main Menu")
+
+        let appMenuItem = NSMenuItem(title: MudsnoteBrand.appName, action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: MudsnoteBrand.appName)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let aboutItem = NSMenuItem(
+            title: "关于 \(MudsnoteBrand.appName)",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        aboutItem.target = NSApp
+        appMenu.addItem(aboutItem)
+        appMenu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: "设置...", action: #selector(showPreferences), keyEquivalent: ",")
+        settingsItem.target = self
+        settingsItem.keyEquivalentModifierMask = [.command]
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+
+        let hideItem = NSMenuItem(title: "隐藏 \(MudsnoteBrand.appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        hideItem.target = NSApp
+        hideItem.keyEquivalentModifierMask = [.command]
+        appMenu.addItem(hideItem)
+
+        let hideOthersItem = NSMenuItem(title: "隐藏其他", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.target = NSApp
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthersItem)
+
+        let showAllItem = NSMenuItem(title: "全部显示", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        showAllItem.target = NSApp
+        appMenu.addItem(showAllItem)
+        appMenu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "退出 \(MudsnoteBrand.appName)", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        quitItem.keyEquivalentModifierMask = [.command]
+        appMenu.addItem(quitItem)
+
+        let fileMenuItem = NSMenuItem(title: "文件", action: nil, keyEquivalent: "")
+        let fileMenu = NSMenu(title: "文件")
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        let newNoteItem = NSMenuItem(title: "新建笔记", action: #selector(newNoteFromMainMenu), keyEquivalent: "n")
+        newNoteItem.target = self
+        newNoteItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(newNoteItem)
+        fileMenu.addItem(.separator())
+
+        let closeItem = NSMenuItem(title: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeItem.target = nil
+        closeItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(closeItem)
+
+        let editMenuItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+        addResponderMenuItem(title: "撤销", action: Selector(("undo:")), keyEquivalent: "z", to: editMenu)
+        addResponderMenuItem(title: "重做", action: Selector(("redo:")), keyEquivalent: "z", modifiers: [.command, .shift], to: editMenu)
+        editMenu.addItem(.separator())
+        addResponderMenuItem(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x", to: editMenu)
+        addResponderMenuItem(title: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c", to: editMenu)
+        addResponderMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v", to: editMenu)
+        addResponderMenuItem(title: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a", to: editMenu)
+
+        let viewMenuItem = NSMenuItem(title: "显示", action: nil, keyEquivalent: "")
+        let viewMenu = NSMenu(title: "显示")
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
+        let findItem = NSMenuItem(title: "搜索笔记", action: #selector(focusLibrarySearchFromMainMenu), keyEquivalent: "f")
+        findItem.target = self
+        findItem.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(findItem)
+
+        let sidebarItem = NSMenuItem(title: "显示或隐藏资料库", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
+        sidebarItem.target = self
+        sidebarItem.keyEquivalentModifierMask = [.command, .control]
+        viewMenu.addItem(sidebarItem)
+
+        let windowMenuItem = NSMenuItem(title: "窗口", action: nil, keyEquivalent: "")
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        addResponderMenuItem(title: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m", to: windowMenu)
+        addResponderMenuItem(title: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "", to: windowMenu)
+
+        return mainMenu
+    }
+
+    private func addResponderMenuItem(
+        title: String,
+        action: Selector,
+        keyEquivalent: String,
+        modifiers: NSEvent.ModifierFlags = [.command],
+        to menu: NSMenu
+    ) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = nil
+        item.keyEquivalentModifierMask = modifiers
+        menu.addItem(item)
+    }
+
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let newNote = NSMenuItem(title: "快速笔记", action: #selector(showQuickCapture), keyEquivalent: "n")
+        let newNote = NSMenuItem(title: "快速笔记", action: #selector(showQuickCapture), keyEquivalent: "")
         newNote.target = self
         menu.addItem(newNote)
 
@@ -345,6 +462,24 @@ final class AppController: NSObject, NSApplicationDelegate {
         libraryWindowController = controller
         controller.showWindowAndFocus()
         selectVisualQANoteIfNeeded(in: controller)
+    }
+
+    @objc
+    func newNoteFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.createNewNoteForLibrary()
+    }
+
+    @objc
+    func focusLibrarySearchFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.focusSearchForLibrary()
+    }
+
+    @objc
+    func toggleLibrarySidebarFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.toggleSourceListForLibrary()
     }
 
     private func selectVisualQANoteIfNeeded(in controller: LibraryWindowController) {

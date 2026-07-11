@@ -1031,6 +1031,7 @@ final class LibraryWindowController: NSWindowController,
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
+    private var isCreatingNewNote = false
     private var hasCenteredWindow = false
     private var hasRequestedWindowPresentation = false
     private var hasHydratedInitialNoteList = false
@@ -1193,6 +1194,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func showInitialNoteLoadingShell(for note: NoteSearchResult) {
         isLoadingInitialNote = true
+        isCreatingNewNote = false
         selectedURL = note.url
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
@@ -3619,6 +3621,7 @@ final class LibraryWindowController: NSWindowController,
             }
             cancelActiveNoteLoad()
             isLoadingInitialNote = false
+            isCreatingNewNote = true
             selectedURL = nil
             selectedTags = []
             suppressSelectionChanges = true
@@ -3627,14 +3630,26 @@ final class LibraryWindowController: NSWindowController,
             setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
             isDirty = false
-            statusLabel.stringValue = "新笔记"
+            statusLabel.stringValue = editorDateText(for: Date())
             updateEmptyState()
             refreshSourceSelection()
             updateToolbarActionState()
-            titleField.becomeFirstResponder()
+            window?.makeFirstResponder(titleField)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isCreatingNewNote else { return }
+                self.window?.makeFirstResponder(self.titleField)
+            }
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
+    }
+
+    func createNewNoteForLibrary() {
+        newNotePressed()
+    }
+
+    func focusSearchForLibrary() {
+        window?.makeFirstResponder(searchField)
     }
 
     @objc
@@ -4119,6 +4134,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func load(note: NoteSearchResult) {
         isLoadingInitialNote = false
+        isCreatingNewNote = false
         cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
@@ -4431,6 +4447,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         selectedURL = savedURL
+        isCreatingNewNote = false
         isDirty = false
         let savedAt = Date()
         updateSourceCountSnapshotAfterSave(
@@ -5078,6 +5095,7 @@ final class LibraryWindowController: NSWindowController,
     private func clearCurrentDocumentAfterRemoval() {
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
+        isCreatingNewNote = false
         selectedURL = nil
         selectedTags = []
         isDirty = false
@@ -5109,7 +5127,7 @@ final class LibraryWindowController: NSWindowController,
         let hasContent = selectedURL != nil
             || !titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !editorTextView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        emptyLabel.isHidden = hasContent
+        emptyLabel.isHidden = isCreatingNewNote || hasContent
     }
 
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
@@ -5200,8 +5218,8 @@ final class LibraryWindowController: NSWindowController,
         guard selectedScope != .trash else { return false }
         guard !isLoadingInitialNote else { return false }
         return selectedURL != nil
+            || isCreatingNewNote
             || isDirty
-            || statusLabel.stringValue == "新笔记"
             || !titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !editorTextView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
