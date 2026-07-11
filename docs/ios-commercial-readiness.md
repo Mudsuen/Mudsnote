@@ -11,7 +11,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Quick Capture widget and App Intents build into the app bundle.
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
 - [ ] Complete the Share Extension as a real target or remove the reference-only surface from release scope.
-- [ ] Add first-run recovery for stale, revoked, moved, or unavailable folder bookmarks.
+- [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
 - [ ] Replace hard-coded mixed-language strings with reviewed `String Catalog` localization.
 
 ## Stability and data safety
@@ -48,7 +48,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
-- [x] Thirteen current unit tests pass on the iPhone 17 simulator.
+- [x] Fifteen current unit tests pass on the iPhone 17 simulator.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.

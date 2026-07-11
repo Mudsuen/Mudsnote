@@ -59,6 +59,7 @@ struct RequirementRow: View {
 struct FolderErrorView: View {
     var message: String
     var chooseFolder: () -> Void
+    var forgetFolder: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
@@ -74,6 +75,8 @@ struct FolderErrorView: View {
                 .multilineTextAlignment(.center)
             Button("重新选择", action: chooseFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
+            Button("清除旧授权", action: forgetFolder)
+                .buttonStyle(CapsuleCommandButtonStyle(isPrimary: false))
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
     }

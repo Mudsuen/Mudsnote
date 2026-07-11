@@ -17,9 +17,11 @@ struct RootView: View {
                 case .ready:
                     tabShell
                 case .error(let message):
-                    FolderErrorView(message: message) {
-                        isFolderImporterPresented = true
-                    }
+                    FolderErrorView(
+                        message: message,
+                        chooseFolder: { isFolderImporterPresented = true },
+                        forgetFolder: { appModel.forgetFolderAndChooseAgain() }
+                    )
                 }
             }
 

@@ -726,11 +726,23 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Detect image content with ImageIO and UTType, enforce attachment count and image/audio/draft size limits before persistence, preflight file sizes before loading imports, and cap pending queue items plus encoded attachment volume. Queue rejection now explicitly keeps the current draft open instead of implying that another pending item made it durable.
 - Lesson: Attachment safety needs defense at import, draft preparation, and recovery persistence; a queued-state message is valid only when the current capture actually reached durable storage.
 
+### 124. Recoverable iOS folder authorization
+
+- Problem: A malformed bookmark surfaced an opaque Foundation error, and restored bookmarks were accepted without checking that the target still existed and was a directory, leaving moved, removed, or revoked folders stuck in an unclear failure state.
+- Fix: Classify bookmark corruption, unavailable targets, and non-folder selections, validate reachability before accepting restored access, clear stale in-memory roots on failure, and provide both reselect and clear-old-authorization actions in the recovery screen.
+- Lesson: A security-scoped bookmark is only a locator and permission hint; every launch must validate the current resource and keep an explicit path back to folder selection.
+
 ### 123. Nonblocking uncached note selection
 
 - Problem: Cache hits and adjacent prefetch made common navigation fast, but selecting an uncached Markdown note still called `String(contentsOf:)` on the main thread; a large file could freeze the Notes-like window and a slower earlier selection could race a later one.
 - Fix: Visible-window cache misses now show a lightweight title/date shell, load Markdown in a cancellable user-initiated task, and apply results only when their generation and selected path are still current. Active selection cancels lower-priority adjacent prefetch, while hidden test windows and deterministic visual-QA selection retain synchronous behavior.
 - Lesson: Notes-grade navigation needs latest-request-wins scheduling around the existing bounded cache; derived prefetch must never compete with or overwrite the user's active selection.
+
+### 125. Nonblocking note-list thumbnail decoding
+
+- Problem: The note list bounded image dimensions, reused cells, and cached decoded thumbnails, but the first cache miss still ran ImageIO decoding while AppKit configured the row. Opening or scrolling through image-heavy notes could therefore spend decode time on the main thread.
+- Fix: Visible library windows now deduplicate thumbnail requests by standardized path, decode them on a utility task, preserve both positive and negative cache entries, and reload only rows still referencing the completed image. Closing the window cancels outstanding work, while hidden test windows retain deterministic synchronous loading.
+- Lesson: A window's first layout can occur before `isVisible` becomes true, so presentation intent must be recorded before `showWindow`; visibility alone is not a reliable boundary for keeping first-frame I/O off the main thread.
 
 ## Maintenance Rule
 

@@ -163,6 +163,39 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testCorruptFolderBookmarkRequiresReselectionAndCanBeForgotten() throws {
+        let suiteName = "MudsnoteCompanionTests.folder.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(Data("not-a-bookmark".utf8), forKey: FolderAccessService.DefaultsKey.bookmarkData)
+        let service = FolderAccessService(defaults: defaults)
+
+        XCTAssertThrowsError(try service.resolvePersistedFolder()) { error in
+            XCTAssertEqual(error as? FolderAccessError, .bookmarkResolutionFailed)
+        }
+        XCTAssertNil(service.currentRoot)
+
+        service.forgetPersistedFolder()
+        XCTAssertNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
+        XCTAssertNil(try service.resolvePersistedFolder())
+    }
+
+    func testFolderSelectionRejectsIndividualFile() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("note.md")
+        try "# Note\n".write(to: file, atomically: true, encoding: .utf8)
+        let suiteName = "MudsnoteCompanionTests.folder.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let service = FolderAccessService(defaults: defaults)
+
+        XCTAssertThrowsError(try service.persistFolder(file)) { error in
+            XCTAssertEqual(error as? FolderAccessError, .notDirectory)
+        }
+        XCTAssertNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
+    }
+
     func testPendingQueueRoundTripsISO8601Dates() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

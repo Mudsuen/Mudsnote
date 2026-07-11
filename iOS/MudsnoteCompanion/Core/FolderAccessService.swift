@@ -1,21 +1,27 @@
 import Foundation
 
-enum FolderAccessError: LocalizedError {
+enum FolderAccessError: LocalizedError, Equatable {
     case missingFolder
     case bookmarkResolutionFailed
+    case folderUnavailable
+    case notDirectory
 
     var errorDescription: String? {
         switch self {
         case .missingFolder:
             return "Choose an iCloud Drive Markdown folder first."
         case .bookmarkResolutionFailed:
-            return "The folder bookmark could not be restored."
+            return "The saved folder permission is no longer valid. Choose the folder again."
+        case .folderUnavailable:
+            return "The saved folder was moved, removed, or is not downloaded. Choose its current location."
+        case .notDirectory:
+            return "Choose a folder, not an individual file."
         }
     }
 }
 
 final class FolderAccessService {
-    private enum DefaultsKey {
+    enum DefaultsKey {
         static let bookmarkData = "mudsnote.ios.folderBookmarkData"
     }
 
@@ -27,6 +33,7 @@ final class FolderAccessService {
     }
 
     func persistFolder(_ url: URL) throws {
+        try validateFolder(url)
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
@@ -41,12 +48,24 @@ final class FolderAccessService {
             return nil
         }
         var isStale = false
-        let url = try URL(
-            resolvingBookmarkData: data,
-            options: [.withoutUI],
-            relativeTo: nil,
-            bookmarkDataIsStale: &isStale
-        )
+        let url: URL
+        do {
+            url = try URL(
+                resolvingBookmarkData: data,
+                options: [.withoutUI],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        } catch {
+            currentRoot = nil
+            throw FolderAccessError.bookmarkResolutionFailed
+        }
+        do {
+            try validateFolder(url)
+        } catch {
+            currentRoot = nil
+            throw error
+        }
         if isStale {
             try persistFolder(url)
         }
@@ -60,6 +79,24 @@ final class FolderAccessService {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
         return try work()
+    }
+
+    func forgetPersistedFolder() {
+        defaults.removeObject(forKey: DefaultsKey.bookmarkData)
+        currentRoot = nil
+    }
+
+    private func validateFolder(_ url: URL) throws {
+        guard url.isFileURL else { throw FolderAccessError.folderUnavailable }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+        guard (try? url.checkResourceIsReachable()) == true else {
+            throw FolderAccessError.folderUnavailable
+        }
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        guard values.isDirectory == true else { throw FolderAccessError.notDirectory }
     }
 }
 

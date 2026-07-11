@@ -65,6 +65,17 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func forgetFolderAndChooseAgain() {
+        folderAccess.forgetPersistedFolder()
+        folderStatus = .missing
+        inboxItems = []
+        recentFiles = []
+        librarySummary = LibrarySummary()
+        tagSummaries = []
+        conflictWarnings = []
+        queue = nil
+    }
+
     func showCapture(_ route: CaptureRoute = .text) {
         captureRoute = route
         isCapturePresented = true
