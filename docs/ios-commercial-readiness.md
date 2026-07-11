@@ -35,9 +35,9 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] Current onboarding and primary dark surfaces render correctly on iPhone 17 / iOS 26.5.
 - [x] Onboarding switches to a scrollable accessibility layout at Dynamic Type accessibility sizes; AX XXXL keeps complete text and the folder action reachable.
-- [x] UI automation covers onboarding-to-system-folder-picker presentation plus continuous capture, draft reset, and destination retention.
+- [x] UI automation covers onboarding-to-system-folder-picker presentation, corrupt-bookmark recovery, continuous capture, draft reset, and destination retention.
 - [ ] Run VoiceOver labels, Dynamic Type, contrast, Reduce Motion, and landscape/iPad audits.
-- [ ] Add UI tests for folder recovery, attachment errors, and interrupted-write states.
+- [ ] Add UI tests for attachment errors and interrupted-write states.
 
 ## Privacy and security
 
@@ -50,7 +50,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
-- [x] Eighteen tests pass on the iPhone 17 simulator: sixteen unit tests plus two end-to-end UI tests.
+- [x] Nineteen tests pass on the iPhone 17 simulator: sixteen unit tests plus three end-to-end UI tests.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.

@@ -102,8 +102,10 @@ struct FolderErrorView: View {
                 .multilineTextAlignment(.center)
             Button("Choose Again", action: chooseFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: true))
+                .accessibilityIdentifier("choose-folder-again-button")
             Button("Clear Old Permission", action: forgetFolder)
                 .buttonStyle(CapsuleCommandButtonStyle(isPrimary: false))
+                .accessibilityIdentifier("clear-folder-permission-button")
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
     }

@@ -34,12 +34,16 @@ struct MudsnoteCompanionApp: App {
 private enum MudsnoteUITestLaunchConfiguration {
     private static let resetArgument = "-ui-testing-reset"
     private static let fixtureFolderArgument = "-ui-testing-fixture-folder"
+    private static let invalidBookmarkArgument = "-ui-testing-invalid-bookmark"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains(resetArgument) || arguments.contains(fixtureFolderArgument) else { return }
+        guard arguments.contains(resetArgument)
+                || arguments.contains(fixtureFolderArgument)
+                || arguments.contains(invalidBookmarkArgument)
+        else { return }
 
         let access = FolderAccessService()
         let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -59,6 +63,13 @@ private enum MudsnoteUITestLaunchConfiguration {
             } catch {
                 assertionFailure("Could not prepare the Mudsnote UI-test library: \(error)")
             }
+        }
+
+        if arguments.contains(invalidBookmarkArgument) {
+            UserDefaults.standard.set(
+                Data("invalid-bookmark".utf8),
+                forKey: FolderAccessService.DefaultsKey.bookmarkData
+            )
         }
         #endif
     }

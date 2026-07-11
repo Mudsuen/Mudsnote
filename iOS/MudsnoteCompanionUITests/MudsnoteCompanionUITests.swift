@@ -15,6 +15,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForNotHittable(chooseFolderButton))
     }
 
+    func testInvalidFolderPermissionCanBeClearedBackToOnboarding() {
+        let app = launchApp(reset: true, fixtureFolder: false, invalidBookmark: true)
+
+        XCTAssertTrue(app.staticTexts["Folder Unavailable"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["choose-folder-again-button"].exists)
+
+        let clearButton = app.buttons["clear-folder-permission-button"]
+        XCTAssertTrue(clearButton.exists)
+        clearButton.tap()
+
+        XCTAssertTrue(app.buttons["choose-folder-button"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Folder Unavailable"].exists)
+    }
+
     func testContinuousCaptureClearsDraftAndKeepsSelectedTarget() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
@@ -51,13 +65,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     @discardableResult
-    private func launchApp(reset: Bool, fixtureFolder: Bool) -> XCUIApplication {
+    private func launchApp(
+        reset: Bool,
+        fixtureFolder: Bool,
+        invalidBookmark: Bool = false
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
             reset ? "-ui-testing-reset" : nil,
-            fixtureFolder ? "-ui-testing-fixture-folder" : nil
+            fixtureFolder ? "-ui-testing-fixture-folder" : nil,
+            invalidBookmark ? "-ui-testing-invalid-bookmark" : nil
         ].compactMap { $0 }
         app.launch()
         return app
