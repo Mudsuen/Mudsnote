@@ -340,6 +340,75 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testPerformanceLargeLibrarySnapshot() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        let archive = root.appendingPathComponent("Archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        for index in 0..<1_000 {
+            try "# Performance Note \(index)\n\nBody \(index)\n".write(
+                to: archive.appendingPathComponent("note-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        measureAsync {
+            let snapshot = try await store.loadLibrarySnapshot()
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_005)
+            XCTAssertEqual(snapshot.recentFiles.count, 24)
+        }
+    }
+
+    func testPerformanceMaximumAttachmentDraftPreparation() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let attachmentData = Data(count: 4 * 1_024 * 1_024)
+        let draft = CaptureDraft(
+            body: "Maximum attachment performance fixture",
+            attachments: (0..<CaptureAttachmentPolicy.maximumAttachmentCount).map { _ in
+                .audio(data: attachmentData, preferredExtension: "m4a")
+            }
+        )
+
+        measureAsync(timeout: 20) {
+            let pending = try await store.preparePendingWrite(for: draft, root: root)
+            XCTAssertEqual(pending.attachments.count, CaptureAttachmentPolicy.maximumAttachmentCount)
+        }
+    }
+
+    private func measureAsync(
+        timeout: TimeInterval = 10,
+        operation: @escaping () async throws -> Void
+    ) {
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
+            let completed = expectation(description: "Asynchronous performance iteration")
+            var operationError: Error?
+            Task {
+                do {
+                    try await operation()
+                } catch {
+                    operationError = error
+                }
+                completed.fulfill()
+            }
+            wait(for: [completed], timeout: timeout)
+            if let operationError {
+                XCTFail("Performance fixture failed: \(operationError)")
+            }
+        }
+    }
+
     private func temporaryRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MudsnoteCompanionTests-\(UUID().uuidString)", isDirectory: true)
