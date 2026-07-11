@@ -101,6 +101,7 @@ final class AppModel: ObservableObject {
     func sendDraft(continueCapturing: Bool = true) {
         guard draft.canSend, !isSendingDraft else { return }
         let nextTarget = draft.target
+        let canUseInboxDelta = nextTarget == .inbox && draft.attachments.isEmpty
         isSendingDraft = true
         Task {
             defer { isSendingDraft = false }
@@ -116,7 +117,7 @@ final class AppModel: ObservableObject {
                         ? String(localized: "Saved. Ready for next")
                         : String(localized: "Saved")
                 )
-                await refreshInbox()
+                await refreshAfterWrite(canUseInboxDelta: canUseInboxDelta)
             } catch {
                 if let draftSaveError = error as? DraftSaveError {
                     statusToast = .error(draftSaveError.localizedDescription)
@@ -261,7 +262,7 @@ final class AppModel: ObservableObject {
             do {
                 try await fileStore.applyInboxMutation(.delete(memoID: memo.id))
                 statusToast = .saved(String(localized: "Deleted"))
-                await refreshInbox()
+                await refreshInboxDelta()
             } catch {
                 statusToast = .error(String(localized: "Delete failed"))
             }
@@ -273,7 +274,7 @@ final class AppModel: ObservableObject {
             do {
                 try await fileStore.applyInboxMutation(.pin(memoID: memo.id))
                 statusToast = .saved(String(localized: "Pinned"))
-                await refreshInbox()
+                await refreshInboxDelta()
             } catch {
                 statusToast = .error(String(localized: "Pin failed"))
             }
@@ -285,7 +286,7 @@ final class AppModel: ObservableObject {
             do {
                 try await fileStore.applyInboxMutation(.addTag(memoID: memo.id, tag: "#tag"))
                 statusToast = .saved(String(localized: "Tagged"))
-                await refreshInbox()
+                await refreshInboxDelta()
             } catch {
                 statusToast = .error(String(localized: "Tag failed"))
             }
@@ -296,21 +297,43 @@ final class AppModel: ObservableObject {
         guard folderAccess.currentRoot != nil else { return }
         do {
             let snapshot = try await fileStore.loadLibrarySnapshot()
-            inboxItems = snapshot.inboxItems
-            recentFiles = snapshot.recentFiles
-            librarySummary = snapshot.summary
-            tagSummaries = Self.tagSummaries(from: inboxItems)
-            conflictWarnings = snapshot.conflictWarnings
-            let pendingCount = await queue?.pendingCount() ?? 0
-            if conflictWarnings.isEmpty == false {
-                syncStatus = .conflict
-            } else if pendingCount > 0 {
-                syncStatus = .pending
-            } else {
-                syncStatus = .idle
-            }
+            await apply(snapshot)
         } catch {
             statusToast = .error(String(localized: "Inbox refresh failed"))
+        }
+    }
+
+    private func refreshAfterWrite(canUseInboxDelta: Bool) async {
+        if canUseInboxDelta {
+            await refreshInboxDelta()
+        } else {
+            await refreshInbox()
+        }
+    }
+
+    private func refreshInboxDelta() async {
+        guard folderAccess.currentRoot != nil else { return }
+        do {
+            let snapshot = try await fileStore.loadInboxDeltaSnapshot()
+            await apply(snapshot)
+        } catch {
+            await refreshInbox()
+        }
+    }
+
+    private func apply(_ snapshot: MarkdownLibrarySnapshot) async {
+        inboxItems = snapshot.inboxItems
+        recentFiles = snapshot.recentFiles
+        librarySummary = snapshot.summary
+        tagSummaries = Self.tagSummaries(from: inboxItems)
+        conflictWarnings = snapshot.conflictWarnings
+        let pendingCount = await queue?.pendingCount() ?? 0
+        if conflictWarnings.isEmpty == false {
+            syncStatus = .conflict
+        } else if pendingCount > 0 {
+            syncStatus = .pending
+        } else {
+            syncStatus = .idle
         }
     }
 

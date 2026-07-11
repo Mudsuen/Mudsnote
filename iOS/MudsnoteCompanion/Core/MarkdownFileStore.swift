@@ -2,10 +2,12 @@ import Foundation
 
 actor MarkdownFileStore {
     private var root: URL?
+    private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private let fileManager = FileManager.default
 
     func configure(root: URL) {
         self.root = root
+        cachedLibrarySnapshot = nil
     }
 
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
@@ -65,7 +67,7 @@ actor MarkdownFileStore {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(24)
             .map { $0 }
-        return MarkdownLibrarySnapshot(
+        let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
             recentFiles: recentFiles,
             summary: LibrarySummary(
@@ -77,6 +79,41 @@ actor MarkdownFileStore {
             ),
             conflictWarnings: conflictWarnings.sorted()
         )
+        cachedLibrarySnapshot = snapshot
+        return snapshot
+    }
+
+    func loadInboxDeltaSnapshot() throws -> MarkdownLibrarySnapshot {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard var snapshot = cachedLibrarySnapshot else {
+            return try loadLibrarySnapshot()
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
+        let inboxItems = InboxParser.parse(inboxMarkdown)
+        let modifiedAt = try inboxURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate ?? .distantPast
+        let inboxFile = RecentMarkdownFile(
+            id: "Inbox.md",
+            relativePath: "Inbox.md",
+            title: "Inbox",
+            modifiedAt: modifiedAt
+        )
+
+        snapshot.inboxItems = inboxItems
+        snapshot.summary.inboxCount = inboxItems.count
+        snapshot.recentFiles = (snapshot.recentFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(24)
+            .map { $0 }
+        cachedLibrarySnapshot = snapshot
+        return snapshot
     }
 
     func applyInboxMutation(_ mutation: InboxMutation) throws {

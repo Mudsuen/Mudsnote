@@ -298,6 +298,46 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
 
+    func testInboxDeltaRefreshAvoidsUnrelatedLibraryRescan() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let baseline = try await store.loadLibrarySnapshot()
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try "# Added externally\n".write(
+            to: projects.appendingPathComponent("external.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let inbox = root.appendingPathComponent("Inbox.md")
+        let inboxAppend = """
+        ## 2026-07-11 18:45
+
+        Incremental refresh memo
+
+        """
+        try (try String(contentsOf: inbox, encoding: .utf8) + inboxAppend).write(
+            to: inbox,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let delta = try await store.loadInboxDeltaSnapshot()
+        XCTAssertEqual(delta.summary.allNotesCount, baseline.summary.allNotesCount)
+        XCTAssertEqual(delta.summary.inboxCount, 1)
+        XCTAssertEqual(delta.inboxItems.first?.body, "Incremental refresh memo")
+        XCTAssertEqual(delta.recentFiles.first?.relativePath, "Inbox.md")
+        XCTAssertFalse(delta.recentFiles.contains { $0.relativePath == "Projects/external.md" })
+
+        let refreshed = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(refreshed.summary.allNotesCount, baseline.summary.allNotesCount + 1)
+        XCTAssertTrue(refreshed.recentFiles.contains { $0.relativePath == "Projects/external.md" })
+    }
+
     func testInboxMutationRereadsDiskAndPreservesExternalAppend() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -364,6 +404,39 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testPerformanceInboxDeltaRefreshInLargeLibrary() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        let archive = root.appendingPathComponent("Archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        for index in 0..<1_000 {
+            try "# Performance Note \(index)\n\nBody \(index)\n".write(
+                to: archive.appendingPathComponent("note-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+        let inbox = root.appendingPathComponent("Inbox.md")
+        try (try String(contentsOf: inbox, encoding: .utf8) + """
+        ## 2026-07-11 18:46
+
+        Performance delta memo
+
+        """).write(to: inbox, atomically: true, encoding: .utf8)
+
+        measureAsync {
+            let snapshot = try await store.loadInboxDeltaSnapshot()
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_005)
+            XCTAssertEqual(snapshot.recentFiles.first?.relativePath, "Inbox.md")
+        }
+    }
+
     func testPerformanceMaximumAttachmentDraftPreparation() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -392,7 +465,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         let options = XCTMeasureOptions()
         options.iterationCount = 3
         measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            let completed = expectation(description: "Asynchronous performance iteration")
+            let completed = DispatchSemaphore(value: 0)
             var operationError: Error?
             Task {
                 do {
@@ -400,9 +473,10 @@ final class MudsnoteCompanionTests: XCTestCase {
                 } catch {
                     operationError = error
                 }
-                completed.fulfill()
+                completed.signal()
             }
-            wait(for: [completed], timeout: timeout)
+            let waitResult = completed.wait(timeout: .now() + timeout)
+            XCTAssertEqual(waitResult, .success, "Asynchronous performance iteration timed out")
             if let operationError {
                 XCTFail("Performance fixture failed: \(operationError)")
             }

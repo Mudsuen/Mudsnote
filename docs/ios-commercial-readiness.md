@@ -28,8 +28,8 @@ This checklist tracks the iOS companion only. A checked item requires current so
 ## Performance
 
 - [x] Build recent files, exact summary counts, and conflict warnings in one file-store actor inventory instead of recursive main-actor scans.
-- [x] Performance fixtures record clock and peak-memory metrics for a 1,000-note library and a maximum 32 MiB attachment draft.
-- [ ] Avoid rescanning the whole library after every capture when only Inbox changed.
+- [x] Performance fixtures record clock and peak-memory metrics for a 1,000-note library, Inbox-only delta refresh, and a maximum 32 MiB attachment draft.
+- [x] Plain-text Inbox captures and Inbox card mutations refresh the cached Inbox slice and recent-file entry without recursively rescanning the library; other targets, attachment writes, queue replay, and explicit refresh still run a complete inventory.
 
 ## Accessibility and visual quality
 
@@ -51,7 +51,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] Twenty-one tests pass on the iPhone 17 simulator: eighteen unit/performance tests plus three end-to-end UI tests.
+- [x] Twenty-three tests pass on the iPhone 17 Pro / iOS 26.5 Simulator: twenty unit/performance tests plus three end-to-end UI tests.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
