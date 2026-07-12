@@ -1153,7 +1153,6 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsLoading = false
     private var fullLibrarySnapshotReloadScheduled = false
     private var isFullLibrarySnapshotLoading = false
-    private var movableNotePathCache: Set<String>?
     private var fileSystemMonitor: LibraryFileSystemMonitor?
     private var internallyMutatedPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
@@ -1557,7 +1556,6 @@ final class LibraryWindowController: NSWindowController,
         })
         let hasFolderStructureChange = externalChanges.contains(where: \.changesDirectoryStructure)
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
 
         for path in markdownPaths {
             loadedNoteCache.removeEntry(forKey: path as NSString)
@@ -4788,7 +4786,6 @@ final class LibraryWindowController: NSWindowController,
             tags: selectedTags,
             modifiedAt: savedAt
         )
-        invalidateMovableNotePathCache()
         statusLabel.stringValue = editorDateText(for: savedAt)
         onSave(savedURL)
         updateToolbarActionState()
@@ -4857,7 +4854,6 @@ final class LibraryWindowController: NSWindowController,
         }
         recordInternalFileSystemChanges(for: urls)
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true)
@@ -4871,7 +4867,6 @@ final class LibraryWindowController: NSWindowController,
         let restoredURL = restoredURLs.first
         recordInternalFileSystemChanges(for: urls + restoredURLs)
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -5337,7 +5332,6 @@ final class LibraryWindowController: NSWindowController,
         let folderURL = try noteStore.createFolder(named: name, in: parentURL)
         recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         selectedScope = .folder(folderURL)
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
@@ -5574,7 +5568,6 @@ final class LibraryWindowController: NSWindowController,
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
         reloadSourceFolderRowsForCurrentState()
@@ -5590,7 +5583,6 @@ final class LibraryWindowController: NSWindowController,
         _ = try noteStore.trashFolder(at: folderURL)
         recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         reloadPersistedSourceDisclosureState()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
@@ -5623,7 +5615,6 @@ final class LibraryWindowController: NSWindowController,
         }
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -5652,7 +5643,7 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
 
-        return movableNotePathsForLibrary().contains(sourceURL.path)
+        return isInsideConfiguredLibraryRoot(sourceURL)
     }
 
     @discardableResult
@@ -5681,7 +5672,6 @@ final class LibraryWindowController: NSWindowController,
         }
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         activeSearchSession = nil
-        invalidateMovableNotePathCache()
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -5698,20 +5688,16 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func movableNotePathsForLibrary() -> Set<String> {
-        if let movableNotePathCache {
-            return movableNotePathCache
+    private func isInsideConfiguredLibraryRoot(_ noteURL: URL) -> Bool {
+        let notePath = noteURL.standardizedFileURL.path
+        return noteStore.preferredDirectories.contains { rootURL in
+            let rootPath = rootURL.standardizedFileURL.path
+            guard notePath.hasPrefix(rootPath + "/") else { return false }
+            let relativePath = String(notePath.dropFirst(rootPath.count + 1))
+            return !relativePath.split(separator: "/").contains {
+                $0.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame
+            }
         }
-
-        let paths = Set(noteStore.listNotes(limit: 10_000).map {
-            $0.url.standardizedFileURL.path
-        })
-        movableNotePathCache = paths
-        return paths
-    }
-
-    private func invalidateMovableNotePathCache() {
-        movableNotePathCache = nil
     }
 
     private func clearCurrentDocumentAfterRemoval() {

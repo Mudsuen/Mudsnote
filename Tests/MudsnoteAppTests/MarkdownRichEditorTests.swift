@@ -4214,12 +4214,20 @@ struct MarkdownRichEditorTests {
         try "outside library".write(to: externalMarkdownURL, atomically: true, encoding: .utf8)
         let nonMarkdownURL = root.appendingPathComponent("drag-seed.txt")
         try "not markdown".write(to: nonMarkdownURL, atomically: true, encoding: .utf8)
+        let attachmentDirectory = projectsFolder.appendingPathComponent(
+            NoteStore.attachmentDirectoryName,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: attachmentDirectory, withIntermediateDirectories: true)
+        let attachmentMarkdownURL = attachmentDirectory.appendingPathComponent("embedded.md")
+        try "attachment markdown".write(to: attachmentMarkdownURL, atomically: true, encoding: .utf8)
         #expect(controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: archiveFolder))
         #expect(controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: archiveFolder))
         #expect(!controller.canMoveDraggedNoteForLibrary(at: savedInProjects.url, to: projectsFolder))
         #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: projectsFolder))
         #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, externalMarkdownURL], to: archiveFolder))
         #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, nonMarkdownURL], to: archiveFolder))
+        #expect(!controller.canMoveDraggedNoteForLibrary(at: attachmentMarkdownURL, to: archiveFolder))
         let archiveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.title == "Archive"
         })

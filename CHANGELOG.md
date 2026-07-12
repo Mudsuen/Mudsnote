@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 153. Scan-free drag targeting
+- Problem: The first drag-to-folder hit test synchronously indexed up to 10,000 Markdown files on the main thread to build a movable-path cache, so a pointer interaction could stall on a large library.
+- Fix: Replaced the scan and its invalidation machinery with constant-size configured-root containment checks while retaining extension, existence, same-folder, trash, external-file, and attachment-directory guards.
+- Lesson: Drag validation belongs on cheap path metadata already in memory; interaction hit testing must never trigger a library-wide index pass.
+
 ### 152. Notes-like group breathing room
 - Problem: Group titles aligned with Apple Notes, but their first note began about `6pt` too close to the heading, making `Today` and recency sections look compressed.
 - Fix: Increased group rows from `48pt` to `54pt` while increasing the title bottom inset from `6pt` to `12pt`, preserving the title baseline and assigning all added space below it.
