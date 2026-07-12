@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 146. Immediate native toolbar menus
+- Problem: Toolbar menus were anchored correctly but still waited for a normal button mouse-up, unlike the immediate menu-tracking rhythm in Apple Notes.
+- Fix: Added a dedicated menu-trigger button that highlights on mouse-down, enters menu tracking immediately, and clears highlight only after the menu closes; applied it only to list options and `Aa`.
+- Lesson: Menu fidelity is behavioral, not only positional; command buttons and menu triggers should remain distinct control types even when their icons share the same toolbar surface.
+
 ### 145. Quiet saves and native sidebar collapse
 - Problem: Autosave replaced the editor date with transient save copy, sidebar collapse snapped without matching the Notes collapsed toolbar, the right-side share/more group was unnecessary, and toolbar menus used inconsistent fallback anchors.
 - Fix: Kept the displayed date stable while editing and refreshed it from the saved file timestamp, added a native 0.22s sidebar collapse with state-specific toolbar controls, removed the share/more group, unified toolbar menu anchoring, darkened the rounded sidebar material, and routed visual QA to a physical external display when available.

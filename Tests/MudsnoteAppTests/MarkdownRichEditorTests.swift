@@ -871,6 +871,7 @@ struct MarkdownRichEditorTests {
         })
         let noteListActionsGlass = try #require(noteListActionsToolbarItem.view as? NSGlassEffectView)
         let noteListActionsToolbarButton = try #require(noteListActionsGlass.allSubviews.compactMap { $0 as? NSButton }.first)
+        #expect(noteListActionsToolbarButton is LibraryToolbarMenuButton)
         #expect(noteListActionsToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.note-list-actions")
         #expect(!noteListActionsToolbarButton.isBordered)
         #expect(noteListActionsToolbarButton.image?.accessibilityDescription == "列表显示选项")
@@ -1012,9 +1013,14 @@ struct MarkdownRichEditorTests {
         ])
         #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
         #expect(Set(editorToolButtons.compactMap { $0.accessibilityLabel() }) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
-        #expect(editorToolButtons.first {
+        let formatToolbarButton = try #require(editorToolButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.format"
-        }?.image?.accessibilityDescription == "格式")
+        })
+        #expect(formatToolbarButton is LibraryToolbarMenuButton)
+        #expect(formatToolbarButton.image?.accessibilityDescription == "格式")
+        #expect(editorToolButtons.filter { $0 !== formatToolbarButton }.allSatisfy {
+            !($0 is LibraryToolbarMenuButton)
+        })
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
         let sourceTrackingSeparator = try #require((window.toolbar?.items ?? []).first {

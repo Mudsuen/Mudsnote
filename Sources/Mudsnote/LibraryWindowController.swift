@@ -1008,6 +1008,20 @@ final class LibraryNoteTableView: NSTableView {
 }
 
 @MainActor
+final class LibraryToolbarMenuButton: NSButton {
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0, isEnabled else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        highlight(true)
+        defer { highlight(false) }
+        _ = sendAction(action, to: target)
+    }
+}
+
+@MainActor
 final class LibraryNoteScrollView: NSScrollView {
     override func layout() {
         let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, frame.width)
@@ -2327,7 +2341,12 @@ final class LibraryWindowController: NSWindowController,
         image: NSImage?,
         action: Selector
     ) -> NSButton {
-        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        let button: NSButton
+        if identifier == Self.formatToolbarItemIdentifier {
+            button = LibraryToolbarMenuButton(image: image ?? NSImage(), target: self, action: action)
+        } else {
+            button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        }
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
@@ -2384,7 +2403,12 @@ final class LibraryWindowController: NSWindowController,
         )) ?? image
         configuredImage?.isTemplate = true
 
-        let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
+        let button: NSButton
+        if identifier == Self.noteListActionsToolbarItemIdentifier {
+            button = LibraryToolbarMenuButton(image: configuredImage ?? NSImage(), target: self, action: action)
+        } else {
+            button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
+        }
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
