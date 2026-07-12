@@ -1156,6 +1156,8 @@ final class LibraryWindowController: NSWindowController,
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
+    private var librarySplitViewController: NSSplitViewController?
+    private weak var sourceSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
     private let sourcePrimaryStack = NSStackView()
     private let sourceFolderStack = NSStackView()
@@ -1215,6 +1217,7 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
@@ -1435,6 +1438,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let librarySplitView {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSSplitView.didResizeSubviewsNotification,
+                object: librarySplitView
+            )
+        }
         autosaveTask?.cancel()
         autosaveTask = nil
         cancelActiveNoteLoad()
@@ -1582,27 +1592,54 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildUI() {
-        guard let contentView = window?.contentView else { return }
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = LibraryNotesPalette.windowBackground.cgColor
-
-        let splitView = NSSplitView()
-        splitView.isVertical = true
-        splitView.dividerStyle = .thin
-        splitView.delegate = self
-        splitView.translatesAutoresizingMaskIntoConstraints = false
-        librarySplitView = splitView
-        contentView.addSubview(splitView)
-        pin(splitView, to: contentView)
-
         let sourceList = buildSourceList()
         let sidebar = buildSidebar()
         let editor = buildEditor()
-        splitView.addArrangedSubview(sourceList)
-        splitView.addArrangedSubview(sidebar)
-        splitView.addArrangedSubview(editor)
-        sourceList.isHidden = !noteStore.librarySourceListVisible
-        contentView.layoutSubtreeIfNeeded()
+
+        let sourceController = NSViewController()
+        sourceController.view = sourceList
+        let noteListController = NSViewController()
+        noteListController.view = sidebar
+        let editorController = NSViewController()
+        editorController.view = editor
+
+        let sourceItem = NSSplitViewItem(sidebarWithViewController: sourceController)
+        sourceItem.minimumThickness = LibraryNotesLayout.sourceColumnMinimumWidth
+        sourceItem.maximumThickness = LibraryNotesLayout.sourceColumnMaximumWidth
+        sourceItem.canCollapse = true
+        sourceItem.allowsFullHeightLayout = true
+        sourceItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+        sourceItem.isCollapsed = !noteStore.librarySourceListVisible
+
+        let noteListItem = NSSplitViewItem(contentListWithViewController: noteListController)
+        noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
+        noteListItem.maximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
+        noteListItem.automaticMaximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
+
+        let editorItem = NSSplitViewItem(viewController: editorController)
+        editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
+
+        let splitController = NSSplitViewController()
+        splitController.addSplitViewItem(sourceItem)
+        splitController.addSplitViewItem(noteListItem)
+        splitController.addSplitViewItem(editorItem)
+        splitController.splitView.isVertical = true
+        splitController.splitView.dividerStyle = .thin
+        splitController.view.wantsLayer = true
+        splitController.view.layer?.backgroundColor = LibraryNotesPalette.windowBackground.cgColor
+
+        librarySplitViewController = splitController
+        sourceSplitViewItem = sourceItem
+        librarySplitView = splitController.splitView
+        window?.contentViewController = splitController
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(librarySplitViewDidResize(_:)),
+            name: NSSplitView.didResizeSubviewsNotification,
+            object: splitController.splitView
+        )
+
+        splitController.view.layoutSubtreeIfNeeded()
         applyStoredLibrarySplitLayoutForLibrary()
     }
 
@@ -1668,7 +1705,13 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.sourceListTrailingInset
         )
         sourceList.addSubview(stack)
-        pin(stack, to: sourceList)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: sourceList.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: sourceList.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: sourceList.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: sourceList.bottomAnchor)
+        ])
         refreshSourceSelection()
 
         return sourceList
@@ -5175,7 +5218,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     var isSourceListVisibleForLibrary: Bool {
-        sourceListView?.isHidden == false
+        if let sourceSplitViewItem {
+            return !sourceSplitViewItem.isCollapsed
+        }
+        return sourceListView?.isHidden == false
     }
 
     private var storedSourceColumnWidthForLibrary: CGFloat {
@@ -5202,7 +5248,7 @@ final class LibraryWindowController: NSWindowController,
 
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
-        sourceList.isHidden = !noteStore.librarySourceListVisible
+        sourceSplitViewItem?.isCollapsed = !noteStore.librarySourceListVisible
         splitView.adjustSubviews()
 
         if !sourceList.isHidden {
@@ -5235,7 +5281,8 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    func splitViewDidResizeSubviews(_ notification: Notification) {
+    @objc
+    private func librarySplitViewDidResize(_ notification: Notification) {
         guard let resizedSplitView = notification.object as? NSSplitView,
               resizedSplitView === librarySplitView,
               !isApplyingStoredSplitLayout,
@@ -5306,7 +5353,11 @@ final class LibraryWindowController: NSWindowController,
     func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
         guard let sourceListView else { return false }
         noteStore.librarySourceListVisible = isVisible
-        sourceListView.isHidden = !isVisible
+        if let sourceSplitViewItem {
+            sourceSplitViewItem.isCollapsed = !isVisible
+        } else {
+            sourceListView.isHidden = !isVisible
+        }
         applyStoredLibrarySplitLayoutForLibrary()
         updateToolbarActionState()
         return isSourceListVisibleForLibrary

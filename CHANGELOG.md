@@ -864,6 +864,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replaced custom toolbar capsules and circular controls with `NSGlassEffectView`, presented the source list as an independent dark sidebar-material surface with a native rounded boundary, preserved the collapsed list-first layout, and reserved a fractional table-layout inset so the right stroke remains drawable.
 - Lesson: Native material should own its rendering instead of being approximated by static alpha fills. Full-width AppKit text blocks also need a small paint allowance because their border is drawn at the layout boundary.
 
+### 143. Full-height native sidebar region
+
+- Problem: The rounded sidebar began below the titlebar, leaving traffic lights and source toolbar icons on the shared window background instead of inside the independent Notes-style region.
+- Fix: Migrated the three-pane root to `NSSplitViewController`, represented the source pane with a full-height `NSSplitViewItem.sidebar`, the note list with a content-list item, and constrained source rows to the sidebar safe area. Collapse now uses the native split item while preserving stored widths and tracking separators.
+- Lesson: A full-height sidebar is a window-structure decision, not a corner-radius adjustment. The titlebar participates only when AppKit owns the sidebar item and the window uses full-size content layout.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

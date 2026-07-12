@@ -796,6 +796,8 @@ struct MarkdownRichEditorTests {
         #expect(window.title == "Mudsnote 笔记")
         #expect(window.titleVisibility == .hidden)
         #expect(window.titlebarAppearsTransparent)
+        #expect(window.styleMask.contains(.fullSizeContentView))
+        #expect(window.contentViewController is NSSplitViewController)
         #expect(window.toolbarStyle == .unified)
         #expect(window.styleMask.contains(.resizable))
         #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
@@ -1069,18 +1071,16 @@ struct MarkdownRichEditorTests {
         #expect(noteTrackingSeparator.dividerIndex == 1)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
-        let sourceSurface = try #require(sourceList as? NSVisualEffectView)
+        let sourceSurface = try #require(sourceList.allSubviews.compactMap { $0 as? NSVisualEffectView }.first {
+            $0.identifier?.rawValue == "LibrarySourceSurface"
+        })
         #expect(sourceSurface.identifier?.rawValue == "LibrarySourceSurface")
         #expect(sourceSurface.material == .sidebar)
         #expect(sourceSurface.blendingMode == .withinWindow)
         #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
         #expect(sourceSurface.layer?.borderWidth == 1)
-        #expect(!sourceList.constraints.contains {
-            $0.firstAttribute == .width && $0.priority == .required
-        })
-        #expect(!noteList.constraints.contains {
-            $0.firstAttribute == .width && $0.priority == .required
-        })
+        #expect(sourceList.frame.width >= LibraryNotesLayout.sourceColumnMinimumWidth)
+        #expect(noteList.frame.width >= LibraryNotesLayout.noteColumnMinimumWidth)
         #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 220)
         #expect(LibraryNotesLayout.sourceColumnMaximumWidth == 320)
         #expect(LibraryNotesLayout.noteColumnMinimumWidth == 220)
