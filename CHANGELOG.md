@@ -816,6 +816,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Unified folder creation and rename under one inline edit state. Rename now replaces the original row in place, preserves hierarchy and parent capture, supports native IME input, commits with Return or focus loss, and cancels with Escape.
 - Lesson: Create and rename are two operations on one list-editing primitive; sharing that primitive keeps focus, error recovery, and filesystem behavior consistent.
 
+### 135. Quiet blank editor state
+
+- Problem: The empty-note visual fixture still rendered a centered “Select or create a note” overlay even though a blank note was selected, unlike Apple Notes' quiet editor canvas.
+- Fix: Removed the custom editor placeholder layer and its repeated state updates from note loading, typing, saving, navigation, and removal paths. Empty notes and no-selection states now keep the editor canvas blank.
+- Lesson: A document editor does not need instructional copy in its primary canvas; removing non-native state is both more faithful and cheaper than maintaining visibility rules for it.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

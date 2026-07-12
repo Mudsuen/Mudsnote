@@ -2260,7 +2260,9 @@ struct MarkdownRichEditorTests {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
         #expect(NSApp.sendAction(try #require(visibleNewItem.action), to: visibleNewItem.target, from: visibleNewItem))
-        #expect(emptyController.emptyLabel.isHidden)
+        #expect(emptyController.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
+            $0.stringValue == "Select or create a note"
+        } == false)
         #expect(emptyController.statusLabel.stringValue != "新笔记")
         #expect(emptyController.window?.firstResponder === emptyController.titleField.currentEditor())
         #expect(emptyController.validateToolbarItem(formatItem))

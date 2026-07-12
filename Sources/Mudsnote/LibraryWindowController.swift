@@ -990,7 +990,6 @@ final class LibraryWindowController: NSWindowController,
     let editorTextView = MarkdownTextView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
-    let emptyLabel = NSTextField(labelWithString: "Select or create a note")
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1241,7 +1240,6 @@ final class LibraryWindowController: NSWindowController,
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
         statusLabel.stringValue = editorDateText(for: note.modifiedAt)
-        updateEmptyState()
         updateToolbarActionState()
     }
 
@@ -1721,23 +1719,15 @@ final class LibraryWindowController: NSWindowController,
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
 
-        emptyLabel.font = .systemFont(ofSize: 15, weight: .medium)
-        emptyLabel.textColor = panelTertiaryTextColor()
-        emptyLabel.alignment = .center
-
         let bodyContainer = NSView()
         bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
         bodyContainer.addSubview(scrollView)
-        bodyContainer.addSubview(emptyLabel)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor),
-            emptyLabel.centerXAnchor.constraint(equalTo: bodyContainer.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: bodyContainer.centerYAnchor)
+            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor)
         ])
 
         let dateRow = NSView()
@@ -3092,8 +3082,6 @@ final class LibraryWindowController: NSWindowController,
 
         if loadFirstIfNeeded, let noteToLoad {
             load(note: noteToLoad)
-        } else if selectedURL == nil {
-            updateEmptyState()
         }
         if refreshCounts {
             sourceCountSnapshot = allNotes
@@ -3822,7 +3810,6 @@ final class LibraryWindowController: NSWindowController,
             applyDocument(title: "", body: "", tags: [])
             isDirty = false
             statusLabel.stringValue = editorDateText(for: Date())
-            updateEmptyState()
             refreshSourceSelection()
             updateToolbarActionState()
             window?.makeFirstResponder(titleField)
@@ -4015,9 +4002,6 @@ final class LibraryWindowController: NSWindowController,
         }
         suppressSelectionChanges = false
 
-        if selectedURL == nil {
-            updateEmptyState()
-        }
         refreshSourceSelection()
         updateToolbarActionState()
         applyEditorSearchHighlightsForCurrentQuery()
@@ -4320,7 +4304,6 @@ final class LibraryWindowController: NSWindowController,
     private func loadSelectedRow() {
         let row = tableView.selectedRow
         guard let note = note(at: row) else {
-            updateEmptyState()
             return
         }
         load(note: note)
@@ -4419,7 +4402,6 @@ final class LibraryWindowController: NSWindowController,
         isDirty = false
         statusLabel.stringValue = editorDateText(for: note.modifiedAt)
         applyEditorSearchHighlightsForCurrentQuery()
-        updateEmptyState()
         updateToolbarActionState()
         prefetchAdjacentNotes(around: note)
     }
@@ -4578,7 +4560,6 @@ final class LibraryWindowController: NSWindowController,
     private func markDirty() {
         guard !suppressEditorChanges, selectedScope != .trash else { return }
         isDirty = true
-        updateEmptyState()
         statusLabel.stringValue = selectedURL == nil ? "新笔记，正在保存..." : "正在保存..."
         updateToolbarActionState()
         scheduleAutosave()
@@ -4657,7 +4638,6 @@ final class LibraryWindowController: NSWindowController,
         invalidateMovableNotePathCache()
         statusLabel.stringValue = editorDateText(for: savedAt)
         onSave(savedURL)
-        updateEmptyState()
         updateToolbarActionState()
         return savedURL
     }
@@ -5536,7 +5516,6 @@ final class LibraryWindowController: NSWindowController,
         isDirty = false
         setEditorEditable(selectedScope != .trash)
         applyDocument(title: "", body: "", tags: [])
-        updateEmptyState()
     }
 
     private func setEditorEditable(_ isEditable: Bool) {
@@ -5556,13 +5535,6 @@ final class LibraryWindowController: NSWindowController,
             return folderURL
         }
         return noteStore.notesDirectory
-    }
-
-    private func updateEmptyState() {
-        let hasContent = selectedURL != nil
-            || !titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !editorTextView.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        emptyLabel.isHidden = isCreatingNewNote || hasContent
     }
 
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
