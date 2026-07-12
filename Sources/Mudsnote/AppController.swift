@@ -211,6 +211,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         newNoteItem.target = self
         newNoteItem.keyEquivalentModifierMask = [.command]
         fileMenu.addItem(newNoteItem)
+
+        let newFolderItem = NSMenuItem(title: "新建文件夹", action: #selector(newFolderFromMainMenu), keyEquivalent: "n")
+        newFolderItem.target = self
+        newFolderItem.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(newFolderItem)
         fileMenu.addItem(.separator())
 
         let closeItem = NSMenuItem(title: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -471,6 +476,14 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc
+    func newFolderFromMainMenu() {
+        showLibraryWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.libraryWindowController?.createNewFolderForLibrary()
+        }
+    }
+
+    @objc
     func focusLibrarySearchFromMainMenu() {
         showLibraryWindow()
         libraryWindowController?.focusSearchForLibrary()
@@ -520,7 +533,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             currentQuickCaptureHotKey: noteStore.hotKeyString,
             currentFloatingHotKey: noteStore.floatingNoteHotKeyString,
             currentSaveShortcut: noteStore.saveShortcutString,
-            revealSavedNoteInFinder: noteStore.revealSavedNoteInFinder,
             floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
             aiEnabled: noteStore.aiEnabled,
@@ -549,7 +561,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         noteStore.hotKeyString = settings.quickCaptureHotKey.displayString
         noteStore.floatingNoteHotKeyString = settings.floatingHotKey.displayString
         noteStore.saveShortcutString = settings.saveShortcut.displayString
-        noteStore.revealSavedNoteInFinder = settings.revealSavedNoteInFinder
         noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
         noteStore.aiEnabled = settings.aiEnabled
@@ -585,11 +596,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         preferencesWindowController?.updatePanelOpacity(opacity)
     }
 
-    private func didSaveNote(at url: URL) {
+    private func didSaveNote(at _: URL) {
         rebuildMenu()
-        if noteStore.revealSavedNoteInFinder {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
         cleanupClosedWindows()
     }
 

@@ -666,11 +666,11 @@ struct MudsnoteCoreTests {
     }
 
     @Test
-    func behaviorSettingsDefaultOnAndPersist() throws {
+    func behaviorSettingsDefaultsAndPersistence() throws {
         let harness = try TestHarness()
         let store = harness.store
 
-        #expect(store.revealSavedNoteInFinder)
+        #expect(!store.revealSavedNoteInFinder)
         #expect(store.floatingNoteStaysOnTop)
         #expect(store.spellCheckingEnabled)
         #expect(store.libraryNoteSortOrderRawValue == 0)

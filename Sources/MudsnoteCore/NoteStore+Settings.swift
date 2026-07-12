@@ -43,7 +43,7 @@ extension NoteStore {
     }
 
     public var revealSavedNoteInFinder: Bool {
-        get { defaults.object(forKey: NoteStoreDefaultsKey.revealSavedNoteInFinder) as? Bool ?? true }
+        get { defaults.object(forKey: NoteStoreDefaultsKey.revealSavedNoteInFinder) as? Bool ?? false }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.revealSavedNoteInFinder) }
     }
 

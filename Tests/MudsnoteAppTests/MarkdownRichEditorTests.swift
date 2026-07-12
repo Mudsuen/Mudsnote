@@ -4103,6 +4103,77 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowCreatesAndCancelsFoldersInline() throws {
+        let suiteName = "mudsnote.library-inline-folder-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-inline-folder-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try store.ensureNotesDirectory()
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+
+        controller.beginInlineFolderCreationForLibrary()
+        let field = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+        })
+        #expect(field.string == "新建文件夹")
+        #expect(window.contentView?.allSubviews.contains {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+        } == true)
+        #expect(field.isEditable)
+        #expect(field.isSelectable)
+
+        controller.beginInlineFolderCreationForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.filter {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+        }.count == 1)
+
+        field.string = "Inline Folder"
+        #expect(controller.textView(field, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        let createdURL = store.notesDirectory.appendingPathComponent("Inline Folder", isDirectory: true)
+        #expect(FileManager.default.fileExists(atPath: createdURL.path))
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Inline Folder"
+        } == true)
+        #expect(window.contentView?.allSubviews.contains {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+        } == false)
+
+        controller.beginInlineFolderCreationForLibrary()
+        let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+        })
+        cancelledField.string = "Cancelled Folder"
+        #expect(controller.textView(cancelledField, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        #expect(!FileManager.default.fileExists(atPath: createdURL.appendingPathComponent("Cancelled Folder").path))
+        #expect(window.contentView?.allSubviews.contains {
+            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+        } == false)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowDeletesRestoresAndPermanentlyDeletesNotes() throws {
         let suiteName = "mudsnote.library-trash-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -4488,6 +4559,11 @@ struct MarkdownRichEditorTests {
         #expect(newNoteItem.action == #selector(AppController.newNoteFromMainMenu))
         #expect(newNoteItem.keyEquivalent == "n")
         #expect(newNoteItem.keyEquivalentModifierMask == [.command])
+        let newFolderItem = try #require(fileMenu.items.first { $0.title == "新建文件夹" })
+        #expect(newFolderItem.target === controller)
+        #expect(newFolderItem.action == #selector(AppController.newFolderFromMainMenu))
+        #expect(newFolderItem.keyEquivalent == "n")
+        #expect(newFolderItem.keyEquivalentModifierMask == [.command, .shift])
         #expect(fileMenu.items.first { $0.title == "关闭窗口" }?.keyEquivalent == "w")
 
         let editMenu = try #require(mainMenu.items.first { $0.title == "编辑" }?.submenu)
@@ -4807,7 +4883,6 @@ struct MarkdownRichEditorTests {
             currentQuickCaptureHotKey: "option+shift+n",
             currentFloatingHotKey: "option+r",
             currentSaveShortcut: "command+return",
-            revealSavedNoteInFinder: true,
             floatingNoteStaysOnTop: true,
             spellCheckingEnabled: true,
             aiEnabled: false,
@@ -4828,6 +4903,9 @@ struct MarkdownRichEditorTests {
         #expect(window.alphaValue == 1)
         #expect(window.toolbarStyle == NSWindow.ToolbarStyle.preference)
         #expect(window.toolbar?.selectedItemIdentifier?.rawValue == "mudsnote.settings.general")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "保存后在 Finder 中显示笔记"
+        } == false)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)

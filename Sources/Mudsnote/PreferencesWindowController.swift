@@ -10,7 +10,6 @@ struct PreferencesSettings {
     let quickCaptureHotKey: HotKeySpec
     let floatingHotKey: HotKeySpec
     let saveShortcut: HotKeySpec
-    let revealSavedNoteInFinder: Bool
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
     let aiEnabled: Bool
@@ -56,7 +55,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let addDirectoryButton = NSButton(title: "添加...", target: nil, action: nil)
     private let removeDirectoryButton = NSButton(title: "移除", target: nil, action: nil)
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
-    private let revealSavedNoteButton = NSButton(checkboxWithTitle: "保存后在 Finder 中显示笔记", target: nil, action: nil)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
@@ -94,7 +92,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentQuickCaptureHotKey: String,
         currentFloatingHotKey: String,
         currentSaveShortcut: String,
-        revealSavedNoteInFinder: Bool,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
         aiEnabled: Bool,
@@ -143,7 +140,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             currentQuickCaptureHotKey: currentQuickCaptureHotKey,
             currentFloatingHotKey: currentFloatingHotKey,
             currentSaveShortcut: currentSaveShortcut,
-            revealSavedNoteInFinder: revealSavedNoteInFinder,
             floatingNoteStaysOnTop: floatingNoteStaysOnTop,
             spellCheckingEnabled: spellCheckingEnabled,
             aiEnabled: aiEnabled,
@@ -214,7 +210,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentQuickCaptureHotKey: String,
         currentFloatingHotKey: String,
         currentSaveShortcut: String,
-        revealSavedNoteInFinder: Bool,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
         aiEnabled: Bool,
@@ -234,7 +229,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         removeDirectoryButton.action = #selector(removeFolderPressed)
         revealDirectoryButton.target = self
         revealDirectoryButton.action = #selector(revealFolderPressed)
-        revealSavedNoteButton.state = revealSavedNoteInFinder ? .on : .off
         floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
         spellCheckingButton.state = spellCheckingEnabled ? .on : .off
         aiEnabledButton.state = aiEnabled ? .on : .off
@@ -314,14 +308,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 control: defaultDirectoryPopUp,
                 help: "新笔记默认保存到这里。其他托管文件夹仍可在快速笔记中选择。"
             ),
-            preferenceRow(label: "托管文件夹:", control: actions),
-            sectionDivider(),
-            sectionTitle("保存行为"),
-            preferenceRow(
-                label: "",
-                control: revealSavedNoteButton,
-                help: "开启后，手动保存成功时会在 Finder 中选中新笔记。"
-            )
+            preferenceRow(label: "托管文件夹:", control: actions)
         ])
     }
 
@@ -633,7 +620,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             quickCaptureHotKey: quickCaptureSpec,
             floatingHotKey: floatingSpec,
             saveShortcut: saveShortcutSpec,
-            revealSavedNoteInFinder: revealSavedNoteButton.state == .on,
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
             spellCheckingEnabled: spellCheckingButton.state == .on,
             aiEnabled: aiEnabledButton.state == .on,

@@ -804,6 +804,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Persisted the library window position and size through the existing lightweight frame model, coalesced move/resize notifications before writing, restored the frame across launches, clamped stale frames back onto the nearest visible display with the current minimum size, and kept canonical visual QA isolated from personal window state.
 - Lesson: Window geometry is part of desktop document state. Persist it cheaply, but keep deterministic visual tests and offscreen-display recovery as explicit boundaries.
 
+### 133. Inline folder creation and quiet saves
+
+- Problem: New Folder opened a modal prompt, and normal saves could unexpectedly reveal the Markdown file in Finder.
+- Fix: Added `Shift-Command-N`, inserted an editable folder row directly in the source list with Return/Escape behavior, and removed automatic Finder reveal from saves and preferences while retaining the explicit Finder command.
+- Lesson: Library organization should stay in context, and persistence should remain quiet unless the user explicitly requests a filesystem action.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

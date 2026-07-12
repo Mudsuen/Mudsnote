@@ -1063,6 +1063,11 @@ final class LibraryWindowController: NSWindowController,
     private var internallyMutatedPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
+    private var inlineNewFolderParentURL: URL?
+    private var inlineNewFolderField: NSTextView?
+    private var inlineNewFolderRow: NSView?
+    private var isCommittingInlineNewFolder = false
+    private var inlineNewFolderHasReceivedFocus = false
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
@@ -2550,7 +2555,8 @@ final class LibraryWindowController: NSWindowController,
                     folderRow: folderRow
                 ))
             }
-            if !sourceFolderStatusLabel.stringValue.isEmpty {
+            insertInlineNewFolderRowIfNeeded()
+            if inlineNewFolderParentURL == nil, !sourceFolderStatusLabel.stringValue.isEmpty {
                 sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
             }
         }
@@ -3612,6 +3618,18 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if textView === inlineNewFolderField {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                cancelInlineNewFolderCreation()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                commitInlineNewFolder()
+                return true
+            }
+            return false
+        }
+
         guard textView === editorTextView else { return false }
 
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
@@ -3626,11 +3644,23 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textDidChange(_ notification: Notification) {
-        if let object = notification.object as AnyObject?, object === editorTextView {
+        if let object = notification.object as AnyObject?, object === inlineNewFolderField {
+            return
+        } else if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
         } else {
             markDirty()
         }
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+        guard let textView = notification.object as? NSTextView,
+              textView === inlineNewFolderField,
+              inlineNewFolderHasReceivedFocus,
+              !isCommittingInlineNewFolder else {
+            return
+        }
+        commitInlineNewFolder()
     }
 
     @objc
@@ -3747,18 +3777,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func addFolderPressed() {
-        guard let folderName = promptForText(
-            title: "新建文件夹",
-            message: "输入文件夹名称。",
-            placeholder: "新建文件夹",
-            defaultValue: "新建文件夹"
-        ) else { return }
-
-        do {
-            _ = try createLibraryFolder(named: folderName)
-        } catch {
-            presentErrorAlert(message: "无法新建文件夹", details: error.localizedDescription)
-        }
+        beginInlineFolderCreationForLibrary()
     }
 
     @objc
@@ -3800,6 +3819,10 @@ final class LibraryWindowController: NSWindowController,
 
     func createNewNoteForLibrary() {
         newNotePressed()
+    }
+
+    func createNewFolderForLibrary() {
+        addFolderPressed()
     }
 
     func focusSearchForLibrary() {
@@ -5118,7 +5141,12 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func createLibraryFolder(named name: String) throws -> URL {
-        let folderURL = try noteStore.createFolder(named: name, in: targetDirectoryForNewFolder())
+        try createLibraryFolder(named: name, in: targetDirectoryForNewFolder())
+    }
+
+    @discardableResult
+    private func createLibraryFolder(named name: String, in parentURL: URL) throws -> URL {
+        let folderURL = try noteStore.createFolder(named: name, in: parentURL)
         recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
         invalidateMovableNotePathCache()
@@ -5126,6 +5154,166 @@ final class LibraryWindowController: NSWindowController,
         reloadSourceFolderRowsForCurrentState()
         reloadNotes(loadFirstIfNeeded: true)
         return folderURL
+    }
+
+    func beginInlineFolderCreationForLibrary() {
+        if inlineNewFolderField != nil {
+            focusInlineNewFolderField()
+            return
+        }
+
+        if !isSourceListVisibleForLibrary {
+            _ = setSourceListVisibleForLibrary(true)
+        }
+        if sourceFoldersSectionCollapsed {
+            sourceFoldersSectionCollapsed = false
+            noteStore.libraryFoldersSectionCollapsed = false
+        }
+        if !sourceFoldersLoaded {
+            reloadSourceFolderRowsForCurrentState()
+        }
+
+        inlineNewFolderParentURL = targetDirectoryForNewFolder().standardizedFileURL
+        inlineNewFolderHasReceivedFocus = false
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+        focusInlineNewFolderField()
+    }
+
+    private func insertInlineNewFolderRowIfNeeded() {
+        guard let parentURL = inlineNewFolderParentURL else { return }
+
+        let parentPath = parentURL.standardizedFileURL.path
+        let parentIndex = sourceFolderRows.firstIndex {
+            $0.url.standardizedFileURL.path == parentPath
+        }
+        let depth = parentIndex.map { sourceFolderRows[$0].depth + 1 } ?? 0
+        let insertionIndex = min((parentIndex ?? -1) + 1, sourceFolderStack.arrangedSubviews.count)
+        let row = makeInlineNewFolderRow(depth: depth)
+        sourceFolderStack.insertArrangedSubview(row, at: insertionIndex)
+        inlineNewFolderRow = row
+        inlineNewFolderHasReceivedFocus = false
+        focusInlineNewFolderField()
+    }
+
+    private func makeInlineNewFolderRow(depth: Int) -> NSView {
+        let row = LibrarySourceRowView()
+        row.identifier = NSUserInterfaceItemIdentifier("LibraryInlineNewFolderRow")
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight).isActive = true
+        row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
+
+        let icon = NSImageView(image: NSImage(
+            systemSymbolName: "folder",
+            accessibilityDescription: "新建文件夹"
+        ) ?? NSImage())
+        icon.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+            weight: LibraryNotesLayout.sourceSymbolWeight
+        )
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        let field = NSTextView(frame: .zero)
+        field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineNewFolderField")
+        field.delegate = self
+        field.string = "新建文件夹"
+        field.font = .systemFont(
+            ofSize: LibraryNotesLayout.sourceButtonFontSize,
+            weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
+        )
+        field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
+        field.backgroundColor = NSColor.controlBackgroundColor
+        field.drawsBackground = true
+        field.isRichText = false
+        field.isVerticallyResizable = false
+        field.isHorizontallyResizable = false
+        field.textContainerInset = NSSize(width: 3, height: 2)
+        field.textContainer?.lineFragmentPadding = 0
+        field.wantsLayer = true
+        field.layer?.cornerRadius = 4
+        field.layer?.borderWidth = 1
+        field.layer?.borderColor = panelAccentColor().withAlphaComponent(0.8).cgColor
+        field.translatesAutoresizingMaskIntoConstraints = false
+
+        let leadingInset = LibrarySourceButtonCell.contentLeadingInset
+            + CGFloat(depth) * LibraryNotesLayout.sourceFolderIndentStep
+        row.addSubview(icon)
+        row.addSubview(field)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
+            icon.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            field.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
+            field.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            field.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        inlineNewFolderField = field
+        return row
+    }
+
+    private func focusInlineNewFolderField(remainingAttempts: Int = 4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, let field = self.inlineNewFolderField else { return }
+            guard let window = field.window ?? self.window else { return }
+
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.contentView?.layoutSubtreeIfNeeded()
+            if window.makeFirstResponder(field) {
+                field.setSelectedRange(NSRange(location: 0, length: field.string.utf16.count))
+                self.inlineNewFolderHasReceivedFocus = true
+                return
+            }
+
+            guard remainingAttempts > 0 else { return }
+            self.focusInlineNewFolderField(remainingAttempts: remainingAttempts - 1)
+        }
+    }
+
+    private func commitInlineNewFolder() {
+        guard !isCommittingInlineNewFolder,
+              let field = inlineNewFolderField,
+              let parentURL = inlineNewFolderParentURL else {
+            return
+        }
+        let name = field.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            cancelInlineNewFolderCreation()
+            return
+        }
+
+        isCommittingInlineNewFolder = true
+        clearInlineNewFolderState()
+        do {
+            _ = try createLibraryFolder(named: name, in: parentURL)
+            isCommittingInlineNewFolder = false
+        } catch {
+            isCommittingInlineNewFolder = false
+            inlineNewFolderParentURL = parentURL
+            rebuildSourceRows(includeTags: sourceTagsLoaded)
+            inlineNewFolderField?.string = name
+            focusInlineNewFolderField()
+            presentErrorAlert(message: "无法新建文件夹", details: error.localizedDescription)
+        }
+    }
+
+    private func cancelInlineNewFolderCreation() {
+        guard inlineNewFolderParentURL != nil else { return }
+        clearInlineNewFolderState()
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+    }
+
+    private func clearInlineNewFolderState() {
+        if let row = inlineNewFolderRow {
+            sourceFolderStack.removeArrangedSubview(row)
+            row.removeFromSuperview()
+        }
+        inlineNewFolderRow = nil
+        inlineNewFolderField = nil
+        inlineNewFolderParentURL = nil
+        inlineNewFolderHasReceivedFocus = false
     }
 
     @discardableResult
