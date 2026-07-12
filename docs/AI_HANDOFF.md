@@ -57,6 +57,11 @@
 - Editor title and body now share a Notes-like `23–24pt` visible reading edge.
 - The outer stack uses `22pt`; TextKit contributes only another `2pt` to body text.
 
+## Latest iteration (167)
+
+- Expanded source-pane default/minimum width is `212pt`, with `184pt` inset rows.
+- Layout migration version 6 replaces only exact previous `220/200pt` defaults and preserves custom pane widths.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

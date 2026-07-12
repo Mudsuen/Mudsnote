@@ -997,6 +997,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Tightened the shared editor inset to `22pt` and the body text-container inset to `2pt`, placing the title near `23pt` and body near `24pt` while preserving the previously calibrated vertical rhythm and full-width date centering.
 - Lesson: Rich editor alignment must account for both view geometry and TextKit padding; matching only the outer stack leaves title and body on visibly different reading edges.
 
+### 167. Reference-width source sidebar
+
+- Problem: The expanded source sidebar remained `220pt` wide while the Apple Notes reference measured about `212pt`, leaving the entire left region and its selected rows visibly oversized.
+- Fix: Tightened the default/minimum source pane to `212pt`, its inset rows to `184pt`, and the consistent minimum window width to `896pt`. Added a version-6 migration that replaces only exact stored `220/200pt` pane defaults while preserving custom widths.
+- Lesson: Pane fidelity needs both a measured default and a conservative migration; changing constants without migrating untouched persisted geometry leaves existing users on the obsolete layout.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -291,22 +291,22 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 5
+    static let storedLayoutScaleVersion = 6
     static let initialWindowSize = NSSize(width: 940, height: 630)
     static let presentedWindowSize = NSSize(width: 940, height: 630)
-    static let minimumWindowSize = NSSize(width: 904, height: 560)
+    static let minimumWindowSize = NSSize(width: 896, height: 560)
     static let previousInitialWindowSize = NSSize(width: 1080, height: 680)
     static let previousPresentedWindowSize = NSSize(width: 1080, height: 720)
-    static let sourceColumnWidth: CGFloat = 220
+    static let sourceColumnWidth: CGFloat = 212
     static let noteColumnWidth: CGFloat = 200
-    static let sourceColumnMinimumWidth: CGFloat = 220
+    static let sourceColumnMinimumWidth: CGFloat = 212
     static let sourceColumnMaximumWidth: CGFloat = 320
     static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320
     static let editorColumnMinimumWidth: CGFloat = 480
     static let noteTableInitialWidth: CGFloat = 174
     static let noteTableMinimumWidth: CGFloat = 174
-    static let sourceRowWidth: CGFloat = 192
+    static let sourceRowWidth: CGFloat = 184
     static let toolbarSearchWidth: CGFloat = 210
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 230
