@@ -71,9 +71,10 @@ struct CaptureConsoleView: View {
                 selectedRoute = .audio
                 appModel.toggleAudioRecording()
             } label: {
-                Image(systemName: appModel.audioRecorder.isRecording ? "stop.fill" : "waveform")
+                Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
             }
             .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
+            .disabled(appModel.isAudioTransitioning || appModel.isTranscribingAudio)
             .accessibilityLabel(
                 Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
             )
@@ -105,7 +106,13 @@ struct CaptureConsoleView: View {
                 Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
             }
             .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
-            .disabled(!appModel.draft.canSend || appModel.isSendingDraft || appModel.audioRecorder.isRecording)
+            .disabled(
+                !appModel.draft.canSend
+                    || appModel.isSendingDraft
+                    || appModel.audioRecorder.isRecording
+                    || appModel.isAudioTransitioning
+                    || appModel.isTranscribingAudio
+            )
             .accessibilityLabel("Save memo")
             .accessibilityIdentifier("save-memo-button")
         }
@@ -131,7 +138,9 @@ struct CaptureConsoleView: View {
                         .fill(MudsnoteColors.primary)
                         .frame(width: 3, height: 28)
                     Text(LocalizedStringKey(
-                        selectedRoute == .audio
+                        appModel.isTranscribingAudio
+                            ? "Transcribing..."
+                            : selectedRoute == .audio
                             ? "Transcription appears here..."
                             : "What's on your mind?"
                     ))

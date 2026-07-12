@@ -158,15 +158,14 @@ struct MarkdownPreviewView: View {
 private struct AudioAttachmentPlayer: View {
     var url: URL
     var title: String
-    @State private var player: AVAudioPlayer?
-    @State private var isPlaying = false
+    @StateObject private var playback = AudioPlaybackController()
 
     var body: some View {
         HStack(spacing: 12) {
             Button {
                 togglePlayback()
             } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .frame(width: 42, height: 42)
                     .background(MudsnoteColors.primary, in: Circle())
@@ -189,26 +188,54 @@ private struct AudioAttachmentPlayer: View {
         .padding(12)
         .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 16))
         .onDisappear {
-            player?.stop()
-            isPlaying = false
+            playback.stop()
         }
     }
 
     private func togglePlayback() {
+        playback.toggle(url: url)
+    }
+}
+
+@MainActor
+private final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published private(set) var isPlaying = false
+    private var player: AVAudioPlayer?
+
+    func toggle(url: URL) {
         do {
             if player == nil {
-                player = try AVAudioPlayer(contentsOf: url)
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.delegate = self
+                self.player = player
             }
             guard let player else { return }
             if player.isPlaying {
                 player.pause()
                 isPlaying = false
             } else {
-                player.play()
-                isPlaying = true
+                isPlaying = player.play()
             }
         } catch {
-            isPlaying = false
+            stop()
+        }
+    }
+
+    func stop() {
+        player?.stop()
+        player = nil
+        isPlaying = false
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            self?.isPlaying = false
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor [weak self] in
+            self?.stop()
         }
     }
 }

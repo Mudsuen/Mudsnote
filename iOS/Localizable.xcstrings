@@ -1081,16 +1081,6 @@
         }
       }
     },
-    "Templates": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模板"
-          }
-        }
-      }
-    },
     "The attachment is empty.": {
       "localizations": {
         "zh-Hans": {
@@ -1141,6 +1131,16 @@
         }
       }
     },
+    "Transcription timed out. The audio is still attached.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转写超时，录音仍已保留。"
+          }
+        }
+      }
+    },
     "Transcribing...": {
       "localizations": {
         "zh-Hans": {
@@ -1161,32 +1161,32 @@
         }
       }
     },
-    "Transcription unavailable": {
+    "No speech detected. Audio kept.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "转写不可用"
+            "value": "未检测到语音，录音已保留。"
           }
         }
       }
     },
-    "Transcription unavailable. Check permission and try again.": {
+    "Speech recognition is temporarily unavailable.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "转写不可用，请检查权限后重试。"
+            "value": "语音识别暂时不可用。"
           }
         }
       }
     },
-    "Transcription: No speech detected.": {
+    "Speech recognition permission is required for transcription.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "转写：未检测到语音。"
+            "value": "转写需要语音识别权限。"
           }
         }
       }

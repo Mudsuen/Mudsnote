@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     @Published var captureRoute: CaptureRoute = .text
     @Published var isCapturePresented = false
     @Published var isSendingDraft = false
+    @Published private(set) var isAudioTransitioning = false
+    @Published private(set) var isTranscribingAudio = false
     @Published var statusToast: StatusToast?
     @Published var query = ""
     @Published var syncStatus: SyncStatus = .idle
@@ -186,7 +188,10 @@ final class AppModel: ObservableObject {
     }
 
     func toggleAudioRecording() {
+        guard !isAudioTransitioning, !isTranscribingAudio else { return }
+        isAudioTransitioning = true
         Task {
+            defer { isAudioTransitioning = false }
             do {
                 if audioRecorder.isRecording {
                     if let recording = try audioRecorder.stop() {
@@ -198,10 +203,8 @@ final class AppModel: ObservableObject {
                             try? FileManager.default.removeItem(at: recording.temporaryURL)
                             throw error
                         }
-                        if draft.body.isEmpty {
-                            draft.body = String(localized: "Transcribing...")
-                        }
                         statusToast = .saved(String(localized: "Audio attached"))
+                        isTranscribingAudio = true
                         Task {
                             await transcribe(recording)
                         }
@@ -229,30 +232,25 @@ final class AppModel: ObservableObject {
     private func transcribe(_ recording: RecordedAudio) async {
         defer {
             try? FileManager.default.removeItem(at: recording.temporaryURL)
+            isTranscribingAudio = false
         }
 
         do {
             let text = try await audioRecorder.transcribe(url: recording.temporaryURL)
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                if draft.body == String(localized: "Transcribing...") {
-                    draft.body = String(localized: "Transcription: No speech detected.")
-                }
+                statusToast = .pending(String(localized: "No speech detected. Audio kept."))
                 return
             }
 
-            if draft.body == String(localized: "Transcribing...")
-                || draft.body == String(localized: "Transcription: No speech detected.") {
+            if draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 draft.body = trimmed
             } else {
                 draft.body += "\n\n\(trimmed)"
             }
             statusToast = .saved(String(localized: "Transcribed"))
         } catch {
-            if draft.body == String(localized: "Transcribing...") {
-                draft.body = String(localized: "Transcription unavailable. Check permission and try again.")
-            }
-            statusToast = .error(String(localized: "Transcription unavailable"))
+            statusToast = .error(error.localizedDescription)
         }
     }
 

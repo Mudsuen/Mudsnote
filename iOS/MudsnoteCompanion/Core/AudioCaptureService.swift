@@ -73,25 +73,27 @@ final class AudioCaptureService: NSObject, ObservableObject {
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
 
-        return try await withCheckedThrowingContinuation { continuation in
-            final class ResumeBox {
-                var didResume = false
-            }
-            let box = ResumeBox()
+        let state = SpeechRecognitionState()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                state.install(continuation)
+                let task = recognizer.recognitionTask(with: request) { result, error in
+                    if let error {
+                        state.finish(.failure(error))
+                        return
+                    }
 
-            recognizer.recognitionTask(with: request) { result, error in
-                if let error {
-                    guard !box.didResume else { return }
-                    box.didResume = true
-                    continuation.resume(throwing: error)
-                    return
+                    guard let result, result.isFinal else { return }
+                    state.finish(.success(result.bestTranscription.formattedString))
                 }
+                state.install(task)
 
-                guard let result, result.isFinal else { return }
-                guard !box.didResume else { return }
-                box.didResume = true
-                continuation.resume(returning: result.bestTranscription.formattedString)
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 45) {
+                    state.finish(.failure(SpeechTranscriptionError.timedOut))
+                }
             }
+        } onCancel: {
+            state.finish(.failure(CancellationError()))
         }
     }
 
@@ -126,7 +128,65 @@ enum AudioCaptureError: LocalizedError, Equatable {
     }
 }
 
-enum SpeechTranscriptionError: Error {
+enum SpeechTranscriptionError: LocalizedError, Equatable {
     case notAuthorized
     case recognizerUnavailable
+    case timedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .notAuthorized:
+            String(localized: "Speech recognition permission is required for transcription.")
+        case .recognizerUnavailable:
+            String(localized: "Speech recognition is temporarily unavailable.")
+        case .timedOut:
+            String(localized: "Transcription timed out. The audio is still attached.")
+        }
+    }
+}
+
+private final class SpeechRecognitionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, Error>?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var isFinished = false
+
+    func install(_ continuation: CheckedContinuation<String, Error>) {
+        lock.lock()
+        if isFinished {
+            lock.unlock()
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func install(_ task: SFSpeechRecognitionTask) {
+        lock.lock()
+        if isFinished {
+            lock.unlock()
+            task.cancel()
+            return
+        }
+        recognitionTask = task
+        lock.unlock()
+    }
+
+    func finish(_ result: Result<String, Error>) {
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        let continuation = continuation
+        self.continuation = nil
+        let recognitionTask = recognitionTask
+        self.recognitionTask = nil
+        lock.unlock()
+
+        recognitionTask?.cancel()
+        continuation?.resume(with: result)
+    }
 }

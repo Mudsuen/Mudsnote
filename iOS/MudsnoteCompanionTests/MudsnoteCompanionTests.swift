@@ -5,6 +5,9 @@ final class MudsnoteCompanionTests: XCTestCase {
     func testAudioCaptureErrorsExplainRecovery() {
         XCTAssertNotNil(AudioCaptureError.microphonePermissionDenied.errorDescription)
         XCTAssertNotNil(AudioCaptureError.couldNotStart.errorDescription)
+        XCTAssertNotNil(SpeechTranscriptionError.notAuthorized.errorDescription)
+        XCTAssertNotNil(SpeechTranscriptionError.recognizerUnavailable.errorDescription)
+        XCTAssertNotNil(SpeechTranscriptionError.timedOut.errorDescription)
     }
 
     @MainActor
