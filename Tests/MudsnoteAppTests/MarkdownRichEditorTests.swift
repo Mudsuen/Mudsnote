@@ -3530,7 +3530,6 @@ struct MarkdownRichEditorTests {
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
         #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
-        controller.refreshSelectedScopeFromCachedSnapshotForLibrary()
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
     }
 

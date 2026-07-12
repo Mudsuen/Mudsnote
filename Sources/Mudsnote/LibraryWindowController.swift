@@ -4880,6 +4880,7 @@ final class LibraryWindowController: NSWindowController,
             tags: selectedTags,
             modifiedAt: savedAt
         )
+        refreshVisibleNoteListAfterSave(selecting: savedURL)
         statusLabel.stringValue = editorDateText(for: savedAt)
         onSave(savedURL)
         updateToolbarActionState()
@@ -4913,6 +4914,19 @@ final class LibraryWindowController: NSWindowController,
         if sourceCountSnapshot.count > Self.sourceCountSnapshotLimit {
             sourceCountSnapshot.removeLast(sourceCountSnapshot.count - Self.sourceCountSnapshotLimit)
         }
+    }
+
+    private func refreshVisibleNoteListAfterSave(selecting savedURL: URL) {
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            scheduleSearchResultReload(query: query, selecting: savedURL)
+            return
+        }
+
+        notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
+        rebuildNoteListRowsForDisplayOptions()
+        updateNoteListHeader(query: "")
+        refreshSourceCounts(using: sourceCountSnapshot)
     }
 
     private func removeNotesFromSourceSnapshot(at urls: [URL]) {

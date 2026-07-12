@@ -32,6 +32,11 @@
 - Default/canonical library geometry is `940x630pt`, close to the `931x623pt` Apple Notes reference.
 - Version-5 migration recenters only exact old-default frames and preserves custom window sizing.
 
+## Latest iteration (162)
+
+- Successful autosave immediately updates visible list metadata, ordering, groups, selection, and counts from the in-memory snapshot.
+- Search-state saves schedule detached result refresh instead of synchronously rebuilding the index.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

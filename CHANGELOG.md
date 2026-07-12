@@ -967,6 +967,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Tightened the default library window to `940x630pt` and the safe minimum to `904x560pt`, retained the `220/200pt` source/list proportions, and migrated only frames that exactly matched either previous default while preserving their center.
 - Lesson: Matching control metrics inside an oversized shell is not enough; default window geometry is a first-order fidelity signal, but migration must not overwrite intentional user resizing.
 
+### 162. Immediate list metadata after autosave
+
+- Problem: Successful autosave refreshed the editor timestamp and source snapshot, but the visible note row kept its old title, preview, and date until another navigation or filesystem refresh.
+- Fix: After save, project the current scope directly from the updated in-memory snapshot, rebuild sorting/grouping while preserving selection, refresh counts, and use detached search refresh when a query is active.
+- Lesson: Snapshot correctness must reach every visible projection immediately; persisting data without updating the list makes autosave appear unreliable even when the file is correct.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
