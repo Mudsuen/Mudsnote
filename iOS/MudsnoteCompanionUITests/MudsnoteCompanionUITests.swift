@@ -103,6 +103,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testAttachmentLibraryShowsStoredFiles() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let attachments = app.buttons["attachments-link"]
+        XCTAssertTrue(attachments.waitForExistence(timeout: 8))
+        attachments.tap()
+
+        let storedImage = app.buttons["attachment-row-Attachments/ui-test.png"]
+        XCTAssertTrue(storedImage.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["ui-test.png"].exists)
+        XCTAssertFalse(app.staticTexts["Images and audio are stored in Attachments/yyyy/mm and referenced by relative Markdown links."].exists)
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,

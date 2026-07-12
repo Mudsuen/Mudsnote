@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     @Published var inboxItems: [MemoBlock] = []
     @Published var libraryFiles: [RecentMarkdownFile] = []
     @Published var recentFiles: [RecentMarkdownFile] = []
+    @Published var attachments: [LibraryAttachment] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
     @Published var librarySummary = LibrarySummary()
@@ -73,6 +74,7 @@ final class AppModel: ObservableObject {
         inboxItems = []
         libraryFiles = []
         recentFiles = []
+        attachments = []
         librarySummary = LibrarySummary()
         tagSummaries = []
         conflictWarnings = []
@@ -308,6 +310,17 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func previewURL(for attachment: LibraryAttachment) async -> URL? {
+        do {
+            return try await fileStore.prepareAttachmentPreview(
+                relativePath: attachment.relativePath
+            )
+        } catch {
+            statusToast = .error(String(localized: "Could not open attachment"))
+            return nil
+        }
+    }
+
     func refreshInbox() async {
         guard folderAccess.currentRoot != nil else { return }
         do {
@@ -340,6 +353,7 @@ final class AppModel: ObservableObject {
         inboxItems = snapshot.inboxItems
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
+        attachments = snapshot.attachments
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)
         conflictWarnings = snapshot.conflictWarnings

@@ -251,6 +251,16 @@
         }
       }
     },
+    "Could not open attachment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开附件"
+          }
+        }
+      }
+    },
     "Could not save. Draft kept open": {
       "localizations": {
         "zh-Hans": {
@@ -407,6 +417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "图片"
+          }
+        }
+      }
+    },
+    "Images and audio added to notes appear here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到笔记中的图片和音频会显示在这里。"
           }
         }
       }
@@ -587,6 +607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有笔记"
+          }
+        }
+      }
+    },
+    "No Attachments": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无附件"
           }
         }
       }
@@ -1087,6 +1117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "此 Markdown 文件不在已授权的资料库中。"
+          }
+        }
+      }
+    },
+    "This attachment is outside the authorized library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此附件不在已授权的资料库中。"
           }
         }
       }

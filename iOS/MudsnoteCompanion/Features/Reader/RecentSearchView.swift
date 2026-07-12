@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 
 enum LibraryDestination: Hashable {
@@ -114,10 +115,11 @@ struct LibraryHomeView: View {
                 }
 
                 NavigationLink {
-                    AttachmentLibraryView(count: appModel.librarySummary.attachmentCount)
+                    AttachmentLibraryView()
                 } label: {
                     NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
                 }
+                .accessibilityIdentifier("attachments-link")
 
                 NavigationLink {
                     SettingsRulesView(chooseFolder: chooseFolder)
@@ -489,20 +491,53 @@ struct TagMemoListView: View {
 
 struct AttachmentLibraryView: View {
     @EnvironmentObject private var appModel: AppModel
-    var count: Int
+    @State private var previewURL: URL?
 
     var body: some View {
         List {
-            Section {
-                HStack {
-                    Label("Attachments", systemImage: "paperclip")
-                    Spacer()
-                    Text("\(count)")
-                        .foregroundStyle(MudsnoteColors.muted)
+            if appModel.attachments.isEmpty {
+                ContentUnavailableView(
+                    "No Attachments",
+                    systemImage: "paperclip",
+                    description: Text("Images and audio added to notes appear here.")
+                )
+                .listRowBackground(Color.clear)
+            } else {
+                ForEach(appModel.attachments) { attachment in
+                    Button {
+                        Task {
+                            previewURL = await appModel.previewURL(for: attachment)
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: attachment.kind.systemImage)
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.primary)
+                                .frame(width: 38, height: 38)
+                                .background(MudsnoteColors.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(attachment.fileName)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(MudsnoteColors.text)
+                                    .lineLimit(1)
+                                Text(attachmentMetadata(attachment))
+                                    .font(.caption)
+                                    .foregroundStyle(MudsnoteColors.muted)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.muted)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("attachment-row-\(attachment.id)")
                 }
-                Text("Images and audio are stored in Attachments/yyyy/mm and referenced by relative Markdown links.")
-                    .font(.footnote)
-                    .foregroundStyle(MudsnoteColors.muted)
             }
         }
         .listStyle(.insetGrouped)
@@ -512,6 +547,15 @@ struct AttachmentLibraryView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle("Attachments")
+        .quickLookPreview($previewURL)
+    }
+
+    private func attachmentMetadata(_ attachment: LibraryAttachment) -> String {
+        let size = ByteCountFormatter.string(
+            fromByteCount: attachment.byteCount,
+            countStyle: .file
+        )
+        return "\(size) · \(attachment.modifiedAt.formatted(date: .abbreviated, time: .shortened))"
     }
 }
 

@@ -294,9 +294,36 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.summary.dailyCount, 1)
         XCTAssertEqual(snapshot.summary.templateCount, 3)
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
+        XCTAssertEqual(snapshot.attachments.count, 1)
+        XCTAssertEqual(snapshot.attachments.first?.relativePath, "Attachments/image.png")
+        XCTAssertEqual(snapshot.attachments.first?.kind, .image)
         XCTAssertEqual(snapshot.allFiles.count, 36)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
+    }
+
+    func testAttachmentPreviewCopiesAuthorizedFileAndRejectsTraversal() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachment = root.appendingPathComponent("Attachments/preview.png")
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47])
+        try bytes.write(to: attachment, options: .atomic)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let preview = try await store.prepareAttachmentPreview(
+            relativePath: "Attachments/preview.png"
+        )
+        XCTAssertEqual(try Data(contentsOf: preview), bytes)
+        XCTAssertTrue(preview.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+
+        do {
+            _ = try await store.prepareAttachmentPreview(relativePath: "../outside.png")
+            XCTFail("Path traversal should be rejected")
+        } catch {
+            XCTAssertEqual(error as? AttachmentPreviewError, .invalidPath)
+        }
     }
 
     func testMarkdownDocumentLoadsInsideAuthorizedLibraryAndRejectsTraversal() async throws {

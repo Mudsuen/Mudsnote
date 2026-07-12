@@ -59,6 +59,12 @@ private enum MudsnoteUITestLaunchConfiguration {
             do {
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
                 try FolderInitializer.initialize(root)
+                if let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=") {
+                    try image.write(
+                        to: root.appendingPathComponent("Attachments/ui-test.png"),
+                        options: .atomic
+                    )
+                }
                 try access.persistFolder(root)
             } catch {
                 assertionFailure("Could not prepare the Mudsnote UI-test library: \(error)")

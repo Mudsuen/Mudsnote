@@ -20,8 +20,9 @@ actor MarkdownFileStore {
         let inboxURL = root.appendingPathComponent("Inbox.md")
         let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
         let inboxItems = InboxParser.parse(inboxMarkdown)
-        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         var markdownFiles: [RecentMarkdownFile] = []
+        var attachments: [LibraryAttachment] = []
         var dailyCount = 0
         var templateCount = 0
         var attachmentCount = 0
@@ -46,6 +47,14 @@ actor MarkdownFileStore {
 
                 if relativePath.hasPrefix("Attachments/") {
                     attachmentCount += 1
+                    attachments.append(LibraryAttachment(
+                        id: relativePath,
+                        relativePath: relativePath,
+                        fileName: url.lastPathComponent,
+                        modifiedAt: values.contentModificationDate ?? .distantPast,
+                        byteCount: Int64(values.fileSize ?? 0),
+                        kind: LibraryAttachment.Kind(fileExtension: url.pathExtension)
+                    ))
                 }
                 guard url.pathExtension.lowercased() == "md" else { continue }
                 if relativePath.hasPrefix("Daily/") {
@@ -72,6 +81,7 @@ actor MarkdownFileStore {
             inboxItems: inboxItems,
             allFiles: allFiles,
             recentFiles: recentFiles,
+            attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
@@ -138,6 +148,33 @@ actor MarkdownFileStore {
             relativePath: relativePath,
             markdown: try String(contentsOf: fileURL, encoding: .utf8)
         )
+    }
+
+    func prepareAttachmentPreview(relativePath: String) throws -> URL {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let standardizedRoot = root.standardizedFileURL
+        let fileURL = root.appendingPathComponent(relativePath).standardizedFileURL
+        let attachmentsRoot = root.appendingPathComponent("Attachments", isDirectory: true).standardizedFileURL
+        guard fileURL.path.hasPrefix(attachmentsRoot.path + "/"),
+              fileURL.path.hasPrefix(standardizedRoot.path + "/") else {
+            throw AttachmentPreviewError.invalidPath
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+        guard values.isRegularFile == true else {
+            throw AttachmentPreviewError.invalidPath
+        }
+
+        let previewDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MudsnoteAttachmentPreview", isDirectory: true)
+        try? fileManager.removeItem(at: previewDirectory)
+        try fileManager.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+        let previewURL = previewDirectory.appendingPathComponent(fileURL.lastPathComponent)
+        try fileManager.copyItem(at: fileURL, to: previewURL)
+        return previewURL
     }
 
     func applyInboxMutation(_ mutation: InboxMutation) throws {
@@ -347,8 +384,43 @@ struct MarkdownLibrarySnapshot: Equatable {
     var inboxItems: [MemoBlock]
     var allFiles: [RecentMarkdownFile]
     var recentFiles: [RecentMarkdownFile]
+    var attachments: [LibraryAttachment]
     var summary: LibrarySummary
     var conflictWarnings: [String]
+}
+
+struct LibraryAttachment: Identifiable, Equatable {
+    var id: String
+    var relativePath: String
+    var fileName: String
+    var modifiedAt: Date
+    var byteCount: Int64
+    var kind: Kind
+
+    enum Kind: Equatable {
+        case image
+        case audio
+        case other
+
+        init(fileExtension: String) {
+            switch fileExtension.lowercased() {
+            case "png", "jpg", "jpeg", "heic", "gif", "webp", "tif", "tiff":
+                self = .image
+            case "m4a", "wav", "mp3", "aac", "caf", "aif", "aiff":
+                self = .audio
+            default:
+                self = .other
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .image: "photo"
+            case .audio: "waveform"
+            case .other: "doc"
+            }
+        }
+    }
 }
 
 struct MarkdownDocument: Identifiable, Equatable {
@@ -363,6 +435,14 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         String(localized: "This Markdown file is outside the authorized library.")
+    }
+}
+
+enum AttachmentPreviewError: LocalizedError, Equatable {
+    case invalidPath
+
+    var errorDescription: String? {
+        String(localized: "This attachment is outside the authorized library.")
     }
 }
 
