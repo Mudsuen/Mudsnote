@@ -424,6 +424,24 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testAuthorizedLibraryPathRejectsAbsoluteAndEscapingReferences() {
+        let root = URL(fileURLWithPath: "/tmp/MudsnoteLibrary", isDirectory: true)
+
+        XCTAssertEqual(
+            AuthorizedLibraryPath.resolve("Attachments/2026/image.png", within: root)?.path,
+            "/tmp/MudsnoteLibrary/Attachments/2026/image.png"
+        )
+        XCTAssertNil(AuthorizedLibraryPath.resolve("../private.txt", within: root))
+        XCTAssertNil(AuthorizedLibraryPath.resolve("/etc/passwd", within: root))
+        XCTAssertNil(
+            AuthorizedLibraryPath.resolve(
+                "Daily/2026-07-12.md",
+                within: root,
+                constrainedTo: "Attachments"
+            )
+        )
+    }
+
     func testInboxDeltaRefreshAvoidsUnrelatedLibraryRescan() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

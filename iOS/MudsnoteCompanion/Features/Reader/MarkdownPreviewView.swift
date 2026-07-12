@@ -8,6 +8,8 @@ struct MarkdownPreviewView: View {
     private var metadata: String
     private var markdown: String
     @State private var showRaw = false
+    @State private var accessedRoot: URL?
+    @State private var accessRevision = 0
 
     init(memo: MemoBlock) {
         title = String(localized: "Markdown")
@@ -52,11 +54,13 @@ struct MarkdownPreviewView: View {
                 }
             }
         }
+        .onAppear(perform: beginLibraryAccess)
+        .onDisappear(perform: endLibraryAccess)
     }
 
     private var markdownBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(renderLines(), id: \.self) { line in
+            ForEach(Array(renderLines().enumerated()), id: \.offset) { _, line in
                 if let attachment = MarkdownAttachmentLine(line) {
                     attachmentView(attachment)
                 } else if line.hasPrefix(">") {
@@ -117,7 +121,22 @@ struct MarkdownPreviewView: View {
 
     private func localFileURL(for relativePath: String) -> URL? {
         guard case .ready(let root) = appModel.folderStatus else { return nil }
-        return root.appendingPathComponent(relativePath)
+        _ = accessRevision
+        return AuthorizedLibraryPath.resolve(relativePath, within: root)
+    }
+
+    private func beginLibraryAccess() {
+        guard accessedRoot == nil,
+              case .ready(let root) = appModel.folderStatus else { return }
+        if root.startAccessingSecurityScopedResource() {
+            accessedRoot = root
+        }
+        accessRevision += 1
+    }
+
+    private func endLibraryAccess() {
+        accessedRoot?.stopAccessingSecurityScopedResource()
+        accessedRoot = nil
     }
 
     private func markdownText(_ line: String) -> Text {

@@ -131,10 +131,8 @@ actor MarkdownFileStore {
 
     func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
-        let standardizedRoot = root.standardizedFileURL
-        let fileURL = root.appendingPathComponent(relativePath).standardizedFileURL
-        guard fileURL.pathExtension.lowercased() == "md",
-              fileURL.path.hasPrefix(standardizedRoot.path + "/") else {
+        guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              fileURL.pathExtension.lowercased() == "md" else {
             throw MarkdownDocumentError.invalidPath
         }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -152,11 +150,11 @@ actor MarkdownFileStore {
 
     func prepareAttachmentPreview(relativePath: String) throws -> URL {
         guard let root else { throw FolderAccessError.missingFolder }
-        let standardizedRoot = root.standardizedFileURL
-        let fileURL = root.appendingPathComponent(relativePath).standardizedFileURL
-        let attachmentsRoot = root.appendingPathComponent("Attachments", isDirectory: true).standardizedFileURL
-        guard fileURL.path.hasPrefix(attachmentsRoot.path + "/"),
-              fileURL.path.hasPrefix(standardizedRoot.path + "/") else {
+        guard let fileURL = AuthorizedLibraryPath.resolve(
+            relativePath,
+            within: root,
+            constrainedTo: "Attachments"
+        ) else {
             throw AttachmentPreviewError.invalidPath
         }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -371,6 +369,26 @@ actor MarkdownFileStore {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter
     }()
+}
+
+enum AuthorizedLibraryPath {
+    static func resolve(
+        _ relativePath: String,
+        within root: URL,
+        constrainedTo directory: String? = nil
+    ) -> URL? {
+        guard !relativePath.isEmpty, !relativePath.hasPrefix("/") else { return nil }
+        let standardizedRoot = root.standardizedFileURL
+        let candidate = root.appendingPathComponent(relativePath).standardizedFileURL
+        guard candidate.path.hasPrefix(standardizedRoot.path + "/") else { return nil }
+        if let directory {
+            let allowedRoot = root
+                .appendingPathComponent(directory, isDirectory: true)
+                .standardizedFileURL
+            guard candidate.path.hasPrefix(allowedRoot.path + "/") else { return nil }
+        }
+        return candidate
+    }
 }
 
 struct RecentMarkdownFile: Identifiable, Equatable {
