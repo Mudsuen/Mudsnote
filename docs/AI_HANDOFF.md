@@ -52,6 +52,11 @@
 - Collapsed and expanded note lists share reference-measured horizontal baselines: `20pt` group headings, `15pt` selection starts, and `40pt` row content.
 - The `200pt` content-list pane and scrollbar clearance remain unchanged.
 
+## Latest iteration (166)
+
+- Editor title and body now share a Notes-like `23–24pt` visible reading edge.
+- The outer stack uses `22pt`; TextKit contributes only another `2pt` to body text.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

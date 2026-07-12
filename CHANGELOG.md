@@ -991,6 +991,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Matched the state-specific reference with a `20pt` group-title inset, `15pt` selected-row leading inset, `40pt` note-content baseline, and quieter bounded separators while preserving the established pane width and scrollbar clearance.
 - Lesson: Once shell proportions are stable, list fidelity depends on independently measuring headings, selection shapes, text baselines, and separators rather than shifting the entire table as one block.
 
+### 166. Shared editor reading edge
+
+- Problem: The editor title and body appeared several points farther from the pane divider than Apple Notes because the `24pt` outer inset and the text view's additional `4pt` container inset accumulated only for body text.
+- Fix: Tightened the shared editor inset to `22pt` and the body text-container inset to `2pt`, placing the title near `23pt` and body near `24pt` while preserving the previously calibrated vertical rhythm and full-width date centering.
+- Lesson: Rich editor alignment must account for both view geometry and TextKit padding; matching only the outer stack leaves title and body on visibly different reading edges.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

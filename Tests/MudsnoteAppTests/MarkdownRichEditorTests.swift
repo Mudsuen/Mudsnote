@@ -1292,6 +1292,7 @@ struct MarkdownRichEditorTests {
         #expect(editorParagraphStyle.paragraphSpacing == LibraryNotesLayout.editorParagraphSpacing)
         #expect(LibraryNotesLayout.editorLineSpacing == 2.5)
         #expect(LibraryNotesLayout.editorParagraphSpacing == 6)
+        #expect(controller.editorTextView.textContainerInset.width == LibraryNotesLayout.editorTextContainerHorizontalInset)
         #expect(controller.editorTextView.textContainerInset.height == 4)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
@@ -1312,7 +1313,8 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorDateToTitleSpacing > LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
-        #expect(LibraryNotesLayout.editorHorizontalInset == 24)
+        #expect(LibraryNotesLayout.editorHorizontalInset == 22)
+        #expect(LibraryNotesLayout.editorTextContainerHorizontalInset == 2)
         let editorPane = try #require(editorStack.superview)
         #expect(editorPane.constraints.contains {
             $0.firstItem === editorStack

@@ -371,7 +371,8 @@ enum LibraryNotesLayout {
     static let noteListTopInset: CGFloat = 4
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 18
-    static let editorHorizontalInset: CGFloat = 24
+    static let editorHorizontalInset: CGFloat = 22
+    static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
     static let editorDateToTitleSpacing: CGFloat = 34
@@ -2572,7 +2573,10 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.insertionPointColor = theme.accentColor
         editorTextView.isVerticallyResizable = true
         editorTextView.isHorizontallyResizable = false
-        editorTextView.textContainerInset = NSSize(width: 4, height: 4)
+        editorTextView.textContainerInset = NSSize(
+            width: LibraryNotesLayout.editorTextContainerHorizontalInset,
+            height: 4
+        )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
     }
