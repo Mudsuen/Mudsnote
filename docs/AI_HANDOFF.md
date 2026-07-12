@@ -47,6 +47,11 @@
 - The full-height source surface retains its rounded clipping and darkened native material without drawing a second layer border.
 - AppKit remains the sole owner of the sidebar and split-pane edge treatment.
 
+## Latest iteration (165)
+
+- Collapsed and expanded note lists share reference-measured horizontal baselines: `20pt` group headings, `15pt` selection starts, and `40pt` row content.
+- The `200pt` content-list pane and scrollbar clearance remain unchanged.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

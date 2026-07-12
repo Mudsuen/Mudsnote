@@ -491,7 +491,7 @@ private enum LibraryFormatCommand: Int {
 
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
-    static let titleLeadingInset: CGFloat = 10
+    static let titleLeadingInset: CGFloat = 20
     static let titleTrailingInset: CGFloat = 10
     static let titleBottomInset: CGFloat = 12
 
@@ -524,7 +524,7 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 6
-    static let contentLeadingInset: CGFloat = 36
+    static let contentLeadingInset: CGFloat = 40
     static let contentBottomInset: CGFloat = 6
     static let contentTrailingInset: CGFloat = 14
     static let textRowSpacing: CGFloat = 1
@@ -629,18 +629,18 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 10
-    static let selectionTrailingInset: CGFloat = 24
+    static let selectionLeadingInset: CGFloat = 15
+    static let selectionTrailingInset: CGFloat = 21
     static let selectionVerticalInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
     static let selectionFillColor = NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
-    static let hoverLeadingInset: CGFloat = 10
-    static let hoverTrailingInset: CGFloat = 24
+    static let hoverLeadingInset: CGFloat = selectionLeadingInset
+    static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 36
-    static let separatorTrailingInset: CGFloat = 24
+    static let separatorLeadingInset: CGFloat = 42
+    static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?

@@ -985,6 +985,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Removed the custom layer border while retaining the `24pt` clipping radius, darkened sidebar material, and AppKit-owned pane separation.
 - Lesson: A native full-height sidebar should have one edge owner; custom material may shape and tint the surface without redrawing AppKit's structural boundary.
 
+### 165. Notes-matched list insets
+
+- Problem: In the collapsed state, note-group titles and row text began too far left while the selected background used a looser leading edge than Apple Notes, making the `200pt` list pane feel visually off-center.
+- Fix: Matched the state-specific reference with a `20pt` group-title inset, `15pt` selected-row leading inset, `40pt` note-content baseline, and quieter bounded separators while preserving the established pane width and scrollbar clearance.
+- Lesson: Once shell proportions are stable, list fidelity depends on independently measuring headings, selection shapes, text baselines, and separators rather than shifting the entire table as one block.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
