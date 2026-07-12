@@ -437,13 +437,30 @@ private enum LibraryActionError: LocalizedError {
 }
 
 private enum LibraryFormatCommand: Int {
-    case heading = 1
+    case heading1 = 1
+    case heading2
+    case heading3
+    case paragraph
     case bold
     case italic
     case underline
     case strikethrough
+    case checklist
     case bullet
     case ordered
+
+    var paragraphKind: MarkdownParagraphKind? {
+        switch self {
+        case .heading1: return .heading(level: 1)
+        case .heading2: return .heading(level: 2)
+        case .heading3: return .heading(level: 3)
+        case .paragraph: return .paragraph
+        case .checklist: return .checklist(checked: false)
+        case .bullet: return .bullet
+        case .ordered: return .ordered(index: 1)
+        case .bold, .italic, .underline, .strikethrough: return nil
+        }
+    }
 }
 
 @MainActor
@@ -1137,7 +1154,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
     private var inlineFolderEditOperation: InlineFolderEditOperation?
-    private var inlineFolderEditField: NSTextView?
+    private var inlineFolderEditField: NSTextField?
     private var inlineFolderEditRow: NSView?
     private var isCommittingInlineFolderEdit = false
     private var inlineFolderEditHasReceivedFocus = false
@@ -3742,6 +3759,10 @@ final class LibraryWindowController: NSWindowController,
     func controlTextDidChange(_ obj: Notification) {
         guard let object = obj.object as AnyObject? else { return }
 
+        if object === inlineFolderEditField {
+            return
+        }
+
         if object === searchField {
             scheduleSearchReloadFromTyping()
             return
@@ -3753,6 +3774,18 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if control === inlineFolderEditField {
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                cancelInlineFolderEdit()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                commitInlineFolderEdit()
+                return true
+            }
+            return false
+        }
+
         guard control === searchField else { return false }
         flushPendingSearchReload()
 
@@ -3776,18 +3809,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if textView === inlineFolderEditField {
-            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-                cancelInlineFolderEdit()
-                return true
-            }
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                commitInlineFolderEdit()
-                return true
-            }
-            return false
-        }
-
         guard textView === editorTextView else { return false }
 
         if commandSelector == #selector(NSResponder.insertTab(_:)) {
@@ -3802,18 +3823,16 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textDidChange(_ notification: Notification) {
-        if let object = notification.object as AnyObject?, object === inlineFolderEditField {
-            return
-        } else if let object = notification.object as AnyObject?, object === editorTextView {
+        if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
         } else {
             markDirty()
         }
     }
 
-    func textDidEndEditing(_ notification: Notification) {
-        guard let textView = notification.object as? NSTextView,
-              textView === inlineFolderEditField,
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField,
+              field === inlineFolderEditField,
               inlineFolderEditHasReceivedFocus,
               !isCommittingInlineFolderEdit else {
             return
@@ -4256,7 +4275,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func formatPressed(_ sender: Any?) {
         guard canEditCurrentDocument else { return }
-        let menu = makeFormatMenu()
+        let menu = makeFormatMenuForLibrary()
         guard !menu.items.isEmpty else { return }
 
         if let item = sender as? NSToolbarItem,
@@ -5375,7 +5394,6 @@ final class LibraryWindowController: NSWindowController,
         sourceFolderStack.insertArrangedSubview(row, at: insertionIndex)
         inlineFolderEditRow = row
         inlineFolderEditHasReceivedFocus = false
-        focusInlineFolderEditField()
     }
 
     private func makeInlineFolderEditRow(depth: Int, name: String) -> NSView {
@@ -5396,10 +5414,9 @@ final class LibraryWindowController: NSWindowController,
         )
         icon.translatesAutoresizingMaskIntoConstraints = false
 
-        let field = NSTextView(frame: .zero)
+        let field = NSTextField(string: name)
         field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditField")
         field.delegate = self
-        field.string = name
         field.font = .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
             weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
@@ -5407,11 +5424,11 @@ final class LibraryWindowController: NSWindowController,
         field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         field.backgroundColor = NSColor.controlBackgroundColor
         field.drawsBackground = true
-        field.isRichText = false
-        field.isVerticallyResizable = false
-        field.isHorizontallyResizable = false
-        field.textContainerInset = NSSize(width: 3, height: 2)
-        field.textContainer?.lineFragmentPadding = 0
+        field.isBezeled = false
+        field.isBordered = false
+        field.focusRingType = .none
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.usesSingleLineMode = true
         field.wantsLayer = true
         field.layer?.cornerRadius = 4
         field.layer?.borderWidth = 1
@@ -5444,8 +5461,15 @@ final class LibraryWindowController: NSWindowController,
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             window.contentView?.layoutSubtreeIfNeeded()
-            if window.makeFirstResponder(field) {
-                field.setSelectedRange(NSRange(location: 0, length: field.string.utf16.count))
+            if let fieldEditor = field.currentEditor() as? NSTextView,
+               window.firstResponder === fieldEditor {
+                fieldEditor.setSelectedRange(NSRange(location: 0, length: field.stringValue.utf16.count))
+                self.inlineFolderEditHasReceivedFocus = true
+                return
+            }
+            if window.makeFirstResponder(field),
+               let fieldEditor = field.currentEditor() as? NSTextView {
+                fieldEditor.setSelectedRange(NSRange(location: 0, length: field.stringValue.utf16.count))
                 self.inlineFolderEditHasReceivedFocus = true
                 return
             }
@@ -5461,7 +5485,7 @@ final class LibraryWindowController: NSWindowController,
               let operation = inlineFolderEditOperation else {
             return
         }
-        let name = field.string.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             cancelInlineFolderEdit()
             return
@@ -5481,7 +5505,7 @@ final class LibraryWindowController: NSWindowController,
             isCommittingInlineFolderEdit = false
             inlineFolderEditOperation = operation
             rebuildSourceRows(includeTags: sourceTagsLoaded)
-            inlineFolderEditField?.string = name
+            inlineFolderEditField?.stringValue = name
             focusInlineFolderEditField()
             let message: String
             switch operation {
@@ -6233,37 +6257,75 @@ final class LibraryWindowController: NSWindowController,
         count > 1 ? String(format: multiple, count) : single
     }
 
-    private func makeFormatMenu() -> NSMenu {
+    func makeFormatMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
-        let items: [(String, LibraryFormatCommand, String)] = [
-            ("标题", .heading, "1"),
-            ("加粗", .bold, "b"),
-            ("斜体", .italic, "i"),
-            ("下划线", .underline, "u"),
-            ("删除线", .strikethrough, ""),
-            ("项目符号列表", .bullet, ""),
-            ("编号列表", .ordered, "")
+        let groups: [[(String, LibraryFormatCommand, String, NSEvent.ModifierFlags)]] = [
+            [
+                ("标题", .heading1, "1", [.command, .option]),
+                ("副标题", .heading2, "2", [.command, .option]),
+                ("小标题", .heading3, "3", [.command, .option]),
+                ("正文", .paragraph, "0", [.command, .option])
+            ],
+            [
+                ("加粗", .bold, "b", [.command]),
+                ("斜体", .italic, "i", [.command]),
+                ("下划线", .underline, "u", [.command]),
+                ("删除线", .strikethrough, "x", [.command, .shift])
+            ],
+            [
+                ("待办列表", .checklist, "9", [.command, .shift]),
+                ("项目符号列表", .bullet, "8", [.command, .shift]),
+                ("编号列表", .ordered, "7", [.command, .shift])
+            ]
         ]
 
-        for (title, command, keyEquivalent) in items {
-            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: keyEquivalent)
-            item.target = self
-            item.tag = command.rawValue
-            if command == .heading {
-                item.keyEquivalentModifierMask = [.command, .option]
-            } else if command == .strikethrough {
-                item.keyEquivalentModifierMask = [.command, .shift]
-                item.keyEquivalent = "x"
-            } else if [.bold, .italic, .underline].contains(command) {
-                item.keyEquivalentModifierMask = [.command]
-            }
-            menu.addItem(item)
-            if command == .strikethrough {
+        for (groupIndex, items) in groups.enumerated() {
+            if groupIndex > 0 {
                 menu.addItem(.separator())
+            }
+            for (title, command, keyEquivalent, modifiers) in items {
+                let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: keyEquivalent)
+                item.target = self
+                item.tag = command.rawValue
+                item.keyEquivalentModifierMask = modifiers
+                item.state = isFormatCommandActive(command) ? .on : .off
+                menu.addItem(item)
             }
         }
 
         return menu
+    }
+
+    private func isFormatCommandActive(_ command: LibraryFormatCommand) -> Bool {
+        if let targetKind = command.paragraphKind,
+           let storage = editorTextView.textStorage {
+            let kinds = selectedLineRanges().map {
+                MarkdownRichTextCodec.paragraphKind(at: $0, in: storage)
+            }
+            return !kinds.isEmpty && kinds.allSatisfy { sameParagraphCategory($0, targetKind) }
+        }
+
+        let attributes: [NSAttributedString.Key: Any]
+        if let storage = editorTextView.textStorage, storage.length > 0 {
+            let location = min(editorTextView.selectedRange().location, storage.length - 1)
+            attributes = storage.attributes(at: location, effectiveRange: nil)
+        } else {
+            attributes = editorTextView.typingAttributes
+        }
+        switch command {
+        case .bold:
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            return NSFontManager.shared.traits(of: font).contains(.boldFontMask)
+        case .italic:
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            return isItalicActive(font: font, obliqueness: attributes[.obliqueness])
+        case .underline:
+            return (attributes[.underlineStyle] as? Int) == NSUnderlineStyle.single.rawValue
+        case .strikethrough:
+            return (attributes[.strikethroughStyle] as? Int) == NSUnderlineStyle.single.rawValue
+        default:
+            return false
+        }
     }
 
     private func makeMoveNoteMenu() -> NSMenu {
@@ -6698,10 +6760,22 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleParagraphKind(_ target: MarkdownParagraphKind) {
+        applyParagraphKind(target, togglesOffWhenMatching: true)
+    }
+
+    private func setParagraphKind(_ target: MarkdownParagraphKind) {
+        applyParagraphKind(target, togglesOffWhenMatching: false)
+    }
+
+    private func applyParagraphKind(_ target: MarkdownParagraphKind, togglesOffWhenMatching: Bool) {
         guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
         let ranges = selectedLineRanges()
         let currentKinds = ranges.map { MarkdownRichTextCodec.paragraphKind(at: $0, in: storage) }
-        let shouldResetToParagraph = currentKinds.allSatisfy { sameParagraphCategory($0, target) }
+        let allMatchTarget = currentKinds.allSatisfy { sameParagraphCategory($0, target) }
+        if allMatchTarget, !togglesOffWhenMatching {
+            return
+        }
+        let shouldResetToParagraph = togglesOffWhenMatching && allMatchTarget
         var renderedLines: [NSAttributedString] = []
 
         for (index, lineRange) in ranges.enumerated() {
@@ -6774,9 +6848,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func applyFormatCommand(_ command: LibraryFormatCommand) {
         focusEditorForLibraryAction()
+        if let paragraphKind = command.paragraphKind {
+            setParagraphKind(paragraphKind)
+            return
+        }
         switch command {
-        case .heading:
-            toggleParagraphKind(.heading(level: 1))
         case .bold:
             toggleInlineFontTrait(.boldFontMask)
         case .italic:
@@ -6785,10 +6861,8 @@ final class LibraryWindowController: NSWindowController,
             toggleIntAttribute(.underlineStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "下划线")
         case .strikethrough:
             toggleIntAttribute(.strikethroughStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "删除线")
-        case .bullet:
-            toggleParagraphKind(.bullet)
-        case .ordered:
-            toggleParagraphKind(.ordered(index: 1))
+        case .heading1, .heading2, .heading3, .paragraph, .checklist, .bullet, .ordered:
+            break
         }
     }
 

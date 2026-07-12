@@ -2122,6 +2122,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
         let window = try #require(controller.window)
+        window.makeKeyAndOrderFront(nil)
         controller.loadSourceFoldersForLibrary()
 
         let allButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
@@ -2629,6 +2630,36 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.link",
             "mudsnote.library.toolbar.attachment"
         ])
+
+        let initialFormatMenu = controller.makeFormatMenuForLibrary()
+        #expect(initialFormatMenu.items.filter { !$0.isSeparatorItem }.map(\.title) == [
+            "标题", "副标题", "小标题", "正文",
+            "加粗", "斜体", "下划线", "删除线",
+            "待办列表", "项目符号列表", "编号列表"
+        ])
+        #expect(initialFormatMenu.items.first { $0.title == "正文" }?.state == .on)
+        #expect(initialFormatMenu.items.first { $0.title == "副标题" }?.keyEquivalent == "2")
+        #expect(initialFormatMenu.items.first { $0.title == "副标题" }?.keyEquivalentModifierMask == [.command, .option])
+        #expect(initialFormatMenu.items.first { $0.title == "待办列表" }?.keyEquivalentModifierMask == [.command, .shift])
+
+        let subtitleItem = try #require(initialFormatMenu.items.first { $0.title == "副标题" })
+        #expect(NSApp.sendAction(try #require(subtitleItem.action), to: subtitleItem.target, from: subtitleItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "## plain")
+        let subtitleMenu = controller.makeFormatMenuForLibrary()
+        #expect(subtitleMenu.items.first { $0.title == "副标题" }?.state == .on)
+        let selectedSubtitleItem = try #require(subtitleMenu.items.first { $0.title == "副标题" })
+        #expect(NSApp.sendAction(try #require(selectedSubtitleItem.action), to: selectedSubtitleItem.target, from: selectedSubtitleItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "## plain")
+
+        let bodyItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "正文" })
+        #expect(NSApp.sendAction(try #require(bodyItem.action), to: bodyItem.target, from: bodyItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        let checklistItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "待办列表" })
+        #expect(NSApp.sendAction(try #require(checklistItem.action), to: checklistItem.target, from: checklistItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] plain")
+        let resetBodyItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "正文" })
+        #expect(NSApp.sendAction(try #require(resetBodyItem.action), to: resetBodyItem.target, from: resetBodyItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
         controller.markdownTextViewToggleBold(controller.editorTextView)
@@ -4238,10 +4269,10 @@ struct MarkdownRichEditorTests {
         controller.loadSourceFoldersForLibrary()
 
         controller.beginInlineFolderCreationForLibrary()
-        let field = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+        let field = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
-        #expect(field.string == "新建文件夹")
+        #expect(field.stringValue == "新建文件夹")
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == true)
@@ -4249,36 +4280,38 @@ struct MarkdownRichEditorTests {
         #expect(field.isSelectable)
 
         controller.beginInlineFolderCreationForLibrary()
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.filter {
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.filter {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         }.count == 1)
 
-        field.string = "Inline Folder"
-        #expect(controller.textView(field, doCommandBy: #selector(NSResponder.insertNewline(_:))))
-        let createdURL = store.notesDirectory.appendingPathComponent("Inline Folder", isDirectory: true)
+        let fieldEditor = NSTextView()
+        field.stringValue = "中文文件夹"
+        #expect(controller.control(field, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        let createdURL = store.notesDirectory.appendingPathComponent("中文文件夹", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: createdURL.path))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Inline Folder"
+            $0.title == "中文文件夹"
         } == true)
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
 
         let createdButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Inline Folder"
+            $0.title == "中文文件夹"
         })
         let createdRow = try #require(createdButton.superview as? LibrarySourceRowView)
         let renameItem = try #require(createdRow.menu?.items.first { $0.title == "重命名文件夹" })
         #expect(NSApp.sendAction(try #require(renameItem.action), to: renameItem.target, from: renameItem))
-        let renameField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+        let renameField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
-        #expect(renameField.string == "Inline Folder")
+        #expect(renameField.stringValue == "中文文件夹")
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Inline Folder"
+            $0.title == "中文文件夹"
         } == false)
-        renameField.string = "Renamed Inline Folder"
-        #expect(controller.textView(renameField, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        let renameEditor = NSTextView()
+        renameField.stringValue = "Renamed Inline Folder"
+        #expect(controller.control(renameField, textView: renameEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         let renamedURL = store.notesDirectory.appendingPathComponent("Renamed Inline Folder", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: renamedURL.path))
         #expect(!FileManager.default.fileExists(atPath: createdURL.path))
@@ -4287,11 +4320,11 @@ struct MarkdownRichEditorTests {
         } == true)
 
         controller.beginInlineFolderCreationForLibrary()
-        let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+        let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
-        cancelledField.string = "Cancelled Folder"
-        #expect(controller.textView(cancelledField, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        cancelledField.stringValue = "Cancelled Folder"
+        #expect(controller.control(cancelledField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(!FileManager.default.fileExists(atPath: renamedURL.appendingPathComponent("Cancelled Folder").path))
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"

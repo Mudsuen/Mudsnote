@@ -834,6 +834,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added Left/Right responder commands that reuse the persisted folder disclosure model. Right expands a collapsed folder, then enters its first child; Left returns to the parent or collapses an expanded folder while restoring focus by URL after row reconstruction.
 - Lesson: Hierarchy navigation should operate on the authoritative folder rows and reacquire rendered controls after mutation; retaining a view across a disclosure rebuild is both fragile and unnecessary.
 
+### 138. Notes-style paragraph format menu
+
+- Problem: The `Aa` menu exposed only H1 and treated an already active heading as a toggle back to body, so it was neither a complete nor stateful paragraph-style chooser.
+- Fix: Added H1, H2, H3, Body, checklist, bullet, and numbered paragraph styles alongside inline formatting, grouped them like a native format menu, displayed the active style, and made menu paragraph commands idempotent while preserving toggle semantics for dedicated toolbar actions.
+- Lesson: A style chooser and a shortcut toggle are different commands. Sharing rendering primitives is useful, but their interaction semantics must remain explicit.
+
+### 139. Native inline folder field editor
+
+- Problem: The inline folder row used a standalone `NSTextView`, so it never participated in AppKit's shared field-editor lifecycle and first-input replacement could race with focus, especially when an input method began marked-text composition.
+- Fix: Replaced it with a single-line `NSTextField`, select the default name only after its window field editor exists, and moved Return, Escape, and focus-loss handling onto `NSTextFieldDelegate`.
+- Lesson: Native single-line renaming should use the platform field-editor contract; input methods reveal responder timing bugs but are not the source of them.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
