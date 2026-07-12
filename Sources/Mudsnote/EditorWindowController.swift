@@ -208,6 +208,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var activeToolbarActionSelection: NSRange?
     let suggestionController = SuggestionPopoverController()
     var inlineSuggestionContext: InlineSuggestionContext?
+    var linkEditorSheetController: LinkEditorSheetController?
     weak var backdropView: GradientBackdropView?
     weak var shellContentView: NSView?
     weak var overlayScrollIndicator: ScrollIndicatorOverlay?
@@ -498,11 +499,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     @objc
     private func editLinkMenuItemPressed(_ sender: NSMenuItem) {
-        guard let link = sender.representedObject as? MarkdownLinkReference,
-              let url = promptForEditedLinkURL(currentValue: link.url) else {
-            return
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        presentLinkEditor(
+            title: "编辑链接",
+            destination: link.url,
+            name: link.label
+        ) { [weak self] destination, name in
+            self?.applyLinkURL(
+                destination,
+                label: name.isEmpty ? destination : name,
+                to: link
+            )
         }
-        applyLinkURL(url, to: link)
     }
 
     @objc
@@ -525,21 +533,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         return true
     }
 
-    private func promptForEditedLinkURL(currentValue: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = "编辑链接"
-        alert.informativeText = "更新链接地址。"
-        alert.addButton(withTitle: "确定")
-        alert.addButton(withTitle: "取消")
-
-        let field = NSTextField(string: currentValue)
-        field.placeholderString = "https://example.com"
-        field.frame = NSRect(x: 0, y: 0, width: 300, height: 28)
-        alert.accessoryView = field
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
+    private func presentLinkEditor(
+        title: String,
+        destination: String,
+        name: String,
+        onSubmit: @escaping (String, String) -> Void
+    ) {
+        guard linkEditorSheetController == nil, let window else { return }
+        let controller = LinkEditorSheetController(
+            title: title,
+            destination: destination,
+            name: name,
+            onSubmit: onSubmit,
+            onDismiss: { [weak self] in
+                self?.linkEditorSheetController = nil
+                self?.window?.makeFirstResponder(self?.editorTextView)
+            }
+        )
+        linkEditorSheetController = controller
+        controller.beginSheet(for: window)
     }
 
     @discardableResult

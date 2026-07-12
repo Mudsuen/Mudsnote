@@ -151,7 +151,7 @@ extension EditorWindowController {
 
     // MARK: - Inline font traits
 
-    func applyLinkURL(_ url: String?, to reference: MarkdownLinkReference) {
+    func applyLinkURL(_ url: String?, label: String? = nil, to reference: MarkdownLinkReference) {
         guard let storage = editorTextView.textStorage,
               reference.range.location >= 0,
               NSMaxRange(reference.range) <= storage.length,
@@ -163,7 +163,13 @@ extension EditorWindowController {
         suppressTextDidChange = true
         storage.beginEditing()
         if let url {
-            storage.addAttribute(.qmLinkURL, value: url, range: reference.range)
+            if let label {
+                storage.replaceCharacters(in: reference.range, with: label)
+            }
+            let updatedRange = NSRange(location: reference.range.location, length: (label ?? reference.label).utf16.count)
+            storage.addAttribute(.qmLinkURL, value: url, range: updatedRange)
+            storage.addAttribute(.foregroundColor, value: theme.accentColor, range: updatedRange)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: updatedRange)
         } else {
             storage.removeAttribute(.qmLinkURL, range: reference.range)
             storage.removeAttribute(.underlineStyle, range: reference.range)
@@ -172,7 +178,8 @@ extension EditorWindowController {
         storage.endEditing()
         suppressTextDidChange = false
 
-        editorTextView.setSelectedRange(reference.range)
+        let selectedLength = url == nil ? reference.range.length : (label ?? reference.label).utf16.count
+        editorTextView.setSelectedRange(NSRange(location: reference.range.location, length: selectedLength))
         updateTypingAttributesFromInsertionPoint()
         registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: url == nil ? "移除链接" : "编辑链接")
         userDidEdit()

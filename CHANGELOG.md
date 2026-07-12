@@ -846,6 +846,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replaced it with a single-line `NSTextField`, select the default name only after its window field editor exists, and moved Return, Escape, and focus-loss handling onto `NSTextFieldDelegate`.
 - Lesson: Native single-line renaming should use the platform field-editor contract; input methods reveal responder timing bugs but are not the source of them.
 
+### 140. Notes-style link sheet
+
+- Problem: Link insertion and editing used blocking `NSAlert.runModal()` prompts with only a URL field, unlike Notes' window-attached Link To and Name workflow.
+- Fix: Added a shared two-field link sheet for library and floating editors, destination-gated confirmation, Return/Escape handling, selected-text name defaults, editable link labels, and focus restoration after dismissal.
+- Lesson: Reference-app interaction should be measured directly. Notes uses a window-modal sheet rather than a popover, and preserving that distinction keeps other note windows responsive.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

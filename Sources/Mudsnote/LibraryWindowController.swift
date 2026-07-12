@@ -1158,6 +1158,7 @@ final class LibraryWindowController: NSWindowController,
     private var inlineFolderEditRow: NSView?
     private var isCommittingInlineFolderEdit = false
     private var inlineFolderEditHasReceivedFocus = false
+    private var linkEditorSheetController: LinkEditorSheetController?
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
@@ -4311,13 +4312,16 @@ final class LibraryWindowController: NSWindowController,
     private func linkPressed() {
         guard canEditCurrentDocument else { return }
         let defaultLabel = selectedTextForLinkDefault()
-        guard let url = promptForText(
-            title: "插入链接",
-            message: "输入链接地址。",
-            placeholder: "https://example.com",
-            defaultValue: ""
-        ) else { return }
-        insertLinkForLibrary(label: defaultLabel.isEmpty ? url : defaultLabel, url: url)
+        presentLinkEditorForLibrary(
+            title: "添加链接",
+            destination: "",
+            name: defaultLabel
+        ) { [weak self] destination, name in
+            self?.insertLinkForLibrary(
+                label: name.isEmpty ? destination : name,
+                url: destination
+            )
+        }
     }
 
     @objc
@@ -6380,16 +6384,18 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func editLinkMenuItemPressed(_ sender: NSMenuItem) {
-        guard let link = sender.representedObject as? MarkdownLinkReference,
-              let url = promptForText(
-                title: "编辑链接",
-                message: "更新链接地址。",
-                placeholder: "https://example.com",
-                defaultValue: link.url
-              ) else {
-            return
+        guard let link = sender.representedObject as? MarkdownLinkReference else { return }
+        presentLinkEditorForLibrary(
+            title: "编辑链接",
+            destination: link.url,
+            name: link.label
+        ) { [weak self] destination, name in
+            self?.updateLinkForLibrary(
+                link,
+                label: name.isEmpty ? destination : name,
+                url: destination
+            )
         }
-        updateLinkForLibrary(link, url: url)
     }
 
     @objc
@@ -6412,7 +6418,7 @@ final class LibraryWindowController: NSWindowController,
         return true
     }
 
-    func updateLinkForLibrary(_ link: MarkdownLinkReference, url: String?) {
+    func updateLinkForLibrary(_ link: MarkdownLinkReference, label: String? = nil, url: String?) {
         guard canEditCurrentDocument,
               let storage = editorTextView.textStorage,
               link.range.location >= 0,
@@ -6424,7 +6430,13 @@ final class LibraryWindowController: NSWindowController,
         suppressEditorChanges = true
         storage.beginEditing()
         if let url {
-            storage.addAttribute(.qmLinkURL, value: url, range: link.range)
+            if let label {
+                storage.replaceCharacters(in: link.range, with: label)
+            }
+            let updatedRange = NSRange(location: link.range.location, length: (label ?? link.label).utf16.count)
+            storage.addAttribute(.qmLinkURL, value: url, range: updatedRange)
+            storage.addAttribute(.foregroundColor, value: theme.accentColor, range: updatedRange)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: updatedRange)
         } else {
             storage.removeAttribute(.qmLinkURL, range: link.range)
             storage.removeAttribute(.underlineStyle, range: link.range)
@@ -6433,9 +6445,31 @@ final class LibraryWindowController: NSWindowController,
         storage.endEditing()
         suppressEditorChanges = false
 
-        editorTextView.setSelectedRange(link.range)
+        let selectedLength = url == nil ? link.range.length : (label ?? link.label).utf16.count
+        editorTextView.setSelectedRange(NSRange(location: link.range.location, length: selectedLength))
         updateTypingAttributesFromInsertionPoint()
         markDirty()
+    }
+
+    private func presentLinkEditorForLibrary(
+        title: String,
+        destination: String,
+        name: String,
+        onSubmit: @escaping (String, String) -> Void
+    ) {
+        guard linkEditorSheetController == nil, let window else { return }
+        let controller = LinkEditorSheetController(
+            title: title,
+            destination: destination,
+            name: name,
+            onSubmit: onSubmit,
+            onDismiss: { [weak self] in
+                self?.linkEditorSheetController = nil
+                self?.focusEditorForLibraryAction()
+            }
+        )
+        linkEditorSheetController = controller
+        controller.beginSheet(for: window)
     }
 
     @discardableResult

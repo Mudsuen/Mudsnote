@@ -2945,6 +2945,45 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func linkEditorSheetRequiresDestinationAndSupportsSubmitAndCancel() throws {
+        var submittedValue: (destination: String, name: String)?
+        var dismissCount = 0
+        let controller = LinkEditorSheetController(
+            title: "添加链接",
+            destination: "",
+            name: "Selected text",
+            onSubmit: { submittedValue = ($0, $1) },
+            onDismiss: { dismissCount += 1 }
+        )
+
+        #expect(controller.window?.contentView?.allSubviews.compactMap { $0.identifier?.rawValue }.contains("LinkEditorDestinationField") == true)
+        #expect(controller.window?.contentView?.allSubviews.compactMap { $0.identifier?.rawValue }.contains("LinkEditorNameField") == true)
+        #expect(controller.nameField.stringValue == "Selected text")
+        #expect(!controller.confirmButton.isEnabled)
+
+        controller.destinationField.stringValue = "  https://example.com/path  "
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.destinationField))
+        #expect(controller.confirmButton.isEnabled)
+        controller.submitForTesting()
+        #expect(submittedValue?.destination == "https://example.com/path")
+        #expect(submittedValue?.name == "Selected text")
+        #expect(dismissCount == 1)
+
+        var cancelledSubmission = false
+        let cancelledController = LinkEditorSheetController(
+            title: "编辑链接",
+            destination: "https://muds.top",
+            name: "Muds",
+            onSubmit: { _, _ in cancelledSubmission = true },
+            onDismiss: { dismissCount += 1 }
+        )
+        cancelledController.cancelForTesting()
+        #expect(!cancelledSubmission)
+        #expect(dismissCount == 2)
+    }
+
+    @MainActor
+    @Test
     func libraryAndFloatingEditorsManageMarkdownLinks() throws {
         let suiteName = "mudsnote.link-management-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2988,18 +3027,18 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(copyItem.action), to: copyItem.target, from: copyItem))
         #expect(NSPasteboard.general.string(forType: .string) == "https://muds.top")
 
-        libraryController.updateLinkForLibrary(libraryLink, url: "https://example.com")
+        libraryController.updateLinkForLibrary(libraryLink, label: "Example", url: "https://example.com")
         #expect(MarkdownRichTextCodec.serialize(
             libraryController.editorTextView.attributedString(),
             theme: libraryController.theme
-        ) == "[Muds](https://example.com)")
+        ) == "[Example](https://example.com)")
 
         let updatedLibraryLink = try #require(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation))
         libraryController.updateLinkForLibrary(updatedLibraryLink, url: nil)
         #expect(MarkdownRichTextCodec.serialize(
             libraryController.editorTextView.attributedString(),
             theme: libraryController.theme
-        ) == "Muds")
+        ) == "Example")
         #expect(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation) == nil)
 
         let harness = try makeEditorControllerHarness(draftID: "link-management", showsSaveButton: false)
@@ -3014,11 +3053,11 @@ struct MarkdownRichEditorTests {
         #expect(floatingController.configureLinkContextMenu(floatingMenu, for: floatingLink))
         #expect(floatingMenu.items.map(\.title) == ["打开链接", "编辑链接...", "复制链接", "移除链接"])
 
-        floatingController.applyLinkURL("https://platform.openai.com", to: floatingLink)
+        floatingController.applyLinkURL("https://platform.openai.com", label: "Platform", to: floatingLink)
         #expect(MarkdownRichTextCodec.serialize(
             floatingController.editorTextView.attributedString(),
             theme: floatingController.theme
-        ) == "[OpenAI](https://platform.openai.com)")
+        ) == "[Platform](https://platform.openai.com)")
 
         let undoManager = try #require(floatingController.editorTextView.undoManager)
         #expect(undoManager.canUndo)
@@ -3031,14 +3070,14 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(
             floatingController.editorTextView.attributedString(),
             theme: floatingController.theme
-        ) == "[OpenAI](https://platform.openai.com)")
+        ) == "[Platform](https://platform.openai.com)")
 
         let updatedFloatingLink = try #require(floatingController.editorTextView.linkReference(atCharacterIndex: 0))
         floatingController.applyLinkURL(nil, to: updatedFloatingLink)
         #expect(MarkdownRichTextCodec.serialize(
             floatingController.editorTextView.attributedString(),
             theme: floatingController.theme
-        ) == "OpenAI")
+        ) == "Platform")
     }
 
     @MainActor
