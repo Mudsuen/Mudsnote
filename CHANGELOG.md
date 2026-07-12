@@ -936,6 +936,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Kept save progress out of editor status text while retaining post-save file timestamps in the library, synchronized sidebar chrome and title movement with the native split collapse animation, removed the ellipsis from the default toolbar, and restored normal AppKit click-release menu activation with a centered lower-edge anchor.
 - Lesson: Persistence feedback should not displace document metadata, and titlebar state changes need to participate in the same animation and event lifecycle as the pane they represent.
 
+### 157. Background Recently Deleted snapshots
+
+- Problem: Opening Recently Deleted parsed trashed Markdown synchronously, and source-count refreshes separately walked the trash directory on the main thread.
+- Fix: Added a bounded in-memory trash snapshot, hydrated and validated it alongside the normal library snapshot off the main actor, and updated it atomically during trash, restore, and permanent-delete commands.
+- Lesson: Every navigation scope must obey the same snapshot-first contract; a single exceptional filesystem-backed scope can still make the whole sidebar feel blocked.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

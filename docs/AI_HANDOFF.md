@@ -6,6 +6,12 @@
 - Sidebar collapse coordinates split-item animation, title offset, and toolbar visibility state.
 - The unused list ellipsis is removed, and remaining menu-backed toolbar controls use normal click-release activation with a centered lower-edge anchor.
 
+## Latest iteration (157)
+
+- Recently Deleted uses a bounded in-memory snapshot for navigation and counts.
+- Background source validation loads normal and trashed notes together off the main actor.
+- Trash, restore, and permanent-delete commands update the snapshot immediately.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

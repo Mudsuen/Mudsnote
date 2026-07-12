@@ -5147,6 +5147,50 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Background Refresh"])
     }
 
+    @Test
+    func recentlyDeletedNavigationUsesSnapshotBeforeBackgroundTrashRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-trash-navigation-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.trash-navigation-snapshot-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
+        _ = try store.trashNote(at: noteURL)
+        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySourceButton-3"
+        })
+
+        trashButton.performClick(nil)
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, controller.noteListSearchResultsForLibrary().isEmpty {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Background Trash"])
+    }
+
     @MainActor
     @Test
     func preferencesWindowUsesStandardMacSettingsChrome() throws {

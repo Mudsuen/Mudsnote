@@ -246,7 +246,7 @@ private final class LibraryThumbnailDecodeResult: @unchecked Sendable {
 }
 
 private extension NoteSearchResult {
-    func replacingURL(_ url: URL) -> NoteSearchResult {
+    func replacingURL(_ url: URL, modifiedAt replacementModifiedAt: Date? = nil) -> NoteSearchResult {
         let sourceDirectoryPath = self.url.deletingLastPathComponent().standardizedFileURL.path
         let remappedThumbnailURL = thumbnailURL.flatMap { thumbnailURL -> URL? in
             let thumbnailPath = thumbnailURL.standardizedFileURL.path
@@ -258,7 +258,7 @@ private extension NoteSearchResult {
             url: url,
             title: title,
             snippet: snippet,
-            modifiedAt: modifiedAt,
+            modifiedAt: replacementModifiedAt ?? modifiedAt,
             createdAt: createdAt,
             tags: tags,
             hasAttachments: hasAttachments,
@@ -1115,6 +1115,7 @@ final class LibraryWindowController: NSWindowController,
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
     private var sourceCountSnapshot: [NoteSearchResult] = []
+    private var trashedNotesSnapshot: [NoteSearchResult] = []
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
@@ -1257,6 +1258,7 @@ final class LibraryWindowController: NSWindowController,
             )
         } else {
             hasHydratedInitialNoteList = true
+            trashedNotesSnapshot = noteStore.listTrashedNotes(limit: Self.sourceCountSnapshotLimit)
             reloadNotes(
                 loadFirstIfNeeded: true,
                 allNotesSnapshot: allNoteResults(limit: Self.sourceCountSnapshotLimit)
@@ -1439,11 +1441,13 @@ final class LibraryWindowController: NSWindowController,
         let sourceFolderPaths = currentSourceFolderPaths()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
+                self.trashedNotesSnapshot = trashedNotes
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
@@ -3175,7 +3179,7 @@ final class LibraryWindowController: NSWindowController,
             notes: allNotes,
             folderPaths: currentSourceFolderPaths()
         )
-        let trashCount = noteStore.trashedNoteCount()
+        let trashCount = trashedNotesSnapshot.count
 
         for button in sourceButtons {
             let count: Int
@@ -3285,6 +3289,8 @@ final class LibraryWindowController: NSWindowController,
             guard !Task.isCancelled else { return }
             let allNotes = noteStore.listNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
+            let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
+            guard !Task.isCancelled else { return }
             let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
             guard !Task.isCancelled else { return }
 
@@ -3300,7 +3306,9 @@ final class LibraryWindowController: NSWindowController,
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
-                guard allNotes != self.sourceCountSnapshot else {
+                let trashChanged = trashedNotes != self.trashedNotesSnapshot
+                self.trashedNotesSnapshot = trashedNotes
+                guard allNotes != self.sourceCountSnapshot || trashChanged else {
                     self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
                     return
                 }
@@ -3369,7 +3377,7 @@ final class LibraryWindowController: NSWindowController,
                     || note.title.localizedCaseInsensitiveContains("Inbox")
             }.prefix(limit))
         case .trash:
-            return noteStore.listTrashedNotes(limit: limit)
+            return Array(trashedNotesSnapshot.prefix(limit))
         case .folder(let url):
             let folderPath = url.standardizedFileURL.path
             return Array(allNotes.filter { note in
@@ -4888,11 +4896,20 @@ final class LibraryWindowController: NSWindowController,
             for url in urls {
                 try noteStore.permanentlyDeleteTrashedNote(at: url)
             }
+            removeNotesFromTrashSnapshot(at: urls)
         } else {
             try saveCurrentNoteIfNeeded()
+            let selectedNotesByPath = Dictionary(uniqueKeysWithValues: urls.compactMap { url in
+                let path = url.standardizedFileURL.path
+                return sourceCountSnapshot.first { $0.url.standardizedFileURL.path == path }.map { (path, $0) }
+            })
             for url in urls {
-                _ = try noteStore.trashNote(at: url)
+                let trashedURL = try noteStore.trashNote(at: url)
+                if let note = selectedNotesByPath[url.standardizedFileURL.path] {
+                    trashedNotesSnapshot.append(note.replacingURL(trashedURL, modifiedAt: Date()))
+                }
             }
+            sortAndTrimTrashSnapshot()
         }
         recordInternalFileSystemChanges(for: urls)
         if selectedScope != .trash {
@@ -4911,6 +4928,7 @@ final class LibraryWindowController: NSWindowController,
         let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
         let restoredURL = restoredURLs.first
         recordInternalFileSystemChanges(for: urls + restoredURLs)
+        removeNotesFromTrashSnapshot(at: urls)
         for url in restoredURLs {
             let document = try noteStore.loadNote(at: url)
             let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate])
@@ -4930,6 +4948,18 @@ final class LibraryWindowController: NSWindowController,
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
         return restoredURL
+    }
+
+    private func removeNotesFromTrashSnapshot(at urls: [URL]) {
+        let removedPaths = Set(urls.map { $0.standardizedFileURL.path })
+        trashedNotesSnapshot.removeAll { removedPaths.contains($0.url.standardizedFileURL.path) }
+    }
+
+    private func sortAndTrimTrashSnapshot() {
+        trashedNotesSnapshot.sort { $0.modifiedAt > $1.modifiedAt }
+        if trashedNotesSnapshot.count > Self.sourceCountSnapshotLimit {
+            trashedNotesSnapshot.removeLast(trashedNotesSnapshot.count - Self.sourceCountSnapshotLimit)
+        }
     }
 
     func selectedMarkdownFileURLForLibrary() -> URL? {
