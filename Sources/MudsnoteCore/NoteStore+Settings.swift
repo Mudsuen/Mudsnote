@@ -103,12 +103,26 @@ extension NoteStore {
     }
 
     @discardableResult
-    public func migrateLibraryLayoutScaleIfNeeded(to version: Int) -> Bool {
-        guard defaults.integer(forKey: NoteStoreDefaultsKey.libraryLayoutScaleVersion) < version else {
+    public func migrateLibraryLayoutScaleIfNeeded(
+        to version: Int,
+        replacingDefaultPaneWidths previousDefaults: (source: Double, note: Double)? = nil
+    ) -> Bool {
+        let currentVersion = defaults.integer(forKey: NoteStoreDefaultsKey.libraryLayoutScaleVersion)
+        guard currentVersion < version else {
             return false
         }
-        defaults.removeObject(forKey: NoteStoreDefaultsKey.librarySourceColumnWidth)
-        defaults.removeObject(forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth)
+
+        if currentVersion + 1 == version, let previousDefaults {
+            if librarySourceColumnWidth.map({ abs($0 - previousDefaults.source) < 0.5 }) ?? false {
+                defaults.removeObject(forKey: NoteStoreDefaultsKey.librarySourceColumnWidth)
+            }
+            if libraryNoteColumnWidth.map({ abs($0 - previousDefaults.note) < 0.5 }) ?? false {
+                defaults.removeObject(forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth)
+            }
+        } else {
+            defaults.removeObject(forKey: NoteStoreDefaultsKey.librarySourceColumnWidth)
+            defaults.removeObject(forKey: NoteStoreDefaultsKey.libraryNoteColumnWidth)
+        }
         defaults.set(version, forKey: NoteStoreDefaultsKey.libraryLayoutScaleVersion)
         return true
     }

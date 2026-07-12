@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 150. Compact Notes pane proportions
+- Problem: Corrected point-scale comparisons showed the default source and note-list panes were still `250/250pt`, visibly wider than Apple Notes' roughly `212/200pt` columns and especially oversized after source collapse.
+- Fix: Tightened both defaults to a conservative `220/220pt`, resized their internal row/table geometry, and added a versioned migration that replaces only untouched `250pt` defaults while preserving manually resized panes.
+- Lesson: Reference-scale shell fidelity depends on pane proportions, but layout migrations must distinguish obsolete defaults from deliberate user geometry.
+
 ### 149. State-accurate toolbar geometry
 - Problem: The empty-state Apple Notes reference lost its Retina DPI metadata, so visual QA rendered it at half scale; the New Note button also remained on the list side of the tracked editor divider, widening and crowding both expanded and collapsed headers.
 - Fix: Added explicit `2x` metrics for the checked-in Retina references, deterministic expanded/collapsed fixture state, and moved New Note across the tracked divider into the editor-side toolbar region.

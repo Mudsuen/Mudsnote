@@ -269,20 +269,20 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 2
+    static let storedLayoutScaleVersion = 3
     static let initialWindowSize = NSSize(width: 1080, height: 680)
     static let presentedWindowSize = NSSize(width: 1080, height: 720)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
-    static let sourceColumnWidth: CGFloat = 250
-    static let noteColumnWidth: CGFloat = 250
+    static let sourceColumnWidth: CGFloat = 220
+    static let noteColumnWidth: CGFloat = 220
     static let sourceColumnMinimumWidth: CGFloat = 220
     static let sourceColumnMaximumWidth: CGFloat = 320
     static let noteColumnMinimumWidth: CGFloat = 220
     static let noteColumnMaximumWidth: CGFloat = 320
     static let editorColumnMinimumWidth: CGFloat = 480
-    static let noteTableInitialWidth: CGFloat = 224
+    static let noteTableInitialWidth: CGFloat = 194
     static let noteTableMinimumWidth: CGFloat = 194
-    static let sourceRowWidth: CGFloat = 222
+    static let sourceRowWidth: CGFloat = 192
     static let toolbarSearchWidth: CGFloat = 210
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 230
@@ -1206,7 +1206,10 @@ final class LibraryWindowController: NSWindowController,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
-        noteStore.migrateLibraryLayoutScaleIfNeeded(to: LibraryNotesLayout.storedLayoutScaleVersion)
+        noteStore.migrateLibraryLayoutScaleIfNeeded(
+            to: LibraryNotesLayout.storedLayoutScaleVersion,
+            replacingDefaultPaneWidths: (source: 250, note: 250)
+        )
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
