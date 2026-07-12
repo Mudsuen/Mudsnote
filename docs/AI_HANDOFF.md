@@ -72,6 +72,11 @@
 - Source rows use a compact `32pt` zero-gap rhythm matching Apple Notes.
 - The iCloud heading retains `4pt` separation and Tags retains a deliberate `6pt` section break.
 
+## Latest iteration (170)
+
+- Note-list date groups use `45pt` rows with a `15pt` title bottom inset.
+- Group headings and first note cards align vertically in both expanded and collapsed reference states.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

@@ -1015,6 +1015,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reduced source rows to `32pt`, removed incidental inner/cross-stack gaps, and retained only deliberate `4pt` spacing after the iCloud heading plus `6pt` before Tags. Added a root-stack identity and tests for the exact spacing contract.
 - Lesson: Sidebar density should come from a zero-gap row rhythm with explicit semantic group breaks, not uniform stack spacing that silently compounds across nested stacks.
 
+### 170. Reference-height note groups
+
+- Problem: Date-group rows still occupied `54pt`, placing group headings about `12pt` and the first note card about `9pt` below their Apple Notes positions in both expanded and collapsed states.
+- Fix: Reduced group rows to `45pt` and increased the title bottom inset to `15pt`, independently aligning the heading baseline and following card while preserving their breathing room.
+- Lesson: A section header's row height controls following content while its internal bottom inset controls the label; both must be measured separately to align the complete list rhythm.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

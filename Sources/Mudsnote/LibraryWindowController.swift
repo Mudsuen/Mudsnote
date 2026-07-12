@@ -349,7 +349,7 @@ enum LibraryNotesLayout {
     static let sourceDisclosureToButtonSpacing: CGFloat = 1
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
-    static let noteGroupRowHeight: CGFloat = 54
+    static let noteGroupRowHeight: CGFloat = 45
     static let noteRowHeight: CGFloat = 76
     static let sourceGroupFontSize: CGFloat = 13.5
     static let sourceButtonFontSize: CGFloat = 15
@@ -496,7 +496,7 @@ private enum LibraryFormatCommand: Int {
 final class LibraryGroupHeaderCellView: NSTableCellView {
     static let titleLeadingInset: CGFloat = 20
     static let titleTrailingInset: CGFloat = 10
-    static let titleBottomInset: CGFloat = 12
+    static let titleBottomInset: CGFloat = 15
 
     let titleLabel = NSTextField(labelWithString: "")
 

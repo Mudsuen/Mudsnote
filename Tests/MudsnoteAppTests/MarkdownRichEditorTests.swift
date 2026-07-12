@@ -1212,15 +1212,15 @@ struct MarkdownRichEditorTests {
         #expect(groupCell.titleLabel.stringValue == "Today")
         #expect(LibraryGroupHeaderCellView.titleLeadingInset == 20)
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
-        #expect(LibraryGroupHeaderCellView.titleBottomInset == 12)
+        #expect(LibraryGroupHeaderCellView.titleBottomInset == 15)
         #expect(
-            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.titleBottomInset == 42
+            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.titleBottomInset == 30
         )
         let groupRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 0) as? LibraryNoteRowView)
         groupRowView.setPointerHovered(true)
         #expect(!groupRowView.isPointerHovered)
         #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
-        #expect(LibraryNotesLayout.noteGroupRowHeight == 54)
+        #expect(LibraryNotesLayout.noteGroupRowHeight == 45)
         #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
         #expect(LibraryNotesLayout.noteRowHeight == 76)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
