@@ -2109,6 +2109,10 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         try store.ensureNotesDirectory()
+        let projectsFolder = try store.createFolder(named: "Projects")
+        let clientFolder = projectsFolder.appendingPathComponent("Client", isDirectory: true)
+        try FileManager.default.createDirectory(at: clientFolder, withIntermediateDirectories: true)
+        _ = try store.saveNewNote(title: "Client Keyboard Seed", body: "Nested keyboard body", in: clientFolder)
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -2149,6 +2153,42 @@ struct MarkdownRichEditorTests {
         allButton.moveUp(nil)
         #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
         #expect(window.firstResponder === allButton)
+
+        func sourceButton(titled title: String) throws -> LibrarySourceButton {
+            try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
+                $0.title == title
+            })
+        }
+
+        let projectsButton = try sourceButton(titled: "Projects")
+        projectsButton.performClick(nil)
+        #expect(window.firstResponder === projectsButton)
+        projectsButton.moveRight(nil)
+        #expect(try sourceButton(titled: "Client").isHidden == false)
+        #expect(window.firstResponder === (try sourceButton(titled: "Projects")))
+
+        let expandedProjectsButton = try sourceButton(titled: "Projects")
+        expandedProjectsButton.moveRight(nil)
+        let clientButton = try sourceButton(titled: "Client")
+        #expect(window.firstResponder === clientButton)
+        #expect(controller.noteListTitleLabel.stringValue == "Client")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Client Keyboard Seed"])
+
+        clientButton.moveLeft(nil)
+        let parentProjectsButton = try sourceButton(titled: "Projects")
+        #expect(window.firstResponder === parentProjectsButton)
+        #expect(controller.noteListTitleLabel.stringValue == "Projects")
+
+        parentProjectsButton.moveLeft(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.contains {
+            $0.title == "Client"
+        } == false)
+        let collapsedProjectsButton = try sourceButton(titled: "Projects")
+        #expect(window.firstResponder === collapsedProjectsButton)
+
+        collapsedProjectsButton.moveLeft(nil)
+        #expect(window.firstResponder === (try sourceButton(titled: "Notes")))
+        #expect(controller.noteListTitleLabel.stringValue == "Notes")
     }
 
     @MainActor

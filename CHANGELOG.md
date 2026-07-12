@@ -828,6 +828,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a focusable source-button responder that routes both raw arrow events and AppKit `moveUp:`/`moveDown:` commands through one visible-row navigation path. Source actions now reclaim focus after their scope reload completes without drawing an extra focus ring.
 - Lesson: Desktop list navigation should be owned by the action's final responder state, not by mouse-event timing; one command boundary keeps accessibility, keyboard, and pointer activation consistent.
 
+### 137. Source hierarchy keyboard navigation
+
+- Problem: Up/Down moved across visible source rows, but nested folders still required disclosure-button clicks and offered no Apple Notes-style hierarchy navigation.
+- Fix: Added Left/Right responder commands that reuse the persisted folder disclosure model. Right expands a collapsed folder, then enters its first child; Left returns to the parent or collapses an expanded folder while restoring focus by URL after row reconstruction.
+- Lesson: Hierarchy navigation should operate on the authoritative folder rows and reacquire rendered controls after mutation; retaining a view across a disclosure rebuild is both fragile and unnecessary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -899,6 +899,8 @@ final class LibrarySourceButtonCell: NSButtonCell {
 fileprivate enum LibrarySourceKeyCommand {
     case next
     case previous
+    case enterHierarchy
+    case leaveHierarchy
 }
 
 @MainActor
@@ -917,6 +919,16 @@ final class LibrarySourceButton: NSButton {
         super.moveUp(sender)
     }
 
+    override func moveRight(_ sender: Any?) {
+        guard onKeyCommand?(.enterHierarchy) != true else { return }
+        super.moveRight(sender)
+    }
+
+    override func moveLeft(_ sender: Any?) {
+        guard onKeyCommand?(.leaveHierarchy) != true else { return }
+        super.moveLeft(sender)
+    }
+
     override func keyDown(with event: NSEvent) {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
             super.keyDown(with: event)
@@ -925,6 +937,10 @@ final class LibrarySourceButton: NSButton {
 
         let command: LibrarySourceKeyCommand?
         switch event.keyCode {
+        case 123:
+            command = .leaveHierarchy
+        case 124:
+            command = .enterHierarchy
         case 125:
             command = .next
         case 126:
@@ -3050,19 +3066,86 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
 
-        let targetIndex: Int
         switch command {
         case .next:
-            targetIndex = currentIndex + 1
+            return activateSourceButton(at: currentIndex + 1)
         case .previous:
-            targetIndex = currentIndex - 1
+            return activateSourceButton(at: currentIndex - 1)
+        case .enterHierarchy:
+            return enterSourceFolderHierarchy(from: button)
+        case .leaveHierarchy:
+            return leaveSourceFolderHierarchy(from: button)
         }
-        guard sourceButtons.indices.contains(targetIndex) else { return true }
+    }
 
-        let target = sourceButtons[targetIndex]
+    private func activateSourceButton(at index: Int) -> Bool {
+        guard sourceButtons.indices.contains(index) else { return true }
+
+        let target = sourceButtons[index]
         target.performClick(nil)
         target.window?.makeFirstResponder(target)
         return true
+    }
+
+    private func enterSourceFolderHierarchy(from button: NSButton) -> Bool {
+        guard case .folder(let folderURL) = scope(for: button),
+              let folderIndex = sourceFolderRows.firstIndex(where: {
+                  $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
+              }) else {
+            return true
+        }
+        let folderRow = sourceFolderRows[folderIndex]
+        guard folderRow.hasChildren else { return true }
+
+        if !isSourceFolderExpanded(path: folderURL.standardizedFileURL.path, depth: folderRow.depth) {
+            toggleSourceFolderDisclosure(at: folderIndex)
+            focusSourceButton(for: .folder(folderURL))
+            return true
+        }
+
+        let childIndex = folderIndex + 1
+        guard sourceFolderRows.indices.contains(childIndex),
+              sourceFolderRows[childIndex].depth == folderRow.depth + 1 else {
+            return true
+        }
+        focusAndActivateSourceButton(for: .folder(sourceFolderRows[childIndex].url))
+        return true
+    }
+
+    private func leaveSourceFolderHierarchy(from button: NSButton) -> Bool {
+        guard case .folder(let folderURL) = scope(for: button),
+              let folderIndex = sourceFolderRows.firstIndex(where: {
+                  $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
+              }) else {
+            return true
+        }
+        let folderRow = sourceFolderRows[folderIndex]
+        if folderRow.hasChildren,
+           isSourceFolderExpanded(path: folderURL.standardizedFileURL.path, depth: folderRow.depth) {
+            toggleSourceFolderDisclosure(at: folderIndex)
+            focusSourceButton(for: .folder(folderURL))
+            return true
+        }
+
+        guard folderRow.depth > 0,
+              let parentIndex = stride(from: folderIndex - 1, through: 0, by: -1).first(where: {
+                  sourceFolderRows[$0].depth == folderRow.depth - 1
+              }) else {
+            return true
+        }
+        focusAndActivateSourceButton(for: .folder(sourceFolderRows[parentIndex].url))
+        return true
+    }
+
+    private func focusAndActivateSourceButton(for targetScope: LibraryScope) {
+        guard let button = sourceButtons.first(where: { scope(for: $0) == targetScope }) else { return }
+        button.performClick(nil)
+        button.window?.makeFirstResponder(button)
+    }
+
+    private func focusSourceButton(for targetScope: LibraryScope) {
+        guard let button = sourceButtons.first(where: { scope(for: $0) == targetScope }) else { return }
+        button.window?.makeFirstResponder(button)
     }
 
     private func currentSourceFolderPaths() -> Set<String> {
@@ -3759,6 +3842,11 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func folderDisclosurePressed(_ sender: NSButton) {
         let index = sender.tag - 10
+        guard sourceFolderRows.indices.contains(index) else { return }
+        toggleSourceFolderDisclosure(at: index)
+    }
+
+    private func toggleSourceFolderDisclosure(at index: Int) {
         guard sourceFolderRows.indices.contains(index) else { return }
         let folderURL = sourceFolderRows[index].url.standardizedFileURL
         let folderPath = folderURL.path
