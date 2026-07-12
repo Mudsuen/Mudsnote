@@ -822,6 +822,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Removed the custom editor placeholder layer and its repeated state updates from note loading, typing, saving, navigation, and removal paths. Empty notes and no-selection states now keep the editor canvas blank.
 - Lesson: A document editor does not need instructional copy in its primary canvas; removing non-native state is both more faithful and cheaper than maintaining visibility rules for it.
 
+### 136. Source-list keyboard continuity
+
+- Problem: Source rows changed scope with the mouse, but focus returned to the note table and Up/Down could not continue through folders like Apple Notes.
+- Fix: Added a focusable source-button responder that routes both raw arrow events and AppKit `moveUp:`/`moveDown:` commands through one visible-row navigation path. Source actions now reclaim focus after their scope reload completes without drawing an extra focus ring.
+- Lesson: Desktop list navigation should be owned by the action's final responder state, not by mouse-event timing; one command boundary keeps accessibility, keyboard, and pointer activation consistent.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

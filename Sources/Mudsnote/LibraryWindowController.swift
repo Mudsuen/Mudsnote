@@ -896,6 +896,50 @@ final class LibrarySourceButtonCell: NSButtonCell {
     }
 }
 
+fileprivate enum LibrarySourceKeyCommand {
+    case next
+    case previous
+}
+
+@MainActor
+final class LibrarySourceButton: NSButton {
+    fileprivate var onKeyCommand: ((LibrarySourceKeyCommand) -> Bool)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func moveDown(_ sender: Any?) {
+        guard onKeyCommand?(.next) != true else { return }
+        super.moveDown(sender)
+    }
+
+    override func moveUp(_ sender: Any?) {
+        guard onKeyCommand?(.previous) != true else { return }
+        super.moveUp(sender)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+
+        let command: LibrarySourceKeyCommand?
+        switch event.keyCode {
+        case 125:
+            command = .next
+        case 126:
+            command = .previous
+        default:
+            command = nil
+        }
+
+        if let command, onKeyCommand?(command) == true {
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 fileprivate enum LibraryNoteKeyCommand {
     case open
     case delete
@@ -2922,7 +2966,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
         let title = sourceTitle(for: scope)
-        let button = NSButton(title: title, target: self, action: #selector(scopeButtonPressed(_:)))
+        let button = LibrarySourceButton(title: title, target: self, action: #selector(scopeButtonPressed(_:)))
         button.cell = LibrarySourceButtonCell(textCell: title)
         button.target = self
         button.action = #selector(scopeButtonPressed(_:))
@@ -2937,6 +2981,7 @@ final class LibraryWindowController: NSWindowController,
         button.alignment = .left
         button.isBordered = false
         button.bezelStyle = .shadowlessSquare
+        button.focusRingType = .none
         button.font = .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
             weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
@@ -2945,6 +2990,10 @@ final class LibraryWindowController: NSWindowController,
         button.wantsLayer = true
         button.layer?.cornerRadius = LibraryNotesLayout.sourceRowCornerRadius
         button.layer?.cornerCurve = .continuous
+        button.onKeyCommand = { [weak self, weak button] command in
+            guard let self, let button else { return false }
+            return self.handleSourceKeyCommand(command, from: button)
+        }
         return button
     }
 
@@ -2994,6 +3043,26 @@ final class LibraryWindowController: NSWindowController,
                 ? LibrarySourceSelectionPalette.selectedCountColor
                 : panelTertiaryTextColor()
         }
+    }
+
+    private func handleSourceKeyCommand(_ command: LibrarySourceKeyCommand, from button: NSButton) -> Bool {
+        guard let currentIndex = sourceButtons.firstIndex(where: { $0 === button }) else {
+            return false
+        }
+
+        let targetIndex: Int
+        switch command {
+        case .next:
+            targetIndex = currentIndex + 1
+        case .previous:
+            targetIndex = currentIndex - 1
+        }
+        guard sourceButtons.indices.contains(targetIndex) else { return true }
+
+        let target = sourceButtons[targetIndex]
+        target.performClick(nil)
+        target.window?.makeFirstResponder(target)
+        return true
     }
 
     private func currentSourceFolderPaths() -> Set<String> {
@@ -3681,6 +3750,7 @@ final class LibraryWindowController: NSWindowController,
             try saveCurrentNoteIfNeeded()
             selectedScope = scope(for: sender)
             reloadNotesForNavigation(loadFirstIfNeeded: true)
+            sender.window?.makeFirstResponder(sender)
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }

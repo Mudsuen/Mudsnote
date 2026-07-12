@@ -2091,6 +2091,68 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func librarySourceRowsNavigateWithArrowKeys() throws {
+        let suiteName = "mudsnote.library-source-keyboard-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-source-keyboard-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try store.ensureNotesDirectory()
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+
+        let allButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
+            $0.title == "All iCloud"
+        })
+        let notesButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
+            $0.title == "Notes"
+        })
+        #expect(allButton.acceptsFirstResponder)
+        #expect(allButton.focusRingType == .none)
+        allButton.performClick(nil)
+        #expect(window.firstResponder === allButton)
+
+        allButton.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
+        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(window.firstResponder === notesButton)
+        notesButton.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
+        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
+        #expect(window.firstResponder === allButton)
+
+        allButton.moveDown(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(window.firstResponder === notesButton)
+
+        notesButton.moveUp(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
+        #expect(window.firstResponder === allButton)
+
+        allButton.moveUp(nil)
+        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
+        #expect(window.firstResponder === allButton)
+    }
+
+    @MainActor
+    @Test
     func librarySourceListShowsZeroCountsForEmptyFoldersLikeAppleNotes() throws {
         let suiteName = "mudsnote.library-empty-folder-count-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
