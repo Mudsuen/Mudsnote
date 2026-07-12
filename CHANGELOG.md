@@ -930,6 +930,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Migrated the three-pane root to `NSSplitViewController`, represented the source pane with a full-height `NSSplitViewItem.sidebar`, the note list with a content-list item, and constrained source rows to the sidebar safe area. Collapse now uses the native split item while preserving stored widths and tracking separators.
 - Lesson: A full-height sidebar is a window-structure decision, not a corner-radius adjustment. The titlebar participates only when AppKit owns the sidebar item and the window uses full-size content layout.
 
+### 156. Quiet save timestamps and native collapse/menu behavior
+
+- Problem: Draft saves reused the editor status area for transient save messages, the sidebar chrome changed outside the collapse transaction, the unused list ellipsis remained visible, and menu buttons opened during mouse-down with a left-biased anchor.
+- Fix: Kept save progress out of editor status text while retaining post-save file timestamps in the library, synchronized sidebar chrome and title movement with the native split collapse animation, removed the ellipsis from the default toolbar, and restored normal AppKit click-release menu activation with a centered lower-edge anchor.
+- Lesson: Persistence feedback should not displace document metadata, and titlebar state changes need to participate in the same animation and event lifecycle as the pane they represent.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

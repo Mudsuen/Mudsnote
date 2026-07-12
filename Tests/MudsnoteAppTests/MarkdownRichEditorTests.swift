@@ -841,7 +841,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
@@ -859,16 +859,12 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
         let toolbarItemOrder = try #require(window.toolbar).items.map(\.itemIdentifier.rawValue)
-        let noteListActionsIndex = try #require(toolbarItemOrder.firstIndex(
-            of: "mudsnote.library.toolbar.note-list-actions"
-        ))
         let noteSeparatorIndex = try #require(toolbarItemOrder.firstIndex(
             of: "mudsnote.library.toolbar.note-separator"
         ))
         let newNoteIndex = try #require(toolbarItemOrder.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(noteListActionsIndex < noteSeparatorIndex)
         #expect(noteSeparatorIndex < newNoteIndex)
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
@@ -887,26 +883,6 @@ struct MarkdownRichEditorTests {
             #expect(item.toolTip == item.label)
         }
         #expect(controller.makeExportMenuForLibrary().items.map(\.title) == ["复制 Markdown 内容", "导出 Markdown..."])
-        #expect(LibraryNotesLayout.toolbarMoreSymbolName == "ellipsis")
-        let noteListActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-actions"
-        })
-        let noteListActionsGlass = try #require(noteListActionsToolbarItem.view as? NSGlassEffectView)
-        let noteListActionsToolbarButton = try #require(noteListActionsGlass.allSubviews.compactMap { $0 as? NSButton }.first)
-        #expect(noteListActionsToolbarButton is LibraryToolbarMenuButton)
-        #expect(noteListActionsToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.note-list-actions")
-        #expect(!noteListActionsToolbarButton.isBordered)
-        #expect(noteListActionsToolbarButton.image?.accessibilityDescription == "列表显示选项")
-        #expect(noteListActionsToolbarButton.toolTip == "列表显示选项")
-        #expect(noteListActionsToolbarButton.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
-        })
-        #expect(noteListActionsToolbarButton.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
-        })
-        #expect(noteListActionsGlass.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
-        #expect(noteListActionsGlass.style == .regular)
-
         let newNoteToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
@@ -1038,11 +1014,9 @@ struct MarkdownRichEditorTests {
         let formatToolbarButton = try #require(editorToolButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.format"
         })
-        #expect(formatToolbarButton is LibraryToolbarMenuButton)
+        #expect(type(of: formatToolbarButton) == NSButton.self)
         #expect(formatToolbarButton.image?.accessibilityDescription == "格式")
-        #expect(editorToolButtons.filter { $0 !== formatToolbarButton }.allSatisfy {
-            !($0 is LibraryToolbarMenuButton)
-        })
+        #expect(editorToolButtons.allSatisfy { type(of: $0) == NSButton.self })
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
         let sourceTrackingSeparator = try #require((window.toolbar?.items ?? []).first {
@@ -3548,6 +3522,23 @@ struct MarkdownRichEditorTests {
         #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
         controller.refreshSelectedScopeFromCachedSnapshotForLibrary()
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
+    }
+
+    @MainActor
+    @Test
+    func floatingDraftAutosaveDoesNotReplaceStatusText() throws {
+        let harness = try makeEditorControllerHarness(draftID: "quiet-autosave-status", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let statusBeforeEdit = controller.statusLabel.stringValue
+
+        controller.editorTextView.string = "Quiet draft"
+        controller.markDocumentDirty()
+        #expect(controller.statusLabel.stringValue == statusBeforeEdit)
+
+        controller.persistDraft(force: true)
+        #expect(controller.statusLabel.stringValue == statusBeforeEdit)
+        #expect(harness.store.loadDraft(id: "quiet-autosave-status")?.title == "Quiet draft")
     }
 
     @MainActor

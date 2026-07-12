@@ -318,7 +318,6 @@ enum LibraryNotesLayout {
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
-    static let toolbarMoreSymbolName = "ellipsis"
     static let toolbarNoteListTitleWidth: CGFloat = 160
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
@@ -1031,20 +1030,6 @@ final class LibraryNoteTableView: NSTableView {
 }
 
 @MainActor
-final class LibraryToolbarMenuButton: NSButton {
-    override func mouseDown(with event: NSEvent) {
-        guard event.buttonNumber == 0, isEnabled else {
-            super.mouseDown(with: event)
-            return
-        }
-
-        highlight(true)
-        defer { highlight(false) }
-        _ = sendAction(action, to: target)
-    }
-}
-
-@MainActor
 final class LibraryNoteScrollView: NSScrollView {
     override func layout() {
         let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, frame.width)
@@ -1101,7 +1086,6 @@ final class LibraryWindowController: NSWindowController,
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
     private static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
-    private static let noteListActionsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-actions")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
@@ -2038,7 +2022,6 @@ final class LibraryWindowController: NSWindowController,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.noteListTitleToolbarItemIdentifier,
-            Self.noteListActionsToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
             .flexibleSpace,
@@ -2077,13 +2060,6 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
-        case Self.noteListActionsToolbarItemIdentifier:
-            return toolbarCircularButtonItem(
-                identifier: itemIdentifier,
-                label: "列表显示选项",
-                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
-                action: #selector(noteListActionsToolbarMenuPressed(_:))
-            )
         case Self.addFolderToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -2398,12 +2374,7 @@ final class LibraryWindowController: NSWindowController,
         image: NSImage?,
         action: Selector
     ) -> NSButton {
-        let button: NSButton
-        if identifier == Self.formatToolbarItemIdentifier {
-            button = LibraryToolbarMenuButton(image: image ?? NSImage(), target: self, action: action)
-        } else {
-            button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        }
+        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
@@ -2460,12 +2431,7 @@ final class LibraryWindowController: NSWindowController,
         )) ?? image
         configuredImage?.isTemplate = true
 
-        let button: NSButton
-        if identifier == Self.noteListActionsToolbarItemIdentifier {
-            button = LibraryToolbarMenuButton(image: configuredImage ?? NSImage(), target: self, action: action)
-        } else {
-            button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
-        }
+        let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
@@ -4777,7 +4743,7 @@ final class LibraryWindowController: NSWindowController,
         do {
             _ = try saveCurrentNote(force: false)
         } catch {
-            statusLabel.stringValue = "自动保存失败"
+            NSSound.beep()
         }
     }
 
@@ -5368,15 +5334,21 @@ final class LibraryWindowController: NSWindowController,
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
         guard let sourceListView else { return false }
         noteStore.librarySourceListVisible = isVisible
+        applySourceVisibilityChrome(isVisible)
         if let sourceSplitViewItem {
             if animated {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
                     context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    context.allowsImplicitAnimation = true
                     sourceSplitViewItem.animator().isCollapsed = !isVisible
+                    if let titleView = noteListToolbarTitleLeadingConstraint?.firstItem as? NSView {
+                        titleView.superview?.animator().layoutSubtreeIfNeeded()
+                    }
                 } completionHandler: { [weak self] in
                     Task { @MainActor [weak self] in
                         self?.restoreStoredPaneWidthsAfterSourceVisibilityChange()
+                        self?.updateToolbarActionState()
                     }
                 }
             } else {
@@ -5388,6 +5360,22 @@ final class LibraryWindowController: NSWindowController,
         }
         updateToolbarActionState()
         return isSourceListVisibleForLibrary
+    }
+
+    private func applySourceVisibilityChrome(_ isVisible: Bool) {
+        noteListToolbarTitleLeadingConstraint?.constant = isVisible ? 0 : -24
+        for item in window?.toolbar?.items ?? [] {
+            switch item.itemIdentifier {
+            case Self.addFolderToolbarItemIdentifier, Self.sourceTrackingSeparatorToolbarItemIdentifier:
+                item.isHidden = !isVisible
+            case Self.toggleSidebarToolbarItemIdentifier:
+                let label = isVisible ? "隐藏资料库" : "显示资料库"
+                updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
+                configureToggleSidebarToolbarItem(item, label: label, usesCompactGlass: !isVisible)
+            default:
+                break
+            }
+        }
     }
 
     private func restoreStoredPaneWidthsAfterSourceVisibilityChange() {
@@ -5943,21 +5931,9 @@ final class LibraryWindowController: NSWindowController,
     private func updateToolbarActionState() {
         let isTrashScope = selectedScope == .trash
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
-        noteListToolbarTitleLeadingConstraint?.constant = isSourceListVisibleForLibrary ? 0 : -24
+        applySourceVisibilityChrome(isSourceListVisibleForLibrary)
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case Self.addFolderToolbarItemIdentifier:
-                item.isHidden = !isSourceListVisibleForLibrary
-            case Self.sourceTrackingSeparatorToolbarItemIdentifier:
-                item.isHidden = !isSourceListVisibleForLibrary
-            case Self.toggleSidebarToolbarItemIdentifier:
-                let label = isSourceListVisibleForLibrary ? "隐藏资料库" : "显示资料库"
-                updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
-                configureToggleSidebarToolbarItem(
-                    item,
-                    label: label,
-                    usesCompactGlass: !isSourceListVisibleForLibrary
-                )
             case Self.deleteToolbarItemIdentifier:
                 let label = isTrashScope
                     ? noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount)
@@ -6030,17 +6006,12 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    @objc
-    private func noteListActionsToolbarMenuPressed(_ sender: Any?) {
-        popToolbarMenu(makeNoteListActionsMenuForLibrary(), from: sender)
-    }
-
     private func popToolbarMenu(_ menu: NSMenu, from sender: Any?) {
         menu.autoenablesItems = false
         if let view = (sender as? NSView) ?? (sender as? NSToolbarItem)?.view {
             menu.popUp(
                 positioning: nil,
-                at: NSPoint(x: view.bounds.minX, y: view.bounds.minY - 6),
+                at: NSPoint(x: view.bounds.midX, y: view.bounds.minY - 4),
                 in: view
             )
         } else if let contentView = window?.contentView {

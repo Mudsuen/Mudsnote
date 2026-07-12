@@ -7,7 +7,6 @@ extension EditorWindowController {
     func markDocumentDirty() {
         guard !suppressAutosave else { return }
         isDirty = true
-        statusLabel.stringValue = "自动保存中"
         autosaveTimer?.invalidate()
         autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in self?.persistDraft(force: false) }
@@ -23,7 +22,6 @@ extension EditorWindowController {
 
         if document.title.isEmpty && document.body.isEmpty {
             noteStore.deleteDraft(id: currentDraftID)
-            statusLabel.stringValue = fileURL == nil && activeFloatingNoteURL == nil ? "Markdown" : "编辑中"
             return
         }
 
@@ -39,9 +37,8 @@ extension EditorWindowController {
 
         do {
             try noteStore.saveDraft(snapshot)
-            statusLabel.stringValue = "已保存"
         } catch {
-            statusLabel.stringValue = "保存失败"
+            NSSound.beep()
         }
     }
 

@@ -1,5 +1,11 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (156)
+
+- Save progress no longer replaces the editor status/time text; the library date updates from the file modification date only after a successful save.
+- Sidebar collapse coordinates split-item animation, title offset, and toolbar visibility state.
+- The unused list ellipsis is removed, and remaining menu-backed toolbar controls use normal click-release activation with a centered lower-edge anchor.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
