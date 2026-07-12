@@ -1033,6 +1033,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reduced the native search field to `160pt` and its wrapper to `180pt` while preserving the `32/36pt` field/wrapper heights, search behavior, focus handling, and responsive toolbar layout.
 - Lesson: Search prominence should come from placement and native affordance rather than excess width; horizontal and vertical control metrics need independent tuning.
 
+### 173. Higher editor content origin
+
+- Problem: The editor title still read lower than the supplied clear Apple Notes reference even after the date-to-title gap was corrected.
+- Fix: Reduced the editor stack's safe-area top inset from `18pt` to `12pt`, moving the date, title, and body upward together while preserving their calibrated internal spacing and reading edge.
+- Lesson: Once internal title rhythm is correct, vertical alignment should be adjusted at the shared content origin so date, title, body, and caret remain coherent.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

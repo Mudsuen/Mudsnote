@@ -87,6 +87,11 @@
 - Toolbar search uses a `160x32pt` field in a `180x36pt` wrapper.
 - Search behavior and focus contracts are unchanged; only horizontal toolbar occupancy was reduced.
 
+## Latest iteration (173)
+
+- The editor content stack begins `12pt` below the safe-area boundary instead of `18pt`.
+- Date, title, and body move upward together; their internal spacing and shared horizontal reading edge remain unchanged.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
