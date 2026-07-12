@@ -1021,6 +1021,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reduced group rows to `45pt` and increased the title bottom inset to `15pt`, independently aligning the heading baseline and following card while preserving their breathing room.
 - Lesson: A section header's row height controls following content while its internal bottom inset controls the label; both must be measured separately to align the complete list rhythm.
 
+### 171. Notes-ordered toolbar spacing
+
+- Problem: A flexible spacer sat directly after New Note, pushing the editor tools toward Search and leaving roughly twice the Apple Notes gap between the primary action and formatting group.
+- Fix: Reordered the native toolbar to New Note, fixed space, editor tools, flexible space, then Search. Added an exact default-order regression contract while keeping share and ellipsis controls absent.
+- Lesson: Toolbar spacing semantics matter as much as item dimensions; fixed space expresses local grouping, while flexible space belongs between command clusters that should occupy opposite sides.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -2053,9 +2053,9 @@ final class LibraryWindowController: NSWindowController,
             Self.noteListTitleToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
-            .flexibleSpace,
-            Self.editorToolsToolbarItemIdentifier,
             .space,
+            Self.editorToolsToolbarItemIdentifier,
+            .flexibleSpace,
             Self.searchToolbarItemIdentifier
         ]
     }

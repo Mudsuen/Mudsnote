@@ -77,6 +77,11 @@
 - Note-list date groups use `45pt` rows with a `15pt` title bottom inset.
 - Group headings and first note cards align vertically in both expanded and collapsed reference states.
 
+## Latest iteration (171)
+
+- Toolbar order is New Note, fixed space, editor tools, flexible space, Search.
+- New Note to editor-tools separation measures about `19.5pt`, close to the `18.5pt` reference gap; share and ellipsis remain omitted.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

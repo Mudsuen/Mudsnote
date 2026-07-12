@@ -877,6 +877,15 @@ struct MarkdownRichEditorTests {
             of: "mudsnote.library.toolbar.new-note"
         ))
         #expect(noteSeparatorIndex < newNoteIndex)
+        let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
+        let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
+        let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
+            of: "mudsnote.library.toolbar.new-note"
+        ))
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 1] == .space)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.editor-tools")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
             "mudsnote.library.toolbar.toggle-sidebar"
