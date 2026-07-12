@@ -262,6 +262,59 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(markdown.components(separatedBy: "mudsnote-write:").count - 1, 1)
     }
 
+    func testConcurrentQueueInstancesMergeInsteadOfClobberingPendingWrites() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let firstQueue = PendingWriteQueue(root: root)
+        let secondQueue = PendingWriteQueue(root: root)
+        try await firstQueue.load()
+        try await secondQueue.load()
+
+        let first = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "First",
+            attachments: []
+        )
+        let second = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "Second",
+            attachments: []
+        )
+        try await firstQueue.enqueue(first)
+        try await secondQueue.enqueue(second)
+
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let pendingCount = await verificationQueue.pendingCount()
+        XCTAssertEqual(pendingCount, 2)
+    }
+
+    func testIntentCaptureWriterUsesDurableQueueAndCleansUpAfterSuccess() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        try await IntentCaptureWriter.write(
+            CaptureDraft(body: "Captured from Shortcuts", target: .inbox),
+            root: root
+        )
+
+        let inbox = try String(
+            contentsOf: root.appendingPathComponent("Inbox.md"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(inbox.contains("Captured from Shortcuts"))
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        let pendingCount = await queue.pendingCount()
+        XCTAssertEqual(pendingCount, 0)
+    }
+
     func testLibrarySnapshotUsesOneExactInventoryBeyondRecentLimit() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

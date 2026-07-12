@@ -112,11 +112,10 @@ struct AppendToInboxIntent: AppIntent {
         guard let root = try access.resolvePersistedFolder() else {
             throw FolderAccessError.missingFolder
         }
-        let store = MarkdownFileStore()
-        await store.configure(root: root)
-        let draft = CaptureDraft(body: text, target: .inbox)
-        let pending = try await store.preparePendingWrite(for: draft, root: root)
-        try await store.performPendingWrite(pending)
+        try await IntentCaptureWriter.write(
+            CaptureDraft(body: text, target: .inbox),
+            root: root
+        )
         return .result()
     }
 }
@@ -139,46 +138,27 @@ struct AppendToDailyIntent: AppIntent {
         guard let root = try access.resolvePersistedFolder() else {
             throw FolderAccessError.missingFolder
         }
-        let store = MarkdownFileStore()
-        await store.configure(root: root)
-        let draft = CaptureDraft(body: text, target: .daily(Date()))
-        let pending = try await store.preparePendingWrite(for: draft, root: root)
-        try await store.performPendingWrite(pending)
+        try await IntentCaptureWriter.write(
+            CaptureDraft(body: text, target: .daily(Date())),
+            root: root
+        )
         return .result()
     }
 }
 
-#if MUDSNOTE_WIDGET_EXTENSION
-import SwiftUI
-import WidgetKit
-
-struct QuickCaptureWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "QuickCaptureWidget", provider: Provider()) { _ in
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Mudsnote")
-                    .font(.headline)
-                Text("What's on your mind?")
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("Quick Note", intent: CaptureMemoIntent())
-                    Button("Daily", intent: CaptureMemoIntent())
-                }
-            }
-            .containerBackground(.fill.tertiary, for: .widget)
+enum IntentCaptureWriter {
+    static func write(_ draft: CaptureDraft, root: URL) async throws {
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.replay { item in
+            try await store.performPendingWrite(item)
         }
+
+        let pending = try await store.preparePendingWrite(for: draft, root: root)
+        try await queue.enqueue(pending)
+        try await store.performPendingWrite(pending)
+        try await queue.remove(id: pending.id)
     }
 }
-
-struct Provider: TimelineProvider {
-    func placeholder(in context: Context) -> SimpleEntry { SimpleEntry(date: Date()) }
-    func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> Void) { completion(SimpleEntry(date: Date())) }
-    func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleEntry>) -> Void) {
-        completion(Timeline(entries: [SimpleEntry(date: Date())], policy: .never))
-    }
-}
-
-struct SimpleEntry: TimelineEntry {
-    let date: Date
-}
-#endif

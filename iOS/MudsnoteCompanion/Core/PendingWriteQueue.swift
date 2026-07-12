@@ -27,11 +27,10 @@ actor PendingWriteQueue {
         try withRootAccess {
             guard FileManager.default.fileExists(atPath: queueURL.path) else {
                 items = []
-                try persistUnlocked()
+                try persistUnlocked(items, to: queueURL)
                 return
             }
-            let data = try Data(contentsOf: queueURL)
-            items = try JSONDecoder.pendingWrites.decode([PendingWrite].self, from: data)
+            items = try loadItemsUnlocked(from: queueURL)
         }
     }
 
@@ -40,16 +39,17 @@ actor PendingWriteQueue {
     }
 
     func enqueue(_ item: PendingWrite) throws {
-        if !items.contains(where: { $0.id == item.id }) {
-            try PendingWriteQueuePolicy.validate(existing: items, appending: item)
-            items.append(item)
-            try persist()
+        try mutatePersistedItems { persisted in
+            guard !persisted.contains(where: { $0.id == item.id }) else { return }
+            try PendingWriteQueuePolicy.validate(existing: persisted, appending: item)
+            persisted.append(item)
         }
     }
 
     func remove(id: UUID) throws {
-        items.removeAll { $0.id == id }
-        try persist()
+        try mutatePersistedItems { persisted in
+            persisted.removeAll { $0.id == id }
+        }
     }
 
     func replay(_ writer: (PendingWrite) async throws -> Void) async throws {
@@ -59,15 +59,43 @@ actor PendingWriteQueue {
         }
     }
 
-    private func persist() throws {
+    private func mutatePersistedItems(
+        _ mutation: (inout [PendingWrite]) throws -> Void
+    ) throws {
         try withRootAccess {
-            try persistUnlocked()
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            var operationError: Error?
+            var updatedItems: [PendingWrite]?
+            coordinator.coordinate(
+                writingItemAt: queueURL,
+                options: .forMerging,
+                error: &coordinationError
+            ) { coordinatedURL in
+                do {
+                    var persisted = try loadItemsUnlocked(from: coordinatedURL)
+                    try mutation(&persisted)
+                    try persistUnlocked(persisted, to: coordinatedURL)
+                    updatedItems = persisted
+                } catch {
+                    operationError = error
+                }
+            }
+
+            if let coordinationError { throw coordinationError }
+            if let operationError { throw operationError }
+            if let updatedItems { items = updatedItems }
         }
     }
 
-    private func persistUnlocked() throws {
+    private func loadItemsUnlocked(from url: URL) throws -> [PendingWrite] {
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder.pendingWrites.decode([PendingWrite].self, from: data)
+    }
+
+    private func persistUnlocked(_ items: [PendingWrite], to url: URL) throws {
         let data = try JSONEncoder.pretty.encode(items)
-        try data.write(to: queueURL, options: .atomic)
+        try data.write(to: url, options: .atomic)
     }
 
     private func withRootAccess<T>(_ work: () throws -> T) throws -> T {
