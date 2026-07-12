@@ -24,7 +24,6 @@ actor MarkdownFileStore {
         var markdownFiles: [RecentMarkdownFile] = []
         var attachments: [LibraryAttachment] = []
         var dailyCount = 0
-        var templateCount = 0
         var attachmentCount = 0
         var conflictWarnings: [String] = []
 
@@ -60,9 +59,6 @@ actor MarkdownFileStore {
                 if relativePath.hasPrefix("Daily/") {
                     dailyCount += 1
                 }
-                if relativePath.hasPrefix("Templates/") {
-                    templateCount += 1
-                }
                 markdownFiles.append(RecentMarkdownFile(
                     id: relativePath,
                     relativePath: relativePath,
@@ -86,7 +82,6 @@ actor MarkdownFileStore {
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
                 dailyCount: dailyCount,
-                templateCount: templateCount,
                 attachmentCount: attachmentCount
             ),
             conflictWarnings: conflictWarnings.sorted()
@@ -468,7 +463,6 @@ struct LibrarySummary: Equatable {
     var allNotesCount = 0
     var inboxCount = 0
     var dailyCount = 0
-    var templateCount = 0
     var attachmentCount = 0
 }
 

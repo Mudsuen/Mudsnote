@@ -207,13 +207,18 @@ final class AppModel: ObservableObject {
                         }
                     }
                 } else {
-                    try audioRecorder.start()
+                    try await audioRecorder.start()
                     statusToast = .pending(String(localized: "Recording"))
                 }
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
         }
+    }
+
+    func cancelAudioRecording() {
+        guard audioRecorder.isRecording else { return }
+        audioRecorder.cancel()
     }
 
     private func appendAttachment(_ attachment: CaptureAttachment) throws {

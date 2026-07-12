@@ -106,24 +106,11 @@ enum FolderInitializer {
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try ensureDirectory(root.appendingPathComponent("Daily"))
         try ensureDirectory(root.appendingPathComponent("Attachments"))
-        try ensureDirectory(root.appendingPathComponent("Templates"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote"))
 
         try ensureFile(
             root.appendingPathComponent("Inbox.md"),
             contents: "# Inbox\n\n"
-        )
-        try ensureFile(
-            root.appendingPathComponent("Templates/quick-memo.md"),
-            contents: "## {{datetime}}\n\n{{body}}\n\n{{tags}}\n"
-        )
-        try ensureFile(
-            root.appendingPathComponent("Templates/reading.md"),
-            contents: "## {{datetime}}\n\nSource: {{url}}\n\n{{body}}\n"
-        )
-        try ensureFile(
-            root.appendingPathComponent("Templates/meeting.md"),
-            contents: "## {{datetime}}\n\nParticipants:\n\nNotes:\n{{body}}\n"
         )
         try ensureFile(
             root.appendingPathComponent(".mudsnote/queue.json"),

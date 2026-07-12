@@ -71,6 +71,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Quick Notes"].exists)
         XCTAssertFalse(app.staticTexts["Call Recordings"].exists)
         XCTAssertFalse(app.staticTexts["All Tags"].exists)
+        XCTAssertFalse(app.staticTexts["Templates"].exists)
 
         allNotes.tap()
         let inbox = app.buttons["markdown-file-row-Inbox.md"]

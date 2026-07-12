@@ -2,6 +2,11 @@ import XCTest
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testAudioCaptureErrorsExplainRecovery() {
+        XCTAssertNotNil(AudioCaptureError.microphonePermissionDenied.errorDescription)
+        XCTAssertNotNil(AudioCaptureError.couldNotStart.errorDescription)
+    }
+
     @MainActor
     func testSystemCaptureWaitsForLibraryBeforePresenting() {
         let model = AppModel(bootstrapImmediately: false)
@@ -358,14 +363,13 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
 
-        XCTAssertEqual(snapshot.summary.allNotesCount, 36)
+        XCTAssertEqual(snapshot.summary.allNotesCount, 33)
         XCTAssertEqual(snapshot.summary.dailyCount, 1)
-        XCTAssertEqual(snapshot.summary.templateCount, 3)
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
         XCTAssertEqual(snapshot.attachments.count, 1)
         XCTAssertEqual(snapshot.attachments.first?.relativePath, "Attachments/image.png")
         XCTAssertEqual(snapshot.attachments.first?.kind, .image)
-        XCTAssertEqual(snapshot.allFiles.count, 36)
+        XCTAssertEqual(snapshot.allFiles.count, 33)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
@@ -543,7 +547,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         measureAsync {
             let snapshot = try await store.loadLibrarySnapshot()
-            XCTAssertEqual(snapshot.summary.allNotesCount, 1_005)
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_002)
             XCTAssertEqual(snapshot.recentFiles.count, 24)
         }
     }
@@ -576,7 +580,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         measureAsync {
             let snapshot = try await store.loadInboxDeltaSnapshot()
-            XCTAssertEqual(snapshot.summary.allNotesCount, 1_005)
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_002)
             XCTAssertEqual(snapshot.recentFiles.first?.relativePath, "Inbox.md")
         }
     }

@@ -1,16 +1,6 @@
 import QuickLook
 import SwiftUI
 
-enum LibraryDestination: Hashable {
-    case allNotes
-    case inbox
-    case daily
-    case templates
-    case attachments
-    case tag(String)
-    case settings
-}
-
 struct LibraryHomeView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var searchQuery = ""
@@ -104,15 +94,6 @@ struct LibraryHomeView: View {
                     NotesFolderRow(title: String(localized: "All Notes"), systemImage: "doc.text", count: appModel.librarySummary.allNotesCount)
                 }
                 .accessibilityIdentifier("all-notes-link")
-
-                NavigationLink {
-                    FolderNotesListView(
-                        title: String(localized: "Templates"),
-                        files: appModel.libraryFiles.filter { $0.relativePath.hasPrefix("Templates/") }
-                    )
-                } label: {
-                    NotesFolderRow(title: String(localized: "Templates"), systemImage: "folder", count: appModel.librarySummary.templateCount)
-                }
 
                 NavigationLink {
                     AttachmentLibraryView()

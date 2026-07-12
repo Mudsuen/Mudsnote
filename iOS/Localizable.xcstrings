@@ -51,6 +51,16 @@
         }
       }
     },
+    "Audio recording could not start. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法开始录音，请重试。"
+          }
+        }
+      }
+    },
     "Audio reference": {
       "localizations": {
         "zh-Hans": {
@@ -627,6 +637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Markdown"
+          }
+        }
+      }
+    },
+    "Microphone access is required to record audio.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音需要麦克风权限。"
           }
         }
       }

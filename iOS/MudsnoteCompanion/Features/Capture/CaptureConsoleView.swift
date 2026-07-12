@@ -51,6 +51,9 @@ struct CaptureConsoleView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+        .onDisappear {
+            appModel.cancelAudioRecording()
+        }
     }
 
     private var commandBar: some View {
@@ -102,7 +105,7 @@ struct CaptureConsoleView: View {
                 Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
             }
             .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
-            .disabled(!appModel.draft.canSend || appModel.isSendingDraft)
+            .disabled(!appModel.draft.canSend || appModel.isSendingDraft || appModel.audioRecorder.isRecording)
             .accessibilityLabel("Save memo")
             .accessibilityIdentifier("save-memo-button")
         }
