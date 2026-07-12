@@ -3,18 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${MUDSNOTE_APP_PATH:-/Applications/Mudsnote.app}"
-REFERENCE_PATH="${MUDSNOTE_NOTES_REFERENCE:-$ROOT_DIR/docs/visual-qa/apple-notes-reference.png}"
 OUTPUT_DIR="${1:-/tmp/mudsnote-visual-qa}"
 
 mkdir -p "$OUTPUT_DIR"
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Missing app bundle: $APP_PATH" >&2
-  exit 1
-fi
-
-if [[ ! -f "$REFERENCE_PATH" ]]; then
-  echo "Missing Apple Notes reference image: $REFERENCE_PATH" >&2
   exit 1
 fi
 
@@ -56,15 +50,23 @@ SELECTED_FIXTURE="${MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE:-empty}"
 case "$SELECTED_FIXTURE" in
   empty)
     SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
+    DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
     ;;
   content)
     SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
+    DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
     ;;
   *)
     echo "Unknown MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE '$SELECTED_FIXTURE'. Expected 'empty' or 'content'." >&2
     exit 2
     ;;
 esac
+
+REFERENCE_PATH="${MUDSNOTE_NOTES_REFERENCE:-$DEFAULT_REFERENCE_PATH}"
+if [[ ! -f "$REFERENCE_PATH" ]]; then
+  echo "Missing Apple Notes reference image: $REFERENCE_PATH" >&2
+  exit 1
+fi
 
 rm -rf "$FIXTURE_ROOT"
 mkdir -p "$FIXTURE_ROOT"

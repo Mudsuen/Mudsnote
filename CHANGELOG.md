@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 148. State-matched editor visual QA
+- Problem: The content fixture silently compared against the empty Apple Notes reference, making the editor title rhythm appear tighter than the actual content state.
+- Fix: Routed empty and content fixtures to their matching checked-in references and restored the content date-to-title spacing to `30pt` based on the true content comparison.
+- Lesson: Visual geometry changes require state-matched references; an empty-state screenshot cannot validate content rhythm.
+
 ### 147. Unoccluded first note row
 - Problem: Selecting the first note let the floating recency header cover its title and preview, making an empty note appear as a gold row containing only its folder; disabling the float then exposed that the list itself entered the full-size titlebar.
 - Fix: Disabled floating table group rows and anchored the note-list stack to its pane safe area, preserving the toolbar title/count while keeping `Today` and the complete first note row below it.
