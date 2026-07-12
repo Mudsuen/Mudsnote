@@ -59,11 +59,19 @@ esac
 case "$SELECTED_FIXTURE" in
   empty)
     SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
-    DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
+    if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
+      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
+    else
+      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
+    fi
     ;;
   content)
     SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
-    DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
+    if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
+      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
+    else
+      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
+    fi
     ;;
   *)
     echo "Unknown MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE '$SELECTED_FIXTURE'. Expected 'empty' or 'content'." >&2
@@ -80,7 +88,7 @@ fi
 REFERENCE_BACKING_SCALE="${MUDSNOTE_NOTES_REFERENCE_BACKING_SCALE:-}"
 if [[ -z "$REFERENCE_BACKING_SCALE" ]]; then
   case "$REFERENCE_PATH" in
-    "$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png")
+    "$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png")
       REFERENCE_BACKING_SCALE="2"
       ;;
   esac
@@ -401,6 +409,49 @@ try png.write(to: outputURL)
 print(captureMode)
 SWIFT
 )"
+
+if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
+  /usr/bin/swift - "$REFERENCE_PATH" "$REFERENCE_BACKING_SCALE" "$APP_SCREENSHOT" <<'SWIFT'
+import AppKit
+
+let args = CommandLine.arguments
+guard args.count == 4,
+      let referenceScale = Double(args[2]),
+      referenceScale > 0,
+      let referenceData = try? Data(contentsOf: URL(fileURLWithPath: args[1])),
+      let reference = NSBitmapImageRep(data: referenceData),
+      let appData = try? Data(contentsOf: URL(fileURLWithPath: args[3])),
+      let app = NSBitmapImageRep(data: appData),
+      let appImage = app.cgImage else {
+    fputs("Could not load collapsed-state comparison images\n", stderr)
+    exit(2)
+}
+
+let appScaleX = CGFloat(app.pixelsWide) / max(app.size.width, 1)
+let appScaleY = CGFloat(app.pixelsHigh) / max(app.size.height, 1)
+let cropPointWidth = CGFloat(reference.pixelsWide) / CGFloat(referenceScale)
+let cropPointHeight = CGFloat(reference.pixelsHigh) / CGFloat(referenceScale)
+let cropRect = CGRect(
+    x: 0,
+    y: 0,
+    width: min(CGFloat(app.pixelsWide), cropPointWidth * appScaleX),
+    height: min(CGFloat(app.pixelsHigh), cropPointHeight * appScaleY)
+).integral
+
+guard let cropped = appImage.cropping(to: cropRect) else {
+    fputs("Could not crop Mudsnote collapsed-state region\n", stderr)
+    exit(2)
+}
+
+let output = NSBitmapImageRep(cgImage: cropped)
+output.size = NSSize(width: cropRect.width / appScaleX, height: cropRect.height / appScaleY)
+guard let png = output.representation(using: .png, properties: [:]) else {
+    fputs("Could not encode Mudsnote collapsed-state region\n", stderr)
+    exit(2)
+}
+try png.write(to: URL(fileURLWithPath: args[3]))
+SWIFT
+fi
 
 /usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" "$WINDOW_ID" "$REFERENCE_BACKING_SCALE" <<'SWIFT'
 import AppKit

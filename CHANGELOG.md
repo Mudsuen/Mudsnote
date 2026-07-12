@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 155. State-matched collapsed Notes geometry
+- Problem: Collapsed visual QA still compared against an expanded Notes screenshot, hiding that the note list was about `20pt` too wide, the sidebar toggle was oversized, the library title sat too far right, and the titlebar bottom edge was missing.
+- Fix: Added the supplied collapsed Notes reference and same-region capture path, tightened the default/minimum note column from `220pt` to `200pt` with a versioned migration, added native pane separators, switched the collapsed toggle to a fixed `30pt` macOS 26 glass circle, and reclaimed `24pt` of reserved toolbar space for the collapsed title while preserving expanded geometry.
+- Lesson: Responsive shell states need their own point-scale references; an expanded full-window comparison cannot validate collapsed toolbar ownership or pane boundaries.
+
 ### 154. Snapshot-first library navigation
 - Problem: When the library snapshot was still empty, source navigation and several post-mutation refreshes could synchronously enumerate up to 10,000 Markdown files on the main thread, making ordinary browsing vulnerable to large-library stalls.
 - Fix: Made UI reloads consume only an explicit or in-memory snapshot and schedule cancellable background validation for disk reconciliation. Save, move, trash, restore, folder rename, and folder deletion now update snapshot paths, metadata, and thumbnail references immediately so lifecycle actions remain consistent without rescanning.

@@ -291,19 +291,19 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 3
+    static let storedLayoutScaleVersion = 4
     static let initialWindowSize = NSSize(width: 1080, height: 680)
     static let presentedWindowSize = NSSize(width: 1080, height: 720)
     static let minimumWindowSize = NSSize(width: 1040, height: 620)
     static let sourceColumnWidth: CGFloat = 220
-    static let noteColumnWidth: CGFloat = 220
+    static let noteColumnWidth: CGFloat = 200
     static let sourceColumnMinimumWidth: CGFloat = 220
     static let sourceColumnMaximumWidth: CGFloat = 320
-    static let noteColumnMinimumWidth: CGFloat = 220
+    static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320
     static let editorColumnMinimumWidth: CGFloat = 480
-    static let noteTableInitialWidth: CGFloat = 194
-    static let noteTableMinimumWidth: CGFloat = 194
+    static let noteTableInitialWidth: CGFloat = 174
+    static let noteTableMinimumWidth: CGFloat = 174
     static let sourceRowWidth: CGFloat = 192
     static let toolbarSearchWidth: CGFloat = 210
     static let toolbarSearchHeight: CGFloat = 32
@@ -1144,6 +1144,7 @@ final class LibraryWindowController: NSWindowController,
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
     private var sourceSnapshotValidationGeneration = 0
+    private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
     private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
@@ -1230,7 +1231,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteStore = noteStore
         noteStore.migrateLibraryLayoutScaleIfNeeded(
             to: LibraryNotesLayout.storedLayoutScaleVersion,
-            replacingDefaultPaneWidths: (source: 250, note: 250)
+            replacingDefaultPaneWidths: (source: 220, note: 220)
         )
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
@@ -1856,12 +1857,18 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.noteListTrailingInset
         )
         sidebar.addSubview(stack)
+        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNoteListTitlebarSeparator")
+        sidebar.addSubview(titlebarSeparator)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             stack.topAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
+            stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
+            titlebarSeparator.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            titlebarSeparator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
+            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
         listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
@@ -1940,12 +1947,18 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.editorHorizontalInset
         )
         editor.addSubview(stack)
+        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryEditorTitlebarSeparator")
+        editor.addSubview(titlebarSeparator)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
             stack.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor)
+            stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
+            titlebarSeparator.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
+            titlebarSeparator.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
+            titlebarSeparator.bottomAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
@@ -1956,6 +1969,14 @@ final class LibraryWindowController: NSWindowController,
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
         return editor
+    }
+
+    private func makeLibraryTitlebarSeparator(identifier: String) -> NSBox {
+        let separator = NSBox()
+        separator.identifier = NSUserInterfaceItemIdentifier(identifier)
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        return separator
     }
 
     private func configureToolbar() {
@@ -2233,10 +2254,12 @@ final class LibraryWindowController: NSWindowController,
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(headerStack)
         headerStack.translatesAutoresizingMaskIntoConstraints = false
+        let titleLeadingConstraint = headerStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor)
+        noteListToolbarTitleLeadingConstraint = titleLeadingConstraint
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
             wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight),
-            headerStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            titleLeadingConstraint,
             headerStack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
             headerStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
         ])
@@ -5920,14 +5943,21 @@ final class LibraryWindowController: NSWindowController,
     private func updateToolbarActionState() {
         let isTrashScope = selectedScope == .trash
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
+        noteListToolbarTitleLeadingConstraint?.constant = isSourceListVisibleForLibrary ? 0 : -24
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
             case Self.addFolderToolbarItemIdentifier:
                 item.isHidden = !isSourceListVisibleForLibrary
+            case Self.sourceTrackingSeparatorToolbarItemIdentifier:
+                item.isHidden = !isSourceListVisibleForLibrary
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isSourceListVisibleForLibrary ? "隐藏资料库" : "显示资料库"
                 updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
-                item.isBordered = !isSourceListVisibleForLibrary
+                configureToggleSidebarToolbarItem(
+                    item,
+                    label: label,
+                    usesCompactGlass: !isSourceListVisibleForLibrary
+                )
             case Self.deleteToolbarItemIdentifier:
                 let label = isTrashScope
                     ? noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount)
@@ -5961,6 +5991,43 @@ final class LibraryWindowController: NSWindowController,
         button.image = image
         button.toolTip = label
         button.setAccessibilityLabel(label)
+    }
+
+    private func configureToggleSidebarToolbarItem(
+        _ item: NSToolbarItem,
+        label: String,
+        usesCompactGlass: Bool
+    ) {
+        item.isBordered = false
+        let image = toolbarSymbolImage(symbolName: "sidebar.left", label: label)
+        image?.isTemplate = true
+        let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(toggleSourceListPressed))
+        button.identifier = NSUserInterfaceItemIdentifier(Self.toggleSidebarToolbarItemIdentifier.rawValue)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.focusRingType = .none
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
+        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
+        guard usesCompactGlass else {
+            item.view = button
+            return
+        }
+
+        item.view = toolbarGlassSurface(
+            identifier: "\(Self.toggleSidebarToolbarItemIdentifier.rawValue).glass",
+            content: button,
+            size: NSSize(
+                width: LibraryNotesLayout.toolbarCircularButtonSize,
+                height: LibraryNotesLayout.toolbarCircularButtonSize
+            ),
+            cornerRadius: LibraryNotesLayout.toolbarCircularButtonSize / 2
+        )
     }
 
     @objc
