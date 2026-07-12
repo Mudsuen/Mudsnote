@@ -3392,12 +3392,25 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func searchResultsForSelectedScope(query: String, limit: Int) -> [NoteSearchResult] {
-        searchResults(
+        if selectedScope == .trash, searchScopeControl.selectedSegment != 1 {
+            return cachedTrashSearchResults(query: query, limit: limit)
+        }
+        return searchResults(
             for: selectedScope,
             query: query,
             limit: limit,
             searchesAllNotes: searchScopeControl.selectedSegment == 1
         )
+    }
+
+    private func cachedTrashSearchResults(query: String, limit: Int) -> [NoteSearchResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return Array(trashedNotesSnapshot.prefix(limit)) }
+        return Array(trashedNotesSnapshot.lazy.filter { note in
+            note.title.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.snippet.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+        }.prefix(limit))
     }
 
     private func searchResults(
@@ -4119,6 +4132,9 @@ final class LibraryWindowController: NSWindowController,
         } else if synchronously {
             reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
             applyEditorSearchHighlightsForCurrentQuery()
+            if selectedScope == .trash, searchScopeControl.selectedSegment != 1 {
+                scheduleSearchResultReload(query: query, selecting: selectedURL)
+            }
         } else {
             scheduleSearchResultReload(query: query, selecting: selectedURL)
         }

@@ -3919,6 +3919,53 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func recentlyDeletedKeyboardSearchFlushesFromSnapshotBeforeFullTextRefresh() throws {
+        let suiteName = "mudsnote.trash-search-snapshot-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-trash-search-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Cached Trash Result", body: "Snapshot preview")
+        let trashedURL = try store.trashNote(at: noteURL)
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySourceButton-3"
+        })
+        trashButton.performClick(nil)
+        try FileManager.default.removeItem(at: trashedURL)
+
+        controller.searchField.stringValue = "cached"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        let fieldEditor = NSTextView()
+        #expect(controller.control(
+            controller.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Cached Trash Result"])
+    }
+
+    @MainActor
+    @Test
     func libraryWindowHidesEmptyTagPlaceholderLikeAppleNotes() throws {
         let suiteName = "mudsnote.library-empty-tag-source-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

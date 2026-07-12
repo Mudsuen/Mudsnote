@@ -12,6 +12,11 @@
 - Background source validation loads normal and trashed notes together off the main actor.
 - Trash, restore, and permanent-delete commands update the snapshot immediately.
 
+## Latest iteration (158)
+
+- Recently Deleted keyboard search flushes use cached title, preview, and tag metadata immediately.
+- A detached full-text search replaces the provisional result, preserving body-only matches without blocking keyboard interaction.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

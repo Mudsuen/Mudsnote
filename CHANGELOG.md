@@ -942,6 +942,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a bounded in-memory trash snapshot, hydrated and validated it alongside the normal library snapshot off the main actor, and updated it atomically during trash, restore, and permanent-delete commands.
 - Lesson: Every navigation scope must obey the same snapshot-first contract; a single exceptional filesystem-backed scope can still make the whole sidebar feel blocked.
 
+### 158. Snapshot-first trash keyboard search
+
+- Problem: Typing in Recently Deleted searched asynchronously, but keyboard commands that flushed the debounce could synchronously reopen and parse every trashed Markdown file.
+- Fix: Keyboard flushes now filter the in-memory trash snapshot immediately by title, preview, and tags, then launch the existing detached full-text search to replace that provisional result.
+- Lesson: A debounced background search still needs a nonblocking flush path; keyboard immediacy and complete eventual results are separate phases.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
