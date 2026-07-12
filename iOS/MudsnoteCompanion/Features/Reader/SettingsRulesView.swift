@@ -5,53 +5,62 @@ struct SettingsRulesView: View {
     var chooseFolder: () -> Void
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Folder") {
-                    HStack {
-                        Text("Root")
-                        Spacer()
-                        if case .ready(let url) = appModel.folderStatus {
-                            Text(url.lastPathComponent)
-                                .foregroundStyle(MudsnoteColors.muted)
-                        }
-                    }
-                    Button("Choose another folder", action: chooseFolder)
-                    Button("Replay pending queue") {
-                        appModel.replayQueue()
+        List {
+            Section("Library") {
+                HStack {
+                    Label("Folder", systemImage: "folder")
+                    Spacer()
+                    if case .ready(let url) = appModel.folderStatus {
+                        Text(url.lastPathComponent)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
                     }
                 }
+                Button("Choose Another Folder", action: chooseFolder)
+            }
 
-                Section("Write rules") {
-                    SettingRow(title: String(localized: "Default target"), value: "Inbox.md")
-                    SettingRow(title: String(localized: "Daily path"), value: "Daily/yyyy-MM-dd.md")
-                    SettingRow(title: String(localized: "Attachment path"), value: "Attachments/yyyy/MM")
-                    SettingRow(title: String(localized: "Image reference"), value: "![Image](path)")
-                    SettingRow(title: String(localized: "Audio reference"), value: "[Audio](path)")
-                    SettingRow(title: String(localized: "Audio transcription"), value: String(localized: "Placeholder fallback"))
-                }
-
-                Section("Sync status") {
-                    switch appModel.syncStatus {
-                    case .idle:
-                        SettingRow(title: String(localized: "Status"), value: String(localized: "Saved"))
-                    case .pending:
-                        SettingRow(title: String(localized: "Status"), value: String(localized: "Pending"))
-                    case .conflict:
-                        SettingRow(title: String(localized: "Status"), value: String(localized: "Conflict"))
-                    }
-
-                    ForEach(appModel.conflictWarnings, id: \.self) { warning in
-                        Text(warning)
+            Section("Storage") {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Local Markdown")
+                        Text("Notes and attachments stay in your selected folder.")
                             .font(.caption)
                             .foregroundStyle(MudsnoteColors.muted)
                     }
+                } icon: {
+                    Image(systemName: "internaldrive")
+                        .foregroundStyle(MudsnoteColors.primary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(MudsnoteColors.canvas)
-            .navigationTitle("Settings")
+
+            if appModel.syncStatus != .idle || !appModel.conflictWarnings.isEmpty {
+                Section("Needs Attention") {
+                    if appModel.syncStatus == .pending {
+                        Label("Some captures are waiting to be saved.", systemImage: "clock.arrow.circlepath")
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                    Button("Replay pending queue") {
+                        appModel.replayQueue()
+                    }
+
+                    ForEach(appModel.conflictWarnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                    }
+                }
+            }
+
+            Section("About") {
+                SettingRow(title: String(localized: "Version"), value: appVersion)
+            }
         }
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .navigationTitle("Settings")
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
 }
 
