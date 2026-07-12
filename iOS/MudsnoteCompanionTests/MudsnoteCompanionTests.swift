@@ -109,6 +109,60 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(draft.canSend)
     }
 
+    func testEmptyDraftCannotPreparePendingWrite() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.preparePendingWrite(for: CaptureDraft(), root: root)
+        ) { error in
+            XCTAssertEqual(error as? CaptureDraftError, .empty)
+        }
+    }
+
+    func testPendingWriteRejectsDamagedPathsAndAttachmentData() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let escapingTarget = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "../outside.md",
+            markdownBlock: "memo",
+            attachments: []
+        )
+        await XCTAssertThrowsErrorAsync(try await store.performPendingWrite(escapingTarget)) { error in
+            XCTAssertEqual(error as? PendingWriteValidationError, .invalidTargetPath)
+        }
+
+        let escapingAttachment = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "memo",
+            attachments: [PendingAttachment(relativePath: "../outside.m4a", base64Data: "AQ==")]
+        )
+        await XCTAssertThrowsErrorAsync(try await store.performPendingWrite(escapingAttachment)) { error in
+            XCTAssertEqual(error as? PendingWriteValidationError, .invalidAttachmentPath)
+        }
+
+        let damagedAttachment = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "memo",
+            attachments: [PendingAttachment(relativePath: "Attachments/audio.m4a", base64Data: "invalid")]
+        )
+        await XCTAssertThrowsErrorAsync(try await store.performPendingWrite(damagedAttachment)) { error in
+            XCTAssertEqual(error as? PendingWriteValidationError, .invalidAttachmentData)
+        }
+    }
+
     func testImageAttachmentUsesDetectedContentTypeInsteadOfMisleadingSuffix() throws {
         let pngData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         let attachment = try CaptureAttachment.validatedImage(
@@ -449,6 +503,21 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testAuthorizedLibraryPathRejectsSymlinkEscape() throws {
+        let root = try temporaryRoot()
+        let outside = try temporaryRoot()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let link = root.appendingPathComponent("LinkedOutside", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+
+        XCTAssertNil(
+            AuthorizedLibraryPath.resolve("LinkedOutside/private.md", within: root)
+        )
+    }
+
     func testInboxDeltaRefreshAvoidsUnrelatedLibraryRescan() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -631,6 +700,20 @@ final class MudsnoteCompanionTests: XCTestCase {
             if let operationError {
                 XCTFail("Performance fixture failed: \(operationError)")
             }
+        }
+    }
+
+    private func XCTAssertThrowsErrorAsync<T>(
+        _ expression: @autoclosure () async throws -> T,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ errorHandler: (Error) -> Void
+    ) async {
+        do {
+            _ = try await expression()
+            XCTFail("Expected expression to throw", file: file, line: line)
+        } catch {
+            errorHandler(error)
         }
     }
 

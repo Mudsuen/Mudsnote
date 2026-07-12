@@ -214,6 +214,7 @@ actor MarkdownFileStore {
     }
 
     func preparePendingWrite(for draft: CaptureDraft, root: URL, now: Date = Date()) async throws -> PendingWrite {
+        guard draft.canSend else { throw CaptureDraftError.empty }
         try CaptureAttachmentPolicy.validate(draft.attachments)
         let attachmentWrites = try attachmentWrites(for: draft.attachments, root: root, now: now)
         let markdown = Self.markdownBlock(
@@ -239,23 +240,42 @@ actor MarkdownFileStore {
 
     func performPendingWrite(_ pending: PendingWrite) async throws {
         guard let root else { throw FolderAccessError.missingFolder }
+        guard let target = AuthorizedLibraryPath.resolve(pending.targetRelativePath, within: root),
+              target.pathExtension.lowercased() == "md" else {
+            throw PendingWriteValidationError.invalidTargetPath
+        }
+        guard !pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PendingWriteValidationError.invalidMarkdown
+        }
+
+        let validatedAttachments = try pending.attachments.map { attachment in
+            guard let url = AuthorizedLibraryPath.resolve(
+                attachment.relativePath,
+                within: root,
+                constrainedTo: "Attachments"
+            ) else {
+                throw PendingWriteValidationError.invalidAttachmentPath
+            }
+            guard let data = Data(base64Encoded: attachment.base64Data), !data.isEmpty else {
+                throw PendingWriteValidationError.invalidAttachmentData
+            }
+            return (url: url, data: data)
+        }
         let accessed = root.startAccessingSecurityScopedResource()
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
 
-        for attachment in pending.attachments {
-            let attachmentURL = root.appendingPathComponent(attachment.relativePath)
+        for attachment in validatedAttachments {
+            let attachmentURL = attachment.url
             try fileManager.createDirectory(
                 at: attachmentURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let data = Data(base64Encoded: attachment.base64Data) ?? Data()
             guard !fileManager.fileExists(atPath: attachmentURL.path) else { continue }
-            try data.write(to: attachmentURL, options: .atomic)
+            try attachment.data.write(to: attachmentURL, options: .atomic)
         }
 
-        let target = root.appendingPathComponent(pending.targetRelativePath)
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !fileManager.fileExists(atPath: target.path) {
             try "# \(target.deletingPathExtension().lastPathComponent)\n\n".write(to: target, atomically: true, encoding: .utf8)
@@ -374,8 +394,11 @@ enum AuthorizedLibraryPath {
     ) -> URL? {
         guard !relativePath.isEmpty, !relativePath.hasPrefix("/") else { return nil }
         let standardizedRoot = root.standardizedFileURL
-        let candidate = root.appendingPathComponent(relativePath).standardizedFileURL
+        let candidate = root
+            .appendingPathComponent(relativePath)
+            .standardizedFileURL
         guard candidate.path.hasPrefix(standardizedRoot.path + "/") else { return nil }
+        guard !containsSymbolicLink(relativePath, within: standardizedRoot) else { return nil }
         if let directory {
             let allowedRoot = root
                 .appendingPathComponent(directory, isDirectory: true)
@@ -383,6 +406,17 @@ enum AuthorizedLibraryPath {
             guard candidate.path.hasPrefix(allowedRoot.path + "/") else { return nil }
         }
         return candidate
+    }
+
+    private static func containsSymbolicLink(_ relativePath: String, within root: URL) -> Bool {
+        var current = root
+        for component in relativePath.split(separator: "/") {
+            current.appendPathComponent(String(component))
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)) != nil {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -448,6 +482,25 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         String(localized: "This Markdown file is outside the authorized library.")
+    }
+}
+
+enum CaptureDraftError: LocalizedError, Equatable {
+    case empty
+
+    var errorDescription: String? {
+        String(localized: "Add text or an attachment before saving.")
+    }
+}
+
+enum PendingWriteValidationError: LocalizedError, Equatable {
+    case invalidTargetPath
+    case invalidAttachmentPath
+    case invalidAttachmentData
+    case invalidMarkdown
+
+    var errorDescription: String? {
+        String(localized: "A pending capture is damaged and was not written.")
     }
 }
 

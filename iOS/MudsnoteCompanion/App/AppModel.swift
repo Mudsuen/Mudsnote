@@ -109,7 +109,10 @@ final class AppModel: ObservableObject {
     }
 
     func sendDraft(continueCapturing: Bool = true) {
-        guard draft.canSend, !isSendingDraft else { return }
+        guard draft.canSend,
+              !isSendingDraft,
+              !isAudioTransitioning,
+              !isTranscribingAudio else { return }
         let nextTarget = draft.target
         let canUseInboxDelta = nextTarget == .inbox && draft.attachments.isEmpty
         isSendingDraft = true

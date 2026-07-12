@@ -38,9 +38,9 @@ struct SettingsRulesView: View {
                     if appModel.syncStatus == .pending {
                         Label("Some captures are waiting to be saved.", systemImage: "clock.arrow.circlepath")
                             .foregroundStyle(MudsnoteColors.muted)
-                    }
-                    Button("Replay pending queue") {
-                        appModel.replayQueue()
+                        Button("Replay pending queue") {
+                            appModel.replayQueue()
+                        }
                     }
 
                     ForEach(appModel.conflictWarnings, id: \.self) { warning in

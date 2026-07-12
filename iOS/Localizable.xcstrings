@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "A pending capture is damaged and was not written.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一条待保存记录已损坏，因此未写入。"
+          }
+        }
+      }
+    },
+    "Add text or an attachment before saving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先输入文字或添加附件。"
+          }
+        }
+      }
+    },
     "All Notes": {
       "localizations": {
         "zh-Hans": {
