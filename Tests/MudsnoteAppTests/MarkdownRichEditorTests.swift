@@ -528,6 +528,17 @@ struct MarkdownRichEditorTests {
         #expect(visible.contains(NSPoint(x: minimumSized.midX, y: minimumSized.midY)))
     }
 
+    @Test
+    func libraryDefaultFrameMigrationShrinksOnlyPreviousDefaults() {
+        let previous = StoredWindowFrame(x: 100, y: 80, width: 1080, height: 720)
+        let migrated = LibraryNotesLayout.migratedDefaultWindowFrame(previous)
+        #expect(migrated == StoredWindowFrame(x: 170, y: 125, width: 940, height: 630))
+
+        let customized = StoredWindowFrame(x: 40, y: 30, width: 1180, height: 760)
+        #expect(LibraryNotesLayout.migratedDefaultWindowFrame(customized) == customized)
+        #expect(LibraryNotesLayout.migratedDefaultWindowFrame(nil) == nil)
+    }
+
     @MainActor
     @Test
     func floatingToolbarButtonAppliesInlineTypingFormat() throws {
@@ -808,9 +819,9 @@ struct MarkdownRichEditorTests {
         #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(!controller.tableView.floatsGroupRows)
-        #expect(LibraryNotesLayout.storedLayoutScaleVersion == 4)
-        #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 1080, height: 680))
-        #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 1080, height: 720))
+        #expect(LibraryNotesLayout.storedLayoutScaleVersion == 5)
+        #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 940, height: 630))
+        #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 940, height: 630))
         #expect(LibraryNotesLayout.sourceColumnWidth == 220)
         #expect(LibraryNotesLayout.noteColumnWidth == 200)
         #expect(LibraryNotesLayout.sourceColumnWidth > LibraryNotesLayout.noteColumnWidth)
@@ -823,8 +834,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == 230)
         #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 2200, height: 1200)) == LibraryNotesLayout.presentedWindowSize)
         let clampedSize = LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1180, height: 720))
-        #expect(clampedSize.width == 1080)
-        #expect(clampedSize.height == 648)
+        #expect(clampedSize == LibraryNotesLayout.presentedWindowSize)
         #expect(clampedSize.width >= LibraryNotesLayout.minimumWindowSize.width)
         #expect(clampedSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(LibraryNotesLayout.presentedWindowSize(
@@ -1417,8 +1427,8 @@ struct MarkdownRichEditorTests {
         let firstWindow = try #require(firstController.window)
         firstWindow.contentView?.layoutSubtreeIfNeeded()
         let firstSplitView = try #require(firstWindow.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
-        let desiredSourceWidth: CGFloat = 280
-        let desiredNoteWidth: CGFloat = 280
+        let desiredSourceWidth: CGFloat = 240
+        let desiredNoteWidth: CGFloat = 210
 
         firstSplitView.setPosition(desiredSourceWidth, ofDividerAt: 0)
         firstSplitView.layoutSubtreeIfNeeded()

@@ -961,6 +961,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Lesson: Removing chrome must not orphan useful commands; macOS menus are the correct low-noise home for secondary list presentation options.
 - Follow-up: Folder deletion now remaps every contained note into the trash snapshot immediately, preserving Recently Deleted counts under the snapshot-first architecture.
 
+### 161. Reference-scale default library window
+
+- Problem: The default `1080x720pt` workspace remained materially larger than the supplied Apple Notes reference at roughly `931x623pt`, matching the reported oversized-window regression.
+- Fix: Tightened the default library window to `940x630pt` and the safe minimum to `904x560pt`, retained the `220/200pt` source/list proportions, and migrated only frames that exactly matched either previous default while preserving their center.
+- Lesson: Matching control metrics inside an oversized shell is not enough; default window geometry is a first-order fidelity signal, but migration must not overwrite intentional user resizing.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

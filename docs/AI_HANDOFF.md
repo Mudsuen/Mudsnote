@@ -27,6 +27,11 @@
 - View > Sort By exposes edit-date, creation-date, and title sorting without restoring the toolbar ellipsis.
 - View > Group By Date uses native menu validation to reflect live or persisted state.
 
+## Latest iteration (161)
+
+- Default/canonical library geometry is `940x630pt`, close to the `931x623pt` Apple Notes reference.
+- Version-5 migration recenters only exact old-default frames and preserves custom window sizing.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

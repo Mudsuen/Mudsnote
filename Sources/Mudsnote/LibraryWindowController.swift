@@ -291,10 +291,12 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 4
-    static let initialWindowSize = NSSize(width: 1080, height: 680)
-    static let presentedWindowSize = NSSize(width: 1080, height: 720)
-    static let minimumWindowSize = NSSize(width: 1040, height: 620)
+    static let storedLayoutScaleVersion = 5
+    static let initialWindowSize = NSSize(width: 940, height: 630)
+    static let presentedWindowSize = NSSize(width: 940, height: 630)
+    static let minimumWindowSize = NSSize(width: 904, height: 560)
+    static let previousInitialWindowSize = NSSize(width: 1080, height: 680)
+    static let previousPresentedWindowSize = NSSize(width: 1080, height: 720)
     static let sourceColumnWidth: CGFloat = 220
     static let noteColumnWidth: CGFloat = 200
     static let sourceColumnMinimumWidth: CGFloat = 220
@@ -401,6 +403,20 @@ enum LibraryNotesLayout {
 
     static func clampedNoteColumnWidth(_ width: CGFloat) -> CGFloat {
         min(max(width, noteColumnMinimumWidth), noteColumnMaximumWidth)
+    }
+
+    static func migratedDefaultWindowFrame(_ frame: StoredWindowFrame?) -> StoredWindowFrame? {
+        guard let frame else { return nil }
+        let matchesPreviousDefault = [previousInitialWindowSize, previousPresentedWindowSize].contains { size in
+            abs(frame.width - size.width) < 0.5 && abs(frame.height - size.height) < 0.5
+        }
+        guard matchesPreviousDefault else { return frame }
+        return StoredWindowFrame(
+            x: frame.x + ((frame.width - presentedWindowSize.width) / 2),
+            y: frame.y + ((frame.height - presentedWindowSize.height) / 2),
+            width: presentedWindowSize.width,
+            height: presentedWindowSize.height
+        )
     }
 }
 
@@ -1214,10 +1230,13 @@ final class LibraryWindowController: NSWindowController,
         onClose: @escaping () -> Void
     ) {
         self.noteStore = noteStore
-        noteStore.migrateLibraryLayoutScaleIfNeeded(
+        let migratedLayout = noteStore.migrateLibraryLayoutScaleIfNeeded(
             to: LibraryNotesLayout.storedLayoutScaleVersion,
-            replacingDefaultPaneWidths: (source: 220, note: 220)
+            replacingDefaultPaneWidths: (source: 220, note: 200)
         )
+        if migratedLayout {
+            noteStore.libraryWindowFrame = LibraryNotesLayout.migratedDefaultWindowFrame(noteStore.libraryWindowFrame)
+        }
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
