@@ -948,6 +948,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Keyboard flushes now filter the in-memory trash snapshot immediately by title, preview, and tags, then launch the existing detached full-text search to replace that provisional result.
 - Lesson: A debounced background search still needs a nonblocking flush path; keyboard immediacy and complete eventual results are separate phases.
 
+### 159. Snapshot-first initial keyboard search
+
+- Problem: Pressing Return or an arrow key before the first search debounce completed could synchronously create and validate the full search session on the main thread.
+- Fix: When no reusable search session exists, keyboard flushes now filter the loaded scope snapshot immediately and schedule detached indexed search; established sessions continue using their complete in-memory ranking synchronously.
+- Lesson: The first interaction needs a cache-backed fast path even when steady-state search is already optimized.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

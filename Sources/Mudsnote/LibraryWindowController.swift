@@ -3413,6 +3413,45 @@ final class LibraryWindowController: NSWindowController,
         }.prefix(limit))
     }
 
+    private func cachedSearchResultsForSelectedScope(query: String, limit: Int) -> [NoteSearchResult] {
+        if selectedScope == .trash, searchScopeControl.selectedSegment != 1 {
+            return cachedTrashSearchResults(query: query, limit: limit)
+        }
+
+        let candidates: [NoteSearchResult]
+        if searchScopeControl.selectedSegment == 1 {
+            candidates = sourceCountSnapshot
+        } else {
+            switch selectedScope {
+            case .all:
+                candidates = sourceCountSnapshot
+            case .recent:
+                candidates = recentNoteResults(limit: 80, allNotes: sourceCountSnapshot)
+            case .inbox:
+                candidates = sourceCountSnapshot.filter(libraryIsInboxNote)
+            case .trash:
+                candidates = trashedNotesSnapshot
+            case .folder(let folderURL):
+                let folderPath = folderURL.standardizedFileURL.path
+                candidates = sourceCountSnapshot.filter { note in
+                    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
+                    return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+                }
+            case .tag(let tag):
+                candidates = sourceCountSnapshot.filter { note in
+                    note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+                }
+            }
+        }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Array(candidates.lazy.filter { note in
+            note.title.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.snippet.localizedCaseInsensitiveContains(trimmedQuery)
+                || note.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+        }.prefix(limit))
+    }
+
     private func searchResults(
         for scope: LibraryScope,
         query: String,
@@ -4130,11 +4169,14 @@ final class LibraryWindowController: NSWindowController,
             reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
             applyEditorSearchHighlightsForCurrentQuery()
         } else if synchronously {
-            reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
-            applyEditorSearchHighlightsForCurrentQuery()
-            if selectedScope == .trash, searchScopeControl.selectedSegment != 1 {
+            if activeSearchSession == nil || (selectedScope == .trash && searchScopeControl.selectedSegment != 1) {
+                let provisionalResults = cachedSearchResultsForSelectedScope(query: query, limit: 240)
+                applySearchResults(provisionalResults, query: query, selecting: selectedURL)
                 scheduleSearchResultReload(query: query, selecting: selectedURL)
+            } else {
+                reloadNotes(selecting: selectedURL, loadFirstIfNeeded: false, refreshCounts: false)
             }
+            applyEditorSearchHighlightsForCurrentQuery()
         } else {
             scheduleSearchResultReload(query: query, selecting: selectedURL)
         }

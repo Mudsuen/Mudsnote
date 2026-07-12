@@ -17,6 +17,11 @@
 - Recently Deleted keyboard search flushes use cached title, preview, and tag metadata immediately.
 - A detached full-text search replaces the provisional result, preserving body-only matches without blocking keyboard interaction.
 
+## Latest iteration (159)
+
+- First-search keyboard flushes use scope-filtered snapshot metadata instead of building the search index on the main actor.
+- Detached indexed search publishes the reusable full-text session afterward; established sessions still rank synchronously in memory.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

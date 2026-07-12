@@ -3919,6 +3919,51 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func firstKeyboardSearchFlushUsesSnapshotBeforeBuildingSearchSession() async throws {
+        let suiteName = "mudsnote.first-search-flush-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-first-search-flush-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Immediate Snapshot", body: "First search body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.searchField.stringValue = "immediate"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        #expect(controller.activeSearchSessionForLibrary() == nil)
+        let fieldEditor = NSTextView()
+        #expect(controller.control(
+            controller.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        #expect(controller.titleField.stringValue == "Immediate Snapshot")
+        #expect(controller.activeSearchSessionForLibrary() == nil)
+
+        await controller.waitForExternalLibraryRefreshForTesting()
+        #expect(controller.activeSearchSessionForLibrary() != nil)
+    }
+
+    @MainActor
+    @Test
     func recentlyDeletedKeyboardSearchFlushesFromSnapshotBeforeFullTextRefresh() throws {
         let suiteName = "mudsnote.trash-search-snapshot-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
