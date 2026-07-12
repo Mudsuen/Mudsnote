@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 151. Reference-aligned editor origin
+- Problem: After correcting reference backing scale and pane proportions, the editor date still began about `6pt` above Apple Notes and the title remained another `3–4pt` too close to it.
+- Fix: Moved the safe-area editor origin from `12pt` to `18pt` and refined date-to-title spacing from `30pt` to `34pt` using the state-matched content comparison.
+- Lesson: Editor rhythm should be calibrated as two independent measurements: the pane's safe-area origin and the spacing between semantic rows.
+
 ### 150. Compact Notes pane proportions
 - Problem: Corrected point-scale comparisons showed the default source and note-list panes were still `250/250pt`, visibly wider than Apple Notes' roughly `212/200pt` columns and especially oversized after source collapse.
 - Fix: Tightened both defaults to a conservative `220/220pt`, resized their internal row/table geometry, and added a versioned migration that replaces only untouched `250pt` defaults while preserving manually resized panes.
