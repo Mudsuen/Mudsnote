@@ -1191,6 +1191,16 @@
         }
       }
     },
+    "Opening Mudsnote…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在打开 Mudsnote…"
+          }
+        }
+      }
+    },
     "This Markdown file is outside the authorized library.": {
       "localizations": {
         "zh-Hans": {

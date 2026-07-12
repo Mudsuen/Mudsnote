@@ -10,6 +10,10 @@ struct RootView: View {
 
             Group {
                 switch appModel.folderStatus {
+                case .loading:
+                    ProgressView("Opening Mudsnote…")
+                        .tint(MudsnoteColors.primary)
+                        .foregroundStyle(MudsnoteColors.muted)
                 case .missing:
                     OnboardingFolderView {
                         isFolderImporterPresented = true

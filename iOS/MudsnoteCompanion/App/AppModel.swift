@@ -14,7 +14,7 @@ enum SystemEntryRequest {
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var folderStatus: FolderStatus = .missing
+    @Published var folderStatus: FolderStatus = .loading
     @Published var inboxItems: [MemoBlock] = []
     @Published var libraryFiles: [RecentMarkdownFile] = []
     @Published var recentFiles: [RecentMarkdownFile] = []
@@ -37,9 +37,12 @@ final class AppModel: ObservableObject {
     let audioRecorder = AudioCaptureService()
 
     private var queue: PendingWriteQueue?
+    private var pendingCaptureRoute: CaptureRoute?
 
-    init() {
-        Task { await bootstrap() }
+    init(bootstrapImmediately: Bool = true) {
+        if bootstrapImmediately {
+            Task { await bootstrap() }
+        }
     }
 
     func bootstrap() async {
@@ -384,6 +387,7 @@ final class AppModel: ObservableObject {
             statusToast = .pending(String(localized: "Pending captures need attention"))
         }
         await refreshInbox()
+        presentPendingCaptureIfPossible()
     }
 
     private func appendCurrentDraft() async throws {
@@ -402,6 +406,17 @@ final class AppModel: ObservableObject {
     }
 
     private func openSystemCapture(_ route: CaptureRoute) {
+        guard case .ready = folderStatus else {
+            pendingCaptureRoute = route
+            return
+        }
+        showCapture(route)
+    }
+
+    func presentPendingCaptureIfPossible() {
+        guard case .ready = folderStatus,
+              let route = pendingCaptureRoute else { return }
+        pendingCaptureRoute = nil
         showCapture(route)
     }
 
@@ -456,6 +471,7 @@ struct TagSummary: Equatable, Identifiable {
 }
 
 enum FolderStatus: Equatable {
+    case loading
     case missing
     case ready(URL)
     case error(String)

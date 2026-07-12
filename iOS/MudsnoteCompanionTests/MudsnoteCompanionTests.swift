@@ -2,6 +2,21 @@ import XCTest
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    @MainActor
+    func testSystemCaptureWaitsForLibraryBeforePresenting() {
+        let model = AppModel(bootstrapImmediately: false)
+        model.handle(url: URL(string: "mudsnote://capture?mode=audio")!)
+
+        XCTAssertFalse(model.isCapturePresented)
+        XCTAssertEqual(model.folderStatus, .loading)
+
+        model.folderStatus = .ready(URL(fileURLWithPath: "/tmp/MudsnoteLibrary"))
+        model.presentPendingCaptureIfPossible()
+
+        XCTAssertTrue(model.isCapturePresented)
+        XCTAssertEqual(model.captureRoute, .audio)
+    }
+
     func testMarkdownBlockFormat() {
         let date = Date(timeIntervalSince1970: 1_717_747_920)
         let block = MarkdownFileStore.markdownBlock(
