@@ -1027,6 +1027,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reordered the native toolbar to New Note, fixed space, editor tools, flexible space, then Search. Added an exact default-order regression contract while keeping share and ellipsis controls absent.
 - Lesson: Toolbar spacing semantics matter as much as item dimensions; fixed space expresses local grouping, while flexible space belongs between command clusters that should occupy opposite sides.
 
+### 172. Reference-width toolbar search
+
+- Problem: The toolbar search field occupied `210pt` inside a `230pt` wrapper, roughly `50–70pt` wider than the Apple Notes reference and needlessly compressing the toolbar's central breathing room.
+- Fix: Reduced the native search field to `160pt` and its wrapper to `180pt` while preserving the `32/36pt` field/wrapper heights, search behavior, focus handling, and responsive toolbar layout.
+- Lesson: Search prominence should come from placement and native affordance rather than excess width; horizontal and vertical control metrics need independent tuning.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

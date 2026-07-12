@@ -307,9 +307,9 @@ enum LibraryNotesLayout {
     static let noteTableInitialWidth: CGFloat = 174
     static let noteTableMinimumWidth: CGFloat = 174
     static let sourceRowWidth: CGFloat = 184
-    static let toolbarSearchWidth: CGFloat = 210
+    static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
-    static let toolbarSearchWrapperWidth: CGFloat = 230
+    static let toolbarSearchWrapperWidth: CGFloat = 180
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let toolbarEditorToolsWidth: CGFloat = 184
     static let toolbarEditorToolsHeight: CGFloat = 32

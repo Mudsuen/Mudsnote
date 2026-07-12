@@ -82,6 +82,11 @@
 - Toolbar order is New Note, fixed space, editor tools, flexible space, Search.
 - New Note to editor-tools separation measures about `19.5pt`, close to the `18.5pt` reference gap; share and ellipsis remain omitted.
 
+## Latest iteration (172)
+
+- Toolbar search uses a `160x32pt` field in a `180x36pt` wrapper.
+- Search behavior and focus contracts are unchanged; only horizontal toolbar occupancy was reduced.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
