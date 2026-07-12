@@ -46,6 +46,15 @@ FIXTURE_ARCHIVES_DIR="$FIXTURE_ROOT/Archives"
 FIXTURE_APP_SUPPORT_DIR="$FIXTURE_ROOT/AppSupport"
 FIXTURE_DEFAULTS_SUITE="local.codex.mudsnote.visual-qa"
 SELECTED_FIXTURE="${MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE:-empty}"
+SOURCE_LIST_VISIBLE="${MUDSNOTE_VISUAL_QA_SOURCE_LIST_VISIBLE:-true}"
+
+case "$SOURCE_LIST_VISIBLE" in
+  true|false) ;;
+  *)
+    echo "Unknown MUDSNOTE_VISUAL_QA_SOURCE_LIST_VISIBLE '$SOURCE_LIST_VISIBLE'. Expected 'true' or 'false'." >&2
+    exit 2
+    ;;
+esac
 
 case "$SELECTED_FIXTURE" in
   empty)
@@ -68,9 +77,19 @@ if [[ ! -f "$REFERENCE_PATH" ]]; then
   exit 1
 fi
 
+REFERENCE_BACKING_SCALE="${MUDSNOTE_NOTES_REFERENCE_BACKING_SCALE:-}"
+if [[ -z "$REFERENCE_BACKING_SCALE" ]]; then
+  case "$REFERENCE_PATH" in
+    "$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png")
+      REFERENCE_BACKING_SCALE="2"
+      ;;
+  esac
+fi
+
 rm -rf "$FIXTURE_ROOT"
 mkdir -p "$FIXTURE_ROOT"
 defaults delete "$FIXTURE_DEFAULTS_SUITE" >/dev/null 2>&1 || true
+defaults write "$FIXTURE_DEFAULTS_SUITE" mudsnote.library.sourceListVisible -bool "$SOURCE_LIST_VISIBLE"
 
 /usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_RESOURCES_DIR" "$FIXTURE_ARCHIVES_DIR" "$FIXTURE_APP_SUPPORT_DIR" <<'SWIFT'
 import Foundation
@@ -383,13 +402,13 @@ print(captureMode)
 SWIFT
 )"
 
-/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" "$WINDOW_ID" <<'SWIFT'
+/usr/bin/swift - "$REFERENCE_PATH" "$APP_SCREENSHOT" "$PAIR_SCREENSHOT" "$METADATA_PATH" "$WINDOW_ID" "$REFERENCE_BACKING_SCALE" <<'SWIFT'
 import AppKit
 import CoreGraphics
 
 let args = CommandLine.arguments
-guard args.count == 6, let capturedWindowID = Int(args[5]) else {
-    fputs("Usage: stitch reference app output metadata window-id\n", stderr)
+guard args.count == 7, let capturedWindowID = Int(args[5]) else {
+    fputs("Usage: stitch reference app output metadata window-id reference-backing-scale\n", stderr)
     exit(2)
 }
 
@@ -397,6 +416,7 @@ let referenceURL = URL(fileURLWithPath: args[1])
 let appURL = URL(fileURLWithPath: args[2])
 let outputURL = URL(fileURLWithPath: args[3])
 let metadataURL = URL(fileURLWithPath: args[4])
+let forcedReferenceBackingScale = Double(args[6]).flatMap { $0 > 0 ? CGFloat($0) : nil }
 
 struct ImageMetrics {
     let url: URL
@@ -438,7 +458,7 @@ func capturedWindowBoundsDescription(windowID: Int) -> String {
     return String(format: "x=%.0f,y=%.0f,width=%.0f,height=%.0f", x, y, width, height)
 }
 
-func loadImageMetrics(_ url: URL) -> ImageMetrics {
+func loadImageMetrics(_ url: URL, forcedBackingScale: CGFloat? = nil) -> ImageMetrics {
     guard
         let image = NSImage(contentsOf: url),
         image.size.width > 0,
@@ -448,6 +468,12 @@ func loadImageMetrics(_ url: URL) -> ImageMetrics {
     else {
         fputs("Could not load image: \(url.path)\n", stderr)
         exit(2)
+    }
+    if let forcedBackingScale {
+        image.size = NSSize(
+            width: CGFloat(bitmap.pixelsWide) / forcedBackingScale,
+            height: CGFloat(bitmap.pixelsHigh) / forcedBackingScale
+        )
     }
     return ImageMetrics(
         url: url,
@@ -483,7 +509,7 @@ func drawLabel(_ title: String, metrics: ImageMetrics, drawScale: CGFloat, in re
     text.draw(in: rect.insetBy(dx: 4, dy: 10))
 }
 
-let reference = loadImageMetrics(referenceURL)
+let reference = loadImageMetrics(referenceURL, forcedBackingScale: forcedReferenceBackingScale)
 let app = loadImageMetrics(appURL)
 
 func imageHasVisibleContent(_ metrics: ImageMetrics) -> Bool {
@@ -591,6 +617,7 @@ SWIFT
   echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
   echo "selected_fixture=$SELECTED_FIXTURE"
   echo "selected_note_path=$SELECTED_NOTE_PATH"
+  echo "source_list_visible=$SOURCE_LIST_VISIBLE"
   echo "frontmost_before_capture=$FRONTMOST_BEFORE_CAPTURE"
   echo "capture_mode=$CAPTURE_MODE"
 } >> "$METADATA_PATH"

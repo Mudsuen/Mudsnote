@@ -853,6 +853,18 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.restore"))
+        let toolbarItemOrder = try #require(window.toolbar).items.map(\.itemIdentifier.rawValue)
+        let noteListActionsIndex = try #require(toolbarItemOrder.firstIndex(
+            of: "mudsnote.library.toolbar.note-list-actions"
+        ))
+        let noteSeparatorIndex = try #require(toolbarItemOrder.firstIndex(
+            of: "mudsnote.library.toolbar.note-separator"
+        ))
+        let newNoteIndex = try #require(toolbarItemOrder.firstIndex(
+            of: "mudsnote.library.toolbar.new-note"
+        ))
+        #expect(noteListActionsIndex < noteSeparatorIndex)
+        #expect(noteSeparatorIndex < newNoteIndex)
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
             "mudsnote.library.toolbar.toggle-sidebar"

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 149. State-accurate toolbar geometry
+- Problem: The empty-state Apple Notes reference lost its Retina DPI metadata, so visual QA rendered it at half scale; the New Note button also remained on the list side of the tracked editor divider, widening and crowding both expanded and collapsed headers.
+- Fix: Added explicit `2x` metrics for the checked-in Retina references, deterministic expanded/collapsed fixture state, and moved New Note across the tracked divider into the editor-side toolbar region.
+- Lesson: Window chrome must be compared in points from trustworthy backing-scale metadata, and toolbar ownership is defined by split-view separators rather than item proximity alone.
+
 ### 148. State-matched editor visual QA
 - Problem: The content fixture silently compared against the empty Apple Notes reference, making the editor title rhythm appear tighter than the actual content state.
 - Fix: Routed empty and content fixtures to their matching checked-in references and restored the content date-to-title spacing to `30pt` based on the true content comparison.
