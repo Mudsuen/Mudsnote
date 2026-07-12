@@ -32,9 +32,7 @@ struct CaptureConsoleView: View {
                     isPhotoPickerPresented = true
                 }
             } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                    isBodyFocused = true
-                }
+                isBodyFocused = true
             }
         }
         .onChange(of: appModel.captureRoute) { _, route in
