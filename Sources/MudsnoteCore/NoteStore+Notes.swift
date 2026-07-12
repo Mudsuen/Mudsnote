@@ -91,6 +91,7 @@ extension NoteStore {
         }
 
         try writeNote(to: desiredURL, title: title, body: body, tags: tags)
+        try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: desiredURL.path)
         rememberRecentFile(desiredURL, replacing: desiredURL == url ? nil : url)
         if desiredURL.standardizedFileURL != url.standardizedFileURL {
             replaceLibraryPinnedNotePath(url, with: desiredURL)

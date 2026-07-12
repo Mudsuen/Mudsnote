@@ -9,6 +9,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let launchArguments: Set<String>
     private let visualQASelectedNoteURL: URL?
     private let usesCanonicalVisualQAWindowSize: Bool
+    private let prefersExternalVisualQAScreen: Bool
     static let explicitLaunchWindowArguments: Set<String> = [
         "--quick-capture",
         "--search",
@@ -31,6 +32,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         self.noteStore = Self.makeNoteStore(arguments: rawLaunchArguments)
         self.visualQASelectedNoteURL = Self.visualQASelectedNoteURL(arguments: rawLaunchArguments)
         self.usesCanonicalVisualQAWindowSize = Self.usesCanonicalVisualQAWindowSize(arguments: rawLaunchArguments)
+        self.prefersExternalVisualQAScreen = Self.prefersExternalVisualQAScreen(arguments: rawLaunchArguments)
         super.init()
     }
 
@@ -121,6 +123,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     static func usesCanonicalVisualQAWindowSize(arguments: [String]) -> Bool {
         arguments.contains("--visual-qa-canonical-window-size")
+    }
+
+    static func prefersExternalVisualQAScreen(arguments: [String]) -> Bool {
+        arguments.contains("--visual-qa-external-screen")
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
@@ -453,6 +459,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             noteStore: noteStore,
             defersInitialNoteHydration: true,
             usesCanonicalWindowSize: usesCanonicalVisualQAWindowSize,
+            prefersExternalScreen: prefersExternalVisualQAScreen,
             onOpenInSeparateWindow: { [weak self] url in
                 self?.openEditor(for: url)
             },

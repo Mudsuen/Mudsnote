@@ -155,6 +155,8 @@ Useful launch modes:
 - `/Applications/Mudsnote.app --args --search`
 - `/Applications/Mudsnote.app --args --preferences`
 
+The visual Notes QA script passes `--visual-qa-external-screen`; when a physical external display is connected, the canonical test window is centered there so UI automation does not occupy the built-in display.
+
 Packaged-app smoke expectations depend on the task, but for quick capture they should usually include:
 
 - confirm the panel opens

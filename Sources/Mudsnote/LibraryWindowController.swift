@@ -291,13 +291,8 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 35
     static let toolbarEditorToolButtonHeight: CGFloat = 26
-    static let toolbarFileActionsWidth: CGFloat = 72
-    static let toolbarFileActionsHeight: CGFloat = 32
-    static let toolbarMenuButtonWidth: CGFloat = 30
-    static let toolbarMenuButtonHeight: CGFloat = 28
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
-    static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
@@ -319,6 +314,8 @@ enum LibraryNotesLayout {
     static let sourceListTrailingInset: CGFloat = 14
     static let sourceSurfaceCornerRadius: CGFloat = 24
     static let sourceSurfaceBorderAlpha: CGFloat = 0.20
+    static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
+    static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 6
     static let sourceRowCornerRadius: CGFloat = 8
@@ -388,7 +385,7 @@ enum LibraryNotesLayout {
 
 private enum LibraryNotesPalette {
     static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let sourceBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
+    static let sourceBackground = NSColor(calibratedWhite: 0.045, alpha: 1)
     static let noteListBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
     static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
 }
@@ -1080,7 +1077,6 @@ final class LibraryWindowController: NSWindowController,
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
     private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
-    private static let fileActionsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.file-actions")
     private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
@@ -1091,6 +1087,7 @@ final class LibraryWindowController: NSWindowController,
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let usesCanonicalWindowSize: Bool
+    private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
     private var visualQASelectedURL: URL?
@@ -1187,6 +1184,7 @@ final class LibraryWindowController: NSWindowController,
         noteStore: NoteStore,
         defersInitialNoteHydration: Bool = false,
         usesCanonicalWindowSize: Bool = false,
+        prefersExternalScreen: Bool = false,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
@@ -1198,6 +1196,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
+        self.prefersExternalScreen = prefersExternalScreen
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
         self.onSave = onSave
         self.onClose = onClose
@@ -1248,7 +1247,9 @@ final class LibraryWindowController: NSWindowController,
         showWindow(nil)
         guard let window else { return }
         if !hasCenteredWindow {
-            let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
+            let preferredScreen = prefersExternalScreen ? Self.externalScreen() : nil
+            let visibleFrame = (preferredScreen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+                ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
             if !usesCanonicalWindowSize, let storedFrame = noteStore.libraryWindowFrame {
                 let restoredFrame = clampedPanelFrame(
                     NSRect(
@@ -1662,6 +1663,15 @@ final class LibraryWindowController: NSWindowController,
         ).cgColor
         sourceListView = sourceList
 
+        let darkeningView = NSView()
+        darkeningView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceDarkeningTint")
+        darkeningView.wantsLayer = true
+        darkeningView.layer?.backgroundColor = NSColor.black.withAlphaComponent(
+            LibraryNotesLayout.sourceSurfaceDarkeningAlpha
+        ).cgColor
+        sourceList.addSubview(darkeningView)
+        pin(darkeningView, to: sourceList)
+
         configureSourceStack(sourcePrimaryStack)
         configureSourceStack(sourceFolderStack)
         configureSourceStack(sourceTrashStack)
@@ -1965,7 +1975,6 @@ final class LibraryWindowController: NSWindowController,
             .flexibleSpace,
             Self.editorToolsToolbarItemIdentifier,
             .space,
-            Self.fileActionsToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }
@@ -1983,9 +1992,7 @@ final class LibraryWindowController: NSWindowController,
             Self.checklistToolbarItemIdentifier,
             Self.tableToolbarItemIdentifier,
             Self.linkToolbarItemIdentifier,
-            Self.attachmentToolbarItemIdentifier,
-            Self.exportToolbarItemIdentifier,
-            Self.moreToolbarItemIdentifier
+            Self.attachmentToolbarItemIdentifier
         ]
     }
 
@@ -2039,8 +2046,6 @@ final class LibraryWindowController: NSWindowController,
             )
         case Self.editorToolsToolbarItemIdentifier:
             return toolbarEditorToolsItem(identifier: itemIdentifier)
-        case Self.fileActionsToolbarItemIdentifier:
-            return toolbarFileActionsItem(identifier: itemIdentifier)
         case Self.formatToolbarItemIdentifier:
             let item = toolbarImageItem(
                 identifier: itemIdentifier,
@@ -2077,13 +2082,6 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "paperclip",
                 action: #selector(attachmentPressed)
             )
-        case Self.exportToolbarItemIdentifier:
-            return toolbarMenuButtonItem(
-                identifier: itemIdentifier,
-                label: "复制与导出",
-                symbolName: "square.and.arrow.up",
-                action: #selector(exportToolbarMenuPressed(_:))
-            )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -2115,13 +2113,6 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "arrow.uturn.backward",
                 action: #selector(restoreSelectedNotePressed),
                 visibilityPriority: .low
-            )
-        case Self.moreToolbarItemIdentifier:
-            return toolbarMenuButtonItem(
-                identifier: itemIdentifier,
-                label: "更多",
-                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
-                action: #selector(moreToolbarMenuPressed(_:))
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
@@ -2319,52 +2310,6 @@ final class LibraryWindowController: NSWindowController,
         return item
     }
 
-    private func toolbarFileActionsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "文件操作"
-        item.paletteLabel = "文件操作"
-        item.toolTip = "复制、导出与更多操作"
-        item.visibilityPriority = .high
-        item.isBordered = false
-
-        let stack = NSStackView(views: [
-            toolbarMenuButton(
-                identifier: Self.exportToolbarItemIdentifier,
-                label: "复制与导出",
-                symbolName: "square.and.arrow.up",
-                action: #selector(exportToolbarMenuPressed(_:))
-            ),
-            toolbarMenuButton(
-                identifier: Self.moreToolbarItemIdentifier,
-                label: "更多",
-                symbolName: LibraryNotesLayout.toolbarMoreSymbolName,
-                action: #selector(moreToolbarMenuPressed(_:))
-            )
-        ])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.distribution = .fillEqually
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let capsule = toolbarGlassSurface(
-            identifier: "LibraryToolbarFileActions",
-            content: stack,
-            size: NSSize(
-                width: LibraryNotesLayout.toolbarFileActionsWidth,
-                height: LibraryNotesLayout.toolbarFileActionsHeight
-            ),
-            cornerRadius: LibraryNotesLayout.toolbarFileActionsHeight / 2
-        )
-        NSLayoutConstraint.activate([
-            stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight)
-        ])
-
-        item.view = capsule
-        setFileActionsToolbarGroupState(in: item)
-        return item
-    }
-
     private func toolbarEditorToolButton(
         identifier: NSToolbarItem.Identifier,
         label: String,
@@ -2415,32 +2360,6 @@ final class LibraryWindowController: NSWindowController,
         item.target = self
         item.action = action
         item.visibilityPriority = visibilityPriority
-        return item
-    }
-
-    private func toolbarMenuButtonItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.visibilityPriority = visibilityPriority
-        item.isBordered = false
-
-        let button = toolbarMenuButton(
-            identifier: identifier,
-            label: label,
-            symbolName: symbolName,
-            action: action
-        )
-        item.image = button.image
-        item.view = button
-        setToolbarMenuButtonEnabled(validateToolbarItem(item), in: item)
         return item
     }
 
@@ -2514,32 +2433,6 @@ final class LibraryWindowController: NSWindowController,
             glass.heightAnchor.constraint(equalToConstant: size.height)
         ])
         return glass
-    }
-
-    private func toolbarMenuButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSButton {
-        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
-        image?.isTemplate = true
-        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonWidth).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight).isActive = true
-        return button
     }
 
     private func toolbarSymbolImage(symbolName: String, label: String) -> NSImage? {
@@ -4021,7 +3914,10 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func toggleSourceListPressed() {
-        toggleSourceListForLibrary()
+        setSourceListVisibleForLibrary(
+            !isSourceListVisibleForLibrary,
+            animated: window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
     }
 
     @objc
@@ -4333,15 +4229,7 @@ final class LibraryWindowController: NSWindowController,
         guard canEditCurrentDocument else { return }
         let menu = makeFormatMenuForLibrary()
         guard !menu.items.isEmpty else { return }
-
-        if let item = sender as? NSToolbarItem,
-           let view = item.view {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
-        } else if let view = sender as? NSView {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
-        } else if let contentView = window?.contentView {
-            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
-        }
+        popToolbarMenu(menu, from: sender)
     }
 
     @objc
@@ -4405,13 +4293,7 @@ final class LibraryWindowController: NSWindowController,
         guard canMoveSelectedNote else { return }
         let menu = makeMoveNoteMenu()
         guard !menu.items.isEmpty else { return }
-
-        if let item = sender as? NSToolbarItem,
-           let view = item.view {
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.minY - 4), in: view)
-        } else if let contentView = window?.contentView {
-            menu.popUp(positioning: nil, at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 40), in: contentView)
-        }
+        popToolbarMenu(menu, from: sender)
     }
 
     @objc
@@ -4796,7 +4678,6 @@ final class LibraryWindowController: NSWindowController,
     private func markDirty() {
         guard !suppressEditorChanges, selectedScope != .trash else { return }
         isDirty = true
-        statusLabel.stringValue = selectedURL == nil ? "新笔记，正在保存..." : "正在保存..."
         updateToolbarActionState()
         scheduleAutosave()
     }
@@ -4862,7 +4743,8 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
-        let savedAt = Date()
+        let savedAt = (try? FileManager.default.attributesOfItem(atPath: savedURL.path)[.modificationDate])
+            as? Date ?? Date()
         updateSourceCountSnapshotAfterSave(
             previousURL: previousURL,
             savedURL: savedURL,
@@ -5357,16 +5239,57 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
+        setSourceListVisibleForLibrary(isVisible, animated: false)
+    }
+
+    @discardableResult
+    private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
         guard let sourceListView else { return false }
         noteStore.librarySourceListVisible = isVisible
         if let sourceSplitViewItem {
-            sourceSplitViewItem.isCollapsed = !isVisible
+            if animated {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    sourceSplitViewItem.animator().isCollapsed = !isVisible
+                } completionHandler: { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.restoreStoredPaneWidthsAfterSourceVisibilityChange()
+                    }
+                }
+            } else {
+                sourceSplitViewItem.isCollapsed = !isVisible
+                restoreStoredPaneWidthsAfterSourceVisibilityChange()
+            }
         } else {
             sourceListView.isHidden = !isVisible
         }
-        applyStoredLibrarySplitLayoutForLibrary()
         updateToolbarActionState()
         return isSourceListVisibleForLibrary
+    }
+
+    private func restoreStoredPaneWidthsAfterSourceVisibilityChange() {
+        guard let splitView = librarySplitView,
+              splitView.arrangedSubviews.count == 3 else { return }
+        isApplyingStoredSplitLayout = true
+        defer { isApplyingStoredSplitLayout = false }
+        splitView.adjustSubviews()
+        if !splitView.arrangedSubviews[0].isHidden {
+            splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
+            splitView.layoutSubtreeIfNeeded()
+        }
+        let noteList = splitView.arrangedSubviews[1]
+        splitView.setPosition(noteList.frame.minX + storedNoteColumnWidthForLibrary, ofDividerAt: 1)
+        splitView.layoutSubtreeIfNeeded()
+    }
+
+    private static func externalScreen() -> NSScreen? {
+        NSScreen.screens.first { screen in
+            guard let number = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
+            return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) == 0
+        }
     }
 
     @discardableResult
@@ -5905,9 +5828,12 @@ final class LibraryWindowController: NSWindowController,
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
+            case Self.addFolderToolbarItemIdentifier:
+                item.isHidden = !isSourceListVisibleForLibrary
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isSourceListVisibleForLibrary ? "隐藏资料库" : "显示资料库"
                 updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
+                item.isBordered = !isSourceListVisibleForLibrary
             case Self.deleteToolbarItemIdentifier:
                 let label = isTrashScope
                     ? noteActionTitle(single: "永久删除", multiple: "永久删除 %d 条笔记", count: selectionCount)
@@ -5920,12 +5846,6 @@ final class LibraryWindowController: NSWindowController,
             case Self.restoreToolbarItemIdentifier:
                 let label = noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount)
                 updateToolbarItemPresentation(item, label: label, symbolName: "arrow.uturn.backward")
-            case Self.exportToolbarItemIdentifier:
-                setToolbarMenuButtonEnabled(canExportSelectedNote, in: item)
-            case Self.moreToolbarItemIdentifier:
-                setToolbarMenuButtonEnabled(canShowMoreActions, in: item)
-            case Self.fileActionsToolbarItemIdentifier:
-                setFileActionsToolbarGroupState(in: item)
             case Self.editorToolsToolbarItemIdentifier:
                 setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
             default:
@@ -5950,66 +5870,25 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func exportToolbarMenuPressed(_ sender: Any?) {
-        popToolbarMenu(makeExportMenuForLibrary(), from: sender)
-    }
-
-    @objc
     private func noteListActionsToolbarMenuPressed(_ sender: Any?) {
         popToolbarMenu(makeNoteListActionsMenuForLibrary(), from: sender)
     }
 
-    @objc
-    private func moreToolbarMenuPressed(_ sender: Any?) {
-        popToolbarMenu(makeMoreActionsMenuForLibrary(), from: sender)
-    }
-
     private func popToolbarMenu(_ menu: NSMenu, from sender: Any?) {
-        guard let view = sender as? NSView else {
-            menu.popUp(positioning: nil, at: .zero, in: nil)
-            return
+        menu.autoenablesItems = false
+        if let view = (sender as? NSView) ?? (sender as? NSToolbarItem)?.view {
+            menu.popUp(
+                positioning: nil,
+                at: NSPoint(x: view.bounds.minX, y: view.bounds.minY - 6),
+                in: view
+            )
+        } else if let contentView = window?.contentView {
+            menu.popUp(
+                positioning: nil,
+                at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.maxY - 44),
+                in: contentView
+            )
         }
-
-        menu.popUp(
-            positioning: nil,
-            at: NSPoint(x: 0, y: view.bounds.minY - 2),
-            in: view
-        )
-    }
-
-    private func setToolbarMenuButtonEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
-        item.isEnabled = isEnabled
-        guard let button = item.view as? NSButton else { return }
-        setToolbarMenuButtonEnabled(isEnabled, button: button)
-    }
-
-    private func setToolbarMenuButtonEnabled(_ isEnabled: Bool, button: NSButton) {
-        button.isEnabled = isEnabled
-        button.alphaValue = 1
-        button.contentTintColor = toolbarIconTintColor(isEnabled: isEnabled)
-    }
-
-    private func setFileActionsToolbarGroupState(in item: NSToolbarItem) {
-        item.isEnabled = true
-        guard let view = item.view else { return }
-        for button in toolbarButtons(in: view) {
-            switch button.identifier?.rawValue {
-            case Self.exportToolbarItemIdentifier.rawValue:
-                setToolbarMenuButtonEnabled(canExportSelectedNote, button: button)
-            case Self.moreToolbarItemIdentifier.rawValue:
-                setToolbarMenuButtonEnabled(canShowMoreActions, button: button)
-            default:
-                continue
-            }
-        }
-    }
-
-    private func toolbarButtons(in view: NSView) -> [NSButton] {
-        var buttons = view.subviews.compactMap { $0 as? NSButton }
-        for subview in view.subviews {
-            buttons.append(contentsOf: toolbarButtons(in: subview))
-        }
-        return buttons
     }
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {

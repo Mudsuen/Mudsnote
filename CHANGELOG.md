@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 145. Quiet saves and native sidebar collapse
+- Problem: Autosave replaced the editor date with transient save copy, sidebar collapse snapped without matching the Notes collapsed toolbar, the right-side share/more group was unnecessary, and toolbar menus used inconsistent fallback anchors.
+- Fix: Kept the displayed date stable while editing and refreshed it from the saved file timestamp, added a native 0.22s sidebar collapse with state-specific toolbar controls, removed the share/more group, unified toolbar menu anchoring, darkened the rounded sidebar material, and routed visual QA to a physical external display when available.
+- Lesson: A Notes-like shell depends as much on state transitions and quiet feedback as static geometry; toolbar composition should change with pane visibility instead of merely hiding pane content.
+
 ### 144. Safe-area editor rhythm
 - Problem: After enabling full-size content for the native sidebar, the editor date row entered the titlebar and the 30pt title remained visibly larger than Apple Notes.
 - Fix: Anchored the editor stack to the window safe area, reduced the title to 24pt, and reset date-to-title spacing to 8pt while preserving the 15pt body.

@@ -224,7 +224,8 @@ open -n "$APP_PATH" --args \
   --visual-qa-extra-dir "$FIXTURE_ARCHIVES_DIR" \
   --visual-qa-app-support-dir "$FIXTURE_APP_SUPPORT_DIR" \
   --visual-qa-select-note "$SELECTED_NOTE_PATH" \
-  --visual-qa-canonical-window-size
+  --visual-qa-canonical-window-size \
+  --visual-qa-external-screen
 
 cleanup_failed_visual_qa() {
   local status=$?

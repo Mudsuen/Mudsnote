@@ -844,7 +844,7 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.link"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.attachment"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.file-actions"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.file-actions"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.export"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
@@ -864,49 +864,7 @@ struct MarkdownRichEditorTests {
             #expect(item.image != nil)
             #expect(item.toolTip == item.label)
         }
-        let fileActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.file-actions"
-        })
-        #expect(fileActionsToolbarItem.label == "文件操作")
-        #expect(!fileActionsToolbarItem.isBordered)
-        let fileActionsView = try #require(fileActionsToolbarItem.view)
-        #expect(fileActionsView.identifier?.rawValue == "LibraryToolbarFileActions")
-        #expect(fileActionsView.frame.width == LibraryNotesLayout.toolbarFileActionsWidth)
-        #expect(fileActionsView.frame.height == LibraryNotesLayout.toolbarFileActionsHeight)
-        let fileActionsGlass = try #require(fileActionsView as? NSGlassEffectView)
-        #expect(fileActionsGlass.style == .regular)
-        #expect(fileActionsGlass.cornerRadius == LibraryNotesLayout.toolbarFileActionsHeight / 2)
-        #expect(LibraryNotesLayout.toolbarFileActionsWidth == 72)
-        #expect(LibraryNotesLayout.toolbarFileActionsHeight == 32)
-
-        let fileActionButtons = fileActionsView.allSubviews.compactMap { $0 as? NSButton }
-        #expect(Set(fileActionButtons.compactMap { $0.identifier?.rawValue }) == [
-            "mudsnote.library.toolbar.export",
-            "mudsnote.library.toolbar.more"
-        ])
-        let exportToolbarButton = try #require(fileActionButtons.first {
-            $0.identifier?.rawValue == "mudsnote.library.toolbar.export"
-        })
-        #expect(exportToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.export")
-        #expect(!exportToolbarButton.isBordered)
-        #expect(exportToolbarButton.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.toolbarMenuButtonWidth
-        })
-        #expect(exportToolbarButton.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarMenuButtonHeight
-        })
-        #expect(exportToolbarButton.image?.accessibilityDescription == "复制与导出")
-        #expect(exportToolbarButton.toolTip == "复制与导出")
         #expect(controller.makeExportMenuForLibrary().items.map(\.title) == ["复制 Markdown 内容", "导出 Markdown..."])
-        let moreToolbarButton = try #require(fileActionButtons.first {
-            $0.identifier?.rawValue == "mudsnote.library.toolbar.more"
-        })
-        #expect(moreToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.more")
-        #expect(!moreToolbarButton.isBordered)
-        #expect(moreToolbarButton.image?.accessibilityDescription == "更多")
-        #expect(LibraryNotesLayout.toolbarMenuButtonWidth == 30)
-        #expect(LibraryNotesLayout.toolbarMenuButtonHeight == 28)
-        #expect(LibraryNotesLayout.toolbarMenuButtonDisabledAlpha == 0.42)
         #expect(LibraryNotesLayout.toolbarMoreSymbolName == "ellipsis")
         let noteListActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-actions"
@@ -1079,6 +1037,12 @@ struct MarkdownRichEditorTests {
         #expect(sourceSurface.blendingMode == .withinWindow)
         #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
         #expect(sourceSurface.layer?.borderWidth == 1)
+        let sourceDarkeningTint = try #require(sourceSurface.allSubviews.first {
+            $0.identifier?.rawValue == "LibrarySourceDarkeningTint"
+        })
+        #expect(sourceDarkeningTint.layer?.backgroundColor?.alpha == LibraryNotesLayout.sourceSurfaceDarkeningAlpha)
+        #expect(LibraryNotesLayout.sourceSurfaceDarkeningAlpha == 0.30)
+        #expect(LibraryNotesLayout.sourceCollapseAnimationDuration == 0.22)
         #expect(sourceList.frame.width >= LibraryNotesLayout.sourceColumnMinimumWidth)
         #expect(noteList.frame.width >= LibraryNotesLayout.noteColumnMinimumWidth)
         #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 220)
@@ -1089,17 +1053,26 @@ struct MarkdownRichEditorTests {
         let toggleSourceItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.toggle-sidebar"
         })
+        let addFolderItem = try #require((window.toolbar?.items ?? []).first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.add-folder"
+        })
         #expect(controller.isSourceListVisibleForLibrary)
+        #expect(!addFolderItem.isHidden)
+        #expect(!toggleSourceItem.isBordered)
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
         #expect(!controller.isSourceListVisibleForLibrary)
         #expect(sourceList.isHidden)
+        #expect(addFolderItem.isHidden)
+        #expect(toggleSourceItem.isBordered)
         #expect(toggleSourceItem.label == "显示资料库")
         #expect(toggleSourceItem.toolTip == "显示资料库")
         #expect(NSApp.sendAction(try #require(toggleSourceItem.action), to: toggleSourceItem.target, from: toggleSourceItem))
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(!sourceList.isHidden)
+        #expect(!addFolderItem.isHidden)
+        #expect(!toggleSourceItem.isBordered)
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
@@ -2314,18 +2287,6 @@ struct MarkdownRichEditorTests {
             try visibleEditorToolsView(in: controller).allSubviews.compactMap { $0 as? NSButton }
         }
 
-        func visibleToolbarButton(in controller: LibraryWindowController, rawValue: String) throws -> NSButton {
-            let buttons = (controller.window?.toolbar?.items ?? []).flatMap { item -> [NSButton] in
-                guard let view = item.view else { return [] }
-                var result = view.allSubviews.compactMap { $0 as? NSButton }
-                if let button = view as? NSButton {
-                    result.append(button)
-                }
-                return result
-            }
-            return try #require(buttons.first { $0.identifier?.rawValue == rawValue })
-        }
-
         func tintAlpha(_ button: NSButton) throws -> CGFloat {
             try #require(button.contentTintColor).alphaComponent
         }
@@ -2364,20 +2325,10 @@ struct MarkdownRichEditorTests {
         #expect(try visibleEditorToolsView(in: emptyController) is NSGlassEffectView)
         #expect(LibraryNotesLayout.toolbarEditorToolsDisabledAlpha == 0.42)
         #expect(LibraryNotesLayout.toolbarIconEnabledAlpha == 0.76)
-        #expect(LibraryNotesLayout.toolbarIconDisabledAlpha == LibraryNotesLayout.toolbarMenuButtonDisabledAlpha)
         #expect(LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha == 1)
         #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha) < 0.001
         })
-        let emptyExportButton = try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.export")
-        let emptyMoreButton = try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.more")
-        #expect(!emptyExportButton.isEnabled)
-        #expect(!emptyMoreButton.isEnabled)
-        #expect(emptyExportButton.alphaValue == 1)
-        #expect(emptyMoreButton.alphaValue == 1)
-        #expect(abs(try tintAlpha(emptyExportButton) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
-        #expect(abs(try tintAlpha(emptyMoreButton) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
-
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
@@ -2398,7 +2349,6 @@ struct MarkdownRichEditorTests {
         #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
         })
-        #expect(abs(try tintAlpha(try visibleToolbarButton(in: emptyController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
 
         let noteURL = try store.saveNewNote(title: "Toolbar State", body: "Body line")
         let selectedController = LibraryWindowController(
@@ -2422,8 +2372,6 @@ struct MarkdownRichEditorTests {
         #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
         })
-        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.export")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
-        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
 
         let normalMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(normalMoreMenu.items.first { $0.title == "保存" }?.isEnabled == true)
@@ -2454,9 +2402,6 @@ struct MarkdownRichEditorTests {
         #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha) < 0.001
         })
-        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.export")) - LibraryNotesLayout.toolbarIconDisabledAlpha) < 0.001)
-        #expect(abs(try tintAlpha(try visibleToolbarButton(in: selectedController, rawValue: "mudsnote.library.toolbar.more")) - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001)
-
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "分享..." } == nil)
@@ -3512,6 +3457,8 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Autosave Seed", body: "Original body")
+        let oldModifiedAt = Date().addingTimeInterval(-86_400)
+        try FileManager.default.setAttributes([.modificationDate: oldModifiedAt], ofItemAtPath: noteURL.path)
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -3521,6 +3468,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
+        let displayedTimeBeforeEdit = controller.statusLabel.stringValue
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
             markdown: "Autosaved body",
             theme: controller.theme,
@@ -3528,12 +3476,12 @@ struct MarkdownRichEditorTests {
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
 
-        #expect(controller.statusLabel.stringValue == "正在保存...")
+        #expect(controller.statusLabel.stringValue == displayedTimeBeforeEdit)
 
         try controller.flushPendingAutosaveForTesting()
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
-        #expect(controller.statusLabel.stringValue != "正在保存...")
+        #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
         controller.refreshSelectedScopeFromCachedSnapshotForLibrary()
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
     }
@@ -4843,6 +4791,12 @@ struct MarkdownRichEditorTests {
             "--visual-qa-select-note",
             "--library"
         ]) == nil)
+    }
+
+    @Test
+    func visualQALaunchCanPreferAnExternalDisplay() {
+        #expect(AppController.prefersExternalVisualQAScreen(arguments: ["--visual-qa-external-screen"]))
+        #expect(!AppController.prefersExternalVisualQAScreen(arguments: ["--library"]))
     }
 
     @MainActor
