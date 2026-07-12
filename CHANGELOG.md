@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 147. Unoccluded first note row
+- Problem: Selecting the first note let the floating recency header cover its title and preview, making an empty note appear as a gold row containing only its folder; disabling the float then exposed that the list itself entered the full-size titlebar.
+- Fix: Disabled floating table group rows and anchored the note-list stack to its pane safe area, preserving the toolbar title/count while keeping `Today` and the complete first note row below it.
+- Lesson: Full-size titlebars require explicit safe-area boundaries in every pane, and floating table groups are unsafe when selection-driven scrolling can place content beneath them.
+
 ### 146. Immediate native toolbar menus
 - Problem: Toolbar menus were anchored correctly but still waited for a normal button mouse-up, unlike the immediate menu-tracking rhythm in Apple Notes.
 - Fix: Added a dedicated menu-trigger button that highlights on mouse-down, enters menu tracking immediately, and clears highlight only after the menu closes; applied it only to list options and `Aa`.

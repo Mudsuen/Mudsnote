@@ -1761,6 +1761,7 @@ final class LibraryWindowController: NSWindowController,
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
         tableView.style = .plain
+        tableView.floatsGroupRows = false
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         tableView.selectionHighlightStyle = .regular
         tableView.allowsMultipleSelection = true
@@ -1828,7 +1829,13 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.noteListTrailingInset
         )
         sidebar.addSubview(stack)
-        pin(stack, to: sidebar)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
+        ])
         listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         return sidebar

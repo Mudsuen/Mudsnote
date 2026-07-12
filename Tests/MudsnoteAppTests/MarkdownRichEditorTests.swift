@@ -802,6 +802,7 @@ struct MarkdownRichEditorTests {
         #expect(window.styleMask.contains(.resizable))
         #expect(window.minSize.width == LibraryNotesLayout.minimumWindowSize.width)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
+        #expect(!controller.tableView.floatsGroupRows)
         #expect(LibraryNotesLayout.storedLayoutScaleVersion == 2)
         #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 1080, height: 680))
         #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 1080, height: 720))
@@ -1088,6 +1089,13 @@ struct MarkdownRichEditorTests {
         #expect(noteListStack.edgeInsets.left == LibraryNotesLayout.noteListLeadingInset)
         #expect(noteListStack.edgeInsets.bottom == LibraryNotesLayout.noteListBottomInset)
         #expect(noteListStack.edgeInsets.right == LibraryNotesLayout.noteListTrailingInset)
+        let noteListPane = try #require(noteListStack.superview)
+        #expect(noteListPane.constraints.contains {
+            $0.firstItem === noteListStack
+                && $0.firstAttribute == .top
+                && $0.secondItem === noteListPane.safeAreaLayoutGuide
+                && $0.secondAttribute == .top
+        })
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-iCloud"
         })
