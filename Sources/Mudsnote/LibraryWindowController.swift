@@ -375,7 +375,7 @@ enum LibraryNotesLayout {
     static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 34
+    static let editorDateToTitleSpacing: CGFloat = 8
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusFontSize: CGFloat = 13
     static let editorTitleFontSize: CGFloat = 24

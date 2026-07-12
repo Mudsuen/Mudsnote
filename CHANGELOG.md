@@ -1003,6 +1003,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Tightened the default/minimum source pane to `212pt`, its inset rows to `184pt`, and the consistent minimum window width to `896pt`. Added a version-6 migration that replaces only exact stored `220/200pt` pane defaults while preserving custom widths.
 - Lesson: Pane fidelity needs both a measured default and a conservative migration; changing constants without migrating untouched persisted geometry leaves existing users on the obsolete layout.
 
+### 168. Reference-height editor title
+
+- Problem: The editor title still sat visibly too low because the date row retained `34pt` of additional spacing, a value derived from a privacy-blurred comparison that obscured the actual title edge.
+- Fix: Used the supplied clear Apple Notes crop to reduce date-to-title spacing to `8pt`, moving title and body up `26pt` while leaving the centered date and toolbar unchanged. The resulting title top is within roughly `3pt` of the clear reference.
+- Lesson: Blurred content can validate broad structure but not text baselines; visible typography must be calibrated from an unblurred state-matched reference.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -62,6 +62,11 @@
 - Expanded source-pane default/minimum width is `212pt`, with `184pt` inset rows.
 - Layout migration version 6 replaces only exact previous `220/200pt` defaults and preserves custom pane widths.
 
+## Latest iteration (168)
+
+- Editor date-to-title spacing is `8pt`, based on the user's clear Apple Notes title crop.
+- Title and body move together; the centered date and toolbar geometry remain unchanged.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
