@@ -49,12 +49,18 @@ struct RootView: View {
         }
         .sheet(isPresented: $appModel.isCapturePresented) {
             CaptureConsoleView(initialRoute: appModel.captureRoute)
-                .presentationDetents([.fraction(0.32), .medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel.opacity(0.96))
         }
         .sheet(item: $appModel.selectedMemo) { memo in
             MarkdownPreviewView(memo: memo)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(MudsnoteColors.panel)
+        }
+        .sheet(item: $appModel.selectedDocument) { document in
+            MarkdownPreviewView(document: document)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)

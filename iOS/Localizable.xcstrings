@@ -241,6 +241,16 @@
         }
       }
     },
+    "Could not open Markdown file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开 Markdown 文件"
+          }
+        }
+      }
+    },
     "Could not save. Draft kept open": {
       "localizations": {
         "zh-Hans": {
@@ -377,6 +387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件夹已就绪"
+          }
+        }
+      }
+    },
+    "Formatting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "格式"
           }
         }
       }
@@ -741,6 +761,16 @@
         }
       }
     },
+    "Remove attachment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除附件"
+          }
+        }
+      }
+    },
     "Replay pending queue": {
       "localizations": {
         "zh-Hans": {
@@ -1037,6 +1067,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "语音输入"
+          }
+        }
+      }
+    },
+    "Open Markdown file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Markdown 文件"
+          }
+        }
+      }
+    },
+    "This Markdown file is outside the authorized library.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Markdown 文件不在已授权的资料库中。"
           }
         }
       }

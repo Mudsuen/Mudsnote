@@ -294,8 +294,39 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.summary.dailyCount, 1)
         XCTAssertEqual(snapshot.summary.templateCount, 3)
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
+        XCTAssertEqual(snapshot.allFiles.count, 36)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
+    }
+
+    func testMarkdownDocumentLoadsInsideAuthorizedLibraryAndRejectsTraversal() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Projects/Launch.md")
+        try FileManager.default.createDirectory(
+            at: documentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Launch\n\nCommercial-ready reader\n".write(
+            to: documentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let document = try await store.loadMarkdownDocument(relativePath: "Projects/Launch.md")
+        XCTAssertEqual(document.title, "Launch")
+        XCTAssertEqual(document.relativePath, "Projects/Launch.md")
+        XCTAssertTrue(document.markdown.contains("Commercial-ready reader"))
+
+        do {
+            _ = try await store.loadMarkdownDocument(relativePath: "../outside.md")
+            XCTFail("Path traversal should be rejected")
+        } catch {
+            XCTAssertEqual(error as? MarkdownDocumentError, .invalidPath)
+        }
     }
 
     func testInboxDeltaRefreshAvoidsUnrelatedLibraryRescan() async throws {

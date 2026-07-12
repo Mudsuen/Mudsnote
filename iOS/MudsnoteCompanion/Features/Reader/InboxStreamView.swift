@@ -4,8 +4,7 @@ struct InboxStreamView: View {
     @EnvironmentObject private var appModel: AppModel
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 if appModel.inboxItems.isEmpty {
                     EmptyReaderStateView(
                         title: String(localized: "No Memos Yet"),
@@ -47,15 +46,14 @@ struct InboxStreamView: View {
                             .listRowBackground(MudsnoteColors.canvas)
                     }
                 }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .refreshable {
-                await appModel.refreshInbox()
-            }
-            .background(MudsnoteColors.canvas)
-            .navigationTitle("Inbox")
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .refreshable {
+            await appModel.refreshInbox()
+        }
+        .background(MudsnoteColors.canvas)
+        .navigationTitle("Inbox")
     }
 }
 

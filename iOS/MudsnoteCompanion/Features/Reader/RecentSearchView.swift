@@ -17,7 +17,7 @@ struct LibraryHomeView: View {
 
     private var filteredFiles: [RecentMarkdownFile] {
         guard !searchQuery.isEmpty else { return [] }
-        return appModel.recentFiles.filter {
+        return appModel.libraryFiles.filter {
             $0.title.localizedCaseInsensitiveContains(searchQuery)
                 || $0.relativePath.localizedCaseInsensitiveContains(searchQuery)
         }
@@ -28,9 +28,10 @@ struct LibraryHomeView: View {
             ScrollView {
                 if searchQuery.isEmpty {
                     VStack(alignment: .leading, spacing: 22) {
-                        quickSection
                         accountSection
-                        tagsSection
+                        if !appModel.tagSummaries.isEmpty {
+                            tagsSection
+                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
@@ -76,63 +77,37 @@ struct LibraryHomeView: View {
     }
 
     @ViewBuilder
-    private var quickSection: some View {
-        notesCard {
-            NavigationLink {
-                InboxStreamView()
-            } label: {
-                NotesFolderRow(
-                    title: String(localized: "Quick Notes"),
-                    systemImage: "waveform.path.ecg.rectangle",
-                    iconTint: .red,
-                    count: appModel.librarySummary.inboxCount
-                )
-            }
-
-            NavigationLink {
-                TagMemoListView(tag: "#语音")
-            } label: {
-                NotesFolderRow(
-                    title: String(localized: "Call Recordings"),
-                    systemImage: "phone.waveform",
-                    iconTint: .green,
-                    count: appModel.tagSummaries.first(where: { $0.name == "#语音" })?.count ?? 0
-                )
-            }
-        }
-    }
-
-    @ViewBuilder
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             NotesSectionHeader(title: rootSectionTitle)
 
             notesCard {
                 NavigationLink {
-                    FolderNotesListView(title: String(localized: "All Notes"), files: appModel.recentFiles)
-                } label: {
-                    NotesFolderRow(title: String(localized: "All Notes"), systemImage: "folder", count: appModel.librarySummary.allNotesCount)
-                }
-
-                NavigationLink {
                     InboxStreamView()
                 } label: {
-                    NotesFolderRow(title: String(localized: "Inbox"), systemImage: "folder", count: appModel.librarySummary.inboxCount)
+                    NotesFolderRow(title: String(localized: "Inbox"), systemImage: "tray.full", count: appModel.librarySummary.inboxCount)
                 }
 
                 NavigationLink {
                     FolderNotesListView(
                         title: String(localized: "Daily"),
-                        files: appModel.recentFiles.filter { $0.relativePath.hasPrefix("Daily/") }
+                        files: appModel.libraryFiles.filter { $0.relativePath.hasPrefix("Daily/") }
                     )
                 } label: {
-                    NotesFolderRow(title: String(localized: "Daily"), systemImage: "folder", count: appModel.librarySummary.dailyCount)
+                    NotesFolderRow(title: String(localized: "Daily"), systemImage: "calendar", count: appModel.librarySummary.dailyCount)
                 }
+
+                NavigationLink {
+                    FolderNotesListView(title: String(localized: "All Notes"), files: appModel.libraryFiles)
+                } label: {
+                    NotesFolderRow(title: String(localized: "All Notes"), systemImage: "doc.text", count: appModel.librarySummary.allNotesCount)
+                }
+                .accessibilityIdentifier("all-notes-link")
 
                 NavigationLink {
                     FolderNotesListView(
                         title: String(localized: "Templates"),
-                        files: appModel.recentFiles.filter { $0.relativePath.hasPrefix("Templates/") }
+                        files: appModel.libraryFiles.filter { $0.relativePath.hasPrefix("Templates/") }
                     )
                 } label: {
                     NotesFolderRow(title: String(localized: "Templates"), systemImage: "folder", count: appModel.librarySummary.templateCount)
@@ -158,7 +133,6 @@ struct LibraryHomeView: View {
         VStack(alignment: .leading, spacing: 10) {
             NotesSectionHeader(title: String(localized: "Tags"))
             FlowLayout(spacing: 10, rowSpacing: 10) {
-                TagChip(title: String(localized: "All Tags"))
                 ForEach(appModel.tagSummaries) { tag in
                     NavigationLink {
                         TagMemoListView(tag: tag.name)
@@ -189,7 +163,12 @@ struct LibraryHomeView: View {
             } else {
                 notesCard {
                     ForEach(filteredFiles) { file in
-                        RecentFileRow(file: file)
+                        Button {
+                            appModel.openFile(file)
+                        } label: {
+                            RecentFileRow(file: file)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -227,26 +206,13 @@ struct FolderNotesListView: View {
                     .foregroundStyle(MudsnoteColors.muted)
             } else {
                 ForEach(files) { file in
-                    RecentFileRow(file: file)
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                            Button("Tag") {
-                    appModel.statusToast = .pending(String(localized: "Tag applies to Inbox memo cards"))
-                            }
-                            .tint(.blue)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                appModel.statusToast = .pending(String(localized: "Delete is not enabled for Markdown source yet"))
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                            Button {
-                                appModel.statusToast = .pending(String(localized: "Pinned"))
-                            } label: {
-                                Label("Pin", systemImage: "pin")
-                            }
-                            .tint(.yellow)
-                        }
+                    Button {
+                        appModel.openFile(file)
+                    } label: {
+                        RecentFileRow(file: file)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("markdown-file-row-\(file.id)")
                 }
             }
         }
@@ -273,12 +239,9 @@ struct NotesSectionHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(MudsnoteColors.text)
             Spacer()
-            Image(systemName: "chevron.down")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.muted)
         }
         .padding(.horizontal, 2)
     }
@@ -361,6 +324,7 @@ struct NotesBottomCommandBar: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -370,6 +334,9 @@ struct NotesBottomCommandBar: View {
                         .font(.system(size: 21, weight: .medium))
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .fixedSize()
                 .accessibilityLabel("Voice input")
             }
             .foregroundStyle(MudsnoteColors.text)
@@ -596,6 +563,8 @@ struct RecentFileRow: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowBackground(MudsnoteColors.card)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Open Markdown file")
     }
 }
 

@@ -64,6 +64,45 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(editor.exists)
     }
 
+    func testSimplifiedLibraryOpensRealMarkdownFile() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["Quick Notes"].exists)
+        XCTAssertFalse(app.staticTexts["Call Recordings"].exists)
+        XCTAssertFalse(app.staticTexts["All Tags"].exists)
+
+        allNotes.tap()
+        let inbox = app.buttons["markdown-file-row-Inbox.md"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+        inbox.tap()
+        XCTAssertTrue(app.staticTexts["Inbox.md"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Raw"].exists)
+    }
+
+    func testCaptureCommandsStayInSingleRow() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
+
+        let labels = ["Add image", "Record audio", "Formatting", "capture-target-menu", "save-memo-button"]
+        let controls = labels.map { app.buttons[$0] }
+        for control in controls {
+            XCTAssertTrue(control.waitForExistence(timeout: 5))
+        }
+
+        let centerY = controls[0].frame.midY
+        for control in controls.dropFirst() {
+            XCTAssertEqual(control.frame.midY, centerY, accuracy: 2)
+        }
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Single-row capture console"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,

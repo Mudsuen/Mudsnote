@@ -67,8 +67,10 @@ actor MarkdownFileStore {
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(24)
             .map { $0 }
+        let allFiles = markdownFiles.sorted { $0.modifiedAt > $1.modifiedAt }
         let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
+            allFiles: allFiles,
             recentFiles: recentFiles,
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
@@ -108,12 +110,34 @@ actor MarkdownFileStore {
 
         snapshot.inboxItems = inboxItems
         snapshot.summary.inboxCount = inboxItems.count
-        snapshot.recentFiles = (snapshot.recentFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
+        snapshot.allFiles = (snapshot.allFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
             .sorted { $0.modifiedAt > $1.modifiedAt }
+        snapshot.recentFiles = snapshot.allFiles
             .prefix(24)
             .map { $0 }
         cachedLibrarySnapshot = snapshot
         return snapshot
+    }
+
+    func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let standardizedRoot = root.standardizedFileURL
+        let fileURL = root.appendingPathComponent(relativePath).standardizedFileURL
+        guard fileURL.pathExtension.lowercased() == "md",
+              fileURL.path.hasPrefix(standardizedRoot.path + "/") else {
+            throw MarkdownDocumentError.invalidPath
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        return MarkdownDocument(
+            id: relativePath,
+            title: fileURL.deletingPathExtension().lastPathComponent,
+            relativePath: relativePath,
+            markdown: try String(contentsOf: fileURL, encoding: .utf8)
+        )
     }
 
     func applyInboxMutation(_ mutation: InboxMutation) throws {
@@ -321,9 +345,25 @@ struct RecentMarkdownFile: Identifiable, Equatable {
 
 struct MarkdownLibrarySnapshot: Equatable {
     var inboxItems: [MemoBlock]
+    var allFiles: [RecentMarkdownFile]
     var recentFiles: [RecentMarkdownFile]
     var summary: LibrarySummary
     var conflictWarnings: [String]
+}
+
+struct MarkdownDocument: Identifiable, Equatable {
+    var id: String
+    var title: String
+    var relativePath: String
+    var markdown: String
+}
+
+enum MarkdownDocumentError: LocalizedError, Equatable {
+    case invalidPath
+
+    var errorDescription: String? {
+        String(localized: "This Markdown file is outside the authorized library.")
+    }
 }
 
 struct LibrarySummary: Equatable {

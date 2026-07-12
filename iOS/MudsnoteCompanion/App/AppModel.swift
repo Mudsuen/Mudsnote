@@ -16,8 +16,10 @@ enum SystemEntryRequest {
 final class AppModel: ObservableObject {
     @Published var folderStatus: FolderStatus = .missing
     @Published var inboxItems: [MemoBlock] = []
+    @Published var libraryFiles: [RecentMarkdownFile] = []
     @Published var recentFiles: [RecentMarkdownFile] = []
     @Published var selectedMemo: MemoBlock?
+    @Published var selectedDocument: MarkdownDocument?
     @Published var librarySummary = LibrarySummary()
     @Published var tagSummaries: [TagSummary] = []
     @Published var draft = CaptureDraft()
@@ -69,6 +71,7 @@ final class AppModel: ObservableObject {
         folderAccess.forgetPersistedFolder()
         folderStatus = .missing
         inboxItems = []
+        libraryFiles = []
         recentFiles = []
         librarySummary = LibrarySummary()
         tagSummaries = []
@@ -293,6 +296,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func openFile(_ file: RecentMarkdownFile) {
+        Task {
+            do {
+                selectedDocument = try await fileStore.loadMarkdownDocument(
+                    relativePath: file.relativePath
+                )
+            } catch {
+                statusToast = .error(String(localized: "Could not open Markdown file"))
+            }
+        }
+    }
+
     func refreshInbox() async {
         guard folderAccess.currentRoot != nil else { return }
         do {
@@ -323,6 +338,7 @@ final class AppModel: ObservableObject {
 
     private func apply(_ snapshot: MarkdownLibrarySnapshot) async {
         inboxItems = snapshot.inboxItems
+        libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)

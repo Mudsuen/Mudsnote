@@ -20,58 +20,20 @@ struct CaptureConsoleView: View {
                 attachmentStrip
             }
 
-            formatToolbar
-
-            HStack(spacing: 8) {
-                routeButton(.text, icon: "text.alignleft")
-
-                Button {
-                    selectedRoute = .image
-                    isPhotoPickerPresented = true
-                } label: {
-                    Image(systemName: "photo")
-                }
-                .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
-                .accessibilityLabel("Add image")
-
-                Button {
-                    selectedRoute = .audio
-                    appModel.toggleAudioRecording()
-                } label: {
-                    Image(systemName: appModel.audioRecorder.isRecording ? "stop.fill" : "waveform")
-                }
-                .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
-                .accessibilityLabel(
-                    Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
-                )
-
-                TargetMenuView()
-
-                Spacer()
-
-                Button {
-                    appModel.sendDraft(continueCapturing: true)
-                    selectedRoute = .text
-                    selectedPhotoItem = nil
-                    isBodyFocused = true
-                } label: {
-                    Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
-                }
-                .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
-                .disabled(!appModel.draft.canSend || appModel.isSendingDraft)
-                .accessibilityLabel("Save memo")
-                .accessibilityIdentifier("save-memo-button")
-            }
+            commandBar
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
         .padding(.top, 12)
-        .padding(.bottom, 16)
+        .padding(.bottom, 12)
         .background(MudsnoteColors.panel)
         .onAppear {
-            isBodyFocused = selectedRoute != .image
             if selectedRoute == .image {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     isPhotoPickerPresented = true
+                }
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                    isBodyFocused = true
                 }
             }
         }
@@ -91,6 +53,62 @@ struct CaptureConsoleView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+    }
+
+    private var commandBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                selectedRoute = .image
+                isPhotoPickerPresented = true
+            } label: {
+                Image(systemName: "photo")
+            }
+            .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
+            .accessibilityLabel("Add image")
+
+            Button {
+                selectedRoute = .audio
+                appModel.toggleAudioRecording()
+            } label: {
+                Image(systemName: appModel.audioRecorder.isRecording ? "stop.fill" : "waveform")
+            }
+            .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
+            .accessibilityLabel(
+                Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
+            )
+
+            Menu {
+                Button("Tag") { appendToken(" #tag") }
+                Button("Bold") { appendToken("**bold**") }
+                Button("List") { appendToken("\n- ") }
+                Divider()
+                Button("Quote") { appendToken("\n> ") }
+                Button("Checklist") { appendToken("\n- [ ] ") }
+                Button("Code") { appendToken(" `code`") }
+            } label: {
+                Image(systemName: "textformat")
+            }
+            .buttonStyle(IconCircleButtonStyle())
+            .accessibilityLabel("Formatting")
+
+            TargetMenuView()
+
+            Spacer()
+
+            Button {
+                appModel.sendDraft(continueCapturing: true)
+                selectedRoute = .text
+                selectedPhotoItem = nil
+                isBodyFocused = true
+            } label: {
+                Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
+            }
+            .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
+            .disabled(!appModel.draft.canSend || appModel.isSendingDraft)
+            .accessibilityLabel("Save memo")
+            .accessibilityIdentifier("save-memo-button")
+        }
+        .frame(minHeight: 52)
     }
 
     private var editor: some View {
@@ -127,99 +145,32 @@ struct CaptureConsoleView: View {
         .frame(minHeight: 156)
     }
 
-    private var formatToolbar: some View {
-        HStack(spacing: 0) {
-            formatButton("#") {
-                appendToken(" #tag")
-            }
-
-            Divider().frame(height: 28).padding(.horizontal, 10)
-
-            Button {
-                selectedRoute = .image
-                isPhotoPickerPresented = true
-            } label: {
-                Image(systemName: "photo")
-                    .frame(width: 44, height: 36)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add image from Photos")
-
-            Divider().frame(height: 28).padding(.horizontal, 10)
-
-            Button {
-                appendToken("**bold**")
-            } label: {
-                Image(systemName: "bold")
-                    .frame(width: 44, height: 36)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Bold")
-
-            Divider().frame(height: 28).padding(.horizontal, 10)
-
-            Button {
-                appendToken("\n- ")
-            } label: {
-                Image(systemName: "list.bullet")
-                    .frame(width: 44, height: 36)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("List")
-
-            Divider().frame(height: 28).padding(.horizontal, 10)
-
-            Menu {
-                Button("Quote") { appendToken("\n> ") }
-                Button("Checklist") { appendToken("\n- [ ] ") }
-                Button("Code") { appendToken(" `code`") }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 44, height: 36)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("More formatting")
-        }
-        .font(.system(size: 22, weight: .semibold))
-        .foregroundStyle(MudsnoteColors.text)
-        .padding(.horizontal, 10)
-        .frame(height: 46)
-        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(MudsnoteColors.line, lineWidth: 1)
-        }
-    }
-
     private var attachmentStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(appModel.draft.attachments.enumerated()), id: \.offset) { index, attachment in
-                    Label(attachmentLabel(attachment), systemImage: attachmentIcon(attachment))
-                        .font(.caption)
-                        .foregroundStyle(MudsnoteColors.text)
-                        .padding(.horizontal, 12)
-                        .frame(height: 34)
-                        .background(MudsnoteColors.card, in: Capsule())
-                        .overlay { Capsule().stroke(MudsnoteColors.line, lineWidth: 1) }
-                        .contextMenu {
-                            Button("Remove", role: .destructive) {
-                                appModel.draft.attachments.remove(at: index)
-                            }
+                    HStack(spacing: 6) {
+                        Label(attachmentLabel(attachment), systemImage: attachmentIcon(attachment))
+                        Button {
+                            appModel.draft.attachments.remove(at: index)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
                         }
+                        .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel("Remove attachment")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.text)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 8)
+                    .frame(height: 44)
+                    .background(MudsnoteColors.card, in: Capsule())
+                    .overlay { Capsule().stroke(MudsnoteColors.line, lineWidth: 1) }
                 }
             }
         }
-    }
-
-    private func routeButton(_ route: CaptureRoute, icon: String) -> some View {
-        Button {
-            selectedRoute = route
-            isBodyFocused = true
-        } label: {
-            Image(systemName: icon)
-        }
-        .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == route))
     }
 
     private func attachmentLabel(_ attachment: CaptureAttachment) -> String {
@@ -238,14 +189,6 @@ struct CaptureConsoleView: View {
         case .audio:
             return "waveform"
         }
-    }
-
-    private func formatButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .frame(width: 44, height: 36)
-        }
-        .buttonStyle(.plain)
     }
 
     private func appendToken(_ token: String) {

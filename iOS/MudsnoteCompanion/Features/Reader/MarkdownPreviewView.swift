@@ -4,19 +4,33 @@ import UIKit
 
 struct MarkdownPreviewView: View {
     @EnvironmentObject private var appModel: AppModel
-    var memo: MemoBlock
+    private var title: String
+    private var metadata: String
+    private var markdown: String
     @State private var showRaw = false
+
+    init(memo: MemoBlock) {
+        title = String(localized: "Markdown")
+        metadata = memo.dateText
+        markdown = memo.body
+    }
+
+    init(document: MarkdownDocument) {
+        title = document.title
+        metadata = document.relativePath
+        markdown = document.markdown
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(memo.dateText)
+                    Text(metadata)
                         .font(.system(.headline, design: .rounded, weight: .semibold))
                         .foregroundStyle(MudsnoteColors.text)
 
                     if showRaw {
-                        Text(memo.body)
+                        Text(markdown)
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(MudsnoteColors.text)
                             .textSelection(.enabled)
@@ -27,7 +41,7 @@ struct MarkdownPreviewView: View {
                 .padding(MudsnoteSpacing.safeHorizontal)
             }
             .background(MudsnoteColors.canvas)
-            .navigationTitle("Markdown")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -115,7 +129,7 @@ struct MarkdownPreviewView: View {
     }
 
     private func renderLines() -> [String] {
-        memo.body
+        markdown
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }

@@ -34,10 +34,10 @@ struct TargetMenuView: View {
                 Text(appModel.draft.target.compactLabel)
                     .lineLimit(1)
             }
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(.caption, design: .default, weight: .semibold))
             .foregroundStyle(MudsnoteColors.text)
             .padding(.horizontal, 12)
-            .frame(height: 42)
+            .frame(height: 48)
             .frame(maxWidth: 104)
             .background(MudsnoteColors.card, in: Capsule())
             .overlay {

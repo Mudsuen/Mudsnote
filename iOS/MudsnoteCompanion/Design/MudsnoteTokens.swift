@@ -57,7 +57,7 @@ struct IconCircleButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(isActive ? .black : MudsnoteColors.text)
-            .frame(width: 42, height: 42)
+            .frame(width: 48, height: 48)
             .background(isActive ? MudsnoteColors.primary : MudsnoteColors.card)
             .clipShape(Circle())
             .overlay {
