@@ -245,6 +245,28 @@ private final class LibraryThumbnailDecodeResult: @unchecked Sendable {
     }
 }
 
+private extension NoteSearchResult {
+    func replacingURL(_ url: URL) -> NoteSearchResult {
+        let sourceDirectoryPath = self.url.deletingLastPathComponent().standardizedFileURL.path
+        let remappedThumbnailURL = thumbnailURL.flatMap { thumbnailURL -> URL? in
+            let thumbnailPath = thumbnailURL.standardizedFileURL.path
+            guard thumbnailPath.hasPrefix(sourceDirectoryPath + "/") else { return thumbnailURL }
+            let relativePath = String(thumbnailPath.dropFirst(sourceDirectoryPath.count + 1))
+            return url.deletingLastPathComponent().appendingPathComponent(relativePath)
+        }
+        return NoteSearchResult(
+            url: url,
+            title: title,
+            snippet: snippet,
+            modifiedAt: modifiedAt,
+            createdAt: createdAt,
+            tags: tags,
+            hasAttachments: hasAttachments,
+            thumbnailURL: remappedThumbnailURL
+        )
+    }
+}
+
 private enum LibrarySourceSection: Int {
     case folders = 0
     case tags = 1
@@ -1250,7 +1272,10 @@ final class LibraryWindowController: NSWindowController,
             )
         } else {
             hasHydratedInitialNoteList = true
-            reloadNotes(loadFirstIfNeeded: true)
+            reloadNotes(
+                loadFirstIfNeeded: true,
+                allNotesSnapshot: allNoteResults(limit: Self.sourceCountSnapshotLimit)
+            )
         }
     }
 
@@ -2985,6 +3010,7 @@ final class LibraryWindowController: NSWindowController,
         button.cell = LibrarySourceButtonCell(textCell: title)
         button.target = self
         button.action = #selector(scopeButtonPressed(_:))
+        button.identifier = NSUserInterfaceItemIdentifier("LibrarySourceButton-\(tag)")
         button.tag = tag
         button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
@@ -3201,8 +3227,7 @@ final class LibraryWindowController: NSWindowController,
         cancelSourceSnapshotValidation()
         cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let needsAllNotes = query.isEmpty || refreshCounts
-        let allNotes = allNotesSnapshot ?? (needsAllNotes ? allNoteResults(limit: Self.sourceCountSnapshotLimit) : [])
+        let allNotes = allNotesSnapshot ?? sourceCountSnapshot
         searchScopeControl.isHidden = query.isEmpty
         notes = query.isEmpty
             ? notesForSelectedScope(limit: 240, allNotes: allNotes)
@@ -3240,25 +3265,20 @@ final class LibraryWindowController: NSWindowController,
         }
         refreshSourceSelection()
         updateToolbarActionState()
+        if allNotesSnapshot == nil, query.isEmpty {
+            scheduleSourceSnapshotValidation(loadFirstIfNeeded: loadFirstIfNeeded)
+        }
     }
 
     private func reloadNotesForNavigation(
         selecting preferredURL: URL? = nil,
         loadFirstIfNeeded: Bool
     ) {
-        guard !sourceCountSnapshot.isEmpty else {
-            reloadNotes(selecting: preferredURL, loadFirstIfNeeded: loadFirstIfNeeded)
-            return
-        }
-
-        let cachedSnapshot = sourceCountSnapshot
         reloadNotes(
             selecting: preferredURL,
             loadFirstIfNeeded: loadFirstIfNeeded,
-            allNotesSnapshot: cachedSnapshot,
             refreshCounts: false
         )
-        scheduleSourceSnapshotValidation(loadFirstIfNeeded: loadFirstIfNeeded)
     }
 
     private func scheduleSourceSnapshotValidation(loadFirstIfNeeded: Bool) {
@@ -4821,6 +4841,39 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func removeNotesFromSourceSnapshot(at urls: [URL]) {
+        let removedPaths = Set(urls.map { $0.standardizedFileURL.path })
+        sourceCountSnapshot.removeAll { removedPaths.contains($0.url.standardizedFileURL.path) }
+    }
+
+    private func remapSourceSnapshotNotes(from sourceURLs: [URL], to destinationURLs: [URL]) {
+        let destinationBySourcePath = Dictionary(uniqueKeysWithValues: zip(sourceURLs, destinationURLs).map {
+            ($0.standardizedFileURL.path, $1.standardizedFileURL)
+        })
+        sourceCountSnapshot = sourceCountSnapshot.map { note in
+            guard let destinationURL = destinationBySourcePath[note.url.standardizedFileURL.path] else { return note }
+            return note.replacingURL(destinationURL)
+        }
+    }
+
+    private func remapSourceSnapshotFolder(from sourceURL: URL, to destinationURL: URL) {
+        let sourcePath = sourceURL.standardizedFileURL.path
+        let destination = destinationURL.standardizedFileURL
+        sourceCountSnapshot = sourceCountSnapshot.map { note in
+            let notePath = note.url.standardizedFileURL.path
+            guard notePath.hasPrefix(sourcePath + "/") else { return note }
+            let relativePath = String(notePath.dropFirst(sourcePath.count + 1))
+            return note.replacingURL(destination.appendingPathComponent(relativePath))
+        }
+    }
+
+    private func removeSourceSnapshotNotes(in folderURL: URL) {
+        let folderPath = folderURL.standardizedFileURL.path
+        sourceCountSnapshot.removeAll {
+            $0.url.standardizedFileURL.path.hasPrefix(folderPath + "/")
+        }
+    }
+
     @discardableResult
     func saveCurrentNoteForLibrary() throws -> URL? {
         let savedURL = try saveCurrentNote(force: true)
@@ -4853,6 +4906,9 @@ final class LibraryWindowController: NSWindowController,
             }
         }
         recordInternalFileSystemChanges(for: urls)
+        if selectedScope != .trash {
+            removeNotesFromSourceSnapshot(at: urls)
+        }
         activeSearchSession = nil
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
@@ -4866,6 +4922,19 @@ final class LibraryWindowController: NSWindowController,
         let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
         let restoredURL = restoredURLs.first
         recordInternalFileSystemChanges(for: urls + restoredURLs)
+        for url in restoredURLs {
+            let document = try noteStore.loadNote(at: url)
+            let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate])
+                as? Date ?? Date()
+            updateSourceCountSnapshotAfterSave(
+                previousURL: nil,
+                savedURL: url,
+                title: document.title,
+                body: document.body,
+                tags: document.tags,
+                modifiedAt: modifiedAt
+            )
+        }
         activeSearchSession = nil
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
@@ -5567,6 +5636,7 @@ final class LibraryWindowController: NSWindowController,
     private func renameLibraryFolder(at folderURL: URL, to name: String) throws -> URL {
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
+        remapSourceSnapshotFolder(from: folderURL, to: renamedURL)
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
@@ -5582,6 +5652,7 @@ final class LibraryWindowController: NSWindowController,
 
         _ = try noteStore.trashFolder(at: folderURL)
         recordInternalFileSystemChanges(for: [folderURL])
+        removeSourceSnapshotNotes(in: folderURL)
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .all
@@ -5614,6 +5685,7 @@ final class LibraryWindowController: NSWindowController,
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
+        remapSourceSnapshotNotes(from: sourceURLs, to: movedURLs)
         activeSearchSession = nil
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)
@@ -5671,6 +5743,7 @@ final class LibraryWindowController: NSWindowController,
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
+        remapSourceSnapshotNotes(from: sourceURLs, to: movedURLs)
         activeSearchSession = nil
         selectedURL = movedURLs.first
         selectedScope = .folder(targetDirectory)

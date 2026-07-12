@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 154. Snapshot-first library navigation
+- Problem: When the library snapshot was still empty, source navigation and several post-mutation refreshes could synchronously enumerate up to 10,000 Markdown files on the main thread, making ordinary browsing vulnerable to large-library stalls.
+- Fix: Made UI reloads consume only an explicit or in-memory snapshot and schedule cancellable background validation for disk reconciliation. Save, move, trash, restore, folder rename, and folder deletion now update snapshot paths, metadata, and thumbnail references immediately so lifecycle actions remain consistent without rescanning.
+- Lesson: A cache-first navigation path is only truly nonblocking when every mutation maintains that cache atomically; a hidden empty-cache fallback can reintroduce the entire filesystem cost.
+
 ### 153. Scan-free drag targeting
 - Problem: The first drag-to-folder hit test synchronously indexed up to 10,000 Markdown files on the main thread to build a movable-path cache, so a pointer interaction could stall on a large library.
 - Fix: Replaced the scan and its invalidation machinery with constant-size configured-root containment checks while retaining extension, existence, same-folder, trash, external-file, and attachment-directory guards.

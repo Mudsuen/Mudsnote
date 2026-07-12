@@ -16,4 +16,4 @@
 - Focused library shell testing and the full Swift test suite passed.
 - Packaging, strict signing, and installed-app process launch passed.
 - Two visual-QA attempts could not activate Mudsnote because the current frontmost process was `loginwindow`; no screenshot is accepted as evidence for this iteration yet.
-- Empty/content visual confirmation remains required after the desktop session is unlocked.
+- Content-state visual confirmation passed after the desktop session was unlocked: `/tmp/mudsnote-snapshot-navigation-154/apple-notes-vs-mudsnote.png` shows complete first rows and stable recency-group spacing.
