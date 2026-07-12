@@ -131,6 +131,20 @@ private struct LibraryFolderRow: Equatable, Sendable {
     let hasChildren: Bool
 }
 
+private enum InlineFolderEditOperation: Equatable {
+    case create(parentURL: URL)
+    case rename(folderURL: URL)
+
+    var initialName: String {
+        switch self {
+        case .create:
+            return "新建文件夹"
+        case .rename(let folderURL):
+            return folderURL.lastPathComponent
+        }
+    }
+}
+
 struct LibrarySourceCountIndex: Sendable {
     let inboxCount: Int
     private let folderCounts: [String: Int]
@@ -1063,11 +1077,11 @@ final class LibraryWindowController: NSWindowController,
     private var internallyMutatedPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
-    private var inlineNewFolderParentURL: URL?
-    private var inlineNewFolderField: NSTextView?
-    private var inlineNewFolderRow: NSView?
-    private var isCommittingInlineNewFolder = false
-    private var inlineNewFolderHasReceivedFocus = false
+    private var inlineFolderEditOperation: InlineFolderEditOperation?
+    private var inlineFolderEditField: NSTextView?
+    private var inlineFolderEditRow: NSView?
+    private var isCommittingInlineFolderEdit = false
+    private var inlineFolderEditHasReceivedFocus = false
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
@@ -2549,14 +2563,18 @@ final class LibraryWindowController: NSWindowController,
         updateSourceFolderStatus()
         if !sourceFoldersSectionCollapsed {
             for (index, folderRow) in sourceFolderRows.enumerated() {
+                if case .rename(let folderURL) = inlineFolderEditOperation,
+                   folderURL.standardizedFileURL.path == folderRow.url.standardizedFileURL.path {
+                    continue
+                }
                 sourceFolderStack.addArrangedSubview(makeScopeRow(
                     .folder(folderRow.url),
                     tag: 10 + index,
                     folderRow: folderRow
                 ))
             }
-            insertInlineNewFolderRowIfNeeded()
-            if inlineNewFolderParentURL == nil, !sourceFolderStatusLabel.stringValue.isEmpty {
+            insertInlineFolderEditRowIfNeeded()
+            if inlineFolderEditOperation == nil, !sourceFolderStatusLabel.stringValue.isEmpty {
                 sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
             }
         }
@@ -3618,13 +3636,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if textView === inlineNewFolderField {
+        if textView === inlineFolderEditField {
             if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-                cancelInlineNewFolderCreation()
+                cancelInlineFolderEdit()
                 return true
             }
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                commitInlineNewFolder()
+                commitInlineFolderEdit()
                 return true
             }
             return false
@@ -3644,7 +3662,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func textDidChange(_ notification: Notification) {
-        if let object = notification.object as AnyObject?, object === inlineNewFolderField {
+        if let object = notification.object as AnyObject?, object === inlineFolderEditField {
             return
         } else if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
@@ -3655,12 +3673,12 @@ final class LibraryWindowController: NSWindowController,
 
     func textDidEndEditing(_ notification: Notification) {
         guard let textView = notification.object as? NSTextView,
-              textView === inlineNewFolderField,
-              inlineNewFolderHasReceivedFocus,
-              !isCommittingInlineNewFolder else {
+              textView === inlineFolderEditField,
+              inlineFolderEditHasReceivedFocus,
+              !isCommittingInlineFolderEdit else {
             return
         }
-        commitInlineNewFolder()
+        commitInlineFolderEdit()
     }
 
     @objc
@@ -4202,20 +4220,8 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func renameFolderMenuItemPressed(_ sender: NSMenuItem) {
-        guard let directory = sender.representedObject as? URL,
-              let folderName = promptForText(
-                title: "重命名文件夹",
-                message: "输入新的文件夹名称。",
-                placeholder: "文件夹名称",
-                defaultValue: directory.lastPathComponent
-              ) else { return }
-
-        do {
-            selectedScope = .folder(directory)
-            _ = try renameSelectedFolderForLibrary(to: folderName)
-        } catch {
-            presentErrorAlert(message: "无法重命名文件夹", details: error.localizedDescription)
-        }
+        guard let directory = sender.representedObject as? URL else { return }
+        beginInlineFolderRenameForLibrary(at: directory)
     }
 
     @objc
@@ -5157,8 +5163,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func beginInlineFolderCreationForLibrary() {
-        if inlineNewFolderField != nil {
-            focusInlineNewFolderField()
+        if inlineFolderEditField != nil {
+            focusInlineFolderEditField()
             return
         }
 
@@ -5173,38 +5179,77 @@ final class LibraryWindowController: NSWindowController,
             reloadSourceFolderRowsForCurrentState()
         }
 
-        inlineNewFolderParentURL = targetDirectoryForNewFolder().standardizedFileURL
-        inlineNewFolderHasReceivedFocus = false
+        inlineFolderEditOperation = .create(parentURL: targetDirectoryForNewFolder().standardizedFileURL)
+        inlineFolderEditHasReceivedFocus = false
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        focusInlineNewFolderField()
+        focusInlineFolderEditField()
     }
 
-    private func insertInlineNewFolderRowIfNeeded() {
-        guard let parentURL = inlineNewFolderParentURL else { return }
-
-        let parentPath = parentURL.standardizedFileURL.path
-        let parentIndex = sourceFolderRows.firstIndex {
-            $0.url.standardizedFileURL.path == parentPath
+    func beginInlineFolderRenameForLibrary(at folderURL: URL) {
+        if inlineFolderEditField != nil {
+            focusInlineFolderEditField()
+            return
         }
-        let depth = parentIndex.map { sourceFolderRows[$0].depth + 1 } ?? 0
-        let insertionIndex = min((parentIndex ?? -1) + 1, sourceFolderStack.arrangedSubviews.count)
-        let row = makeInlineNewFolderRow(depth: depth)
-        sourceFolderStack.insertArrangedSubview(row, at: insertionIndex)
-        inlineNewFolderRow = row
-        inlineNewFolderHasReceivedFocus = false
-        focusInlineNewFolderField()
+
+        if !isSourceListVisibleForLibrary {
+            _ = setSourceListVisibleForLibrary(true)
+        }
+        if sourceFoldersSectionCollapsed {
+            sourceFoldersSectionCollapsed = false
+            noteStore.libraryFoldersSectionCollapsed = false
+        }
+        if !sourceFoldersLoaded {
+            reloadSourceFolderRowsForCurrentState()
+        }
+
+        let standardizedURL = folderURL.standardizedFileURL
+        guard sourceFolderRows.contains(where: {
+            $0.url.standardizedFileURL.path == standardizedURL.path
+        }) else { return }
+        inlineFolderEditOperation = .rename(folderURL: standardizedURL)
+        inlineFolderEditHasReceivedFocus = false
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+        focusInlineFolderEditField()
     }
 
-    private func makeInlineNewFolderRow(depth: Int) -> NSView {
+    private func insertInlineFolderEditRowIfNeeded() {
+        guard let operation = inlineFolderEditOperation else { return }
+
+        let insertionIndex: Int
+        let depth: Int
+        switch operation {
+        case .create(let parentURL):
+            let parentPath = parentURL.standardizedFileURL.path
+            let parentIndex = sourceFolderRows.firstIndex {
+                $0.url.standardizedFileURL.path == parentPath
+            }
+            depth = parentIndex.map { sourceFolderRows[$0].depth + 1 } ?? 0
+            insertionIndex = min((parentIndex ?? -1) + 1, sourceFolderStack.arrangedSubviews.count)
+        case .rename(let folderURL):
+            guard let folderIndex = sourceFolderRows.firstIndex(where: {
+                $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
+            }) else { return }
+            depth = sourceFolderRows[folderIndex].depth
+            insertionIndex = min(folderIndex, sourceFolderStack.arrangedSubviews.count)
+        }
+
+        let row = makeInlineFolderEditRow(depth: depth, name: operation.initialName)
+        sourceFolderStack.insertArrangedSubview(row, at: insertionIndex)
+        inlineFolderEditRow = row
+        inlineFolderEditHasReceivedFocus = false
+        focusInlineFolderEditField()
+    }
+
+    private func makeInlineFolderEditRow(depth: Int, name: String) -> NSView {
         let row = LibrarySourceRowView()
-        row.identifier = NSUserInterfaceItemIdentifier("LibraryInlineNewFolderRow")
+        row.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditRow")
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight).isActive = true
         row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
 
         let icon = NSImageView(image: NSImage(
             systemSymbolName: "folder",
-            accessibilityDescription: "新建文件夹"
+            accessibilityDescription: "文件夹"
         ) ?? NSImage())
         icon.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         icon.symbolConfiguration = NSImage.SymbolConfiguration(
@@ -5214,9 +5259,9 @@ final class LibraryWindowController: NSWindowController,
         icon.translatesAutoresizingMaskIntoConstraints = false
 
         let field = NSTextView(frame: .zero)
-        field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineNewFolderField")
+        field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditField")
         field.delegate = self
-        field.string = "新建文件夹"
+        field.string = name
         field.font = .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
             weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
@@ -5249,13 +5294,13 @@ final class LibraryWindowController: NSWindowController,
             field.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             field.heightAnchor.constraint(equalToConstant: 24)
         ])
-        inlineNewFolderField = field
+        inlineFolderEditField = field
         return row
     }
 
-    private func focusInlineNewFolderField(remainingAttempts: Int = 4) {
+    private func focusInlineFolderEditField(remainingAttempts: Int = 4) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self, let field = self.inlineNewFolderField else { return }
+            guard let self, let field = self.inlineFolderEditField else { return }
             guard let window = field.window ?? self.window else { return }
 
             NSApp.activate(ignoringOtherApps: true)
@@ -5263,57 +5308,69 @@ final class LibraryWindowController: NSWindowController,
             window.contentView?.layoutSubtreeIfNeeded()
             if window.makeFirstResponder(field) {
                 field.setSelectedRange(NSRange(location: 0, length: field.string.utf16.count))
-                self.inlineNewFolderHasReceivedFocus = true
+                self.inlineFolderEditHasReceivedFocus = true
                 return
             }
 
             guard remainingAttempts > 0 else { return }
-            self.focusInlineNewFolderField(remainingAttempts: remainingAttempts - 1)
+            self.focusInlineFolderEditField(remainingAttempts: remainingAttempts - 1)
         }
     }
 
-    private func commitInlineNewFolder() {
-        guard !isCommittingInlineNewFolder,
-              let field = inlineNewFolderField,
-              let parentURL = inlineNewFolderParentURL else {
+    private func commitInlineFolderEdit() {
+        guard !isCommittingInlineFolderEdit,
+              let field = inlineFolderEditField,
+              let operation = inlineFolderEditOperation else {
             return
         }
         let name = field.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
-            cancelInlineNewFolderCreation()
+            cancelInlineFolderEdit()
             return
         }
 
-        isCommittingInlineNewFolder = true
-        clearInlineNewFolderState()
+        isCommittingInlineFolderEdit = true
+        clearInlineFolderEditState()
         do {
-            _ = try createLibraryFolder(named: name, in: parentURL)
-            isCommittingInlineNewFolder = false
+            switch operation {
+            case .create(let parentURL):
+                _ = try createLibraryFolder(named: name, in: parentURL)
+            case .rename(let folderURL):
+                _ = try renameLibraryFolder(at: folderURL, to: name)
+            }
+            isCommittingInlineFolderEdit = false
         } catch {
-            isCommittingInlineNewFolder = false
-            inlineNewFolderParentURL = parentURL
+            isCommittingInlineFolderEdit = false
+            inlineFolderEditOperation = operation
             rebuildSourceRows(includeTags: sourceTagsLoaded)
-            inlineNewFolderField?.string = name
-            focusInlineNewFolderField()
-            presentErrorAlert(message: "无法新建文件夹", details: error.localizedDescription)
+            inlineFolderEditField?.string = name
+            focusInlineFolderEditField()
+            let message: String
+            switch operation {
+            case .create:
+                message = "无法新建文件夹"
+            case .rename:
+                message = "无法重命名文件夹"
+            }
+            presentErrorAlert(message: message, details: error.localizedDescription)
         }
     }
 
-    private func cancelInlineNewFolderCreation() {
-        guard inlineNewFolderParentURL != nil else { return }
-        clearInlineNewFolderState()
+    private func cancelInlineFolderEdit() {
+        guard inlineFolderEditOperation != nil else { return }
+        clearInlineFolderEditState()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
     }
 
-    private func clearInlineNewFolderState() {
-        if let row = inlineNewFolderRow {
+    private func clearInlineFolderEditState() {
+        if let row = inlineFolderEditRow {
             sourceFolderStack.removeArrangedSubview(row)
             row.removeFromSuperview()
         }
-        inlineNewFolderRow = nil
-        inlineNewFolderField = nil
-        inlineNewFolderParentURL = nil
-        inlineNewFolderHasReceivedFocus = false
+        inlineFolderEditRow = nil
+        inlineFolderEditField = nil
+        inlineFolderEditOperation = nil
+        inlineFolderEditHasReceivedFocus = false
     }
 
     @discardableResult
@@ -5322,6 +5379,11 @@ final class LibraryWindowController: NSWindowController,
             throw LibraryActionError.noFolderSelected
         }
 
+        return try renameLibraryFolder(at: folderURL, to: name)
+    }
+
+    @discardableResult
+    private func renameLibraryFolder(at folderURL: URL, to name: String) throws -> URL {
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         activeSearchSession = nil

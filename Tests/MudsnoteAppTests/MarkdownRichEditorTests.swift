@@ -4103,7 +4103,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowCreatesAndCancelsFoldersInline() throws {
+    func libraryWindowCreatesRenamesAndCancelsFoldersInline() throws {
         let suiteName = "mudsnote.library-inline-folder-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -4135,18 +4135,18 @@ struct MarkdownRichEditorTests {
 
         controller.beginInlineFolderCreationForLibrary()
         let field = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         #expect(field.string == "新建文件夹")
         #expect(window.contentView?.allSubviews.contains {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == true)
         #expect(field.isEditable)
         #expect(field.isSelectable)
 
         controller.beginInlineFolderCreationForLibrary()
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.filter {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         }.count == 1)
 
         field.string = "Inline Folder"
@@ -4157,18 +4157,40 @@ struct MarkdownRichEditorTests {
             $0.title == "Inline Folder"
         } == true)
         #expect(window.contentView?.allSubviews.contains {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
+
+        let createdButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.title == "Inline Folder"
+        })
+        let createdRow = try #require(createdButton.superview as? LibrarySourceRowView)
+        let renameItem = try #require(createdRow.menu?.items.first { $0.title == "重命名文件夹" })
+        #expect(NSApp.sendAction(try #require(renameItem.action), to: renameItem.target, from: renameItem))
+        let renameField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
+            $0.identifier?.rawValue == "LibraryInlineFolderEditField"
+        })
+        #expect(renameField.string == "Inline Folder")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Inline Folder"
+        } == false)
+        renameField.string = "Renamed Inline Folder"
+        #expect(controller.textView(renameField, doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        let renamedURL = store.notesDirectory.appendingPathComponent("Renamed Inline Folder", isDirectory: true)
+        #expect(FileManager.default.fileExists(atPath: renamedURL.path))
+        #expect(!FileManager.default.fileExists(atPath: createdURL.path))
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Renamed Inline Folder"
+        } == true)
 
         controller.beginInlineFolderCreationForLibrary()
         let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextView }.first {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderField"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         cancelledField.string = "Cancelled Folder"
         #expect(controller.textView(cancelledField, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
-        #expect(!FileManager.default.fileExists(atPath: createdURL.appendingPathComponent("Cancelled Folder").path))
+        #expect(!FileManager.default.fileExists(atPath: renamedURL.appendingPathComponent("Cancelled Folder").path))
         #expect(window.contentView?.allSubviews.contains {
-            $0.identifier?.rawValue == "LibraryInlineNewFolderRow"
+            $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
     }
 

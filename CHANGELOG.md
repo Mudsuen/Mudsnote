@@ -810,6 +810,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added `Shift-Command-N`, inserted an editable folder row directly in the source list with Return/Escape behavior, and removed automatic Finder reveal from saves and preferences while retaining the explicit Finder command.
 - Lesson: Library organization should stay in context, and persistence should remain quiet unless the user explicitly requests a filesystem action.
 
+### 134. Inline folder rename
+
+- Problem: Folder creation was inline, but Rename Folder still opened a modal alert and broke the source-list workflow.
+- Fix: Unified folder creation and rename under one inline edit state. Rename now replaces the original row in place, preserves hierarchy and parent capture, supports native IME input, commits with Return or focus loss, and cancels with Escape.
+- Lesson: Create and rename are two operations on one list-editing primitive; sharing that primitive keeps focus, error recovery, and filesystem behavior consistent.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
