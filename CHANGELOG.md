@@ -858,6 +858,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Matched the core Notes menu hierarchy with Sort By first and Group By Date second, added persistent creation-date sorting and grouping, and made row dates follow the active date basis.
 - Lesson: A sort mode is also a presentation contract. Group headers and row metadata must use the same date, and creation metadata should ride the existing indexed file-attribute read instead of adding another scan.
 
+### 142. Native macOS 26 chrome and complete table edge
+
+- Problem: Toolbar groups still simulated material with flat CALayer fills, the source sidebar read as part of the flat split background, and a 100% native text-table width clipped its trailing border.
+- Fix: Replaced custom toolbar capsules and circular controls with `NSGlassEffectView`, presented the source list as an independent dark sidebar-material surface with a native rounded boundary, preserved the collapsed list-first layout, and reserved a fractional table-layout inset so the right stroke remains drawable.
+- Lesson: Native material should own its rendering instead of being approximated by static alpha fills. Full-width AppKit text blocks also need a small paint allowance because their border is drawn at the layout boundary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

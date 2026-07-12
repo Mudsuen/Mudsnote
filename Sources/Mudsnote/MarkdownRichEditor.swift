@@ -919,7 +919,8 @@ enum MarkdownRichTextCodec {
         table.layoutAlgorithm = .automaticLayoutAlgorithm
         table.collapsesBorders = true
         table.hidesEmptyCells = false
-        table.setContentWidth(100, type: .percentageValueType)
+        // Keep the trailing stroke inside the text container's drawable bounds.
+        table.setContentWidth(99.25, type: .percentageValueType)
 
         let output = NSMutableAttributedString()
         for (rowIndex, row) in rows.enumerated() {

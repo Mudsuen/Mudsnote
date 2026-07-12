@@ -297,10 +297,6 @@ enum LibraryNotesLayout {
     static let toolbarMenuButtonHeight: CGFloat = 28
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
-    static let toolbarCircularButtonFillAlpha: CGFloat = 0.40
-    static let toolbarCircularButtonBorderWidth: CGFloat = 0
-    static let toolbarFileActionsFillAlpha: CGFloat = 0.40
-    static let toolbarFileActionsBorderWidth: CGFloat = 0
     static let toolbarMenuButtonDisabledAlpha: CGFloat = 0.42
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -310,11 +306,6 @@ enum LibraryNotesLayout {
     static let toolbarNoteListTitleHeight: CGFloat = 46
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
-    static let toolbarEditorToolsBorderWidth: CGFloat = 0
-    static let toolbarEditorToolsEnabledBorderAlpha: CGFloat = 0
-    static let toolbarEditorToolsDisabledBorderAlpha: CGFloat = 0
-    static let toolbarEditorToolsEnabledFillAlpha: CGFloat = 0.40
-    static let toolbarEditorToolsDisabledFillAlpha: CGFloat = 0.22
     static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 16
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
@@ -326,6 +317,8 @@ enum LibraryNotesLayout {
     static let sourceListLeadingInset: CGFloat = 14
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 14
+    static let sourceSurfaceCornerRadius: CGFloat = 24
+    static let sourceSurfaceBorderAlpha: CGFloat = 0.20
     static let sourceInnerRowSpacing: CGFloat = 1
     static let sourceSectionSpacing: CGFloat = 6
     static let sourceRowCornerRadius: CGFloat = 8
@@ -1614,10 +1607,22 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildSourceList() -> NSView {
-        let sourceList = NSView()
+        let sourceList = NSVisualEffectView()
         sourceList.translatesAutoresizingMaskIntoConstraints = false
+        sourceList.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSurface")
+        sourceList.material = .sidebar
+        sourceList.blendingMode = .withinWindow
+        sourceList.state = .active
         sourceList.wantsLayer = true
-        sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground.cgColor
+        sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground
+            .withAlphaComponent(0.86)
+            .cgColor
+        sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
+        sourceList.layer?.masksToBounds = true
+        sourceList.layer?.borderWidth = 1
+        sourceList.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(
+            LibraryNotesLayout.sourceSurfaceBorderAlpha
+        ).cgColor
         sourceListView = sourceList
 
         configureSourceStack(sourcePrimaryStack)
@@ -2206,21 +2211,6 @@ final class LibraryWindowController: NSWindowController,
         item.toolTip = "编辑工具"
         item.visibilityPriority = .high
 
-        let capsule = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarEditorToolsWidth,
-            height: LibraryNotesLayout.toolbarEditorToolsHeight
-        ))
-        capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorTools")
-        capsule.wantsLayer = true
-        capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarEditorToolsHeight / 2
-        capsule.layer?.masksToBounds = true
-        capsule.layer?.borderWidth = LibraryNotesLayout.toolbarEditorToolsBorderWidth
-        capsule.layer?.borderColor = Self.toolbarEditorToolsBorderColor(isEnabled: true).cgColor
-        capsule.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: true).cgColor
-        capsule.translatesAutoresizingMaskIntoConstraints = false
-
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -2228,6 +2218,15 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
 
+        let capsule = toolbarGlassSurface(
+            identifier: "LibraryToolbarEditorTools",
+            content: stack,
+            size: NSSize(
+                width: LibraryNotesLayout.toolbarEditorToolsWidth,
+                height: LibraryNotesLayout.toolbarEditorToolsHeight
+            ),
+            cornerRadius: LibraryNotesLayout.toolbarEditorToolsHeight / 2
+        )
         let buttons = [
             toolbarEditorToolButton(
                 identifier: Self.formatToolbarItemIdentifier,
@@ -2262,13 +2261,7 @@ final class LibraryWindowController: NSWindowController,
         ]
         buttons.forEach { stack.addArrangedSubview($0) }
 
-        capsule.addSubview(stack)
         NSLayoutConstraint.activate([
-            capsule.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsWidth),
-            capsule.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsHeight),
-            stack.leadingAnchor.constraint(equalTo: capsule.leadingAnchor, constant: 2),
-            stack.trailingAnchor.constraint(equalTo: capsule.trailingAnchor, constant: -2),
-            stack.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
             stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight)
         ])
 
@@ -2284,21 +2277,6 @@ final class LibraryWindowController: NSWindowController,
         item.toolTip = "复制、导出与更多操作"
         item.visibilityPriority = .high
         item.isBordered = false
-
-        let capsule = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarFileActionsWidth,
-            height: LibraryNotesLayout.toolbarFileActionsHeight
-        ))
-        capsule.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarFileActions")
-        capsule.wantsLayer = true
-        capsule.layer?.cornerRadius = LibraryNotesLayout.toolbarFileActionsHeight / 2
-        capsule.layer?.masksToBounds = true
-        capsule.layer?.borderWidth = LibraryNotesLayout.toolbarFileActionsBorderWidth
-        capsule.layer?.borderColor = NSColor.clear.cgColor
-        capsule.layer?.backgroundColor = Self.toolbarFileActionsFillColor().cgColor
-        capsule.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView(views: [
             toolbarMenuButton(
@@ -2320,12 +2298,16 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        capsule.addSubview(stack)
+        let capsule = toolbarGlassSurface(
+            identifier: "LibraryToolbarFileActions",
+            content: stack,
+            size: NSSize(
+                width: LibraryNotesLayout.toolbarFileActionsWidth,
+                height: LibraryNotesLayout.toolbarFileActionsHeight
+            ),
+            cornerRadius: LibraryNotesLayout.toolbarFileActionsHeight / 2
+        )
         NSLayoutConstraint.activate([
-            capsule.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarFileActionsWidth),
-            capsule.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarFileActionsHeight),
-            stack.centerXAnchor.constraint(equalTo: capsule.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
             stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarMenuButtonHeight)
         ])
 
@@ -2444,21 +2426,45 @@ final class LibraryWindowController: NSWindowController,
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.wantsLayer = true
-        button.layer?.cornerRadius = LibraryNotesLayout.toolbarCircularButtonSize / 2
-        button.layer?.masksToBounds = true
-        button.layer?.borderWidth = LibraryNotesLayout.toolbarCircularButtonBorderWidth
-        button.layer?.borderColor = NSColor.clear.cgColor
-        button.layer?.backgroundColor = Self.toolbarCircularButtonFillColor().cgColor
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
         button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
 
+        let glass = toolbarGlassSurface(
+            identifier: "\(identifier.rawValue).glass",
+            content: button,
+            size: NSSize(
+                width: LibraryNotesLayout.toolbarCircularButtonSize,
+                height: LibraryNotesLayout.toolbarCircularButtonSize
+            ),
+            cornerRadius: LibraryNotesLayout.toolbarCircularButtonSize / 2
+        )
         item.image = configuredImage
-        item.view = button
+        item.view = glass
         return item
+    }
+
+    private func toolbarGlassSurface(
+        identifier: String,
+        content: NSView,
+        size: NSSize,
+        cornerRadius: CGFloat
+    ) -> NSGlassEffectView {
+        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
+        glass.identifier = NSUserInterfaceItemIdentifier(identifier)
+        glass.style = .regular
+        glass.cornerRadius = cornerRadius
+        glass.contentView = content
+        glass.translatesAutoresizingMaskIntoConstraints = false
+        glass.setContentHuggingPriority(.required, for: .horizontal)
+        glass.setContentCompressionResistancePriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            glass.widthAnchor.constraint(equalToConstant: size.width),
+            glass.heightAnchor.constraint(equalToConstant: size.height)
+        ])
+        return glass
     }
 
     private func toolbarMenuButton(
@@ -5929,7 +5935,6 @@ final class LibraryWindowController: NSWindowController,
     private func setFileActionsToolbarGroupState(in item: NSToolbarItem) {
         item.isEnabled = true
         guard let view = item.view else { return }
-        view.layer?.backgroundColor = Self.toolbarFileActionsFillColor().cgColor
         for button in toolbarButtons(in: view) {
             switch button.identifier?.rawValue {
             case Self.exportToolbarItemIdentifier.rawValue:
@@ -5950,20 +5955,6 @@ final class LibraryWindowController: NSWindowController,
         return buttons
     }
 
-    private static func toolbarFileActionsFillColor() -> NSColor {
-        NSColor(
-            calibratedWhite: 0.18,
-            alpha: LibraryNotesLayout.toolbarFileActionsFillAlpha
-        )
-    }
-
-    private static func toolbarCircularButtonFillColor() -> NSColor {
-        NSColor(
-            calibratedWhite: 0.18,
-            alpha: LibraryNotesLayout.toolbarCircularButtonFillAlpha
-        )
-    }
-
     private func updateVisibleEditorToolsToolbarGroupEnabled() {
         for item in window?.toolbar?.items ?? [] where item.itemIdentifier == Self.editorToolsToolbarItemIdentifier {
             setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
@@ -5976,24 +5967,7 @@ final class LibraryWindowController: NSWindowController,
         view.alphaValue = isEnabled
             ? LibraryNotesLayout.toolbarEditorToolsEnabledAlpha
             : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
-        view.layer?.borderColor = Self.toolbarEditorToolsBorderColor(isEnabled: isEnabled).cgColor
-        view.layer?.backgroundColor = Self.toolbarEditorToolsFillColor(isEnabled: isEnabled).cgColor
         setEditorToolControls(in: view, enabled: isEnabled)
-    }
-
-    private static func toolbarEditorToolsBorderColor(isEnabled: Bool) -> NSColor {
-        let alpha = isEnabled
-            ? LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha
-            : LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha
-        guard alpha > 0 else { return .clear }
-        return NSColor.separatorColor.withAlphaComponent(alpha)
-    }
-
-    private static func toolbarEditorToolsFillColor(isEnabled: Bool) -> NSColor {
-        NSColor(calibratedWhite: 0.18, alpha: isEnabled
-            ? LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha
-            : LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha
-        )
     }
 
     private func setEditorToolControls(in view: NSView, enabled isEnabled: Bool) {

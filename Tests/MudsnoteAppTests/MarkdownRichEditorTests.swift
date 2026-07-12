@@ -871,15 +871,11 @@ struct MarkdownRichEditorTests {
         #expect(fileActionsView.identifier?.rawValue == "LibraryToolbarFileActions")
         #expect(fileActionsView.frame.width == LibraryNotesLayout.toolbarFileActionsWidth)
         #expect(fileActionsView.frame.height == LibraryNotesLayout.toolbarFileActionsHeight)
-        #expect((fileActionsView as? NSVisualEffectView) == nil)
-        #expect(fileActionsView.layer?.cornerRadius == LibraryNotesLayout.toolbarFileActionsHeight / 2)
-        #expect(fileActionsView.layer?.masksToBounds == true)
-        #expect(fileActionsView.layer?.borderWidth == LibraryNotesLayout.toolbarFileActionsBorderWidth)
-        #expect(fileActionsView.layer?.borderColor?.alpha == 0)
-        #expect(abs((fileActionsView.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarFileActionsFillAlpha) < 0.001)
+        let fileActionsGlass = try #require(fileActionsView as? NSGlassEffectView)
+        #expect(fileActionsGlass.style == .regular)
+        #expect(fileActionsGlass.cornerRadius == LibraryNotesLayout.toolbarFileActionsHeight / 2)
         #expect(LibraryNotesLayout.toolbarFileActionsWidth == 72)
         #expect(LibraryNotesLayout.toolbarFileActionsHeight == 32)
-        #expect(LibraryNotesLayout.toolbarFileActionsBorderWidth == 0)
 
         let fileActionButtons = fileActionsView.allSubviews.compactMap { $0 as? NSButton }
         #expect(Set(fileActionButtons.compactMap { $0.identifier?.rawValue }) == [
@@ -913,7 +909,8 @@ struct MarkdownRichEditorTests {
         let noteListActionsToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-actions"
         })
-        let noteListActionsToolbarButton = try #require(noteListActionsToolbarItem.view as? NSButton)
+        let noteListActionsGlass = try #require(noteListActionsToolbarItem.view as? NSGlassEffectView)
+        let noteListActionsToolbarButton = try #require(noteListActionsGlass.allSubviews.compactMap { $0 as? NSButton }.first)
         #expect(noteListActionsToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.note-list-actions")
         #expect(!noteListActionsToolbarButton.isBordered)
         #expect(noteListActionsToolbarButton.image?.accessibilityDescription == "列表显示选项")
@@ -924,19 +921,17 @@ struct MarkdownRichEditorTests {
         #expect(noteListActionsToolbarButton.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
         })
-        #expect(noteListActionsToolbarButton.layer?.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
-        #expect(noteListActionsToolbarButton.layer?.masksToBounds == true)
-        #expect(noteListActionsToolbarButton.layer?.borderWidth == LibraryNotesLayout.toolbarCircularButtonBorderWidth)
-        #expect(noteListActionsToolbarButton.layer?.borderColor?.alpha == 0)
-        #expect(abs((noteListActionsToolbarButton.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarCircularButtonFillAlpha) < 0.001)
+        #expect(noteListActionsGlass.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
+        #expect(noteListActionsGlass.style == .regular)
 
         let newNoteToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        let newNoteToolbarButton = try #require(newNoteToolbarItem.view as? NSButton)
+        let newNoteGlass = try #require(newNoteToolbarItem.view as? NSGlassEffectView)
+        let newNoteToolbarButton = try #require(newNoteGlass.allSubviews.compactMap { $0 as? NSButton }.first)
         #expect(!newNoteToolbarItem.isBordered)
-        #expect(newNoteToolbarItem.target === controller)
-        #expect(newNoteToolbarItem.action != nil)
+        #expect(newNoteToolbarButton.target === controller)
+        #expect(newNoteToolbarButton.action != nil)
         #expect(newNoteToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.new-note")
         #expect(!newNoteToolbarButton.isBordered)
         #expect(newNoteToolbarButton.image?.accessibilityDescription == "新建笔记")
@@ -947,14 +942,10 @@ struct MarkdownRichEditorTests {
         #expect(newNoteToolbarButton.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
         })
-        #expect(newNoteToolbarButton.layer?.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
-        #expect(newNoteToolbarButton.layer?.masksToBounds == true)
-        #expect(newNoteToolbarButton.layer?.borderWidth == LibraryNotesLayout.toolbarCircularButtonBorderWidth)
-        #expect(newNoteToolbarButton.layer?.borderColor?.alpha == 0)
-        #expect(abs((newNoteToolbarButton.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarCircularButtonFillAlpha) < 0.001)
+        #expect(newNoteGlass.cornerRadius == LibraryNotesLayout.toolbarCircularButtonSize / 2)
+        #expect(newNoteGlass.style == .regular)
         #expect(LibraryNotesLayout.toolbarCircularButtonSize == 30)
         #expect(LibraryNotesLayout.toolbarCircularButtonSymbolPointSize == 16)
-        #expect(LibraryNotesLayout.toolbarCircularButtonBorderWidth == 0)
 
         let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
         let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })
@@ -1044,19 +1035,13 @@ struct MarkdownRichEditorTests {
         #expect(editorToolsView.identifier?.rawValue == "LibraryToolbarEditorTools")
         #expect(editorToolsView.frame.width == LibraryNotesLayout.toolbarEditorToolsWidth)
         #expect(editorToolsView.frame.height == LibraryNotesLayout.toolbarEditorToolsHeight)
-        #expect((editorToolsView as? NSVisualEffectView) == nil)
-        #expect(editorToolsView.layer?.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
-        #expect(editorToolsView.layer?.masksToBounds == true)
-        #expect(editorToolsView.layer?.borderWidth == LibraryNotesLayout.toolbarEditorToolsBorderWidth)
-        #expect(LibraryNotesLayout.toolbarEditorToolsBorderWidth == 0)
+        let editorToolsGlass = try #require(editorToolsView as? NSGlassEffectView)
+        #expect(editorToolsGlass.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
+        #expect(editorToolsGlass.style == .regular)
         #expect(LibraryNotesLayout.toolbarEditorToolsWidth == 184)
         #expect(LibraryNotesLayout.toolbarEditorToolsHeight == 32)
         #expect(LibraryNotesLayout.toolbarEditorToolButtonWidth == 35)
         #expect(LibraryNotesLayout.toolbarEditorToolButtonHeight == 26)
-        #expect(LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha == 0.40)
-        #expect(LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha == 0.22)
-        #expect(abs((editorToolsView.layer?.borderColor?.alpha ?? -1) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
-        #expect(abs((editorToolsView.layer?.backgroundColor?.alpha ?? -1) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
         #expect(Set(editorToolButtons.compactMap { $0.identifier?.rawValue }) == [
             "mudsnote.library.toolbar.format",
@@ -1084,6 +1069,12 @@ struct MarkdownRichEditorTests {
         #expect(noteTrackingSeparator.dividerIndex == 1)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
+        let sourceSurface = try #require(sourceList as? NSVisualEffectView)
+        #expect(sourceSurface.identifier?.rawValue == "LibrarySourceSurface")
+        #expect(sourceSurface.material == .sidebar)
+        #expect(sourceSurface.blendingMode == .withinWindow)
+        #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
+        #expect(sourceSurface.layer?.borderWidth == 1)
         #expect(!sourceList.constraints.contains {
             $0.firstAttribute == .width && $0.priority == .required
         })
@@ -2336,14 +2327,6 @@ struct MarkdownRichEditorTests {
             try visibleEditorToolButtons(in: controller).map { try tintAlpha($0) }
         }
 
-        func visibleEditorToolsBorderAlpha(in controller: LibraryWindowController) throws -> CGFloat {
-            try #require(visibleEditorToolsView(in: controller).layer?.borderColor?.alpha)
-        }
-
-        func visibleEditorToolsFillAlpha(in controller: LibraryWindowController) throws -> CGFloat {
-            try #require(visibleEditorToolsView(in: controller).layer?.backgroundColor?.alpha)
-        }
-
         func toolbarItem(_ rawValue: String) -> NSToolbarItem {
             NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier(rawValue))
         }
@@ -2371,8 +2354,7 @@ struct MarkdownRichEditorTests {
         #expect(emptyController.validateToolbarItem(newItem))
         #expect(try visibleEditorToolButtons(in: emptyController).allSatisfy { !$0.isEnabled })
         #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
-        #expect(abs(try visibleEditorToolsBorderAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha) < 0.001)
-        #expect(abs(try visibleEditorToolsFillAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha) < 0.001)
+        #expect(try visibleEditorToolsView(in: emptyController) is NSGlassEffectView)
         #expect(LibraryNotesLayout.toolbarEditorToolsDisabledAlpha == 0.42)
         #expect(LibraryNotesLayout.toolbarIconEnabledAlpha == 0.76)
         #expect(LibraryNotesLayout.toolbarIconDisabledAlpha == LibraryNotesLayout.toolbarMenuButtonDisabledAlpha)
@@ -2392,7 +2374,8 @@ struct MarkdownRichEditorTests {
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        #expect(NSApp.sendAction(try #require(visibleNewItem.action), to: visibleNewItem.target, from: visibleNewItem))
+        let visibleNewButton = try #require(visibleNewItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
+        visibleNewButton.performClick(nil)
         #expect(emptyController.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.stringValue == "Select or create a note"
         } == false)
@@ -2405,8 +2388,6 @@ struct MarkdownRichEditorTests {
         #expect(emptyController.validateToolbarItem(moreItem))
         #expect(try visibleEditorToolButtons(in: emptyController).allSatisfy(\.isEnabled))
         #expect(try visibleEditorToolsView(in: emptyController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
-        #expect(abs(try visibleEditorToolsBorderAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
-        #expect(abs(try visibleEditorToolsFillAlpha(in: emptyController) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
         #expect(try editorToolTintAlphas(in: emptyController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
         })
@@ -2431,8 +2412,6 @@ struct MarkdownRichEditorTests {
         #expect(selectedController.validateToolbarItem(exportItem))
         #expect(!selectedController.validateToolbarItem(restoreItem))
         #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsEnabledAlpha)
-        #expect(abs(try visibleEditorToolsBorderAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsEnabledBorderAlpha) < 0.001)
-        #expect(abs(try visibleEditorToolsFillAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsEnabledFillAlpha) < 0.001)
         #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarIconEnabledAlpha) < 0.001
         })
@@ -2465,8 +2444,6 @@ struct MarkdownRichEditorTests {
         #expect(selectedController.validateToolbarItem(restoreItem))
         #expect(try visibleEditorToolButtons(in: selectedController).allSatisfy { !$0.isEnabled })
         #expect(try visibleEditorToolsView(in: selectedController).alphaValue == LibraryNotesLayout.toolbarEditorToolsDisabledAlpha)
-        #expect(abs(try visibleEditorToolsBorderAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsDisabledBorderAlpha) < 0.001)
-        #expect(abs(try visibleEditorToolsFillAlpha(in: selectedController) - LibraryNotesLayout.toolbarEditorToolsDisabledFillAlpha) < 0.001)
         #expect(try editorToolTintAlphas(in: selectedController).allSatisfy {
             abs($0 - LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha) < 0.001
         })
@@ -3129,7 +3106,9 @@ struct MarkdownRichEditorTests {
 
         let nameLocation = (rendered.string as NSString).range(of: "Name").location
         let paragraphStyle = try #require(rendered.attribute(.paragraphStyle, at: nameLocation, effectiveRange: nil) as? NSParagraphStyle)
-        #expect(paragraphStyle.textBlocks.first is NSTextTableBlock)
+        let tableBlock = try #require(paragraphStyle.textBlocks.first as? NSTextTableBlock)
+        #expect(tableBlock.table.contentWidth == 99.25)
+        #expect(tableBlock.table.contentWidthValueType == .percentageValueType)
         #expect((rendered.attribute(.qmTableRow, at: nameLocation, effectiveRange: nil) as? Int) == 0)
         #expect((rendered.attribute(.qmTableColumn, at: nameLocation, effectiveRange: nil) as? Int) == 0)
 
@@ -4232,7 +4211,8 @@ struct MarkdownRichEditorTests {
         let newItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        #expect(NSApp.sendAction(try #require(newItem.action), to: newItem.target, from: newItem))
+        let newButton = try #require(newItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
+        newButton.performClick(nil)
         controller.titleField.stringValue = "Folder Seed"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
