@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 144. Safe-area editor rhythm
+- Problem: After enabling full-size content for the native sidebar, the editor date row entered the titlebar and the 30pt title remained visibly larger than Apple Notes.
+- Fix: Anchored the editor stack to the window safe area, reduced the title to 24pt, and reset date-to-title spacing to 8pt while preserving the 15pt body.
+- Lesson: Full-height sidebars require each neighboring pane to define its own titlebar-safe content boundary; compensating with oversized spacing is fragile.
+
 ### 01. Initial MVP
 - Problem: No working app yet.
 - Fix: Built a menu bar Markdown capture app with global hotkey, recent notes, settings, and app packaging.

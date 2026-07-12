@@ -355,10 +355,10 @@ enum LibraryNotesLayout {
     static let editorHorizontalInset: CGFloat = 24
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 34
+    static let editorDateToTitleSpacing: CGFloat = 8
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusFontSize: CGFloat = 13
-    static let editorTitleFontSize: CGFloat = 30
+    static let editorTitleFontSize: CGFloat = 24
     static let editorBodyFontSize: CGFloat = 15
     static let editorCodeFontSize: CGFloat = 14
     static let editorLineSpacing: CGFloat = 2.5
@@ -1882,7 +1882,13 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.editorHorizontalInset
         )
         editor.addSubview(stack)
-        pin(stack, to: editor)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor)
+        ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
             dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),

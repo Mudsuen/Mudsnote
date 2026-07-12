@@ -1256,7 +1256,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
-        #expect(LibraryNotesLayout.editorTitleFontSize == 30)
+        #expect(LibraryNotesLayout.editorTitleFontSize == 24)
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
@@ -1284,14 +1284,21 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
-        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 34)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 8)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
         #expect(LibraryNotesLayout.editorTopInset == 12)
-        #expect(LibraryNotesLayout.editorDateToTitleSpacing > LibraryNotesLayout.editorDateRowHeight)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
         #expect(LibraryNotesLayout.editorHorizontalInset == 24)
+        let editorPane = try #require(editorStack.superview)
+        #expect(editorPane.constraints.contains {
+            $0.firstItem === editorStack
+                && $0.firstAttribute == .top
+                && $0.secondItem === editorPane.safeAreaLayoutGuide
+                && $0.secondAttribute == .top
+        })
         #expect(editorStack.constraints.contains {
             $0.firstAttribute == .width
                 && $0.firstItem === controller.titleField
