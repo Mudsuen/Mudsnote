@@ -328,7 +328,7 @@ enum LibraryNotesLayout {
     static let sourceSymbolPointSize: CGFloat = 16
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let windowScreenMargin: CGFloat = 72
-    static let sourceRowHeight: CGFloat = 36
+    static let sourceRowHeight: CGFloat = 32
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
     static let sourceListTopInset: CGFloat = 12
@@ -338,8 +338,10 @@ enum LibraryNotesLayout {
     static let sourceSurfaceCornerRadius: CGFloat = 24
     static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
-    static let sourceInnerRowSpacing: CGFloat = 1
-    static let sourceSectionSpacing: CGFloat = 6
+    static let sourceInnerRowSpacing: CGFloat = 0
+    static let sourceSectionSpacing: CGFloat = 0
+    static let sourceHeaderToRowsSpacing: CGFloat = 4
+    static let sourceTagsSectionSpacing: CGFloat = 6
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceFolderIndentStep: CGFloat = 14
     static let sourceDisclosureButtonWidth: CGFloat = 14
@@ -1755,9 +1757,12 @@ final class LibraryWindowController: NSWindowController,
             sourceTagStack,
             NSView()
         ])
+        stack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRootStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = LibraryNotesLayout.sourceSectionSpacing
+        stack.setCustomSpacing(LibraryNotesLayout.sourceHeaderToRowsSpacing, after: libraryHeader)
+        stack.setCustomSpacing(LibraryNotesLayout.sourceTagsSectionSpacing, after: sourceTrashStack)
         stack.edgeInsets = NSEdgeInsets(
             top: LibraryNotesLayout.sourceListTopInset,
             left: LibraryNotesLayout.sourceListLeadingInset,

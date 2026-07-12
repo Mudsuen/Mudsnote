@@ -1009,6 +1009,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Used the supplied clear Apple Notes crop to reduce date-to-title spacing to `8pt`, moving title and body up `26pt` while leaving the centered date and toolbar unchanged. The resulting title top is within roughly `3pt` of the clear reference.
 - Lesson: Blurred content can validate broad structure but not text baselines; visible typography must be calibrated from an unblurred state-matched reference.
 
+### 169. Compact source-list rhythm
+
+- Problem: Source rows remained `36pt` high with `1pt` inner and `6pt` cross-stack spacing, producing `37–42pt` center distances while Apple Notes uses roughly `32–33pt`.
+- Fix: Reduced source rows to `32pt`, removed incidental inner/cross-stack gaps, and retained only deliberate `4pt` spacing after the iCloud heading plus `6pt` before Tags. Added a root-stack identity and tests for the exact spacing contract.
+- Lesson: Sidebar density should come from a zero-gap row rhythm with explicit semantic group breaks, not uniform stack spacing that silently compounds across nested stacks.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

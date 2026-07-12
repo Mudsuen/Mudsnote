@@ -67,6 +67,11 @@
 - Editor date-to-title spacing is `8pt`, based on the user's clear Apple Notes title crop.
 - Title and body move together; the centered date and toolbar geometry remain unchanged.
 
+## Latest iteration (169)
+
+- Source rows use a compact `32pt` zero-gap rhythm matching Apple Notes.
+- The iCloud heading retains `4pt` separation and Tags retains a deliberate `6pt` section break.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

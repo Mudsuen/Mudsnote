@@ -1132,7 +1132,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(libraryGroup.stringValue == "iCloud")
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
-        #expect(LibraryNotesLayout.sourceRowHeight == 36)
+        #expect(LibraryNotesLayout.sourceRowHeight == 32)
         #expect(LibraryNotesLayout.sourceListTopInset == 12)
         #expect(LibraryNotesLayout.sourceListLeadingInset == 14)
         #expect(LibraryNotesLayout.sourceListBottomInset == 14)
@@ -1156,9 +1156,18 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
         })
         #expect(sourcePrimaryStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
+        #expect(LibraryNotesLayout.sourceInnerRowSpacing == 0)
+        let sourceRootStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySourceRootStack"
+        })
+        #expect(sourceRootStack.spacing == 0)
+        #expect(sourceRootStack.customSpacing(after: libraryGroup) == LibraryNotesLayout.sourceHeaderToRowsSpacing)
         let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySourceTrashStack"
         })
+        #expect(sourceRootStack.customSpacing(after: sourceTrashStack) == LibraryNotesLayout.sourceTagsSectionSpacing)
+        #expect(LibraryNotesLayout.sourceHeaderToRowsSpacing == 4)
+        #expect(LibraryNotesLayout.sourceTagsSectionSpacing == 6)
         let primarySourceTitles = sourcePrimaryStack.arrangedSubviews
             .flatMap(\.allSubviews)
             .compactMap { ($0 as? NSButton)?.title }
