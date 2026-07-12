@@ -3,7 +3,7 @@ import Foundation
 import MudsnoteCore
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate {
+final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private let noteStore: NoteStore
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments: Set<String>
@@ -255,6 +255,34 @@ final class AppController: NSObject, NSApplicationDelegate {
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
+        viewMenu.addItem(.separator())
+
+        let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
+        let sortMenu = NSMenu(title: "排序方式")
+        for (title, order) in [
+            ("编辑日期", LibraryNoteSortOrder.dateEdited),
+            ("创建日期", .dateCreated),
+            ("标题", .title)
+        ] {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(sortLibraryNotesFromMainMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = order.rawValue
+            sortMenu.addItem(item)
+        }
+        sortItem.submenu = sortMenu
+        viewMenu.addItem(sortItem)
+
+        let groupByDateItem = NSMenuItem(
+            title: "按日期分组",
+            action: #selector(toggleLibraryNoteGroupingFromMainMenu(_:)),
+            keyEquivalent: ""
+        )
+        groupByDateItem.target = self
+        viewMenu.addItem(groupByDateItem)
 
         let windowMenuItem = NSMenuItem(title: "窗口", action: nil, keyEquivalent: "")
         let windowMenu = NSMenu(title: "窗口")
@@ -500,6 +528,38 @@ final class AppController: NSObject, NSApplicationDelegate {
     func toggleLibrarySidebarFromMainMenu() {
         showLibraryWindow()
         libraryWindowController?.toggleSourceListForLibrary()
+    }
+
+    @objc
+    func sortLibraryNotesFromMainMenu(_ sender: NSMenuItem) {
+        guard let order = LibraryNoteSortOrder(rawValue: sender.tag) else { return }
+        showLibraryWindow()
+        libraryWindowController?.setNoteListSortOrderForLibrary(order)
+    }
+
+    @objc
+    func toggleLibraryNoteGroupingFromMainMenu(_ sender: NSMenuItem) {
+        showLibraryWindow()
+        guard let libraryWindowController else { return }
+        libraryWindowController.setNoteListGroupingForLibrary(!libraryWindowController.groupsNoteListByDate)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(sortLibraryNotesFromMainMenu(_:)):
+            let currentOrder = libraryWindowController?.noteListSortOrder
+                ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)
+                ?? .dateEdited
+            menuItem.state = menuItem.tag == currentOrder.rawValue ? .on : .off
+            return true
+        case #selector(toggleLibraryNoteGroupingFromMainMenu(_:)):
+            let groupsByDate = libraryWindowController?.groupsNoteListByDate
+                ?? noteStore.libraryGroupsNotesByDate
+            menuItem.state = groupsByDate ? .on : .off
+            return true
+        default:
+            return true
+        }
     }
 
     private func selectVisualQANoteIfNeeded(in controller: LibraryWindowController) {

@@ -5749,8 +5749,31 @@ final class LibraryWindowController: NSWindowController,
             throw LibraryActionError.noFolderSelected
         }
 
-        _ = try noteStore.trashFolder(at: folderURL)
-        recordInternalFileSystemChanges(for: [folderURL])
+        let folderPath = folderURL.standardizedFileURL.path
+        let notesInFolderByPath = Dictionary(uniqueKeysWithValues: sourceCountSnapshot.compactMap { note -> (String, NoteSearchResult)? in
+            let notePath = note.url.standardizedFileURL.path
+            guard notePath.hasPrefix(folderPath + "/") else { return nil }
+            return (notePath, note)
+        })
+        let trashResult = try noteStore.trashFolderWithNoteURLs(at: folderURL)
+        let trashedFolderURL = trashResult.directory
+        let deletedAt = Date()
+        trashedNotesSnapshot.append(contentsOf: trashResult.noteURLs.map { trashedURL in
+            let trashedFolderPath = trashedFolderURL.standardizedFileURL.path
+            let relativePath = String(trashedURL.standardizedFileURL.path.dropFirst(trashedFolderPath.count + 1))
+            let originalPath = folderURL.appendingPathComponent(relativePath).standardizedFileURL.path
+            if let note = notesInFolderByPath[originalPath] {
+                return note.replacingURL(trashedURL, modifiedAt: deletedAt)
+            }
+            return NoteSearchResult(
+                url: trashedURL,
+                title: trashedURL.deletingPathExtension().lastPathComponent,
+                snippet: "",
+                modifiedAt: deletedAt
+            )
+        })
+        sortAndTrimTrashSnapshot()
+        recordInternalFileSystemChanges(for: [folderURL, trashedFolderURL])
         removeSourceSnapshotNotes(in: folderURL)
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
@@ -6312,16 +6335,24 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func noteListGroupingMenuItemPressed(_ sender: NSMenuItem) {
-        groupsNoteListByDate.toggle()
+        setNoteListGroupingForLibrary(!groupsNoteListByDate)
+    }
+
+    func setNoteListGroupingForLibrary(_ groupsByDate: Bool) {
+        guard groupsNoteListByDate != groupsByDate else { return }
+        groupsNoteListByDate = groupsByDate
         noteStore.libraryGroupsNotesByDate = groupsNoteListByDate
         rebuildNoteListRowsForDisplayOptions()
     }
 
     @objc
     private func noteListSortMenuItemPressed(_ sender: NSMenuItem) {
-        guard let order = LibraryNoteSortOrder(rawValue: sender.tag), order != noteListSortOrder else {
-            return
-        }
+        guard let order = LibraryNoteSortOrder(rawValue: sender.tag) else { return }
+        setNoteListSortOrderForLibrary(order)
+    }
+
+    func setNoteListSortOrderForLibrary(_ order: LibraryNoteSortOrder) {
+        guard order != noteListSortOrder else { return }
         noteListSortOrder = order
         noteStore.libraryNoteSortOrderRawValue = order.rawValue
         rebuildNoteListRowsForDisplayOptions()

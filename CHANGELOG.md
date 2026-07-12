@@ -954,6 +954,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: When no reusable search session exists, keyboard flushes now filter the loaded scope snapshot immediately and schedule detached indexed search; established sessions continue using their complete in-memory ranking synchronously.
 - Lesson: The first interaction needs a cache-backed fast path even when steady-state search is already optimized.
 
+### 160. Native View-menu list options
+
+- Problem: Removing the unnecessary toolbar ellipsis also removed the only visible route to note sorting and date grouping, leaving tested commands unreachable to users.
+- Fix: Added Sort By and Group By Date to the native View menu, routed them through the active library controller, and used AppKit menu validation to keep checkmarks synchronized with persisted or live window state.
+- Lesson: Removing chrome must not orphan useful commands; macOS menus are the correct low-noise home for secondary list presentation options.
+- Follow-up: Folder deletion now remaps every contained note into the trash snapshot immediately, preserving Recently Deleted counts under the snapshot-first architecture.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

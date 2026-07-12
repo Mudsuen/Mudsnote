@@ -22,6 +22,11 @@
 - First-search keyboard flushes use scope-filtered snapshot metadata instead of building the search index on the main actor.
 - Detached indexed search publishes the reusable full-text session afterward; established sessions still rank synchronously in memory.
 
+## Latest iteration (160)
+
+- View > Sort By exposes edit-date, creation-date, and title sorting without restoring the toolbar ellipsis.
+- View > Group By Date uses native menu validation to reflect live or persisted state.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

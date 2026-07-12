@@ -147,6 +147,10 @@ extension NoteStore {
     }
 
     public func trashFolder(at directory: URL) throws -> URL {
+        try trashFolderWithNoteURLs(at: directory).directory
+    }
+
+    public func trashFolderWithNoteURLs(at directory: URL) throws -> (directory: URL, noteURLs: [URL]) {
         let originalDirectory = directory.standardizedFileURL
         let folderTrashRoot = trashDirectory().appendingPathComponent("Folders", isDirectory: true)
         try fileManager.createDirectory(at: folderTrashRoot, withIntermediateDirectories: true)
@@ -172,7 +176,7 @@ extension NoteStore {
         forgetRecentPathPrefix(originalDirectory)
         removeLibraryPinnedNotePaths(in: originalDirectory)
         removeLibraryFolderDisclosurePaths(in: originalDirectory)
-        return trashedDirectory
+        return (trashedDirectory, originalFiles)
     }
 
     public func trashDirectory() -> URL {

@@ -4896,6 +4896,19 @@ struct MarkdownRichEditorTests {
         #expect(searchItem.keyEquivalent == "f")
         #expect(searchItem.keyEquivalentModifierMask == [.command])
         #expect(viewMenu.items.first { $0.title == "显示或隐藏资料库" }?.keyEquivalentModifierMask == [.command, .control])
+        let sortMenu = try #require(viewMenu.items.first { $0.title == "排序方式" }?.submenu)
+        #expect(sortMenu.items.map(\.title) == ["编辑日期", "创建日期", "标题"])
+        #expect(sortMenu.items.allSatisfy {
+            $0.target === controller && $0.action == #selector(AppController.sortLibraryNotesFromMainMenu(_:))
+        })
+        let editedDateItem = try #require(sortMenu.items.first { $0.title == "编辑日期" })
+        #expect(controller.validateMenuItem(editedDateItem))
+        #expect(editedDateItem.state == .on)
+        let groupingItem = try #require(viewMenu.items.first { $0.title == "按日期分组" })
+        #expect(groupingItem.target === controller)
+        #expect(groupingItem.action == #selector(AppController.toggleLibraryNoteGroupingFromMainMenu(_:)))
+        #expect(controller.validateMenuItem(groupingItem))
+        #expect(groupingItem.state == .on)
     }
 
     @MainActor
