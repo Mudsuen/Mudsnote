@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 152. Notes-like group breathing room
+- Problem: Group titles aligned with Apple Notes, but their first note began about `6pt` too close to the heading, making `Today` and recency sections look compressed.
+- Fix: Increased group rows from `48pt` to `54pt` while increasing the title bottom inset from `6pt` to `12pt`, preserving the title baseline and assigning all added space below it.
+- Lesson: Section rhythm should move content independently from labels; paired height/inset changes make that intent measurable and regression-testable.
+
 ### 151. Reference-aligned editor origin
 - Problem: After correcting reference backing scale and pane proportions, the editor date still began about `6pt` above Apple Notes and the title remained another `3–4pt` too close to it.
 - Fix: Moved the safe-area editor origin from `12pt` to `18pt` and refined date-to-title spacing from `30pt` to `34pt` using the state-matched content comparison.
