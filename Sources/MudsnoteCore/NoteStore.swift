@@ -70,6 +70,7 @@ struct NoteSearchIndexSnapshot: Codable {
 
 struct NoteSearchFileSignature: Equatable, Codable {
     let modifiedAt: Date
+    let createdAt: Date
     let fileSize: UInt64
 }
 
@@ -80,6 +81,7 @@ struct NoteSearchIndexEntry: Codable {
     let bodyLower: String
     let snippet: String
     let modifiedAt: Date
+    let createdAt: Date
     let tags: [String]
     let tagsLower: [String]
     let hasAttachments: Bool
@@ -91,6 +93,7 @@ struct NoteSearchIndexEntry: Codable {
             title: title,
             snippet: snippet,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             tags: tags,
             hasAttachments: hasAttachments,
             thumbnailURL: thumbnailURL
@@ -99,7 +102,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot

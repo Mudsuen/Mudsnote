@@ -12,8 +12,9 @@ enum LibraryNoteListRow {
 }
 
 enum LibraryNoteSortOrder: Int {
-    case dateEdited
-    case title
+    case dateEdited = 0
+    case title = 1
+    case dateCreated = 2
 }
 
 enum LibraryNoteListProjection {
@@ -72,7 +73,8 @@ enum LibraryNoteListProjection {
         var groupOrder: [String] = []
         var groupedNotes: [String: [PreparedNote]] = [:]
         for note in notesForGrouping {
-            let group = groupTitle(for: note.note.modifiedAt, now: now, calendar: calendar)
+            let groupDate = sortOrder == .dateCreated ? note.note.createdAt : note.note.modifiedAt
+            let group = groupTitle(for: groupDate, now: now, calendar: calendar)
             if groupedNotes[group] == nil {
                 groupOrder.append(group)
             }
@@ -109,6 +111,10 @@ enum LibraryNoteListProjection {
             case .dateEdited:
                 if lhs.note.modifiedAt != rhs.note.modifiedAt {
                     return lhs.note.modifiedAt > rhs.note.modifiedAt
+                }
+            case .dateCreated:
+                if lhs.note.createdAt != rhs.note.createdAt {
+                    return lhs.note.createdAt > rhs.note.createdAt
                 }
             case .title:
                 let titleComparison = lhs.note.title.localizedCaseInsensitiveCompare(rhs.note.title)

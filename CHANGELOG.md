@@ -852,6 +852,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a shared two-field link sheet for library and floating editors, destination-gated confirmation, Return/Escape handling, selected-text name defaults, editable link labels, and focus restoration after dismissal.
 - Lesson: Reference-app interaction should be measured directly. Notes uses a window-modal sheet rather than a popover, and preserving that distinction keeps other note windows responsive.
 
+### 141. Notes-style list sorting options
+
+- Problem: The list-options menu led with a disabled display-mode row, ordered grouping before sorting, and omitted Notes' creation-date sort; visible row dates were always edit dates.
+- Fix: Matched the core Notes menu hierarchy with Sort By first and Group By Date second, added persistent creation-date sorting and grouping, and made row dates follow the active date basis.
+- Lesson: A sort mode is also a presentation contract. Group headers and row metadata must use the same date, and creation metadata should ride the existing indexed file-attribute read instead of adding another scan.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

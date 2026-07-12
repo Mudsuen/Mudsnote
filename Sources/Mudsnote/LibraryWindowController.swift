@@ -5726,10 +5726,14 @@ final class LibraryWindowController: NSWindowController,
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
         let snippet = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
         let preview = snippet.isEmpty ? "No additional text" : snippet
-        let dateText = noteListDateText(for: note.modifiedAt)
+        let dateText = noteListDateText(for: noteListDisplayDateForLibrary(note))
         let cleanedPreview = noteListPreviewText(preview, removingDuplicateDateText: dateText)
         guard !cleanedPreview.isEmpty else { return dateText }
         return "\(dateText)  \(cleanedPreview)"
+    }
+
+    func noteListDisplayDateForLibrary(_ note: NoteSearchResult) -> Date {
+        noteListSortOrder == .dateCreated ? note.createdAt : note.modifiedAt
     }
 
     private func noteListPreviewText(_ preview: String, removingDuplicateDateText dateText: String) -> String {
@@ -6144,25 +6148,13 @@ final class LibraryWindowController: NSWindowController,
     func makeNoteListActionsMenuForLibrary() -> NSMenu {
         let menu = NSMenu()
 
-        let listItem = NSMenuItem(title: "显示为列表", action: nil, keyEquivalent: "")
-        listItem.state = .on
-        listItem.isEnabled = false
-        menu.addItem(listItem)
-
-        menu.addItem(.separator())
-
-        let groupingItem = NSMenuItem(
-            title: "按日期分组",
-            action: #selector(noteListGroupingMenuItemPressed(_:)),
-            keyEquivalent: ""
-        )
-        groupingItem.target = self
-        groupingItem.state = groupsNoteListByDate ? .on : .off
-        menu.addItem(groupingItem)
-
         let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
         let sortMenu = NSMenu()
-        for (title, order) in [("编辑日期", LibraryNoteSortOrder.dateEdited), ("标题", .title)] {
+        for (title, order) in [
+            ("编辑日期", LibraryNoteSortOrder.dateEdited),
+            ("创建日期", .dateCreated),
+            ("标题", .title)
+        ] {
             let item = NSMenuItem(
                 title: title,
                 action: #selector(noteListSortMenuItemPressed(_:)),
@@ -6175,6 +6167,15 @@ final class LibraryWindowController: NSWindowController,
         }
         sortItem.submenu = sortMenu
         menu.addItem(sortItem)
+
+        let groupingItem = NSMenuItem(
+            title: "按日期分组",
+            action: #selector(noteListGroupingMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        groupingItem.target = self
+        groupingItem.state = groupsNoteListByDate ? .on : .off
+        menu.addItem(groupingItem)
 
         return menu
     }

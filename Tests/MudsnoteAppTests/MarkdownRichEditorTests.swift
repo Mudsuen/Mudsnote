@@ -959,11 +959,15 @@ struct MarkdownRichEditorTests {
         let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
         let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })
         let initialSortMenu = try #require(initialListMenu.items.first { $0.title == "排序方式" }?.submenu)
-        #expect(initialListMenu.items.first { $0.title == "显示为列表" }?.state == .on)
-        #expect(initialListMenu.items.first { $0.title == "显示为列表" }?.isEnabled == false)
+        #expect(initialListMenu.items.map(\.title) == ["排序方式", "按日期分组"])
+        #expect(initialSortMenu.items.map(\.title) == ["编辑日期", "创建日期", "标题"])
         #expect(initialGroupingItem.state == .on)
         #expect(initialSortMenu.items.first { $0.title == "编辑日期" }?.state == .on)
+        #expect(initialSortMenu.items.first { $0.title == "创建日期" }?.state == .off)
         #expect(initialSortMenu.items.first { $0.title == "标题" }?.state == .off)
+        #expect(LibraryNoteSortOrder.dateEdited.rawValue == 0)
+        #expect(LibraryNoteSortOrder.title.rawValue == 1)
+        #expect(LibraryNoteSortOrder.dateCreated.rawValue == 2)
         #expect(controller.noteListSortOrder == .dateEdited)
         #expect(controller.groupsNoteListByDate)
         #expect(controller.numberOfRows(in: controller.tableView) == 2)
@@ -1523,9 +1527,19 @@ struct MarkdownRichEditorTests {
         let alphaURL = try store.saveNewNote(title: "Alpha Yesterday", body: "Yesterday")
         let now = Date()
         let yesterday = try #require(Calendar.current.date(byAdding: .day, value: -1, to: now))
-        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: todayURL.path)
-        try FileManager.default.setAttributes([.modificationDate: yesterday], ofItemAtPath: bravoURL.path)
-        try FileManager.default.setAttributes([.modificationDate: yesterday], ofItemAtPath: alphaURL.path)
+        let twoDaysAgo = try #require(Calendar.current.date(byAdding: .day, value: -2, to: now))
+        try FileManager.default.setAttributes(
+            [.modificationDate: now, .creationDate: twoDaysAgo],
+            ofItemAtPath: todayURL.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: yesterday, .creationDate: yesterday],
+            ofItemAtPath: bravoURL.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: yesterday, .creationDate: now],
+            ofItemAtPath: alphaURL.path
+        )
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -1548,6 +1562,22 @@ struct MarkdownRichEditorTests {
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
 
         let initialMenu = controller.makeNoteListActionsMenuForLibrary()
+        let createdSortItem = try #require(initialMenu.items.first { $0.title == "排序方式" }?.submenu?.items.first {
+            $0.title == "创建日期"
+        })
+        #expect(NSApp.sendAction(try #require(createdSortItem.action), to: createdSortItem.target, from: createdSortItem))
+        #expect(controller.noteListSortOrder == .dateCreated)
+        #expect(listedNoteTitles() == ["Alpha Yesterday", "Bravo Yesterday", "Zulu Today"])
+        let displayDateProbe = NoteSearchResult(
+            url: alphaURL,
+            title: "Probe",
+            snippet: "",
+            modifiedAt: yesterday,
+            createdAt: now
+        )
+        #expect(controller.noteListDisplayDateForLibrary(displayDateProbe) == now)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
+
         let titleSortItem = try #require(initialMenu.items.first { $0.title == "排序方式" }?.submenu?.items.first {
             $0.title == "标题"
         })

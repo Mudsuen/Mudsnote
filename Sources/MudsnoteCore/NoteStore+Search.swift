@@ -231,6 +231,7 @@ extension NoteStore {
                 title: entry.title,
                 snippet: snippet,
                 modifiedAt: entry.modifiedAt,
+                createdAt: entry.createdAt,
                 tags: entry.tags,
                 hasAttachments: entry.hasAttachments,
                 thumbnailURL: entry.thumbnailURL
@@ -339,7 +340,8 @@ extension NoteStore {
         }
 
         let fileSize = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
-        return NoteSearchFileSignature(modifiedAt: modifiedAt, fileSize: fileSize)
+        let createdAt = (attrs[.creationDate] as? Date) ?? modifiedAt
+        return NoteSearchFileSignature(modifiedAt: modifiedAt, createdAt: createdAt, fileSize: fileSize)
     }
 
     private func indexedEntry(for fileURL: URL, signature: NoteSearchFileSignature?) -> NoteSearchIndexEntry? {
@@ -349,6 +351,7 @@ extension NoteStore {
         }
 
         let modifiedAt = signature?.modifiedAt ?? Date()
+        let createdAt = signature?.createdAt ?? modifiedAt
         let note = loadedNote(from: text, at: fileURL)
         let title = displayTitle(for: fileURL, loadedTitle: note.title)
         let snippet = MarkdownEditorDocument.firstPreviewLine(in: note.body) ?? ""
@@ -360,6 +363,7 @@ extension NoteStore {
             bodyLower: note.body.lowercased(),
             snippet: snippet,
             modifiedAt: modifiedAt,
+            createdAt: createdAt,
             tags: note.tags,
             tagsLower: note.tags.map { $0.lowercased() },
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),

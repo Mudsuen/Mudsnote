@@ -17,6 +17,7 @@ public struct NoteSearchResult: Equatable, Sendable {
     public let title: String
     public let snippet: String
     public let modifiedAt: Date
+    public let createdAt: Date
     public let tags: [String]
     public let hasAttachments: Bool
     public let thumbnailURL: URL?
@@ -26,6 +27,7 @@ public struct NoteSearchResult: Equatable, Sendable {
         title: String,
         snippet: String,
         modifiedAt: Date,
+        createdAt: Date? = nil,
         tags: [String] = [],
         hasAttachments: Bool = false,
         thumbnailURL: URL? = nil
@@ -34,6 +36,7 @@ public struct NoteSearchResult: Equatable, Sendable {
         self.title = title
         self.snippet = snippet
         self.modifiedAt = modifiedAt
+        self.createdAt = createdAt ?? modifiedAt
         self.tags = tags
         self.hasAttachments = hasAttachments
         self.thumbnailURL = thumbnailURL
