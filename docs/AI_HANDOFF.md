@@ -37,6 +37,16 @@
 - Successful autosave immediately updates visible list metadata, ordering, groups, selection, and counts from the in-memory snapshot.
 - Search-state saves schedule detached result refresh instead of synchronously rebuilding the index.
 
+## Latest iteration (163)
+
+- Post-save folder/tag/Inbox count aggregation runs on a cancellable utility task with generation and folder-set guards.
+- Visible note rows still update synchronously from memory before aggregate counts publish.
+
+## Latest iteration (164)
+
+- The full-height source surface retains its rounded clipping and darkened native material without drawing a second layer border.
+- AppKit remains the sole owner of the sidebar and split-pane edge treatment.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

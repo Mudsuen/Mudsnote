@@ -1048,7 +1048,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceSurface.material == .sidebar)
         #expect(sourceSurface.blendingMode == .withinWindow)
         #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
-        #expect(sourceSurface.layer?.borderWidth == 1)
+        #expect(sourceSurface.layer?.borderWidth == 0)
         let sourceDarkeningTint = try #require(sourceSurface.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceDarkeningTint"
         })
@@ -3486,7 +3486,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowAutosavesEditedExistingNote() throws {
+    func libraryWindowAutosavesEditedExistingNote() async throws {
         let suiteName = "mudsnote.library-autosave-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3531,6 +3531,11 @@ struct MarkdownRichEditorTests {
         #expect(loaded.body == "Autosaved body")
         #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
+        await controller.waitForSourceCountRefreshForLibrary()
+        let allCount = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
+        })
+        #expect(allCount.stringValue == "1")
     }
 
     @MainActor

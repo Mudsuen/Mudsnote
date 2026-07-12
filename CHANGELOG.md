@@ -973,6 +973,18 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: After save, project the current scope directly from the updated in-memory snapshot, rebuild sorting/grouping while preserving selection, refresh counts, and use detached search refresh when a query is active.
 - Lesson: Snapshot correctness must reach every visible projection immediately; persisting data without updating the list makes autosave appear unreliable even when the file is correct.
 
+### 163. Background source-count aggregation after save
+
+- Problem: Immediate list projection after autosave also rebuilt folder, tag, and Inbox counts for up to 10,000 notes on the main actor.
+- Fix: Kept note rows immediate, moved source-count index aggregation to a cancellable utility task, and published counts only when its generation and folder-path snapshot still match the current window.
+- Lesson: A fast visible projection can still hide an expensive secondary projection; list metadata and aggregate navigation counts need separate scheduling budgets.
+
+### 164. Single native sidebar edge
+
+- Problem: The rounded source sidebar drew its own `1pt` outline on top of the native sidebar item's boundary, leaving doubled traces along the top and left edges.
+- Fix: Removed the custom layer border while retaining the `24pt` clipping radius, darkened sidebar material, and AppKit-owned pane separation.
+- Lesson: A native full-height sidebar should have one edge owner; custom material may shape and tint the surface without redrawing AppKit's structural boundary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

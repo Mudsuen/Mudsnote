@@ -336,7 +336,6 @@ enum LibraryNotesLayout {
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 14
     static let sourceSurfaceCornerRadius: CGFloat = 24
-    static let sourceSurfaceBorderAlpha: CGFloat = 0.20
     static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceInnerRowSpacing: CGFloat = 1
@@ -1145,6 +1144,8 @@ final class LibraryWindowController: NSWindowController,
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
     private var sourceSnapshotValidationGeneration = 0
+    private var sourceCountRefreshTask: Task<Void, Never>?
+    private var sourceCountRefreshGeneration = 0
     private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
     private var isSearchResultReloading = false
@@ -1508,6 +1509,9 @@ final class LibraryWindowController: NSWindowController,
         internallyMutatedPaths.removeAll()
         attachmentQuickLookController.dismiss()
         cancelSourceSnapshotValidation()
+        sourceCountRefreshTask?.cancel()
+        sourceCountRefreshTask = nil
+        sourceCountRefreshGeneration += 1
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
         cancelActiveSearchResultReload()
@@ -1706,10 +1710,6 @@ final class LibraryWindowController: NSWindowController,
             .cgColor
         sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
         sourceList.layer?.masksToBounds = true
-        sourceList.layer?.borderWidth = 1
-        sourceList.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(
-            LibraryNotesLayout.sourceSurfaceBorderAlpha
-        ).cgColor
         sourceListView = sourceList
 
         let darkeningView = NSView()
@@ -3198,13 +3198,52 @@ final class LibraryWindowController: NSWindowController,
             notes: allNotes,
             folderPaths: currentSourceFolderPaths()
         )
+        applySourceCounts(
+            allNotesCount: allNotes.count,
+            recentCount: recentCount,
+            trashCount: trashedNotesSnapshot.count,
+            countIndex: countIndex
+        )
+    }
+
+    private func scheduleSourceCountRefresh(using allNotes: [NoteSearchResult]) {
+        sourceCountRefreshTask?.cancel()
+        sourceCountRefreshGeneration += 1
+        let generation = sourceCountRefreshGeneration
+        let folderPaths = currentSourceFolderPaths()
+        let recentCount = noteStore.listRecentFiles(limit: 80).count
         let trashCount = trashedNotesSnapshot.count
+
+        sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
+            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: folderPaths)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      generation == self.sourceCountRefreshGeneration,
+                      folderPaths == self.currentSourceFolderPaths() else { return }
+                self.sourceCountRefreshTask = nil
+                self.applySourceCounts(
+                    allNotesCount: allNotes.count,
+                    recentCount: recentCount,
+                    trashCount: trashCount,
+                    countIndex: countIndex
+                )
+            }
+        }
+    }
+
+    private func applySourceCounts(
+        allNotesCount: Int,
+        recentCount: Int,
+        trashCount: Int,
+        countIndex: LibrarySourceCountIndex
+    ) {
 
         for button in sourceButtons {
             let count: Int
             switch scope(for: button) {
             case .all:
-                count = allNotes.count
+                count = allNotesCount
             case .recent:
                 count = recentCount
             case .inbox:
@@ -4926,7 +4965,11 @@ final class LibraryWindowController: NSWindowController,
         notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
         rebuildNoteListRowsForDisplayOptions()
         updateNoteListHeader(query: "")
-        refreshSourceCounts(using: sourceCountSnapshot)
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+    }
+
+    func waitForSourceCountRefreshForLibrary() async {
+        await sourceCountRefreshTask?.value
     }
 
     private func removeNotesFromSourceSnapshot(at urls: [URL]) {
