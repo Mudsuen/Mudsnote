@@ -1,6 +1,45 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "An unfinished quick note stays in protected app storage and is excluded from device backups until submitted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未提交的快速笔记会保存在受保护的应用存储中，并排除在设备备份之外。" } } }
+    },
+    "Could not discard the saved quick note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法丢弃保存的快速笔记草稿" } } }
+    },
+    "Discard Unrecoverable Draft": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃无法恢复的草稿" } } }
+    },
+    "Discard Unrecoverable Draft?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "要丢弃无法恢复的草稿吗？" } } }
+    },
+    "Mudsnote does not upload your notes. Sync and backup behavior follows the folder provider you choose.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Mudsnote 不会上传你的笔记。同步和备份行为由你选择的文件夹提供方决定。" } } }
+    },
+    "No Mudsnote Account": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无需 Mudsnote 账户" } } }
+    },
+    "Privacy": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "隐私" } } }
+    },
+    "Protected Quick Draft": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "受保护的快速草稿" } } }
+    },
+    "Quick note recovery needs attention": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "快速笔记恢复需要处理" } } }
+    },
+    "Quick Note Recovery": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "快速笔记恢复" } } }
+    },
+    "This removes only the damaged app-private quick note recovery data. Notes already saved in your selected folder are not changed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这只会移除已损坏的应用私有快速笔记恢复数据，不会更改已保存到所选文件夹的笔记。" } } }
+    },
+    "Try Recovery Again": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "再次尝试恢复" } } }
+    },
+    "Unrecoverable quick note discarded": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已丢弃无法恢复的快速笔记草稿" } } }
+    },
     "Could not protect the quick note draft": {
       "localizations": {
         "zh-Hans": {

@@ -37,6 +37,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let resetArgument = "-ui-testing-reset"
     private static let fixtureFolderArgument = "-ui-testing-fixture-folder"
     private static let invalidBookmarkArgument = "-ui-testing-invalid-bookmark"
+    private static let damagedDraftArgument = "-ui-testing-damaged-draft"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -45,6 +46,7 @@ private enum MudsnoteUITestLaunchConfiguration {
         guard arguments.contains(resetArgument)
                 || arguments.contains(fixtureFolderArgument)
                 || arguments.contains(invalidBookmarkArgument)
+                || arguments.contains(damagedDraftArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -89,6 +91,17 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.set(
                 Data("invalid-bookmark".utf8),
                 forKey: FolderAccessService.DefaultsKey.bookmarkData
+            )
+        }
+
+        if arguments.contains(damagedDraftArgument) {
+            try? FileManager.default.createDirectory(
+                at: CaptureDraftRecoveryStore.defaultDirectory,
+                withIntermediateDirectories: true
+            )
+            try? Data("damaged-draft".utf8).write(
+                to: CaptureDraftRecoveryStore.defaultDirectory.appendingPathComponent("draft.json"),
+                options: .atomic
             )
         }
         #endif

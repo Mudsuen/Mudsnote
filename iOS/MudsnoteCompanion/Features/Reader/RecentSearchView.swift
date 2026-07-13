@@ -174,6 +174,7 @@ struct LibraryHomeView: View {
                 } label: {
                     NotesFolderRow(title: String(localized: "Settings"), systemImage: "gearshape", count: nil)
                 }
+                .accessibilityIdentifier("settings-link")
             }
         }
     }

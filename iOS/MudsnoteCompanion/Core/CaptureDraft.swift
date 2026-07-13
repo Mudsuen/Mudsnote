@@ -298,36 +298,46 @@ actor CaptureDraftRecoveryStore {
             lastMetadata = nil
             return nil
         }
-        let metadata = try JSONDecoder.captureDraftRecovery.decode(
-            Metadata.self,
-            from: Data(contentsOf: metadataURL)
-        )
-        guard metadata.version == 1 else { throw CaptureDraftRecoveryError.unsupportedVersion }
-        let attachments = try metadata.attachments.map { entry -> CaptureAttachment in
-            guard entry.filename == URL(fileURLWithPath: entry.filename).lastPathComponent else {
-                throw CaptureDraftRecoveryError.damaged
-            }
-            let fileURL = directory.appendingPathComponent(entry.filename)
-            let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-            switch entry.kind {
-            case .image:
-                return try CaptureAttachment.validatedImage(
-                    data: data,
-                    suggestedExtension: entry.preferredExtension
-                )
-            case .audio:
-                return try CaptureAttachment.validatedAudio(
-                    data: data,
-                    preferredExtension: entry.preferredExtension
-                )
-            case .file:
-                return try CaptureAttachment.validatedFile(
-                    data: data,
-                    suggestedName: "\(entry.preferredBaseName ?? "file").\(entry.preferredExtension)"
-                )
-            }
+        let metadata: Metadata
+        do {
+            metadata = try JSONDecoder.captureDraftRecovery.decode(
+                Metadata.self,
+                from: Data(contentsOf: metadataURL)
+            )
+        } catch {
+            throw CaptureDraftRecoveryError.damaged
         }
-        try CaptureAttachmentPolicy.validate(attachments)
+        guard metadata.version == 1 else { throw CaptureDraftRecoveryError.unsupportedVersion }
+        let attachments: [CaptureAttachment]
+        do {
+            attachments = try metadata.attachments.map { entry -> CaptureAttachment in
+                guard entry.filename == URL(fileURLWithPath: entry.filename).lastPathComponent else {
+                    throw CaptureDraftRecoveryError.damaged
+                }
+                let fileURL = directory.appendingPathComponent(entry.filename)
+                let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+                switch entry.kind {
+                case .image:
+                    return try CaptureAttachment.validatedImage(
+                        data: data,
+                        suggestedExtension: entry.preferredExtension
+                    )
+                case .audio:
+                    return try CaptureAttachment.validatedAudio(
+                        data: data,
+                        preferredExtension: entry.preferredExtension
+                    )
+                case .file:
+                    return try CaptureAttachment.validatedFile(
+                        data: data,
+                        suggestedName: "\(entry.preferredBaseName ?? "file").\(entry.preferredExtension)"
+                    )
+                }
+            }
+            try CaptureAttachmentPolicy.validate(attachments)
+        } catch {
+            throw CaptureDraftRecoveryError.damaged
+        }
         let draft = CaptureDraft(
             body: metadata.body,
             tags: metadata.tags,
@@ -355,6 +365,10 @@ actor CaptureDraftRecoveryStore {
             withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var protectedDirectory = directory
+        try protectedDirectory.setResourceValues(resourceValues)
 
         var entries: [Attachment] = []
         for (index, attachment) in draft.attachments.enumerated() {

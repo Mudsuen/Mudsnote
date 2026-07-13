@@ -29,6 +29,25 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Folder Unavailable"].exists)
     }
 
+    func testDamagedQuickDraftCanBeDiscardedWithoutChangingLibrary() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            damagedDraft: true
+        )
+        let settings = app.buttons["settings-link"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+        XCTAssertTrue(app.staticTexts["Quick Note Recovery"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["The saved quick note is damaged and could not be restored."].exists)
+        XCTAssertTrue(app.buttons["Try Recovery Again"].exists)
+        app.buttons["Discard Unrecoverable Draft"].tap()
+        XCTAssertTrue(app.alerts["Discard Unrecoverable Draft?"].waitForExistence(timeout: 3))
+        app.alerts.buttons["Discard"].tap()
+        XCTAssertTrue(app.staticTexts["Unrecoverable quick note discarded"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Quick Note Recovery"].exists)
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
@@ -338,7 +357,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
     private func launchApp(
         reset: Bool,
         fixtureFolder: Bool,
-        invalidBookmark: Bool = false
+        invalidBookmark: Bool = false,
+        damagedDraft: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -346,7 +366,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "-AppleLocale", "en_US",
             reset ? "-ui-testing-reset" : nil,
             fixtureFolder ? "-ui-testing-fixture-folder" : nil,
-            invalidBookmark ? "-ui-testing-invalid-bookmark" : nil
+            invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,
+            damagedDraft ? "-ui-testing-damaged-draft" : nil
         ].compactMap { $0 }
         app.launch()
         return app

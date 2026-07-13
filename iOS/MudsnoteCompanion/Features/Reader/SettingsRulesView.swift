@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsRulesView: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var isDiscardRecoveryPresented = false
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -31,6 +32,46 @@ struct SettingsRulesView: View {
                     Image(systemName: "internaldrive")
                         .foregroundStyle(MudsnoteColors.primary)
                 }
+
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Protected Quick Draft")
+                        Text("An unfinished quick note stays in protected app storage and is excluded from device backups until submitted.")
+                            .font(.caption)
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                } icon: {
+                    Image(systemName: "lock.doc")
+                        .foregroundStyle(MudsnoteColors.primary)
+                }
+            }
+
+            Section("Privacy") {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No Mudsnote Account")
+                        Text("Mudsnote does not upload your notes. Sync and backup behavior follows the folder provider you choose.")
+                            .font(.caption)
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                } icon: {
+                    Image(systemName: "hand.raised")
+                        .foregroundStyle(MudsnoteColors.primary)
+                }
+            }
+
+            if let issue = appModel.draftRecoveryIssue {
+                Section("Quick Note Recovery") {
+                    Label(issue, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                    Button("Try Recovery Again") {
+                        appModel.retryCaptureDraftRecovery()
+                    }
+                    Button("Discard Unrecoverable Draft", role: .destructive) {
+                        isDiscardRecoveryPresented = true
+                    }
+                }
             }
 
             if appModel.syncStatus != .idle || !appModel.conflictWarnings.isEmpty {
@@ -57,6 +98,14 @@ struct SettingsRulesView: View {
         .scrollContentBackground(.hidden)
         .background(MudsnoteColors.canvas)
         .navigationTitle("Settings")
+        .alert("Discard Unrecoverable Draft?", isPresented: $isDiscardRecoveryPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Discard", role: .destructive) {
+                appModel.discardUnrecoverableCaptureDraft()
+            }
+        } message: {
+            Text("This removes only the damaged app-private quick note recovery data. Notes already saved in your selected folder are not changed.")
+        }
     }
 
     private var appVersion: String {

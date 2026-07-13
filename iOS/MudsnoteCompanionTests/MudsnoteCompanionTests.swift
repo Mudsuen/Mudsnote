@@ -169,6 +169,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         let store = CaptureDraftRecoveryStore(directory: directory)
 
         try await store.save(draft)
+        XCTAssertEqual(
+            try directory.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup,
+            true
+        )
         let initialFiles = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         draft.body += " updated"
         try await store.save(draft)
@@ -183,6 +187,27 @@ final class MudsnoteCompanionTests: XCTestCase {
         try await relaunchedStore.save(CaptureDraft())
         let cleared = try await relaunchedStore.load()
         XCTAssertNil(cleared)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    func testDamagedQuickCaptureRecoveryHasStableErrorAndCanBeCleared() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("CaptureDraft", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("not-json".utf8).write(
+            to: directory.appendingPathComponent("draft.json"),
+            options: .atomic
+        )
+        let store = CaptureDraftRecoveryStore(directory: directory)
+
+        do {
+            _ = try await store.load()
+            XCTFail("Damaged recovery should fail")
+        } catch {
+            XCTAssertEqual(error as? CaptureDraftRecoveryError, .damaged)
+        }
+        try await store.clear()
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 

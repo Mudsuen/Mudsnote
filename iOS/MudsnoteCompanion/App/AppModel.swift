@@ -43,6 +43,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var completedSearchQuery = ""
     @Published private(set) var completedSearchScope = MarkdownSearchScope.all
     @Published private(set) var libraryRevision = 0
+    @Published private(set) var draftRecoveryIssue: String?
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -170,6 +171,24 @@ final class AppModel: ObservableObject {
         draftPersistenceTask?.cancel()
         let snapshot = draft
         draftPersistenceTask = Task { await persistCaptureDraft(snapshot) }
+    }
+
+    func retryCaptureDraftRecovery() {
+        Task { await restoreCaptureDraftIfNeeded() }
+    }
+
+    func discardUnrecoverableCaptureDraft() {
+        draftPersistenceTask?.cancel()
+        Task {
+            do {
+                try await draftRecoveryStore.clear()
+                draftRecoveryIssue = nil
+                statusToast = .saved(String(localized: "Unrecoverable quick note discarded"))
+                if draft.canSend { scheduleDraftPersistenceIfNeeded() }
+            } catch {
+                statusToast = .error(String(localized: "Could not discard the saved quick note"))
+            }
+        }
     }
 
     func sendDraft(continueCapturing: Bool = true) {
@@ -300,10 +319,12 @@ final class AppModel: ObservableObject {
             draftRecoveryEnabled = false
             draft = recovered
             draftRecoveryEnabled = true
+            draftRecoveryIssue = nil
             recoveredDraftNeedsAnnouncement = true
             announceRecoveredDraftIfPossible()
         } catch {
-            statusToast = .error(error.localizedDescription)
+            draftRecoveryIssue = error.localizedDescription
+            statusToast = .error(String(localized: "Quick note recovery needs attention"))
         }
     }
 
