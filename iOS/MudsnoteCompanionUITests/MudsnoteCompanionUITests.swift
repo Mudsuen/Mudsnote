@@ -100,6 +100,24 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(editor.exists)
     }
 
+    func testHomeCommandsStayInOneNotesStyleBottomRow() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let search = app.textFields["library-search-field"]
+        let quickNote = app.buttons["quick-note-button"]
+        let newNote = app.buttons["new-note-button"]
+        XCTAssertTrue(search.waitForExistence(timeout: 8))
+        XCTAssertTrue(quickNote.exists)
+        XCTAssertTrue(newNote.exists)
+        XCTAssertEqual(quickNote.frame.midY, search.frame.midY, accuracy: 3)
+        XCTAssertEqual(newNote.frame.midY, search.frame.midY, accuracy: 3)
+        XCTAssertLessThan(quickNote.frame.maxX, newNote.frame.minX)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style home command row"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testNewNoteCreatesStandaloneMarkdownAndOpensFullEditor() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]

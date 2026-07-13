@@ -44,7 +44,7 @@ struct LibraryHomeView: View {
             .refreshable {
                 await appModel.refreshInbox()
             }
-            .navigationTitle("Library")
+            .navigationTitle("Folders")
             .task(id: SearchTaskID(
                 query: searchQuery,
                 scope: searchScope,
@@ -978,6 +978,17 @@ struct NotesBottomCommandBar: View {
                 .contentShape(Rectangle())
                 .fixedSize()
                 .accessibilityLabel("Voice input")
+
+                Button(action: quickNote) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .fixedSize()
+                .accessibilityLabel("Quick Note")
+                .accessibilityIdentifier("quick-note-button")
             }
             .foregroundStyle(MudsnoteColors.text)
             .padding(.horizontal, 16)
@@ -987,27 +998,13 @@ struct NotesBottomCommandBar: View {
                 Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
             }
 
-            Button(action: quickNote) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(MudsnoteColors.text)
-                    .frame(width: 48, height: 48)
-                    .background(MudsnoteColors.panel, in: Circle())
-                    .overlay {
-                        Circle().stroke(MudsnoteColors.line, lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Quick Note")
-            .accessibilityIdentifier("quick-note-button")
-
             Button(action: newNote) {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 23, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(Color.black)
                     .frame(width: 54, height: 54)
-                    .background(MudsnoteColors.primary, in: Circle())
+                    .background(NotesCloneColors.folderYellow, in: Circle())
                     .overlay {
                         Circle().stroke(MudsnoteColors.line.opacity(0.25), lineWidth: 1)
                     }
