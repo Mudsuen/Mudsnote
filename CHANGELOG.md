@@ -1229,6 +1229,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: A 5,000-run alternating-format document improved from about `41ms` to stable `27ms` debug runs, remains below a `50ms` regression gate, and compares against the complete expected Markdown. Full tests, packaging, installed-app smoke, strict signature verification, and content-state visual QA passed.
 - Lesson: Cache immutable document-wide values at the serialization boundary; repeated Swift/Foundation bridging inside a per-run loop can dominate more than the formatting logic itself.
 
+### 204. Incremental folder-tree lifecycle projection
+
+- Problem: Creating, renaming, or deleting a folder recursively rescanned the complete source directory tree on the main thread before repainting the sidebar. Large hierarchies could therefore stall a direct user command, and an older deferred scan could overwrite a newer local mutation.
+- Fix: Added a bounded in-memory folder-tree projection for sorted insertion, subtree path remapping, and subtree removal. Lifecycle commands now update that snapshot immediately, while a generation guard rejects stale deferred scans and the filesystem monitor remains responsible for external changes.
+- Verification: Snapshot-isolation tests prove local lifecycle changes do not synchronously absorb an unrelated external directory. A 10,000-row insertion test improved from about `126ms` total test time to stable `38–40ms` runs and passes a `<50ms` operation gate. Full tests, packaging, installed-app smoke, strict signature verification, and expanded visual QA passed.
+- Lesson: A loaded navigation hierarchy should be mutated as application state; recursive filesystem discovery belongs to cancellable background validation, not the command path.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

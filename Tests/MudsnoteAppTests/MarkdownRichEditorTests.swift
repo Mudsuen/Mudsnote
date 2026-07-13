@@ -4599,6 +4599,134 @@ struct MarkdownRichEditorTests {
         } == false)
     }
 
+    @Test
+    func folderTreeProjectionMaintainsHierarchyAcrossLifecycleMutations() throws {
+        let root = URL(fileURLWithPath: "/tmp/Mudsnote Projection/Notes", isDirectory: true)
+        let alpha = root.appendingPathComponent("Alpha", isDirectory: true)
+        let child = alpha.appendingPathComponent("Child", isDirectory: true)
+        let gamma = root.appendingPathComponent("Gamma", isDirectory: true)
+        let initial = [
+            LibraryFolderRow(url: root, depth: 0, hasChildren: true),
+            LibraryFolderRow(url: alpha, depth: 1, hasChildren: true),
+            LibraryFolderRow(url: child, depth: 2, hasChildren: false),
+            LibraryFolderRow(url: gamma, depth: 1, hasChildren: false)
+        ]
+
+        let beta = root.appendingPathComponent("Beta", isDirectory: true)
+        let inserted = LibraryFolderTreeProjection.inserting(beta, under: root, into: initial)
+        #expect(inserted.map(\.url.lastPathComponent) == ["Notes", "Alpha", "Child", "Beta", "Gamma"])
+        #expect(inserted.first?.hasChildren == true)
+
+        let zeta = root.appendingPathComponent("Zeta", isDirectory: true)
+        let renamed = LibraryFolderTreeProjection.renaming(alpha, to: zeta, in: inserted)
+        #expect(renamed.map(\.url.lastPathComponent) == ["Notes", "Beta", "Gamma", "Zeta", "Child"])
+        #expect(renamed.last?.url == zeta.appendingPathComponent("Child", isDirectory: true))
+        #expect(renamed[3].hasChildren == true)
+
+        let withoutRenamedSubtree = LibraryFolderTreeProjection.removing(zeta, from: renamed)
+        #expect(withoutRenamedSubtree.map(\.url.lastPathComponent) == ["Notes", "Beta", "Gamma"])
+        let emptyRoot = LibraryFolderTreeProjection.removing(
+            gamma,
+            from: LibraryFolderTreeProjection.removing(beta, from: withoutRenamedSubtree)
+        )
+        #expect(emptyRoot == [LibraryFolderRow(url: root, depth: 0, hasChildren: false)])
+
+        let depthThreeFolder = child.appendingPathComponent("Depth Three", isDirectory: true)
+        let depthLimited = initial + [
+            LibraryFolderRow(url: depthThreeFolder, depth: 3, hasChildren: false)
+        ]
+        let depthFourFolder = depthThreeFolder.appendingPathComponent("Depth Four", isDirectory: true)
+        #expect(LibraryFolderTreeProjection.inserting(
+            depthFourFolder,
+            under: depthThreeFolder,
+            into: depthLimited
+        ) == depthLimited)
+    }
+
+    @Test
+    func folderTreeProjectionStaysInteractiveAtSnapshotLimit() {
+        let root = URL(fileURLWithPath: "/tmp/Mudsnote Projection Performance/Notes", isDirectory: true)
+        var rows = [LibraryFolderRow(url: root, depth: 0, hasChildren: true)]
+        rows.append(contentsOf: (0..<10_000).map { index in
+            LibraryFolderRow(
+                url: root.appendingPathComponent(String(format: "Folder %05d", index), isDirectory: true),
+                depth: 1,
+                hasChildren: false
+            )
+        })
+
+        let insertedURL = root.appendingPathComponent("Folder 05000a", isDirectory: true)
+        let clock = ContinuousClock()
+        var projected: [LibraryFolderRow] = []
+        let elapsed = clock.measure {
+            projected = LibraryFolderTreeProjection.inserting(insertedURL, under: root, into: rows)
+        }
+
+        #expect(elapsed < .milliseconds(50))
+        #expect(projected.count == 10_002)
+        #expect(projected[5_002].url == insertedURL)
+    }
+
+    @MainActor
+    @Test
+    func folderLifecycleProjectsLoadedSnapshotWithoutSynchronousRescan() throws {
+        let suiteName = "mudsnote.folder-lifecycle-snapshot-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-folder-lifecycle-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.createFolder(named: "Existing")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+
+        let externalFolder = store.notesDirectory.appendingPathComponent("External Drift", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalFolder, withIntermediateDirectories: true)
+        let created = try controller.createLibraryFolder(named: "Created")
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Created"
+        } == true)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "External Drift"
+        } == false)
+
+        let renamed = try controller.renameSelectedFolderForLibrary(to: "Renamed")
+        #expect(renamed.deletingLastPathComponent() == created.deletingLastPathComponent())
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Renamed"
+        } == true)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "External Drift"
+        } == false)
+
+        try controller.deleteSelectedFolderForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Renamed"
+        } == false)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "External Drift"
+        } == false)
+    }
+
     @MainActor
     @Test
     func libraryWindowCreatesMovesRenamesAndDeletesFolders() throws {

@@ -270,6 +270,13 @@
 - A 5,000-run alternating bold/plain document serializes in stable debug runs of about `27ms`, down from roughly `41ms`, with a `<50ms` regression gate and full-output equality assertion.
 - Full tests, packaging, installed-app smoke, strict signature verification, and content-state visual QA pass. Evidence is `/tmp/mudsnote-visual-qa-203-serialization/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (204)
+
+- Folder create, rename, and delete commands no longer rebuild the complete source hierarchy from disk on the main actor.
+- `LibraryFolderTreeProjection` inserts sorted children, remaps renamed subtrees, removes deleted subtrees, and updates only the affected parent disclosure state within the existing maximum depth.
+- Deferred folder scans carry a generation; stale completions reschedule instead of overwriting a newer lifecycle projection.
+- A 10,000-row insertion stays below `50ms`, snapshot-isolation and existing lifecycle tests pass, and installed visual evidence is `/tmp/mudsnote-visual-qa-204-folder-projection/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
