@@ -1263,9 +1263,15 @@ struct MarkdownRichEditorTests {
         #expect(groupCell.titleLabel.stringValue == "Today")
         #expect(LibraryGroupHeaderCellView.titleLeadingInset == 20)
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
-        #expect(LibraryGroupHeaderCellView.titleBottomInset == 15)
+        #expect(groupCell.isFirstGroup)
+        #expect(groupCell.titleBottomInset == LibraryGroupHeaderCellView.firstTitleBottomInset)
+        #expect(LibraryGroupHeaderCellView.firstTitleBottomInset == 15)
+        groupCell.isFirstGroup = false
+        #expect(groupCell.titleBottomInset == LibraryGroupHeaderCellView.followingTitleBottomInset)
+        #expect(LibraryGroupHeaderCellView.followingTitleBottomInset == 2)
+        groupCell.isFirstGroup = true
         #expect(
-            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.titleBottomInset == 30
+            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.firstTitleBottomInset == 30
         )
         let groupRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 0) as? LibraryNoteRowView)
         groupRowView.setPointerHovered(true)
@@ -1278,9 +1284,10 @@ struct MarkdownRichEditorTests {
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
-        #expect(LibraryNoteRowView.selectionLeadingInset == 10)
-        #expect(LibraryNoteRowView.selectionTrailingInset == 31)
-        #expect(LibraryNoteRowView.selectionVerticalInset == 4)
+        #expect(LibraryNoteRowView.selectionLeadingInset == 15)
+        #expect(LibraryNoteRowView.selectionTrailingInset == 22)
+        #expect(LibraryNoteRowView.selectionTopInset == 6)
+        #expect(LibraryNoteRowView.selectionBottomInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
         let selectionFill = try #require(LibraryNoteRowView.selectionFillColor.usingColorSpace(.genericRGB))
         #expect(abs(selectionFill.redComponent - 0.492) < 0.001)
@@ -1289,7 +1296,7 @@ struct MarkdownRichEditorTests {
         #expect(abs(selectionFill.alphaComponent - 0.96) < 0.001)
         #expect(LibraryNoteRowView.hoverLeadingInset == LibraryNoteRowView.selectionLeadingInset)
         #expect(LibraryNoteRowView.hoverTrailingInset == LibraryNoteRowView.selectionTrailingInset)
-        #expect(LibraryNoteRowView.hoverVerticalInset < LibraryNoteRowView.selectionVerticalInset)
+        #expect(LibraryNoteRowView.hoverVerticalInset < LibraryNoteRowView.selectionBottomInset)
         #expect(LibraryNoteRowView.hoverCornerRadius == LibraryNoteRowView.selectionCornerRadius)
         #expect(LibraryNoteRowView.hoverFillColor.alphaComponent < 0.3)
         #expect(LibraryNoteRowView.separatorLeadingInset == LibraryNoteCellView.contentLeadingInset + 2)
@@ -1319,10 +1326,10 @@ struct MarkdownRichEditorTests {
         let windowAspectRatio = LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height
         #expect(windowAspectRatio > 1.45 && windowAspectRatio < 1.60)
         #expect(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth == 5)
-        #expect(LibraryNoteCellView.contentTopInset == 6)
-        #expect(LibraryNoteCellView.contentLeadingInset == 35)
-        #expect(LibraryNoteCellView.contentBottomInset == 6)
-        #expect(LibraryNoteCellView.contentTrailingInset == 43)
+        #expect(LibraryNoteCellView.contentTopInset == 4.5)
+        #expect(LibraryNoteCellView.contentLeadingInset == 40)
+        #expect(LibraryNoteCellView.contentBottomInset == 7.5)
+        #expect(LibraryNoteCellView.contentTrailingInset == 34)
         #expect(
             LibraryNoteCellView.contentTrailingInset
                 == LibraryNoteRowView.selectionTrailingInset
@@ -1332,7 +1339,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.selectionTextTrailingPadding == 10)
         #expect(LibraryNoteCellView.stackTextTrailingAdjustment == 2)
         #expect(LibraryNoteCellView.minimumTextWidth == 40)
-        #expect(LibraryNoteCellView.textRowSpacing == 1)
+        #expect(LibraryNoteCellView.textRowSpacing == 2.5)
         #expect(LibraryNotesLayout.noteGroupFontSize == 15)
         #expect(LibraryNotesLayout.noteGroupFontWeight == .bold)
         #expect(LibraryNotesLayout.noteTitleFontSize == 14)

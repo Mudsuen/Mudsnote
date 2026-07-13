@@ -1153,6 +1153,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Re-measured the current installed app against the state-matched `304x292pt` reference, then moved the editor stack top inset from `6pt` to `18pt` and its horizontal inset from `22pt` to `28pt`. The resulting title bounds are `x=459–546, y=196–238px` versus Apple Notes' `x=459–543, y=197–238px`, while the internal date/title/body spacing remains unchanged.
 - Lesson: Shared editor origin changes must be driven by current, deterministic state-matched captures; older crops with different window state can accumulate apparently reasonable adjustments into a visible overcorrection.
 
+### 193. Pixel-matched list section rhythm
+
+- Problem: Direct inspection of the original `2x` collapsed captures showed that the previous scaled montage misrepresented list geometry: the selected card was actually `5pt` too far left, its top edge extended `2pt` too high, and later group titles sat about `13pt` too high inside otherwise correctly sized rows. The three metadata lines were also vertically compressed.
+- Fix: Measured original pixels instead of the presentation montage, restored the `15pt` card and `40pt` text starts, set the trailing card inset to `22pt`, and used asymmetric `6/4pt` top/bottom selection insets. Later group labels now use a `2pt` bottom inset while the first remains `15pt`; note metadata uses `2.5pt` row spacing with `4.5/7.5pt` content insets. Apple Notes and Mudsnote now share the exact selected-card bounds `30,214–355,349px` at `2x`, and the later group title begins at the same `y=418px`.
+- Lesson: Measure geometry in the original backing-scale images, not a rescaled comparison canvas. First and subsequent section headings can require different placement even when their row heights are identical.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

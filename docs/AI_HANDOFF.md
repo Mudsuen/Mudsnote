@@ -191,6 +191,13 @@
 - In the deterministic collapsed fixture, the installed title now measures `x=459–546, y=196–238px` at `2x`, against Apple Notes' `x=459–543, y=197–238px`.
 - Shared editor-origin calibration must use the current state-matched capture; do not reuse older clear crops without reproducing their exact window, pane, and selected-note state.
 
+## Latest iteration (193)
+
+- Original `2x` pixel inspection supersedes the scaled-montage estimate from iteration 191: selected-card leading/trailing insets are `15/22pt`, note text starts at `40pt`, and separators start at `42pt`.
+- The selected surface uses asymmetric `6pt` top and `4pt` bottom insets; its installed bounds exactly match Apple Notes at `30,214–355,349px` in the collapsed fixture.
+- First group labels retain a `15pt` bottom inset while following groups use `2pt`; this aligns the second section at `y=418px` without changing the correct `45pt` group or `76pt` note row heights.
+- Note metadata uses `2.5pt` vertical spacing and `4.5/7.5pt` top/bottom content insets; the remaining line-bound differences are within roughly `1–2pt` of native font rasterization.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
