@@ -1107,6 +1107,16 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(memoQueryInInbox.map(\.location), [String(localized: "Inbox")])
     }
 
+    func testSearchHighlightingMatchesMultipleTermsWithoutCaseOrDiacriticSensitivity() {
+        let text = "Résumé restore RESTORE"
+        let matches = SearchHighlighting.ranges(
+            in: text,
+            query: "resume restore"
+        ).map { String(text[$0]) }
+
+        XCTAssertEqual(matches, ["Résumé", "restore", "RESTORE"])
+    }
+
     @MainActor
     func testAppModelPublishesCompletedSearchIdentity() async throws {
         let root = try temporaryRoot()

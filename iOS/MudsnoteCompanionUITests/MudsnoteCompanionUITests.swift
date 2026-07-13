@@ -371,6 +371,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let result = app.buttons["search-result-file:Projects/UI Lifecycle.md"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
+        let highlightedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        highlightedScreenshot.name = "Highlighted search result"
+        highlightedScreenshot.lifetime = .keepAlways
+        add(highlightedScreenshot)
         let scope = app.segmentedControls["search-scope-picker"]
         XCTAssertTrue(scope.exists)
 

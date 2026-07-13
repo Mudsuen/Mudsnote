@@ -235,7 +235,10 @@ struct LibraryHomeView: View {
                             isSearchFocused = false
                             appModel.openSearchResult(result)
                         } label: {
-                            SearchResultRow(result: result)
+                            SearchResultRow(
+                                result: result,
+                                query: appModel.completedSearchQuery
+                            )
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("search-result-\(result.id)")
@@ -276,20 +279,21 @@ struct LibraryHomeView: View {
 
 private struct SearchResultRow: View {
     var result: MarkdownSearchResult
+    var query: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(result.title)
+            SearchHighlightedText(text: result.title, query: query)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(MudsnoteColors.text)
                 .lineLimit(1)
             if !result.context.isEmpty {
-                Text(result.context)
+                SearchHighlightedText(text: result.context, query: query)
                     .font(.subheadline)
                     .foregroundStyle(MudsnoteColors.muted)
                     .lineLimit(2)
             }
-            Text(result.location)
+            SearchHighlightedText(text: result.location, query: query)
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.primary)
                 .lineLimit(1)
@@ -300,6 +304,54 @@ private struct SearchResultRow: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(MudsnoteColors.line).frame(height: 1).padding(.leading, 18)
         }
+    }
+}
+
+private struct SearchHighlightedText: View {
+    var text: String
+    var query: String
+
+    var body: some View {
+        Text(highlightedText)
+    }
+
+    private var highlightedText: AttributedString {
+        var attributed = AttributedString(text)
+        for range in SearchHighlighting.ranges(in: text, query: query) {
+            guard let lowerBound = AttributedString.Index(range.lowerBound, within: attributed),
+                  let upperBound = AttributedString.Index(range.upperBound, within: attributed) else {
+                continue
+            }
+            attributed[lowerBound..<upperBound].backgroundColor = Color.yellow.opacity(0.38)
+            attributed[lowerBound..<upperBound].foregroundColor = MudsnoteColors.text
+        }
+        return attributed
+    }
+}
+
+enum SearchHighlighting {
+    static func ranges(in text: String, query: String) -> [Range<String.Index>] {
+        let terms = query
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        var matches: [Range<String.Index>] = []
+        for term in terms {
+            var remaining = text.startIndex..<text.endIndex
+            while let match = text.range(
+                of: term,
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                range: remaining,
+                locale: .current
+            ) {
+                if !matches.contains(where: { $0.overlaps(match) }) {
+                    matches.append(match)
+                }
+                guard match.upperBound < text.endIndex else { break }
+                remaining = match.upperBound..<text.endIndex
+            }
+        }
+        return matches.sorted { $0.lowerBound < $1.lowerBound }
     }
 }
 
