@@ -3,24 +3,37 @@ import AVFoundation
 import UIKit
 
 struct MarkdownPreviewView: View {
+    private enum Source {
+        case memo(MemoBlock)
+        case document(MarkdownDocument)
+    }
+
     @EnvironmentObject private var appModel: AppModel
+    @FocusState private var editorFocused: Bool
+    private var source: Source
     private var title: String
     private var metadata: String
-    private var markdown: String
-    @State private var showRaw = false
+    @State private var draftMarkdown: String
+    @State private var originalMarkdown: String
+    @State private var isEditing = false
+    @State private var isSaving = false
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
 
     init(memo: MemoBlock) {
+        source = .memo(memo)
         title = String(localized: "Markdown")
         metadata = memo.dateText
-        markdown = memo.body
+        _draftMarkdown = State(initialValue: memo.body)
+        _originalMarkdown = State(initialValue: memo.body)
     }
 
     init(document: MarkdownDocument) {
+        source = .document(document)
         title = document.title
         metadata = document.relativePath
-        markdown = document.markdown
+        _draftMarkdown = State(initialValue: document.markdown)
+        _originalMarkdown = State(initialValue: document.markdown)
     }
 
     var body: some View {
@@ -31,13 +44,23 @@ struct MarkdownPreviewView: View {
                         .font(.system(.headline, design: .rounded, weight: .semibold))
                         .foregroundStyle(MudsnoteColors.text)
 
-                    if showRaw {
-                        Text(markdown)
+                    if isEditing {
+                        TextEditor(text: $draftMarkdown)
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(MudsnoteColors.text)
-                            .textSelection(.enabled)
+                            .scrollContentBackground(.hidden)
+                            .focused($editorFocused)
+                            .frame(minHeight: 420)
+                            .accessibilityIdentifier("markdown-editor")
                     } else {
                         markdownBody
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("rendered-markdown")
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                isEditing = true
+                                editorFocused = true
+                            }
                     }
                 }
                 .padding(MudsnoteSpacing.safeHorizontal)
@@ -46,14 +69,24 @@ struct MarkdownPreviewView: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(showRaw ? "Preview" : "Raw") {
-                        showRaw.toggle()
+                if isEditing {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            Task { await saveAndFinishEditing() }
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                        .disabled(isSaving)
+                        .accessibilityLabel("Save note")
                     }
-                    .foregroundStyle(MudsnoteColors.text)
                 }
             }
         }
+        .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
         .onAppear(perform: beginLibraryAccess)
         .onDisappear(perform: endLibraryAccess)
     }
@@ -148,10 +181,43 @@ struct MarkdownPreviewView: View {
     }
 
     private func renderLines() -> [String] {
-        markdown
+        draftMarkdown
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    @MainActor
+    private func saveAndFinishEditing() async {
+        editorFocused = false
+        guard draftMarkdown != originalMarkdown else {
+            isEditing = false
+            return
+        }
+        isSaving = true
+        defer { isSaving = false }
+
+        let saved: Bool
+        switch source {
+        case .memo(let memo):
+            saved = await appModel.saveMemo(
+                memo,
+                body: draftMarkdown,
+                expectedBody: originalMarkdown
+            ) != nil
+        case .document(let document):
+            saved = await appModel.saveDocument(
+                document,
+                markdown: draftMarkdown,
+                expectedMarkdown: originalMarkdown
+            ) != nil
+        }
+        if saved {
+            originalMarkdown = draftMarkdown
+            isEditing = false
+        } else {
+            editorFocused = true
+        }
     }
 }
 

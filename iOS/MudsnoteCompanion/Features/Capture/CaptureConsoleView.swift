@@ -98,10 +98,10 @@ struct CaptureConsoleView: View {
             Spacer()
 
             Button {
-                appModel.sendDraft(continueCapturing: true)
+                isBodyFocused = false
+                appModel.sendDraft(continueCapturing: false)
                 selectedRoute = .text
                 selectedPhotoItem = nil
-                isBodyFocused = true
             } label: {
                 Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
             }

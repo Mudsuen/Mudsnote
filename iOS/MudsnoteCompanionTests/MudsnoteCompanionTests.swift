@@ -431,6 +431,53 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
 
+    func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let project = root.appendingPathComponent("Projects/Launch.md")
+        try FileManager.default.createDirectory(
+            at: project.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Launch\n\nCommercial architecture roadmap\n".write(
+            to: project,
+            atomically: true,
+            encoding: .utf8
+        )
+        let inbox = root.appendingPathComponent("Inbox.md")
+        try (try String(contentsOf: inbox, encoding: .utf8) + """
+
+        ## 2026-07-13 09:00
+
+        Unique inbox thought
+
+        #strategy
+
+        """).write(to: inbox, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+
+        let fileResults = try await store.search(query: "commercial architecture")
+        XCTAssertEqual(fileResults.map(\.location), ["Projects/Launch.md"])
+        if case .file = try XCTUnwrap(fileResults.first).destination {
+            // Expected file-level result.
+        } else {
+            XCTFail("Expected a file search result")
+        }
+
+        let memoResults = try await store.search(query: "unique strategy")
+        XCTAssertEqual(memoResults.count, 1)
+        XCTAssertEqual(memoResults.first?.location, String(localized: "Inbox"))
+        if case .memo(let memo) = try XCTUnwrap(memoResults.first).destination {
+            XCTAssertTrue(memo.body.contains("Unique inbox thought"))
+        } else {
+            XCTFail("Expected an individual Inbox memo result")
+        }
+    }
+
     func testAttachmentPreviewCopiesAuthorizedFileAndRejectsTraversal() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -482,6 +529,68 @@ final class MudsnoteCompanionTests: XCTestCase {
             XCTFail("Path traversal should be rejected")
         } catch {
             XCTAssertEqual(error as? MarkdownDocumentError, .invalidPath)
+        }
+    }
+
+    func testMarkdownDocumentSaveRejectsExternalOverwrite() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Daily/editable.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Daily/editable.md")
+
+        let saved = try await store.saveMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: "# Updated\n",
+            expectedMarkdown: original.markdown
+        )
+        XCTAssertEqual(saved.markdown, "# Updated\n")
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Updated\n")
+
+        try "# External change\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        await XCTAssertThrowsErrorAsync(
+            try await store.saveMarkdownDocument(
+                relativePath: original.relativePath,
+                markdown: "# Stale edit\n",
+                expectedMarkdown: saved.markdown
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownDocumentError, .changedExternally)
+        }
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# External change\n")
+    }
+
+    func testInboxMemoEditRejectsStaleBody() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let inbox = root.appendingPathComponent("Inbox.md")
+        try """
+        # Inbox
+
+        ## 2026-07-13 10:00
+
+        Original memo
+
+        """.write(to: inbox, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let memo = try XCTUnwrap(InboxParser.parse(try String(contentsOf: inbox, encoding: .utf8)).first)
+
+        try await store.applyInboxMutation(
+            .replaceBody(memoID: memo.id, expectedBody: memo.body, newBody: "Edited memo")
+        )
+        XCTAssertTrue(try String(contentsOf: inbox, encoding: .utf8).contains("Edited memo"))
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.applyInboxMutation(
+                .replaceBody(memoID: memo.id, expectedBody: memo.body, newBody: "Stale overwrite")
+            )
+        ) { error in
+            XCTAssertEqual(error as? InboxMutationError, .memoChanged)
         }
     }
 

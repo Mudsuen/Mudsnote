@@ -3,16 +3,9 @@ import SwiftUI
 
 struct LibraryHomeView: View {
     @EnvironmentObject private var appModel: AppModel
+    @FocusState private var isSearchFocused: Bool
     @State private var searchQuery = ""
     var chooseFolder: () -> Void
-
-    private var filteredFiles: [RecentMarkdownFile] {
-        guard !searchQuery.isEmpty else { return [] }
-        return appModel.libraryFiles.filter {
-            $0.title.localizedCaseInsensitiveContains(searchQuery)
-                || $0.relativePath.localizedCaseInsensitiveContains(searchQuery)
-        }
-    }
 
     var body: some View {
         NavigationStack {
@@ -34,11 +27,22 @@ struct LibraryHomeView: View {
                         .padding(.bottom, 110)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(NotesCloneColors.background)
             .refreshable {
                 await appModel.refreshInbox()
             }
             .navigationTitle("Library")
+            .task(id: searchQuery) {
+                let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    appModel.clearSearch()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                await appModel.searchLibrary(query: trimmed)
+            }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
@@ -58,9 +62,14 @@ struct LibraryHomeView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                NotesBottomCommandBar(searchText: $searchQuery) {
+                NotesBottomCommandBar(
+                    searchText: $searchQuery,
+                    searchFocused: $isSearchFocused
+                ) {
+                    isSearchFocused = false
                     appModel.showCapture(.audio)
                 } newNote: {
+                    isSearchFocused = false
                     appModel.showCapture(.text)
                 }
             }
@@ -137,7 +146,11 @@ struct LibraryHomeView: View {
 
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if filteredFiles.isEmpty {
+            if appModel.isSearching {
+                ProgressView("Searching…")
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
+            } else if appModel.searchResults.isEmpty {
                 Text("No Results")
                     .foregroundStyle(.secondary)
                     .padding(18)
@@ -145,11 +158,12 @@ struct LibraryHomeView: View {
                     .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
             } else {
                 notesCard {
-                    ForEach(filteredFiles) { file in
+                    ForEach(appModel.searchResults) { result in
                         Button {
-                            appModel.openFile(file)
+                            isSearchFocused = false
+                            appModel.openSearchResult(result)
                         } label: {
-                            RecentFileRow(file: file)
+                            SearchResultRow(result: result)
                         }
                         .buttonStyle(.plain)
                     }
@@ -173,6 +187,35 @@ struct LibraryHomeView: View {
         .overlay {
             RoundedRectangle(cornerRadius: MudsnoteRadius.card)
                 .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+    }
+}
+
+private struct SearchResultRow: View {
+    var result: MarkdownSearchResult
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(result.title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(MudsnoteColors.text)
+                .lineLimit(1)
+            if !result.context.isEmpty {
+                Text(result.context)
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(2)
+            }
+            Text(result.location)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1).padding(.leading, 18)
         }
     }
 }
@@ -289,6 +332,7 @@ struct TagChip: View {
 
 struct NotesBottomCommandBar: View {
     @Binding var searchText: String
+    var searchFocused: FocusState<Bool>.Binding
     var record: () -> Void
     var newNote: () -> Void
 
@@ -299,6 +343,7 @@ struct NotesBottomCommandBar: View {
                     .font(.system(size: 19, weight: .medium))
                 TextField("Search", text: $searchText)
                     .font(.body)
+                    .focused(searchFocused)
                     .textInputAutocapitalization(.never)
                     .submitLabel(.search)
                 if !searchText.isEmpty {
@@ -333,7 +378,8 @@ struct NotesBottomCommandBar: View {
             Button(action: newNote) {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(Color.black)
                     .frame(width: 54, height: 54)
                     .background(MudsnoteColors.primary, in: Circle())
                     .overlay {

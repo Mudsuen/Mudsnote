@@ -33,6 +33,8 @@ final class AppModel: ObservableObject {
     @Published var query = ""
     @Published var syncStatus: SyncStatus = .idle
     @Published var conflictWarnings: [String] = []
+    @Published private(set) var searchResults: [MarkdownSearchResult] = []
+    @Published private(set) var isSearching = false
 
     let folderAccess = FolderAccessService()
     let fileStore = MarkdownFileStore()
@@ -40,6 +42,7 @@ final class AppModel: ObservableObject {
 
     private var queue: PendingWriteQueue?
     private var pendingCaptureRoute: CaptureRoute?
+    private var activeSearchQuery = ""
 
     init(bootstrapImmediately: Bool = true) {
         if bootstrapImmediately {
@@ -317,6 +320,93 @@ final class AppModel: ObservableObject {
                 statusToast = .error(String(localized: "Could not open Markdown file"))
             }
         }
+    }
+
+    func searchLibrary(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeSearchQuery = trimmed
+        guard !trimmed.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        do {
+            let results = try await fileStore.search(query: trimmed)
+            guard !Task.isCancelled else { return }
+            searchResults = results
+        } catch is CancellationError {
+            return
+        } catch {
+            searchResults = []
+            statusToast = .error(String(localized: "Search could not be completed"))
+        }
+        isSearching = false
+    }
+
+    func clearSearch() {
+        activeSearchQuery = ""
+        searchResults = []
+        isSearching = false
+    }
+
+    func openSearchResult(_ result: MarkdownSearchResult) {
+        switch result.destination {
+        case .file(let file):
+            openFile(file)
+        case .memo(let memo):
+            selectedMemo = memo
+        }
+    }
+
+    func saveDocument(
+        _ document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        do {
+            let updated = try await fileStore.saveMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Saved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func saveMemo(
+        _ memo: MemoBlock,
+        body: String,
+        expectedBody: String
+    ) async -> MemoBlock? {
+        do {
+            try await fileStore.applyInboxMutation(
+                .replaceBody(memoID: memo.id, expectedBody: expectedBody, newBody: body)
+            )
+            await refreshInboxDelta()
+            guard let updated = inboxItems.first(where: { $0.id == memo.id }) else {
+                throw InboxMutationError.memoNotFound
+            }
+            selectedMemo = updated
+            statusToast = .saved(String(localized: "Saved"))
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    private func refreshActiveSearchIfNeeded() async {
+        guard !activeSearchQuery.isEmpty else { return }
+        await searchLibrary(query: activeSearchQuery)
     }
 
     func previewURL(for attachment: LibraryAttachment) async -> URL? {

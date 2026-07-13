@@ -1,13 +1,21 @@
 import Foundation
 
 actor MarkdownFileStore {
+    private struct SearchCacheEntry {
+        var modifiedAt: Date
+        var byteCount: Int
+        var markdown: String
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
+    private var searchCache: [String: SearchCacheEntry] = [:]
     private let fileManager = FileManager.default
 
     func configure(root: URL) {
         self.root = root
         cachedLibrarySnapshot = nil
+        searchCache = [:]
     }
 
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
@@ -143,6 +151,70 @@ actor MarkdownFileStore {
         )
     }
 
+    func search(query: String, limit: Int = 80) throws -> [MarkdownSearchResult] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let terms = MarkdownSearch.normalizedTerms(query)
+        guard !terms.isEmpty else { return [] }
+        let files: [RecentMarkdownFile]
+        if let cachedLibrarySnapshot {
+            files = cachedLibrarySnapshot.allFiles
+        } else {
+            files = try loadLibrarySnapshot().allFiles
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        var matches: [MarkdownSearchResult] = []
+        var activePaths = Set<String>()
+        for file in files {
+            try Task.checkCancellation()
+            guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
+            activePaths.insert(file.relativePath)
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let modifiedAt = values?.contentModificationDate ?? file.modifiedAt
+            let byteCount = values?.fileSize ?? 0
+            let markdown: String
+            if let cached = searchCache[file.relativePath],
+               cached.modifiedAt == modifiedAt,
+               cached.byteCount == byteCount {
+                markdown = cached.markdown
+            } else {
+                markdown = try boundedSearchText(from: url)
+                if byteCount <= 256 * 1_024 {
+                    searchCache[file.relativePath] = SearchCacheEntry(
+                        modifiedAt: modifiedAt,
+                        byteCount: byteCount,
+                        markdown: markdown
+                    )
+                    trimSearchCacheIfNeeded()
+                } else {
+                    searchCache.removeValue(forKey: file.relativePath)
+                }
+            }
+
+            if file.relativePath == "Inbox.md" {
+                for memo in InboxParser.parse(markdown) {
+                    if let result = MarkdownSearch.match(memo: memo, terms: terms) {
+                        matches.append(result)
+                    }
+                }
+            } else if let result = MarkdownSearch.match(file: file, markdown: markdown, terms: terms) {
+                matches.append(result)
+            }
+        }
+        searchCache = searchCache.filter { activePaths.contains($0.key) }
+
+        return matches
+            .sorted {
+                if $0.score == $1.score { return $0.modifiedAt > $1.modifiedAt }
+                return $0.score > $1.score
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     func prepareAttachmentPreview(relativePath: String) throws -> URL {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(
@@ -200,6 +272,11 @@ actor MarkdownFileStore {
                     if items[index].body.split(whereSeparator: \.isWhitespace).contains(Substring(normalizedTag)) == false {
                         items[index].body += items[index].body.isEmpty ? normalizedTag : "\n\n\(normalizedTag)"
                     }
+                case .replaceBody(_, let expectedBody, let newBody):
+                    guard items[index].body == expectedBody else {
+                        throw InboxMutationError.memoChanged
+                    }
+                    items[index].body = newBody.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
 
                 let updatedMarkdown = InboxParser.markdown(forDisplayItems: items)
@@ -236,6 +313,68 @@ actor MarkdownFileStore {
                 PendingAttachment(relativePath: $0.relativePath, base64Data: $0.data.base64EncodedString())
             }
         )
+    }
+
+    func saveMarkdownDocument(
+        relativePath: String,
+        markdown: String,
+        expectedMarkdown: String
+    ) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              fileURL.pathExtension.lowercased() == "md" else {
+            throw MarkdownDocumentError.invalidPath
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var saveError: Error?
+        coordinator.coordinate(writingItemAt: fileURL, options: .forMerging, error: &coordinationError) { coordinatedURL in
+            do {
+                let current = try String(contentsOf: coordinatedURL, encoding: .utf8)
+                guard current == expectedMarkdown else {
+                    throw MarkdownDocumentError.changedExternally
+                }
+                try markdown.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+            } catch {
+                saveError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let saveError { throw saveError }
+        cachedLibrarySnapshot = nil
+        searchCache.removeValue(forKey: relativePath)
+        return MarkdownDocument(
+            id: relativePath,
+            title: fileURL.deletingPathExtension().lastPathComponent,
+            relativePath: relativePath,
+            markdown: markdown
+        )
+    }
+
+    private func boundedSearchText(from url: URL) throws -> String {
+        let maximumBytes = 32 * 1_024 * 1_024
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: maximumBytes) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func trimSearchCacheIfNeeded() {
+        let maximumEntries = 64
+        guard searchCache.count > maximumEntries else { return }
+        let overflow = searchCache.count - maximumEntries
+        let oldestKeys = searchCache
+            .sorted { $0.value.modifiedAt < $1.value.modifiedAt }
+            .prefix(overflow)
+            .map(\.key)
+        for key in oldestKeys {
+            searchCache.removeValue(forKey: key)
+        }
     }
 
     func performPendingWrite(_ pending: PendingWrite) async throws {
@@ -427,6 +566,95 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var modifiedAt: Date
 }
 
+struct MarkdownSearchResult: Identifiable, Equatable {
+    enum Destination: Equatable {
+        case file(RecentMarkdownFile)
+        case memo(MemoBlock)
+    }
+
+    var id: String
+    var title: String
+    var context: String
+    var location: String
+    var score: Int
+    var modifiedAt: Date
+    var destination: Destination
+}
+
+enum MarkdownSearch {
+    static func normalizedTerms(_ query: String) -> [String] {
+        query
+            .split(whereSeparator: \.isWhitespace)
+            .map { normalize(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    static func match(
+        file: RecentMarkdownFile,
+        markdown: String,
+        terms: [String]
+    ) -> MarkdownSearchResult? {
+        let title = normalize(file.title)
+        let path = normalize(file.relativePath)
+        let body = normalize(markdown)
+        guard terms.allSatisfy({ title.contains($0) || path.contains($0) || body.contains($0) }) else {
+            return nil
+        }
+        let score = terms.reduce(into: 0) { total, term in
+            if title == term { total += 1_000 }
+            else if title.hasPrefix(term) { total += 700 }
+            else if title.contains(term) { total += 500 }
+            if path.contains(term) { total += 180 }
+            if body.contains(term) { total += 80 }
+        }
+        return MarkdownSearchResult(
+            id: "file:\(file.relativePath)",
+            title: file.title,
+            context: context(in: markdown, matching: terms),
+            location: file.relativePath,
+            score: score,
+            modifiedAt: file.modifiedAt,
+            destination: .file(file)
+        )
+    }
+
+    static func match(memo: MemoBlock, terms: [String]) -> MarkdownSearchResult? {
+        let searchable = normalize([memo.body, memo.tags.joined(separator: " "), memo.dateText].joined(separator: " "))
+        guard terms.allSatisfy(searchable.contains) else { return nil }
+        let tagText = normalize(memo.tags.joined(separator: " "))
+        let score = terms.reduce(into: 300) { total, term in
+            if tagText.contains(term) { total += 250 }
+            if searchable.contains(term) { total += 100 }
+        }
+        return MarkdownSearchResult(
+            id: "memo:\(memo.id)",
+            title: memo.body.split(separator: "\n").first.map(String.init) ?? String(localized: "Untitled memo"),
+            context: context(in: memo.body, matching: terms),
+            location: String(localized: "Inbox"),
+            score: score,
+            modifiedAt: .distantPast,
+            destination: .memo(memo)
+        )
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+    }
+
+    private static func context(in markdown: String, matching terms: [String]) -> String {
+        let meaningfulLines = markdown
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("<!--") }
+        let matched = meaningfulLines.first { line in
+            let normalized = normalize(line)
+            return terms.contains(where: normalized.contains)
+        }
+        let line = matched ?? meaningfulLines.first ?? ""
+        return String(line.prefix(180))
+    }
+}
+
 struct MarkdownLibrarySnapshot: Equatable {
     var inboxItems: [MemoBlock]
     var allFiles: [RecentMarkdownFile]
@@ -479,9 +707,15 @@ struct MarkdownDocument: Identifiable, Equatable {
 
 enum MarkdownDocumentError: LocalizedError, Equatable {
     case invalidPath
+    case changedExternally
 
     var errorDescription: String? {
-        String(localized: "This Markdown file is outside the authorized library.")
+        switch self {
+        case .invalidPath:
+            String(localized: "This Markdown file is outside the authorized library.")
+        case .changedExternally:
+            String(localized: "This note changed elsewhere. Reopen it before editing again.")
+        }
     }
 }
 
@@ -523,16 +757,18 @@ enum InboxMutation: Equatable {
     case delete(memoID: String)
     case pin(memoID: String)
     case addTag(memoID: String, tag: String)
+    case replaceBody(memoID: String, expectedBody: String, newBody: String)
 
     var memoID: String {
         switch self {
-        case .delete(let memoID), .pin(let memoID), .addTag(let memoID, _): memoID
+        case .delete(let memoID), .pin(let memoID), .addTag(let memoID, _), .replaceBody(let memoID, _, _): memoID
         }
     }
 }
 
-enum InboxMutationError: LocalizedError {
+enum InboxMutationError: LocalizedError, Equatable {
     case memoNotFound
+    case memoChanged
 
     var errorDescription: String? {
         String(localized: "The memo changed before this action completed. Refresh and try again.")

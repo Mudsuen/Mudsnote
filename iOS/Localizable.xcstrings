@@ -21,6 +21,46 @@
         }
       }
     },
+    "Search could not be completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法完成搜索"
+          }
+        }
+      }
+    },
+    "Searching…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索…"
+          }
+        }
+      }
+    },
+    "Untitled memo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名笔记"
+          }
+        }
+      }
+    },
+    "This note changed elsewhere. Reopen it before editing again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条笔记已在其他位置更改，请重新打开后再编辑。"
+          }
+        }
+      }
+    },
     "All Notes": {
       "localizations": {
         "zh-Hans": {

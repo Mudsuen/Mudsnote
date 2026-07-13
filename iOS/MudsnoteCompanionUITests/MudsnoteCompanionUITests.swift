@@ -29,7 +29,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Folder Unavailable"].exists)
     }
 
-    func testContinuousCaptureClearsDraftAndKeepsSelectedTarget() {
+    func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
         XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
@@ -46,22 +46,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         editor.typeText("First UI memo")
         XCTAssertTrue(saveButton.isEnabled)
         saveButton.tap()
-        XCTAssertTrue(app.staticTexts["Saved. Ready for next"].waitForExistence(timeout: 5))
-        XCTAssertTrue(waitForEmptyValue(of: editor))
-        XCTAssertTrue(editor.exists)
-
-        targetMenu.tap()
-        let dailyButton = app.buttons["Daily"]
-        XCTAssertTrue(dailyButton.waitForExistence(timeout: 5))
-        dailyButton.tap()
-        XCTAssertEqual(targetMenu.value as? String, "Daily")
-
-        editor.tap()
-        editor.typeText("Second UI memo")
-        saveButton.tap()
-        XCTAssertTrue(waitForEmptyValue(of: editor))
-        XCTAssertEqual(targetMenu.value as? String, "Daily")
-        XCTAssertTrue(editor.exists)
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(editor.exists)
     }
 
     func testSimplifiedLibraryOpensRealMarkdownFile() {
@@ -78,7 +65,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(inbox.waitForExistence(timeout: 5))
         inbox.tap()
         XCTAssertTrue(app.staticTexts["Inbox.md"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Raw"].exists)
+        XCTAssertFalse(app.buttons["Raw"].exists)
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.tap()
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
     }
 
     func testCaptureCommandsStayInSingleRow() {
