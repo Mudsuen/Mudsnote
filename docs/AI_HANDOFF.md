@@ -92,6 +92,11 @@
 - The editor content stack begins `12pt` below the safe-area boundary instead of `18pt`.
 - Date, title, and body move upward together; their internal spacing and shared horizontal reading edge remain unchanged.
 
+## Latest iteration (174)
+
+- Expanded Add Folder and Sidebar Toggle align with Apple Notes through a trailing-aligned `68pt` Add Folder wrapper, without introducing a spacer toolbar item or overflow chevron.
+- The five-button editor-tools glass group is `155pt` wide with `31pt` button tracks, matching the measured reference density.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

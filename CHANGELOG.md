@@ -1039,6 +1039,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reduced the editor stack's safe-area top inset from `18pt` to `12pt`, moving the date, title, and body upward together while preserving their calibrated internal spacing and reading edge.
 - Lesson: Once internal title rhythm is correct, vertical alignment should be adjusted at the shared content origin so date, title, body, and caret remain coherent.
 
+### 174. Reference-aligned source toolbar
+
+- Problem: In the expanded library, Add Folder and Sidebar Toggle sat roughly `11–15pt` left of their Apple Notes positions; adding a separate spacer item caused toolbar overflow.
+- Fix: Replaced the native Add Folder item body with a `68pt` wrapper whose `30pt` button is trailing-aligned, shifting both source controls into the measured reference positions without adding another toolbar item. Tightened the five-button editor-tools group from `184pt` to `155pt` with `31pt` button tracks, matching the reference and preserving toolbar capacity.
+- Lesson: Pane-local alignment should be expressed inside an existing toolbar item when possible; adding invisible toolbar items changes overflow behavior even when their apparent width is reclaimed elsewhere.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

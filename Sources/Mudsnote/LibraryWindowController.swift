@@ -311,11 +311,12 @@ enum LibraryNotesLayout {
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 180
     static let toolbarSearchWrapperHeight: CGFloat = 36
-    static let toolbarEditorToolsWidth: CGFloat = 184
+    static let toolbarEditorToolsWidth: CGFloat = 155
     static let toolbarEditorToolsHeight: CGFloat = 32
-    static let toolbarEditorToolButtonWidth: CGFloat = 35
+    static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
+    static let toolbarAddFolderWrapperWidth: CGFloat = 68
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -2090,7 +2091,7 @@ final class LibraryWindowController: NSWindowController,
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
         case Self.addFolderToolbarItemIdentifier:
-            return toolbarButtonItem(
+            return toolbarAddFolderItem(
                 identifier: itemIdentifier,
                 label: "添加文件夹",
                 symbolName: "folder.badge.plus",
@@ -2259,7 +2260,10 @@ final class LibraryWindowController: NSWindowController,
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(headerStack)
         headerStack.translatesAutoresizingMaskIntoConstraints = false
-        let titleLeadingConstraint = headerStack.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor)
+        let titleLeadingConstraint = headerStack.leadingAnchor.constraint(
+            equalTo: wrapper.leadingAnchor,
+            constant: 0
+        )
         noteListToolbarTitleLeadingConstraint = titleLeadingConstraint
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
@@ -2317,6 +2321,55 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.visibilityPriority = visibilityPriority
         item.isBordered = false
+        return item
+    }
+
+    private func toolbarAddFolderItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        symbolName: String,
+        action: Selector
+    ) -> NSToolbarItem {
+        let item = toolbarButtonItem(
+            identifier: identifier,
+            label: label,
+            symbolName: symbolName,
+            action: action
+        )
+        let button = NSButton(
+            image: item.image ?? NSImage(),
+            target: self,
+            action: action
+        )
+        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.focusRingType = .none
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
+        button.translatesAutoresizingMaskIntoConstraints = false
+
+        let wrapper = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarAddFolderWrapperWidth,
+            height: LibraryNotesLayout.toolbarCircularButtonSize
+        ))
+        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarAddFolderWrapper")
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(button)
+        NSLayoutConstraint.activate([
+            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarAddFolderWrapperWidth),
+            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
+            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
+            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
+            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
+        ])
+        item.view = wrapper
         return item
     }
 
@@ -5539,7 +5592,8 @@ final class LibraryWindowController: NSWindowController,
         noteListToolbarTitleLeadingConstraint?.constant = isVisible ? 0 : -24
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case Self.addFolderToolbarItemIdentifier, Self.sourceTrackingSeparatorToolbarItemIdentifier:
+            case Self.addFolderToolbarItemIdentifier,
+                 Self.sourceTrackingSeparatorToolbarItemIdentifier:
                 item.isHidden = !isVisible
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isVisible ? "隐藏资料库" : "显示资料库"

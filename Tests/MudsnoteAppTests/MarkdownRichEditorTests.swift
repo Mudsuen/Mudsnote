@@ -879,6 +879,7 @@ struct MarkdownRichEditorTests {
         #expect(noteSeparatorIndex < newNoteIndex)
         let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
         let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
+        #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.add-folder")
         let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
@@ -897,7 +898,10 @@ struct MarkdownRichEditorTests {
             if toolbarButtonID == "mudsnote.library.toolbar.toggle-sidebar" {
                 #expect(item.view is NSButton)
             } else {
-                #expect(item.view == nil)
+                let wrapper = try #require(item.view)
+                #expect(wrapper.identifier?.rawValue == "LibraryToolbarAddFolderWrapper")
+                #expect(wrapper.frame.width == LibraryNotesLayout.toolbarAddFolderWrapperWidth)
+                #expect(LibraryNotesLayout.toolbarAddFolderWrapperWidth == 68)
             }
             #expect(item.image != nil)
             #expect(item.toolTip == item.label)
@@ -1017,9 +1021,9 @@ struct MarkdownRichEditorTests {
         let editorToolsGlass = try #require(editorToolsView as? NSGlassEffectView)
         #expect(editorToolsGlass.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
         #expect(editorToolsGlass.style == .regular)
-        #expect(LibraryNotesLayout.toolbarEditorToolsWidth == 184)
+        #expect(LibraryNotesLayout.toolbarEditorToolsWidth == 155)
         #expect(LibraryNotesLayout.toolbarEditorToolsHeight == 32)
-        #expect(LibraryNotesLayout.toolbarEditorToolButtonWidth == 35)
+        #expect(LibraryNotesLayout.toolbarEditorToolButtonWidth == 31)
         #expect(LibraryNotesLayout.toolbarEditorToolButtonHeight == 26)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
         #expect(Set(editorToolButtons.compactMap { $0.identifier?.rawValue }) == [
