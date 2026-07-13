@@ -530,10 +530,11 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 6
-    static let contentLeadingInset: CGFloat = 40
+    static let contentLeadingInset: CGFloat = 35
     static let contentBottomInset: CGFloat = 6
-    static let contentTrailingInset: CGFloat = 31
+    static let contentTrailingInset: CGFloat = 43
     static let selectionTextTrailingPadding: CGFloat = 10
+    static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
     static let textRowSpacing: CGFloat = 1
 
@@ -603,6 +604,7 @@ final class LibraryNoteCellView: NSTableCellView {
         textStack.orientation = .vertical
         textStack.alignment = .leading
         textStack.spacing = Self.textRowSpacing
+        textStack.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for label in [titleLabel, snippetLabel, metaLabel] {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -611,6 +613,7 @@ final class LibraryNoteCellView: NSTableCellView {
         let stack = NSStackView(views: [textStack, thumbnailImageView])
         stack.orientation = .horizontal
         stack.alignment = .centerY
+        stack.distribution = .fill
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(
             top: Self.contentTopInset,
@@ -641,8 +644,8 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 15
-    static let selectionTrailingInset: CGFloat = 21
+    static let selectionLeadingInset: CGFloat = 10
+    static let selectionTrailingInset: CGFloat = 31
     static let selectionVerticalInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
     static let selectionFillColor = NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
@@ -651,7 +654,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 42
+    static let separatorLeadingInset: CGFloat = 37
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
 

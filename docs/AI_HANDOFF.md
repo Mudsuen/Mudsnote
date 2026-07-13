@@ -179,6 +179,12 @@
 - A detached utility task validates the file modification date and reloads externally changed Markdown; cancellation, selection generation, selected-path, and dirty-editor checks reject stale or destructive results.
 - The regression injects a `350ms` metadata read and requires cached-note selection to return within `150ms` while proving the read never executes on the main thread.
 
+## Latest iteration (191)
+
+- Unthumbnailed note rows use horizontal fill distribution and a low-hugging text stack, so title, date/preview, and folder metadata consume the full safe width instead of truncating at intrinsic width.
+- Equal-scale collapsed QA now aligns the selected card at `10pt` from the list edge and `31pt` from the trailing table edge; note text starts at `35pt` and preserves `10pt` inside the selected-card trailing edge.
+- The layout regression verifies both near-full available text width and the actual text drawing boundary, not only the label frame.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

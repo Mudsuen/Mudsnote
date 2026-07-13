@@ -1278,8 +1278,8 @@ struct MarkdownRichEditorTests {
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
-        #expect(LibraryNoteRowView.selectionLeadingInset == 15)
-        #expect(LibraryNoteRowView.selectionTrailingInset == 21)
+        #expect(LibraryNoteRowView.selectionLeadingInset == 10)
+        #expect(LibraryNoteRowView.selectionTrailingInset == 31)
         #expect(LibraryNoteRowView.selectionVerticalInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
         let selectionFill = try #require(LibraryNoteRowView.selectionFillColor.usingColorSpace(.genericRGB))
@@ -1320,14 +1320,17 @@ struct MarkdownRichEditorTests {
         #expect(windowAspectRatio > 1.45 && windowAspectRatio < 1.60)
         #expect(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth == 5)
         #expect(LibraryNoteCellView.contentTopInset == 6)
-        #expect(LibraryNoteCellView.contentLeadingInset == 40)
+        #expect(LibraryNoteCellView.contentLeadingInset == 35)
         #expect(LibraryNoteCellView.contentBottomInset == 6)
-        #expect(LibraryNoteCellView.contentTrailingInset == 31)
+        #expect(LibraryNoteCellView.contentTrailingInset == 43)
         #expect(
             LibraryNoteCellView.contentTrailingInset
-                == LibraryNoteRowView.selectionTrailingInset + LibraryNoteCellView.selectionTextTrailingPadding
+                == LibraryNoteRowView.selectionTrailingInset
+                    + LibraryNoteCellView.selectionTextTrailingPadding
+                    + LibraryNoteCellView.stackTextTrailingAdjustment
         )
         #expect(LibraryNoteCellView.selectionTextTrailingPadding == 10)
+        #expect(LibraryNoteCellView.stackTextTrailingAdjustment == 2)
         #expect(LibraryNoteCellView.minimumTextWidth == 40)
         #expect(LibraryNoteCellView.textRowSpacing == 1)
         #expect(LibraryNotesLayout.noteGroupFontSize == 15)
@@ -1357,8 +1360,16 @@ struct MarkdownRichEditorTests {
         )
         firstNoteCell.layoutSubtreeIfNeeded()
         let titleFrameInCell = firstNoteCell.titleLabel.convert(firstNoteCell.titleLabel.bounds, to: firstNoteCell)
+        let availableTextWidth = firstNoteCell.bounds.width
+            - LibraryNoteCellView.contentLeadingInset
+            - LibraryNoteCellView.contentTrailingInset
+        #expect(titleFrameInCell.width >= availableTextWidth - 4.5)
+        let titleDrawingRect = try #require(firstNoteCell.titleLabel.cell?.drawingRect(
+            forBounds: firstNoteCell.titleLabel.bounds
+        ))
+        let titleDrawingRectInCell = firstNoteCell.titleLabel.convert(titleDrawingRect, to: firstNoteCell)
         #expect(
-            titleFrameInCell.maxX
+            titleDrawingRectInCell.maxX
                 <= firstNoteCell.bounds.maxX
                     - LibraryNoteRowView.selectionTrailingInset
                     - LibraryNoteCellView.selectionTextTrailingPadding

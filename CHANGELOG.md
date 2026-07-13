@@ -1141,6 +1141,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Cache hits now paint immediately, then validate the file modification date and reload stale Markdown in a detached utility task. Selection generation, selected-path, cancellation, and dirty-editor guards prevent delayed validation from overwriting a newer note or unsaved edits.
 - Lesson: A memory-cache hit is only interaction-safe when every freshness check on that path is asynchronous; stale-result protection must cover validation and reload as one operation.
 
+### 191. Reference-aligned note-card width
+
+- Problem: Equal-scale expanded and collapsed comparisons showed that unthumbnailed note rows kept their text stack near intrinsic width instead of filling the card. Dates, previews, and folder names therefore truncated despite available space, while the selected card began about `5pt` too far right and extended too close to the scrollbar.
+- Fix: Made the horizontal row stack use fill distribution with a low-hugging text column, then aligned the selected surface to `10pt` leading and `31pt` trailing insets. Shifted note text and separators `5pt` left and retained a measured `10pt` text-to-selection trailing gap after AppKit stack adjustment. Added a real-layout width and clipping regression.
+- Lesson: Compression resistance prevents overflow, but it does not make a short intrinsic-width stack consume free space; Notes parity needs both expansion policy and independently measured card/text boundaries.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
