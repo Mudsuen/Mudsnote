@@ -148,6 +148,7 @@ struct LibraryHomeView: View {
                         count: appModel.librarySummary.recentlyDeletedCount
                     )
                 }
+                .accessibilityIdentifier("recently-deleted-link")
 
                 NavigationLink {
                     SettingsRulesView(chooseFolder: chooseFolder)

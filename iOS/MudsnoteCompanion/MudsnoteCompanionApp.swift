@@ -65,6 +65,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                         options: .atomic
                     )
                 }
+                let projects = root.appendingPathComponent("Projects", isDirectory: true)
+                try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+                try "# UI Lifecycle\n\nRestore this note end to end.\n".write(
+                    to: projects.appendingPathComponent("UI Lifecycle.md"),
+                    atomically: true,
+                    encoding: .utf8
+                )
                 try access.persistFolder(root)
             } catch {
                 assertionFailure("Could not prepare the Mudsnote UI-test library: \(error)")

@@ -116,6 +116,38 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Images and audio are stored in Attachments/yyyy/mm and referenced by relative Markdown links."].exists)
     }
 
+    func testNoteMovesToRecentlyDeletedAndRestoresThroughUI() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.swipeLeft()
+        let delete = app.buttons["Delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
+        delete.tap()
+        XCTAssertTrue(waitForNonexistence(note))
+
+        app.navigationBars["All Notes"].buttons.firstMatch.tap()
+        let recentlyDeleted = app.buttons["recently-deleted-link"]
+        XCTAssertTrue(recentlyDeleted.waitForExistence(timeout: 5))
+        recentlyDeleted.tap()
+
+        let deletedTitle = app.staticTexts["UI Lifecycle"]
+        XCTAssertTrue(deletedTitle.waitForExistence(timeout: 5))
+        deletedTitle.swipeRight()
+        let restore = app.buttons["Restore"]
+        XCTAssertTrue(restore.waitForExistence(timeout: 3))
+        restore.tap()
+        XCTAssertTrue(waitForNonexistence(deletedTitle))
+
+        app.navigationBars["Recently Deleted"].buttons.firstMatch.tap()
+        allNotes.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,
@@ -151,6 +183,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         }
         return XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)],
+            timeout: 5
+        ) == .completed
+    }
+
+    private func waitForNonexistence(_ element: XCUIElement) -> Bool {
+        let predicate = NSPredicate(format: "exists == false")
+        return XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
             timeout: 5
         ) == .completed
     }
