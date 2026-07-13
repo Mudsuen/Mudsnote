@@ -70,26 +70,97 @@ if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
   SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/感悟.md"
   DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
 elif [[ "$SELECTED_FIXTURE" == "content" ]]; then
-  SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
+  SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/knock 短密码.md"
   DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
 else
   SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
   DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
 fi
 
-REFERENCE_PATH="${MUDSNOTE_NOTES_REFERENCE:-$DEFAULT_REFERENCE_PATH}"
-if [[ ! -f "$REFERENCE_PATH" ]]; then
-  echo "Missing Apple Notes reference image: $REFERENCE_PATH" >&2
+REFERENCE_SOURCE_PATH="${MUDSNOTE_NOTES_REFERENCE:-$DEFAULT_REFERENCE_PATH}"
+if [[ ! -f "$REFERENCE_SOURCE_PATH" ]]; then
+  echo "Missing Apple Notes reference image: $REFERENCE_SOURCE_PATH" >&2
   exit 1
 fi
 
 REFERENCE_BACKING_SCALE="${MUDSNOTE_NOTES_REFERENCE_BACKING_SCALE:-}"
 if [[ -z "$REFERENCE_BACKING_SCALE" ]]; then
-  case "$REFERENCE_PATH" in
+  case "$REFERENCE_SOURCE_PATH" in
     "$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png")
       REFERENCE_BACKING_SCALE="2"
       ;;
   esac
+fi
+
+REFERENCE_CONTENT_INSETS_POINTS="${MUDSNOTE_NOTES_REFERENCE_CONTENT_INSETS:-}"
+if [[ -z "$REFERENCE_CONTENT_INSETS_POINTS" ]]; then
+  case "$REFERENCE_SOURCE_PATH" in
+    "$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"|"$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png")
+      REFERENCE_CONTENT_INSETS_POINTS="5,5,5,5"
+      ;;
+    *)
+      REFERENCE_CONTENT_INSETS_POINTS="0,0,0,0"
+      ;;
+  esac
+fi
+
+REFERENCE_PATH="$REFERENCE_SOURCE_PATH"
+NORMALIZED_REFERENCE_PATH="$OUTPUT_DIR/apple-notes-reference-normalized.png"
+if [[ "$REFERENCE_CONTENT_INSETS_POINTS" != "0,0,0,0" ]]; then
+  /usr/bin/swift - "$REFERENCE_SOURCE_PATH" "$REFERENCE_BACKING_SCALE" "$REFERENCE_CONTENT_INSETS_POINTS" "$NORMALIZED_REFERENCE_PATH" <<'SWIFT'
+import AppKit
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count == 5,
+      let backingScale = Double(args[2]),
+      backingScale > 0 else {
+    fputs("Reference normalization requires a positive backing scale\n", stderr)
+    exit(2)
+}
+
+let insetValues = args[3].split(separator: ",").compactMap { Double($0) }
+guard insetValues.count == 4,
+      insetValues.allSatisfy({ $0 >= 0 }),
+      let sourceData = try? Data(contentsOf: URL(fileURLWithPath: args[1])),
+      let source = NSBitmapImageRep(data: sourceData),
+      let sourceImage = source.cgImage else {
+    fputs("Reference content insets must be four nonnegative point values: left,top,right,bottom\n", stderr)
+    exit(2)
+}
+
+let pixelInsets = insetValues.map { Int(($0 * backingScale).rounded()) }
+let left = pixelInsets[0]
+let top = pixelInsets[1]
+let right = pixelInsets[2]
+let bottom = pixelInsets[3]
+let cropRect = CGRect(
+    x: left,
+    y: top,
+    width: source.pixelsWide - left - right,
+    height: source.pixelsHigh - top - bottom
+)
+guard cropRect.width > 0,
+      cropRect.height > 0,
+      let cropped = sourceImage.cropping(to: cropRect) else {
+    fputs("Reference content insets exceed the source image bounds\n", stderr)
+    exit(2)
+}
+
+let output = NSBitmapImageRep(cgImage: cropped)
+output.size = NSSize(
+    width: CGFloat(cropped.width) / backingScale,
+    height: CGFloat(cropped.height) / backingScale
+)
+guard let png = output.representation(using: .png, properties: [:]) else {
+    fputs("Could not encode normalized Apple Notes reference\n", stderr)
+    exit(2)
+}
+try png.write(to: URL(fileURLWithPath: args[4]))
+SWIFT
+  REFERENCE_PATH="$NORMALIZED_REFERENCE_PATH"
+else
+  rm -f "$NORMALIZED_REFERENCE_PATH"
 fi
 
 rm -rf "$FIXTURE_ROOT"
@@ -684,6 +755,9 @@ SWIFT
 
 {
   echo
+  echo "reference_source_path=$REFERENCE_SOURCE_PATH"
+  echo "reference_content_insets_points=$REFERENCE_CONTENT_INSETS_POINTS"
+  echo "reference_normalized_path=$REFERENCE_PATH"
   echo "fixture_notes_dir=$FIXTURE_NOTES_DIR"
   echo "fixture_resources_dir=$FIXTURE_RESOURCES_DIR"
   echo "fixture_archives_dir=$FIXTURE_ARCHIVES_DIR"
@@ -697,7 +771,8 @@ SWIFT
   echo "capture_mode=$CAPTURE_MODE"
 } >> "$METADATA_PATH"
 
-echo "Reference: $REFERENCE_PATH"
+echo "Reference source:     $REFERENCE_SOURCE_PATH"
+echo "Reference normalized: $REFERENCE_PATH"
 echo "Mudsnote:  $APP_SCREENSHOT"
 echo "Compare:   $PAIR_SCREENSHOT"
 echo "Metadata:  $METADATA_PATH"

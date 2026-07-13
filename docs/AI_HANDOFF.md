@@ -198,6 +198,14 @@
 - First group labels retain a `15pt` bottom inset while following groups use `2pt`; this aligns the second section at `y=418px` without changing the correct `45pt` group or `76pt` note row heights.
 - Note metadata uses `2.5pt` vertical spacing and `4.5/7.5pt` top/bottom content insets; the remaining line-bound differences are within roughly `1–2pt` of native font rasterization.
 
+## Latest iteration (194)
+
+- The three checked-in Apple Notes references contain a uniform `5pt` black capture margin. `scripts/visual_notes_qa.sh` now crops those margins before comparison, records source/normalized paths and content insets in metadata, and leaves externally supplied references uncropped by default.
+- The normalized expanded reference is `921x613pt`; the canonical window now uses that exact size with `200/200pt` source and note columns. At `2x`, the rendered source and editor dividers align with Apple Notes at `x=416px` and `x=816px`.
+- Layout migration version 8 replaces only exact previous `940x630`, `1080x680`, and `1080x720` default frames plus the prior `205/200pt` pane defaults. Customized frames and pane widths remain untouched.
+- Normalized collapsed comparison supersedes iteration 193's margin-bearing coordinates: the selected card now matches Apple Notes at `20,204–345,339px`, with `10/27pt` card insets, a `35pt` text start, and a trailing text constraint that keeps long titles inside the card.
+- The collapsed title, list stack, and editor content origins were shifted by the same normalized-reference delta. Tightened Add Folder and Search wrappers keep every required toolbar item visible at the smaller canonical width without an overflow chevron.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

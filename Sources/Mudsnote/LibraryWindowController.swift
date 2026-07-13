@@ -291,15 +291,18 @@ private enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 7
-    static let initialWindowSize = NSSize(width: 940, height: 630)
-    static let presentedWindowSize = NSSize(width: 940, height: 630)
+    static let storedLayoutScaleVersion = 8
+    static let initialWindowSize = NSSize(width: 921, height: 613)
+    static let presentedWindowSize = NSSize(width: 921, height: 613)
     static let minimumWindowSize = NSSize(width: 896, height: 560)
-    static let previousInitialWindowSize = NSSize(width: 1080, height: 680)
-    static let previousPresentedWindowSize = NSSize(width: 1080, height: 720)
-    static let sourceColumnWidth: CGFloat = 205
+    static let previousDefaultWindowSizes = [
+        NSSize(width: 940, height: 630),
+        NSSize(width: 1080, height: 680),
+        NSSize(width: 1080, height: 720)
+    ]
+    static let sourceColumnWidth: CGFloat = 200
     static let noteColumnWidth: CGFloat = 200
-    static let sourceColumnMinimumWidth: CGFloat = 205
+    static let sourceColumnMinimumWidth: CGFloat = 200
     static let sourceColumnMaximumWidth: CGFloat = 320
     static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320
@@ -309,7 +312,7 @@ enum LibraryNotesLayout {
     static let sourceRowWidth: CGFloat = 180
     static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
-    static let toolbarSearchWrapperWidth: CGFloat = 180
+    static let toolbarSearchWrapperWidth: CGFloat = 160
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let toolbarEditorToolsWidth: CGFloat = 155
     static let toolbarEditorToolsHeight: CGFloat = 32
@@ -317,8 +320,8 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
-    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11
-    static let toolbarAddFolderWrapperWidth: CGFloat = 68
+    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -16
+    static let toolbarAddFolderWrapperWidth: CGFloat = 63
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -337,7 +340,7 @@ enum LibraryNotesLayout {
     static let sourceListTopInset: CGFloat = 12
     static let sourceListLeadingInset: CGFloat = 14
     static let sourceListBottomInset: CGFloat = 14
-    static let sourceListTrailingInset: CGFloat = 11
+    static let sourceListTrailingInset: CGFloat = 6
     static let sourceSurfaceCornerRadius: CGFloat = 24
     static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
@@ -373,10 +376,11 @@ enum LibraryNotesLayout {
     static let noteListHeaderCountFontSize: CGFloat = 12
     static let noteListLeadingInset: CGFloat = 14
     static let noteListTrailingInset: CGFloat = 12
-    static let noteListTopInset: CGFloat = 4
+    static let noteListTopInset: CGFloat = 0
+    static let noteListStackTopOffset: CGFloat = -1
     static let noteListBottomInset: CGFloat = 14
-    static let editorTopInset: CGFloat = 18
-    static let editorHorizontalInset: CGFloat = 28
+    static let editorTopInset: CGFloat = 13
+    static let editorHorizontalInset: CGFloat = 23
     static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
@@ -412,7 +416,7 @@ enum LibraryNotesLayout {
 
     static func migratedDefaultWindowFrame(_ frame: StoredWindowFrame?) -> StoredWindowFrame? {
         guard let frame else { return nil }
-        let matchesPreviousDefault = [previousInitialWindowSize, previousPresentedWindowSize].contains { size in
+        let matchesPreviousDefault = previousDefaultWindowSizes.contains { size in
             abs(frame.width - size.width) < 0.5 && abs(frame.height - size.height) < 0.5
         }
         guard matchesPreviousDefault else { return frame }
@@ -497,7 +501,7 @@ private enum LibraryFormatCommand: Int {
 
 @MainActor
 final class LibraryGroupHeaderCellView: NSTableCellView {
-    static let titleLeadingInset: CGFloat = 20
+    static let titleLeadingInset: CGFloat = 16
     static let titleTrailingInset: CGFloat = 10
     static let firstTitleBottomInset: CGFloat = 15
     static let followingTitleBottomInset: CGFloat = 2
@@ -547,9 +551,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 4.5
-    static let contentLeadingInset: CGFloat = 40
+    static let contentLeadingInset: CGFloat = 35
     static let contentBottomInset: CGFloat = 7.5
-    static let contentTrailingInset: CGFloat = 34
+    static let contentTrailingInset: CGFloat = 39
     static let selectionTextTrailingPadding: CGFloat = 10
     static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
@@ -661,8 +665,8 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 15
-    static let selectionTrailingInset: CGFloat = 22
+    static let selectionLeadingInset: CGFloat = 10
+    static let selectionTrailingInset: CGFloat = 27
     static let selectionTopInset: CGFloat = 6
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
@@ -672,7 +676,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 42
+    static let separatorLeadingInset: CGFloat = 37
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
 
@@ -1330,7 +1334,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteStore = noteStore
         let migratedLayout = noteStore.migrateLibraryLayoutScaleIfNeeded(
             to: LibraryNotesLayout.storedLayoutScaleVersion,
-            replacingDefaultPaneWidths: (source: 212, note: 200)
+            replacingDefaultPaneWidths: (source: 205, note: 200)
         )
         if migratedLayout {
             noteStore.libraryWindowFrame = LibraryNotesLayout.migratedDefaultWindowFrame(noteStore.libraryWindowFrame)
@@ -1974,7 +1978,10 @@ final class LibraryWindowController: NSWindowController,
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
+            stack.topAnchor.constraint(
+                equalTo: sidebar.safeAreaLayoutGuide.topAnchor,
+                constant: LibraryNotesLayout.noteListStackTopOffset
+            ),
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
             titlebarSeparator.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             titlebarSeparator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
@@ -2304,8 +2311,7 @@ final class LibraryWindowController: NSWindowController,
             ))
             wrapper.addSubview(searchField)
             NSLayoutConstraint.activate([
-                searchField.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
-                searchField.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -10),
+                searchField.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
                 searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
             ])
             item.view = wrapper

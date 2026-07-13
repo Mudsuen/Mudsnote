@@ -554,7 +554,13 @@ struct MarkdownRichEditorTests {
     func libraryDefaultFrameMigrationShrinksOnlyPreviousDefaults() {
         let previous = StoredWindowFrame(x: 100, y: 80, width: 1080, height: 720)
         let migrated = LibraryNotesLayout.migratedDefaultWindowFrame(previous)
-        #expect(migrated == StoredWindowFrame(x: 170, y: 125, width: 940, height: 630))
+        #expect(migrated == StoredWindowFrame(x: 179.5, y: 133.5, width: 921, height: 613))
+
+        let currentDefault = StoredWindowFrame(x: 100, y: 80, width: 940, height: 630)
+        #expect(
+            LibraryNotesLayout.migratedDefaultWindowFrame(currentDefault)
+                == StoredWindowFrame(x: 109.5, y: 88.5, width: 921, height: 613)
+        )
 
         let customized = StoredWindowFrame(x: 40, y: 30, width: 1180, height: 760)
         #expect(LibraryNotesLayout.migratedDefaultWindowFrame(customized) == customized)
@@ -842,19 +848,19 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.minimumWindowSize.width == 896)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(!controller.tableView.floatsGroupRows)
-        #expect(LibraryNotesLayout.storedLayoutScaleVersion == 7)
-        #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 940, height: 630))
-        #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 940, height: 630))
-        #expect(LibraryNotesLayout.sourceColumnWidth == 205)
+        #expect(LibraryNotesLayout.storedLayoutScaleVersion == 8)
+        #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 921, height: 613))
+        #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 921, height: 613))
+        #expect(LibraryNotesLayout.sourceColumnWidth == 200)
         #expect(LibraryNotesLayout.noteColumnWidth == 200)
-        #expect(LibraryNotesLayout.sourceColumnWidth > LibraryNotesLayout.noteColumnWidth)
+        #expect(LibraryNotesLayout.sourceColumnWidth == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNotesLayout.noteTableInitialWidth == 174)
         #expect(LibraryNotesLayout.noteTableMinimumWidth == 174)
         #expect(LibraryNotesLayout.sourceRowWidth == 180)
         #expect(LibraryNotesLayout.sourceRowWidth + LibraryNotesLayout.sourceListLeadingInset + LibraryNotesLayout.sourceListTrailingInset == LibraryNotesLayout.sourceColumnWidth)
         #expect(LibraryNotesLayout.noteTableInitialWidth + LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNotesLayout.toolbarSearchWidth == 160)
-        #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == 180)
+        #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == LibraryNotesLayout.toolbarSearchWidth)
         #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 2200, height: 1200)) == LibraryNotesLayout.presentedWindowSize)
         let clampedSize = LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1180, height: 720))
         #expect(clampedSize == LibraryNotesLayout.presentedWindowSize)
@@ -923,7 +929,7 @@ struct MarkdownRichEditorTests {
                 let wrapper = try #require(item.view)
                 #expect(wrapper.identifier?.rawValue == "LibraryToolbarAddFolderWrapper")
                 #expect(wrapper.frame.width == LibraryNotesLayout.toolbarAddFolderWrapperWidth)
-                #expect(LibraryNotesLayout.toolbarAddFolderWrapperWidth == 68)
+                #expect(LibraryNotesLayout.toolbarAddFolderWrapperWidth == 63)
             }
             #expect(item.image != nil)
             #expect(item.toolTip == item.label)
@@ -1017,6 +1023,11 @@ struct MarkdownRichEditorTests {
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
         #expect(toolbarSearchWrapper.frame.height >= LibraryNotesLayout.toolbarSearchWrapperHeight)
+        #expect(abs(toolbarSearchField.frame.midX - toolbarSearchWrapper.bounds.midX) < 0.5)
+        let visibleToolbarItemIDs = Set((window.toolbar?.visibleItems ?? []).map(\.itemIdentifier.rawValue))
+        #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
+        #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         let noteListTitleToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-title"
         })
@@ -1096,7 +1107,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceCollapseAnimationDuration == 0.22)
         #expect(sourceList.frame.width >= LibraryNotesLayout.sourceColumnMinimumWidth)
         #expect(noteList.frame.width >= LibraryNotesLayout.noteColumnMinimumWidth)
-        #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 205)
+        #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 200)
         #expect(LibraryNotesLayout.sourceColumnMaximumWidth == 320)
         #expect(LibraryNotesLayout.noteColumnMinimumWidth == 200)
         #expect(LibraryNotesLayout.noteColumnMaximumWidth == 320)
@@ -1146,7 +1157,7 @@ struct MarkdownRichEditorTests {
             $0.firstItem === collapsedTitleStack && $0.firstAttribute == .leading
         })
         #expect(collapsedTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset)
-        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -11)
+        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -16)
         window.contentView?.layoutSubtreeIfNeeded()
         let collapsedToggleFrame = collapsedToggleWrapper.convert(collapsedToggleWrapper.bounds, to: nil)
         let collapsedTitleFrame = collapsedTitleStack.convert(collapsedTitleStack.bounds, to: nil)
@@ -1166,6 +1177,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibraryNoteListStack"
         })
         #expect(noteListStack.edgeInsets.top == LibraryNotesLayout.noteListTopInset)
+        #expect(LibraryNotesLayout.noteListTopInset == 0)
         #expect(noteListStack.edgeInsets.left == LibraryNotesLayout.noteListLeadingInset)
         #expect(noteListStack.edgeInsets.bottom == LibraryNotesLayout.noteListBottomInset)
         #expect(noteListStack.edgeInsets.right == LibraryNotesLayout.noteListTrailingInset)
@@ -1175,7 +1187,9 @@ struct MarkdownRichEditorTests {
                 && $0.firstAttribute == .top
                 && $0.secondItem === noteListPane.safeAreaLayoutGuide
                 && $0.secondAttribute == .top
+                && $0.constant == LibraryNotesLayout.noteListStackTopOffset
         })
+        #expect(LibraryNotesLayout.noteListStackTopOffset == -1)
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-iCloud"
         })
@@ -1186,7 +1200,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceListTopInset == 12)
         #expect(LibraryNotesLayout.sourceListLeadingInset == 14)
         #expect(LibraryNotesLayout.sourceListBottomInset == 14)
-        #expect(LibraryNotesLayout.sourceListTrailingInset == 11)
+        #expect(LibraryNotesLayout.sourceListTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceSymbolPointSize == 15)
         #expect(LibraryNotesLayout.sourceDisclosureSymbolPointSize == 10)
         #expect(LibraryNotesLayout.sourceRowCornerRadius == 8)
@@ -1261,7 +1275,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.tableView(controller.tableView, pasteboardWriterForRow: 0) == nil)
         let groupCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
         #expect(groupCell.titleLabel.stringValue == "Today")
-        #expect(LibraryGroupHeaderCellView.titleLeadingInset == 20)
+        #expect(LibraryGroupHeaderCellView.titleLeadingInset == 16)
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
         #expect(groupCell.isFirstGroup)
         #expect(groupCell.titleBottomInset == LibraryGroupHeaderCellView.firstTitleBottomInset)
@@ -1284,8 +1298,8 @@ struct MarkdownRichEditorTests {
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
-        #expect(LibraryNoteRowView.selectionLeadingInset == 15)
-        #expect(LibraryNoteRowView.selectionTrailingInset == 22)
+        #expect(LibraryNoteRowView.selectionLeadingInset == 10)
+        #expect(LibraryNoteRowView.selectionTrailingInset == 27)
         #expect(LibraryNoteRowView.selectionTopInset == 6)
         #expect(LibraryNoteRowView.selectionBottomInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
@@ -1325,11 +1339,11 @@ struct MarkdownRichEditorTests {
         #expect(snippetParagraphStyle.lineBreakMode == .byTruncatingTail)
         let windowAspectRatio = LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height
         #expect(windowAspectRatio > 1.45 && windowAspectRatio < 1.60)
-        #expect(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth == 5)
+        #expect(LibraryNotesLayout.sourceColumnWidth == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNoteCellView.contentTopInset == 4.5)
-        #expect(LibraryNoteCellView.contentLeadingInset == 40)
+        #expect(LibraryNoteCellView.contentLeadingInset == 35)
         #expect(LibraryNoteCellView.contentBottomInset == 7.5)
-        #expect(LibraryNoteCellView.contentTrailingInset == 34)
+        #expect(LibraryNoteCellView.contentTrailingInset == 39)
         #expect(
             LibraryNoteCellView.contentTrailingInset
                 == LibraryNoteRowView.selectionTrailingInset
@@ -1429,11 +1443,11 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 4)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
-        #expect(LibraryNotesLayout.editorTopInset == 18)
+        #expect(LibraryNotesLayout.editorTopInset == 13)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
-        #expect(LibraryNotesLayout.editorHorizontalInset == 28)
+        #expect(LibraryNotesLayout.editorHorizontalInset == 23)
         #expect(LibraryNotesLayout.editorTextContainerHorizontalInset == 2)
         let editorPane = try #require(editorStack.superview)
         #expect(editorPane.constraints.contains {
@@ -1552,6 +1566,15 @@ struct MarkdownRichEditorTests {
         let firstWindow = try #require(firstController.window)
         firstWindow.contentView?.layoutSubtreeIfNeeded()
         let firstSplitView = try #require(firstWindow.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
+        let visibleFrame = try #require((firstWindow.screen ?? NSScreen.main)?.visibleFrame)
+        let desiredWindowFrame = NSRect(
+            x: visibleFrame.minX + 24,
+            y: visibleFrame.minY + 24,
+            width: min(1120, visibleFrame.width - 48),
+            height: min(760, visibleFrame.height - 48)
+        )
+        firstWindow.setFrame(desiredWindowFrame, display: false)
+        firstWindow.contentView?.layoutSubtreeIfNeeded()
         let desiredSourceWidth: CGFloat = 240
         let desiredNoteWidth: CGFloat = 210
 
@@ -1562,14 +1585,6 @@ struct MarkdownRichEditorTests {
         firstSplitView.layoutSubtreeIfNeeded()
         firstController.persistLibrarySplitLayoutForLibrary()
 
-        let visibleFrame = try #require((firstWindow.screen ?? NSScreen.main)?.visibleFrame)
-        let desiredWindowFrame = NSRect(
-            x: visibleFrame.minX + 24,
-            y: visibleFrame.minY + 24,
-            width: min(1120, visibleFrame.width - 48),
-            height: min(760, visibleFrame.height - 48)
-        )
-        firstWindow.setFrame(desiredWindowFrame, display: false)
         try await Task.sleep(for: .milliseconds(260))
 
         #expect(abs((store.librarySourceColumnWidth ?? 0) - Double(desiredSourceWidth)) < 1)

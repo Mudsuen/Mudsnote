@@ -1159,6 +1159,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Measured original pixels instead of the presentation montage, restored the `15pt` card and `40pt` text starts, set the trailing card inset to `22pt`, and used asymmetric `6/4pt` top/bottom selection insets. Later group labels now use a `2pt` bottom inset while the first remains `15pt`; note metadata uses `2.5pt` row spacing with `4.5/7.5pt` content insets. Apple Notes and Mudsnote now share the exact selected-card bounds `30,214–355,349px` at `2x`, and the later group title begins at the same `y=418px`.
 - Lesson: Measure geometry in the original backing-scale images, not a rescaled comparison canvas. First and subsequent section headings can require different placement even when their row heights are identical.
 
+### 194. Reference-content-normalized Notes geometry
+
+- Problem: The checked-in Apple Notes references contained a uniform `5pt` black screenshot margin, while Mudsnote captures contained only window content. Comparing those different origins produced systematic `5pt` offsets and left long list titles too close to the selected card's right edge.
+- Fix: Normalize built-in references before comparison and record the crop metadata. Adopt the resulting `921x613pt` canonical window, `200/200pt` source/list widths, corrected collapsed list/editor origins, bounded note text geometry, and tighter toolbar wrappers. Layout migration version 8 updates exact previous defaults while preserving customized frames and pane widths.
+- Verification: Full `swift test`, installed-app smoke, code-signature validation, and expanded, collapsed, and content-state visual comparisons passed. The normalized expanded dividers align at `x=416/816px` and the collapsed selected card aligns at `20,204–345,339px` at `2x`.
+- Lesson: Compare window content to window content. Capture margins must be normalized before any pixel-derived layout constant is accepted.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
