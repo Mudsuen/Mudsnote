@@ -97,6 +97,9 @@ struct LibraryHomeView: View {
                     appModel.showCapture(.audio)
                 } newNote: {
                     isSearchFocused = false
+                    appModel.createStandaloneNote()
+                } quickNote: {
+                    isSearchFocused = false
                     appModel.showCapture(.text)
                 }
             }
@@ -626,6 +629,11 @@ struct LibraryFolderView: View {
                     } label: {
                         Label("Rename Folder", systemImage: "pencil")
                     }
+                    Button {
+                        appModel.createStandaloneNote(inFolder: currentFolder.relativePath)
+                    } label: {
+                        Label("New Note", systemImage: "square.and.pencil")
+                    }
                     Button(role: .destructive) {
                         isConfirmingDelete = true
                     } label: {
@@ -936,6 +944,7 @@ struct NotesBottomCommandBar: View {
     var searchFocused: FocusState<Bool>.Binding
     var record: () -> Void
     var newNote: () -> Void
+    var quickNote: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -977,6 +986,20 @@ struct NotesBottomCommandBar: View {
             .overlay {
                 Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
             }
+
+            Button(action: quickNote) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .frame(width: 48, height: 48)
+                    .background(MudsnoteColors.panel, in: Circle())
+                    .overlay {
+                        Circle().stroke(MudsnoteColors.line, lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Quick Note")
+            .accessibilityIdentifier("quick-note-button")
 
             Button(action: newNote) {
                 Image(systemName: "square.and.pencil")

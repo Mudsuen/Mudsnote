@@ -134,6 +134,39 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(block.contains("#闪念 #图片"))
     }
 
+    func testStandaloneNotesAreCreatedAsUniquePortableMarkdownFiles() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let first = try await store.createMarkdownDocument()
+        let second = try await store.createMarkdownDocument()
+        let project = try await store.createMarkdownDocument(inFolder: "Projects")
+
+        XCTAssertEqual(first.relativePath, "Untitled Note.md")
+        XCTAssertEqual(second.relativePath, "Untitled Note 2.md")
+        XCTAssertEqual(project.relativePath, "Projects/Untitled Note.md")
+        XCTAssertTrue(first.isNew)
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(first.relativePath), encoding: .utf8),
+            ""
+        )
+
+        let saved = try await store.saveMarkdownDocument(
+            relativePath: first.relativePath,
+            markdown: "Standalone note\n",
+            expectedMarkdown: ""
+        )
+        XCTAssertFalse(saved.isNew)
+        XCTAssertEqual(saved.markdown, "Standalone note\n")
+    }
+
     func testInboxParserFindsMemoBlocks() {
         let markdown = """
         # Inbox

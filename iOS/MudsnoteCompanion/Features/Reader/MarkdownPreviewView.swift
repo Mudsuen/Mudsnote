@@ -64,6 +64,7 @@ struct MarkdownPreviewView: View {
         metadata = document.relativePath
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
+        _isEditing = State(initialValue: document.isNew)
     }
 
     var body: some View {
@@ -147,7 +148,13 @@ struct MarkdownPreviewView: View {
             }
         }
         .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
-        .onAppear(perform: beginLibraryAccess)
+        .onAppear {
+            beginLibraryAccess()
+            if isEditing {
+                detent = .large
+                focusEditorAfterPresentation()
+            }
+        }
         .onDisappear(perform: endLibraryAccess)
         .onChange(of: selectedPhotoItem) { _, item in
             guard item != nil else { return }
@@ -315,6 +322,10 @@ struct MarkdownPreviewView: View {
     private func beginEditing() {
         isEditing = true
         withAnimation(.snappy(duration: 0.28)) { detent = .large }
+        focusEditorAfterPresentation()
+    }
+
+    private func focusEditorAfterPresentation() {
         Task { @MainActor in
             await Task.yield()
             editorFocused = true

@@ -212,6 +212,30 @@ actor MarkdownFileStore {
         cachedLibrarySnapshot = nil
     }
 
+    func createMarkdownDocument(inFolder relativeFolderPath: String? = nil) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let directory = try userFolderURL(
+            relativePath: relativeFolderPath,
+            root: root,
+            allowRoot: true
+        )
+        let destination = uniqueMarkdownURL(
+            for: directory.appendingPathComponent("Untitled Note.md")
+        )
+        try Data().write(to: destination, options: .withoutOverwriting)
+        let relativePath = Self.relativePath(for: destination, root: root)
+        invalidateAfterMutation(relativePaths: [relativePath])
+        return MarkdownDocument(
+            id: relativePath,
+            title: destination.deletingPathExtension().lastPathComponent,
+            relativePath: relativePath,
+            markdown: "",
+            isNew: true
+        )
+    }
+
     func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
@@ -1589,6 +1613,7 @@ struct MarkdownDocument: Identifiable, Equatable {
     var title: String
     var relativePath: String
     var markdown: String
+    var isNew = false
 }
 
 enum MarkdownDocumentError: LocalizedError, Equatable {

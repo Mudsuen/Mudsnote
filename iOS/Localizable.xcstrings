@@ -1,6 +1,12 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Could not create note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法新建笔记" } } }
+    },
+    "New Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建笔记" } } }
+    },
     "Damaged pending captures were preserved": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留损坏的待保存记录" } } }
     },
