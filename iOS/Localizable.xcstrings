@@ -1823,6 +1823,15 @@
     },
     "The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记可能已在其他位置更改。请重新打开已存储版本，或保留当前草稿后重试。" } } }
+    },
+    "Remove from Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "从笔记中移除" } } }
+    },
+    "Attachment removed from note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已从笔记中移除" } } }
+    },
+    "This attachment is no longer referenced by the note.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记已不再引用此附件。" } } }
     }
   },
   "version": "1.0"

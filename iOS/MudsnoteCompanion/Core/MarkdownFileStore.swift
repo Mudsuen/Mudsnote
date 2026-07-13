@@ -482,6 +482,26 @@ actor MarkdownFileStore {
         }
     }
 
+    func removeAttachmentFromMarkdownDocument(
+        relativePath: String,
+        markdown: String,
+        expectedMarkdown: String,
+        attachmentLine: String
+    ) throws -> MarkdownDocument {
+        var lines = markdown.components(separatedBy: .newlines)
+        guard let index = lines.firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespaces) == attachmentLine.trimmingCharacters(in: .whitespaces)
+        }) else {
+            throw MarkdownDocumentError.attachmentReferenceNotFound
+        }
+        lines.remove(at: index)
+        return try saveMarkdownDocument(
+            relativePath: relativePath,
+            markdown: lines.joined(separator: "\n"),
+            expectedMarkdown: expectedMarkdown
+        )
+    }
+
     @discardableResult
     func trashMarkdownDocument(
         relativePath: String,
@@ -1552,6 +1572,7 @@ struct MarkdownDocument: Identifiable, Equatable {
 enum MarkdownDocumentError: LocalizedError, Equatable {
     case invalidPath
     case changedExternally
+    case attachmentReferenceNotFound
 
     var errorDescription: String? {
         switch self {
@@ -1559,6 +1580,8 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
             String(localized: "This Markdown file is outside the authorized library.")
         case .changedExternally:
             String(localized: "This note changed elsewhere. Reopen it before editing again.")
+        case .attachmentReferenceNotFound:
+            String(localized: "This attachment is no longer referenced by the note.")
         }
     }
 }

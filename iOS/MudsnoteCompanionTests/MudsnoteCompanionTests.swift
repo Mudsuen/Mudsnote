@@ -912,7 +912,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# External change\n")
     }
 
-    func testMarkdownDocumentAttachmentIsCollisionSafeAndRollsBackOnConflict() async throws {
+    func testMarkdownDocumentAttachmentInsertRemoveCollisionAndConflictRollback() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -954,11 +954,20 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let attachmentFolder = root.appendingPathComponent("Attachments/2026/07")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
+        let removed = try await store.removeAttachmentFromMarkdownDocument(
+            relativePath: second.relativePath,
+            markdown: second.markdown,
+            expectedMarkdown: second.markdown,
+            attachmentLine: "![Image](Attachments/2026/07/IMG-20260713-120000.png)"
+        )
+        XCTAssertFalse(removed.markdown.contains("IMG-20260713-120000.png"))
+        XCTAssertTrue(removed.markdown.contains("IMG-20260713-120000-2.png"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
         await XCTAssertThrowsErrorAsync(
             try await store.attachToMarkdownDocument(
-                relativePath: second.relativePath,
-                markdown: second.markdown,
-                expectedMarkdown: original.markdown,
+                relativePath: removed.relativePath,
+                markdown: removed.markdown,
+                expectedMarkdown: second.markdown,
                 attachment: image,
                 now: now
             )

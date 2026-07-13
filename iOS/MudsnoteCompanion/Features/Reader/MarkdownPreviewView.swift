@@ -251,27 +251,38 @@ struct MarkdownPreviewView: View {
 
     @ViewBuilder
     private func attachmentView(_ attachment: MarkdownAttachmentLine) -> some View {
-        switch attachment.kind {
-        case .image:
-            if let image = localImage(for: attachment.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(MudsnoteColors.line, lineWidth: 1)
-                    }
-            } else {
-                attachmentLabel(attachment)
+        Group {
+            switch attachment.kind {
+            case .image:
+                if let image = localImage(for: attachment.path) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(MudsnoteColors.line, lineWidth: 1)
+                        }
+                } else {
+                    attachmentLabel(attachment)
+                }
+            case .audio, .file:
+                if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
+                    AudioAttachmentPlayer(url: url, title: attachment.path)
+                } else if let url = localFileURL(for: attachment.path) {
+                    Link(destination: url) { attachmentLabel(attachment) }
+                } else {
+                    attachmentLabel(attachment)
+                }
             }
-        case .audio, .file:
-            if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
-                AudioAttachmentPlayer(url: url, title: attachment.path)
-            } else if let url = localFileURL(for: attachment.path) {
-                Link(destination: url) { attachmentLabel(attachment) }
-            } else {
-                attachmentLabel(attachment)
+        }
+        .contextMenu {
+            if case .document = source {
+                Button(role: .destructive) {
+                    Task { await removeAttachment(attachment) }
+                } label: {
+                    Label("Remove from Note", systemImage: "trash")
+                }
             }
         }
     }
@@ -412,6 +423,23 @@ struct MarkdownPreviewView: View {
             originalMarkdown = updated.markdown
             saveState = .saved
             editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
+    private func removeAttachment(_ attachment: MarkdownAttachmentLine) async {
+        guard case .document(let document) = source else { return }
+        if let updated = await appModel.removeAttachment(
+            line: attachment.rawLine,
+            from: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
         } else {
             saveState = .failed
             isSaveFailurePresented = true
@@ -705,10 +733,12 @@ private struct MarkdownAttachmentLine {
     }
 
     var path: String
+    var rawLine: String
     var systemImage: String
     var kind: Kind
 
     init?(_ line: String) {
+        rawLine = line
         if line.hasPrefix("![[") {
             path = line
                 .replacingOccurrences(of: "![[", with: "")

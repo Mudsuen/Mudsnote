@@ -613,6 +613,30 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func removeAttachment(
+        line: String,
+        from document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        do {
+            let updated = try await fileStore.removeAttachmentFromMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachmentLine: line
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Attachment removed from note"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     private func refreshActiveSearchIfNeeded() async {
         guard !activeSearchQuery.isEmpty else { return }
         await searchLibrary(query: activeSearchQuery)
