@@ -1222,6 +1222,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Ordering, rename replacement, duplicate prevention, capacity, autosave, and date-group sorting tests pass. A debug-build `10,000`-entry update stays below the `50ms` regression gate across three consecutive runs. Full tests, packaging, installed-app smoke, strict signature verification, and collapsed-state visual QA passed.
 - Lesson: Moving from sort to insertion is not enough when per-element normalization dominates; canonicalize identifiers at mutation boundaries and keep the array loop allocation-light.
 
+### 203. Snapshot-backed rich Markdown serialization
+
+- Problem: Autosave serialized the whole attributed document on the main thread, and every formatting run fetched and bridged the full Swift `String` to `NSString` again before extracting its substring. Dense formatting therefore repeated whole-document work thousands of times.
+- Fix: Added one serialization-scoped context that snapshots the source `NSString` once and caches `NSFontManager` traits by font identity. Lines, tables, and inline runs share that context while preserving the existing synchronous save ordering and exact Markdown output.
+- Verification: A 5,000-run alternating-format document improved from about `41ms` to stable `27ms` debug runs, remains below a `50ms` regression gate, and compares against the complete expected Markdown. Full tests, packaging, installed-app smoke, strict signature verification, and content-state visual QA passed.
+- Lesson: Cache immutable document-wide values at the serialization boundary; repeated Swift/Foundation bridging inside a per-run loop can dominate more than the formatting logic itself.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

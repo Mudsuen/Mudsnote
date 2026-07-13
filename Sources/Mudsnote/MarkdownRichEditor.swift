@@ -865,11 +865,17 @@ enum MarkdownRichTextCodec {
 
     static func serialize(_ attributedString: NSAttributedString, theme: MarkdownEditorTheme) -> String {
         let nsString = attributedString.string as NSString
+        let context = SerializationContext(attributedString: attributedString)
         var lines: [String] = []
         var location = 0
 
         while location < nsString.length {
-            if let table = serializedTable(startingAt: location, in: attributedString, theme: theme) {
+            if let table = serializedTable(
+                startingAt: location,
+                in: attributedString,
+                theme: theme,
+                context: context
+            ) {
                 lines.append(table.markdown)
                 location = table.endLocation
                 continue
@@ -882,7 +888,13 @@ enum MarkdownRichTextCodec {
                 length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
             )
             let lineText = nsString.substring(with: lineRange)
-            lines.append(serializeLine(range: lineRange, visibleText: lineText, in: attributedString, theme: theme))
+            lines.append(serializeLine(
+                range: lineRange,
+                visibleText: lineText,
+                in: attributedString,
+                theme: theme,
+                context: context
+            ))
             location = NSMaxRange(paragraphRange)
         }
 
@@ -1027,7 +1039,8 @@ enum MarkdownRichTextCodec {
     private static func serializedTable(
         startingAt location: Int,
         in attributedString: NSAttributedString,
-        theme: MarkdownEditorTheme
+        theme: MarkdownEditorTheme,
+        context: SerializationContext
     ) -> (markdown: String, endLocation: Int)? {
         guard location >= 0, location < attributedString.length,
               let tableID = attributedString.attribute(.qmTableID, at: location, effectiveRange: nil) as? String else {
@@ -1062,7 +1075,8 @@ enum MarkdownRichTextCodec {
                 range: contentRange,
                 in: attributedString,
                 paragraphKind: .paragraph,
-                theme: theme
+                theme: theme,
+                context: context
             )
                 .replacingOccurrences(of: tablePlaceholder, with: "")
                 .replacingOccurrences(of: "|", with: "\\|")
@@ -1173,13 +1187,31 @@ enum MarkdownRichTextCodec {
         paragraphKind: MarkdownParagraphKind,
         theme: MarkdownEditorTheme
     ) -> String {
-        serializeInline(range: range, in: attributedString, paragraphKind: paragraphKind, theme: theme)
+        serializeInline(
+            range: range,
+            in: attributedString,
+            paragraphKind: paragraphKind,
+            theme: theme,
+            context: SerializationContext(attributedString: attributedString)
+        )
     }
 
-    private static func serializeLine(range: NSRange, visibleText: String, in attributedString: NSAttributedString, theme: MarkdownEditorTheme) -> String {
+    private static func serializeLine(
+        range: NSRange,
+        visibleText: String,
+        in attributedString: NSAttributedString,
+        theme: MarkdownEditorTheme,
+        context: SerializationContext
+    ) -> String {
         let kind = paragraphKind(at: range, in: attributedString)
         let contentRange = rangeAfterVisiblePrefix(for: range, in: attributedString, kind: kind)
-        let contentMarkdown = serializeInline(range: contentRange, in: attributedString, paragraphKind: kind, theme: theme)
+        let contentMarkdown = serializeInline(
+            range: contentRange,
+            in: attributedString,
+            paragraphKind: kind,
+            theme: theme,
+            context: context
+        )
 
         switch kind {
         case .paragraph:
@@ -1201,7 +1233,8 @@ enum MarkdownRichTextCodec {
         range: NSRange,
         in attributedString: NSAttributedString,
         paragraphKind: MarkdownParagraphKind,
-        theme: MarkdownEditorTheme
+        theme: MarkdownEditorTheme,
+        context: SerializationContext
     ) -> String {
         guard range.length > 0 else { return "" }
 
@@ -1213,15 +1246,25 @@ enum MarkdownRichTextCodec {
             var effectiveRange = NSRange(location: 0, length: 0)
             let attributes = attributedString.attributes(at: location, effectiveRange: &effectiveRange)
             let clippedRange = NSIntersectionRange(effectiveRange, range)
-            let text = (attributedString.string as NSString).substring(with: clippedRange)
-            markdown += serializeRun(text: text, attributes: attributes, baseFont: baseFont)
+            let text = context.string.substring(with: clippedRange)
+            markdown += serializeRun(
+                text: text,
+                attributes: attributes,
+                baseFont: baseFont,
+                context: context
+            )
             location = NSMaxRange(clippedRange)
         }
 
         return markdown
     }
 
-    private static func serializeRun(text: String, attributes: [NSAttributedString.Key: Any], baseFont: NSFont) -> String {
+    private static func serializeRun(
+        text: String,
+        attributes: [NSAttributedString.Key: Any],
+        baseFont: NSFont,
+        context: SerializationContext
+    ) -> String {
         if text.isEmpty { return "" }
 
         if let imageMarkdown = attributes[.qmImageMarkdown] as? String {
@@ -1255,8 +1298,8 @@ enum MarkdownRichTextCodec {
         }
 
         if let font = attributes[.font] as? NSFont {
-            let traits = NSFontManager.shared.traits(of: font)
-            let baseTraits = NSFontManager.shared.traits(of: baseFont)
+            let traits = context.traits(for: font)
+            let baseTraits = context.traits(for: baseFont)
             let isBold = traits.contains(.boldFontMask) && !baseTraits.contains(.boldFontMask)
             let isItalic = (traits.contains(.italicFontMask) && !baseTraits.contains(.italicFontMask))
                 || isObliqued(attributes[.obliqueness])
@@ -1271,6 +1314,26 @@ enum MarkdownRichTextCodec {
         }
 
         return wrapped
+    }
+
+    private final class SerializationContext {
+        let string: NSString
+        private var traitsByFont: [ObjectIdentifier: NSFontTraitMask] = [:]
+
+        init(attributedString: NSAttributedString) {
+            string = attributedString.string as NSString
+        }
+
+        func traits(for font: NSFont) -> NSFontTraitMask {
+            let identity = ObjectIdentifier(font)
+            if let cached = traitsByFont[identity] {
+                return cached
+            }
+
+            let traits = NSFontManager.shared.traits(of: font)
+            traitsByFont[identity] = traits
+            return traits
+        }
     }
 
     private static func paragraphKind(for line: String) -> MarkdownParagraphKind {

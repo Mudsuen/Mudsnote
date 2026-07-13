@@ -263,6 +263,13 @@
 - Regression coverage includes rename replacement, duplicate prevention, ordering, capacity, and a debug-build `10,000`-entry update budget below `50ms`.
 - Collapsed visual regression evidence is `/tmp/mudsnote-visual-qa-202-collapsed/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (203)
+
+- Rich Markdown serialization now creates one immutable context per call instead of bridging the entire attributed string inside every formatting run.
+- Lines, native tables, and inline content reuse the same `NSString` snapshot and per-font trait cache; public serialization behavior and synchronous save durability are unchanged.
+- A 5,000-run alternating bold/plain document serializes in stable debug runs of about `27ms`, down from roughly `41ms`, with a `<50ms` regression gate and full-output equality assertion.
+- Full tests, packaging, installed-app smoke, strict signature verification, and content-state visual QA pass. Evidence is `/tmp/mudsnote-visual-qa-203-serialization/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

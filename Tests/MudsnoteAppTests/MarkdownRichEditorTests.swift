@@ -148,6 +148,37 @@ struct MarkdownRichEditorTests {
     )
 
     @Test
+    func richMarkdownSerializationStaysInteractiveForDenseFormatting() {
+        let document = NSMutableAttributedString()
+        document.beginEditing()
+        for index in 0..<5_000 {
+            let font = index.isMultiple(of: 2) ? theme.bodyFont : theme.boldFont
+            document.append(NSAttributedString(
+                string: "segment\(index) ",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: theme.textColor,
+                    .paragraphStyle: theme.paragraphStyle(for: .paragraph),
+                    .qmParagraphKind: MarkdownParagraphKind.paragraph.encodedValue
+                ]
+            ))
+        }
+        document.endEditing()
+
+        let clock = ContinuousClock()
+        var markdown = ""
+        let elapsed = clock.measure {
+            markdown = MarkdownRichTextCodec.serialize(document, theme: theme)
+        }
+        let expected = (0..<5_000).map { index in
+            index.isMultiple(of: 2) ? "segment\(index) " : "**segment\(index) **"
+        }.joined()
+
+        #expect(elapsed < .milliseconds(50))
+        #expect(markdown == expected)
+    }
+
+    @Test
     func librarySourceCountIndexAggregatesFoldersTagsAndInboxInOnePass() {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Source Count Index", isDirectory: true)
         let notesFolder = root.appendingPathComponent("Notes", isDirectory: true)
