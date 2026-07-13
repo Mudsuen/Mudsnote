@@ -1274,8 +1274,16 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteRowView.separatorTrailingInset == 28)
         #expect(LibraryNoteRowView.separatorAlpha < 0.4)
         #expect(!noteRowView.isPointerHovered)
-        noteRowView.setPointerHovered(true)
+        controller.tableView.setPointerHoveredRow(noteRowView)
         #expect(noteRowView.isPointerHovered)
+        let replacementHoverRow = LibraryNoteRowView()
+        controller.tableView.setPointerHoveredRow(replacementHoverRow)
+        #expect(!noteRowView.isPointerHovered)
+        #expect(replacementHoverRow.isPointerHovered)
+        #expect(controller.tableView.pointerHoveredRow === replacementHoverRow)
+        controller.tableView.reconcilePointerHover(at: nil)
+        #expect(!replacementHoverRow.isPointerHovered)
+        #expect(controller.tableView.pointerHoveredRow == nil)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string.contains("Body line"))
         let snippetParagraphStyle = try #require(
@@ -1292,7 +1300,13 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.contentTopInset == 6)
         #expect(LibraryNoteCellView.contentLeadingInset == 40)
         #expect(LibraryNoteCellView.contentBottomInset == 6)
-        #expect(LibraryNoteCellView.contentTrailingInset == 14)
+        #expect(LibraryNoteCellView.contentTrailingInset == 31)
+        #expect(
+            LibraryNoteCellView.contentTrailingInset
+                == LibraryNoteRowView.selectionTrailingInset + LibraryNoteCellView.selectionTextTrailingPadding
+        )
+        #expect(LibraryNoteCellView.selectionTextTrailingPadding == 10)
+        #expect(LibraryNoteCellView.minimumTextWidth == 40)
         #expect(LibraryNoteCellView.textRowSpacing == 1)
         #expect(LibraryNotesLayout.noteGroupFontSize == 15)
         #expect(LibraryNotesLayout.noteGroupFontWeight == .bold)
@@ -1313,6 +1327,21 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.titleLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.snippetLabel.maximumNumberOfLines == 1)
         #expect(firstNoteCell.metaLabel.maximumNumberOfLines == 1)
+        firstNoteCell.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: controller.tableView.tableColumns[0].width,
+            height: LibraryNotesLayout.noteRowHeight
+        )
+        firstNoteCell.layoutSubtreeIfNeeded()
+        let titleFrameInCell = firstNoteCell.titleLabel.convert(firstNoteCell.titleLabel.bounds, to: firstNoteCell)
+        #expect(
+            titleFrameInCell.maxX
+                <= firstNoteCell.bounds.maxX
+                    - LibraryNoteRowView.selectionTrailingInset
+                    - LibraryNoteCellView.selectionTextTrailingPadding
+                    + 0.5
+        )
         #expect(firstNoteCell.folderImageView.identifier?.rawValue == "LibraryNoteFolderIndicator")
         #expect(firstNoteCell.folderImageView.image?.accessibilityDescription == "文件夹")
         #expect(firstNoteCell.attachmentImageView.identifier?.rawValue == "LibraryNoteAttachmentIndicator")

@@ -532,7 +532,9 @@ final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 6
     static let contentLeadingInset: CGFloat = 40
     static let contentBottomInset: CGFloat = 6
-    static let contentTrailingInset: CGFloat = 14
+    static let contentTrailingInset: CGFloat = 31
+    static let selectionTextTrailingPadding: CGFloat = 10
+    static let minimumTextWidth: CGFloat = 40
     static let textRowSpacing: CGFloat = 1
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -601,6 +603,10 @@ final class LibraryNoteCellView: NSTableCellView {
         textStack.orientation = .vertical
         textStack.alignment = .leading
         textStack.spacing = Self.textRowSpacing
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for label in [titleLabel, snippetLabel, metaLabel] {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
 
         let stack = NSStackView(views: [textStack, thumbnailImageView])
         stack.orientation = .horizontal
@@ -617,7 +623,7 @@ final class LibraryNoteCellView: NSTableCellView {
         for label in [titleLabel, snippetLabel] {
             label.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
         }
-        textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTextWidth).isActive = true
         metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
         folderImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         folderImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
@@ -680,11 +686,15 @@ final class LibraryNoteRowView: NSTableRowView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        setPointerHovered(true)
+        noteTableView?.setPointerHoveredRow(self)
     }
 
     override func mouseExited(with event: NSEvent) {
-        setPointerHovered(false)
+        guard noteTableView?.pointerHoveredRow === self else {
+            setPointerHovered(false)
+            return
+        }
+        noteTableView?.setPointerHoveredRow(nil)
     }
 
     func setPointerHovered(_ hovered: Bool) {
@@ -750,6 +760,17 @@ final class LibraryNoteRowView: NSTableRowView {
             width: max(0, bounds.width - leading - trailing),
             height: max(0, bounds.height - vertical * 2)
         )
+    }
+
+    private var noteTableView: LibraryNoteTableView? {
+        var candidate = superview
+        while let view = candidate {
+            if let tableView = view as? LibraryNoteTableView {
+                return tableView
+            }
+            candidate = view.superview
+        }
+        return nil
     }
 }
 
@@ -1017,6 +1038,40 @@ fileprivate enum LibraryNoteKeyCommand {
 final class LibraryNoteTableView: NSTableView {
     fileprivate var onKeyCommand: ((LibraryNoteKeyCommand) -> Bool)?
     fileprivate var onContextMenu: ((Int) -> NSMenu?)?
+    private(set) weak var pointerHoveredRow: LibraryNoteRowView?
+
+    func setPointerHoveredRow(_ rowView: LibraryNoteRowView?) {
+        let nextRow = rowView?.isGroupRow == false ? rowView : nil
+        guard pointerHoveredRow !== nextRow else {
+            nextRow?.setPointerHovered(true)
+            return
+        }
+        pointerHoveredRow?.setPointerHovered(false)
+        pointerHoveredRow = nextRow
+        nextRow?.setPointerHovered(true)
+    }
+
+    func reconcilePointerHover(at location: NSPoint?) {
+        guard let location, bounds.contains(location) else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        let row = row(at: location)
+        guard row >= 0,
+              let rowView = rowView(atRow: row, makeIfNecessary: false) as? LibraryNoteRowView else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        setPointerHoveredRow(rowView)
+    }
+
+    func reconcilePointerHover() {
+        guard let window, window.isKeyWindow else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        reconcilePointerHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
 
     override func keyDown(with event: NSEvent) {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
@@ -1052,6 +1107,11 @@ final class LibraryNoteTableView: NSTableView {
 
 @MainActor
 final class LibraryNoteScrollView: NSScrollView {
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        (documentView as? LibraryNoteTableView)?.reconcilePointerHover()
+    }
+
     override func layout() {
         let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, frame.width)
         super.layout()
