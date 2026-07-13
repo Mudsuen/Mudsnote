@@ -49,6 +49,23 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
+    @Test func boundedNoteProjectionStopsAfterReachingItsLimit() {
+        var visited = 0
+        let matches = LibraryNoteListProjection.prefix(0..<10_000, limit: 240) { value in
+            visited += 1
+            return value.isMultiple(of: 2)
+        }
+
+        #expect(matches.count == 240)
+        #expect(matches.first == 0)
+        #expect(matches.last == 478)
+        #expect(visited == 479)
+        #expect(LibraryNoteListProjection.prefix(0..<10_000, limit: 0) { _ in
+            Issue.record("A zero-limit projection must not evaluate its predicate")
+            return true
+        }.isEmpty)
+    }
+
     @Test
     func noteSnapshotUpsertKeepsModifiedOrderAndReplacesPaths() throws {
         let root = FileManager.default.temporaryDirectory

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 161. Bounded source-scope projection
+- Problem: Inbox, folder, and tag navigation filtered the complete 10,000-note snapshot into a temporary array before keeping only the first 240 visible notes, creating avoidable main-thread scanning and allocation.
+- Fix: Added a shared bounded projection that preserves snapshot order, stops as soon as the visible limit is reached, and allocates only the result capacity. A regression proves 240 alternating matches visit 479 of 10,000 inputs instead of all 10,000.
+- Lesson: Snapshot-first navigation also needs bounded in-memory work; removing filesystem I/O is not enough if a UI action still materializes every matching record.
+
 ### 160. Reference-aligned source row highlights
 - Problem: Source-row selection and hover reused the scroll content insets, shifting their rounded surface `4pt` right and shrinking a `32pt` row to a `30pt` highlight even though the icon and label content was already aligned.
 - Fix: Added independent `10/10/0pt` highlight insets for `LibrarySourceOutlineRowView`, moving selection and hover left without changing outline indentation, content insets, row content, or scroll geometry.

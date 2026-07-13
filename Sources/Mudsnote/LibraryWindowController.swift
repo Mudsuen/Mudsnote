@@ -3698,22 +3698,22 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .inbox:
-            return Array(allNotes.filter { note in
+            return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
                 note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
                     || note.title.localizedCaseInsensitiveContains("Inbox")
-            }.prefix(limit))
+            }
         case .trash:
             return Array(trashedNotesSnapshot.prefix(limit))
         case .folder(let url):
             let folderPath = url.standardizedFileURL.path
-            return Array(allNotes.filter { note in
+            return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
                 let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
                 return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
-            }.prefix(limit))
+            }
         case .tag(let tag):
-            return Array(allNotes.filter { note in
+            return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
                 note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-            }.prefix(limit))
+            }
         }
     }
 

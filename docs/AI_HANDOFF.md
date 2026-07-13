@@ -311,6 +311,12 @@
 - Outline indentation, source icon/title/count geometry, scroll insets, drag targets, and the collapsed library state are unchanged.
 - Expanded comparison is `/tmp/mudsnote-source-highlight-probe-209/apple-notes-vs-mudsnote.png`; collapsed comparison is `/tmp/mudsnote-source-highlight-collapsed-209/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (210)
+
+- Inbox, folder, and tag navigation use a bounded in-memory projection over the loaded snapshot.
+- Scope switching preserves modified-date order, allocates at most the 240 visible results, and stops scanning once that limit is reached.
+- The 10,000-entry regression proves 240 alternating matches require only 479 predicate evaluations.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

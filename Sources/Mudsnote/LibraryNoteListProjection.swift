@@ -18,6 +18,24 @@ enum LibraryNoteSortOrder: Int {
 }
 
 enum LibraryNoteListProjection {
+    static func prefix<Notes: Sequence>(
+        _ notes: Notes,
+        limit: Int,
+        where predicate: (Notes.Element) -> Bool
+    ) -> [Notes.Element] {
+        guard limit > 0 else { return [] }
+
+        var matches: [Notes.Element] = []
+        matches.reserveCapacity(limit)
+        for note in notes where predicate(note) {
+            matches.append(note)
+            if matches.count == limit {
+                break
+            }
+        }
+        return matches
+    }
+
     static func upsertByModifiedDate(
         _ note: NoteSearchResult,
         into snapshot: inout [NoteSearchResult],
