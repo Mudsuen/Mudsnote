@@ -316,6 +316,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
+    static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
     static let toolbarAddFolderWrapperWidth: CGFloat = 68
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
@@ -5589,7 +5590,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
-        noteListToolbarTitleLeadingConstraint?.constant = isVisible ? 0 : -24
+        noteListToolbarTitleLeadingConstraint?.constant = isVisible ? 0 : -58
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
             case Self.addFolderToolbarItemIdentifier,
@@ -6245,7 +6246,7 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        item.view = toolbarGlassSurface(
+        let glass = toolbarGlassSurface(
             identifier: "\(Self.toggleSidebarToolbarItemIdentifier.rawValue).glass",
             content: button,
             size: NSSize(
@@ -6254,6 +6255,25 @@ final class LibraryWindowController: NSWindowController,
             ),
             cornerRadius: LibraryNotesLayout.toolbarCircularButtonSize / 2
         )
+        let wrapper = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth,
+            height: LibraryNotesLayout.toolbarCircularButtonSize
+        ))
+        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarCollapsedSidebarWrapper")
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(glass)
+        glass.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth),
+            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
+            glass.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            glass.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
+            glass.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
+            glass.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
+        ])
+        item.view = wrapper
     }
 
     private func popToolbarMenu(_ menu: NSMenu, from sender: Any?) {

@@ -1098,7 +1098,13 @@ struct MarkdownRichEditorTests {
         #expect(addFolderItem.isHidden)
         #expect(sourceTrackingSeparatorItem.isHidden)
         #expect(!toggleSourceItem.isBordered)
-        let collapsedToggleGlass = try #require(toggleSourceItem.view as? NSGlassEffectView)
+        let collapsedToggleWrapper = try #require(toggleSourceItem.view)
+        #expect(collapsedToggleWrapper.identifier?.rawValue == "LibraryToolbarCollapsedSidebarWrapper")
+        #expect(collapsedToggleWrapper.frame.width == LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth)
+        #expect(LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth == 34)
+        let collapsedToggleGlass = try #require(collapsedToggleWrapper.allSubviews.compactMap {
+            $0 as? NSGlassEffectView
+        }.first)
         #expect(collapsedToggleGlass.frame.size == NSSize(
             width: LibraryNotesLayout.toolbarCircularButtonSize,
             height: LibraryNotesLayout.toolbarCircularButtonSize
@@ -1114,7 +1120,7 @@ struct MarkdownRichEditorTests {
         let collapsedTitleLeadingConstraint = try #require(collapsedTitleStack.superview?.constraints.first {
             $0.firstItem === collapsedTitleStack && $0.firstAttribute == .leading
         })
-        #expect(collapsedTitleLeadingConstraint.constant == -24)
+        #expect(collapsedTitleLeadingConstraint.constant == -58)
         let collapsedToggleButton = try #require(collapsedToggleGlass.contentView as? NSButton)
         collapsedToggleButton.performClick(nil)
         #expect(controller.isSourceListVisibleForLibrary)

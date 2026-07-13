@@ -1045,6 +1045,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replaced the native Add Folder item body with a `68pt` wrapper whose `30pt` button is trailing-aligned, shifting both source controls into the measured reference positions without adding another toolbar item. Tightened the five-button editor-tools group from `184pt` to `155pt` with `31pt` button tracks, matching the reference and preserving toolbar capacity.
 - Lesson: Pane-local alignment should be expressed inside an existing toolbar item when possible; adding invisible toolbar items changes overflow behavior even when their apparent width is reclaimed elsewhere.
 
+### 175. Reference-aligned collapsed toolbar
+
+- Problem: In the collapsed library reference, Sidebar Toggle remained about `4pt` left of Apple Notes and the list title about `2.5pt` left, despite the expanded toolbar being aligned.
+- Fix: Kept the expanded toggle unchanged, wrapped only the collapsed `30pt` glass control in a trailing-aligned `34pt` item, and calibrated the existing collapsed list-title offset to `-58pt`. The compact comparison now places both controls within roughly `2–2.5pt` of the reference.
+- Lesson: Expanded and collapsed toolbar states have different AppKit item geometry; small state-specific wrappers are safer than changing shared item widths or introducing zero-width spacers.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

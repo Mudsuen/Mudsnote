@@ -97,6 +97,11 @@
 - Expanded Add Folder and Sidebar Toggle align with Apple Notes through a trailing-aligned `68pt` Add Folder wrapper, without introducing a spacer toolbar item or overflow chevron.
 - The five-button editor-tools glass group is `155pt` wide with `31pt` button tracks, matching the measured reference density.
 
+## Latest iteration (175)
+
+- Collapsed Sidebar Toggle uses a trailing-aligned `34pt` wrapper around the existing `30pt` glass control; expanded state remains unchanged.
+- The collapsed list title uses a `-58pt` state offset, putting button and title within about `2–2.5pt` of the checked-in Apple Notes crop.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
