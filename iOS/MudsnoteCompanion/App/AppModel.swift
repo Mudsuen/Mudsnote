@@ -360,6 +360,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func togglePinned(_ file: RecentMarkdownFile) {
+        Task {
+            do {
+                try await fileStore.setPinned(!file.isPinned, relativePath: file.relativePath)
+                statusToast = .saved(
+                    file.isPinned ? String(localized: "Unpinned") : String(localized: "Pinned")
+                )
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
     @discardableResult
     func createFolder(named name: String, parent: String? = nil) async -> Bool {
         guard syncStatus != .pending else {

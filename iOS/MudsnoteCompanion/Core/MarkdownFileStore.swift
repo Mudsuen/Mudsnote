@@ -91,11 +91,20 @@ actor MarkdownFileStore {
             }
         }
 
+        let storedPinnedPaths = try loadPinnedPaths(root: root)
+        let activePaths = Set(markdownFiles.map(\.relativePath))
+        let pinnedPaths = storedPinnedPaths.intersection(activePaths)
+        if pinnedPaths != storedPinnedPaths {
+            try savePinnedPaths(pinnedPaths, root: root)
+        }
+        for index in markdownFiles.indices {
+            markdownFiles[index].isPinned = pinnedPaths.contains(markdownFiles[index].relativePath)
+        }
         let recentFiles = markdownFiles
-            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .sorted(by: Self.notesOrder)
             .prefix(24)
             .map { $0 }
-        let allFiles = markdownFiles.sorted { $0.modifiedAt > $1.modifiedAt }
+        let allFiles = markdownFiles.sorted(by: Self.notesOrder)
         let trashedFiles = try loadTrashedFiles(root: root)
         let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
@@ -146,12 +155,32 @@ actor MarkdownFileStore {
         snapshot.inboxItems = inboxItems
         snapshot.summary.inboxCount = inboxItems.count
         snapshot.allFiles = (snapshot.allFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
-            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .sorted(by: Self.notesOrder)
         snapshot.recentFiles = snapshot.allFiles
             .prefix(24)
             .map { $0 }
         cachedLibrarySnapshot = snapshot
         return snapshot
+    }
+
+    func setPinned(_ isPinned: Bool, relativePath: String) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard Self.isPinnableNotePath(relativePath),
+              let url = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              url.pathExtension.lowercased() == "md",
+              fileManager.fileExists(atPath: url.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+        var pins = try loadPinnedPaths(root: root)
+        if isPinned {
+            pins.insert(relativePath)
+        } else {
+            pins.remove(relativePath)
+        }
+        try savePinnedPaths(pins, root: root)
+        cachedLibrarySnapshot = nil
     }
 
     func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
@@ -404,12 +433,18 @@ actor MarkdownFileStore {
             id: trashID,
             originalRelativePath: relativePath,
             title: source.deletingPathExtension().lastPathComponent,
-            trashedAt: now
+            trashedAt: now,
+            wasPinned: try loadPinnedPaths(root: root).contains(relativePath)
         )
         try JSONEncoder.mudsnote.encode(metadata).write(to: metadataURL, options: .atomic)
         do {
             try coordinatedMove(from: source, to: trashedFile)
+            try removePinnedPath(relativePath, root: root)
         } catch {
+            if fileManager.fileExists(atPath: trashedFile.path),
+               !fileManager.fileExists(atPath: source.path) {
+                try? coordinatedMove(from: trashedFile, to: source)
+            }
             try? fileManager.removeItem(at: metadataURL)
             throw error
         }
@@ -460,7 +495,13 @@ actor MarkdownFileStore {
                 to: newRelativePath,
                 root: root
             )
+            try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
+            try? rewriteTrashedOriginalPathPrefix(
+                from: newRelativePath,
+                to: relativePath,
+                root: root
+            )
             try? coordinatedMove(from: destination, to: source)
             throw error
         }
@@ -496,6 +537,12 @@ actor MarkdownFileStore {
         )
         try coordinatedMove(from: source, to: destination)
         let moved = try recentFile(at: destination, root: root)
+        do {
+            try replacePinnedPath(relativePath, with: moved.relativePath, root: root)
+        } catch {
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
         invalidateAfterMutation(relativePaths: [relativePath, moved.relativePath])
         return moved
     }
@@ -542,13 +589,19 @@ actor MarkdownFileStore {
             withIntermediateDirectories: true
         )
         try coordinatedMove(from: item.fileURL, to: destination)
+        let relativePath = Self.relativePath(for: destination, root: root)
         do {
+            if item.wasPinned {
+                try addPinnedPath(relativePath, root: root)
+            }
             try fileManager.removeItem(at: item.metadataURL)
         } catch {
+            if item.wasPinned {
+                try? removePinnedPath(relativePath, root: root)
+            }
             try? coordinatedMove(from: destination, to: item.fileURL)
             throw error
         }
-        let relativePath = Self.relativePath(for: destination, root: root)
         invalidateAfterMutation(relativePaths: [relativePath])
         let modifiedAt = try destination.resourceValues(
             forKeys: [.contentModificationDateKey]
@@ -609,6 +662,7 @@ actor MarkdownFileStore {
 
     private func trashItem(id: String, root: URL) throws -> (
         originalRelativePath: String,
+        wasPinned: Bool,
         fileURL: URL,
         metadataURL: URL
     ) {
@@ -627,7 +681,7 @@ actor MarkdownFileStore {
               fileManager.fileExists(atPath: fileURL.path) else {
             throw MarkdownLifecycleError.noteNotFound
         }
-        return (metadata.originalRelativePath, fileURL, metadataURL)
+        return (metadata.originalRelativePath, metadata.wasPinned ?? false, fileURL, metadataURL)
     }
 
     private func coordinatedMove(from source: URL, to destination: URL) throws {
@@ -790,6 +844,58 @@ actor MarkdownFileStore {
         searchCache = searchCache.filter { !$0.key.hasPrefix(prefix + "/") && $0.key != prefix }
     }
 
+    private func loadPinnedPaths(root: URL) throws -> Set<String> {
+        let url = root.appendingPathComponent(".mudsnote/pins.json")
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 1_048_576,
+              let paths = try? JSONDecoder().decode([String].self, from: Data(contentsOf: url))
+        else { return [] }
+        return Set(paths.filter(Self.isPinnableNotePath))
+    }
+
+    private func savePinnedPaths(_ paths: Set<String>, root: URL) throws {
+        let url = root.appendingPathComponent(".mudsnote/pins.json")
+        let data = try JSONEncoder().encode(paths.sorted())
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func addPinnedPath(_ path: String, root: URL) throws {
+        var pins = try loadPinnedPaths(root: root)
+        pins.insert(path)
+        try savePinnedPaths(pins, root: root)
+    }
+
+    private func removePinnedPath(_ path: String, root: URL) throws {
+        var pins = try loadPinnedPaths(root: root)
+        guard pins.remove(path) != nil else { return }
+        try savePinnedPaths(pins, root: root)
+    }
+
+    private func replacePinnedPath(_ oldPath: String, with newPath: String, root: URL) throws {
+        var pins = try loadPinnedPaths(root: root)
+        guard pins.remove(oldPath) != nil else { return }
+        pins.insert(newPath)
+        try savePinnedPaths(pins, root: root)
+    }
+
+    private func rewritePinnedPathPrefix(from oldPrefix: String, to newPrefix: String, root: URL) throws {
+        let pins = try loadPinnedPaths(root: root)
+        let updated = Set(pins.map { path in
+            path.hasPrefix(oldPrefix + "/")
+                ? newPrefix + path.dropFirst(oldPrefix.count)
+                : path
+        })
+        guard updated != pins else { return }
+        try savePinnedPaths(updated, root: root)
+    }
+
+    private static func notesOrder(_ lhs: RecentMarkdownFile, _ rhs: RecentMarkdownFile) -> Bool {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+        return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+    }
+
     private func invalidateAfterMutation(relativePaths: [String]) {
         cachedLibrarySnapshot = nil
         for path in relativePaths {
@@ -803,6 +909,13 @@ actor MarkdownFileStore {
               !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return false }
         return true
+    }
+
+    private static func isPinnableNotePath(_ relativePath: String) -> Bool {
+        relativePath != "Inbox.md"
+            && !relativePath.hasPrefix("Attachments/")
+            && !relativePath.hasPrefix(".mudsnote/")
+            && relativePath.hasSuffix(".md")
     }
 
     private func boundedSearchText(from url: URL) throws -> String {
@@ -1013,6 +1126,7 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var relativePath: String
     var title: String
     var modifiedAt: Date
+    var isPinned = false
 }
 
 struct MarkdownSearchResult: Identifiable, Equatable {
@@ -1127,6 +1241,7 @@ private struct TrashedMarkdownMetadata: Codable {
     var originalRelativePath: String
     var title: String
     var trashedAt: Date
+    var wasPinned: Bool?
 }
 
 struct LibraryFolderNode: Identifiable, Equatable {

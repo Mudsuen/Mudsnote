@@ -709,6 +709,77 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testPinnedNoteSurvivesMoveFolderRenameTrashAndRestore() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let old = root.appendingPathComponent("Old.md")
+        let newer = root.appendingPathComponent("Newer.md")
+        try "# Old pinned\n".write(to: old, atomically: true, encoding: .utf8)
+        try "# Newer\n".write(to: newer, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_600_000_000)],
+            ofItemAtPath: old.path
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Old.md")
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.allFiles.first?.relativePath, "Old.md")
+        XCTAssertTrue(snapshot.allFiles.first?.isPinned == true)
+
+        let folder = try await store.createFolder(named: "Archive")
+        let moved = try await store.moveMarkdownDocument(
+            relativePath: "Old.md",
+            toFolder: folder.relativePath
+        )
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == moved.relativePath }?.isPinned == true)
+
+        let renamed = try await store.renameFolder(relativePath: "Archive", to: "Filed")
+        let renamedPath = "\(renamed)/Old.md"
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == renamedPath }?.isPinned == true)
+
+        let trashed = try await store.trashMarkdownDocument(relativePath: renamedPath)
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertFalse(snapshot.allFiles.contains { $0.isPinned })
+        let restored = try await store.restoreTrashedMarkdownDocument(id: trashed.id)
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(restored.relativePath, renamedPath)
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == renamedPath }?.isPinned == true)
+
+        try await store.setPinned(false, relativePath: renamedPath)
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertFalse(snapshot.allFiles.first { $0.relativePath == renamedPath }?.isPinned == true)
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(renamedPath), encoding: .utf8),
+            "# Old pinned\n"
+        )
+    }
+
+    func testDamagedPinMetadataDoesNotBlockLibrary() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try Data("not-json".utf8).write(to: root.appendingPathComponent(".mudsnote/pins.json"))
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+
+        XCTAssertFalse(snapshot.allFiles.contains { $0.isPinned })
+        let daily = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath.hasPrefix("Daily/") })
+        try await store.setPinned(true, relativePath: daily.relativePath)
+        XCTAssertNoThrow(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(contentsOf: root.appendingPathComponent(".mudsnote/pins.json"))
+            )
+        )
+    }
+
     func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

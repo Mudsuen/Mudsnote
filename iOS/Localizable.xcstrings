@@ -1760,6 +1760,15 @@
     },
     "This folder contains files Mudsnote will not delete.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹包含 Mudsnote 不会删除的其他文件。" } } }
+    },
+    "Unpin": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消置顶" } } }
+    },
+    "Unpinned": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已取消置顶" } } }
+    },
+    "Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记" } } }
     }
   },
   "version": "1.0"

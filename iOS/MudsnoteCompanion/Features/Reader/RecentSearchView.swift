@@ -281,21 +281,30 @@ struct FolderNotesListView: View {
         scope.files(from: appModel.libraryFiles)
     }
 
+    private var pinnedFiles: [RecentMarkdownFile] { files.filter(\.isPinned) }
+    private var otherFiles: [RecentMarkdownFile] { files.filter { !$0.isPinned } }
+
     var body: some View {
         List {
             if files.isEmpty {
                 Text("No Notes")
                     .foregroundStyle(MudsnoteColors.muted)
             } else {
-                ForEach(files) { file in
-                    Button {
-                        appModel.openFile(file)
-                    } label: {
-                        RecentFileRow(file: file)
+                if !pinnedFiles.isEmpty {
+                    Section("Pinned") {
+                        ForEach(pinnedFiles) { file in
+                            NoteFileButton(file: file)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("markdown-file-row-\(file.id)")
-                    .modifier(NoteLifecycleActions(file: file))
+                }
+                if !otherFiles.isEmpty {
+                    Section {
+                        ForEach(otherFiles) { file in
+                            NoteFileButton(file: file)
+                        }
+                    } header: {
+                        if !pinnedFiles.isEmpty { Text("Notes") }
+                    }
                 }
             }
         }
@@ -342,6 +351,9 @@ struct LibraryFolderView: View {
         }
     }
 
+    private var pinnedFiles: [RecentMarkdownFile] { directFiles.filter(\.isPinned) }
+    private var otherFiles: [RecentMarkdownFile] { directFiles.filter { !$0.isPinned } }
+
     var body: some View {
         List {
             ForEach(currentFolder.children) { child in
@@ -357,15 +369,21 @@ struct LibraryFolderView: View {
                 }
             }
 
-            ForEach(directFiles) { file in
-                Button {
-                    appModel.openFile(file)
-                } label: {
-                    RecentFileRow(file: file)
+            if !pinnedFiles.isEmpty {
+                Section("Pinned") {
+                    ForEach(pinnedFiles) { file in
+                        NoteFileButton(file: file)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("markdown-file-row-\(file.id)")
-                .modifier(NoteLifecycleActions(file: file))
+            }
+            if !otherFiles.isEmpty {
+                Section {
+                    ForEach(otherFiles) { file in
+                        NoteFileButton(file: file)
+                    }
+                } header: {
+                    if !pinnedFiles.isEmpty { Text("Notes") }
+                }
             }
 
             if currentFolder.children.isEmpty, directFiles.isEmpty {
@@ -450,12 +468,38 @@ struct LibraryFolderView: View {
     }
 }
 
+private struct NoteFileButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var file: RecentMarkdownFile
+
+    var body: some View {
+        Button {
+            appModel.openFile(file)
+        } label: {
+            RecentFileRow(file: file)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("markdown-file-row-\(file.id)")
+        .modifier(NoteLifecycleActions(file: file))
+    }
+}
+
 private struct NoteLifecycleActions: ViewModifier {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
 
     func body(content: Content) -> some View {
         content
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                if appModel.canMoveToRecentlyDeleted(file) {
+                    Button {
+                        appModel.togglePinned(file)
+                    } label: {
+                        Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
+                    }
+                    .tint(.yellow)
+                }
+            }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if appModel.canMoveToRecentlyDeleted(file) {
                     Button(role: .destructive) {
@@ -466,6 +510,13 @@ private struct NoteLifecycleActions: ViewModifier {
                 }
             }
             .contextMenu {
+                if appModel.canMoveToRecentlyDeleted(file) {
+                    Button {
+                        appModel.togglePinned(file)
+                    } label: {
+                        Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
+                    }
+                }
                 if appModel.canMoveToRecentlyDeleted(file), !appModel.allFolders.isEmpty {
                     Menu {
                         ForEach(appModel.allFolders) { folder in
@@ -954,13 +1005,23 @@ struct RecentFileRow: View {
     var file: RecentMarkdownFile
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(file.title)
-                .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundStyle(MudsnoteColors.text)
-            Text(file.relativePath)
-                .font(.caption)
-                .foregroundStyle(MudsnoteColors.muted)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(file.title)
+                    .font(.system(.body, design: .rounded, weight: .medium))
+                    .foregroundStyle(MudsnoteColors.text)
+                Text(file.relativePath)
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            Spacer(minLength: 8)
+            if file.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NotesCloneColors.folderYellow)
+                    .accessibilityLabel("Pinned")
+                    .accessibilityIdentifier("pin-indicator-\(file.id)")
+            }
         }
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)

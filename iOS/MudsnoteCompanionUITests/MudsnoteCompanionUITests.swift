@@ -148,6 +148,29 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
+    func testNotePinsAndUnpinsThroughSwipeActions() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let pinIndicator = app.images["pin-indicator-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.swipeRight()
+        let pin = app.buttons["Pin"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 3))
+        pin.tap()
+        XCTAssertTrue(pinIndicator.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Pinned"].exists)
+
+        note.swipeRight()
+        let unpin = app.buttons["Unpin"]
+        XCTAssertTrue(unpin.waitForExistence(timeout: 3))
+        unpin.tap()
+        XCTAssertTrue(waitForNonexistence(pinIndicator))
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,
