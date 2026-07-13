@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 159. Reference-sized toolbar and source icons
+- Problem: After the expanded source actions were corrected, New Note remained slightly undersized, grouped editor symbols were slightly oversized, `Aa` was visibly too small, and source-row symbols were still downscaled by an undersized image slot.
+- Fix: Gave New Note its own `13pt` symbol configuration, changed grouped symbols to `13pt`, restored native `Aa` to `17pt`, and enlarged source-row image slots to preserve the existing `15pt` system-symbol canvas while keeping label origins aligned.
+- Lesson: AppKit symbol point size, image canvas, image-view bounds, and visible glyph boundary are separate measurements; tune each control family independently from equal-scale rendered evidence.
+
 ### 158. Reference-sized source toolbar symbols
 - Problem: Expanded Add Folder and Sidebar Toggle used the correct native SF Symbols, but shared the generic `19pt` toolbar configuration and rendered visibly larger than Apple Notes.
 - Fix: Added a dedicated `13pt` source-action symbol configuration and applied it consistently during toolbar creation, state refresh, and sidebar visibility transitions without changing button frames or collapsed glass controls.

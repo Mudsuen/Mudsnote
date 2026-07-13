@@ -1,24 +1,27 @@
-# Design QA: expanded source toolbar icons
+# Design QA: native toolbar and source icon audit
 
 ## Evidence
 
-- Reference: `/tmp/mudsnote-source-action-icons-final-207/apple-notes-reference-normalized.png` (`921x613pt`, `1842x1226px`)
-- Current: `/tmp/mudsnote-source-action-icons-final-207/mudsnote-library.png` (`921x613pt`, `1842x1226px`)
-- Combined comparison: `/tmp/mudsnote-source-action-icons-final-207/apple-notes-vs-mudsnote.png`
-- State: dark appearance, expanded source sidebar, pointer outside the toolbar, content note selected
+- Expanded reference/current: `/tmp/mudsnote-all-icons-probe-208/apple-notes-reference-normalized.png` and `/tmp/mudsnote-all-icons-probe-208/mudsnote-library.png`
+- Expanded comparison: `/tmp/mudsnote-all-icons-probe-208/apple-notes-vs-mudsnote.png`
+- Collapsed comparison: `/tmp/mudsnote-editor-toolbar-icons-collapsed-208/apple-notes-vs-mudsnote.png`
+- Real-pointer Aa hover: `/tmp/mudsnote-window-hover-crop-208.png`
+- State: dark appearance, canonical `921x613pt`, `2x`, content note selected, pointer outside static comparison
 
 ## Review
 
 - P0: none
 - P1: none
 - P2: none
-- Add Folder uses the same `folder.badge.plus` system symbol as the reference and measures `44x30px`, versus Apple Notes' `44x31px` visible boundary.
-- Sidebar Toggle uses the same `sidebar.left` system symbol as the reference and measures `38x30px`, exactly matching Apple Notes.
-- Native `.toolbar` hover/pressed drawing, `30pt` hit areas, toolbar positions, and collapsed `.glass` control remain unchanged.
-- Intentional differences outside this check: local fixture content, omitted Call Recordings source, and non-identical colors.
+- New Note matches Apple Notes at `32x32px`.
+- Checklist is `36x33px` versus `37x33px`; Table matches at `39x30px`; Attachment matches at `31x35px`.
+- Native Aa is `37x25px` versus `39x24px` and remains fully contained by its real hover highlight.
+- Search remains the native `NSSearchField`; its icon is within `2px` of the reference and was not overridden.
+- Source folder/trash symbols preserve reference-aligned trailing edges and title origins. The folder width differs by `3px`, but enlarging it would move the already aligned text.
+- Collapsed sidebar glass geometry and symbol scale remain unchanged.
 
 ## Remaining P3
 
-- Folder height differs by one Retina pixel, below the threshold for another point-size change.
+- The extra local-first Link command has no equivalent in the captured Apple Notes toolbar; its `13pt` symbol follows the aligned editor-tool family.
 
 final result: passed

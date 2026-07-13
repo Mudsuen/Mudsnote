@@ -297,6 +297,13 @@
 - The `30pt` button frames, measured source-toolbar positions, and collapsed `12pt` glass sidebar control are unchanged.
 - Equal-scale `2x` QA measures Apple Notes at `44x31px` and `38x30px`; Mudsnote now renders `44x30px` and `38x30px`. Evidence is `/tmp/mudsnote-source-action-icons-final-207/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (208)
+
+- New Note now has an independent `13pt` compact-glass symbol configuration; the collapsed Sidebar Toggle remains `12pt`.
+- Grouped editor symbols use `13pt`, while native `Aa` uses `17pt`. Equal-scale QA matches New Note exactly at `32x32px`, Table at `39x30px`, Attachment at `31x35px`, and keeps Checklist/Aa within one or two pixels of Apple Notes.
+- Source-row symbols retain their `15pt` configuration but render in a `22x20pt` image slot instead of being downscaled inside `18x18pt`; the icon trailing edges and title origins align with the reference.
+- Expanded comparison is `/tmp/mudsnote-all-icons-probe-208/apple-notes-vs-mudsnote.png`, collapsed comparison is `/tmp/mudsnote-editor-toolbar-icons-collapsed-208/apple-notes-vs-mudsnote.png`, and real-pointer hover evidence is `/tmp/mudsnote-window-hover-crop-208.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

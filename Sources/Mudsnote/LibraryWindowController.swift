@@ -485,9 +485,12 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
                 constant: LibraryNotesLayout.sourceCellContentLeadingInset
             ),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            icon.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconWidth),
+            icon.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconHeight),
+            title.leadingAnchor.constraint(
+                equalTo: icon.trailingAnchor,
+                constant: LibraryNotesLayout.sourceIconTitleSpacing
+            ),
             title.centerYAnchor.constraint(equalTo: centerYAnchor),
             title.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -6),
             countLabel.trailingAnchor.constraint(
@@ -601,8 +604,8 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26
-    static let toolbarEditorToolSymbolPointSize: CGFloat = 14
-    static let toolbarEditorFormatFontSize: CGFloat = 13
+    static let toolbarEditorToolSymbolPointSize: CGFloat = 13
+    static let toolbarEditorFormatFontSize: CGFloat = 17
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarNewNoteWrapperWidth: CGFloat = 44
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
@@ -610,6 +613,7 @@ enum LibraryNotesLayout {
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarAddFolderWrapperWidth: CGFloat = 63
     static let toolbarSourceActionSymbolPointSize: CGFloat = 13
+    static let toolbarNewNoteSymbolPointSize: CGFloat = 13
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 12
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -633,7 +637,10 @@ enum LibraryNotesLayout {
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceFolderIndentStep: CGFloat = 14
-    static let sourceCellContentLeadingInset: CGFloat = 4
+    static let sourceCellContentLeadingInset: CGFloat = 7.5
+    static let sourceIconWidth: CGFloat = 22
+    static let sourceIconHeight: CGFloat = 20
+    static let sourceIconTitleSpacing: CGFloat = 3
     static let sourceGroupContentLeadingInset: CGFloat = 5
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
@@ -2684,7 +2691,11 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.isBordered = false
 
-        let configuredImage = toolbarCompactGlassSymbolImage(symbolName: symbolName, label: label)
+        let configuredImage = toolbarCompactGlassSymbolImage(
+            symbolName: symbolName,
+            label: label,
+            pointSize: LibraryNotesLayout.toolbarNewNoteSymbolPointSize
+        )
         configuredImage?.isTemplate = true
 
         let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
@@ -2736,10 +2747,14 @@ final class LibraryWindowController: NSWindowController,
         )) ?? image
     }
 
-    private func toolbarCompactGlassSymbolImage(symbolName: String, label: String) -> NSImage? {
+    private func toolbarCompactGlassSymbolImage(
+        symbolName: String,
+        label: String,
+        pointSize: CGFloat = LibraryNotesLayout.toolbarCircularButtonSymbolPointSize
+    ) -> NSImage? {
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
         return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.toolbarCircularButtonSymbolPointSize,
+            pointSize: pointSize,
             weight: .regular
         )) ?? image
     }
@@ -4064,11 +4079,17 @@ final class LibraryWindowController: NSWindowController,
         cell.addSubview(icon)
         cell.addSubview(field)
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            icon.leadingAnchor.constraint(
+                equalTo: cell.leadingAnchor,
+                constant: LibraryNotesLayout.sourceCellContentLeadingInset
+            ),
             icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            icon.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconWidth),
+            icon.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconHeight),
+            field.leadingAnchor.constraint(
+                equalTo: icon.trailingAnchor,
+                constant: LibraryNotesLayout.sourceIconTitleSpacing
+            ),
             field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
             field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             field.heightAnchor.constraint(equalToConstant: 24)
