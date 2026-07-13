@@ -112,6 +112,11 @@
 - The editor vertical stack uses `.fill`, so the date and title remain tightly anchored at the top and the body receives all flexible height.
 - Visual comparison: `/tmp/mudsnote-editor-stack-fill-177/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (178)
+
+- Source navigation still paints from the in-memory snapshot first, then starts detached filesystem validation after a cooperative yield rather than a fixed `80ms` delay.
+- Cancellation and generation checks continue to reject stale validations; the focused race test passed 10 consecutive runs and the full suite passed.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

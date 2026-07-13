@@ -3407,7 +3407,7 @@ final class LibraryWindowController: NSWindowController,
         let sourceFolderPaths = currentSourceFolderPaths()
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
-            try? await Task.sleep(for: .milliseconds(80))
+            await Task.yield()
             guard !Task.isCancelled else { return }
             let allNotes = noteStore.listNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }

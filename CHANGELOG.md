@@ -1063,6 +1063,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Set the editor stack distribution explicitly to `.fill`, keeping the date and title at their measured `20pt + 8pt` rhythm while the body container absorbs remaining height.
 - Lesson: Notes-like top alignment needs an explicit stack distribution; spacing constants alone do not prevent AppKit from reallocating flexible space.
 
+### 178. Immediate source snapshot validation
+
+- Problem: Source navigation painted its cached snapshot immediately but imposed an additional fixed `80ms` wait before validating the filesystem. Under concurrent I/O this amplified tail latency and made the background-refresh regression intermittently exceed its deadline.
+- Fix: Replace the fixed delay with one cooperative `Task.yield()`. Existing cancellation and generation guards still coalesce obsolete validations, while the current validation starts as soon as the executor can schedule it.
+- Lesson: Generation-based cancellation is the correct coalescing boundary here; a fixed debounce adds latency without improving correctness.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
