@@ -1868,6 +1868,15 @@
     "Note Moved": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已移动" } } }
     },
+    "Duplicate Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "复制笔记" } } }
+    },
+    "Note Duplicated": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已复制" } } }
+    },
+    "Inbox and Daily notes cannot be duplicated.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 和 Daily 系统笔记不能复制。" } } }
+    },
     "Finish pending captures before changing folders.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待处理的快速笔记，再更改文件夹。" } } }
     },

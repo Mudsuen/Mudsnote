@@ -658,6 +658,41 @@ actor MarkdownFileStore {
         }
     }
 
+    func duplicateMarkdownDocument(
+        relativePath: String,
+        now: Date = Date()
+    ) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md",
+              (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            throw MarkdownLifecycleError.protectedNote
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+        let stem = source.deletingPathExtension().lastPathComponent
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent("\(stem) Copy.md")
+        let destination = uniqueMarkdownURL(for: requested)
+        try coordinatedCopy(from: source, to: destination)
+        do {
+            try fileManager.setAttributes(
+                [.creationDate: now, .modificationDate: now],
+                ofItemAtPath: destination.path
+            )
+            let duplicated = try recentFile(at: destination, root: root)
+            invalidateAfterMutation(relativePaths: [duplicated.relativePath])
+            return duplicated
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        }
+    }
+
     @discardableResult
     func trashMarkdownDocument(
         relativePath: String,
@@ -998,6 +1033,27 @@ actor MarkdownFileStore {
         }
         if let coordinationError { throw coordinationError }
         if let moveError { throw moveError }
+    }
+
+    private func coordinatedCopy(from source: URL, to destination: URL) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var copyError: Error?
+        coordinator.coordinate(
+            readingItemAt: source,
+            options: .withoutChanges,
+            writingItemAt: destination,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedSource, coordinatedDestination in
+            do {
+                try fileManager.copyItem(at: coordinatedSource, to: coordinatedDestination)
+            } catch {
+                copyError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let copyError { throw copyError }
     }
 
     private func uniqueMarkdownURL(for requested: URL) -> URL {

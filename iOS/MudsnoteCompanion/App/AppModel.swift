@@ -528,6 +528,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func duplicate(_ file: RecentMarkdownFile) {
+        guard canMoveToRecentlyDeleted(file) else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be duplicated."))
+            return
+        }
+        Task {
+            do {
+                _ = try await fileStore.duplicateMarkdownDocument(
+                    relativePath: file.relativePath
+                )
+                statusToast = .saved(String(localized: "Note Duplicated"))
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
     @discardableResult
     func createFolder(named name: String, parent: String? = nil) async -> Bool {
         guard syncStatus != .pending else {

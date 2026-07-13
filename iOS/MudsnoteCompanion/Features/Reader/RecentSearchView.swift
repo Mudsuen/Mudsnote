@@ -928,6 +928,11 @@ private struct NoteLifecycleActions: ViewModifier {
                     } label: {
                         Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
                     }
+                    Button {
+                        appModel.duplicate(file)
+                    } label: {
+                        Label("Duplicate Note", systemImage: "plus.square.on.square")
+                    }
                 }
                 if appModel.canMoveToRecentlyDeleted(file), !appModel.allFolders.isEmpty {
                     Menu {

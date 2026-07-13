@@ -1018,6 +1018,51 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testDuplicateNotePreservesMarkdownWithoutCopyingPinState() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let markdown = "# Plan\n\n[Brief](Attachments/shared.txt)\n"
+        try markdown.write(
+            to: root.appendingPathComponent("Projects/Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try Data("shared".utf8).write(to: root.appendingPathComponent("Attachments/shared.txt"))
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Projects/Plan.md")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = try await store.duplicateMarkdownDocument(
+            relativePath: "Projects/Plan.md",
+            now: now
+        )
+        let second = try await store.duplicateMarkdownDocument(
+            relativePath: "Projects/Plan.md",
+            now: now.addingTimeInterval(1)
+        )
+
+        XCTAssertEqual(first.relativePath, "Projects/Plan Copy.md")
+        XCTAssertEqual(second.relativePath, "Projects/Plan Copy 2.md")
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(first.relativePath), encoding: .utf8),
+            markdown
+        )
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == "Projects/Plan.md" }?.isPinned == true)
+        XCTAssertFalse(snapshot.allFiles.first { $0.relativePath == first.relativePath }?.isPinned == true)
+        XCTAssertFalse(snapshot.allFiles.first { $0.relativePath == second.relativePath }?.isPinned == true)
+        XCTAssertEqual(
+            try Data(contentsOf: root.appendingPathComponent("Attachments/shared.txt")),
+            Data("shared".utf8)
+        )
+    }
+
     func testDamagedPinMetadataDoesNotBlockLibrary() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

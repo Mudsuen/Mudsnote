@@ -532,6 +532,26 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForNonexistence(pinIndicator))
     }
 
+    func testNoteContextMenuCreatesPortableDuplicate() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.press(forDuration: 1)
+        let duplicate = app.buttons["Duplicate Note"]
+        XCTAssertTrue(duplicate.waitForExistence(timeout: 3))
+        duplicate.tap()
+
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle Copy.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["Note Duplicated"].exists)
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,
