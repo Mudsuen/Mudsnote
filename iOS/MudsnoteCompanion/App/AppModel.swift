@@ -582,6 +582,37 @@ final class AppModel: ObservableObject {
         return inboxItems.first { $0.id == memo.id }
     }
 
+    func attachPhoto(
+        _ item: PhotosPickerItem?,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard let item, attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                throw CaptureAttachmentError.empty
+            }
+            let attachment = try CaptureAttachment.validatedImage(data: data)
+            let updated = try await fileStore.attachToMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachment: attachment
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Image attached"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     private func refreshActiveSearchIfNeeded() async {
         guard !activeSearchQuery.isEmpty else { return }
         await searchLibrary(query: activeSearchQuery)

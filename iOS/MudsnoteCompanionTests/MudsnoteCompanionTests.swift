@@ -912,6 +912,62 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# External change\n")
     }
 
+    func testMarkdownDocumentAttachmentIsCollisionSafeAndRollsBackOnConflict() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Projects/Photos.md")
+        try FileManager.default.createDirectory(
+            at: documentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Photos\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let image = try CaptureAttachment.validatedImage(
+            data: try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Photos.md")
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 13,
+            hour: 12
+        )))
+
+        let first = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: image,
+            now: now
+        )
+        let second = try await store.attachToMarkdownDocument(
+            relativePath: first.relativePath,
+            markdown: first.markdown,
+            expectedMarkdown: first.markdown,
+            attachment: image,
+            now: now
+        )
+        XCTAssertTrue(first.markdown.contains("![Image](Attachments/2026/07/IMG-20260713-120000.png)"))
+        XCTAssertTrue(second.markdown.contains("![Image](Attachments/2026/07/IMG-20260713-120000-2.png)"))
+
+        let attachmentFolder = root.appendingPathComponent("Attachments/2026/07")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
+        await XCTAssertThrowsErrorAsync(
+            try await store.attachToMarkdownDocument(
+                relativePath: second.relativePath,
+                markdown: second.markdown,
+                expectedMarkdown: original.markdown,
+                attachment: image,
+                now: now
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownDocumentError, .changedExternally)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
+    }
+
     func testInboxMemoEditRejectsStaleBody() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

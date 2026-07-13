@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import PhotosUI
 import UIKit
 
 struct MarkdownPreviewView: View {
@@ -33,6 +34,7 @@ struct MarkdownPreviewView: View {
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
 
@@ -117,6 +119,10 @@ struct MarkdownPreviewView: View {
         .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
         .onAppear(perform: beginLibraryAccess)
         .onDisappear(perform: endLibraryAccess)
+        .onChange(of: selectedPhotoItem) { _, item in
+            guard item != nil else { return }
+            Task { await attachPhoto(item) }
+        }
         .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
             guard isEditing, draftMarkdown != originalMarkdown else { return }
             try? await Task.sleep(for: .milliseconds(700))
@@ -160,8 +166,22 @@ struct MarkdownPreviewView: View {
     }
 
     private var markdownToolbar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let attachmentIsPreparing = appModel.isPreparingAttachment
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if case .document = source {
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Image(systemName: attachmentIsPreparing ? "hourglass" : "photo")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .frame(width: 40, height: 40)
+                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving || appModel.isPreparingAttachment)
+                    .accessibilityLabel("Add image")
+                    .accessibilityIdentifier("markdown-add-image")
+                }
                 formatButton("textformat.size", .heading)
                 formatButton("bold", .bold)
                 formatButton("italic", .italic)
@@ -373,6 +393,28 @@ struct MarkdownPreviewView: View {
             editorFocused = true
         } else {
             saveState = .failed
+        }
+    }
+
+    private func attachPhoto(_ item: PhotosPickerItem?) async {
+        defer { selectedPhotoItem = nil }
+        guard case .document(let document) = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown else { return }
+        saveState = .saving
+        if let updated = await appModel.attachPhoto(
+            item,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
         }
     }
 }

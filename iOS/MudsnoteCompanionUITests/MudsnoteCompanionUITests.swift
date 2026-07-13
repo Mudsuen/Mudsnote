@@ -72,6 +72,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["markdown-add-image"].waitForExistence(timeout: 5))
 
         let bold = app.buttons["markdown-format-bold"]
         XCTAssertTrue(bold.waitForExistence(timeout: 5))

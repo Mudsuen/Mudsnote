@@ -437,6 +437,51 @@ actor MarkdownFileStore {
         )
     }
 
+    func attachToMarkdownDocument(
+        relativePath: String,
+        markdown: String,
+        expectedMarkdown: String,
+        attachment: CaptureAttachment,
+        now: Date = Date()
+    ) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        try CaptureAttachmentPolicy.validate([attachment])
+        let requestedWrite = try attachmentWrites(for: [attachment], root: root, now: now)[0]
+        guard let requestedURL = AuthorizedLibraryPath.resolve(
+            requestedWrite.relativePath,
+            within: root,
+            constrainedTo: "Attachments"
+        ) else {
+            throw PendingWriteValidationError.invalidAttachmentPath
+        }
+        let destination = uniqueAttachmentDestination(for: requestedURL, root: root)
+        let destinationPath = Self.relativePath(for: destination, root: root)
+        let reference = MarkdownAttachmentReference(
+            relativePath: destinationPath,
+            kind: attachment.referenceKind
+        )
+        let separator = markdown.isEmpty || markdown.hasSuffix("\n") ? "" : "\n"
+        let updatedMarkdown = markdown + separator + reference.markdownLine + "\n"
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        try fileManager.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try requestedWrite.data.write(to: destination, options: .withoutOverwriting)
+        do {
+            return try saveMarkdownDocument(
+                relativePath: relativePath,
+                markdown: updatedMarkdown,
+                expectedMarkdown: expectedMarkdown
+            )
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        }
+    }
+
     @discardableResult
     func trashMarkdownDocument(
         relativePath: String,
@@ -1068,6 +1113,25 @@ actor MarkdownFileStore {
             let suffix = attachments.count > 1 ? "-\(index + 1)" : ""
             let fileName = "\(attachment.filePrefix)-\(timestamp)\(suffix).\(attachment.preferredExtension)"
             return ("Attachments/\(month)/\(fileName)", attachment.data)
+        }
+    }
+
+    private func uniqueAttachmentDestination(for requestedURL: URL, root: URL) -> URL {
+        guard fileManager.fileExists(atPath: requestedURL.path) else { return requestedURL }
+        let folder = requestedURL.deletingLastPathComponent()
+        let base = requestedURL.deletingPathExtension().lastPathComponent
+        let fileExtension = requestedURL.pathExtension
+        var index = 2
+        while true {
+            let name = fileExtension.isEmpty
+                ? "\(base)-\(index)"
+                : "\(base)-\(index).\(fileExtension)"
+            let candidate = folder.appendingPathComponent(name)
+            if !fileManager.fileExists(atPath: candidate.path),
+               candidate.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/") {
+                return candidate
+            }
+            index += 1
         }
     }
 
