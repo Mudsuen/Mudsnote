@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     @Published var inboxItems: [MemoBlock] = []
     @Published var libraryFiles: [RecentMarkdownFile] = []
     @Published var recentFiles: [RecentMarkdownFile] = []
+    @Published var folders: [LibraryFolderNode] = []
     @Published var attachments: [LibraryAttachment] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
@@ -105,6 +106,7 @@ final class AppModel: ObservableObject {
         inboxItems = []
         libraryFiles = []
         recentFiles = []
+        folders = []
         attachments = []
         librarySummary = LibrarySummary()
         tagSummaries = []
@@ -463,6 +465,7 @@ final class AppModel: ObservableObject {
         inboxItems = snapshot.inboxItems
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
+        folders = snapshot.folders
         attachments = snapshot.attachments
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)

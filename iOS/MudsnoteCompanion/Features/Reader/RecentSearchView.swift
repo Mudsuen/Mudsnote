@@ -18,6 +18,9 @@ struct LibraryHomeView: View {
                 if searchQuery.isEmpty {
                     VStack(alignment: .leading, spacing: 22) {
                         accountSection
+                        if !appModel.folders.isEmpty {
+                            foldersSection
+                        }
                         if !appModel.tagSummaries.isEmpty {
                             tagsSection
                         }
@@ -76,6 +79,26 @@ struct LibraryHomeView: View {
                 } newNote: {
                     isSearchFocused = false
                     appModel.showCapture(.text)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var foldersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NotesSectionHeader(title: String(localized: "Folders"))
+            notesCard {
+                ForEach(appModel.folders) { folder in
+                    NavigationLink {
+                        LibraryFolderView(folder: folder)
+                    } label: {
+                        NotesFolderRow(
+                            title: folder.name,
+                            systemImage: "folder.fill",
+                            count: folder.totalNoteCount
+                        )
+                    }
                 }
             }
         }
@@ -254,6 +277,56 @@ struct FolderNotesListView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle(title)
+    }
+}
+
+struct LibraryFolderView: View {
+    @EnvironmentObject private var appModel: AppModel
+    var folder: LibraryFolderNode
+
+    private var directFiles: [RecentMarkdownFile] {
+        appModel.libraryFiles.filter {
+            ($0.relativePath as NSString).deletingLastPathComponent == folder.relativePath
+        }
+    }
+
+    var body: some View {
+        List {
+            ForEach(folder.children) { child in
+                NavigationLink {
+                    LibraryFolderView(folder: child)
+                } label: {
+                    LibraryFolderRow(
+                        title: child.name,
+                        subtitle: child.relativePath,
+                        systemImage: "folder.fill",
+                        count: child.totalNoteCount
+                    )
+                }
+            }
+
+            ForEach(directFiles) { file in
+                Button {
+                    appModel.openFile(file)
+                } label: {
+                    RecentFileRow(file: file)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("markdown-file-row-\(file.id)")
+            }
+
+            if folder.children.isEmpty, directFiles.isEmpty {
+                ContentUnavailableView("No Notes", systemImage: "folder")
+                    .listRowBackground(Color.clear)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .refreshable {
+            await appModel.refreshInbox()
+        }
+        .navigationTitle(folder.name)
     }
 }
 

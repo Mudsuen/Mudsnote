@@ -28,8 +28,15 @@ actor MarkdownFileStore {
         let inboxURL = root.appendingPathComponent("Inbox.md")
         let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
         let inboxItems = InboxParser.parse(inboxMarkdown)
-        let resourceKeys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
+        let resourceKeys: Set<URLResourceKey> = [
+            .contentModificationDateKey,
+            .fileSizeKey,
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
         var markdownFiles: [RecentMarkdownFile] = []
+        var folderPaths = Set<String>()
         var attachments: [LibraryAttachment] = []
         var dailyCount = 0
         var attachmentCount = 0
@@ -47,10 +54,18 @@ actor MarkdownFileStore {
                     conflictWarnings.append(relativePath)
                 }
 
-                guard let values = try? url.resourceValues(forKeys: resourceKeys),
-                      values.isRegularFile == true else {
+                guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
                     continue
                 }
+                if values.isSymbolicLink == true {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                if values.isDirectory == true {
+                    folderPaths.insert(relativePath)
+                    continue
+                }
+                guard values.isRegularFile == true else { continue }
 
                 if relativePath.hasPrefix("Attachments/") {
                     attachmentCount += 1
@@ -85,6 +100,10 @@ actor MarkdownFileStore {
             inboxItems: inboxItems,
             allFiles: allFiles,
             recentFiles: recentFiles,
+            folders: LibraryFolderNode.makeTree(
+                directoryPaths: folderPaths,
+                files: markdownFiles
+            ),
             attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
@@ -659,9 +678,84 @@ struct MarkdownLibrarySnapshot: Equatable {
     var inboxItems: [MemoBlock]
     var allFiles: [RecentMarkdownFile]
     var recentFiles: [RecentMarkdownFile]
+    var folders: [LibraryFolderNode]
     var attachments: [LibraryAttachment]
     var summary: LibrarySummary
     var conflictWarnings: [String]
+}
+
+struct LibraryFolderNode: Identifiable, Equatable {
+    var relativePath: String
+    var name: String
+    var directNoteCount: Int
+    var totalNoteCount: Int
+    var children: [LibraryFolderNode]
+
+    var id: String { relativePath }
+
+    static func makeTree(
+        directoryPaths: some Sequence<String>,
+        files: [RecentMarkdownFile]
+    ) -> [LibraryFolderNode] {
+        let excludedRoots: Set<String> = ["Attachments", "Daily"]
+        var paths = Set<String>()
+
+        func includeAncestors(of rawPath: String) {
+            let components = rawPath
+                .split(separator: "/", omittingEmptySubsequences: true)
+                .map(String.init)
+            guard let root = components.first,
+                  !excludedRoots.contains(root),
+                  !root.hasPrefix(".") else { return }
+
+            for depth in 1...components.count {
+                let candidate = components.prefix(depth).joined(separator: "/")
+                guard !candidate.split(separator: "/").contains(where: { $0.hasPrefix(".") }) else {
+                    break
+                }
+                paths.insert(candidate)
+            }
+        }
+
+        for path in directoryPaths {
+            includeAncestors(of: path)
+        }
+        for file in files {
+            let parent = (file.relativePath as NSString).deletingLastPathComponent
+            guard parent != ".", !parent.isEmpty else { continue }
+            includeAncestors(of: parent)
+        }
+
+        let directCounts = files.reduce(into: [String: Int]()) { counts, file in
+            let parent = (file.relativePath as NSString).deletingLastPathComponent
+            guard paths.contains(parent) else { return }
+            counts[parent, default: 0] += 1
+        }
+
+        let childrenByParent = paths.reduce(into: [String: [String]]()) { children, path in
+            let rawParent = (path as NSString).deletingLastPathComponent
+            let parent = rawParent == "." ? "" : rawParent
+            children[parent, default: []].append(path)
+        }
+
+        func nodes(parent: String?) -> [LibraryFolderNode] {
+            childrenByParent[parent ?? "", default: []]
+                .map { path in
+                    let children = nodes(parent: path)
+                    let directCount = directCounts[path, default: 0]
+                    return LibraryFolderNode(
+                        relativePath: path,
+                        name: (path as NSString).lastPathComponent,
+                        directNoteCount: directCount,
+                        totalNoteCount: directCount + children.reduce(0) { $0 + $1.totalNoteCount },
+                        children: children
+                    )
+                }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+
+        return nodes(parent: nil)
+    }
 }
 
 struct LibraryAttachment: Identifiable, Equatable {

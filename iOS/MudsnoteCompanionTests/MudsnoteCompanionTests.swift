@@ -467,6 +467,72 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
 
+    func testLibrarySnapshotBuildsNestedFolderTreeAndKeepsEmptyFolders() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects/Launch", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Archive/Empty", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Plan\n".write(
+            to: root.appendingPathComponent("Projects/Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Brief\n".write(
+            to: root.appendingPathComponent("Projects/Launch/Brief.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+
+        XCTAssertEqual(snapshot.folders.map(\.name), ["Archive", "Projects"])
+        let archive = try XCTUnwrap(snapshot.folders.first { $0.name == "Archive" })
+        XCTAssertEqual(archive.totalNoteCount, 0)
+        XCTAssertEqual(archive.children.map(\.name), ["Empty"])
+        let projects = try XCTUnwrap(snapshot.folders.first { $0.name == "Projects" })
+        XCTAssertEqual(projects.directNoteCount, 1)
+        XCTAssertEqual(projects.totalNoteCount, 2)
+        XCTAssertEqual(projects.children.map(\.relativePath), ["Projects/Launch"])
+        XCTAssertFalse(snapshot.folders.contains { $0.name == "Attachments" })
+        XCTAssertFalse(snapshot.folders.contains { $0.name == "Daily" })
+    }
+
+    func testFolderTreeRejectsHiddenAndSystemPathsAndBuildsMissingAncestors() {
+        let files = [
+            RecentMarkdownFile(
+                id: "Work/Deep/Note.md",
+                relativePath: "Work/Deep/Note.md",
+                title: "Note",
+                modifiedAt: .distantPast
+            ),
+            RecentMarkdownFile(
+                id: ".private/Secret.md",
+                relativePath: ".private/Secret.md",
+                title: "Secret",
+                modifiedAt: .distantPast
+            ),
+        ]
+
+        let folders = LibraryFolderNode.makeTree(
+            directoryPaths: ["Attachments/2026", "Daily/2026", ".mudsnote/cache"],
+            files: files
+        )
+
+        XCTAssertEqual(folders.map(\.relativePath), ["Work"])
+        XCTAssertEqual(folders.first?.children.map(\.relativePath), ["Work/Deep"])
+        XCTAssertEqual(folders.first?.totalNoteCount, 1)
+    }
+
     func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

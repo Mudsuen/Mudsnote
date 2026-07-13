@@ -441,6 +441,16 @@
         }
       }
     },
+    "Folders": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件夹"
+          }
+        }
+      }
+    },
     "Folder Unavailable": {
       "localizations": {
         "zh-Hans": {
