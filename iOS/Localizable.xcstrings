@@ -2095,6 +2095,24 @@
     },
     "Some selected notes could not be restored after the operation failed.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "操作失败后，部分所选笔记无法恢复。" } } }
+    },
+    "Recently Deleted Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近删除选项" } } }
+    },
+    "Restore Selected Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复所选笔记" } } }
+    },
+    "Delete Selected Notes Permanently": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除所选笔记" } } }
+    },
+    "Selected Notes Restored": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已恢复" } } }
+    },
+    "Selected Notes Deleted Permanently": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已永久删除" } } }
+    },
+    "Delete Selected Notes Permanently?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除所选笔记？" } } }
     }
   },
   "version": "1.0"

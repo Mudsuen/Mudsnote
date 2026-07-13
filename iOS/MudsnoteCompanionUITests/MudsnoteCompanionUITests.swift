@@ -599,6 +599,79 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
+    func testRecentlyDeletedSelectionRestoresAndPermanentlyDeletesMultipleNotes() {
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        app.buttons["Sort Notes"].tap()
+        let selectNotes = app.buttons["Select Notes"]
+        XCTAssertTrue(selectNotes.waitForExistence(timeout: 3))
+        selectNotes.tap()
+        app.buttons["selectable-note-row-Projects/UI Lifecycle.md"].tap()
+        app.buttons["selectable-note-row-Projects/Second UI Note.md"].tap()
+        app.buttons["delete-selected-notes"].tap()
+        let moveToDeleted = app.buttons["Move to Recently Deleted"]
+        XCTAssertTrue(moveToDeleted.waitForExistence(timeout: 3))
+        moveToDeleted.tap()
+        XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
+
+        app.navigationBars["All Notes"].buttons.firstMatch.tap()
+        let recentlyDeleted = app.buttons["recently-deleted-link"]
+        XCTAssertTrue(recentlyDeleted.waitForExistence(timeout: 5))
+        recentlyDeleted.tap()
+
+        let options = app.buttons["Recently Deleted Options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        XCTAssertTrue(selectNotes.waitForExistence(timeout: 3))
+        selectNotes.tap()
+        let first = app.staticTexts["UI Lifecycle"]
+        let second = app.staticTexts["Second UI Note"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        first.tap()
+        second.tap()
+        XCTAssertTrue(app.navigationBars["2 Selected"].exists)
+
+        app.buttons["restore-selected-deleted-notes"].tap()
+        XCTAssertTrue(app.staticTexts["No Recently Deleted Notes"].waitForExistence(timeout: 5))
+        app.navigationBars["Recently Deleted"].buttons.firstMatch.tap()
+        allNotes.tap()
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["markdown-file-row-Projects/Second UI Note.md"].exists)
+
+        app.buttons["Sort Notes"].tap()
+        XCTAssertTrue(selectNotes.waitForExistence(timeout: 3))
+        selectNotes.tap()
+        app.buttons["selectable-note-row-Projects/UI Lifecycle.md"].tap()
+        app.buttons["selectable-note-row-Projects/Second UI Note.md"].tap()
+        app.buttons["delete-selected-notes"].tap()
+        XCTAssertTrue(moveToDeleted.waitForExistence(timeout: 3))
+        moveToDeleted.tap()
+        XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
+
+        app.navigationBars["All Notes"].buttons.firstMatch.tap()
+        recentlyDeleted.tap()
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        XCTAssertTrue(selectNotes.waitForExistence(timeout: 3))
+        selectNotes.tap()
+        let selectAll = app.buttons["toggle-select-all-deleted-notes"]
+        XCTAssertTrue(selectAll.waitForExistence(timeout: 5))
+        selectAll.tap()
+        XCTAssertTrue(app.navigationBars["2 Selected"].exists)
+        app.buttons["permanently-delete-selected-notes"].tap()
+        let deletePermanently = app.buttons["Delete Permanently"]
+        XCTAssertTrue(deletePermanently.waitForExistence(timeout: 3))
+        deletePermanently.tap()
+        XCTAssertTrue(app.staticTexts["No Recently Deleted Notes"].waitForExistence(timeout: 5))
+    }
+
     func testNotePinsAndUnpinsThroughSwipeActions() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

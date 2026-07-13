@@ -1116,6 +1116,89 @@ actor MarkdownFileStore {
         )
     }
 
+    func restoreTrashedMarkdownDocuments(ids: [String]) throws -> [RecentMarkdownFile] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let normalizedIDs = Array(Set(ids.map { $0.lowercased() })).sorted()
+        guard !normalizedIDs.isEmpty else { return [] }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+
+        let items = try normalizedIDs.map { id in
+            let item = try trashItem(id: id, root: root)
+            guard Self.isMutableNotePath(item.originalRelativePath),
+                  let requestedDestination = AuthorizedLibraryPath.resolve(
+                    item.originalRelativePath,
+                    within: root
+                  ) else {
+                throw MarkdownLifecycleError.invalidTrashMetadata
+            }
+            return (
+                item: item,
+                requestedDestination: requestedDestination,
+                metadata: try Data(contentsOf: item.metadataURL)
+            )
+        }
+        let originalPins = try loadPinnedPaths(root: root)
+        var moves: [(source: URL, destination: URL, relativePath: String)] = []
+        var removedMetadata: [(url: URL, data: Data)] = []
+
+        do {
+            for entry in items {
+                let destination = uniqueMarkdownURL(for: entry.requestedDestination)
+                try fileManager.createDirectory(
+                    at: destination.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try coordinatedMove(from: entry.item.fileURL, to: destination)
+                moves.append((
+                    entry.item.fileURL,
+                    destination,
+                    Self.relativePath(for: destination, root: root)
+                ))
+            }
+
+            var updatedPins = originalPins
+            for (index, move) in moves.enumerated() where items[index].item.wasPinned {
+                updatedPins.insert(move.relativePath)
+            }
+            if updatedPins != originalPins {
+                try savePinnedPaths(updatedPins, root: root)
+            }
+
+            for entry in items {
+                try fileManager.removeItem(at: entry.item.metadataURL)
+                removedMetadata.append((entry.item.metadataURL, entry.metadata))
+            }
+
+            let restored = try moves.map { try recentFile(at: $0.destination, root: root) }
+            invalidateAfterMutation(relativePaths: moves.map { $0.relativePath })
+            return restored
+        } catch {
+            var rollbackFailed = false
+            for metadata in removedMetadata.reversed() {
+                do {
+                    try metadata.data.write(to: metadata.url, options: .atomic)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            for move in moves.reversed() {
+                do {
+                    try coordinatedMove(from: move.destination, to: move.source)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            do {
+                try savePinnedPaths(originalPins, root: root)
+            } catch {
+                rollbackFailed = true
+            }
+            if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
+            throw error
+        }
+    }
+
     func permanentlyDeleteTrashedMarkdownDocument(id: String) throws {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -1131,9 +1214,57 @@ actor MarkdownFileStore {
         cachedLibrarySnapshot = nil
     }
 
+    func permanentlyDeleteTrashedMarkdownDocuments(ids: [String]) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let normalizedIDs = Array(Set(ids.map { $0.lowercased() })).sorted()
+        guard !normalizedIDs.isEmpty else { return }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+
+        let items = try normalizedIDs.map { try trashItem(id: $0, root: root) }
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        let staging = trashRoot.appendingPathComponent(
+            ".delete-\(UUID().uuidString.lowercased())",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
+        var moves: [(source: URL, destination: URL)] = []
+
+        do {
+            for item in items {
+                for source in [item.fileURL, item.metadataURL] {
+                    let destination = staging.appendingPathComponent(source.lastPathComponent)
+                    try coordinatedMove(from: source, to: destination)
+                    moves.append((source, destination))
+                }
+            }
+            try fileManager.removeItem(at: staging)
+            cachedLibrarySnapshot = nil
+        } catch {
+            var rollbackFailed = false
+            for move in moves.reversed() where fileManager.fileExists(atPath: move.destination.path) {
+                do {
+                    try coordinatedMove(from: move.destination, to: move.source)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if fileManager.fileExists(atPath: staging.path) {
+                do {
+                    try fileManager.removeItem(at: staging)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
+            throw error
+        }
+    }
+
     private func loadTrashedFiles(root: URL) throws -> [TrashedMarkdownFile] {
         let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
         guard fileManager.fileExists(atPath: trashRoot.path) else { return [] }
+        try recoverInterruptedPermanentDeletes(in: trashRoot)
         let urls = try fileManager.contentsOfDirectory(
             at: trashRoot,
             includingPropertiesForKeys: nil,
@@ -1160,6 +1291,28 @@ actor MarkdownFileStore {
                 )
             }
             .sorted { $0.trashedAt > $1.trashedAt }
+    }
+
+    private func recoverInterruptedPermanentDeletes(in trashRoot: URL) throws {
+        let contents = try fileManager.contentsOfDirectory(
+            at: trashRoot,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        for staging in contents where staging.lastPathComponent.hasPrefix(".delete-") {
+            guard (try staging.resourceValues(forKeys: [.isDirectoryKey])).isDirectory == true else {
+                continue
+            }
+            let stagedFiles = try fileManager.contentsOfDirectory(
+                at: staging,
+                includingPropertiesForKeys: nil
+            )
+            for source in stagedFiles {
+                let destination = trashRoot.appendingPathComponent(source.lastPathComponent)
+                guard !fileManager.fileExists(atPath: destination.path) else { continue }
+                try coordinatedMove(from: source, to: destination)
+            }
+            try fileManager.removeItem(at: staging)
+        }
     }
 
     private func trashItem(id: String, root: URL) throws -> (

@@ -803,6 +803,104 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testBatchRecentlyDeletedLifecyclePrevalidatesRestoresPinsAndDeletes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        for folder in ["A", "B"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(folder, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            try "# \(folder)\n".write(
+                to: root.appendingPathComponent("\(folder)/Same.md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePaths: ["A/Same.md", "B/Same.md"])
+        let trashed = try await store.trashMarkdownDocuments(
+            relativePaths: ["A/Same.md", "B/Same.md"]
+        )
+        let missingID = UUID().uuidString.lowercased()
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.restoreTrashedMarkdownDocuments(
+                ids: [trashed[0].id, missingID]
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .noteNotFound)
+        }
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.count, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("A/Same.md").path))
+
+        try "# Replacement\n".write(
+            to: root.appendingPathComponent("A/Same.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let restored = try await store.restoreTrashedMarkdownDocuments(ids: trashed.map(\.id))
+        XCTAssertEqual(Set(restored.map(\.relativePath)), ["A/Same 2.md", "B/Same.md"])
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.trashedFiles.isEmpty)
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == "A/Same 2.md" }?.isPinned == true)
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == "B/Same.md" }?.isPinned == true)
+
+        let retrash = try await store.trashMarkdownDocuments(
+            relativePaths: restored.map(\.relativePath)
+        )
+        await XCTAssertThrowsErrorAsync(
+            try await store.permanentlyDeleteTrashedMarkdownDocuments(
+                ids: [retrash[0].id, missingID]
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .noteNotFound)
+        }
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.count, 2)
+
+        try await store.permanentlyDeleteTrashedMarkdownDocuments(ids: retrash.map(\.id))
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.trashedFiles.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("A/Same 2.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("B/Same.md").path))
+    }
+
+    func testInterruptedBatchPermanentDeleteStagingRecoversOnRefresh() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try "# Recover me\n".write(
+            to: root.appendingPathComponent("Recover.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let trashed = try await store.trashMarkdownDocument(relativePath: "Recover.md")
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        let staging = trashRoot.appendingPathComponent(".delete-interrupted", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
+        for suffix in ["md", "json"] {
+            let name = "\(trashed.id.lowercased()).\(suffix)"
+            try FileManager.default.moveItem(
+                at: trashRoot.appendingPathComponent(name),
+                to: staging.appendingPathComponent(name)
+            )
+        }
+
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.map(\.id), [trashed.id])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: trashRoot.appendingPathComponent("\(trashed.id.lowercased()).md").path
+        ))
+    }
+
     func testFolderCreateRenameAndMoveNoteAvoidCollisions() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

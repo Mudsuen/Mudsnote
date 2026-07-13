@@ -786,6 +786,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func restore(_ items: [TrashedMarkdownFile]) async -> Bool {
+        guard !items.isEmpty else { return false }
+        do {
+            _ = try await fileStore.restoreTrashedMarkdownDocuments(
+                ids: items.map(\.id)
+            )
+            statusToast = .saved(String(localized: "Selected Notes Restored"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            await refreshInbox()
+            return false
+        }
+    }
+
     func permanentlyDelete(_ item: TrashedMarkdownFile) {
         Task {
             do {
@@ -795,6 +813,23 @@ final class AppModel: ObservableObject {
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
+        }
+    }
+
+    @discardableResult
+    func permanentlyDelete(_ items: [TrashedMarkdownFile]) async -> Bool {
+        guard !items.isEmpty else { return false }
+        do {
+            try await fileStore.permanentlyDeleteTrashedMarkdownDocuments(
+                ids: items.map(\.id)
+            )
+            statusToast = .saved(String(localized: "Selected Notes Deleted Permanently"))
+            await refreshInbox()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            await refreshInbox()
+            return false
         }
     }
 
