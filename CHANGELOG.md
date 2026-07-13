@@ -1180,6 +1180,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Normalized pre-fix OCR measured `x=455.0px` for Apple Notes and `x=430.9px` for Mudsnote; final expanded Mudsnote measures `x=454.9px`. The collapsed regression remains `x=309.9px` versus `x=309.7px`. The state-transition regression, full tests, installed smoke, packaging, and signature verification passed.
 - Lesson: A toolbar item can occupy different AppKit tracks as neighboring items appear or disappear; expanded and collapsed title origins must be calibrated and restored independently.
 
+### 197. Reference-aligned editor date baseline
+
+- Problem: The centered editor date began `13.5px` below Apple Notes in both normalized empty and content captures, while the collapsed editor title was already within `2px` vertically. Moving the whole editor stack would have regressed the title and body.
+- Fix: Reduced the editor top inset from `13pt` to `6.25pt` and increased date-to-title spacing from `4pt` to `10.75pt`. Their invariant `17pt` sum moves only the date row upward by `6.75pt` while preserving the title/body origin.
+- Verification: Final empty and content OCR both measure the Mudsnote date at `y=123.0px`, exactly matching Apple Notes. The collapsed editor title remains `y=184px` versus `y=186px`. Full tests, installed smoke, packaging, and signature validation passed.
+- Lesson: When one row in a vertical stack is misaligned but downstream content is correct, preserve the cumulative downstream offset and redistribute spacing before moving the entire stack.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

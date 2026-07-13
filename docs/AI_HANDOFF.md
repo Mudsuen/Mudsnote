@@ -219,6 +219,13 @@
 - State-transition coverage verifies the constraint switches to the collapsed value and restores the expanded value after reopening the source sidebar.
 - Final normalized OCR measures expanded Mudsnote at `x=454.9px` versus Apple Notes `x=455.0px`, while collapsed remains `x=309.9px` versus `x=309.7px`.
 
+## Latest iteration (197)
+
+- Expanded empty and content captures placed the centered editor date at `y=136.5px`, versus Apple Notes `y=123.0px`; the collapsed editor title was already within `2px` vertically.
+- The editor top inset is now `6.25pt` and date-to-title spacing is `10.75pt`. Their sum remains `17pt`, so the date moves up `6.75pt` while title and body origins remain unchanged.
+- Treat the date row and title/body content as independently calibrated vertical relationships; do not move the whole editor stack when only the date baseline differs.
+- Final empty and content captures both measure the Mudsnote date at exactly `y=123.0px`; the collapsed editor title remains `y=184px` versus Apple Notes `y=186px`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
