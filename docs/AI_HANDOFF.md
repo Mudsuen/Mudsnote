@@ -284,6 +284,13 @@
 - A 600-folder regression proves the outline instantiates fewer than 40 visible cells, and the serialized macOS suite passes all 154 tests. Folder lifecycle operations continue to update the in-memory tree immediately and schedule deferred validation rather than scanning synchronously.
 - Installed packaging and strict signing pass. In the current background automation session, System Events reports zero windows for both the unchanged Mudsnote baseline and Apple Notes, and window-only capture is black; do not attribute that host-level AX/screen-capture condition to the outline migration.
 
+## Latest iteration (206)
+
+- `iCloud` and `Tags` are now real root parents in the native source outline rather than flat visual headings.
+- All iCloud, local folder hierarchy, and Recently Deleted are children of iCloud; tags are children of Tags. AppKit exposes native expanded/collapsed AX rows and system `Expand`/`Collapse` actions.
+- Group disclosure persists without removing child models, folder/tag loading is skipped while its parent is collapsed, empty selection is allowed when all groups hide their children, and the active source selection returns when its parent reopens.
+- Same-height live comparison is `/tmp/apple-notes-vs-mudsnote-groups-final-206.png`; source item icons and group headings align with the live Apple Notes reference. Full 154-test regression, production packaging, and strict signature verification pass.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

@@ -480,7 +480,10 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
         addSubview(title)
         addSubview(countLabel)
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            icon.leadingAnchor.constraint(
+                equalTo: leadingAnchor,
+                constant: LibraryNotesLayout.sourceCellContentLeadingInset
+            ),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 18),
             icon.heightAnchor.constraint(equalToConstant: 18),
@@ -629,6 +632,8 @@ enum LibraryNotesLayout {
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceFolderIndentStep: CGFloat = 14
+    static let sourceCellContentLeadingInset: CGFloat = 4
+    static let sourceGroupContentLeadingInset: CGFloat = 5
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
     static let noteGroupRowHeight: CGFloat = 45
@@ -1859,7 +1864,7 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.backgroundColor = .clear
         sourceOutlineView.style = .sourceList
         sourceOutlineView.selectionHighlightStyle = .regular
-        sourceOutlineView.allowsEmptySelection = false
+        sourceOutlineView.allowsEmptySelection = true
         sourceOutlineView.allowsMultipleSelection = false
         sourceOutlineView.indentationPerLevel = LibraryNotesLayout.sourceFolderIndentStep
         sourceOutlineView.rowSizeStyle = .custom
@@ -2826,8 +2831,13 @@ final class LibraryWindowController: NSWindowController,
 
     private func rebuildSourceRows(includeTags: Bool) {
         let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
+        let wasRestoringExpansion = isRestoringSourceOutlineExpansion
         isSynchronizingSourceOutlineSelection = true
-        defer { isSynchronizingSourceOutlineSelection = wasSynchronizingSelection }
+        isRestoringSourceOutlineExpansion = true
+        defer {
+            isSynchronizingSourceOutlineSelection = wasSynchronizingSelection
+            isRestoringSourceOutlineExpansion = wasRestoringExpansion
+        }
         if !includeTags {
             sourceTagNames = []
         }
@@ -2836,37 +2846,39 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
-        roots.append(makeSourceOutlineItem(
+        let iCloudGroup = makeSourceOutlineItem(
             identifier: "group:icloud",
-            kind: .group(title: "iCloud", section: nil)
-        ))
-        roots.append(makeSourceOutlineScopeItem(.all))
+            kind: .group(title: "iCloud", section: .folders)
+        )
+        iCloudGroup.append(makeSourceOutlineScopeItem(.all))
 
-        if !sourceFoldersSectionCollapsed {
-            roots.append(contentsOf: makeSourceFolderOutlineRoots())
-            if inlineFolderEditOperation == nil {
-                if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
-                    roots.append(makeSourceOutlineItem(
-                        identifier: "status:folders:loading",
-                        kind: .status("Loading Folders...")
-                    ))
-                } else if sourceFolderTreeRows.isEmpty {
-                    roots.append(makeSourceOutlineItem(
-                        identifier: "status:folders:empty",
-                        kind: .status("No Folders")
-                    ))
-                }
+        for folderRoot in makeSourceFolderOutlineRoots() {
+            iCloudGroup.append(folderRoot)
+        }
+        if inlineFolderEditOperation == nil {
+            if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
+                iCloudGroup.append(makeSourceOutlineItem(
+                    identifier: "status:folders:loading",
+                    kind: .status("Loading Folders...")
+                ))
+            } else if sourceFolderTreeRows.isEmpty {
+                iCloudGroup.append(makeSourceOutlineItem(
+                    identifier: "status:folders:empty",
+                    kind: .status("No Folders")
+                ))
             }
         }
+        iCloudGroup.append(makeSourceOutlineScopeItem(.trash))
+        roots.append(iCloudGroup)
 
-        roots.append(makeSourceOutlineScopeItem(.trash))
-        roots.append(makeSourceOutlineItem(
+        let tagsGroup = makeSourceOutlineItem(
             identifier: "group:tags",
             kind: .group(title: "Tags", section: .tags)
-        ))
-        if !sourceTagsSectionCollapsed {
-            roots.append(contentsOf: sourceTagNames.map { makeSourceOutlineScopeItem(.tag($0)) })
+        )
+        for tag in sourceTagNames {
+            tagsGroup.append(makeSourceOutlineScopeItem(.tag(tag)))
         }
+        roots.append(tagsGroup)
 
         sourceOutlineRootItems = roots
         sourceOutlineView.reloadData()
@@ -2958,8 +2970,17 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func restoreSourceOutlineExpansion() {
+        let wasRestoringExpansion = isRestoringSourceOutlineExpansion
         isRestoringSourceOutlineExpansion = true
-        defer { isRestoringSourceOutlineExpansion = false }
+        defer { isRestoringSourceOutlineExpansion = wasRestoringExpansion }
+        if !sourceFoldersSectionCollapsed,
+           let iCloudGroup = sourceOutlineItemsByIdentifier["group:icloud"] {
+            sourceOutlineView.expandItem(iCloudGroup, expandChildren: false)
+        }
+        if !sourceTagsSectionCollapsed,
+           let tagsGroup = sourceOutlineItemsByIdentifier["group:tags"] {
+            sourceOutlineView.expandItem(tagsGroup, expandChildren: false)
+        }
         for folderRow in sourceFolderTreeRows where folderRow.hasChildren {
             let path = folderRow.url.standardizedFileURL.path
             guard isSourceFolderExpanded(path: path, depth: folderRow.depth),
@@ -2994,7 +3015,9 @@ final class LibraryWindowController: NSWindowController,
     private func scheduleDeferredSourceFolderLoad() {
         sourceFolderLoadGeneration += 1
         let generation = sourceFolderLoadGeneration
-        guard !sourceFoldersLoaded, !sourceFoldersLoading else { return }
+        guard !sourceFoldersSectionCollapsed,
+              !sourceFoldersLoaded,
+              !sourceFoldersLoading else { return }
         sourceFoldersLoading = true
         let preferredDirectories = noteStore.preferredDirectories
         let collapsedPaths = collapsedFolderPaths
@@ -3029,7 +3052,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func scheduleDeferredSourceTagLoad() {
-        guard !sourceTagsLoaded, !sourceTagsLoading else { return }
+        guard !sourceTagsSectionCollapsed,
+              !sourceTagsLoaded,
+              !sourceTagsLoading else { return }
         sourceTagsLoading = true
         let noteStore = noteStore
         DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -3355,6 +3380,32 @@ final class LibraryWindowController: NSWindowController,
 
     func toggleSourceTagsSectionForLibrary() {
         toggleSourceSection(.tags)
+    }
+
+    func toggleSourceFoldersSectionForLibrary() {
+        toggleSourceSection(.folders)
+    }
+
+    func sourceOutlineLevelForLibrary(titled title: String) -> Int? {
+        guard let item = sourceOutlineItemsByScopeIdentifier.values.first(where: {
+            guard let scope = $0.scope else { return false }
+            return sourceTitle(for: scope).localizedCaseInsensitiveCompare(title) == .orderedSame
+        }) else { return nil }
+        var level = 0
+        var parent = item.parent
+        while parent != nil {
+            level += 1
+            parent = parent?.parent
+        }
+        return level
+    }
+
+    func isSourceGroupExpandedForLibrary(titled title: String) -> Bool? {
+        guard let item = sourceOutlineItemsByIdentifier.values.first(where: {
+            guard case .group(let groupTitle, _) = $0.kind else { return false }
+            return groupTitle.localizedCaseInsensitiveCompare(title) == .orderedSame
+        }) else { return nil }
+        return sourceOutlineView.isItemExpanded(item)
     }
 
     var sourceOutlineInstantiatedCellCountForLibrary: Int {
@@ -3846,7 +3897,11 @@ final class LibraryWindowController: NSWindowController,
                 cell.addSubview(label)
                 label.translatesAutoresizingMaskIntoConstraints = false
                 NSLayoutConstraint.activate([
-                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: section == .tags ? 0 : 4),
+                    label.leadingAnchor.constraint(
+                        equalTo: cell.leadingAnchor,
+                        constant: LibraryNotesLayout.sourceGroupContentLeadingInset
+                            + (section == .tags ? 0 : 4)
+                    ),
                     label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
                     label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
                 ])
@@ -4020,10 +4075,7 @@ final class LibraryWindowController: NSWindowController,
         guard outlineView === sourceOutlineView,
               let item = item as? LibrarySourceOutlineItem else { return false }
         switch item.kind {
-        case .group(_, let section):
-            if let section {
-                toggleSourceSection(section)
-            }
+        case .group:
             return false
         case .scope:
             return true
@@ -4097,6 +4149,22 @@ final class LibraryWindowController: NSWindowController,
               notification.object as? NSOutlineView === sourceOutlineView,
               let item = notification.userInfo?["NSObject"]
                 as? LibrarySourceOutlineItem else { return }
+
+        if case .group(_, let section) = item.kind,
+           let section,
+           !item.children.isEmpty {
+            DispatchQueue.main.async { [weak self, weak item] in
+                guard let self,
+                      let item,
+                      self.sourceOutlineItemsByIdentifier[item.identifier] === item,
+                      self.sourceOutlineView.isItemExpanded(item) == isExpanded else { return }
+                self.setSourceSection(section, collapsed: !isExpanded)
+                if isExpanded {
+                    self.refreshSourceSelection()
+                }
+            }
+            return
+        }
 
         let folderURL: URL
         switch item.kind {
@@ -4530,23 +4598,34 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleSourceSection(_ section: LibrarySourceSection) {
+        let shouldExpand = isSourceSectionCollapsed(section)
+        setSourceSection(section, collapsed: !shouldExpand)
+        guard let item = sourceOutlineItemsByIdentifier[
+            section == .folders ? "group:icloud" : "group:tags"
+        ] else { return }
+        if shouldExpand {
+            sourceOutlineView.expandItem(item, expandChildren: false)
+            refreshSourceSelection()
+        } else {
+            sourceOutlineView.collapseItem(item, collapseChildren: false)
+        }
+    }
 
+    private func setSourceSection(_ section: LibrarySourceSection, collapsed: Bool) {
         switch section {
         case .folders:
-            sourceFoldersSectionCollapsed.toggle()
-            noteStore.libraryFoldersSectionCollapsed = sourceFoldersSectionCollapsed
-            if !sourceFoldersSectionCollapsed {
+            sourceFoldersSectionCollapsed = collapsed
+            noteStore.libraryFoldersSectionCollapsed = collapsed
+            if !collapsed {
                 scheduleDeferredSourceFolderLoad()
             }
         case .tags:
-            sourceTagsSectionCollapsed.toggle()
-            noteStore.libraryTagsSectionCollapsed = sourceTagsSectionCollapsed
-            if !sourceTagsSectionCollapsed {
+            sourceTagsSectionCollapsed = collapsed
+            noteStore.libraryTagsSectionCollapsed = collapsed
+            if !collapsed {
                 scheduleDeferredSourceTagLoad()
             }
         }
-
-        rebuildSourceRows(includeTags: sourceTagsLoaded)
     }
 
     private func persistSourceDisclosureState() {

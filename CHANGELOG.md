@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 157. Native account and tag disclosure
+- Problem: After the source list moved to `NSOutlineView`, `iCloud` and `Tags` were still flat heading rows, so they lacked Apple Notes' native expandable-parent semantics, system disclosure actions, and hierarchical indentation.
+- Fix: Made both headings real outline parents, nested All iCloud, folders, Recently Deleted, and tags beneath them, persisted expand/collapse through AppKit notifications, and kept collapsed groups in the model so row virtualization and snapshots remain stable. Collapsed groups now defer unnecessary folder/tag loading, and source selection is restored when a group reopens.
+- Lesson: Native controls only deliver their full behavioral and accessibility value when the data model uses their real hierarchy; visually grouping flat rows preserves avoidable custom state machinery.
+
 ### 156. Native source outline navigation
 - Problem: The source sidebar visually approximated Apple Notes but still rebuilt a custom stack of buttons, so disclosure, keyboard traversal, scrolling, row reuse, inline editing, and accessibility behavior had to be maintained independently from AppKit.
 - Fix: Replaced the custom source-button stack with a native `NSOutlineView` source list, preserving Mudsnote's folder/tag/trash scopes while moving hierarchy disclosure, keyboard navigation, field-editor-backed rename/create, row reuse, context menus, and drag/drop onto public AppKit primitives. Folder lifecycle projections remain snapshot-first and deferred scans stay off the main actor.

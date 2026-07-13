@@ -1339,6 +1339,8 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceSymbolPointSize == 15)
         #expect(LibraryNotesLayout.sourceRowCornerRadius == 8)
         #expect(LibraryNotesLayout.sourceFolderIndentStep == 14)
+        #expect(LibraryNotesLayout.sourceCellContentLeadingInset == 4)
+        #expect(LibraryNotesLayout.sourceGroupContentLeadingInset == 5)
         #expect(LibraryNotesLayout.sourceCountTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceCountWidth == 32)
         #expect(LibraryNotesLayout.sourceButtonFontSize == 13.5)
@@ -1350,6 +1352,7 @@ struct MarkdownRichEditorTests {
         let sourceOutline = controller.sourceOutlineView
         #expect(sourceOutline.identifier?.rawValue == "LibrarySourceOutline")
         #expect(sourceOutline.style == .sourceList)
+        #expect(sourceOutline.allowsEmptySelection)
         #expect(sourceOutline.delegate === controller)
         #expect(sourceOutline.dataSource === controller)
         #expect(sourceOutline.indentationPerLevel == LibraryNotesLayout.sourceFolderIndentStep)
@@ -4246,6 +4249,7 @@ struct MarkdownRichEditorTests {
             _ = try store.saveNewNote(title: "Plain Seed \(index)", body: "plain body")
         }
 
+        #expect(!store.libraryTagsSectionCollapsed)
         let controller = LibraryWindowController(
             noteStore: store,
             onOpenInSeparateWindow: { _ in },
@@ -4255,22 +4259,30 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        #expect(!store.libraryTagsSectionCollapsed)
         #expect(!controller.sourceTitlesForLibrary().contains("library"))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
 
         controller.loadSourceTagsForLibrary()
+        #expect(!store.libraryTagsSectionCollapsed)
 
         #expect(controller.sourceTitlesForLibrary().contains("library"))
         #expect(controller.sourceCountTextForLibrary(titled: "library") == "1")
         #expect(controller.sourceCountTextForLibrary(titled: "All iCloud") == "246")
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "All iCloud") == 1)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "library") == 1)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
 
         controller.toggleSourceTagsSectionForLibrary()
-        #expect(!controller.sourceTitlesForLibrary().contains("library"))
+        #expect(controller.sourceTitlesForLibrary().contains("library"))
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("library"))
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
         #expect(store.libraryTagsSectionCollapsed)
 
         let reopenedCollapsedTagsController = LibraryWindowController(
@@ -4281,11 +4293,14 @@ struct MarkdownRichEditorTests {
         )
         defer { reopenedCollapsedTagsController.close() }
         reopenedCollapsedTagsController.loadSourceTagsForLibrary()
-        #expect(!reopenedCollapsedTagsController.sourceTitlesForLibrary().contains("library"))
+        #expect(reopenedCollapsedTagsController.sourceTitlesForLibrary().contains("library"))
+        #expect(!reopenedCollapsedTagsController.visibleSourceTitlesForLibrary().contains("library"))
+        #expect(reopenedCollapsedTagsController.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
 
         controller.toggleSourceTagsSectionForLibrary()
         #expect(!store.libraryTagsSectionCollapsed)
-        #expect(controller.sourceTitlesForLibrary().contains("library"))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("library"))
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
 
         #expect(controller.selectSourceForLibrary(titled: "library"))
         #expect(controller.noteListTitleLabel.stringValue == "#library")
@@ -4344,6 +4359,23 @@ struct MarkdownRichEditorTests {
         #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
         #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
         #expect(!controller.sourceTitlesForLibrary().contains(NoteStore.attachmentDirectoryName))
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "All iCloud") == 1)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "Projects") == 2)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "Client") == 3)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "Recently Deleted") == 1)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
+
+        controller.toggleSourceFoldersSectionForLibrary()
+        #expect(store.libraryFoldersSectionCollapsed)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == false)
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Projects"))
+
+        controller.toggleSourceFoldersSectionForLibrary()
+        #expect(!store.libraryFoldersSectionCollapsed)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
+        #expect(controller.visibleSourceTitlesForLibrary().contains("All iCloud"))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
 
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.identifier?.rawValue == "LibrarySourceGroup-Folders"
