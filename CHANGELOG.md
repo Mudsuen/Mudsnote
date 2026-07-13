@@ -1117,6 +1117,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Split the folder hierarchy into a complete background-loaded tree snapshot and an in-memory visible-row projection, so disclosure changes no longer touch the filesystem. Added a regression test that proves disclosure uses the loaded snapshot until an explicit refresh. Recalibrated the collapsed title offset to `-7pt` and added a geometric non-overlap assertion.
 - Lesson: Navigation disclosure should be a pure projection of loaded state, and compact-toolbar alignment needs intersection assertions in addition to fixed-value checks and screenshots.
 
+### 187. State-matched compact typography and higher editor title
+
+- Problem: Collapsed QA selected a different note/date grouping from the Apple Notes reference, so typography evidence was not trustworthy. The compact title and group labels remained oversized, list previews could clip without an ellipsis, and the editor title still sat slightly low relative to its date.
+- Fix: Added a deterministic collapsed-reference fixture, tightened the collapsed title offset and compact header/group typography, preserved tail truncation in highlighted attributed strings, and reduced date-to-title spacing from `8pt` to `4pt` without moving the date row.
+- Lesson: Visual parity needs deterministic content state as well as matching window geometry; semantic row spacing should be adjusted independently when only one element needs to move.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

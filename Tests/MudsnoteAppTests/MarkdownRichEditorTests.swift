@@ -1124,7 +1124,7 @@ struct MarkdownRichEditorTests {
             $0.firstItem === collapsedTitleStack && $0.firstAttribute == .leading
         })
         #expect(collapsedTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset)
-        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -7)
+        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -11)
         window.contentView?.layoutSubtreeIfNeeded()
         let collapsedToggleFrame = collapsedToggleWrapper.convert(collapsedToggleWrapper.bounds, to: nil)
         let collapsedTitleFrame = collapsedTitleStack.convert(collapsedTitleStack.bounds, to: nil)
@@ -1228,6 +1228,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(noteListTitle.stringValue == "All iCloud")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
+        #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
         #expect(noteListCount.stringValue == "1 note")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
         #expect(noteListEmpty.isHidden)
@@ -1276,6 +1277,14 @@ struct MarkdownRichEditorTests {
         #expect(noteRowView.isPointerHovered)
         let firstNoteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(firstNoteCell.snippetLabel.attributedStringValue.string.contains("Body line"))
+        let snippetParagraphStyle = try #require(
+            firstNoteCell.snippetLabel.attributedStringValue.attribute(
+                .paragraphStyle,
+                at: 0,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+        )
+        #expect(snippetParagraphStyle.lineBreakMode == .byTruncatingTail)
         let windowAspectRatio = LibraryNotesLayout.presentedWindowSize.width / LibraryNotesLayout.presentedWindowSize.height
         #expect(windowAspectRatio > 1.45 && windowAspectRatio < 1.60)
         #expect(LibraryNotesLayout.sourceColumnWidth - LibraryNotesLayout.noteColumnWidth == 5)
@@ -1284,7 +1293,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.contentBottomInset == 6)
         #expect(LibraryNoteCellView.contentTrailingInset == 14)
         #expect(LibraryNoteCellView.textRowSpacing == 1)
-        #expect(LibraryNotesLayout.noteGroupFontSize == 16)
+        #expect(LibraryNotesLayout.noteGroupFontSize == 15)
         #expect(LibraryNotesLayout.noteGroupFontWeight == .bold)
         #expect(LibraryNotesLayout.noteTitleFontSize == 14)
         #expect(LibraryNotesLayout.noteTitleFontWeight == .bold)
@@ -1347,7 +1356,7 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
-        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 8)
+        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 4)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
         #expect(LibraryNotesLayout.editorTopInset == 6)

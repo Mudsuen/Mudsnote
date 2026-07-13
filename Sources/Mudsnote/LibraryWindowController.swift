@@ -317,7 +317,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
-    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -7
+    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11
     static let toolbarAddFolderWrapperWidth: CGFloat = 68
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
@@ -361,7 +361,7 @@ enum LibraryNotesLayout {
     static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
     static let sourceCountFontSize: CGFloat = 13
     static let sourceSymbolWeight: NSFont.Weight = .medium
-    static let noteGroupFontSize: CGFloat = 16
+    static let noteGroupFontSize: CGFloat = 15
     static let noteGroupFontWeight: NSFont.Weight = .bold
     static let noteTitleFontSize: CGFloat = 14
     static let noteTitleFontWeight: NSFont.Weight = .bold
@@ -369,7 +369,7 @@ enum LibraryNotesLayout {
     static let noteSnippetFontWeight: NSFont.Weight = .regular
     static let noteMetaFontSize: CGFloat = 11
     static let noteMetaFontWeight: NSFont.Weight = .medium
-    static let noteListHeaderTitleFontSize: CGFloat = 18
+    static let noteListHeaderTitleFontSize: CGFloat = 13
     static let noteListHeaderCountFontSize: CGFloat = 12
     static let noteListLeadingInset: CGFloat = 14
     static let noteListTrailingInset: CGFloat = 12
@@ -380,7 +380,7 @@ enum LibraryNotesLayout {
     static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 8
+    static let editorDateToTitleSpacing: CGFloat = 4
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusFontSize: CGFloat = 13
     static let editorTitleFontSize: CGFloat = 24
@@ -3861,9 +3861,12 @@ final class LibraryWindowController: NSWindowController,
         baseColor: NSColor,
         query: String
     ) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byTruncatingTail
         let attributed = NSMutableAttributedString(string: text, attributes: [
             .font: font,
-            .foregroundColor: baseColor
+            .foregroundColor: baseColor,
+            .paragraphStyle: paragraphStyle
         ])
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, !text.isEmpty else { return attributed }

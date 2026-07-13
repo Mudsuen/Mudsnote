@@ -157,6 +157,12 @@
 - Folder hierarchy loading now produces a complete bounded tree snapshot off the main thread; source disclosure projects visible rows from that snapshot without filesystem I/O.
 - The collapsed note-list title uses a measured `-7pt` offset and a geometric test prevents it from intersecting the compact sidebar button.
 
+## Latest iteration (187)
+
+- Collapsed visual QA now seeds the same `感悟` selection and date groups as its Apple Notes reference instead of reusing whichever normal content fixture was requested.
+- The compact note-list title/group typography is `13pt/15pt`, the collapsed title offset is `-11pt`, and attributed list previews retain tail ellipsis behavior.
+- Editor date-to-title spacing is `4pt`, moving only the title/body rhythm upward while preserving the calibrated date-row origin.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

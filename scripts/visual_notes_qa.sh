@@ -47,6 +47,7 @@ FIXTURE_APP_SUPPORT_DIR="$FIXTURE_ROOT/AppSupport"
 FIXTURE_DEFAULTS_SUITE="local.codex.mudsnote.visual-qa"
 SELECTED_FIXTURE="${MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE:-empty}"
 SOURCE_LIST_VISIBLE="${MUDSNOTE_VISUAL_QA_SOURCE_LIST_VISIBLE:-true}"
+RESOLVED_FIXTURE="$SELECTED_FIXTURE"
 
 case "$SOURCE_LIST_VISIBLE" in
   true|false) ;;
@@ -57,27 +58,24 @@ case "$SOURCE_LIST_VISIBLE" in
 esac
 
 case "$SELECTED_FIXTURE" in
-  empty)
-    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
-    if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
-      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
-    else
-      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
-    fi
-    ;;
-  content)
-    SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
-    if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
-      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
-    else
-      DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
-    fi
-    ;;
+  empty|content) ;;
   *)
     echo "Unknown MUDSNOTE_VISUAL_QA_SELECTED_FIXTURE '$SELECTED_FIXTURE'. Expected 'empty' or 'content'." >&2
     exit 2
     ;;
 esac
+
+if [[ "$SOURCE_LIST_VISIBLE" == "false" ]]; then
+  RESOLVED_FIXTURE="collapsed-reference"
+  SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/感悟.md"
+  DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-collapsed-reference.png"
+elif [[ "$SELECTED_FIXTURE" == "content" ]]; then
+  SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/项目计划.md"
+  DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-content-reference.png"
+else
+  SELECTED_NOTE_PATH="$FIXTURE_NOTES_DIR/New Note.md"
+  DEFAULT_REFERENCE_PATH="$ROOT_DIR/docs/visual-qa/apple-notes-reference.png"
+fi
 
 REFERENCE_PATH="${MUDSNOTE_NOTES_REFERENCE:-$DEFAULT_REFERENCE_PATH}"
 if [[ ! -f "$REFERENCE_PATH" ]]; then
@@ -99,12 +97,12 @@ mkdir -p "$FIXTURE_ROOT"
 defaults delete "$FIXTURE_DEFAULTS_SUITE" >/dev/null 2>&1 || true
 defaults write "$FIXTURE_DEFAULTS_SUITE" mudsnote.library.sourceListVisible -bool "$SOURCE_LIST_VISIBLE"
 
-/usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_RESOURCES_DIR" "$FIXTURE_ARCHIVES_DIR" "$FIXTURE_APP_SUPPORT_DIR" <<'SWIFT'
+/usr/bin/swift - "$FIXTURE_NOTES_DIR" "$FIXTURE_RESOURCES_DIR" "$FIXTURE_ARCHIVES_DIR" "$FIXTURE_APP_SUPPORT_DIR" "$RESOLVED_FIXTURE" <<'SWIFT'
 import Foundation
 
 let args = CommandLine.arguments
-guard args.count == 5 else {
-    fputs("Usage: seed-visual-qa notes-dir resources-dir archives-dir app-support-dir\n", stderr)
+guard args.count == 6 else {
+    fputs("Usage: seed-visual-qa notes-dir resources-dir archives-dir app-support-dir fixture\n", stderr)
     exit(2)
 }
 
@@ -112,6 +110,7 @@ let notesDirectory = URL(fileURLWithPath: args[1], isDirectory: true)
 let resourcesDirectory = URL(fileURLWithPath: args[2], isDirectory: true)
 let archivesDirectory = URL(fileURLWithPath: args[3], isDirectory: true)
 let appSupportDirectory = URL(fileURLWithPath: args[4], isDirectory: true)
+let fixture = args[5]
 let trashDirectory = appSupportDirectory.appendingPathComponent("Trash", isDirectory: true)
 let fileManager = FileManager.default
 try fileManager.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
@@ -121,6 +120,9 @@ try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories:
 
 let calendar = Calendar.current
 let now = Date()
+let currentWeekday = calendar.component(.weekday, from: now)
+let rawDaysSinceThursday = (currentWeekday - 5 + 7) % 7
+let daysSincePreviousThursday = rawDaysSinceThursday == 0 ? 7 : rawDaysSinceThursday
 
 func fixtureDate(daysAgo: Int, hour: Int, minute: Int) -> Date {
     let shifted = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
@@ -158,41 +160,62 @@ func writeNote(
     try fileManager.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
 }
 
-try writeNote(
-    directory: notesDirectory,
-    filename: "New Note.md",
-    title: "",
-    body: "",
-    daysAgo: 0,
-    hour: 11,
-    minute: 51
-)
-try writeNote(
-    directory: notesDirectory,
-    filename: "项目计划.md",
-    title: "项目计划",
-    body: """
-    本周重点
-    整理需求并确定优先级
-    完成编辑器交互验证
-    检查桌面端与移动端体验
+if fixture == "collapsed-reference" {
+    try writeNote(
+        directory: notesDirectory,
+        filename: "感悟.md",
+        title: "感悟",
+        body: "",
+        daysAgo: daysSincePreviousThursday,
+        hour: 11,
+        minute: 51
+    )
+    try writeNote(
+        directory: notesDirectory,
+        filename: "notes-list-marker.md",
+        title: "///",
+        body: "FDE",
+        daysAgo: daysSincePreviousThursday + 7,
+        hour: 9,
+        minute: 30
+    )
+} else {
+    try writeNote(
+        directory: notesDirectory,
+        filename: "New Note.md",
+        title: "",
+        body: "",
+        daysAgo: 0,
+        hour: 11,
+        minute: 51
+    )
+    try writeNote(
+        directory: notesDirectory,
+        filename: "项目计划.md",
+        title: "项目计划",
+        body: """
+        本周重点
+        整理需求并确定优先级
+        完成编辑器交互验证
+        检查桌面端与移动端体验
 
-    1. 修复阻塞问题
-    2. 完成发布前检查
-    """,
-    daysAgo: 3,
-    hour: 10,
-    minute: 15
-)
-try writeNote(
-    directory: notesDirectory,
-    filename: "knock 短密码.md",
-    title: "knock 短密码",
-    body: "135792",
-    daysAgo: 5,
-    hour: 9,
-    minute: 40
-)
+        1. 修复阻塞问题
+        2. 完成发布前检查
+        """,
+        daysAgo: 3,
+        hour: 10,
+        minute: 15
+    )
+    try writeNote(
+        directory: notesDirectory,
+        filename: "knock 短密码.md",
+        title: "knock 短密码",
+        body: "135792",
+        daysAgo: 5,
+        hour: 9,
+        minute: 40
+    )
+}
 try writeNote(
     directory: notesDirectory,
     filename: "Call Recording.md",
@@ -667,6 +690,7 @@ SWIFT
   echo "fixture_app_support_dir=$FIXTURE_APP_SUPPORT_DIR"
   echo "fixture_defaults_suite=$FIXTURE_DEFAULTS_SUITE"
   echo "selected_fixture=$SELECTED_FIXTURE"
+  echo "resolved_fixture=$RESOLVED_FIXTURE"
   echo "selected_note_path=$SELECTED_NOTE_PATH"
   echo "source_list_visible=$SOURCE_LIST_VISIBLE"
   echo "frontmost_before_capture=$FRONTMOST_BEFORE_CAPTURE"
