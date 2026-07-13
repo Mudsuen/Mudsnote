@@ -1057,6 +1057,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Set the logical source default/minimum to `205pt`, source rows to `180pt`, and the trailing source inset to `11pt`. Added layout-scale migration version 7, which replaces only exact stored `212/200pt` defaults while preserving custom pane widths.
 - Lesson: Native sidebar fidelity must be measured from the rendered divider rather than assuming the split-item width constant equals the visible outer width.
 
+### 177. Stable editor title rhythm
+
+- Problem: The editor title could render too far below the date because the vertical stack's default gravity-area distribution was free to place surplus height between arranged views.
+- Fix: Set the editor stack distribution explicitly to `.fill`, keeping the date and title at their measured `20pt + 8pt` rhythm while the body container absorbs remaining height.
+- Lesson: Notes-like top alignment needs an explicit stack distribution; spacing constants alone do not prevent AppKit from reallocating flexible space.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

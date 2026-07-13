@@ -107,6 +107,11 @@
 - The source split item uses a `205pt` logical default/minimum so its rendered native sidebar edge lands within about `3pt` of Apple Notes.
 - Source rows are `180pt` wide with `14/11pt` horizontal insets; migration version 7 updates only untouched `212/200pt` pane defaults.
 
+## Latest iteration (177)
+
+- The editor vertical stack uses `.fill`, so the date and title remain tightly anchored at the top and the body receives all flexible height.
+- Visual comparison: `/tmp/mudsnote-editor-stack-fill-177/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

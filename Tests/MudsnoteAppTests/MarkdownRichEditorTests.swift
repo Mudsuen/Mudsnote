@@ -1331,6 +1331,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(editorStack.spacing == 0)
         #expect(editorStack.alignment == .leading)
+        #expect(editorStack.distribution == .fill)
         #expect(editorDateRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })

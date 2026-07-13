@@ -1952,6 +1952,7 @@ final class LibraryWindowController: NSWindowController,
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
+        stack.distribution = .fill
         stack.spacing = 0
         stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
         stack.setCustomSpacing(LibraryNotesLayout.editorTitleToBodySpacing, after: titleField)
