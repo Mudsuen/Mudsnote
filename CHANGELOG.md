@@ -1147,6 +1147,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Made the horizontal row stack use fill distribution with a low-hugging text column, then aligned the selected surface to `10pt` leading and `31pt` trailing insets. Shifted note text and separators `5pt` left and retained a measured `10pt` text-to-selection trailing gap after AppKit stack adjustment. Added a real-layout width and clipping regression.
 - Lesson: Compression resistance prevents overflow, but it does not make a short intrinsic-width stack consume free space; Notes parity needs both expansion policy and independently measured card/text boundaries.
 
+### 192. State-matched editor content origin
+
+- Problem: The deterministic collapsed fixture showed the same `感悟` title about `25px` high and `12px` left of Apple Notes at `2x`, despite older clear-crop calibrations suggesting the shared editor origin was already aligned.
+- Fix: Re-measured the current installed app against the state-matched `304x292pt` reference, then moved the editor stack top inset from `6pt` to `18pt` and its horizontal inset from `22pt` to `28pt`. The resulting title bounds are `x=459–546, y=196–238px` versus Apple Notes' `x=459–543, y=197–238px`, while the internal date/title/body spacing remains unchanged.
+- Lesson: Shared editor origin changes must be driven by current, deterministic state-matched captures; older crops with different window state can accumulate apparently reasonable adjustments into a visible overcorrection.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

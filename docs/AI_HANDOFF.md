@@ -185,6 +185,12 @@
 - Equal-scale collapsed QA now aligns the selected card at `10pt` from the list edge and `31pt` from the trailing table edge; note text starts at `35pt` and preserves `10pt` inside the selected-card trailing edge.
 - The layout regression verifies both near-full available text width and the actual text drawing boundary, not only the label frame.
 
+## Latest iteration (192)
+
+- The library editor stack uses an `18pt` safe-area top inset and `28pt` horizontal inset; date-to-title and title-to-body spacing remain `4pt/8pt`.
+- In the deterministic collapsed fixture, the installed title now measures `x=459–546, y=196–238px` at `2x`, against Apple Notes' `x=459–543, y=197–238px`.
+- Shared editor-origin calibration must use the current state-matched capture; do not reuse older clear crops without reproducing their exact window, pane, and selected-note state.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
