@@ -319,11 +319,12 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
+    static let toolbarNewNoteWrapperWidth: CGFloat = 44
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
     static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarAddFolderWrapperWidth: CGFloat = 63
-    static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
+    static let toolbarCircularButtonSymbolPointSize: CGFloat = 12
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
     static let toolbarEditorToolIconDisabledAlpha: CGFloat = 1.0
@@ -2620,11 +2621,7 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.isBordered = false
 
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
-        let configuredImage = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.toolbarCircularButtonSymbolPointSize,
-            weight: .regular
-        )) ?? image
+        let configuredImage = toolbarCompactGlassSymbolImage(symbolName: symbolName, label: label)
         configuredImage?.isTemplate = true
 
         let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
@@ -2635,7 +2632,7 @@ final class LibraryWindowController: NSWindowController,
         button.isBordered = true
         button.focusRingType = .none
         button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
+        button.imageScaling = .scaleNone
         button.contentTintColor = toolbarIconTintColor(isEnabled: true)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setContentHuggingPriority(.required, for: .horizontal)
@@ -2643,8 +2640,24 @@ final class LibraryWindowController: NSWindowController,
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
         button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
 
+        let wrapper = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarNewNoteWrapperWidth,
+            height: LibraryNotesLayout.toolbarCircularButtonSize
+        ))
+        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNewNoteWrapper")
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(button)
+        NSLayoutConstraint.activate([
+            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNewNoteWrapperWidth),
+            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
+            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
+        ])
+
         item.image = configuredImage
-        item.view = button
+        item.view = wrapper
         return item
     }
 
@@ -2652,6 +2665,14 @@ final class LibraryWindowController: NSWindowController,
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
         return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
             pointSize: LibraryNotesLayout.toolbarSymbolPointSize,
+            weight: .regular
+        )) ?? image
+    }
+
+    private func toolbarCompactGlassSymbolImage(symbolName: String, label: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.toolbarCircularButtonSymbolPointSize,
             weight: .regular
         )) ?? image
     }
@@ -6426,7 +6447,9 @@ final class LibraryWindowController: NSWindowController,
         usesCompactGlass: Bool
     ) {
         item.isBordered = false
-        let image = toolbarSymbolImage(symbolName: "sidebar.left", label: label)
+        let image = usesCompactGlass
+            ? toolbarCompactGlassSymbolImage(symbolName: "sidebar.left", label: label)
+            : toolbarSymbolImage(symbolName: "sidebar.left", label: label)
         image?.isTemplate = true
         let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(toggleSourceListPressed))
         button.identifier = NSUserInterfaceItemIdentifier(Self.toggleSidebarToolbarItemIdentifier.rawValue)
@@ -6437,7 +6460,7 @@ final class LibraryWindowController: NSWindowController,
         button.showsBorderOnlyWhileMouseInside = !usesCompactGlass
         button.focusRingType = .none
         button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
+        button.imageScaling = usesCompactGlass ? .scaleNone : .scaleProportionallyDown
         button.contentTintColor = toolbarIconTintColor(isEnabled: true)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true

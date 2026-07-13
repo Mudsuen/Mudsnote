@@ -1201,6 +1201,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Full tests, installed-app library smoke, packaging, and signature validation passed. The packaged content-state comparison is `/tmp/mudsnote-visual-qa-199-native-hover/apple-notes-vs-mudsnote.png`; real pointer captures `/tmp/mudsnote-native-button-hover.png` and `/tmp/mudsnote-native-button-rest.png` differ, proving the native hover state is rendered while the resting group remains compact.
 - Lesson: AppKit's fully automatic toolbar group prioritizes standard hit targets over reference geometry. Composing public `NSGlassEffectView` and `NSButton` controls preserves native animation while allowing a reference-sized command group.
 
+### 200. Reference-aligned compact glass buttons
+
+- Problem: The editor command cluster began too close to the editor divider, and the compact `.glass` buttons rendered their SF Symbols at roughly half the Apple Notes reference size because AppKit reduced the standard symbol canvas inside the `30pt` bezel.
+- Fix: Added a `44pt` layout slot that keeps the native New Note button `30pt` wide while moving its center to the reference offset, then gave compact glass controls a dedicated `12pt` SF Symbol configuration with unscaled native drawing. The expanded toolbar, search field, pane dividers, and expanded sidebar controls remain unchanged.
+- Verification: Expanded and collapsed packaged-app comparisons are `/tmp/mudsnote-visual-qa-200-final-expanded/apple-notes-vs-mudsnote.png` and `/tmp/mudsnote-visual-qa-200-final-collapsed/apple-notes-vs-mudsnote.png`. Full tests, installed-app library smoke, packaging, and strict signature validation passed.
+- Lesson: A system symbol's configured point size is not its final `NSImage.size`; compact native bezels need a symbol configuration based on the resulting image canvas, not the nominal point value alone.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

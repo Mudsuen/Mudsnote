@@ -240,6 +240,13 @@
 - Expanded Add Folder and Sidebar Toggle use the same hover-only toolbar button behavior. Static visual geometry remains on the compact baseline, and real-pointer captures verify hover rendering.
 - Full tests, installed-app library smoke, packaging, and strict signature validation pass for this implementation.
 
+## Latest iteration (200)
+
+- New Note now occupies a `44pt` toolbar layout slot with its native `30pt` glass button trailing-aligned, matching Apple Notes' divider-to-button offset without moving the search field or pane dividers.
+- Compact New Note and collapsed Sidebar Toggle symbols use a dedicated `12pt` SF Symbol configuration with `.scaleNone`; this produces approximately reference-sized `15–17pt` image canvases inside the small native glass bezels.
+- Keep expanded toolbar symbols on the existing `19pt` configuration and proportional scaling. The compact correction is intentionally isolated to `.glass` controls.
+- Final expanded and collapsed visual evidence lives under `/tmp/mudsnote-visual-qa-200-final-expanded` and `/tmp/mudsnote-visual-qa-200-final-collapsed`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

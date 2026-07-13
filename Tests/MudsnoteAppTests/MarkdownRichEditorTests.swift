@@ -939,13 +939,18 @@ struct MarkdownRichEditorTests {
         let newNoteToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        let newNoteToolbarButton = try #require(newNoteToolbarItem.view as? NSButton)
-        #expect(newNoteToolbarItem.isBordered)
+        let newNoteToolbarWrapper = try #require(newNoteToolbarItem.view)
+        #expect(newNoteToolbarWrapper.identifier?.rawValue == "LibraryToolbarNewNoteWrapper")
+        #expect(newNoteToolbarWrapper.frame.width == LibraryNotesLayout.toolbarNewNoteWrapperWidth)
+        #expect(LibraryNotesLayout.toolbarNewNoteWrapperWidth == 44)
+        let newNoteToolbarButton = try #require(newNoteToolbarWrapper.allSubviews.compactMap { $0 as? NSButton }.first)
+        #expect(!newNoteToolbarItem.isBordered)
         #expect(newNoteToolbarButton.target === controller)
         #expect(newNoteToolbarButton.action != nil)
         #expect(newNoteToolbarButton.identifier?.rawValue == "mudsnote.library.toolbar.new-note")
         #expect(newNoteToolbarButton.isBordered)
         #expect(newNoteToolbarButton.bezelStyle == .glass)
+        #expect(newNoteToolbarButton.imageScaling == .scaleNone)
         #expect(newNoteToolbarButton.image?.accessibilityDescription == "新建笔记")
         #expect(newNoteToolbarButton.toolTip == "新建笔记")
         #expect(newNoteToolbarButton.constraints.contains {
@@ -955,7 +960,7 @@ struct MarkdownRichEditorTests {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
         })
         #expect(LibraryNotesLayout.toolbarCircularButtonSize == 30)
-        #expect(LibraryNotesLayout.toolbarCircularButtonSymbolPointSize == 16)
+        #expect(LibraryNotesLayout.toolbarCircularButtonSymbolPointSize == 12)
 
         let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
         let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })
@@ -1143,6 +1148,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(collapsedToggleButton.bezelStyle == .glass)
         #expect(collapsedToggleButton.isBordered)
+        #expect(collapsedToggleButton.imageScaling == .scaleNone)
         #expect(toggleSourceItem.label == "显示资料库")
         #expect(toggleSourceItem.toolTip == "显示资料库")
         let noteListTitleItem = try #require((window.toolbar?.items ?? []).first {
@@ -2512,7 +2518,7 @@ struct MarkdownRichEditorTests {
         let visibleNewItem = try #require((emptyController.window?.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        let visibleNewButton = try #require(visibleNewItem.view as? NSButton)
+        let visibleNewButton = try #require(visibleNewItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
         visibleNewButton.performClick(nil)
         #expect(emptyController.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.stringValue == "Select or create a note"
@@ -4501,7 +4507,8 @@ struct MarkdownRichEditorTests {
         let newItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
         })
-        #expect(NSApp.sendAction(try #require(newItem.action), to: newItem.target, from: newItem))
+        let newButton = try #require(newItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
+        newButton.performClick(nil)
         controller.titleField.stringValue = "Folder Seed"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
