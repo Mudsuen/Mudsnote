@@ -1,6 +1,9 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Damaged pending captures were preserved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已保留损坏的待保存记录" } } }
+    },
     "An unfinished quick note stays in protected app storage and is excluded from device backups until submitted.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未提交的快速笔记会保存在受保护的应用存储中，并排除在设备备份之外。" } } }
     },
@@ -1670,6 +1673,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "待处理记录已达到上限（%lld 条），请重新连接文件夹后重试。"
+          }
+        }
+      }
+    },
+    "pending.queue_quarantined.format": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A damaged pending queue was preserved as %@. Existing notes were not changed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "损坏的待保存队列已保留为 %@，已有笔记未被更改。"
           }
         }
       }

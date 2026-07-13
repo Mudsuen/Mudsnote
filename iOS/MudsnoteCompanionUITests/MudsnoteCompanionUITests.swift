@@ -48,6 +48,36 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Quick Note Recovery"].exists)
     }
 
+    func testDamagedPendingQueueIsolatedWithoutBlockingNewCaptures() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            damagedQueue: true
+        )
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["all-notes-link"].exists)
+
+        newNoteButton.tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("Capture after damaged queue")
+        app.buttons["save-memo-button"].tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertFalse(editor.exists)
+
+        app.buttons["settings-link"].tap()
+        XCTAssertTrue(app.staticTexts["Needs Attention"].waitForExistence(timeout: 5))
+        let warning = app.staticTexts.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@",
+                "A damaged pending queue was preserved as queue-damaged-"
+            )
+        ).firstMatch
+        XCTAssertTrue(warning.waitForExistence(timeout: 5))
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
@@ -358,7 +388,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         reset: Bool,
         fixtureFolder: Bool,
         invalidBookmark: Bool = false,
-        damagedDraft: Bool = false
+        damagedDraft: Bool = false,
+        damagedQueue: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -367,7 +398,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             reset ? "-ui-testing-reset" : nil,
             fixtureFolder ? "-ui-testing-fixture-folder" : nil,
             invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,
-            damagedDraft ? "-ui-testing-damaged-draft" : nil
+            damagedDraft ? "-ui-testing-damaged-draft" : nil,
+            damagedQueue ? "-ui-testing-damaged-queue" : nil
         ].compactMap { $0 }
         app.launch()
         return app

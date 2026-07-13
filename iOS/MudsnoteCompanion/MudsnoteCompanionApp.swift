@@ -38,6 +38,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let fixtureFolderArgument = "-ui-testing-fixture-folder"
     private static let invalidBookmarkArgument = "-ui-testing-invalid-bookmark"
     private static let damagedDraftArgument = "-ui-testing-damaged-draft"
+    private static let damagedQueueArgument = "-ui-testing-damaged-queue"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -47,6 +48,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(fixtureFolderArgument)
                 || arguments.contains(invalidBookmarkArgument)
                 || arguments.contains(damagedDraftArgument)
+                || arguments.contains(damagedQueueArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -82,6 +84,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                     encoding: .utf8
                 )
                 try access.persistFolder(root)
+
+                if arguments.contains(damagedQueueArgument) {
+                    try Data("damaged pending queue".utf8).write(
+                        to: root.appendingPathComponent(".mudsnote/queue.json"),
+                        options: .atomic
+                    )
+                }
             } catch {
                 assertionFailure("Could not prepare the Mudsnote UI-test library: \(error)")
             }

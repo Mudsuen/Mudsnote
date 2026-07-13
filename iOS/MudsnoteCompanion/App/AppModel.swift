@@ -59,6 +59,7 @@ final class AppModel: ObservableObject {
     private var draftPersistenceTask: Task<Void, Never>?
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
+    private var queueRecoveryWarning: String?
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
@@ -135,6 +136,7 @@ final class AppModel: ObservableObject {
         librarySummary = LibrarySummary()
         tagSummaries = []
         conflictWarnings = []
+        queueRecoveryWarning = nil
         searchResults = []
         isSearching = false
         libraryRevision += 1
@@ -837,6 +839,9 @@ final class AppModel: ObservableObject {
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)
         conflictWarnings = snapshot.conflictWarnings
+        if let queueRecoveryWarning {
+            conflictWarnings.append(queueRecoveryWarning)
+        }
         if conflictWarnings.isEmpty == false {
             syncStatus = .conflict
         } else if pendingCount > 0 {
@@ -857,6 +862,7 @@ final class AppModel: ObservableObject {
         isSearching = false
         completedSearchQuery = ""
         completedSearchScope = .all
+        queueRecoveryWarning = nil
         return configurationID
     }
 
@@ -869,7 +875,17 @@ final class AppModel: ObservableObject {
         await fileStore.configure(root: root)
         guard libraryConfigurationID == configurationID else { return false }
         let nextQueue = PendingWriteQueue(root: root)
-        try await nextQueue.load()
+        let queueLoadResult = try await nextQueue.load()
+        switch queueLoadResult {
+        case .ready:
+            queueRecoveryWarning = nil
+        case .quarantined(let filename):
+            queueRecoveryWarning = String(
+                format: String(localized: "pending.queue_quarantined.format"),
+                locale: .current,
+                filename
+            )
+        }
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
         do {
@@ -891,6 +907,8 @@ final class AppModel: ObservableObject {
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
+        } else if queueRecoveryWarning != nil {
+            statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
         }
         presentPendingCaptureIfPossible()
         return true

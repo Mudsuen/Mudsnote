@@ -14,6 +14,7 @@ struct PendingAttachment: Codable, Equatable {
 }
 
 actor PendingWriteQueue {
+    private static let maximumQueueFileBytes = 128 * 1_024 * 1_024
     private let root: URL
     private let queueURL: URL
     private var items: [PendingWrite] = []
@@ -23,14 +24,33 @@ actor PendingWriteQueue {
         self.queueURL = root.appendingPathComponent(".mudsnote/queue.json")
     }
 
-    func load() throws {
+    @discardableResult
+    func load(now: Date = Date()) throws -> PendingWriteQueueLoadResult {
         try withRootAccess {
             guard FileManager.default.fileExists(atPath: queueURL.path) else {
                 items = []
                 try persistUnlocked(items, to: queueURL)
-                return
+                return .ready
             }
-            items = try loadItemsUnlocked(from: queueURL)
+            do {
+                let byteCount = try queueURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard byteCount <= Self.maximumQueueFileBytes else {
+                    throw PendingWriteQueueLoadError.fileTooLarge
+                }
+                items = try loadItemsUnlocked(from: queueURL)
+                return .ready
+            } catch {
+                let quarantineURL = uniqueQuarantineURL(now: now)
+                try FileManager.default.moveItem(at: queueURL, to: quarantineURL)
+                do {
+                    items = []
+                    try persistUnlocked(items, to: queueURL)
+                    return .quarantined(filename: quarantineURL.lastPathComponent)
+                } catch {
+                    try? FileManager.default.moveItem(at: quarantineURL, to: queueURL)
+                    throw error
+                }
+            }
         }
     }
 
@@ -98,6 +118,22 @@ actor PendingWriteQueue {
         try data.write(to: url, options: .atomic)
     }
 
+    private func uniqueQuarantineURL(now: Date) -> URL {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let stem = "queue-damaged-\(formatter.string(from: now))"
+        var candidate = queueURL.deletingLastPathComponent()
+            .appendingPathComponent("\(stem).json")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = queueURL.deletingLastPathComponent()
+                .appendingPathComponent("\(stem)-\(suffix).json")
+            suffix += 1
+        }
+        return candidate
+    }
+
     private func withRootAccess<T>(_ work: () throws -> T) throws -> T {
         let accessed = root.startAccessingSecurityScopedResource()
         defer {
@@ -105,6 +141,15 @@ actor PendingWriteQueue {
         }
         return try work()
     }
+}
+
+enum PendingWriteQueueLoadResult: Equatable {
+    case ready
+    case quarantined(filename: String)
+}
+
+private enum PendingWriteQueueLoadError: Error {
+    case fileTooLarge
 }
 
 enum PendingWriteQueuePolicy {

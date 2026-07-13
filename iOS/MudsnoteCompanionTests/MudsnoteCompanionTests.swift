@@ -342,6 +342,50 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testDamagedPendingQueueIsPreservedWithoutBlockingNewCaptures() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let queueURL = root.appendingPathComponent(".mudsnote/queue.json")
+        let damaged = Data("truncated pending queue".utf8)
+        try damaged.write(to: queueURL, options: .atomic)
+        let queue = PendingWriteQueue(root: root)
+        let now = Date(timeIntervalSince1970: 1_752_384_000)
+
+        let result = try await queue.load(now: now)
+        let quarantineName: String
+        switch result {
+        case .quarantined(let filename):
+            quarantineName = filename
+        case .ready:
+            XCTFail("Expected the damaged queue to be quarantined")
+            return
+        }
+        XCTAssertEqual(
+            try Data(contentsOf: root.appendingPathComponent(".mudsnote/\(quarantineName)")),
+            damaged
+        )
+        let rebuiltItems = try JSONDecoder().decode(
+            [PendingWrite].self,
+            from: Data(contentsOf: queueURL)
+        )
+        XCTAssertEqual(rebuiltItems, [])
+
+        let pending = PendingWrite(
+            id: UUID(),
+            createdAt: now,
+            targetRelativePath: "Inbox.md",
+            markdownBlock: "Recovered queue path\n",
+            attachments: []
+        )
+        try await queue.enqueue(pending)
+        let relaunched = PendingWriteQueue(root: root)
+        let relaunchResult = try await relaunched.load()
+        let pendingCount = await relaunched.pendingCount()
+        XCTAssertEqual(relaunchResult, .ready)
+        XCTAssertEqual(pendingCount, 1)
+    }
+
     func testCorruptFolderBookmarkRequiresReselectionAndCanBeForgotten() throws {
         let suiteName = "MudsnoteCompanionTests.folder.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
