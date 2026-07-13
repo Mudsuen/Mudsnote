@@ -609,6 +609,7 @@ enum LibraryNotesLayout {
     static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarAddFolderWrapperWidth: CGFloat = 63
+    static let toolbarSourceActionSymbolPointSize: CGFloat = 13
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 12
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
@@ -2237,7 +2238,8 @@ final class LibraryWindowController: NSWindowController,
                 identifier: itemIdentifier,
                 label: "隐藏资料库",
                 symbolName: "sidebar.left",
-                action: #selector(toggleSourceListPressed)
+                action: #selector(toggleSourceListPressed),
+                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
             )
         case Self.newNoteToolbarItemIdentifier:
             return toolbarCircularButtonItem(
@@ -2444,13 +2446,18 @@ final class LibraryWindowController: NSWindowController,
         label: String,
         symbolName: String,
         action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
+        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard,
+        symbolPointSize: CGFloat = LibraryNotesLayout.toolbarSymbolPointSize
     ) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        item.image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        item.image = toolbarSymbolImage(
+            symbolName: symbolName,
+            label: label,
+            pointSize: symbolPointSize
+        )
         item.target = self
         item.action = action
         item.visibilityPriority = visibilityPriority
@@ -2468,7 +2475,8 @@ final class LibraryWindowController: NSWindowController,
             identifier: identifier,
             label: label,
             symbolName: symbolName,
-            action: action
+            action: action,
+            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
         )
         let button = NSButton(
             image: item.image ?? NSImage(),
@@ -2716,10 +2724,14 @@ final class LibraryWindowController: NSWindowController,
         return item
     }
 
-    private func toolbarSymbolImage(symbolName: String, label: String) -> NSImage? {
+    private func toolbarSymbolImage(
+        symbolName: String,
+        label: String,
+        pointSize: CGFloat = LibraryNotesLayout.toolbarSymbolPointSize
+    ) -> NSImage? {
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
         return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.toolbarSymbolPointSize,
+            pointSize: pointSize,
             weight: .regular
         )) ?? image
     }
@@ -6178,7 +6190,14 @@ final class LibraryWindowController: NSWindowController,
                 item.isHidden = !isVisible
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isVisible ? "隐藏资料库" : "显示资料库"
-                updateToolbarItemPresentation(item, label: label, symbolName: "sidebar.left")
+                updateToolbarItemPresentation(
+                    item,
+                    label: label,
+                    symbolName: "sidebar.left",
+                    symbolPointSize: isVisible
+                        ? LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+                        : LibraryNotesLayout.toolbarCircularButtonSymbolPointSize
+                )
                 configureToggleSidebarToolbarItem(item, label: label, usesCompactGlass: !isVisible)
             default:
                 break
@@ -6709,11 +6728,20 @@ final class LibraryWindowController: NSWindowController,
         updateVisibleEditorToolsToolbarGroupEnabled()
     }
 
-    private func updateToolbarItemPresentation(_ item: NSToolbarItem, label: String, symbolName: String) {
+    private func updateToolbarItemPresentation(
+        _ item: NSToolbarItem,
+        label: String,
+        symbolName: String,
+        symbolPointSize: CGFloat = LibraryNotesLayout.toolbarSymbolPointSize
+    ) {
         item.label = label
         item.paletteLabel = label
         item.toolTip = label
-        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        let image = toolbarSymbolImage(
+            symbolName: symbolName,
+            label: label,
+            pointSize: symbolPointSize
+        )
         image?.isTemplate = true
         item.image = image
         guard let button = item.view as? NSButton else { return }
@@ -6730,7 +6758,11 @@ final class LibraryWindowController: NSWindowController,
         item.isBordered = false
         let image = usesCompactGlass
             ? toolbarCompactGlassSymbolImage(symbolName: "sidebar.left", label: label)
-            : toolbarSymbolImage(symbolName: "sidebar.left", label: label)
+            : toolbarSymbolImage(
+                symbolName: "sidebar.left",
+                label: label,
+                pointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+            )
         image?.isTemplate = true
         let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(toggleSourceListPressed))
         button.identifier = NSUserInterfaceItemIdentifier(Self.toggleSidebarToolbarItemIdentifier.rawValue)

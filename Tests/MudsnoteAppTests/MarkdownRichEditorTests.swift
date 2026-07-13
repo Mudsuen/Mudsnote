@@ -1080,6 +1080,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(LibraryNotesLayout.toolbarCircularButtonSize == 30)
         #expect(LibraryNotesLayout.toolbarCircularButtonSymbolPointSize == 12)
+        #expect(LibraryNotesLayout.toolbarSourceActionSymbolPointSize == 13)
 
         let initialListMenu = controller.makeNoteListActionsMenuForLibrary()
         let initialGroupingItem = try #require(initialListMenu.items.first { $0.title == "按日期分组" })
@@ -1257,6 +1258,11 @@ struct MarkdownRichEditorTests {
         #expect(!sourceTrackingSeparatorItem.isHidden)
         #expect(toggleSourceItem.isBordered)
         let expandedToggleButton = try #require(toggleSourceItem.view as? NSButton)
+        let addFolderButton = try #require(addFolderItem.view?.allSubviews.compactMap {
+            $0 as? NSButton
+        }.first)
+        #expect(expandedToggleButton.image != nil)
+        #expect(addFolderButton.image != nil)
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         expandedToggleButton.performClick(nil)

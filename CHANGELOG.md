@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 158. Reference-sized source toolbar symbols
+- Problem: Expanded Add Folder and Sidebar Toggle used the correct native SF Symbols, but shared the generic `19pt` toolbar configuration and rendered visibly larger than Apple Notes.
+- Fix: Added a dedicated `13pt` source-action symbol configuration and applied it consistently during toolbar creation, state refresh, and sidebar visibility transitions without changing button frames or collapsed glass controls.
+- Lesson: Native controls still need per-symbol optical sizing; validate the rendered glyph boundary rather than the nominal `NSImage.size` canvas.
+
 ### 157. Native account and tag disclosure
 - Problem: After the source list moved to `NSOutlineView`, `iCloud` and `Tags` were still flat heading rows, so they lacked Apple Notes' native expandable-parent semantics, system disclosure actions, and hierarchical indentation.
 - Fix: Made both headings real outline parents, nested All iCloud, folders, Recently Deleted, and tags beneath them, persisted expand/collapse through AppKit notifications, and kept collapsed groups in the model so row virtualization and snapshots remain stable. Collapsed groups now defer unnecessary folder/tag loading, and source selection is restored when a group reopens.

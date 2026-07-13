@@ -291,6 +291,12 @@
 - Group disclosure persists without removing child models, folder/tag loading is skipped while its parent is collapsed, empty selection is allowed when all groups hide their children, and the active source selection returns when its parent reopens.
 - Same-height live comparison is `/tmp/apple-notes-vs-mudsnote-groups-final-206.png`; source item icons and group headings align with the live Apple Notes reference. Full 154-test regression, production packaging, and strict signature verification pass.
 
+## Latest iteration (207)
+
+- Expanded Add Folder and Sidebar Toggle retain native `.toolbar` hover/pressed behavior but now use an isolated `13pt` SF Symbol configuration instead of the generic `19pt` toolbar size.
+- The `30pt` button frames, measured source-toolbar positions, and collapsed `12pt` glass sidebar control are unchanged.
+- Equal-scale `2x` QA measures Apple Notes at `44x31px` and `38x30px`; Mudsnote now renders `44x30px` and `38x30px`. Evidence is `/tmp/mudsnote-source-action-icons-final-207/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
