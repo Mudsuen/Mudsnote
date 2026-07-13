@@ -1051,6 +1051,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Kept the expanded toggle unchanged, wrapped only the collapsed `30pt` glass control in a trailing-aligned `34pt` item, and calibrated the existing collapsed list-title offset to `-58pt`. The compact comparison now places both controls within roughly `2–2.5pt` of the reference.
 - Lesson: Expanded and collapsed toolbar states have different AppKit item geometry; small state-specific wrappers are safer than changing shared item widths or introducing zero-width spacers.
 
+### 176. Rendered-width source sidebar
+
+- Problem: The logical `212pt` source-column default rendered roughly `10pt` wider than Apple Notes once AppKit's native sidebar geometry was included, and its `184pt` rows remained about `4pt` wider than the reference.
+- Fix: Set the logical source default/minimum to `205pt`, source rows to `180pt`, and the trailing source inset to `11pt`. Added layout-scale migration version 7, which replaces only exact stored `212/200pt` defaults while preserving custom pane widths.
+- Lesson: Native sidebar fidelity must be measured from the rendered divider rather than assuming the split-item width constant equals the visible outer width.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

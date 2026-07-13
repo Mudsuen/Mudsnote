@@ -102,6 +102,11 @@
 - Collapsed Sidebar Toggle uses a trailing-aligned `34pt` wrapper around the existing `30pt` glass control; expanded state remains unchanged.
 - The collapsed list title uses a `-58pt` state offset, putting button and title within about `2–2.5pt` of the checked-in Apple Notes crop.
 
+## Latest iteration (176)
+
+- The source split item uses a `205pt` logical default/minimum so its rendered native sidebar edge lands within about `3pt` of Apple Notes.
+- Source rows are `180pt` wide with `14/11pt` horizontal insets; migration version 7 updates only untouched `212/200pt` pane defaults.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
