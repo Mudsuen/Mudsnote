@@ -81,6 +81,42 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["save-markdown-button"].exists)
     }
 
+    func testMarkdownEditorAutosavesBeforeSheetDismissal() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.tap()
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("\nAutosaved UI edit")
+
+        let saved = app.staticTexts["markdown-save-status"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 3))
+        let savedPredicate = NSPredicate(format: "label == %@", "Saved")
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: savedPredicate, object: saved)],
+                timeout: 5
+            ),
+            .completed
+        )
+
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(waitForHittable(note))
+        note.tap()
+        XCTAssertTrue(app.staticTexts["Autosaved UI edit"].waitForExistence(timeout: 5))
+    }
+
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]
@@ -233,6 +269,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         }
         return XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: predicate, object: nil)],
+            timeout: 5
+        ) == .completed
+    }
+
+    private func waitForHittable(_ element: XCUIElement) -> Bool {
+        let predicate = NSPredicate { _, _ in element.isHittable }
+        return XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
             timeout: 5
         ) == .completed
     }

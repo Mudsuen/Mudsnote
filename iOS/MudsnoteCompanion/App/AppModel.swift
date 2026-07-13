@@ -522,7 +522,8 @@ final class AppModel: ObservableObject {
     func saveDocument(
         _ document: MarkdownDocument,
         markdown: String,
-        expectedMarkdown: String
+        expectedMarkdown: String,
+        announce: Bool = true
     ) async -> MarkdownDocument? {
         do {
             let updated = try await fileStore.saveMarkdownDocument(
@@ -531,7 +532,7 @@ final class AppModel: ObservableObject {
                 expectedMarkdown: expectedMarkdown
             )
             selectedDocument = updated
-            statusToast = .saved(String(localized: "Saved"))
+            if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return updated
@@ -544,7 +545,8 @@ final class AppModel: ObservableObject {
     func saveMemo(
         _ memo: MemoBlock,
         body: String,
-        expectedBody: String
+        expectedBody: String,
+        announce: Bool = true
     ) async -> MemoBlock? {
         do {
             try await fileStore.applyInboxMutation(
@@ -555,13 +557,29 @@ final class AppModel: ObservableObject {
                 throw InboxMutationError.memoNotFound
             }
             selectedMemo = updated
-            statusToast = .saved(String(localized: "Saved"))
+            if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshActiveSearchIfNeeded()
             return updated
         } catch {
             statusToast = .error(error.localizedDescription)
             return nil
         }
+    }
+
+    func reloadDocument(_ document: MarkdownDocument) async -> MarkdownDocument? {
+        do {
+            let reloaded = try await fileStore.loadMarkdownDocument(relativePath: document.relativePath)
+            selectedDocument = reloaded
+            return reloaded
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func reloadMemo(_ memo: MemoBlock) async -> MemoBlock? {
+        await refreshInboxDelta()
+        return inboxItems.first { $0.id == memo.id }
     }
 
     private func refreshActiveSearchIfNeeded() async {

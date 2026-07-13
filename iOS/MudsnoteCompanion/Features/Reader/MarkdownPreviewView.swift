@@ -8,6 +8,18 @@ struct MarkdownPreviewView: View {
         case document(MarkdownDocument)
     }
 
+    private enum SaveState {
+        case idle
+        case saving
+        case saved
+        case failed
+    }
+
+    private struct AutosaveID: Hashable {
+        var markdown: String
+        var isEditing: Bool
+    }
+
     @EnvironmentObject private var appModel: AppModel
     @Binding private var detent: PresentationDetent
     private var source: Source
@@ -17,6 +29,8 @@ struct MarkdownPreviewView: View {
     @State private var originalMarkdown: String
     @State private var isEditing = false
     @State private var isSaving = false
+    @State private var saveState: SaveState = .idle
+    @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var accessedRoot: URL?
@@ -84,12 +98,13 @@ struct MarkdownPreviewView: View {
 
                     if isEditing {
                         Button {
-                            Task { await saveAndFinishEditing() }
+                            Task { await persistDraft(finishEditing: true, announce: true) }
                         } label: {
                             if isSaving {
                                 ProgressView()
                             } else {
-                                Image(systemName: "checkmark")
+                                Text("Done")
+                                    .fontWeight(.semibold)
                             }
                         }
                         .disabled(isSaving)
@@ -102,12 +117,46 @@ struct MarkdownPreviewView: View {
         .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
         .onAppear(perform: beginLibraryAccess)
         .onDisappear(perform: endLibraryAccess)
+        .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
+            guard isEditing, draftMarkdown != originalMarkdown else { return }
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            await persistDraft(finishEditing: false, announce: false)
+        }
+        .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
+            Button("Keep Editing", role: .cancel) {
+                editorFocused = true
+            }
+            Button("Reopen Saved Version", role: .destructive) {
+                Task { await reloadSavedVersion() }
+            }
+        } message: {
+            Text("The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.")
+        }
     }
 
     private var metadataLabel: some View {
-        Text(metadata)
-            .font(.system(.headline, design: .rounded, weight: .semibold))
-            .foregroundStyle(MudsnoteColors.text)
+        HStack(spacing: 8) {
+            Text(metadata)
+                .font(.system(.headline, design: .rounded, weight: .semibold))
+                .foregroundStyle(MudsnoteColors.text)
+            Spacer(minLength: 8)
+            if isEditing {
+                Text(saveStatusText)
+                    .font(.caption)
+                    .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
+                    .accessibilityIdentifier("markdown-save-status")
+            }
+        }
+    }
+
+    private var saveStatusText: LocalizedStringKey {
+        switch saveState {
+        case .idle: draftMarkdown == originalMarkdown ? "Saved" : "Edited"
+        case .saving: "Saving…"
+        case .saved: "Saved"
+        case .failed: "Not Saved"
+        }
     }
 
     private var markdownToolbar: some View {
@@ -257,35 +306,73 @@ struct MarkdownPreviewView: View {
     }
 
     @MainActor
-    private func saveAndFinishEditing() async {
-        editorFocused = false
+    private func persistDraft(finishEditing: Bool, announce: Bool) async {
+        if finishEditing { editorFocused = false }
+        guard !isSaving else { return }
         guard draftMarkdown != originalMarkdown else {
-            isEditing = false
+            if finishEditing { isEditing = false }
             return
         }
         isSaving = true
-        defer { isSaving = false }
+        saveState = .saving
 
-        let saved: Bool
+        var succeeded = true
+        repeat {
+            let snapshot = draftMarkdown
+            let saved = await save(snapshot, announce: announce)
+            if saved {
+                originalMarkdown = snapshot
+                saveState = .saved
+            } else {
+                succeeded = false
+                saveState = .failed
+                isSaveFailurePresented = true
+                break
+            }
+        } while draftMarkdown != originalMarkdown
+
+        isSaving = false
+        if finishEditing, succeeded, draftMarkdown == originalMarkdown {
+            isEditing = false
+        } else if !succeeded {
+            editorFocused = true
+        }
+    }
+
+    private func save(_ markdown: String, announce: Bool) async -> Bool {
         switch source {
         case .memo(let memo):
-            saved = await appModel.saveMemo(
+            return await appModel.saveMemo(
                 memo,
-                body: draftMarkdown,
-                expectedBody: originalMarkdown
+                body: markdown,
+                expectedBody: originalMarkdown,
+                announce: announce
             ) != nil
         case .document(let document):
-            saved = await appModel.saveDocument(
+            return await appModel.saveDocument(
                 document,
-                markdown: draftMarkdown,
-                expectedMarkdown: originalMarkdown
+                markdown: markdown,
+                expectedMarkdown: originalMarkdown,
+                announce: announce
             ) != nil
         }
-        if saved {
-            originalMarkdown = draftMarkdown
-            isEditing = false
-        } else {
+    }
+
+    private func reloadSavedVersion() async {
+        let markdown: String?
+        switch source {
+        case .memo(let memo):
+            markdown = await appModel.reloadMemo(memo)?.body
+        case .document(let document):
+            markdown = await appModel.reloadDocument(document)?.markdown
+        }
+        if let markdown {
+            draftMarkdown = markdown
+            originalMarkdown = markdown
+            saveState = .saved
             editorFocused = true
+        } else {
+            saveState = .failed
         }
     }
 }

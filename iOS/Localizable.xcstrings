@@ -1799,6 +1799,30 @@
     },
     "Previous 30 Days": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 30 天" } } }
+    },
+    "Done": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "完成" } } }
+    },
+    "Edited": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已编辑" } } }
+    },
+    "Saving…": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在存储…" } } }
+    },
+    "Not Saved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未存储" } } }
+    },
+    "Couldn’t Save Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法存储笔记" } } }
+    },
+    "Keep Editing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续编辑" } } }
+    },
+    "Reopen Saved Version": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新打开已存储版本" } } }
+    },
+    "The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记可能已在其他位置更改。请重新打开已存储版本，或保留当前草稿后重试。" } } }
     }
   },
   "version": "1.0"

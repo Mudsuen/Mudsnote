@@ -428,6 +428,7 @@ actor MarkdownFileStore {
         if let saveError { throw saveError }
         cachedLibrarySnapshot = nil
         searchCache.removeValue(forKey: relativePath)
+        listMetadataCache.removeValue(forKey: relativePath)
         return MarkdownDocument(
             id: relativePath,
             title: fileURL.deletingPathExtension().lastPathComponent,
