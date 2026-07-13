@@ -55,7 +55,7 @@ Run the isolated installed-app library smoke:
 ./scripts/library_smoke.sh
 ```
 
-This launches `/Applications/Mudsnote.app` against a temporary library and verifies native `Command-N`, title/body editing, autosave, toolbar search, move to Recently Deleted, restore, and move to a folder without touching the user's notes.
+This launches `/Applications/Mudsnote.app` against a temporary library and verifies native `Command-N`, title/body editing, autosave, toolbar search, move to Recently Deleted, restore, move to a folder, Finder-file attachment paste, portable Markdown storage, and attachment rendering after relaunch without touching the user's notes.
 
 ## Development Notes
 

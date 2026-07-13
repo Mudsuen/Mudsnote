@@ -130,7 +130,7 @@
 ## Latest iteration (181)
 
 - `scripts/library_smoke.sh` exercises the installed three-pane app against an isolated temporary library.
-- It currently proves direct library launch, `Command-N`, title/body editing, autosave to exact Markdown, and search filtering; deletion/restore, folder move, and attachment rendering remain explicit follow-up smoke coverage.
+- It proves direct library launch, `Command-N`, title/body editing, autosave to exact Markdown, search filtering, trash/restore, folder move, Finder-file attachment paste, portable attachment storage, and attachment rendering after relaunch.
 
 ## Latest iteration (182)
 
@@ -140,12 +140,17 @@
 ## Latest iteration (183)
 
 - The File menu now exposes a state-validated "移到文件夹" submenu populated from the current library hierarchy without adding toolbar chrome.
-- `scripts/library_smoke.sh` proves the restored note can be moved into an isolated folder; attachment rendering remains the installed-smoke follow-up.
+- `scripts/library_smoke.sh` proves the restored note can be moved into an isolated folder; iteration 185 extends the same installed workflow through attachment rendering and relaunch.
 
 ## Latest iteration (184)
 
 - The editor stack now begins `6pt` below its safe-area boundary, moving the centered date, title, and body upward together.
 - The calibrated `8pt` date-to-title spacing, typography, horizontal reading edge, toolbar, and pane geometry remain unchanged.
+
+## Latest iteration (185)
+
+- `scripts/library_smoke.sh` now pastes a real Finder PDF into the installed app and verifies its local copy plus portable relative Markdown link.
+- Accessibility evidence proves both the rendered editor attachment and note-list indicator before and after a full app relaunch.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 

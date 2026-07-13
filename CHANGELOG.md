@@ -1105,6 +1105,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Reduced the editor stack's safe-area top inset from `12pt` to `6pt`, moving the date, title, and body upward together while preserving the calibrated date-to-title and title-to-body spacing.
 - Lesson: Once internal editor rhythm is stable, residual vertical mismatch should be corrected at the shared content origin rather than by distorting the spacing between text elements.
 
+### 185. Installed attachment lifecycle smoke
+
+- Problem: Attachment insertion and rendering had strong unit coverage, but the packaged-app smoke did not prove that a real Finder file could pass through paste, local storage, Markdown serialization, UI rendering, and app relaunch.
+- Fix: Extended `library_smoke.sh` to paste a PDF into the moved smoke note, verify the copied `Attachments/yyyy/mm` file and portable relative Markdown link, assert the rendered editor object and note-list attachment indicator through Accessibility, relaunch `/Applications/Mudsnote.app`, and assert the saved attachment renders again.
+- Lesson: Installed attachment evidence must cover both durable filesystem state and observable native UI state; either side alone can miss a broken serialization or rendering boundary.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

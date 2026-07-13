@@ -6,6 +6,7 @@ OUTPUT_DIR="${1:-$(mktemp -d /tmp/mudsnote-library-smoke.XXXXXX)}"
 NOTES_DIR="$OUTPUT_DIR/Notes"
 APP_SUPPORT_DIR="$OUTPUT_DIR/AppSupport"
 MOVE_FOLDER="$NOTES_DIR/Smoke Folder"
+ATTACHMENT_SOURCE="$OUTPUT_DIR/smoke attachment.pdf"
 DEFAULTS_SUITE="local.codex.mudsnote.library-smoke.$$"
 NOTE_TITLE="Installed Smoke Note"
 NOTE_BODY="Smoke body line"
@@ -18,6 +19,7 @@ fi
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$NOTES_DIR" "$APP_SUPPORT_DIR" "$MOVE_FOLDER"
 printf '# Existing Seed\n\nUnrelated body\n' >"$NOTES_DIR/Existing Seed.md"
+printf 'Installed attachment fixture\n' >"$ATTACHMENT_SOURCE"
 defaults delete "$DEFAULTS_SUITE" >/dev/null 2>&1 || true
 
 cleanup() {
@@ -312,9 +314,152 @@ if [[ ! -e "$MOVED_NOTE" || -e "$SAVED_NOTE" ]]; then
   exit 1
 fi
 
+osascript - "$ATTACHMENT_SOURCE" <<'APPLESCRIPT' >/dev/null
+on run arguments
+  set attachmentPath to item 1 of arguments
+  set the clipboard to POSIX file attachmentPath
+  tell application "Mudsnote" to activate
+  tell application "System Events" to tell process "Mudsnote"
+    set frontmost to true
+    set elements to entire contents of window 1
+    set bodyIndex to 0
+    repeat with index from 1 to count elements
+      set candidate to item index of elements
+      try
+        if (role of candidate as text) = "AXTextArea" then
+          set bodyIndex to index
+          exit repeat
+        end if
+      end try
+    end repeat
+    if bodyIndex = 0 then error "Could not locate the Notes editor body for attachment paste"
+    set bodyArea to item bodyIndex of elements
+    set focused of bodyArea to true
+    key code 125 using command down
+    key code 9 using command down
+  end tell
+end run
+APPLESCRIPT
+
+COPIED_ATTACHMENT=""
+for _ in {1..30}; do
+  COPIED_ATTACHMENT="$(find "$MOVE_FOLDER/Attachments" -type f -name 'smoke attachment.pdf' -print -quit 2>/dev/null || true)"
+  if [[ -n "$COPIED_ATTACHMENT" ]] && grep -Fq \
+    '[smoke attachment](Attachments/' "$MOVED_NOTE" && grep -Fq \
+    'smoke%20attachment.pdf)' "$MOVED_NOTE"; then
+    break
+  fi
+  sleep 0.2
+done
+if [[ -z "$COPIED_ATTACHMENT" || ! -e "$COPIED_ATTACHMENT" ]]; then
+  echo "Installed app did not copy the pasted attachment into local storage." >&2
+  exit 1
+fi
+if ! grep -Fq '[smoke attachment](Attachments/' "$MOVED_NOTE" \
+  || ! grep -Fq 'smoke%20attachment.pdf)' "$MOVED_NOTE"; then
+  echo "Installed app did not save a portable relative attachment link." >&2
+  exit 1
+fi
+
+OBJECT_REPLACEMENT_CHARACTER=$'\xEF\xBF\xBC'
+ATTACHMENT_UI_EVIDENCE="$(osascript <<'APPLESCRIPT'
+tell application "System Events" to tell process "Mudsnote"
+  set bodyValue to ""
+  set hasAttachmentIndicator to false
+  set elements to entire contents of window 1
+  repeat with candidate in elements
+    try
+      set candidateRole to role of candidate as text
+      if candidateRole = "AXTextArea" then set bodyValue to value of candidate as text
+      if candidateRole = "AXImage" then
+        if (description of candidate as text) = "有附件" then set hasAttachmentIndicator to true
+      end if
+    end try
+  end repeat
+  return bodyValue & linefeed & hasAttachmentIndicator
+end tell
+APPLESCRIPT
+)"
+if [[ "$ATTACHMENT_UI_EVIDENCE" != *"$OBJECT_REPLACEMENT_CHARACTER"* ]] \
+  || [[ "$ATTACHMENT_UI_EVIDENCE" != *$'\ntrue' ]]; then
+  echo "Installed app did not expose the rendered attachment and list indicator." >&2
+  printf 'Accessibility evidence:\n%s\n' "$ATTACHMENT_UI_EVIDENCE" >&2
+  exit 1
+fi
+
+pkill -x Mudsnote >/dev/null 2>&1 || true
+sleep 0.5
+open -n "$APP_PATH" --args \
+  --library \
+  --visual-qa-defaults-suite "$DEFAULTS_SUITE" \
+  --visual-qa-notes-dir "$NOTES_DIR" \
+  --visual-qa-app-support-dir "$APP_SUPPORT_DIR"
+sleep "${MUDSNOTE_LIBRARY_SMOKE_RELAUNCH_DELAY:-3}"
+
+RELOADED_ATTACHMENT_EVIDENCE="$(osascript - "$NOTE_TITLE" <<'APPLESCRIPT'
+on run arguments
+  set noteTitle to item 1 of arguments
+  tell application "Mudsnote" to activate
+  tell application "System Events" to tell process "Mudsnote"
+    set frontmost to true
+    repeat 30 times
+      if (count windows) > 0 then exit repeat
+      delay 0.2
+    end repeat
+    if (count windows) = 0 then error "Mudsnote library window did not reappear"
+
+    repeat 30 times
+      set elements to entire contents of window 1
+      set titleValue to ""
+      set textFieldCount to 0
+      repeat with candidate in elements
+        try
+          if (role of candidate as text) = "AXTextField" then
+            set textFieldCount to textFieldCount + 1
+            if textFieldCount = 1 then set titleValue to value of candidate as text
+          end if
+        end try
+      end repeat
+      if titleValue = noteTitle then exit repeat
+      delay 0.2
+    end repeat
+
+    set bodyValue to ""
+    set titleValue to ""
+    set hasAttachmentIndicator to false
+    set elements to entire contents of window 1
+    set textFieldCount to 0
+    repeat with candidate in elements
+      try
+        set candidateRole to role of candidate as text
+        if candidateRole = "AXTextField" then
+          set textFieldCount to textFieldCount + 1
+          if textFieldCount = 1 then set titleValue to value of candidate as text
+        end if
+        if candidateRole = "AXTextArea" then set bodyValue to value of candidate as text
+        if candidateRole = "AXImage" then
+          if (description of candidate as text) = "有附件" then set hasAttachmentIndicator to true
+        end if
+      end try
+    end repeat
+    return titleValue & linefeed & bodyValue & linefeed & hasAttachmentIndicator
+  end tell
+end run
+APPLESCRIPT
+)"
+if [[ "$RELOADED_ATTACHMENT_EVIDENCE" != "$NOTE_TITLE"$'\n'* ]] \
+  || [[ "$RELOADED_ATTACHMENT_EVIDENCE" != *"$OBJECT_REPLACEMENT_CHARACTER"* ]] \
+  || [[ "$RELOADED_ATTACHMENT_EVIDENCE" != *$'\ntrue' ]]; then
+  echo "Installed app did not render the saved attachment after relaunch." >&2
+  printf 'Accessibility evidence:\n%s\n' "$RELOADED_ATTACHMENT_EVIDENCE" >&2
+  exit 1
+fi
+
 echo "Installed library smoke passed"
 echo "app=$APP_PATH"
 echo "fixture=$OUTPUT_DIR"
 echo "saved_note=$SAVED_NOTE"
 echo "trash_restore=passed"
 echo "folder_move=$MOVED_NOTE"
+echo "attachment_copy=$COPIED_ATTACHMENT"
+echo "attachment_reload=passed"
