@@ -51,6 +51,10 @@ final class AppModel: ObservableObject {
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
+    var allFolders: [LibraryFolderNode] {
+        folders.flatMap(\.flattened)
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
@@ -348,6 +352,88 @@ final class AppModel: ObservableObject {
                     selectedDocument = nil
                 }
                 statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    @discardableResult
+    func createFolder(named name: String, parent: String? = nil) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            _ = try await fileStore.createFolder(named: name, parentRelativePath: parent)
+            statusToast = .saved(String(localized: "Folder Created"))
+            await refreshInbox()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func renameFolder(_ folder: LibraryFolderNode, to name: String) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            _ = try await fileStore.renameFolder(relativePath: folder.relativePath, to: name)
+            statusToast = .saved(String(localized: "Folder Renamed"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteFolder(_ folder: LibraryFolderNode) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            try await fileStore.trashFolder(relativePath: folder.relativePath)
+            if let selectedDocument,
+               selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
+                self.selectedDocument = nil
+            }
+            statusToast = .saved(String(localized: "Folder Moved to Recently Deleted"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    func move(_ file: RecentMarkdownFile, to folder: LibraryFolderNode) {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return
+        }
+        Task {
+            do {
+                let moved = try await fileStore.moveMarkdownDocument(
+                    relativePath: file.relativePath,
+                    toFolder: folder.relativePath
+                )
+                if selectedDocument?.relativePath == file.relativePath {
+                    selectedDocument = try await fileStore.loadMarkdownDocument(
+                        relativePath: moved.relativePath
+                    )
+                }
+                statusToast = .saved(String(localized: "Note Moved"))
                 await refreshInbox()
                 await refreshActiveSearchIfNeeded()
             } catch {
@@ -671,6 +757,12 @@ struct TagSummary: Equatable, Identifiable {
     var count: Int
 
     var id: String { name }
+}
+
+private extension LibraryFolderNode {
+    var flattened: [LibraryFolderNode] {
+        [self] + children.flatMap(\.flattened)
+    }
 }
 
 enum FolderStatus: Equatable {

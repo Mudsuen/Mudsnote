@@ -378,7 +378,11 @@ actor MarkdownFileStore {
         )
     }
 
-    func trashMarkdownDocument(relativePath: String, now: Date = Date()) throws {
+    @discardableResult
+    func trashMarkdownDocument(
+        relativePath: String,
+        now: Date = Date()
+    ) throws -> TrashedMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
         guard Self.isMutableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
@@ -410,6 +414,117 @@ actor MarkdownFileStore {
             throw error
         }
         invalidateAfterMutation(relativePaths: [relativePath])
+        return TrashedMarkdownFile(
+            id: trashID,
+            originalRelativePath: relativePath,
+            title: metadata.title,
+            trashedAt: now
+        )
+    }
+
+    func createFolder(named name: String, parentRelativePath: String? = nil) throws -> LibraryFolderNode {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let folderName = try Self.validatedFolderName(name)
+        let parent = try userFolderURL(relativePath: parentRelativePath, root: root, allowRoot: true)
+        let requested = parent.appendingPathComponent(folderName, isDirectory: true)
+        let destination = uniqueFolderURL(for: requested)
+        try fileManager.createDirectory(at: destination, withIntermediateDirectories: false)
+        cachedLibrarySnapshot = nil
+        let relativePath = Self.relativePath(for: destination, root: root)
+        return LibraryFolderNode(
+            relativePath: relativePath,
+            name: destination.lastPathComponent,
+            directNoteCount: 0,
+            totalNoteCount: 0,
+            children: []
+        )
+    }
+
+    func renameFolder(relativePath: String, to name: String) throws -> String {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let source = try userFolderURL(relativePath: relativePath, root: root)
+        let folderName = try Self.validatedFolderName(name)
+        if source.lastPathComponent == folderName { return relativePath }
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent(folderName, isDirectory: true)
+        let destination = uniqueFolderURL(for: requested)
+        try coordinatedMove(from: source, to: destination)
+        let newRelativePath = Self.relativePath(for: destination, root: root)
+        do {
+            try rewriteTrashedOriginalPathPrefix(
+                from: relativePath,
+                to: newRelativePath,
+                root: root
+            )
+        } catch {
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
+        invalidatePathPrefix(relativePath)
+        return newRelativePath
+    }
+
+    func moveMarkdownDocument(
+        relativePath: String,
+        toFolder targetFolder: String?
+    ) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownLifecycleError.protectedNote
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+        let targetDirectory = try userFolderURL(
+            relativePath: targetFolder,
+            root: root,
+            allowRoot: true
+        )
+        if source.deletingLastPathComponent().standardizedFileURL == targetDirectory.standardizedFileURL {
+            return try recentFile(at: source, root: root)
+        }
+        let destination = uniqueMarkdownURL(
+            for: targetDirectory.appendingPathComponent(source.lastPathComponent)
+        )
+        try coordinatedMove(from: source, to: destination)
+        let moved = try recentFile(at: destination, root: root)
+        invalidateAfterMutation(relativePaths: [relativePath, moved.relativePath])
+        return moved
+    }
+
+    func trashFolder(relativePath: String, now: Date = Date()) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let folder = try userFolderURL(relativePath: relativePath, root: root)
+        let inventory = try folderDeletionInventory(at: folder, root: root)
+        var trashed: [TrashedMarkdownFile] = []
+        do {
+            for notePath in inventory.notePaths {
+                trashed.append(try trashMarkdownDocument(relativePath: notePath, now: now))
+            }
+            for directory in inventory.directoriesDeepestFirst {
+                let remaining = try fileManager.contentsOfDirectory(atPath: directory.path)
+                guard remaining.isEmpty else {
+                    throw MarkdownLifecycleError.folderContainsUnsupportedItems
+                }
+                try fileManager.removeItem(at: directory)
+            }
+        } catch {
+            for item in trashed.reversed() {
+                _ = try? restoreTrashedMarkdownDocument(id: item.id)
+            }
+            throw error
+        }
+        invalidatePathPrefix(relativePath)
     }
 
     func restoreTrashedMarkdownDocument(id: String) throws -> RecentMarkdownFile {
@@ -544,6 +659,122 @@ actor MarkdownFileStore {
             if !fileManager.fileExists(atPath: candidate.path) { return candidate }
             suffix += 1
         }
+    }
+
+    private func uniqueFolderURL(for requested: URL) -> URL {
+        guard fileManager.fileExists(atPath: requested.path) else { return requested }
+        let parent = requested.deletingLastPathComponent()
+        let name = requested.lastPathComponent
+        var suffix = 2
+        while true {
+            let candidate = parent.appendingPathComponent("\(name) \(suffix)", isDirectory: true)
+            if !fileManager.fileExists(atPath: candidate.path) { return candidate }
+            suffix += 1
+        }
+    }
+
+    private func userFolderURL(
+        relativePath: String?,
+        root: URL,
+        allowRoot: Bool = false
+    ) throws -> URL {
+        guard let relativePath, !relativePath.isEmpty else {
+            if allowRoot { return root }
+            throw MarkdownLifecycleError.invalidFolder
+        }
+        guard Self.isUserFolderPath(relativePath),
+              let url = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            throw MarkdownLifecycleError.invalidFolder
+        }
+        return url
+    }
+
+    private static func validatedFolderName(_ name: String) throws -> String {
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+              value != ".",
+              value != "..",
+              !value.hasPrefix("."),
+              !value.contains("/"),
+              !value.contains(":") else {
+            throw MarkdownLifecycleError.invalidFolderName
+        }
+        return value
+    }
+
+    private static func isUserFolderPath(_ relativePath: String) -> Bool {
+        let components = relativePath.split(separator: "/")
+        guard let first = components.first,
+              first != "Attachments",
+              first != "Daily",
+              !components.contains(where: { $0.hasPrefix(".") }) else { return false }
+        return true
+    }
+
+    private func recentFile(at url: URL, root: URL) throws -> RecentMarkdownFile {
+        let relativePath = Self.relativePath(for: url, root: root)
+        let modifiedAt = try url.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate ?? .distantPast
+        return RecentMarkdownFile(
+            id: relativePath,
+            relativePath: relativePath,
+            title: url.deletingPathExtension().lastPathComponent,
+            modifiedAt: modifiedAt
+        )
+    }
+
+    private func folderDeletionInventory(
+        at folder: URL,
+        root: URL
+    ) throws -> (notePaths: [String], directoriesDeepestFirst: [URL]) {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
+        guard let enumerator = fileManager.enumerator(
+            at: folder,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { throw MarkdownLifecycleError.invalidFolder }
+        var notes: [String] = []
+        var directories = [folder]
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                throw MarkdownLifecycleError.folderContainsUnsupportedItems
+            }
+            if values.isDirectory == true {
+                directories.append(url)
+            } else if values.isRegularFile == true, url.pathExtension.lowercased() == "md" {
+                notes.append(Self.relativePath(for: url, root: root))
+            } else {
+                throw MarkdownLifecycleError.folderContainsUnsupportedItems
+            }
+        }
+        directories.sort { $0.pathComponents.count > $1.pathComponents.count }
+        return (notes.sorted(), directories)
+    }
+
+    private func rewriteTrashedOriginalPathPrefix(
+        from oldPrefix: String,
+        to newPrefix: String,
+        root: URL
+    ) throws {
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        guard fileManager.fileExists(atPath: trashRoot.path) else { return }
+        for metadataURL in try fileManager.contentsOfDirectory(at: trashRoot, includingPropertiesForKeys: nil)
+            where metadataURL.pathExtension.lowercased() == "json" {
+            let data = try Data(contentsOf: metadataURL)
+            var metadata = try JSONDecoder.mudsnote.decode(TrashedMarkdownMetadata.self, from: data)
+            guard metadata.originalRelativePath.hasPrefix(oldPrefix + "/") else { continue }
+            metadata.originalRelativePath = newPrefix + metadata.originalRelativePath.dropFirst(oldPrefix.count)
+            try JSONEncoder.mudsnote.encode(metadata).write(to: metadataURL, options: .atomic)
+        }
+    }
+
+    private func invalidatePathPrefix(_ prefix: String) {
+        cachedLibrarySnapshot = nil
+        searchCache = searchCache.filter { !$0.key.hasPrefix(prefix + "/") && $0.key != prefix }
     }
 
     private func invalidateAfterMutation(relativePaths: [String]) {
@@ -1053,6 +1284,9 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     case protectedNote
     case noteNotFound
     case invalidTrashMetadata
+    case invalidFolder
+    case invalidFolderName
+    case folderContainsUnsupportedItems
 
     var errorDescription: String? {
         switch self {
@@ -1062,6 +1296,12 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
             String(localized: "This note is no longer available.")
         case .invalidTrashMetadata:
             String(localized: "This deleted note has invalid recovery information.")
+        case .invalidFolder:
+            String(localized: "This folder is no longer available.")
+        case .invalidFolderName:
+            String(localized: "Enter a valid folder name.")
+        case .folderContainsUnsupportedItems:
+            String(localized: "This folder contains files Mudsnote will not delete.")
         }
     }
 }
