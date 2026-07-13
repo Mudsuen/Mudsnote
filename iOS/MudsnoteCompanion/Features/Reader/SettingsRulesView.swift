@@ -84,7 +84,26 @@ struct SettingsRulesView: View {
                         }
                     }
 
-                    ForEach(appModel.conflictWarnings, id: \.self) { warning in
+                    if !appModel.conflictFiles.isEmpty {
+                        NavigationLink {
+                            ConflictResolutionView()
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Review Conflicts")
+                                    Text("Conflict copies are preserved until you review them.")
+                                        .font(.caption)
+                                        .foregroundStyle(MudsnoteColors.muted)
+                                }
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        .accessibilityIdentifier("review-conflicts-link")
+                    }
+
+                    ForEach(appModel.recoveryWarnings, id: \.self) { warning in
                         Label(warning, systemImage: "exclamationmark.triangle")
                             .font(.caption)
                     }
@@ -110,6 +129,98 @@ struct SettingsRulesView: View {
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+}
+
+private struct ConflictResolutionView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @State private var conflictToDelete: RecentMarkdownFile?
+
+    var body: some View {
+        List {
+            Section {
+                Text("Conflict copies are kept as separate Markdown files so no version is overwritten. Open one to review it, then keep it as a normal note or move it to Recently Deleted.")
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+
+            if appModel.conflictFiles.isEmpty {
+                ContentUnavailableView(
+                    "No Conflicts",
+                    systemImage: "checkmark.circle",
+                    description: Text("All detected conflict copies have been reviewed.")
+                )
+                .listRowBackground(Color.clear)
+            } else {
+                Section("Conflict Copies") {
+                    ForEach(appModel.conflictFiles) { file in
+                        HStack(spacing: 12) {
+                            Button {
+                                appModel.openFile(file)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "doc.badge.ellipsis")
+                                        .foregroundStyle(.orange)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(file.title)
+                                            .foregroundStyle(MudsnoteColors.text)
+                                            .lineLimit(1)
+                                        Text(file.relativePath)
+                                            .font(.caption)
+                                            .foregroundStyle(MudsnoteColors.muted)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("conflict-file-row-\(file.relativePath)")
+
+                            Menu {
+                                Button {
+                                    appModel.keepConflictCopy(file)
+                                } label: {
+                                    Label("Keep as Separate Note", systemImage: "checkmark.circle")
+                                }
+                                Button(role: .destructive) {
+                                    conflictToDelete = file
+                                } label: {
+                                    Label("Move to Recently Deleted", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(MudsnoteColors.muted)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .accessibilityIdentifier("conflict-actions-\(file.relativePath)")
+                        }
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .navigationTitle("Conflicts")
+        .refreshable { await appModel.refreshInbox() }
+        .confirmationDialog(
+            "Move Conflict to Recently Deleted?",
+            isPresented: Binding(
+                get: { conflictToDelete != nil },
+                set: { if !$0 { conflictToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Move to Recently Deleted", role: .destructive) {
+                guard let file = conflictToDelete else { return }
+                appModel.moveToRecentlyDeleted(file)
+                conflictToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { conflictToDelete = nil }
+        } message: {
+            Text("You can restore this conflict copy later from Recently Deleted.")
+        }
     }
 }
 

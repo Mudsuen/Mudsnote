@@ -78,6 +78,36 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(warning.waitForExistence(timeout: 5))
     }
 
+    func testConflictCopyCanBeSafelyKeptAsSeparateNote() {
+        let app = launchApp(reset: true, fixtureFolder: true, conflictCopy: true)
+        let settings = app.buttons["settings-link"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+
+        let review = app.buttons["review-conflicts-link"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        review.tap()
+
+        let conflict = app.buttons["conflict-file-row-Projects/UI Lifecycle conflicted copy.md"]
+        XCTAssertTrue(conflict.waitForExistence(timeout: 5))
+        let actions = app.buttons["conflict-actions-Projects/UI Lifecycle conflicted copy.md"]
+        XCTAssertTrue(actions.exists)
+        actions.tap()
+        let keep = app.buttons["Keep as Separate Note"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 3))
+        keep.tap()
+
+        XCTAssertTrue(waitForNonexistence(conflict))
+        XCTAssertTrue(app.staticTexts["No Conflicts"].waitForExistence(timeout: 5))
+        app.navigationBars["Conflicts"].buttons.firstMatch.tap()
+        app.navigationBars["Settings"].buttons.firstMatch.tap()
+        app.buttons["all-notes-link"].tap()
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle 2.md"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let quickNoteButton = app.buttons["quick-note-button"]
@@ -571,7 +601,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         fixtureFolder: Bool,
         invalidBookmark: Bool = false,
         damagedDraft: Bool = false,
-        damagedQueue: Bool = false
+        damagedQueue: Bool = false,
+        conflictCopy: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -581,7 +612,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fixtureFolder ? "-ui-testing-fixture-folder" : nil,
             invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,
             damagedDraft ? "-ui-testing-damaged-draft" : nil,
-            damagedQueue ? "-ui-testing-damaged-queue" : nil
+            damagedQueue ? "-ui-testing-damaged-queue" : nil,
+            conflictCopy ? "-ui-testing-conflict-copy" : nil
         ].compactMap { $0 }
         app.launch()
         return app

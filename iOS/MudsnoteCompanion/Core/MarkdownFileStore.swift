@@ -58,11 +58,6 @@ actor MarkdownFileStore {
         ) {
             for case let url as URL in enumerator {
                 let relativePath = Self.relativePath(for: url, root: root)
-                let lowercasedName = url.lastPathComponent.lowercased()
-                if lowercasedName.contains("conflict") || lowercasedName.contains("conflicted copy") {
-                    conflictWarnings.append(relativePath)
-                }
-
                 guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
                     continue
                 }
@@ -88,6 +83,9 @@ actor MarkdownFileStore {
                     ))
                 }
                 guard url.pathExtension.lowercased() == "md" else { continue }
+                if Self.isConflictCopyPath(relativePath) {
+                    conflictWarnings.append(relativePath)
+                }
                 if relativePath.hasPrefix("Daily/") {
                     dailyCount += 1
                 }
@@ -693,6 +691,38 @@ actor MarkdownFileStore {
         }
     }
 
+    func keepConflictCopy(relativePath: String) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              Self.isConflictCopyPath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownLifecycleError.invalidConflictCopy
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+        let recoveredStem = Self.recoveredConflictStem(
+            source.deletingPathExtension().lastPathComponent
+        )
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent("\(recoveredStem).md")
+        let destination = uniqueMarkdownURL(for: requested)
+        let destinationPath = Self.relativePath(for: destination, root: root)
+        try coordinatedMove(from: source, to: destination)
+        do {
+            try replacePinnedPath(relativePath, with: destinationPath, root: root)
+            let recovered = try recentFile(at: destination, root: root)
+            invalidateAfterMutation(relativePaths: [relativePath, destinationPath])
+            return recovered
+        } catch {
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
+    }
+
     @discardableResult
     func trashMarkdownDocument(
         relativePath: String,
@@ -1266,6 +1296,41 @@ actor MarkdownFileStore {
               !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return false }
         return true
+    }
+
+    static func isConflictCopyPath(_ relativePath: String) -> Bool {
+        guard relativePath.lowercased().hasSuffix(".md") else { return false }
+        let stem = ((relativePath as NSString).lastPathComponent as NSString)
+            .deletingPathExtension
+            .lowercased()
+        return stem.contains("conflicted copy")
+            || stem.hasSuffix(" conflict")
+            || stem.hasSuffix(" conflicted")
+            || stem.hasSuffix("-conflict")
+            || stem.hasSuffix("_conflict")
+            || stem.hasSuffix(" (conflict)")
+            || stem.hasSuffix(" (conflicted)")
+    }
+
+    static func recoveredConflictStem(_ filenameStem: String) -> String {
+        var value = filenameStem
+        if let marker = value.range(
+            of: "conflicted copy",
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) {
+            value = String(value[..<marker.lowerBound])
+        } else {
+            value = value.replacingOccurrences(
+                of: #"(?i)(?:[ _-]+|\s*\()(?:conflict|conflicted)\)?\s*$"#,
+                with: "",
+                options: .regularExpression
+            )
+        }
+        value = value.trimmingCharacters(
+            in: CharacterSet.whitespacesAndNewlines
+                .union(CharacterSet(charactersIn: "-_(."))
+        )
+        return value.isEmpty ? "Recovered Note" : String(value.prefix(80))
     }
 
     private static func isGeneratedUntitledNotePath(_ relativePath: String) -> Bool {
@@ -2018,6 +2083,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     case invalidFolder
     case invalidFolderName
     case folderContainsUnsupportedItems
+    case invalidConflictCopy
 
     var errorDescription: String? {
         switch self {
@@ -2033,6 +2099,8 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
             String(localized: "Enter a valid folder name.")
         case .folderContainsUnsupportedItems:
             String(localized: "This folder contains files Mudsnote will not delete.")
+        case .invalidConflictCopy:
+            String(localized: "This file is not a recoverable conflict copy.")
         }
     }
 }

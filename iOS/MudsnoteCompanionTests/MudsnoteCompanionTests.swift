@@ -1063,6 +1063,63 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testConflictCopyRecoveryAvoidsOverwriteAndPreservesPinAndContent() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Original\n".write(
+            to: root.appendingPathComponent("Projects/Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let conflictMarkdown = "# Conflict version\n\nKeep every edit.\n"
+        try conflictMarkdown.write(
+            to: root.appendingPathComponent("Projects/Plan conflicted copy.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Ordinary note\n".write(
+            to: root.appendingPathComponent("Projects/Conflict Resolution.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try Data("not markdown".utf8).write(
+            to: root.appendingPathComponent("Projects/file conflicted copy.txt")
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Projects/Plan conflicted copy.md")
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.conflictWarnings, ["Projects/Plan conflicted copy.md"])
+
+        let recovered = try await store.keepConflictCopy(
+            relativePath: "Projects/Plan conflicted copy.md"
+        )
+
+        XCTAssertEqual(recovered.relativePath, "Projects/Plan 2.md")
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(recovered.relativePath), encoding: .utf8),
+            conflictMarkdown
+        )
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent("Projects/Plan.md"), encoding: .utf8),
+            "# Original\n"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Projects/Plan conflicted copy.md").path
+            )
+        )
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.conflictWarnings.isEmpty)
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == recovered.relativePath }?.isPinned == true)
+    }
+
     func testDamagedPinMetadataDoesNotBlockLibrary() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

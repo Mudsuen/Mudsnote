@@ -2008,6 +2008,42 @@
     },
     "Editor Display": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑器显示" } } }
+    },
+    "Review Conflicts": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "检查冲突" } } }
+    },
+    "Conflict copies are preserved until you review them.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "冲突副本会保留到你完成检查。" } } }
+    },
+    "Conflict copies are kept as separate Markdown files so no version is overwritten. Open one to review it, then keep it as a normal note or move it to Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "冲突副本会作为独立的 Markdown 文件保留，不会覆盖任何版本。打开副本检查后，可将其保留为普通笔记，或移到最近删除。" } } }
+    },
+    "Conflict Copies": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "冲突副本" } } }
+    },
+    "Keep as Separate Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "保留为独立笔记" } } }
+    },
+    "Conflict Kept as Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "冲突副本已保留为笔记" } } }
+    },
+    "Conflicts": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "冲突" } } }
+    },
+    "No Conflicts": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有冲突" } } }
+    },
+    "All detected conflict copies have been reviewed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所有检测到的冲突副本都已检查。" } } }
+    },
+    "Move Conflict to Recently Deleted?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "将冲突副本移到最近删除？" } } }
+    },
+    "You can restore this conflict copy later from Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "你稍后可以从最近删除中恢复此冲突副本。" } } }
+    },
+    "This file is not a recoverable conflict copy.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件不是可恢复的冲突副本。" } } }
     }
   },
   "version": "1.0"

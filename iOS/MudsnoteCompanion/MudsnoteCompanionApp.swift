@@ -40,6 +40,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let invalidBookmarkArgument = "-ui-testing-invalid-bookmark"
     private static let damagedDraftArgument = "-ui-testing-damaged-draft"
     private static let damagedQueueArgument = "-ui-testing-damaged-queue"
+    private static let conflictCopyArgument = "-ui-testing-conflict-copy"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -50,6 +51,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(invalidBookmarkArgument)
                 || arguments.contains(damagedDraftArgument)
                 || arguments.contains(damagedQueueArgument)
+                || arguments.contains(conflictCopyArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -84,6 +86,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                     atomically: true,
                     encoding: .utf8
                 )
+                if arguments.contains(conflictCopyArgument) {
+                    try "# Conflicted UI Lifecycle\n\nReview both versions safely.\n".write(
+                        to: projects.appendingPathComponent("UI Lifecycle conflicted copy.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
                 try access.persistFolder(root)
 
                 if arguments.contains(damagedQueueArgument) {

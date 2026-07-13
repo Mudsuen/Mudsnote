@@ -63,6 +63,16 @@ final class AppModel: ObservableObject {
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
+    var conflictFiles: [RecentMarkdownFile] {
+        let paths = Set(conflictWarnings)
+        return libraryFiles.filter { paths.contains($0.relativePath) }
+    }
+
+    var recoveryWarnings: [String] {
+        let conflictPaths = Set(conflictFiles.map(\.relativePath))
+        return conflictWarnings.filter { !conflictPaths.contains($0) }
+    }
+
     var allFolders: [LibraryFolderNode] {
         folders.flatMap(\.flattened)
     }
@@ -539,6 +549,26 @@ final class AppModel: ObservableObject {
                     relativePath: file.relativePath
                 )
                 statusToast = .saved(String(localized: "Note Duplicated"))
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    func keepConflictCopy(_ file: RecentMarkdownFile) {
+        Task {
+            do {
+                let recovered = try await fileStore.keepConflictCopy(
+                    relativePath: file.relativePath
+                )
+                if selectedDocument?.relativePath == file.relativePath {
+                    selectedDocument = try await fileStore.loadMarkdownDocument(
+                        relativePath: recovered.relativePath
+                    )
+                }
+                statusToast = .saved(String(localized: "Conflict Kept as Note"))
                 await refreshInbox()
                 await refreshActiveSearchIfNeeded()
             } catch {
