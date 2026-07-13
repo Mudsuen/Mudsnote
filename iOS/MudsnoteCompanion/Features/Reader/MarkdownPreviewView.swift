@@ -50,6 +50,10 @@ struct MarkdownPreviewView: View {
     @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
+    @StateObject private var noteAudioRecorder = AudioCaptureService()
+    @State private var isAudioTransitioning = false
+    @State private var pendingAudioRecording: RecordedAudio?
+    @State private var isAudioAttachmentFailurePresented = false
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
@@ -158,14 +162,24 @@ struct MarkdownPreviewView: View {
                                     .fontWeight(.semibold)
                             }
                         }
-                        .disabled(isSaving)
+                        .disabled(
+                            isSaving
+                                || isAudioTransitioning
+                                || noteAudioRecorder.isRecording
+                                || pendingAudioRecording != nil
+                        )
                         .accessibilityLabel("Save note")
                         .accessibilityIdentifier("save-markdown-button")
                     }
                 }
             }
         }
-        .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
+        .interactiveDismissDisabled(
+            (isEditing && draftMarkdown != originalMarkdown)
+                || noteAudioRecorder.isRecording
+                || isAudioTransitioning
+                || pendingAudioRecording != nil
+        )
         .onAppear {
             beginLibraryAccess()
             if isEditing {
@@ -177,6 +191,8 @@ struct MarkdownPreviewView: View {
             if case .document(let document) = source {
                 appModel.discardEmptyNewDocumentIfNeeded(document, markdown: draftMarkdown)
             }
+            noteAudioRecorder.cancel()
+            discardPendingAudioRecording()
             endLibraryAccess()
         }
         .onChange(of: selectedPhotoItem) { _, item in
@@ -198,6 +214,19 @@ struct MarkdownPreviewView: View {
             }
         } message: {
             Text("The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.")
+        }
+        .alert("Couldn’t Attach Audio", isPresented: $isAudioAttachmentFailurePresented) {
+            Button("Keep Editing", role: .cancel) {
+                editorFocused = true
+            }
+            Button("Retry") {
+                Task { await attachPendingAudioRecording() }
+            }
+            Button("Discard Recording", role: .destructive) {
+                discardPendingAudioRecording()
+            }
+        } message: {
+            Text("The recording is still available. Retry after resolving the note conflict, or discard it.")
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -259,6 +288,15 @@ struct MarkdownPreviewView: View {
                     .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
                     .accessibilityIdentifier("markdown-save-status")
             }
+            if noteAudioRecorder.isRecording {
+                Text("Recording")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+            } else if pendingAudioRecording != nil {
+                Text("Audio Not Attached")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
         }
     }
 
@@ -319,6 +357,27 @@ struct MarkdownPreviewView: View {
                     )
                     .accessibilityLabel("Scan document")
                     .accessibilityIdentifier("markdown-scan-document")
+
+                    Button {
+                        Task { await toggleDocumentAudioRecording() }
+                    } label: {
+                        Image(systemName: audioButtonSystemImage)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(noteAudioRecorder.isRecording ? Color.white : MudsnoteColors.text)
+                            .frame(width: 40, height: 40)
+                            .background(
+                                noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.card,
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(
+                        isSaving
+                            || appModel.isPreparingAttachment
+                            || isAudioTransitioning
+                    )
+                    .accessibilityLabel(audioButtonAccessibilityLabel)
+                    .accessibilityIdentifier("markdown-record-audio")
                 }
                 formatButton("textformat.size", .heading)
                 formatButton("bold", .bold)
@@ -690,6 +749,73 @@ struct MarkdownPreviewView: View {
         } catch {
             scanErrorMessage = error.localizedDescription
         }
+    }
+
+    private var audioButtonSystemImage: String {
+        if isAudioTransitioning { return "hourglass" }
+        if pendingAudioRecording != nil { return "exclamationmark.waveform" }
+        return noteAudioRecorder.isRecording ? "stop.fill" : "waveform"
+    }
+
+    private var audioButtonAccessibilityLabel: String {
+        if pendingAudioRecording != nil { return String(localized: "Retry audio attachment") }
+        return String(localized: noteAudioRecorder.isRecording ? "Stop recording" : "Record audio")
+    }
+
+    private func toggleDocumentAudioRecording() async {
+        guard case .document = source, !isAudioTransitioning else { return }
+        if pendingAudioRecording != nil {
+            await attachPendingAudioRecording()
+            return
+        }
+
+        isAudioTransitioning = true
+        defer { isAudioTransitioning = false }
+        do {
+            await persistDraft(finishEditing: false, announce: false)
+            guard draftMarkdown == originalMarkdown else { return }
+
+            if noteAudioRecorder.isRecording {
+                guard let recording = try noteAudioRecorder.stop() else { return }
+                pendingAudioRecording = recording
+                await attachPendingAudioRecording()
+            } else {
+                try await noteAudioRecorder.start()
+                appModel.statusToast = .pending(String(localized: "Recording"))
+            }
+        } catch {
+            noteAudioRecorder.cancel()
+            appModel.statusToast = .error(error.localizedDescription)
+        }
+    }
+
+    private func attachPendingAudioRecording() async {
+        guard let recording = pendingAudioRecording,
+              case .document(let document) = source else { return }
+        saveState = .saving
+        if let updated = await appModel.attachAudio(
+            recording.data,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            try? FileManager.default.removeItem(at: recording.temporaryURL)
+            pendingAudioRecording = nil
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isAudioAttachmentFailurePresented = true
+        }
+    }
+
+    private func discardPendingAudioRecording() {
+        guard let recording = pendingAudioRecording else { return }
+        try? FileManager.default.removeItem(at: recording.temporaryURL)
+        pendingAudioRecording = nil
     }
 
     private func removeAttachment(_ attachment: MarkdownAttachmentLine) async {

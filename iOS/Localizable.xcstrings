@@ -1772,6 +1772,24 @@
     "Cancel": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消" } } }
     },
+    "Audio Not Attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "音频尚未附加" } } }
+    },
+    "Couldn’t Attach Audio": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法附加音频" } } }
+    },
+    "Discard Recording": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃录音" } } }
+    },
+    "Retry": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重试" } } }
+    },
+    "Retry audio attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重试附加音频" } } }
+    },
+    "The recording is still available. Retry after resolving the note conflict, or discard it.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "录音仍然保留。解决笔记冲突后重试，或将其丢弃。" } } }
+    },
     "Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近删除" } } }
     },

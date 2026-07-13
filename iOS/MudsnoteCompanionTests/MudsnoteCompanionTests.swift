@@ -1340,6 +1340,45 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
     }
 
+    func testMarkdownDocumentStoresPortableRecordedAudioAttachment() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Projects/Meeting.md")
+        try FileManager.default.createDirectory(
+            at: documentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Meeting\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let audioData = Data([0x00, 0x01, 0x02, 0x03])
+        let audio = try CaptureAttachment.validatedAudio(data: audioData)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Meeting.md")
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 13,
+            hour: 19,
+            minute: 30
+        )))
+
+        let updated = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: audio,
+            now: now
+        )
+
+        let relativePath = "Attachments/2026/07/audio-20260713-193000.m4a"
+        XCTAssertTrue(updated.markdown.contains("[Audio](\(relativePath))"))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(relativePath)), audioData)
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.attachments.first { $0.relativePath == relativePath }?.kind, .audio)
+        XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == original.relativePath }?.hasAttachments == true)
+    }
+
     func testMarkdownDocumentStoresPortableGenericFileAttachment() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -885,6 +885,34 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func attachAudio(
+        _ data: Data,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment = try CaptureAttachment.validatedAudio(data: data)
+            let updated = try await fileStore.attachToMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachment: attachment
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Audio attached"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     func removeAttachment(
         line: String,
         from document: MarkdownDocument,
