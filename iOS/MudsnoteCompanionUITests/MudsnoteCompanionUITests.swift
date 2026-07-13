@@ -74,6 +74,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-add-image"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-add-file"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-table"].exists)
         let displayMode = app.buttons["markdown-display-mode"]
         XCTAssertTrue(displayMode.exists)
         displayMode.tap()
@@ -144,6 +145,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown-table"].waitForExistence(timeout: 5))
 
         let preview = app.buttons["preview-attachment-Attachments/ui-test.txt"]
         XCTAssertTrue(preview.waitForExistence(timeout: 5))

@@ -1292,6 +1292,33 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testMarkdownTableInsertionAndRenderedBlockParsing() throws {
+        let edit = try XCTUnwrap(MarkdownTableEditing.insertionEdit(
+            in: "Intro",
+            selection: NSRange(location: 5, length: 0)
+        ))
+        let updated = ("Intro" as NSString).replacingCharacters(
+            in: edit.range,
+            with: edit.replacement
+        )
+        XCTAssertEqual(
+            updated,
+            "Intro\n| Column 1 | Column 2 |\n| --- | --- |\n|  |  |"
+        )
+        XCTAssertEqual(
+            edit.selection.location,
+            (updated as NSString).range(of: "|  |  |").location + 2
+        )
+        XCTAssertEqual(
+            MarkdownRenderBlock.parse("# Plan\n\n| Owner | Status |\n| :--- | ---: |\n| Donald | Ready |\n\nDone"),
+            [
+                .line("# Plan"),
+                .table(headers: ["Owner", "Status"], rows: [["Donald", "Ready"]]),
+                .line("Done")
+            ]
+        )
+    }
+
     @MainActor
     func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
         let markdown = "# Heading\n\n- Bullet\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"

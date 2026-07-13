@@ -243,6 +243,7 @@ struct MarkdownPreviewView: View {
                 formatButton("text.quote", .quote)
                 formatButton("chevron.left.forwardslash.chevron.right", .code)
                 formatButton("link", .link)
+                formatButton("tablecells", .table)
                 formatButton("arrow.uturn.backward", .undo)
                 formatButton("arrow.uturn.forward", .redo)
             }
@@ -284,20 +285,64 @@ struct MarkdownPreviewView: View {
 
     private var markdownBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(renderLines().enumerated()), id: \.offset) { _, line in
-                if let attachment = MarkdownAttachmentLine(line) {
-                    attachmentView(attachment)
-                } else if line.hasPrefix(">") {
-                    Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "> ")))
-                        .font(.body.italic())
-                        .foregroundStyle(MudsnoteColors.muted)
-                        .padding(.leading, 12)
-                        .overlay(alignment: .leading) {
-                            Rectangle().fill(MudsnoteColors.line).frame(width: 3)
-                        }
-                } else {
-                    markdownText(line)
+            ForEach(Array(MarkdownRenderBlock.parse(draftMarkdown).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .line(let line):
+                    markdownLine(line)
+                case .table(let headers, let rows):
+                    markdownTable(headers: headers, rows: rows)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func markdownLine(_ line: String) -> some View {
+        if let attachment = MarkdownAttachmentLine(line) {
+            attachmentView(attachment)
+        } else if line.hasPrefix(">") {
+            Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "> ")))
+                .font(.body.italic())
+                .foregroundStyle(MudsnoteColors.muted)
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(MudsnoteColors.line).frame(width: 3)
+                }
+        } else {
+            markdownText(line)
+        }
+    }
+
+    private func markdownTable(headers: [String], rows: [[String]]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                markdownTableRow(headers, isHeader: true)
+                Divider()
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    markdownTableRow(row, isHeader: false)
+                        .background(index.isMultiple(of: 2) ? Color.clear : MudsnoteColors.card.opacity(0.45))
+                    if index < rows.count - 1 { Divider() }
+                }
+            }
+            .background(MudsnoteColors.canvas)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+        }
+        .accessibilityIdentifier("rendered-markdown-table")
+    }
+
+    private func markdownTableRow(_ cells: [String], isHeader: Bool) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                markdownText(cell)
+                    .font(isHeader ? .headline : .body)
+                    .frame(width: 132, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                if index < cells.count - 1 { Divider() }
             }
         }
     }
@@ -391,13 +436,6 @@ struct MarkdownPreviewView: View {
                 .foregroundStyle(MudsnoteColors.text)
         }
         return Text(line).foregroundStyle(MudsnoteColors.text)
-    }
-
-    private func renderLines() -> [String] {
-        draftMarkdown
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
     }
 
     @MainActor
@@ -545,6 +583,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case quote
         case code
         case link
+        case table
         case undo
         case redo
 
@@ -561,6 +600,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .quote: "quote"
             case .code: "code"
             case .link: "link"
+            case .table: "table"
             case .undo: "undo"
             case .redo: "redo"
             }
@@ -569,6 +609,82 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 
     let id = UUID()
     var kind: Kind
+}
+
+enum MarkdownRenderBlock: Equatable {
+    case line(String)
+    case table(headers: [String], rows: [[String]])
+
+    static func parse(_ markdown: String) -> [MarkdownRenderBlock] {
+        let lines = markdown.components(separatedBy: .newlines)
+        var blocks: [MarkdownRenderBlock] = []
+        var index = 0
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else {
+                index += 1
+                continue
+            }
+
+            if index + 1 < lines.count,
+               let headers = cells(in: line),
+               isSeparator(lines[index + 1], columnCount: headers.count) {
+                var rows: [[String]] = []
+                index += 2
+                while index < lines.count, let row = cells(in: lines[index]), row.count == headers.count {
+                    rows.append(row)
+                    index += 1
+                }
+                blocks.append(.table(headers: headers, rows: rows))
+                continue
+            }
+
+            blocks.append(.line(line))
+            index += 1
+        }
+        return blocks
+    }
+
+    private static func cells(in line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("|") else { return nil }
+        let content = trimmed
+            .trimmingCharacters(in: CharacterSet(charactersIn: "|"))
+        let cells = content
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return cells.count >= 2 ? cells : nil
+    }
+
+    private static func isSeparator(_ line: String, columnCount: Int) -> Bool {
+        guard let cells = cells(in: line), cells.count == columnCount else { return false }
+        return cells.allSatisfy { cell in
+            cell.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
+        }
+    }
+}
+
+enum MarkdownTableEditing {
+    static func insertionEdit(in markdown: String, selection: NSRange) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+
+        let needsLeadingNewline = selection.location > 0
+            && source.character(at: selection.location - 1) != 10
+        let needsTrailingNewline = NSMaxRange(selection) < source.length
+            && source.character(at: NSMaxRange(selection)) != 10
+        let leading = needsLeadingNewline ? "\n" : ""
+        let trailing = needsTrailingNewline ? "\n" : ""
+        let table = "| Column 1 | Column 2 |\n| --- | --- |\n|  |  |"
+        let replacement = leading + table + trailing
+        let firstCellOffset = (leading + "| Column 1 | Column 2 |\n| --- | --- |\n| ") as NSString
+        return MarkdownListEdit(
+            range: selection,
+            replacement: replacement,
+            selection: NSRange(location: selection.location + firstCellOffset.length, length: 0)
+        )
+    }
 }
 
 struct MarkdownListEdit: Equatable {
@@ -1127,6 +1243,13 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 let selected = (textView.text as NSString).substring(with: range)
                 let label = selected.isEmpty ? "text" : selected
                 replace(range, with: "[\(label)](https://)", selecting: NSRange(location: range.location + 1, length: (label as NSString).length), in: textView)
+            case .table:
+                if let edit = MarkdownTableEditing.insertionEdit(
+                    in: textView.text,
+                    selection: textView.selectedRange
+                ) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
             case .undo:
                 textView.undoManager?.undo()
             case .redo:
