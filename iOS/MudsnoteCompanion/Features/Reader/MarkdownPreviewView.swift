@@ -504,7 +504,61 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 }
 
 @MainActor
+final class MarkdownRichTextView: UITextView {
+    var checklistMarkers: [MarkdownEditorPresentation.ChecklistMarker] = [] {
+        didSet { setNeedsDisplay() }
+    }
+
+    override func draw(_ rect: CGRect) {
+        super.draw(rect)
+        guard !checklistMarkers.isEmpty else { return }
+        for marker in checklistMarkers {
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: marker.range,
+                actualCharacterRange: nil
+            )
+            var markerRect = layoutManager.boundingRect(
+                forGlyphRange: glyphRange,
+                in: textContainer
+            )
+            markerRect.origin.x += textContainerInset.left
+            markerRect.origin.y += textContainerInset.top
+            let symbolRect = CGRect(
+                x: markerRect.minX + 1,
+                y: markerRect.midY - 10,
+                width: 20,
+                height: 20
+            )
+            let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+            let name = marker.checked ? "checkmark.circle.fill" : "circle"
+            UIColor(MudsnoteColors.primary).set()
+            UIImage(systemName: name, withConfiguration: configuration)?
+                .withTintColor(UIColor(MudsnoteColors.primary), renderingMode: .alwaysOriginal)
+                .draw(in: symbolRect)
+        }
+    }
+
+    func checklistMarker(at point: CGPoint) -> MarkdownEditorPresentation.ChecklistMarker? {
+        checklistMarkers.first { marker in
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: marker.range,
+                actualCharacterRange: nil
+            )
+            var markerRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            markerRect.origin.x += textContainerInset.left
+            markerRect.origin.y += textContainerInset.top
+            return markerRect.insetBy(dx: -8, dy: -8).contains(point)
+        }
+    }
+}
+
+@MainActor
 enum MarkdownEditorPresentation {
+    struct ChecklistMarker: Equatable {
+        var range: NSRange
+        var checked: Bool
+    }
+
     static func apply(to textView: UITextView, displaysSource: Bool) {
         let storage = textView.textStorage
         let fullRange = NSRange(location: 0, length: storage.length)
@@ -526,6 +580,7 @@ enum MarkdownEditorPresentation {
             storage.setAttributes(baseAttributes, range: fullRange)
         }
         guard !displaysSource, storage.length <= 512 * 1_024 else {
+            (textView as? MarkdownRichTextView)?.checklistMarkers = []
             storage.endEditing()
             textView.typingAttributes = baseAttributes
             textView.selectedRange = clamped(selection, length: storage.length)
@@ -533,6 +588,14 @@ enum MarkdownEditorPresentation {
         }
 
         let source = storage.string as NSString
+        let checklistMarkers = checklists(in: source as String)
+        for marker in checklistMarkers {
+            storage.addAttributes([
+                .foregroundColor: UIColor.clear,
+                .font: UIFont.preferredFont(forTextStyle: .body),
+            ], range: marker.range)
+        }
+        (textView as? MarkdownRichTextView)?.checklistMarkers = checklistMarkers
         applyHeadings(in: source, storage: storage)
         applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
@@ -630,6 +693,29 @@ enum MarkdownEditorPresentation {
         let location = min(max(range.location, 0), length)
         return NSRange(location: location, length: min(range.length, length - location))
     }
+
+    static func checklists(in markdown: String) -> [ChecklistMarker] {
+        let source = markdown as NSString
+        return matches(#"(?m)^[ \t]*(- \[([ xX])\] )"#, in: source).map { match in
+            let markerRange = match.range(at: 1)
+            let stateRange = match.range(at: 2)
+            let state = stateRange.location < source.length
+                ? source.substring(with: stateRange).lowercased()
+                : " "
+            return ChecklistMarker(range: markerRange, checked: state == "x")
+        }
+    }
+
+    static func togglingChecklist(in markdown: String, marker: ChecklistMarker) -> String? {
+        let source = NSMutableString(string: markdown)
+        let stateLocation = marker.range.location + 3
+        guard marker.range.length >= 5, stateLocation < source.length else { return nil }
+        source.replaceCharacters(
+            in: NSRange(location: stateLocation, length: 1),
+            with: marker.checked ? " " : "x"
+        )
+        return source as String
+    }
 }
 
 private struct MarkdownTextEditor: UIViewRepresentable {
@@ -643,7 +729,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = MarkdownRichTextView()
         view.delegate = context.coordinator
         view.backgroundColor = .clear
         view.textColor = UIColor(MudsnoteColors.text)
@@ -657,6 +743,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
+        let checklistTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleChecklistTap(_:))
+        )
+        checklistTap.cancelsTouchesInView = false
+        view.addGestureRecognizer(checklistTap)
         MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
         return view
     }
@@ -706,6 +798,22 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.isFocused = false
+        }
+
+        @objc func handleChecklistTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended,
+                  !parent.displaysSource,
+                  let view = recognizer.view as? MarkdownRichTextView,
+                  let marker = view.checklistMarker(at: recognizer.location(in: view)),
+                  let updated = MarkdownEditorPresentation.togglingChecklist(
+                    in: view.text,
+                    marker: marker
+                  ) else { return }
+            let selection = view.selectedRange
+            view.text = updated
+            view.selectedRange = selection
+            parent.text = updated
+            MarkdownEditorPresentation.apply(to: view, displaysSource: false)
         }
 
         func apply(_ kind: MarkdownEditingCommand.Kind, to textView: UITextView) {

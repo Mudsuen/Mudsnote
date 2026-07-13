@@ -1204,8 +1204,8 @@ final class MudsnoteCompanionTests: XCTestCase {
 
     @MainActor
     func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
-        let markdown = "# Heading\n\n**Bold** and `code` with [Link](https://example.com)"
-        let view = UITextView()
+        let markdown = "# Heading\n\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"
+        let view = MarkdownRichTextView()
         view.text = markdown
 
         MarkdownEditorPresentation.apply(to: view, displaysSource: false)
@@ -1223,11 +1223,20 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertGreaterThan(headingFont.pointSize, 20)
         XCTAssertTrue(boldFont.fontDescriptor.symbolicTraits.contains(.traitBold))
         XCTAssertNotNil(storage.attribute(.underlineStyle, at: linkText.location, effectiveRange: nil))
+        XCTAssertEqual(view.checklistMarkers.map(\.checked), [false, true])
+        let firstMarker = try XCTUnwrap(view.checklistMarkers.first)
+        let toggled = try XCTUnwrap(MarkdownEditorPresentation.togglingChecklist(
+            in: markdown,
+            marker: firstMarker
+        ))
+        XCTAssertTrue(toggled.contains("- [x] Ship editor"))
+        XCTAssertTrue(toggled.contains("- [x] Keep Markdown"))
 
         MarkdownEditorPresentation.apply(to: view, displaysSource: true)
         XCTAssertEqual(view.text, markdown)
         let sourceMarkerColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: headingMarker.location, effectiveRange: nil) as? UIColor)
         XCTAssertGreaterThan(sourceMarkerColor.cgColor.alpha, 0.9)
+        XCTAssertTrue(view.checklistMarkers.isEmpty)
     }
 
     func testLibrarySnapshotPublishesAndRefreshesListMetadata() async throws {
