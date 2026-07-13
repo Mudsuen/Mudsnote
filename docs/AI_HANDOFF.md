@@ -117,6 +117,11 @@
 - Source navigation still paints from the in-memory snapshot first, then starts detached filesystem validation after a cooperative yield rather than a fixed `80ms` delay.
 - Cancellation and generation checks continue to reject stale validations; the focused race test passed 10 consecutive runs and the full suite passed.
 
+## Latest iteration (179)
+
+- The source surface, note list, search scope, title field, editor body, and modification-date label now expose stable accessibility names.
+- Visual source-count labels are excluded from the accessibility tree; the owning source button exposes the count as its accessibility value instead.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

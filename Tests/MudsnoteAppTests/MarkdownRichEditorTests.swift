@@ -1009,6 +1009,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(noteListHeaderStack.arrangedSubviews.contains(controller.searchScopeControl))
         #expect(controller.searchScopeControl.isHidden)
+        #expect(controller.searchScopeControl.accessibilityLabel() == "搜索范围")
         noteListTitleToolbarView.layoutSubtreeIfNeeded()
         #expect(controller.noteListTitleLabel.frame.width + 1 >= controller.noteListTitleLabel.intrinsicContentSize.width)
         let editorToolsItem = try #require((window.toolbar?.items ?? []).first {
@@ -1059,6 +1060,8 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceSurface"
         })
         #expect(sourceSurface.identifier?.rawValue == "LibrarySourceSurface")
+        #expect(sourceSurface.accessibilityLabel() == "资料库")
+        #expect(controller.tableView.accessibilityLabel() == "笔记列表")
         #expect(sourceSurface.material == .sidebar)
         #expect(sourceSurface.blendingMode == .withinWindow)
         #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
@@ -1308,6 +1311,9 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
         #expect(LibraryNotesLayout.editorTitleFontSize == 24)
         #expect(controller.titleField.placeholderString == "")
+        #expect(controller.titleField.accessibilityLabel() == "笔记标题")
+        #expect(controller.editorTextView.accessibilityLabel() == "笔记正文")
+        #expect(controller.statusLabel.accessibilityLabel() == "修改时间")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
         #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
@@ -1364,6 +1370,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
+        #expect(!allCount.isAccessibilityElement())
         #expect(allCount.textColor == LibrarySourceSelectionPalette.selectedCountColor)
         #expect(allCount.textColor != LibrarySourceSelectionPalette.foregroundColor)
         #expect(allCount.constraints.contains {
@@ -1373,6 +1380,8 @@ struct MarkdownRichEditorTests {
             $0.title == "All iCloud"
         })
         #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
+        #expect(allSourceButton.accessibilityLabel() == "All iCloud")
+        #expect(allSourceButton.accessibilityValue() as? String == "1 条笔记")
         #expect(allSourceButton.cell is LibrarySourceButtonCell)
         #expect(LibrarySourceButtonCell.contentLeadingInset == 18)
         let sourceButtonDrawingRect = try #require(

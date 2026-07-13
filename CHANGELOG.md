@@ -1069,6 +1069,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Replace the fixed delay with one cooperative `Task.yield()`. Existing cancellation and generation guards still coalesce obsolete validations, while the current validation starts as soon as the executor can schedule it.
 - Lesson: Generation-based cancellation is the correct coalescing boundary here; a fixed debounce adds latency without improving correctness.
 
+### 179. Notes-library accessibility semantics
+
+- Problem: Toolbar icons had accessibility labels, but the three-pane workspace did not consistently name its source pane, note list, search scope, title, body, and modification date. Source counts were also exposed as separate text elements, producing repetitive VoiceOver navigation.
+- Fix: Added stable accessibility labels to the core library controls, merged each source count into its source button's accessibility value, and removed the duplicate visual count label from the accessibility tree.
+- Lesson: A native-feeling Notes clone needs a concise semantic hierarchy as well as matching pixels; decorative metadata should not become separate navigation stops when it belongs to an actionable row.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

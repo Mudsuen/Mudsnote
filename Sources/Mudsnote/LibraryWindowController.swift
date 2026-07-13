@@ -1706,6 +1706,7 @@ final class LibraryWindowController: NSWindowController,
         let sourceList = NSVisualEffectView()
         sourceList.translatesAutoresizingMaskIntoConstraints = false
         sourceList.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSurface")
+        sourceList.setAccessibilityLabel("资料库")
         sourceList.material = .sidebar
         sourceList.blendingMode = .withinWindow
         sourceList.state = .active
@@ -1799,6 +1800,7 @@ final class LibraryWindowController: NSWindowController,
         column.resizingMask = .userResizingMask
         tableView.addTableColumn(column)
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
+        tableView.setAccessibilityLabel("笔记列表")
         tableView.headerView = nil
         tableView.rowHeight = 68
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
@@ -1897,6 +1899,7 @@ final class LibraryWindowController: NSWindowController,
         editor.layer?.backgroundColor = LibraryNotesPalette.editorBackground.cgColor
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
+        titleField.setAccessibilityLabel("笔记标题")
         titleField.placeholderString = ""
         titleField.font = .systemFont(ofSize: LibraryNotesLayout.editorTitleFontSize, weight: .bold)
         titleField.textColor = panelPrimaryTextColor()
@@ -1908,6 +1911,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.delegate = self
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
+        statusLabel.setAccessibilityLabel("修改时间")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
@@ -2024,6 +2028,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureSearchScopeControl() {
         searchScopeControl.identifier = NSUserInterfaceItemIdentifier("LibrarySearchScopeControl")
+        searchScopeControl.setAccessibilityLabel("搜索范围")
         searchScopeControl.target = self
         searchScopeControl.action = #selector(searchScopeChanged(_:))
         searchScopeControl.selectedSegment = 0
@@ -2603,6 +2608,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func configureEditorTextView() {
+        editorTextView.setAccessibilityLabel("笔记正文")
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
@@ -3003,6 +3009,7 @@ final class LibraryWindowController: NSWindowController,
         overlay.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCountOverlay-\(tag)")
         let countLabel = NSTextField(labelWithString: "")
         countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
+        countLabel.setAccessibilityElement(false)
         countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
         countLabel.textColor = panelTertiaryTextColor()
         countLabel.alignment = .right
@@ -3087,6 +3094,7 @@ final class LibraryWindowController: NSWindowController,
         button.target = self
         button.action = #selector(scopeButtonPressed(_:))
         button.identifier = NSUserInterfaceItemIdentifier("LibrarySourceButton-\(tag)")
+        button.setAccessibilityLabel(title)
         button.tag = tag
         button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
@@ -3320,6 +3328,7 @@ final class LibraryWindowController: NSWindowController,
                 count = countIndex.count(forTag: tag)
             }
             sourceCountLabels[button.tag]?.stringValue = sourceCountText(count, for: scope(for: button))
+            button.setAccessibilityValue("\(count) 条笔记")
         }
     }
 
