@@ -1194,6 +1194,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Final empty-state OCR centers Apple Notes and Mudsnote at `x=1311.9px`; content-state Mudsnote centers at `x=1310.6px`, within `1.3px` of the `x=1311.9px` reference. The `y=123px` baseline and collapsed title remain unchanged. Full tests, installed smoke, packaging, and signature validation passed.
 - Lesson: Perceived centering in a scrollable editor may use the unobstructed content region rather than the full pane bounds; calibrate the status row independently when the content origin is already correct.
 
+### 199. Native toolbar interaction feedback
+
+- Problem: The compact toolbar matched the Notes silhouette at rest, but borderless buttons inside static glass did not expose macOS hover or pressed feedback; replacing the group with a stock toolbar item group made every segment about `44pt` and visibly oversized.
+- Fix: Kept the measured `155x32pt` native `NSGlassEffectView` group and five `31pt` tracks, changed its command buttons to AppKit `.toolbar` buttons with `showsBorderOnlyWhileMouseInside`, and changed New Note plus the collapsed sidebar control to native macOS 26 `.glass` buttons. Expanded Add Folder and Sidebar Toggle now use the same system hover-only toolbar treatment.
+- Verification: Full tests, installed-app library smoke, packaging, and signature validation passed. The packaged content-state comparison is `/tmp/mudsnote-visual-qa-199-native-hover/apple-notes-vs-mudsnote.png`; real pointer captures `/tmp/mudsnote-native-button-hover.png` and `/tmp/mudsnote-native-button-rest.png` differ, proving the native hover state is rendered while the resting group remains compact.
+- Lesson: AppKit's fully automatic toolbar group prioritizes standard hit targets over reference geometry. Composing public `NSGlassEffectView` and `NSButton` controls preserves native animation while allowing a reference-sized command group.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -233,6 +233,13 @@
 - Keep date-row centering separate from the editor content insets; the native reference accounts for the right-side scrolling region in its perceived center.
 - Final empty-state OCR centers Mudsnote and Apple Notes at `x=1311.9px`; content-state Mudsnote centers at `x=1310.6px`, within `1.3px` of the same reference center. The `y=123px` baseline and collapsed title remain unchanged.
 
+## Latest iteration (199)
+
+- New Note and the collapsed Sidebar Toggle use native macOS 26 `.glass` buttons, so AppKit owns their hover and pressed animation.
+- The `155x32pt` editor-tools glass group retains five `31pt` tracks; each track is a native `.toolbar` button with `showsBorderOnlyWhileMouseInside` instead of a custom drawn highlight.
+- Expanded Add Folder and Sidebar Toggle use the same hover-only toolbar button behavior. Static visual geometry remains on the compact baseline, and real-pointer captures verify hover rendering.
+- Full tests, installed-app library smoke, packaging, and strict signature validation pass for this implementation.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

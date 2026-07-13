@@ -2456,8 +2456,9 @@ final class LibraryWindowController: NSWindowController,
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
+        button.bezelStyle = .toolbar
+        button.isBordered = true
+        button.showsBorderOnlyWhileMouseInside = true
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
@@ -2572,8 +2573,9 @@ final class LibraryWindowController: NSWindowController,
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
+        button.bezelStyle = .toolbar
+        button.isBordered = true
+        button.showsBorderOnlyWhileMouseInside = true
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
@@ -2629,8 +2631,8 @@ final class LibraryWindowController: NSWindowController,
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
+        button.bezelStyle = .glass
+        button.isBordered = true
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
@@ -2641,39 +2643,9 @@ final class LibraryWindowController: NSWindowController,
         button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
         button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
 
-        let glass = toolbarGlassSurface(
-            identifier: "\(identifier.rawValue).glass",
-            content: button,
-            size: NSSize(
-                width: LibraryNotesLayout.toolbarCircularButtonSize,
-                height: LibraryNotesLayout.toolbarCircularButtonSize
-            ),
-            cornerRadius: LibraryNotesLayout.toolbarCircularButtonSize / 2
-        )
         item.image = configuredImage
-        item.view = glass
+        item.view = button
         return item
-    }
-
-    private func toolbarGlassSurface(
-        identifier: String,
-        content: NSView,
-        size: NSSize,
-        cornerRadius: CGFloat
-    ) -> NSGlassEffectView {
-        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.identifier = NSUserInterfaceItemIdentifier(identifier)
-        glass.style = .regular
-        glass.cornerRadius = cornerRadius
-        glass.contentView = content
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.setContentHuggingPriority(.required, for: .horizontal)
-        glass.setContentCompressionResistancePriority(.required, for: .horizontal)
-        NSLayoutConstraint.activate([
-            glass.widthAnchor.constraint(equalToConstant: size.width),
-            glass.heightAnchor.constraint(equalToConstant: size.height)
-        ])
-        return glass
     }
 
     private func toolbarSymbolImage(symbolName: String, label: String) -> NSImage? {
@@ -2696,6 +2668,27 @@ final class LibraryWindowController: NSWindowController,
             ? LibraryNotesLayout.toolbarIconEnabledAlpha
             : LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha
         )
+    }
+
+    private func toolbarGlassSurface(
+        identifier: String,
+        content: NSView,
+        size: NSSize,
+        cornerRadius: CGFloat
+    ) -> NSGlassEffectView {
+        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
+        glass.identifier = NSUserInterfaceItemIdentifier(identifier)
+        glass.style = .regular
+        glass.cornerRadius = cornerRadius
+        glass.contentView = content
+        glass.translatesAutoresizingMaskIntoConstraints = false
+        glass.setContentHuggingPriority(.required, for: .horizontal)
+        glass.setContentCompressionResistancePriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            glass.widthAnchor.constraint(equalToConstant: size.width),
+            glass.heightAnchor.constraint(equalToConstant: size.height)
+        ])
+        return glass
     }
 
     private func makeFormatToolbarImage() -> NSImage {
@@ -6439,8 +6432,9 @@ final class LibraryWindowController: NSWindowController,
         button.identifier = NSUserInterfaceItemIdentifier(Self.toggleSidebarToolbarItemIdentifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
+        button.bezelStyle = usesCompactGlass ? .glass : .toolbar
+        button.isBordered = true
+        button.showsBorderOnlyWhileMouseInside = !usesCompactGlass
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
@@ -6453,15 +6447,6 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        let glass = toolbarGlassSurface(
-            identifier: "\(Self.toggleSidebarToolbarItemIdentifier.rawValue).glass",
-            content: button,
-            size: NSSize(
-                width: LibraryNotesLayout.toolbarCircularButtonSize,
-                height: LibraryNotesLayout.toolbarCircularButtonSize
-            ),
-            cornerRadius: LibraryNotesLayout.toolbarCircularButtonSize / 2
-        )
         let wrapper = NSView(frame: NSRect(
             x: 0,
             y: 0,
@@ -6470,15 +6455,12 @@ final class LibraryWindowController: NSWindowController,
         ))
         wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarCollapsedSidebarWrapper")
         wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(glass)
-        glass.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(button)
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth),
             wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            glass.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            glass.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            glass.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            glass.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
+            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
         ])
         item.view = wrapper
     }
