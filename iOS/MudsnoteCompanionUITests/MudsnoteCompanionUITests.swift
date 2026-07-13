@@ -120,9 +120,37 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let allNotes = app.buttons["all-notes-link"]
         XCTAssertTrue(waitForHittable(allNotes))
         allNotes.tap()
-        let row = app.buttons["markdown-file-row-Untitled Note.md"]
+        let row = app.buttons["markdown-file-row-Standalone UI Note.md"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(row.label.contains("Standalone UI Note"))
+    }
+
+    func testEmptyStandaloneNoteIsDiscardedWhenSheetCloses() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertTrue(waitForNonexistence(editor))
+
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(waitForHittable(newNoteButton))
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(waitForHittable(allNotes))
+        let restoredCount = NSPredicate(format: "label == %@", "All Notes, 3")
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: restoredCount, object: allNotes)],
+                timeout: 5
+            ),
+            .completed
+        )
+        allNotes.tap()
+        let emptyRow = app.buttons["markdown-file-row-Untitled Note.md"]
+        XCTAssertTrue(waitForNonexistence(emptyRow))
     }
 
     func testQuickCaptureDraftRestoresAfterProcessTermination() {
@@ -256,7 +284,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let quickLook = app.otherElements["QLPreviewControllerView"]
         let close = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
         XCTAssertTrue(quickLook.waitForExistence(timeout: 5))
-        XCTAssertTrue(close.exists)
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["ui-test"].waitForExistence(timeout: 5))
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())

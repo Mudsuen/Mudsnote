@@ -474,6 +474,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func discardEmptyNewDocumentIfNeeded(_ document: MarkdownDocument, markdown: String) {
+        guard document.isNew, markdown.isEmpty else { return }
+        Task {
+            do {
+                try await fileStore.discardEmptyNewMarkdownDocument(
+                    relativePath: document.relativePath
+                )
+                if selectedDocument?.id == document.id { selectedDocument = nil }
+                await refreshInbox()
+            } catch {
+                statusToast = .error(String(localized: "Could not discard empty note"))
+            }
+        }
+    }
+
     func canMoveToRecentlyDeleted(_ file: RecentMarkdownFile) -> Bool {
         file.relativePath != "Inbox.md" && !file.relativePath.hasPrefix("Daily/")
     }
@@ -685,11 +700,20 @@ final class AppModel: ObservableObject {
         announce: Bool = true
     ) async -> MarkdownDocument? {
         do {
-            let updated = try await fileStore.saveMarkdownDocument(
-                relativePath: document.relativePath,
-                markdown: markdown,
-                expectedMarkdown: expectedMarkdown
-            )
+            let updated: MarkdownDocument
+            if document.isNew {
+                updated = try await fileStore.finalizeNewMarkdownDocument(
+                    relativePath: document.relativePath,
+                    markdown: markdown,
+                    expectedMarkdown: expectedMarkdown
+                )
+            } else {
+                updated = try await fileStore.saveMarkdownDocument(
+                    relativePath: document.relativePath,
+                    markdown: markdown,
+                    expectedMarkdown: expectedMarkdown
+                )
+            }
             selectedDocument = updated
             if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshInbox()

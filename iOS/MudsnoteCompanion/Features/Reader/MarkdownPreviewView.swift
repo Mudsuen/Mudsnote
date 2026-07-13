@@ -31,8 +31,7 @@ struct MarkdownPreviewView: View {
 
     @EnvironmentObject private var appModel: AppModel
     @Binding private var detent: PresentationDetent
-    private var source: Source
-    private var metadata: String
+    @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
     @State private var isEditing = false
@@ -52,16 +51,14 @@ struct MarkdownPreviewView: View {
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
-        source = .memo(memo)
-        metadata = memo.dateText
+        _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
     }
 
     init(document: MarkdownDocument, detent: Binding<PresentationDetent>) {
         _detent = detent
-        source = .document(document)
-        metadata = document.relativePath
+        _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
         _isEditing = State(initialValue: document.isNew)
@@ -155,7 +152,12 @@ struct MarkdownPreviewView: View {
                 focusEditorAfterPresentation()
             }
         }
-        .onDisappear(perform: endLibraryAccess)
+        .onDisappear {
+            if case .document(let document) = source {
+                appModel.discardEmptyNewDocumentIfNeeded(document, markdown: draftMarkdown)
+            }
+            endLibraryAccess()
+        }
         .onChange(of: selectedPhotoItem) { _, item in
             guard item != nil else { return }
             Task { await attachPhoto(item) }
@@ -351,6 +353,13 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private var metadata: String {
+        switch source {
+        case .memo(let memo): memo.dateText
+        case .document(let document): document.relativePath
+        }
+    }
+
     @ViewBuilder
     private func markdownLine(_ line: String) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
@@ -537,12 +546,14 @@ struct MarkdownPreviewView: View {
                 announce: announce
             ) != nil
         case .document(let document):
-            return await appModel.saveDocument(
+            guard let updated = await appModel.saveDocument(
                 document,
                 markdown: markdown,
                 expectedMarkdown: originalMarkdown,
                 announce: announce
-            ) != nil
+            ) else { return false }
+            source = .document(updated)
+            return true
         }
     }
 
@@ -552,7 +563,12 @@ struct MarkdownPreviewView: View {
         case .memo(let memo):
             markdown = await appModel.reloadMemo(memo)?.body
         case .document(let document):
-            markdown = await appModel.reloadDocument(document)?.markdown
+            if let reloaded = await appModel.reloadDocument(document) {
+                source = .document(reloaded)
+                markdown = reloaded.markdown
+            } else {
+                markdown = nil
+            }
         }
         if let markdown {
             draftMarkdown = markdown
@@ -566,9 +582,10 @@ struct MarkdownPreviewView: View {
 
     private func attachPhoto(_ item: PhotosPickerItem?) async {
         defer { selectedPhotoItem = nil }
-        guard case .document(let document) = source else { return }
+        guard case .document = source else { return }
         await persistDraft(finishEditing: false, announce: false)
-        guard draftMarkdown == originalMarkdown else { return }
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
         saveState = .saving
         if let updated = await appModel.attachPhoto(
             item,
@@ -576,6 +593,7 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
+            source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
@@ -587,9 +605,10 @@ struct MarkdownPreviewView: View {
     }
 
     private func attachFile(_ url: URL) async {
-        guard case .document(let document) = source else { return }
+        guard case .document = source else { return }
         await persistDraft(finishEditing: false, announce: false)
-        guard draftMarkdown == originalMarkdown else { return }
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
         saveState = .saving
         if let updated = await appModel.attachFile(
             url,
@@ -597,6 +616,7 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
+            source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
@@ -633,6 +653,7 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
+            source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved

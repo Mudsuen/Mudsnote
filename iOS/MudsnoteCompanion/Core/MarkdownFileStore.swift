@@ -236,6 +236,57 @@ actor MarkdownFileStore {
         )
     }
 
+    func finalizeNewMarkdownDocument(
+        relativePath: String,
+        markdown: String,
+        expectedMarkdown: String
+    ) throws -> MarkdownDocument {
+        let saved = try saveMarkdownDocument(
+            relativePath: relativePath,
+            markdown: markdown,
+            expectedMarkdown: expectedMarkdown
+        )
+        guard let root,
+              Self.isGeneratedUntitledNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root) else {
+            return saved
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let preferredStem = Self.portableNoteFilenameStem(from: markdown)
+        guard preferredStem != source.deletingPathExtension().lastPathComponent else {
+            return saved
+        }
+        let destination = uniqueMarkdownURL(
+            for: source.deletingLastPathComponent().appendingPathComponent("\(preferredStem).md")
+        )
+        do {
+            try coordinatedMove(from: source, to: destination)
+            let renamedPath = Self.relativePath(for: destination, root: root)
+            invalidateAfterMutation(relativePaths: [relativePath, renamedPath])
+            return MarkdownDocument(
+                id: renamedPath,
+                title: preferredStem,
+                relativePath: renamedPath,
+                markdown: markdown
+            )
+        } catch {
+            return saved
+        }
+    }
+
+    func discardEmptyNewMarkdownDocument(relativePath: String) throws {
+        guard let root,
+              Self.isGeneratedUntitledNotePath(relativePath),
+              let url = AuthorizedLibraryPath.resolve(relativePath, within: root) else { return }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: url.path),
+              try Data(contentsOf: url).isEmpty else { return }
+        try fileManager.removeItem(at: url)
+        invalidateAfterMutation(relativePaths: [relativePath])
+    }
+
     func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
@@ -1040,6 +1091,34 @@ actor MarkdownFileStore {
         return true
     }
 
+    private static func isGeneratedUntitledNotePath(_ relativePath: String) -> Bool {
+        let stem = (relativePath as NSString).lastPathComponent
+            .replacingOccurrences(of: ".md", with: "")
+        return stem == "Untitled Note"
+            || stem.range(of: #"^Untitled Note [0-9]+$"#, options: .regularExpression) != nil
+    }
+
+    private static func portableNoteFilenameStem(from markdown: String) -> String {
+        let title = MarkdownListMetadata.extract(
+            from: markdown,
+            fallbackTitle: "Untitled Note"
+        ).title
+        var value = title.replacingOccurrences(
+            of: #"[/\\:?*|\"<>]+"#,
+            with: "-",
+            options: .regularExpression
+        )
+        value = value.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        value = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if value.hasPrefix(".") { value.removeFirst() }
+        let bounded = String(value.prefix(80)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return bounded.isEmpty ? "Untitled Note" : bounded
+    }
+
     private static func isPinnableNotePath(_ relativePath: String) -> Bool {
         relativePath != "Inbox.md"
             && !relativePath.hasPrefix("Attachments/")
@@ -1329,15 +1408,38 @@ struct MarkdownListMetadata: Equatable {
 
     static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
         let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
-        let title = lines.lazy.compactMap { line -> String? in
+        let headingTitle = lines.enumerated().lazy.compactMap { index, line -> (Int, String)? in
             let value = line.trimmingCharacters(in: .whitespaces)
             guard value.hasPrefix("# ") else { return nil }
             let heading = String(value.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-            return heading.isEmpty ? nil : heading
-        }.first ?? fallbackTitle
+            return heading.isEmpty ? nil : (index, heading)
+        }.first
+        let plainTitle = lines.enumerated().lazy.compactMap { index, line -> (Int, String)? in
+            var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty,
+                  !value.hasPrefix("#"),
+                  !value.hasPrefix("<!--"),
+                  !value.hasPrefix("!["),
+                  !(value.hasPrefix("[") && value.contains("](Attachments/")),
+                  !value.hasPrefix("---") else { return nil }
+            value = value.replacingOccurrences(
+                of: #"^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|>\s*|\d+[.)]\s+)"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
+                of: #"[*_`~]"#,
+                with: "",
+                options: .regularExpression
+            )
+            return value.isEmpty ? nil : (index, String(value.prefix(120)))
+        }.first
+        let titleMatch = headingTitle ?? plainTitle
+        let title = titleMatch?.1 ?? fallbackTitle
 
         var previewParts: [String] = []
-        for line in lines {
+        for (index, line) in lines.enumerated() {
+            if index == titleMatch?.0 { continue }
             var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty,
                   !value.hasPrefix("#"),

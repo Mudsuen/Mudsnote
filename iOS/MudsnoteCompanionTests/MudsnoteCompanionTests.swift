@@ -158,13 +158,20 @@ final class MudsnoteCompanionTests: XCTestCase {
             ""
         )
 
-        let saved = try await store.saveMarkdownDocument(
+        let saved = try await store.finalizeNewMarkdownDocument(
             relativePath: first.relativePath,
-            markdown: "Standalone note\n",
+            markdown: "# Standalone note / launch\n",
             expectedMarkdown: ""
         )
         XCTAssertFalse(saved.isNew)
-        XCTAssertEqual(saved.markdown, "Standalone note\n")
+        XCTAssertEqual(saved.relativePath, "Standalone note - launch.md")
+        XCTAssertEqual(saved.markdown, "# Standalone note / launch\n")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(first.relativePath).path))
+
+        try await store.discardEmptyNewMarkdownDocument(relativePath: second.relativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(second.relativePath).path))
+        try await store.discardEmptyNewMarkdownDocument(relativePath: saved.relativePath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(saved.relativePath).path))
     }
 
     func testInboxParserFindsMemoBlocks() {
@@ -1483,7 +1490,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(metadata.hasAttachments)
         XCTAssertEqual(
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
-            "File Name"
+            "Plain body"
         )
     }
 

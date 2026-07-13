@@ -4,6 +4,9 @@
     "Could not create note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法新建笔记" } } }
     },
+    "Could not discard empty note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法清理空白笔记" } } }
+    },
     "New Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建笔记" } } }
     },
