@@ -1319,6 +1319,21 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testScannedDocumentCreatesPortableMultiPagePDF() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 500))
+        let first = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 500))
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 30, y: 40, width: 240, height: 20))
+        }
+        let data = try ScannedDocumentPDF.data(for: [first, first])
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
+        XCTAssertEqual(try XCTUnwrap(CGPDFDocument(provider)).numberOfPages, 2)
+        XCTAssertThrowsError(try ScannedDocumentPDF.data(for: []))
+    }
+
     @MainActor
     func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
         let markdown = "# Heading\n\n- Bullet\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"

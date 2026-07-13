@@ -32,7 +32,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Mudsnote can attach captured photos to your Markdown notes.</string>
+	<string>Mudsnote uses the camera to capture photos and scan documents into your Markdown notes.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mudsnote records voice memos and saves the audio file beside your Markdown notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

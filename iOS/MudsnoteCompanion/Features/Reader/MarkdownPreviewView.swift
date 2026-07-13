@@ -4,6 +4,7 @@ import PhotosUI
 import QuickLook
 import UIKit
 import UniformTypeIdentifiers
+import VisionKit
 
 struct MarkdownPreviewView: View {
     private enum Source {
@@ -42,6 +43,8 @@ struct MarkdownPreviewView: View {
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isFileImporterPresented = false
+    @State private var isScannerPresented = false
+    @State private var scanErrorMessage: String?
     @State private var previewURL: URL?
     @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
@@ -175,6 +178,29 @@ struct MarkdownPreviewView: View {
             Task { await attachFile(url) }
         }
         .quickLookPreview($previewURL)
+        .fullScreenCover(isPresented: $isScannerPresented) {
+            DocumentScannerView(
+                onComplete: { result in
+                    isScannerPresented = false
+                    switch result {
+                    case .success(let pages):
+                        Task { await attachScannedDocument(pages) }
+                    case .failure(let error):
+                        scanErrorMessage = error.localizedDescription
+                    }
+                },
+                onCancel: { isScannerPresented = false }
+            )
+            .ignoresSafeArea()
+        }
+        .alert("Couldn’t Scan Document", isPresented: Binding(
+            get: { scanErrorMessage != nil },
+            set: { if !$0 { scanErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { scanErrorMessage = nil }
+        } message: {
+            Text(scanErrorMessage ?? "Try scanning the document again.")
+        }
     }
 
     private var metadataLabel: some View {
@@ -231,6 +257,24 @@ struct MarkdownPreviewView: View {
                     .disabled(isSaving || appModel.isPreparingAttachment)
                     .accessibilityLabel("Add file")
                     .accessibilityIdentifier("markdown-add-file")
+
+                    Button {
+                        isScannerPresented = true
+                    } label: {
+                        Image(systemName: attachmentIsPreparing ? "hourglass" : "doc.viewfinder")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .frame(width: 40, height: 40)
+                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(
+                        isSaving
+                            || appModel.isPreparingAttachment
+                            || !VNDocumentCameraViewController.isSupported
+                    )
+                    .accessibilityLabel("Scan document")
+                    .accessibilityIdentifier("markdown-scan-document")
                 }
                 formatButton("textformat.size", .heading)
                 formatButton("bold", .bold)
@@ -552,6 +596,24 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private func attachScannedDocument(_ pages: [UIImage]) async {
+        do {
+            let data = try ScannedDocumentPDF.data(for: pages)
+            let temporaryDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: temporaryDirectory,
+                withIntermediateDirectories: true
+            )
+            let temporaryURL = temporaryDirectory.appendingPathComponent("Scanned Document.pdf")
+            try data.write(to: temporaryURL, options: .atomic)
+            defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+            await attachFile(temporaryURL)
+        } catch {
+            scanErrorMessage = error.localizedDescription
+        }
+    }
+
     private func removeAttachment(_ attachment: MarkdownAttachmentLine) async {
         guard case .document(let document) = source else { return }
         if let updated = await appModel.removeAttachment(
@@ -566,6 +628,89 @@ struct MarkdownPreviewView: View {
         } else {
             saveState = .failed
             isSaveFailurePresented = true
+        }
+    }
+}
+
+enum ScannedDocumentPDF {
+    enum Error: LocalizedError {
+        case noPages
+
+        var errorDescription: String? {
+            "No scanned pages were available."
+        }
+    }
+
+    static func data(for pages: [UIImage]) throws -> Data {
+        guard !pages.isEmpty else { throw Error.noPages }
+        let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let contentBounds = pageBounds.insetBy(dx: 24, dy: 24)
+        return UIGraphicsPDFRenderer(bounds: pageBounds).pdfData { context in
+            for image in pages {
+                context.beginPage()
+                let size = image.size
+                guard size.width > 0, size.height > 0 else { continue }
+                let scale = min(
+                    contentBounds.width / size.width,
+                    contentBounds.height / size.height
+                )
+                let renderedSize = CGSize(width: size.width * scale, height: size.height * scale)
+                let rect = CGRect(
+                    x: contentBounds.midX - renderedSize.width / 2,
+                    y: contentBounds.midY - renderedSize.height / 2,
+                    width: renderedSize.width,
+                    height: renderedSize.height
+                )
+                image.draw(in: rect)
+            }
+        }
+    }
+}
+
+struct DocumentScannerView: UIViewControllerRepresentable {
+    let onComplete: (Result<[UIImage], Swift.Error>) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onComplete: onComplete, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
+        let controller = VNDocumentCameraViewController()
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
+
+    final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+        let onComplete: (Result<[UIImage], Swift.Error>) -> Void
+        let onCancel: () -> Void
+
+        init(
+            onComplete: @escaping (Result<[UIImage], Swift.Error>) -> Void,
+            onCancel: @escaping () -> Void
+        ) {
+            self.onComplete = onComplete
+            self.onCancel = onCancel
+        }
+
+        func documentCameraViewController(
+            _ controller: VNDocumentCameraViewController,
+            didFinishWith scan: VNDocumentCameraScan
+        ) {
+            onComplete(.success((0..<scan.pageCount).map { scan.imageOfPage(at: $0) }))
+        }
+
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            onCancel()
+        }
+
+        func documentCameraViewController(
+            _ controller: VNDocumentCameraViewController,
+            didFailWithError error: Swift.Error
+        ) {
+            onComplete(.failure(error))
         }
     }
 }
