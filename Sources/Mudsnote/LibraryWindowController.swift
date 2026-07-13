@@ -404,6 +404,172 @@ private enum LibrarySourceSection: Int {
     }
 }
 
+@MainActor
+private final class LibrarySourceOutlineItem: NSObject {
+    enum Kind {
+        case group(title: String, section: LibrarySourceSection?)
+        case scope(LibraryScope)
+        case status(String)
+        case inlineFolderEdit(InlineFolderEditOperation)
+    }
+
+    let identifier: String
+    let kind: Kind
+    weak var parent: LibrarySourceOutlineItem?
+    var children: [LibrarySourceOutlineItem] = []
+    var count = 0
+
+    init(identifier: String, kind: Kind) {
+        self.identifier = identifier
+        self.kind = kind
+    }
+
+    func append(_ child: LibrarySourceOutlineItem) {
+        child.parent = self
+        children.append(child)
+    }
+
+    var scope: LibraryScope? {
+        guard case .scope(let scope) = kind else { return nil }
+        return scope
+    }
+}
+
+@MainActor
+final class LibrarySourceOutlineView: NSOutlineView {
+    var contextMenuProvider: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let location = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: location)
+        guard clickedRow >= 0 else { return nil }
+        if !selectedRowIndexes.contains(clickedRow) {
+            selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
+        }
+        return contextMenuProvider?(clickedRow)
+    }
+}
+
+@MainActor
+final class LibrarySourceOutlineCellView: NSTableCellView {
+    let countLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        let title = NSTextField(labelWithString: "")
+        title.lineBreakMode = .byTruncatingTail
+        title.maximumNumberOfLines = 1
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        textField = title
+
+        let icon = NSImageView()
+        icon.imageScaling = .scaleProportionallyDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        imageView = icon
+
+        countLabel.setAccessibilityElement(false)
+        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
+        countLabel.alignment = .right
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        addSubview(icon)
+        addSubview(title)
+        addSubview(countLabel)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -6),
+            countLabel.trailingAnchor.constraint(
+                equalTo: trailingAnchor,
+                constant: -LibraryNotesLayout.sourceCountTrailingInset
+            ),
+            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            countLabel.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceCountWidth)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+final class LibrarySourceOutlineRowView: NSTableRowView {
+    static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
+    static let leadingInset: CGFloat = LibraryNotesLayout.sourceListLeadingInset
+    static let trailingInset: CGFloat = LibraryNotesLayout.sourceListTrailingInset
+    private var trackingAreaForHover: NSTrackingArea?
+    private(set) var isPointerHovered = false
+
+    override func updateTrackingAreas() {
+        if let trackingAreaForHover {
+            removeTrackingArea(trackingAreaForHover)
+        }
+        super.updateTrackingAreas()
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaForHover = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setPointerHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setPointerHovered(false)
+    }
+
+    func setPointerHovered(_ hovered: Bool) {
+        guard isPointerHovered != hovered else { return }
+        isPointerHovered = hovered
+        needsDisplay = true
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        super.drawBackground(in: dirtyRect)
+        guard isPointerHovered, !isSelected else { return }
+        Self.hoverColor.setFill()
+        NSBezierPath(
+            roundedRect: highlightBounds,
+            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+            yRadius: LibraryNotesLayout.sourceRowCornerRadius
+        ).fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        LibrarySourceSelectionPalette.backgroundColor.setFill()
+        NSBezierPath(
+            roundedRect: highlightBounds,
+            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+            yRadius: LibraryNotesLayout.sourceRowCornerRadius
+        ).fill()
+    }
+
+    private var highlightBounds: NSRect {
+        NSRect(
+            x: bounds.minX + Self.leadingInset,
+            y: bounds.minY + 1,
+            width: max(0, bounds.width - Self.leadingInset - Self.trailingInset),
+            height: max(0, bounds.height - 2)
+        )
+    }
+}
+
 enum LibraryNotesLayout {
     static let storedLayoutScaleVersion = 8
     static let initialWindowSize = NSSize(width: 921, height: 613)
@@ -423,7 +589,6 @@ enum LibraryNotesLayout {
     static let editorColumnMinimumWidth: CGFloat = 480
     static let noteTableInitialWidth: CGFloat = 174
     static let noteTableMinimumWidth: CGFloat = 174
-    static let sourceRowWidth: CGFloat = 180
     static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchWrapperWidth: CGFloat = 160
@@ -451,7 +616,6 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
     static let toolbarSymbolPointSize: CGFloat = 19
     static let sourceSymbolPointSize: CGFloat = 15
-    static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 32
     static let sourceSectionHeaderHeight: CGFloat = 22
@@ -463,15 +627,8 @@ enum LibraryNotesLayout {
     static let sourceSurfaceCornerRadius: CGFloat = 24
     static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
-    static let sourceInnerRowSpacing: CGFloat = 0
-    static let sourceSectionSpacing: CGFloat = 0
-    static let sourceHeaderToRowsSpacing: CGFloat = 4
-    static let sourceTagsSectionSpacing: CGFloat = 6
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceFolderIndentStep: CGFloat = 14
-    static let sourceDisclosureButtonWidth: CGFloat = 14
-    static let sourceDisclosureButtonHeight: CGFloat = 18
-    static let sourceDisclosureToButtonSpacing: CGFloat = 1
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
     static let noteGroupRowHeight: CGFloat = 45
@@ -926,259 +1083,6 @@ final class LibraryNoteRowView: NSTableRowView {
     }
 }
 
-@MainActor
-final class LibrarySourceRowView: NSView {
-    static let hoverHorizontalInset: CGFloat = 0
-    static let hoverVerticalInset: CGFloat = 1
-    static let hoverCornerRadius: CGFloat = LibraryNotesLayout.sourceRowCornerRadius
-    static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
-    static let dropHighlightColor = NSColor(calibratedWhite: 0.24, alpha: 0.80)
-    static let dropRejectedColor = NSColor(calibratedWhite: 0.36, alpha: 0.34)
-
-    var targetDirectory: URL?
-    var canDropNotes: (([URL], URL) -> Bool)?
-    var onDropNotes: (([URL], URL) -> Bool)?
-    private var hoverTrackingArea: NSTrackingArea?
-    private(set) var isPointerHovered = false
-    private(set) var isDropTargeted = false
-    private(set) var isDropRejected = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        registerForDraggedTypes([.fileURL])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func updateTrackingAreas() {
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-            self.hoverTrackingArea = nil
-        }
-        super.updateTrackingAreas()
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        hoverTrackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        setPointerHovered(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        setPointerHovered(false)
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        dragOperation(for: sender)
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        dragOperation(for: sender)
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        setDropTargeted(false)
-        setDropRejected(false)
-        let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
-        guard let targetDirectory,
-              !noteURLs.isEmpty else {
-            return false
-        }
-        return onDropNotes?(noteURLs, targetDirectory) ?? false
-    }
-
-    override func draggingExited(_ sender: NSDraggingInfo?) {
-        setDropTargeted(false)
-        setDropRejected(false)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        if isPointerHovered, !isDropTargeted, !isDropRejected {
-            let hoverRect = bounds.insetBy(
-                dx: Self.hoverHorizontalInset,
-                dy: Self.hoverVerticalInset
-            )
-            let hoverPath = NSBezierPath(
-                roundedRect: hoverRect,
-                xRadius: Self.hoverCornerRadius,
-                yRadius: Self.hoverCornerRadius
-            )
-            Self.hoverColor.setFill()
-            hoverPath.fill()
-        }
-
-        if isDropRejected {
-            let rejectedRect = bounds.insetBy(dx: 1, dy: 2)
-            let rejectedPath = NSBezierPath(
-                roundedRect: rejectedRect,
-                xRadius: LibraryNotesLayout.sourceRowCornerRadius,
-                yRadius: LibraryNotesLayout.sourceRowCornerRadius
-            )
-            rejectedPath.lineWidth = 1.5
-            Self.dropRejectedColor.setStroke()
-            rejectedPath.stroke()
-        }
-
-        guard isDropTargeted else { return }
-
-        let path = NSBezierPath(
-            roundedRect: bounds,
-            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
-            yRadius: LibraryNotesLayout.sourceRowCornerRadius
-        )
-        Self.dropHighlightColor.setFill()
-        path.fill()
-    }
-
-    func setPointerHovered(_ hovered: Bool) {
-        guard isPointerHovered != hovered else { return }
-        isPointerHovered = hovered
-        needsDisplay = true
-    }
-
-    func setDropTargeted(_ targeted: Bool) {
-        guard isDropTargeted != targeted else { return }
-        isDropTargeted = targeted
-        if targeted {
-            isDropRejected = false
-        }
-        needsDisplay = true
-    }
-
-    func setDropRejected(_ rejected: Bool) {
-        guard isDropRejected != rejected else { return }
-        isDropRejected = rejected
-        if rejected {
-            isDropTargeted = false
-        }
-        needsDisplay = true
-    }
-
-    private func dragOperation(for sender: NSDraggingInfo) -> NSDragOperation {
-        let noteURLs = draggedFileURLs(from: sender.draggingPasteboard)
-        guard targetDirectory != nil,
-              !noteURLs.isEmpty,
-              let targetDirectory else {
-            setDropTargeted(false)
-            setDropRejected(false)
-            return []
-        }
-        guard canDropNotes?(noteURLs, targetDirectory) == true else {
-            setDropRejected(true)
-            return []
-        }
-        setDropRejected(false)
-        setDropTargeted(true)
-        return .move
-    }
-
-    private func draggedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        let objects = pasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) ?? []
-        var seenPaths = Set<String>()
-        return objects.compactMap { object -> URL? in
-            let url: URL?
-            if let swiftURL = object as? URL {
-                url = swiftURL
-            } else if let nsURL = object as? NSURL {
-                url = nsURL as URL
-            } else {
-                url = nil
-            }
-            guard let url else { return nil }
-            let standardized = url.standardizedFileURL
-            guard standardized.isFileURL, seenPaths.insert(standardized.path).inserted else { return nil }
-            return standardized
-        }
-    }
-}
-
-@MainActor
-final class LibrarySourceButtonCell: NSButtonCell {
-    static let contentLeadingInset: CGFloat = 18
-
-    override func drawingRect(forBounds rect: NSRect) -> NSRect {
-        var drawingRect = super.drawingRect(forBounds: rect)
-        drawingRect.origin.x += Self.contentLeadingInset
-        drawingRect.size.width = max(0, drawingRect.width - Self.contentLeadingInset)
-        return drawingRect
-    }
-}
-
-fileprivate enum LibrarySourceKeyCommand {
-    case next
-    case previous
-    case enterHierarchy
-    case leaveHierarchy
-}
-
-@MainActor
-final class LibrarySourceButton: NSButton {
-    fileprivate var onKeyCommand: ((LibrarySourceKeyCommand) -> Bool)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func moveDown(_ sender: Any?) {
-        guard onKeyCommand?(.next) != true else { return }
-        super.moveDown(sender)
-    }
-
-    override func moveUp(_ sender: Any?) {
-        guard onKeyCommand?(.previous) != true else { return }
-        super.moveUp(sender)
-    }
-
-    override func moveRight(_ sender: Any?) {
-        guard onKeyCommand?(.enterHierarchy) != true else { return }
-        super.moveRight(sender)
-    }
-
-    override func moveLeft(_ sender: Any?) {
-        guard onKeyCommand?(.leaveHierarchy) != true else { return }
-        super.moveLeft(sender)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
-            super.keyDown(with: event)
-            return
-        }
-
-        let command: LibrarySourceKeyCommand?
-        switch event.keyCode {
-        case 123:
-            command = .leaveHierarchy
-        case 124:
-            command = .enterHierarchy
-        case 125:
-            command = .next
-        case 126:
-            command = .previous
-        default:
-            command = nil
-        }
-
-        if let command, onKeyCommand?(command) == true {
-            return
-        }
-        super.keyDown(with: event)
-    }
-}
-
 fileprivate enum LibraryNoteKeyCommand {
     case open
     case delete
@@ -1290,6 +1194,8 @@ final class LibraryWindowController: NSWindowController,
     NSToolbarItemValidation,
     NSTableViewDataSource,
     NSTableViewDelegate,
+    NSOutlineViewDataSource,
+    NSOutlineViewDelegate,
     NSSearchFieldDelegate,
     NSTextFieldDelegate,
     NSTextViewDelegate,
@@ -1297,6 +1203,7 @@ final class LibraryWindowController: NSWindowController,
     WindowOpacityAdjusting
 {
     let noteStore: NoteStore
+    let sourceOutlineView = LibrarySourceOutlineView()
     let tableView = LibraryNoteTableView()
     let searchField = NSSearchField(string: "")
     let searchScopeControl = NSSegmentedControl(
@@ -1376,8 +1283,11 @@ final class LibraryWindowController: NSWindowController,
     private var hasRequestedWindowPresentation = false
     private var hasHydratedInitialNoteList = false
     private var selectedScope: LibraryScope = .all
-    private var sourceButtons: [NSButton] = []
-    private var sourceCountLabels: [Int: NSTextField] = [:]
+    private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
+    private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
+    private var sourceOutlineItemsByScopeIdentifier: [String: LibrarySourceOutlineItem] = [:]
+    private var isSynchronizingSourceOutlineSelection = false
+    private var isRestoringSourceOutlineExpansion = false
     private var sourceFolderRows: [LibraryFolderRow] = []
     private var sourceFolderTreeRows: [LibraryFolderRow] = []
     private var sourceTagNames: [String] = []
@@ -1405,7 +1315,6 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsSectionCollapsed = false
     private var inlineFolderEditOperation: InlineFolderEditOperation?
     private var inlineFolderEditField: NSTextField?
-    private var inlineFolderEditRow: NSView?
     private var isCommittingInlineFolderEdit = false
     private var inlineFolderEditHasReceivedFocus = false
     private var linkEditorSheetController: LinkEditorSheetController?
@@ -1416,13 +1325,6 @@ final class LibraryWindowController: NSWindowController,
     private var librarySplitViewController: NSSplitViewController?
     private weak var sourceSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
-    private let sourcePrimaryStack = NSStackView()
-    private let sourceFolderStack = NSStackView()
-    private let sourceTrashStack = NSStackView()
-    private let sourceTagStack = NSStackView()
-    private let sourceFolderStatusLabel = NSTextField(labelWithString: "")
-    private let sourceTagStatusLabel = NSTextField(labelWithString: "")
-    private weak var sourceTagHeaderButton: NSButton?
     private static let sourceCountSnapshotLimit = 10_000
 
     let theme = MarkdownEditorTheme(
@@ -1944,62 +1846,58 @@ final class LibraryWindowController: NSWindowController,
         ).cgColor
         sourceList.addSubview(darkeningView)
         pin(darkeningView, to: sourceList)
-
-        configureSourceStack(sourcePrimaryStack)
-        configureSourceStack(sourceFolderStack)
-        configureSourceStack(sourceTrashStack)
-        configureSourceStack(sourceTagStack)
-        sourcePrimaryStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourcePrimaryStack")
-        sourceFolderStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFolderStack")
-        sourceTrashStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTrashStack")
-        sourceTagStack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceTagStack")
-        configureSourceStatusLabel(
-            sourceFolderStatusLabel,
-            identifier: "LibrarySourceFolderStatus"
-        )
-        configureSourceStatusLabel(
-            sourceTagStatusLabel,
-            identifier: "LibrarySourceTagStatus"
-        )
-
-        let libraryHeader = makeSourceGroupLabel("iCloud", identifier: "LibrarySourceGroup-iCloud")
-        let tagHeader = makeSourceSectionHeader(.tags)
-        sourceTagHeaderButton = tagHeader
-
         sourceFolderTreeRows = rootFolderRowsForSourceList()
         sourceFolderRows = sourceFolderTreeRows
-        rebuildSourceRows(includeTags: sourceTagsLoaded)
 
-        let stack = NSStackView(views: [
-            libraryHeader,
-            sourcePrimaryStack,
-            sourceFolderStack,
-            sourceTrashStack,
-            tagHeader,
-            sourceTagStack,
-            NSView()
-        ])
-        stack.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRootStack")
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = LibraryNotesLayout.sourceSectionSpacing
-        stack.setCustomSpacing(LibraryNotesLayout.sourceHeaderToRowsSpacing, after: libraryHeader)
-        stack.setCustomSpacing(LibraryNotesLayout.sourceTagsSectionSpacing, after: sourceTrashStack)
-        stack.edgeInsets = NSEdgeInsets(
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("LibrarySourceColumn"))
+        column.resizingMask = .autoresizingMask
+        sourceOutlineView.addTableColumn(column)
+        sourceOutlineView.outlineTableColumn = column
+        sourceOutlineView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceOutline")
+        sourceOutlineView.setAccessibilityLabel("资料库")
+        sourceOutlineView.headerView = nil
+        sourceOutlineView.backgroundColor = .clear
+        sourceOutlineView.style = .sourceList
+        sourceOutlineView.selectionHighlightStyle = .regular
+        sourceOutlineView.allowsEmptySelection = false
+        sourceOutlineView.allowsMultipleSelection = false
+        sourceOutlineView.indentationPerLevel = LibraryNotesLayout.sourceFolderIndentStep
+        sourceOutlineView.rowSizeStyle = .custom
+        sourceOutlineView.intercellSpacing = .zero
+        sourceOutlineView.delegate = self
+        sourceOutlineView.dataSource = self
+        sourceOutlineView.registerForDraggedTypes([.fileURL])
+        sourceOutlineView.setDraggingSourceOperationMask([], forLocal: false)
+        sourceOutlineView.contextMenuProvider = { [weak self] row in
+            guard let self,
+                  let item = self.sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem,
+                  case .folder(let folderURL)? = item.scope else { return nil }
+            return self.makeFolderContextMenu(for: folderURL)
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceScroll")
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = sourceOutlineView
+        scrollView.contentInsets = NSEdgeInsets(
             top: LibraryNotesLayout.sourceListTopInset,
             left: LibraryNotesLayout.sourceListLeadingInset,
             bottom: LibraryNotesLayout.sourceListBottomInset,
             right: LibraryNotesLayout.sourceListTrailingInset
         )
-        sourceList.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: -4)
+        sourceList.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: sourceList.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: sourceList.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: sourceList.safeAreaLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: sourceList.bottomAnchor)
+            scrollView.leadingAnchor.constraint(equalTo: sourceList.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: sourceList.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: sourceList.safeAreaLayoutGuide.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: sourceList.bottomAnchor)
         ])
-        refreshSourceSelection()
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
 
         return sourceList
     }
@@ -2926,110 +2824,162 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
     }
 
-    private func configureSourceStack(_ stack: NSStackView) {
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = LibraryNotesLayout.sourceInnerRowSpacing
-    }
-
-    private func configureSourceStatusLabel(_ label: NSTextField, identifier: String) {
-        label.identifier = NSUserInterfaceItemIdentifier(identifier)
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = panelTertiaryTextColor().withAlphaComponent(0.82)
-        label.alignment = .left
-        label.lineBreakMode = .byTruncatingTail
-        label.maximumNumberOfLines = 1
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceStatusRowHeight).isActive = true
-        label.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
-    }
-
-    private func makeSourceGroupLabel(_ title: String, identifier: String) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.identifier = NSUserInterfaceItemIdentifier(identifier)
-        label.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
-        label.textColor = panelTertiaryTextColor()
-        label.alignment = .left
-        label.lineBreakMode = .byTruncatingTail
-        return label
-    }
-
-    private func makeSourceSectionHeader(_ section: LibrarySourceSection) -> NSButton {
-        let button = NSButton(
-            title: section.title,
-            image: sourceSectionDisclosureImage(for: section) ?? NSImage(),
-            target: self,
-            action: #selector(sourceSectionDisclosurePressed(_:))
-        )
-        button.identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-\(section.identifier)")
-        button.tag = section.rawValue
-        button.isBordered = false
-        button.bezelStyle = .shadowlessSquare
-        button.imagePosition = .imageLeading
-        button.imageHugsTitle = true
-        button.alignment = .left
-        button.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
-        button.contentTintColor = panelTertiaryTextColor()
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceSectionHeaderHeight).isActive = true
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
-        return button
-    }
-
-    private func sourceSectionDisclosureImage(for section: LibrarySourceSection) -> NSImage? {
-        let symbolName = isSourceSectionCollapsed(section) ? "chevron.right" : "chevron.down"
-        return NSImage(systemSymbolName: symbolName, accessibilityDescription: section.title)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
-                weight: .semibold
-            ))
-    }
-
     private func rebuildSourceRows(includeTags: Bool) {
-        sourceButtons.removeAll()
-        sourceCountLabels.removeAll()
-        removeArrangedSubviews(from: sourcePrimaryStack)
-        removeArrangedSubviews(from: sourceFolderStack)
-        removeArrangedSubviews(from: sourceTrashStack)
-        removeArrangedSubviews(from: sourceTagStack)
-
-        sourcePrimaryStack.addArrangedSubview(makeScopeRow(.all, tag: 0))
-
-        updateSourceFolderStatus()
-        if !sourceFoldersSectionCollapsed {
-            for (index, folderRow) in sourceFolderRows.enumerated() {
-                if case .rename(let folderURL) = inlineFolderEditOperation,
-                   folderURL.standardizedFileURL.path == folderRow.url.standardizedFileURL.path {
-                    continue
-                }
-                sourceFolderStack.addArrangedSubview(makeScopeRow(
-                    .folder(folderRow.url),
-                    tag: 10 + index,
-                    folderRow: folderRow
-                ))
-            }
-            insertInlineFolderEditRowIfNeeded()
-            if inlineFolderEditOperation == nil, !sourceFolderStatusLabel.stringValue.isEmpty {
-                sourceFolderStack.addArrangedSubview(sourceFolderStatusLabel)
-            }
-        }
-        sourceTrashStack.addArrangedSubview(makeScopeRow(.trash, tag: 3))
-
+        let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
+        isSynchronizingSourceOutlineSelection = true
+        defer { isSynchronizingSourceOutlineSelection = wasSynchronizingSelection }
         if !includeTags {
             sourceTagNames = []
         }
-        updateSourceTagStatus()
-        updateSourceTagHeaderPresentation()
-        if !sourceTagsSectionCollapsed {
-            for (index, tag) in sourceTagNames.enumerated() {
-                sourceTagStack.addArrangedSubview(makeScopeRow(.tag(tag), tag: 100 + index))
-            }
-            if !sourceTagStatusLabel.stringValue.isEmpty {
-                sourceTagStack.addArrangedSubview(sourceTagStatusLabel)
+
+        sourceOutlineItemsByIdentifier.removeAll(keepingCapacity: true)
+        sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
+        var roots: [LibrarySourceOutlineItem] = []
+
+        roots.append(makeSourceOutlineItem(
+            identifier: "group:icloud",
+            kind: .group(title: "iCloud", section: nil)
+        ))
+        roots.append(makeSourceOutlineScopeItem(.all))
+
+        if !sourceFoldersSectionCollapsed {
+            roots.append(contentsOf: makeSourceFolderOutlineRoots())
+            if inlineFolderEditOperation == nil {
+                if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
+                    roots.append(makeSourceOutlineItem(
+                        identifier: "status:folders:loading",
+                        kind: .status("Loading Folders...")
+                    ))
+                } else if sourceFolderTreeRows.isEmpty {
+                    roots.append(makeSourceOutlineItem(
+                        identifier: "status:folders:empty",
+                        kind: .status("No Folders")
+                    ))
+                }
             }
         }
+
+        roots.append(makeSourceOutlineScopeItem(.trash))
+        roots.append(makeSourceOutlineItem(
+            identifier: "group:tags",
+            kind: .group(title: "Tags", section: .tags)
+        ))
+        if !sourceTagsSectionCollapsed {
+            roots.append(contentsOf: sourceTagNames.map { makeSourceOutlineScopeItem(.tag($0)) })
+        }
+
+        sourceOutlineRootItems = roots
+        sourceOutlineView.reloadData()
+        restoreSourceOutlineExpansion()
         refreshSourceCounts(using: sourceCountSnapshot)
         refreshSourceSelection()
+        focusInlineFolderEditField()
+    }
+
+    private func makeSourceOutlineItem(
+        identifier: String,
+        kind: LibrarySourceOutlineItem.Kind
+    ) -> LibrarySourceOutlineItem {
+        let item = LibrarySourceOutlineItem(identifier: identifier, kind: kind)
+        sourceOutlineItemsByIdentifier[identifier] = item
+        if let scope = item.scope {
+            sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: scope)] = item
+        }
+        return item
+    }
+
+    private func makeSourceOutlineScopeItem(_ scope: LibraryScope) -> LibrarySourceOutlineItem {
+        makeSourceOutlineItem(
+            identifier: sourceOutlineIdentifier(for: scope),
+            kind: .scope(scope)
+        )
+    }
+
+    private func sourceOutlineIdentifier(for scope: LibraryScope) -> String {
+        switch scope {
+        case .all:
+            return "scope:all"
+        case .recent:
+            return "scope:recent"
+        case .inbox:
+            return "scope:inbox"
+        case .folder(let url):
+            return "scope:folder:\(url.standardizedFileURL.path)"
+        case .tag(let tag):
+            return "scope:tag:\(tag.folding(options: [.caseInsensitive], locale: .current))"
+        case .trash:
+            return "scope:trash"
+        }
+    }
+
+    private func makeSourceFolderOutlineRoots() -> [LibrarySourceOutlineItem] {
+        var roots: [LibrarySourceOutlineItem] = []
+        var ancestors: [LibrarySourceOutlineItem] = []
+
+        for folderRow in sourceFolderTreeRows {
+            while ancestors.count > folderRow.depth {
+                ancestors.removeLast()
+            }
+
+            let folderPath = folderRow.url.standardizedFileURL.path
+            let item: LibrarySourceOutlineItem
+            if case .rename(let folderURL) = inlineFolderEditOperation,
+               folderURL.standardizedFileURL.path == folderPath {
+                item = makeSourceOutlineItem(
+                    identifier: "inline:rename:\(folderPath)",
+                    kind: .inlineFolderEdit(.rename(folderURL: folderRow.url))
+                )
+            } else {
+                item = makeSourceOutlineScopeItem(.folder(folderRow.url))
+            }
+
+            if let parent = ancestors.last {
+                parent.append(item)
+            } else {
+                roots.append(item)
+            }
+            ancestors.append(item)
+        }
+
+        if case .create(let parentURL) = inlineFolderEditOperation {
+            let editItem = makeSourceOutlineItem(
+                identifier: "inline:create:\(parentURL.standardizedFileURL.path)",
+                kind: .inlineFolderEdit(.create(parentURL: parentURL))
+            )
+            if let parent = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: .folder(parentURL))] {
+                parent.children.insert(editItem, at: 0)
+                editItem.parent = parent
+            } else {
+                roots.insert(editItem, at: 0)
+            }
+        }
+
+        return roots
+    }
+
+    private func restoreSourceOutlineExpansion() {
+        isRestoringSourceOutlineExpansion = true
+        defer { isRestoringSourceOutlineExpansion = false }
+        for folderRow in sourceFolderTreeRows where folderRow.hasChildren {
+            let path = folderRow.url.standardizedFileURL.path
+            guard isSourceFolderExpanded(path: path, depth: folderRow.depth),
+                  let item = sourceOutlineItemsByScopeIdentifier[
+                    sourceOutlineIdentifier(for: .folder(folderRow.url))
+                  ] ?? sourceOutlineItemsByIdentifier["inline:rename:\(path)"] else {
+                continue
+            }
+            sourceOutlineView.expandItem(item, expandChildren: false)
+        }
+        if let editItem = sourceOutlineItemsByIdentifier.values.first(where: {
+            if case .inlineFolderEdit = $0.kind { return true }
+            return false
+        }) {
+            var parent = editItem.parent
+            while let current = parent {
+                sourceOutlineView.expandItem(current, expandChildren: false)
+                parent = current.parent
+            }
+        }
     }
 
     private func isSourceSectionCollapsed(_ section: LibrarySourceSection) -> Bool {
@@ -3039,32 +2989,6 @@ final class LibraryWindowController: NSWindowController,
         case .tags:
             return sourceTagsSectionCollapsed
         }
-    }
-
-    private func updateSourceFolderStatus() {
-        if !sourceFoldersLoaded && sourceFolderRows.isEmpty {
-            sourceFolderStatusLabel.stringValue = "Loading Folders..."
-        } else if sourceFolderRows.isEmpty {
-            sourceFolderStatusLabel.stringValue = "No Folders"
-        } else {
-            sourceFolderStatusLabel.stringValue = ""
-        }
-    }
-
-    private func updateSourceTagStatus() {
-        sourceTagStatusLabel.stringValue = ""
-    }
-
-    private func updateSourceTagHeaderPresentation() {
-        guard let button = sourceTagHeaderButton else { return }
-        if sourceTagsLoaded && sourceTagNames.isEmpty {
-            button.image = nil
-            button.imagePosition = .noImage
-        } else {
-            button.image = sourceSectionDisclosureImage(for: .tags)
-            button.imagePosition = .imageLeading
-        }
-        button.imageHugsTitle = true
     }
 
     private func scheduleDeferredSourceFolderLoad() {
@@ -3132,13 +3056,6 @@ final class LibraryWindowController: NSWindowController,
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
-    private func removeArrangedSubviews(from stack: NSStackView) {
-        for view in stack.arrangedSubviews {
-            stack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-    }
-
     private func reloadSourceFolderRowsForCurrentState() {
         sourceFoldersLoaded = true
         sourceFoldersLoading = false
@@ -3156,6 +3073,27 @@ final class LibraryWindowController: NSWindowController,
             expandedFolderPaths: expandedFolderPaths
         )
         rebuildSourceRows(includeTags: sourceTagsLoaded)
+    }
+
+    private func projectSourceFolderTreeRows(_ treeRows: [LibraryFolderRow]) {
+        guard !sourceFoldersLoaded else {
+            applySourceFolderTreeRows(treeRows)
+            return
+        }
+
+        let wasLoading = sourceFoldersLoading
+        sourceFolderLoadGeneration += 1
+        sourceFolderTreeRows = treeRows
+        sourceFolderRows = Self.visibleFolderRowsForSourceList(
+            from: sourceFolderTreeRows,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
+        if !wasLoading {
+            sourceFoldersLoading = false
+            scheduleDeferredSourceFolderLoad()
+        }
     }
 
     private func rootFolderRowsForSourceList() -> [LibraryFolderRow] {
@@ -3289,148 +3227,6 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func makeScopeRow(_ scope: LibraryScope, tag: Int, folderRow: LibraryFolderRow? = nil) -> NSView {
-        let row = LibrarySourceRowView()
-        row.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(tag)")
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight).isActive = true
-        row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
-
-        let button = makeScopeButton(scope, tag: tag)
-        if case .folder(let folderURL) = scope {
-            let menu = makeFolderContextMenu(for: folderURL)
-            row.menu = menu
-            row.targetDirectory = folderURL
-            row.canDropNotes = { [weak self] noteURLs, targetDirectory in
-                self?.canMoveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) ?? false
-            }
-            row.onDropNotes = { [weak self] noteURLs, targetDirectory in
-                guard let movedURLs = try? self?.moveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) else {
-                    return false
-                }
-                return !movedURLs.isEmpty
-            }
-            button.menu = menu
-        }
-        let overlay = PassthroughOverlayView()
-        overlay.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCountOverlay-\(tag)")
-        let countLabel = NSTextField(labelWithString: "")
-        countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(tag)")
-        countLabel.setAccessibilityElement(false)
-        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
-        countLabel.textColor = panelTertiaryTextColor()
-        countLabel.alignment = .right
-        let depth = folderRow?.depth ?? 0
-        let leadingInset = CGFloat(depth) * LibraryNotesLayout.sourceFolderIndentStep
-
-        row.addSubview(button)
-        row.addSubview(overlay, positioned: .above, relativeTo: button)
-        overlay.addSubview(countLabel)
-        let chevronButton = folderRow.flatMap { makeFolderDisclosureButton(for: $0, tag: tag) }
-        if let chevronButton {
-            row.addSubview(chevronButton)
-            chevronButton.translatesAutoresizingMaskIntoConstraints = false
-        }
-
-        button.translatesAutoresizingMaskIntoConstraints = false
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        countLabel.translatesAutoresizingMaskIntoConstraints = false
-        var constraints = [
-            button.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            button.topAnchor.constraint(equalTo: row.topAnchor),
-            button.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            overlay.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: row.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: row.bottomAnchor),
-            countLabel.trailingAnchor.constraint(
-                equalTo: overlay.trailingAnchor,
-                constant: -LibraryNotesLayout.sourceCountTrailingInset
-            ),
-            countLabel.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
-            countLabel.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceCountWidth)
-        ]
-        if let chevronButton {
-            constraints.append(contentsOf: [
-                chevronButton.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
-                chevronButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-                chevronButton.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceDisclosureButtonWidth),
-                chevronButton.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceDisclosureButtonHeight),
-                button.leadingAnchor.constraint(
-                    equalTo: chevronButton.trailingAnchor,
-                    constant: LibraryNotesLayout.sourceDisclosureToButtonSpacing
-                )
-            ])
-        } else {
-            constraints.append(button.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset))
-        }
-        NSLayoutConstraint.activate(constraints)
-
-        sourceButtons.append(button)
-        sourceCountLabels[tag] = countLabel
-        return row
-    }
-
-    private func makeFolderDisclosureButton(for folderRow: LibraryFolderRow, tag: Int) -> NSButton? {
-        guard folderRow.hasChildren else { return nil }
-        let isCollapsed = !isSourceFolderExpanded(path: folderRow.url.standardizedFileURL.path, depth: folderRow.depth)
-        let symbolName = isCollapsed ? "chevron.right" : "chevron.down"
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "展开或折叠文件夹")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                pointSize: LibraryNotesLayout.sourceDisclosureSymbolPointSize,
-                weight: .semibold
-            ))
-        let button = NSButton(
-            image: image ?? NSImage(),
-            target: self,
-            action: #selector(folderDisclosurePressed(_:))
-        )
-        let folderName = folderTitle(for: folderRow.url)
-        button.setAccessibilityLabel(isCollapsed ? "展开 \(folderName)" : "折叠 \(folderName)")
-        button.identifier = NSUserInterfaceItemIdentifier("LibraryFolderDisclosure-\(tag)")
-        button.tag = tag
-        button.isBordered = false
-        button.bezelStyle = .shadowlessSquare
-        button.imagePosition = .imageOnly
-        button.contentTintColor = panelTertiaryTextColor()
-        return button
-    }
-
-    private func makeScopeButton(_ scope: LibraryScope, tag: Int) -> NSButton {
-        let title = sourceTitle(for: scope)
-        let button = LibrarySourceButton(title: title, target: self, action: #selector(scopeButtonPressed(_:)))
-        button.cell = LibrarySourceButtonCell(textCell: title)
-        button.target = self
-        button.action = #selector(scopeButtonPressed(_:))
-        button.identifier = NSUserInterfaceItemIdentifier("LibrarySourceButton-\(tag)")
-        button.setAccessibilityLabel(title)
-        button.tag = tag
-        button.image = NSImage(systemSymbolName: scope.symbolName, accessibilityDescription: title)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-                weight: LibraryNotesLayout.sourceSymbolWeight
-            ))
-        button.imagePosition = .imageLeading
-        button.imageHugsTitle = true
-        button.alignment = .left
-        button.isBordered = false
-        button.bezelStyle = .shadowlessSquare
-        button.focusRingType = .none
-        button.font = .systemFont(
-            ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
-        )
-        button.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
-        button.wantsLayer = true
-        button.layer?.cornerRadius = LibraryNotesLayout.sourceRowCornerRadius
-        button.layer?.cornerCurve = .continuous
-        button.onKeyCommand = { [weak self, weak button] command in
-            guard let self, let button else { return false }
-            return self.handleSourceKeyCommand(command, from: button)
-        }
-        return button
-    }
-
     private func sourceTitle(for scope: LibraryScope) -> String {
         switch scope {
         case .folder(let url):
@@ -3459,111 +3255,118 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceSelection() {
-        for button in sourceButtons {
-            let isSelected = scope(for: button) == selectedScope
-            button.layer?.backgroundColor = isSelected
-                ? LibrarySourceSelectionPalette.backgroundColor.cgColor
-                : NSColor.clear.cgColor
-            button.contentTintColor = isSelected
-                ? LibrarySourceSelectionPalette.foregroundColor
-                : LibrarySourceSelectionPalette.unselectedForegroundColor
-            button.font = .systemFont(
-                ofSize: LibraryNotesLayout.sourceButtonFontSize,
-                weight: isSelected
-                    ? LibraryNotesLayout.sourceSelectedButtonFontWeight
-                    : LibraryNotesLayout.sourceUnselectedButtonFontWeight
-            )
-            sourceCountLabels[button.tag]?.textColor = isSelected
-                ? LibrarySourceSelectionPalette.selectedCountColor
-                : panelTertiaryTextColor()
+        guard let item = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: selectedScope)] else {
+            return
+        }
+        let row = sourceOutlineView.row(forItem: item)
+        guard row >= 0 else { return }
+        let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
+        isSynchronizingSourceOutlineSelection = true
+        sourceOutlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        isSynchronizingSourceOutlineSelection = wasSynchronizingSelection
+        refreshVisibleSourceOutlinePresentation()
+    }
+
+    private func refreshVisibleSourceOutlinePresentation() {
+        let visibleRows = sourceOutlineView.rows(in: sourceOutlineView.visibleRect)
+        guard visibleRows.location != NSNotFound else { return }
+        for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
+            guard let item = sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem,
+                  let cell = sourceOutlineView.view(
+                    atColumn: 0,
+                    row: row,
+                    makeIfNecessary: false
+                  ) as? LibrarySourceOutlineCellView else {
+                continue
+            }
+            configureSourceOutlineCell(cell, for: item)
         }
     }
 
-    private func handleSourceKeyCommand(_ command: LibrarySourceKeyCommand, from button: NSButton) -> Bool {
-        guard let currentIndex = sourceButtons.firstIndex(where: { $0 === button }) else {
-            return false
-        }
-
-        switch command {
-        case .next:
-            return activateSourceButton(at: currentIndex + 1)
-        case .previous:
-            return activateSourceButton(at: currentIndex - 1)
-        case .enterHierarchy:
-            return enterSourceFolderHierarchy(from: button)
-        case .leaveHierarchy:
-            return leaveSourceFolderHierarchy(from: button)
+    func sourceTitlesForLibrary() -> [String] {
+        sourceOutlineItemsByScopeIdentifier.values.compactMap { item in
+            item.scope.map(sourceTitle(for:))
         }
     }
 
-    private func activateSourceButton(at index: Int) -> Bool {
-        guard sourceButtons.indices.contains(index) else { return true }
+    var selectedSourceTitleForLibrary: String {
+        sourceTitle(for: selectedScope)
+    }
 
-        let target = sourceButtons[index]
-        target.performClick(nil)
-        target.window?.makeFirstResponder(target)
+    func visibleSourceTitlesForLibrary() -> [String] {
+        (0..<sourceOutlineView.numberOfRows).compactMap { row in
+            guard let item = sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem,
+                  let scope = item.scope else { return nil }
+            return sourceTitle(for: scope)
+        }
+    }
+
+    @discardableResult
+    func selectSourceForLibrary(titled title: String) -> Bool {
+        guard let item = sourceOutlineItemsByScopeIdentifier.values.first(where: {
+            guard let scope = $0.scope else { return false }
+            return sourceTitle(for: scope).localizedCaseInsensitiveCompare(title) == .orderedSame
+        }) else { return false }
+        var parent = item.parent
+        while let current = parent {
+            sourceOutlineView.expandItem(current, expandChildren: false)
+            parent = current.parent
+        }
+        let row = sourceOutlineView.row(forItem: item)
+        guard row >= 0 else { return false }
+        let scope = item.scope
+        let previousScope = selectedScope
+        sourceOutlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        if let scope, selectedScope != scope || selectedScope == previousScope {
+            guard activateSourceScope(scope) else { return false }
+        }
+        sourceOutlineView.scrollRowToVisible(row)
+        sourceOutlineView.window?.makeFirstResponder(sourceOutlineView)
         return true
     }
 
-    private func enterSourceFolderHierarchy(from button: NSButton) -> Bool {
-        guard case .folder(let folderURL) = scope(for: button),
-              let folderIndex = sourceFolderRows.firstIndex(where: {
-                  $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
-              }) else {
-            return true
+    @discardableResult
+    func setSourceFolderExpandedForLibrary(_ folderURL: URL, expanded: Bool) -> Bool {
+        guard let item = sourceOutlineItemsByScopeIdentifier[
+            sourceOutlineIdentifier(for: .folder(folderURL))
+        ], !item.children.isEmpty else { return false }
+        if expanded {
+            sourceOutlineView.expandItem(item, expandChildren: false)
+        } else {
+            sourceOutlineView.collapseItem(item, collapseChildren: true)
         }
-        let folderRow = sourceFolderRows[folderIndex]
-        guard folderRow.hasChildren else { return true }
-
-        if !isSourceFolderExpanded(path: folderURL.standardizedFileURL.path, depth: folderRow.depth) {
-            toggleSourceFolderDisclosure(at: folderIndex)
-            focusSourceButton(for: .folder(folderURL))
-            return true
-        }
-
-        let childIndex = folderIndex + 1
-        guard sourceFolderRows.indices.contains(childIndex),
-              sourceFolderRows[childIndex].depth == folderRow.depth + 1 else {
-            return true
-        }
-        focusAndActivateSourceButton(for: .folder(sourceFolderRows[childIndex].url))
         return true
     }
 
-    private func leaveSourceFolderHierarchy(from button: NSButton) -> Bool {
-        guard case .folder(let folderURL) = scope(for: button),
-              let folderIndex = sourceFolderRows.firstIndex(where: {
-                  $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
-              }) else {
-            return true
-        }
-        let folderRow = sourceFolderRows[folderIndex]
-        if folderRow.hasChildren,
-           isSourceFolderExpanded(path: folderURL.standardizedFileURL.path, depth: folderRow.depth) {
-            toggleSourceFolderDisclosure(at: folderIndex)
-            focusSourceButton(for: .folder(folderURL))
-            return true
-        }
-
-        guard folderRow.depth > 0,
-              let parentIndex = stride(from: folderIndex - 1, through: 0, by: -1).first(where: {
-                  sourceFolderRows[$0].depth == folderRow.depth - 1
-              }) else {
-            return true
-        }
-        focusAndActivateSourceButton(for: .folder(sourceFolderRows[parentIndex].url))
-        return true
+    func isSourceFolderExpandedForLibrary(_ folderURL: URL) -> Bool {
+        guard let item = sourceOutlineItemsByScopeIdentifier[
+            sourceOutlineIdentifier(for: .folder(folderURL))
+        ] else { return false }
+        return sourceOutlineView.isItemExpanded(item)
     }
 
-    private func focusAndActivateSourceButton(for targetScope: LibraryScope) {
-        guard let button = sourceButtons.first(where: { scope(for: $0) == targetScope }) else { return }
-        button.performClick(nil)
-        button.window?.makeFirstResponder(button)
+    func sourceCountTextForLibrary(titled title: String) -> String? {
+        guard let item = sourceOutlineItemsByScopeIdentifier.values.first(where: {
+            guard let scope = $0.scope else { return false }
+            return sourceTitle(for: scope).localizedCaseInsensitiveCompare(title) == .orderedSame
+        }), let scope = item.scope else { return nil }
+        return sourceCountText(item.count, for: scope)
     }
 
-    private func focusSourceButton(for targetScope: LibraryScope) {
-        guard let button = sourceButtons.first(where: { scope(for: $0) == targetScope }) else { return }
-        button.window?.makeFirstResponder(button)
+    func toggleSourceTagsSectionForLibrary() {
+        toggleSourceSection(.tags)
+    }
+
+    var sourceOutlineInstantiatedCellCountForLibrary: Int {
+        let visibleRows = sourceOutlineView.rows(in: sourceOutlineView.visibleRect)
+        guard visibleRows.location != NSNotFound else { return 0 }
+        return (visibleRows.location..<(visibleRows.location + visibleRows.length)).reduce(into: 0) {
+            count, row in
+            if sourceOutlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                is LibrarySourceOutlineCellView {
+                count += 1
+            }
+        }
     }
 
     private func currentSourceFolderPaths() -> Set<String> {
@@ -3620,9 +3423,10 @@ final class LibraryWindowController: NSWindowController,
         countIndex: LibrarySourceCountIndex
     ) {
 
-        for button in sourceButtons {
+        for item in sourceOutlineItemsByScopeIdentifier.values {
+            guard let scope = item.scope else { continue }
             let count: Int
-            switch scope(for: button) {
+            switch scope {
             case .all:
                 count = allNotesCount
             case .recent:
@@ -3636,9 +3440,9 @@ final class LibraryWindowController: NSWindowController,
             case .tag(let tag):
                 count = countIndex.count(forTag: tag)
             }
-            sourceCountLabels[button.tag]?.stringValue = sourceCountText(count, for: scope(for: button))
-            button.setAccessibilityValue("\(count) 条笔记")
+            item.count = count
         }
+        refreshVisibleSourceOutlinePresentation()
     }
 
     private func sourceCountText(_ count: Int, for scope: LibraryScope) -> String {
@@ -3999,6 +3803,389 @@ final class LibraryWindowController: NSWindowController,
         return listRows[row].note
     }
 
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        guard outlineView === sourceOutlineView else { return 0 }
+        if let item = item as? LibrarySourceOutlineItem {
+            return item.children.count
+        }
+        return sourceOutlineRootItems.count
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        if let item = item as? LibrarySourceOutlineItem {
+            return item.children[index]
+        }
+        return sourceOutlineRootItems[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem else { return false }
+        return !item.children.isEmpty
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        viewFor tableColumn: NSTableColumn?,
+        item: Any
+    ) -> NSView? {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem else { return nil }
+
+        switch item.kind {
+        case .group(let title, let section):
+            let identifier = NSUserInterfaceItemIdentifier(
+                section == .tags ? "LibrarySourceGroup-Tags" : "LibrarySourceGroup-iCloud"
+            )
+            let cell = (outlineView.makeView(withIdentifier: identifier, owner: nil) as? NSTableCellView)
+                ?? NSTableCellView()
+            cell.identifier = identifier
+            let label = cell.textField ?? NSTextField(labelWithString: "")
+            if label.superview == nil {
+                cell.textField = label
+                cell.addSubview(label)
+                label.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: section == .tags ? 0 : 4),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                ])
+            }
+            label.stringValue = title
+            label.identifier = identifier
+            label.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
+            label.textColor = panelTertiaryTextColor()
+            return cell
+        case .status(let message):
+            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceStatusCell")
+            let cell = (outlineView.makeView(withIdentifier: identifier, owner: nil) as? NSTableCellView)
+                ?? NSTableCellView()
+            cell.identifier = identifier
+            let label = cell.textField ?? NSTextField(labelWithString: "")
+            if label.superview == nil {
+                cell.textField = label
+                cell.addSubview(label)
+                label.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 18),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                ])
+            }
+            label.identifier = NSUserInterfaceItemIdentifier(
+                item.identifier.contains("folders") ? "LibrarySourceFolderStatus" : "LibrarySourceTagStatus"
+            )
+            label.stringValue = message
+            label.font = .systemFont(ofSize: 12, weight: .medium)
+            label.textColor = panelTertiaryTextColor().withAlphaComponent(0.82)
+            return cell
+        case .inlineFolderEdit(let operation):
+            return makeSourceOutlineInlineEditCell(for: operation, item: item)
+        case .scope:
+            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceOutlineCell")
+            let cell: LibrarySourceOutlineCellView
+            if let reused = outlineView.makeView(withIdentifier: identifier, owner: nil)
+                as? LibrarySourceOutlineCellView {
+                cell = reused
+            } else {
+                cell = LibrarySourceOutlineCellView()
+                cell.identifier = identifier
+            }
+            configureSourceOutlineCell(cell, for: item)
+            return cell
+        }
+    }
+
+    private func configureSourceOutlineCell(
+        _ cell: LibrarySourceOutlineCellView,
+        for item: LibrarySourceOutlineItem
+    ) {
+        guard let scope = item.scope else { return }
+        let title = sourceTitle(for: scope)
+        let isSelected = selectedScope == scope
+        let legacyTag = sourceLegacyTag(for: scope)
+        cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
+        cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
+        cell.countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(legacyTag)")
+        cell.textField?.stringValue = title
+        cell.textField?.font = .systemFont(
+            ofSize: LibraryNotesLayout.sourceButtonFontSize,
+            weight: isSelected
+                ? LibraryNotesLayout.sourceSelectedButtonFontWeight
+                : LibraryNotesLayout.sourceUnselectedButtonFontWeight
+        )
+        cell.textField?.textColor = isSelected
+            ? LibrarySourceSelectionPalette.foregroundColor
+            : LibrarySourceSelectionPalette.unselectedForegroundColor
+        cell.imageView?.image = NSImage(
+            systemSymbolName: scope.symbolName,
+            accessibilityDescription: title
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+            weight: LibraryNotesLayout.sourceSymbolWeight
+        ))
+        cell.imageView?.contentTintColor = cell.textField?.textColor
+        cell.countLabel.stringValue = sourceCountText(item.count, for: scope)
+        cell.countLabel.textColor = isSelected
+            ? LibrarySourceSelectionPalette.selectedCountColor
+            : panelTertiaryTextColor()
+        cell.setAccessibilityLabel(title)
+        cell.setAccessibilityValue("\(item.count) 条笔记")
+    }
+
+    private func sourceLegacyTag(for scope: LibraryScope) -> Int {
+        switch scope {
+        case .all:
+            return 0
+        case .recent:
+            return 1
+        case .inbox:
+            return 2
+        case .trash:
+            return 3
+        case .folder(let folderURL):
+            let folderPath = folderURL.standardizedFileURL.path
+            return 10 + (sourceFolderTreeRows.firstIndex {
+                $0.url.standardizedFileURL.path == folderPath
+            } ?? 0)
+        case .tag(let tag):
+            return 100 + (sourceTagNames.firstIndex {
+                $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
+            } ?? 0)
+        }
+    }
+
+    private func makeSourceOutlineInlineEditCell(
+        for operation: InlineFolderEditOperation,
+        item: LibrarySourceOutlineItem
+    ) -> NSView {
+        let cell = NSTableCellView()
+        cell.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditRow")
+
+        let icon = NSImageView(image: NSImage(
+            systemSymbolName: "folder",
+            accessibilityDescription: "文件夹"
+        ) ?? NSImage())
+        icon.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+            weight: LibraryNotesLayout.sourceSymbolWeight
+        )
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        let field = NSTextField(string: operation.initialName)
+        field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditField")
+        field.delegate = self
+        field.font = .systemFont(
+            ofSize: LibraryNotesLayout.sourceButtonFontSize,
+            weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
+        )
+        field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
+        field.backgroundColor = NSColor.controlBackgroundColor
+        field.drawsBackground = true
+        field.isBezeled = false
+        field.isBordered = false
+        field.focusRingType = .none
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.usesSingleLineMode = true
+        field.wantsLayer = true
+        field.layer?.cornerRadius = 4
+        field.layer?.borderWidth = 1
+        field.layer?.borderColor = panelAccentColor().withAlphaComponent(0.8).cgColor
+        field.translatesAutoresizingMaskIntoConstraints = false
+
+        cell.addSubview(icon)
+        cell.addSubview(field)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            field.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        inlineFolderEditField = field
+        return cell
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
+        guard let item = item as? LibrarySourceOutlineItem else { return false }
+        if case .group = item.kind { return true }
+        return false
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem else { return false }
+        switch item.kind {
+        case .group(_, let section):
+            if let section {
+                toggleSourceSection(section)
+            }
+            return false
+        case .scope:
+            return true
+        case .status, .inlineFolderEdit:
+            return false
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        guard let item = item as? LibrarySourceOutlineItem else {
+            return LibraryNotesLayout.sourceRowHeight
+        }
+        switch item.kind {
+        case .group:
+            return LibraryNotesLayout.sourceSectionHeaderHeight
+        case .status:
+            return LibraryNotesLayout.sourceStatusRowHeight
+        case .scope, .inlineFolderEdit:
+            return LibraryNotesLayout.sourceRowHeight
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        guard let item = item as? LibrarySourceOutlineItem else { return nil }
+        switch item.kind {
+        case .scope:
+            return LibrarySourceOutlineRowView()
+        case .group, .status, .inlineFolderEdit:
+            let row = NSTableRowView()
+            row.selectionHighlightStyle = .none
+            return row
+        }
+    }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        guard notification.object as? NSOutlineView === sourceOutlineView,
+              !isSynchronizingSourceOutlineSelection,
+              sourceOutlineView.selectedRow >= 0,
+              let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow)
+                as? LibrarySourceOutlineItem,
+              let scope = item.scope else { return }
+        if !activateSourceScope(scope) {
+            refreshSourceSelection()
+        }
+    }
+
+    @discardableResult
+    private func activateSourceScope(_ scope: LibraryScope) -> Bool {
+        do {
+            try saveCurrentNoteIfNeeded()
+            selectedScope = scope
+            reloadNotesForNavigation(loadFirstIfNeeded: true)
+            refreshVisibleSourceOutlinePresentation()
+            return true
+        } catch {
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+            return false
+        }
+    }
+
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        updateSourceFolderExpansion(from: notification, isExpanded: true)
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        updateSourceFolderExpansion(from: notification, isExpanded: false)
+    }
+
+    private func updateSourceFolderExpansion(from notification: Notification, isExpanded: Bool) {
+        guard !isRestoringSourceOutlineExpansion,
+              notification.object as? NSOutlineView === sourceOutlineView,
+              let item = notification.userInfo?["NSObject"]
+                as? LibrarySourceOutlineItem else { return }
+
+        let folderURL: URL
+        switch item.kind {
+        case .scope(.folder(let url)):
+            folderURL = url
+        case .inlineFolderEdit(.rename(let url)):
+            folderURL = url
+        default:
+            return
+        }
+        guard let folderRow = sourceFolderTreeRows.first(where: {
+            $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
+        }) else { return }
+
+        let folderPath = folderURL.standardizedFileURL.path
+        if folderRow.depth == 0 {
+            if isExpanded {
+                collapsedFolderPaths.remove(folderPath)
+            } else {
+                collapsedFolderPaths.insert(folderPath)
+            }
+        } else if isExpanded {
+            expandedFolderPaths.insert(folderPath)
+        } else {
+            expandedFolderPaths.remove(folderPath)
+        }
+        if !isExpanded {
+            expandedFolderPaths = expandedFolderPaths.filter { !$0.hasPrefix(folderPath + "/") }
+            if case .folder(let selectedFolderURL) = selectedScope,
+               selectedFolderURL.standardizedFileURL.path.hasPrefix(folderPath + "/") {
+                selectedScope = .folder(folderURL)
+                refreshSourceSelection()
+                reloadNotesForNavigation(loadFirstIfNeeded: true)
+            }
+        }
+        sourceFolderRows = Self.visibleFolderRowsForSourceList(
+            from: sourceFolderTreeRows,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
+        persistSourceDisclosureState()
+        refreshSourceCounts(using: sourceCountSnapshot)
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        validateDrop info: NSDraggingInfo,
+        proposedItem item: Any?,
+        proposedChildIndex index: Int
+    ) -> NSDragOperation {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem,
+              case .folder(let targetDirectory)? = item.scope else { return [] }
+        let noteURLs = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
+        return canMoveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) ? .move : []
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        acceptDrop info: NSDraggingInfo,
+        item: Any?,
+        childIndex index: Int
+    ) -> Bool {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem,
+              case .folder(let targetDirectory)? = item.scope else { return false }
+        let noteURLs = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
+        guard let moved = try? moveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) else {
+            return false
+        }
+        return !moved.isEmpty
+    }
+
+    private func sourceOutlineDraggedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) ?? []
+        var seenPaths = Set<String>()
+        return objects.compactMap { object in
+            let url = (object as? URL) ?? ((object as? NSURL).map { $0 as URL })
+            guard let url else { return nil }
+            let standardized = url.standardizedFileURL
+            guard standardized.isFileURL,
+                  seenPaths.insert(standardized.path).inserted else { return nil }
+            return standardized
+        }
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
         listRows.count
     }
@@ -4238,7 +4425,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !suppressSelectionChanges else { return }
+        guard notification.object as? NSTableView === tableView,
+              !suppressSelectionChanges else { return }
         do {
             try saveCurrentNoteIfNeeded()
             if preservesCurrentLoadedNoteForMultiSelection() {
@@ -4341,63 +4529,7 @@ final class LibraryWindowController: NSWindowController,
         performSearchReload()
     }
 
-    @objc
-    private func scopeButtonPressed(_ sender: NSButton) {
-        do {
-            try saveCurrentNoteIfNeeded()
-            selectedScope = scope(for: sender)
-            reloadNotesForNavigation(loadFirstIfNeeded: true)
-            sender.window?.makeFirstResponder(sender)
-        } catch {
-            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
-        }
-    }
-
-    @objc
-    private func folderDisclosurePressed(_ sender: NSButton) {
-        let index = sender.tag - 10
-        guard sourceFolderRows.indices.contains(index) else { return }
-        toggleSourceFolderDisclosure(at: index)
-    }
-
-    private func toggleSourceFolderDisclosure(at index: Int) {
-        guard sourceFolderRows.indices.contains(index) else { return }
-        let folderURL = sourceFolderRows[index].url.standardizedFileURL
-        let folderPath = folderURL.path
-        let isExpanded = isSourceFolderExpanded(path: folderPath, depth: sourceFolderRows[index].depth)
-
-        if isExpanded {
-            if sourceFolderRows[index].depth == 0 {
-                collapsedFolderPaths.insert(folderPath)
-            } else {
-                expandedFolderPaths.remove(folderPath)
-            }
-            expandedFolderPaths = expandedFolderPaths.filter { !$0.hasPrefix(folderPath + "/") }
-            if case .folder(let selectedFolderURL) = selectedScope {
-                let selectedPath = selectedFolderURL.standardizedFileURL.path
-                if selectedPath.hasPrefix(folderPath + "/") {
-                    selectedScope = .folder(folderURL)
-                }
-            }
-        } else if sourceFolderRows[index].depth == 0 {
-            collapsedFolderPaths.remove(folderPath)
-        } else {
-            expandedFolderPaths.insert(folderPath)
-        }
-
-        persistSourceDisclosureState()
-        sourceFolderRows = Self.visibleFolderRowsForSourceList(
-            from: sourceFolderTreeRows,
-            collapsedFolderPaths: collapsedFolderPaths,
-            expandedFolderPaths: expandedFolderPaths
-        )
-        rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotesForNavigation(loadFirstIfNeeded: true)
-    }
-
-    @objc
-    private func sourceSectionDisclosurePressed(_ sender: NSButton) {
-        guard let section = LibrarySourceSection(rawValue: sender.tag) else { return }
+    private func toggleSourceSection(_ section: LibrarySourceSection) {
 
         switch section {
         case .folders:
@@ -4414,13 +4546,7 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        sender.image = NSImage(
-            systemSymbolName: isSourceSectionCollapsed(section) ? "chevron.right" : "chevron.down",
-            accessibilityDescription: section.title
-        )
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        refreshSourceCounts(using: sourceCountSnapshot)
-        refreshSourceSelection()
     }
 
     private func persistSourceDisclosureState() {
@@ -4433,29 +4559,6 @@ final class LibraryWindowController: NSWindowController,
         expandedFolderPaths = noteStore.libraryExpandedFolderPaths
         sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
         sourceTagsSectionCollapsed = noteStore.libraryTagsSectionCollapsed
-    }
-
-    private func scope(for button: NSButton) -> LibraryScope {
-        switch button.tag {
-        case 0:
-            return .all
-        case 1:
-            return .recent
-        case 2:
-            return .inbox
-        case 3:
-            return .trash
-        case 10..<100:
-            let index = button.tag - 10
-            guard sourceFolderRows.indices.contains(index) else { return .all }
-            return .folder(sourceFolderRows[index].url)
-        case 100...:
-            let index = button.tag - 100
-            guard sourceTagNames.indices.contains(index) else { return .all }
-            return .tag(sourceTagNames[index])
-        default:
-            return .all
-        }
     }
 
     @objc
@@ -6039,15 +6142,11 @@ final class LibraryWindowController: NSWindowController,
         recordInternalFileSystemChanges(for: [folderURL])
         activeSearchSession = nil
         selectedScope = .folder(folderURL)
-        if sourceFoldersLoaded {
-            applySourceFolderTreeRows(LibraryFolderTreeProjection.inserting(
-                folderURL,
-                under: parentURL,
-                into: sourceFolderTreeRows
-            ))
-        } else {
-            reloadSourceFolderRowsForCurrentState()
-        }
+        projectSourceFolderTreeRows(LibraryFolderTreeProjection.inserting(
+            folderURL,
+            under: parentURL,
+            into: sourceFolderTreeRows
+        ))
         reloadNotes(loadFirstIfNeeded: true)
         return folderURL
     }
@@ -6066,7 +6165,7 @@ final class LibraryWindowController: NSWindowController,
             noteStore.libraryFoldersSectionCollapsed = false
         }
         if !sourceFoldersLoaded {
-            reloadSourceFolderRowsForCurrentState()
+            scheduleDeferredSourceFolderLoad()
         }
 
         inlineFolderEditOperation = .create(parentURL: targetDirectoryForNewFolder().standardizedFileURL)
@@ -6089,101 +6188,17 @@ final class LibraryWindowController: NSWindowController,
             noteStore.libraryFoldersSectionCollapsed = false
         }
         if !sourceFoldersLoaded {
-            reloadSourceFolderRowsForCurrentState()
+            scheduleDeferredSourceFolderLoad()
         }
 
         let standardizedURL = folderURL.standardizedFileURL
-        guard sourceFolderRows.contains(where: {
+        guard sourceFolderTreeRows.contains(where: {
             $0.url.standardizedFileURL.path == standardizedURL.path
         }) else { return }
         inlineFolderEditOperation = .rename(folderURL: standardizedURL)
         inlineFolderEditHasReceivedFocus = false
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         focusInlineFolderEditField()
-    }
-
-    private func insertInlineFolderEditRowIfNeeded() {
-        guard let operation = inlineFolderEditOperation else { return }
-
-        let insertionIndex: Int
-        let depth: Int
-        switch operation {
-        case .create(let parentURL):
-            let parentPath = parentURL.standardizedFileURL.path
-            let parentIndex = sourceFolderRows.firstIndex {
-                $0.url.standardizedFileURL.path == parentPath
-            }
-            depth = parentIndex.map { sourceFolderRows[$0].depth + 1 } ?? 0
-            insertionIndex = min((parentIndex ?? -1) + 1, sourceFolderStack.arrangedSubviews.count)
-        case .rename(let folderURL):
-            guard let folderIndex = sourceFolderRows.firstIndex(where: {
-                $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
-            }) else { return }
-            depth = sourceFolderRows[folderIndex].depth
-            insertionIndex = min(folderIndex, sourceFolderStack.arrangedSubviews.count)
-        }
-
-        let row = makeInlineFolderEditRow(depth: depth, name: operation.initialName)
-        sourceFolderStack.insertArrangedSubview(row, at: insertionIndex)
-        inlineFolderEditRow = row
-        inlineFolderEditHasReceivedFocus = false
-    }
-
-    private func makeInlineFolderEditRow(depth: Int, name: String) -> NSView {
-        let row = LibrarySourceRowView()
-        row.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditRow")
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight).isActive = true
-        row.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowWidth).isActive = true
-
-        let icon = NSImageView(image: NSImage(
-            systemSymbolName: "folder",
-            accessibilityDescription: "文件夹"
-        ) ?? NSImage())
-        icon.contentTintColor = LibrarySourceSelectionPalette.unselectedForegroundColor
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-            weight: LibraryNotesLayout.sourceSymbolWeight
-        )
-        icon.translatesAutoresizingMaskIntoConstraints = false
-
-        let field = NSTextField(string: name)
-        field.identifier = NSUserInterfaceItemIdentifier("LibraryInlineFolderEditField")
-        field.delegate = self
-        field.font = .systemFont(
-            ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
-        )
-        field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
-        field.backgroundColor = NSColor.controlBackgroundColor
-        field.drawsBackground = true
-        field.isBezeled = false
-        field.isBordered = false
-        field.focusRingType = .none
-        field.lineBreakMode = .byTruncatingTail
-        field.cell?.usesSingleLineMode = true
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 4
-        field.layer?.borderWidth = 1
-        field.layer?.borderColor = panelAccentColor().withAlphaComponent(0.8).cgColor
-        field.translatesAutoresizingMaskIntoConstraints = false
-
-        let leadingInset = LibrarySourceButtonCell.contentLeadingInset
-            + CGFloat(depth) * LibraryNotesLayout.sourceFolderIndentStep
-        row.addSubview(icon)
-        row.addSubview(field)
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: leadingInset),
-            icon.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 18),
-            icon.heightAnchor.constraint(equalToConstant: 18),
-            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
-            field.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
-            field.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            field.heightAnchor.constraint(equalToConstant: 24)
-        ])
-        inlineFolderEditField = field
-        return row
     }
 
     private func focusInlineFolderEditField(remainingAttempts: Int = 4) {
@@ -6258,11 +6273,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func clearInlineFolderEditState() {
-        if let row = inlineFolderEditRow {
-            sourceFolderStack.removeArrangedSubview(row)
-            row.removeFromSuperview()
-        }
-        inlineFolderEditRow = nil
         inlineFolderEditField = nil
         inlineFolderEditOperation = nil
         inlineFolderEditHasReceivedFocus = false
@@ -6285,15 +6295,11 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
-        if sourceFoldersLoaded {
-            applySourceFolderTreeRows(LibraryFolderTreeProjection.renaming(
-                folderURL,
-                to: renamedURL,
-                in: sourceFolderTreeRows
-            ))
-        } else {
-            reloadSourceFolderRowsForCurrentState()
-        }
+        projectSourceFolderTreeRows(LibraryFolderTreeProjection.renaming(
+            folderURL,
+            to: renamedURL,
+            in: sourceFolderTreeRows
+        ))
         reloadNotes(loadFirstIfNeeded: true)
         return renamedURL
     }
@@ -6333,14 +6339,10 @@ final class LibraryWindowController: NSWindowController,
         reloadPersistedSourceDisclosureState()
         selectedScope = .all
         clearCurrentDocumentAfterRemoval()
-        if sourceFoldersLoaded {
-            applySourceFolderTreeRows(LibraryFolderTreeProjection.removing(
-                folderURL,
-                from: sourceFolderTreeRows
-            ))
-        } else {
-            reloadSourceFolderRowsForCurrentState()
-        }
+        projectSourceFolderTreeRows(LibraryFolderTreeProjection.removing(
+            folderURL,
+            from: sourceFolderTreeRows
+        ))
         reloadNotes(loadFirstIfNeeded: true)
     }
 

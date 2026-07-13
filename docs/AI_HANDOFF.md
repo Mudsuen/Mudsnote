@@ -277,6 +277,13 @@
 - Deferred folder scans carry a generation; stale completions reschedule instead of overwriting a newer lifecycle projection.
 - A 10,000-row insertion stays below `50ms`, snapshot-isolation and existing lifecycle tests pass, and installed visual evidence is `/tmp/mudsnote-visual-qa-204-folder-projection/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (205)
+
+- The macOS source pane is now a native `NSOutlineView` with `.sourceList` styling instead of a custom stack of source buttons.
+- AppKit owns row virtualization, scrolling, disclosure, keyboard traversal, selection, field-editor-backed folder create/rename, context menus, and drag/drop; Mudsnote supplies the local Markdown scopes and snapshot model.
+- A 600-folder regression proves the outline instantiates fewer than 40 visible cells, and the serialized macOS suite passes all 154 tests. Folder lifecycle operations continue to update the in-memory tree immediately and schedule deferred validation rather than scanning synchronously.
+- Installed packaging and strict signing pass. In the current background automation session, System Events reports zero windows for both the unchanged Mudsnote baseline and Apple Notes, and window-only capture is black; do not attribute that host-level AX/screen-capture condition to the outline migration.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

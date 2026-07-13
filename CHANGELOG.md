@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 156. Native source outline navigation
+- Problem: The source sidebar visually approximated Apple Notes but still rebuilt a custom stack of buttons, so disclosure, keyboard traversal, scrolling, row reuse, inline editing, and accessibility behavior had to be maintained independently from AppKit.
+- Fix: Replaced the custom source-button stack with a native `NSOutlineView` source list, preserving Mudsnote's folder/tag/trash scopes while moving hierarchy disclosure, keyboard navigation, field-editor-backed rename/create, row reuse, context menus, and drag/drop onto public AppKit primitives. Folder lifecycle projections remain snapshot-first and deferred scans stay off the main actor.
+- Lesson: Apple Notes' private implementation is unavailable, but matching its public AppKit architecture removes custom interaction code and improves large-library behavior more reliably than pixel-only styling.
+
 ### 155. State-matched collapsed Notes geometry
 - Problem: Collapsed visual QA still compared against an expanded Notes screenshot, hiding that the note list was about `20pt` too wide, the sidebar toggle was oversized, the library title sat too far right, and the titlebar bottom edge was missing.
 - Fix: Added the supplied collapsed Notes reference and same-region capture path, tightened the default/minimum note column from `220pt` to `200pt` with a versioned migration, added native pane separators, switched the collapsed toggle to a fixed `30pt` macOS 26 glass circle, and reclaimed `24pt` of reserved toolbar space for the collapsed title while preserving expanded geometry.

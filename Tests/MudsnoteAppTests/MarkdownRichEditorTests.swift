@@ -46,6 +46,7 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
     }
 }
 
+@Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
     @Test
@@ -976,8 +977,6 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceColumnWidth == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNotesLayout.noteTableInitialWidth == 174)
         #expect(LibraryNotesLayout.noteTableMinimumWidth == 174)
-        #expect(LibraryNotesLayout.sourceRowWidth == 180)
-        #expect(LibraryNotesLayout.sourceRowWidth + LibraryNotesLayout.sourceListLeadingInset + LibraryNotesLayout.sourceListTrailingInset == LibraryNotesLayout.sourceColumnWidth)
         #expect(LibraryNotesLayout.noteTableInitialWidth + LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNotesLayout.toolbarSearchWidth == 160)
         #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == LibraryNotesLayout.toolbarSearchWidth)
@@ -1338,12 +1337,8 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceListBottomInset == 14)
         #expect(LibraryNotesLayout.sourceListTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceSymbolPointSize == 15)
-        #expect(LibraryNotesLayout.sourceDisclosureSymbolPointSize == 10)
         #expect(LibraryNotesLayout.sourceRowCornerRadius == 8)
         #expect(LibraryNotesLayout.sourceFolderIndentStep == 14)
-        #expect(LibraryNotesLayout.sourceDisclosureButtonWidth == 14)
-        #expect(LibraryNotesLayout.sourceDisclosureButtonHeight == 18)
-        #expect(LibraryNotesLayout.sourceDisclosureToButtonSpacing == 1)
         #expect(LibraryNotesLayout.sourceCountTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceCountWidth == 32)
         #expect(LibraryNotesLayout.sourceButtonFontSize == 13.5)
@@ -1352,35 +1347,22 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceUnselectedButtonFontWeight == .regular)
         #expect(LibraryNotesLayout.sourceCountFontSize == 13)
         #expect(LibraryNotesLayout.sourceSymbolWeight == .medium)
-        let sourcePrimaryStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySourcePrimaryStack"
-        })
-        #expect(sourcePrimaryStack.spacing == LibraryNotesLayout.sourceInnerRowSpacing)
-        #expect(LibraryNotesLayout.sourceInnerRowSpacing == 0)
-        let sourceRootStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySourceRootStack"
-        })
-        #expect(sourceRootStack.spacing == 0)
-        #expect(sourceRootStack.customSpacing(after: libraryGroup) == LibraryNotesLayout.sourceHeaderToRowsSpacing)
-        let sourceTrashStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySourceTrashStack"
-        })
-        #expect(sourceRootStack.customSpacing(after: sourceTrashStack) == LibraryNotesLayout.sourceTagsSectionSpacing)
-        #expect(LibraryNotesLayout.sourceHeaderToRowsSpacing == 4)
-        #expect(LibraryNotesLayout.sourceTagsSectionSpacing == 6)
-        let primarySourceTitles = sourcePrimaryStack.arrangedSubviews
-            .flatMap(\.allSubviews)
-            .compactMap { ($0 as? NSButton)?.title }
-            .filter { !$0.isEmpty }
-        let trashSourceTitles = sourceTrashStack.arrangedSubviews
-            .flatMap(\.allSubviews)
-            .compactMap { ($0 as? NSButton)?.title }
-            .filter { !$0.isEmpty }
-        #expect(primarySourceTitles == ["All iCloud"])
-        #expect(trashSourceTitles == ["Recently Deleted"])
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "最近" || $0.title == "Inbox" || $0.title == "Call Recordings"
-        } == false)
+        let sourceOutline = controller.sourceOutlineView
+        #expect(sourceOutline.identifier?.rawValue == "LibrarySourceOutline")
+        #expect(sourceOutline.style == .sourceList)
+        #expect(sourceOutline.delegate === controller)
+        #expect(sourceOutline.dataSource === controller)
+        #expect(sourceOutline.indentationPerLevel == LibraryNotesLayout.sourceFolderIndentStep)
+        #expect(sourceOutline.rowSizeStyle == .custom)
+        #expect(sourceOutline.intercellSpacing == .zero)
+        #expect(sourceOutline.enclosingScrollView?.hasVerticalScroller == true)
+        #expect(sourceOutline.enclosingScrollView?.autohidesScrollers == true)
+        let sourceTitles = controller.sourceTitlesForLibrary()
+        #expect(sourceTitles.contains("All iCloud"))
+        #expect(sourceTitles.contains("Recently Deleted"))
+        #expect(!sourceTitles.contains("最近"))
+        #expect(!sourceTitles.contains("Inbox"))
+        #expect(!sourceTitles.contains("Call Recordings"))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
@@ -1619,60 +1601,37 @@ struct MarkdownRichEditorTests {
         #expect(allCount.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceCountWidth
         })
-        let allSourceButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "All iCloud"
+        let allSourceCell = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibrarySourceOutlineCellView
+        }.first {
+            $0.identifier?.rawValue == "LibrarySourceRow-0"
         })
-        #expect(allSourceButton.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
-        #expect(allSourceButton.accessibilityLabel() == "All iCloud")
-        #expect(allSourceButton.accessibilityValue() as? String == "1 条笔记")
-        #expect(allSourceButton.cell is LibrarySourceButtonCell)
-        #expect(LibrarySourceButtonCell.contentLeadingInset == 18)
-        let sourceButtonDrawingRect = try #require(
-            (allSourceButton.cell as? LibrarySourceButtonCell)?.drawingRect(
-                forBounds: NSRect(x: 0, y: 0, width: LibraryNotesLayout.sourceRowWidth, height: LibraryNotesLayout.sourceRowHeight)
-            )
-        )
-        #expect(sourceButtonDrawingRect.minX >= LibrarySourceButtonCell.contentLeadingInset)
-        #expect(allSourceButton.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
-        #expect(allSourceButton.layer?.backgroundColor != NSColor.clear.cgColor)
-        #expect(allSourceButton.layer?.cornerRadius == LibraryNotesLayout.sourceRowCornerRadius)
-        let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceButton.font))
+        #expect(allSourceCell.textField?.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
+        #expect(allSourceCell.accessibilityLabel() == "All iCloud")
+        #expect(allSourceCell.accessibilityValue() as? String == "1 条笔记")
+        #expect(allSourceCell.imageView?.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
+        let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceCell.textField?.font))
         let expectedSelectedSourceWeight = NSFontManager.shared.weight(of: .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
             weight: LibraryNotesLayout.sourceSelectedButtonFontWeight
         ))
         #expect(selectedSourceWeight == expectedSelectedSourceWeight)
-        let allSourceRow = try #require(window.contentView?.allSubviews.first {
-            $0.identifier?.rawValue == "LibrarySourceRow-0"
-        } as? LibrarySourceRowView)
-        #expect(allSourceRow.subviews.last?.identifier?.rawValue == "LibrarySourceCountOverlay-0")
-        #expect(allSourceRow.subviews.last?.allSubviews.contains(allCount) == true)
-        #expect(allSourceRow.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.sourceRowHeight
-        })
-        #expect(allSourceRow.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceRowWidth
-        })
-        let trashSourceRow = try #require(window.contentView?.allSubviews.first {
-            $0.identifier?.rawValue == "LibrarySourceRow-3"
-        } as? LibrarySourceRowView)
-        #expect(sourceTrashStack.arrangedSubviews.contains(trashSourceRow))
-        #expect(LibrarySourceRowView.hoverHorizontalInset == 0)
-        #expect(LibrarySourceRowView.hoverVerticalInset == 1)
-        #expect(LibrarySourceRowView.hoverCornerRadius == LibraryNotesLayout.sourceRowCornerRadius)
-        #expect(LibrarySourceRowView.hoverColor.alphaComponent < LibrarySourceRowView.dropHighlightColor.alphaComponent)
+        let allSourceRow = try #require(controller.sourceOutlineView.rowView(
+            atRow: controller.sourceOutlineView.selectedRow,
+            makeIfNecessary: false
+        ) as? LibrarySourceOutlineRowView)
+        #expect(LibrarySourceOutlineRowView.leadingInset == LibraryNotesLayout.sourceListLeadingInset)
+        #expect(LibrarySourceOutlineRowView.trailingInset == LibraryNotesLayout.sourceListTrailingInset)
+        #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent < 0.5)
         #expect(!allSourceRow.isPointerHovered)
         allSourceRow.setPointerHovered(true)
         #expect(allSourceRow.isPointerHovered)
-        allSourceRow.setDropTargeted(true)
-        #expect(allSourceRow.isDropTargeted)
-        allSourceRow.setDropTargeted(false)
+        #expect(controller.sourceOutlineView.registeredDraggedTypes.contains(.fileURL))
         let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"
         })
         #expect(folderCount.stringValue == "1")
-        let tagButton = window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "#library" }
-        #expect(tagButton == nil)
+        #expect(!controller.sourceTitlesForLibrary().contains("#library"))
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
@@ -2400,15 +2359,9 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let window = try #require(controller.window)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Mudsnote"
-        } == false)
-        let notesButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Notes"
-        })
-
-        notesButton.performClick(nil)
+        _ = try #require(controller.window)
+        #expect(!controller.sourceTitlesForLibrary().contains("Mudsnote"))
+        #expect(controller.selectSourceForLibrary(titled: "Notes"))
 
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Default Root"])
@@ -2459,71 +2412,40 @@ struct MarkdownRichEditorTests {
         window.makeKeyAndOrderFront(nil)
         controller.loadSourceFoldersForLibrary()
 
-        let allButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
-            $0.title == "All iCloud"
-        })
-        let notesButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
-            $0.title == "Notes"
-        })
-        #expect(allButton.acceptsFirstResponder)
-        #expect(allButton.focusRingType == .none)
-        allButton.performClick(nil)
-        #expect(window.firstResponder === allButton)
+        let outline = controller.sourceOutlineView
+        #expect(outline.acceptsFirstResponder)
+        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
+        #expect(window.firstResponder === outline)
 
-        allButton.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
+        outline.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
-        #expect(window.firstResponder === notesButton)
-        notesButton.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
+        #expect(window.firstResponder === outline)
+        outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
         #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(window.firstResponder === allButton)
 
-        allButton.moveDown(nil)
+        outline.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
-        #expect(window.firstResponder === notesButton)
 
-        notesButton.moveUp(nil)
+        outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
         #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(window.firstResponder === allButton)
 
-        allButton.moveUp(nil)
+        outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
         #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(window.firstResponder === allButton)
 
-        func sourceButton(titled title: String) throws -> LibrarySourceButton {
-            try #require(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.first {
-                $0.title == title
-            })
-        }
-
-        let projectsButton = try sourceButton(titled: "Projects")
-        projectsButton.performClick(nil)
-        #expect(window.firstResponder === projectsButton)
-        projectsButton.moveRight(nil)
-        #expect(try sourceButton(titled: "Client").isHidden == false)
-        #expect(window.firstResponder === (try sourceButton(titled: "Projects")))
-
-        let expandedProjectsButton = try sourceButton(titled: "Projects")
-        expandedProjectsButton.moveRight(nil)
-        let clientButton = try sourceButton(titled: "Client")
-        #expect(window.firstResponder === clientButton)
+        #expect(controller.selectSourceForLibrary(titled: "Projects"))
+        #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
+        outline.keyDown(with: try keyEvent(keyCode: 124, modifiers: [], characters: "\u{F703}"))
+        #expect(controller.sourceTitlesForLibrary().contains("Client"))
+        outline.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.noteListTitleLabel.stringValue == "Client")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Client Keyboard Seed"])
 
-        clientButton.moveLeft(nil)
-        let parentProjectsButton = try sourceButton(titled: "Projects")
-        #expect(window.firstResponder === parentProjectsButton)
+        outline.keyDown(with: try keyEvent(keyCode: 123, modifiers: [], characters: "\u{F702}"))
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
 
-        parentProjectsButton.moveLeft(nil)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? LibrarySourceButton }.contains {
-            $0.title == "Client"
-        } == false)
-        let collapsedProjectsButton = try sourceButton(titled: "Projects")
-        #expect(window.firstResponder === collapsedProjectsButton)
-
-        collapsedProjectsButton.moveLeft(nil)
-        #expect(window.firstResponder === (try sourceButton(titled: "Notes")))
-        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        outline.keyDown(with: try keyEvent(keyCode: 123, modifiers: [], characters: "\u{F702}"))
+        #expect(!outline.isItemExpanded(outline.item(atRow: outline.selectedRow)))
+        #expect(controller.noteListTitleLabel.stringValue == "Projects")
     }
 
     @MainActor
@@ -2564,21 +2486,10 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let window = try #require(controller.window)
-        func countText(for sourceTitle: String) throws -> String {
-            let row = try #require(window.contentView?.allSubviews.first { view in
-                guard view is LibrarySourceRowView else { return false }
-                return view.allSubviews.compactMap { ($0 as? NSButton)?.title }.contains(sourceTitle)
-            } as? LibrarySourceRowView)
-            let countLabel = try #require(row.allSubviews.compactMap { $0 as? NSTextField }.first {
-                $0.identifier?.rawValue.hasPrefix("LibrarySourceCount-") == true
-            })
-            return countLabel.stringValue
-        }
-
-        #expect(try countText(for: "Notes") == "1")
-        #expect(try countText(for: "Resources") == "0")
-        #expect(try countText(for: "Archives") == "1")
+        _ = try #require(controller.window)
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Resources") == "0")
+        #expect(controller.sourceCountTextForLibrary(titled: "Archives") == "1")
     }
 
     @MainActor
@@ -2696,10 +2607,7 @@ struct MarkdownRichEditorTests {
         #expect(normalExportMenu.items.allSatisfy { $0.isEnabled })
 
         try selectedController.deleteSelectedNoteForLibrary()
-        let trashButton = try #require(selectedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Recently Deleted"
-        })
-        trashButton.performClick(nil)
+        #expect(selectedController.selectSourceForLibrary(titled: "Recently Deleted"))
 
         #expect(!selectedController.validateToolbarItem(formatItem))
         #expect(!selectedController.validateToolbarItem(checklistItem))
@@ -3997,10 +3905,7 @@ struct MarkdownRichEditorTests {
         #expect(scopeControl.selectedSegment == 0)
         #expect(scopeControl.isHidden)
 
-        let projectsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Projects"
-        })
-        projectsButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Projects"))
 
         controller.searchForLibrary(query: "alpha", allNotes: false)
         let scopedSearchSession = try #require(controller.activeSearchSessionForLibrary())
@@ -4260,10 +4165,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceButton-3"
-        })
-        trashButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
         try FileManager.default.removeItem(at: trashedURL)
 
         controller.searchField.stringValue = "cached"
@@ -4310,12 +4212,7 @@ struct MarkdownRichEditorTests {
         let window = try #require(controller.window)
         controller.loadSourceTagsForLibrary()
 
-        let tagsHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
-        })
-        #expect(tagsHeader.title == "Tags")
-        #expect(tagsHeader.image == nil)
-        #expect(tagsHeader.imagePosition == .noImage)
+        #expect(controller.sourceTitlesForLibrary().filter { $0.hasPrefix("#") }.isEmpty)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
@@ -4358,41 +4255,22 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "library"
-        } == false)
+        #expect(!controller.sourceTitlesForLibrary().contains("library"))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
 
         controller.loadSourceTagsForLibrary()
 
-        let tagsHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Tags"
-        })
-        #expect(tagsHeader.title == "Tags")
-        #expect(tagsHeader.image?.accessibilityDescription == "Tags")
-
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "library"
-        } == true)
-        let tagCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-100"
-        })
-        #expect(tagCount.stringValue == "1")
-        let allCountAfterTagLoad = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
-        #expect(allCountAfterTagLoad.stringValue == "246")
+        #expect(controller.sourceTitlesForLibrary().contains("library"))
+        #expect(controller.sourceCountTextForLibrary(titled: "library") == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "All iCloud") == "246")
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
 
-        tagsHeader.performClick(nil)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "library"
-        } == false)
-        #expect(tagsHeader.image?.accessibilityDescription == "Tags")
+        controller.toggleSourceTagsSectionForLibrary()
+        #expect(!controller.sourceTitlesForLibrary().contains("library"))
         #expect(store.libraryTagsSectionCollapsed)
 
         let reopenedCollapsedTagsController = LibraryWindowController(
@@ -4403,20 +4281,13 @@ struct MarkdownRichEditorTests {
         )
         defer { reopenedCollapsedTagsController.close() }
         reopenedCollapsedTagsController.loadSourceTagsForLibrary()
-        #expect(reopenedCollapsedTagsController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "library"
-        } == false)
+        #expect(!reopenedCollapsedTagsController.sourceTitlesForLibrary().contains("library"))
 
-        tagsHeader.performClick(nil)
+        controller.toggleSourceTagsSectionForLibrary()
         #expect(!store.libraryTagsSectionCollapsed)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "library"
-        } == true)
+        #expect(controller.sourceTitlesForLibrary().contains("library"))
 
-        let restoredTagButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "library"
-        })
-        restoredTagButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "library"))
         #expect(controller.noteListTitleLabel.stringValue == "#library")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Tagged Seed"])
     }
@@ -4470,33 +4341,18 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCountAfterFolderLoad.stringValue == "1")
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Projects"
-        } == true)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == false)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == NoteStore.attachmentDirectoryName
-        } == false)
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
+        #expect(!controller.sourceTitlesForLibrary().contains(NoteStore.attachmentDirectoryName))
 
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.identifier?.rawValue == "LibrarySourceGroup-Folders"
         } == false)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Projects"
-        } == true)
-
-        let initialProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
-        })
-        #expect(initialProjectsDisclosure.accessibilityLabel() == "展开 Projects")
-        initialProjectsDisclosure.performClick(nil)
-
-        let clientButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Client"
-        })
-        clientButton.performClick(nil)
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
+        #expect(!controller.isSourceFolderExpandedForLibrary(projectsFolder))
+        #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: true))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Client"))
+        #expect(controller.selectSourceForLibrary(titled: "Client"))
 
         #expect(controller.noteListTitleLabel.stringValue == "Client")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Client Seed"])
@@ -4514,24 +4370,13 @@ struct MarkdownRichEditorTests {
         #expect(clientMoveItem.title.hasPrefix("    "))
         #expect(clientMoveItem.title.trimmingCharacters(in: .whitespaces) == "Client")
 
-        let projectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
-        })
-        #expect(projectsDisclosure.accessibilityLabel() == "折叠 Projects")
-        projectsDisclosure.performClick(nil)
+        #expect(controller.isSourceFolderExpandedForLibrary(projectsFolder))
+        #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == false)
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
 
-        let collapsedProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
-        })
-        #expect(collapsedProjectsDisclosure.accessibilityLabel() == "展开 Projects")
-        collapsedProjectsDisclosure.performClick(nil)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == true)
+        #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: true))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Client"))
         #expect(store.libraryExpandedFolderPaths.contains(projectsFolder.standardizedFileURL.path))
 
         let reopenedController = LibraryWindowController(
@@ -4542,9 +4387,7 @@ struct MarkdownRichEditorTests {
         )
         defer { reopenedController.close() }
         reopenedController.loadSourceFoldersForLibrary()
-        #expect(reopenedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == true)
+        #expect(reopenedController.visibleSourceTitlesForLibrary().contains("Client"))
     }
 
     @MainActor
@@ -4578,25 +4421,16 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
-        let window = try #require(controller.window)
+        _ = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == false)
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
 
         try FileManager.default.removeItem(at: clientFolder)
-        let projectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.accessibilityLabel() == "展开 Projects"
-        })
-        projectsDisclosure.performClick(nil)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == true)
+        #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: true))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Client"))
 
         controller.loadSourceFoldersForLibrary()
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Client"
-        } == false)
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
     }
 
     @Test
@@ -4669,6 +4503,53 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func nativeSourceOutlineInstantiatesOnlyVisibleRows() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-native-outline-reuse-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        for index in 0..<600 {
+            try FileManager.default.createDirectory(
+                at: notesDirectory.appendingPathComponent(String(format: "Folder %04d", index), isDirectory: true),
+                withIntermediateDirectories: false
+            )
+        }
+
+        let suiteName = "mudsnote.native-outline-reuse.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+        window.contentView?.layoutSubtreeIfNeeded()
+        controller.sourceOutlineView.layoutSubtreeIfNeeded()
+
+        #expect(controller.sourceOutlineView.numberOfRows > 600)
+        #expect(controller.sourceOutlineInstantiatedCellCountForLibrary < 40)
+        #expect(
+            controller.sourceOutlineInstantiatedCellCountForLibrary
+                < controller.sourceOutlineView.numberOfRows
+        )
+    }
+
+    @MainActor
+    @Test
     func folderLifecycleProjectsLoadedSnapshotWithoutSynchronousRescan() throws {
         let suiteName = "mudsnote.folder-lifecycle-snapshot-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -4696,35 +4577,25 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
-        let window = try #require(controller.window)
+        _ = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
 
         let externalFolder = store.notesDirectory.appendingPathComponent("External Drift", isDirectory: true)
         try FileManager.default.createDirectory(at: externalFolder, withIntermediateDirectories: true)
         let created = try controller.createLibraryFolder(named: "Created")
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Created"
-        } == true)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "External Drift"
-        } == false)
+        #expect(controller.sourceTitlesForLibrary().contains("Created"))
+        #expect(!controller.sourceTitlesForLibrary().contains("External Drift"))
+        #expect(controller.selectedSourceTitleForLibrary == "Created")
 
         let renamed = try controller.renameSelectedFolderForLibrary(to: "Renamed")
         #expect(renamed.deletingLastPathComponent() == created.deletingLastPathComponent())
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Renamed"
-        } == true)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "External Drift"
-        } == false)
+        #expect(controller.sourceTitlesForLibrary().contains("Renamed"))
+        #expect(!controller.sourceTitlesForLibrary().contains("External Drift"))
+        #expect(controller.selectedSourceTitleForLibrary == "Renamed")
 
         try controller.deleteSelectedFolderForLibrary()
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Renamed"
-        } == false)
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "External Drift"
-        } == false)
+        #expect(!controller.sourceTitlesForLibrary().contains("Renamed"))
+        #expect(!controller.sourceTitlesForLibrary().contains("External Drift"))
     }
 
     @MainActor
@@ -4760,10 +4631,8 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
-        let projectsButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Projects"
-        })
-        projectsButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Projects"))
+        #expect(controller.selectedSourceTitleForLibrary == "Projects")
 
         let newItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
@@ -4800,22 +4669,8 @@ struct MarkdownRichEditorTests {
         #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, externalMarkdownURL], to: archiveFolder))
         #expect(!controller.canMoveDraggedNotesForLibrary(at: [savedInProjects.url, nonMarkdownURL], to: archiveFolder))
         #expect(!controller.canMoveDraggedNoteForLibrary(at: attachmentMarkdownURL, to: archiveFolder))
-        let archiveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Archive"
-        })
-        let archiveSourceRow = try #require(archiveButton.superview as? LibrarySourceRowView)
-        #expect(archiveSourceRow.targetDirectory?.standardizedFileURL.path == archiveFolder.standardizedFileURL.path)
-        #expect(!archiveSourceRow.isDropTargeted)
-        #expect(!archiveSourceRow.isDropRejected)
-        archiveSourceRow.setDropRejected(true)
-        #expect(archiveSourceRow.isDropRejected)
-        #expect(!archiveSourceRow.isDropTargeted)
-        archiveSourceRow.setDropTargeted(true)
-        #expect(archiveSourceRow.isDropTargeted)
-        #expect(!archiveSourceRow.isDropRejected)
-        archiveSourceRow.setDropTargeted(false)
-        #expect(LibrarySourceRowView.dropHighlightColor.alphaComponent == 0.80)
-        #expect(LibrarySourceRowView.dropRejectedColor.alphaComponent < LibrarySourceRowView.dropHighlightColor.alphaComponent)
+        #expect(controller.sourceTitlesForLibrary().contains("Archive"))
+        #expect(controller.sourceOutlineView.registeredDraggedTypes.contains(.fileURL))
 
         let movedURLs = try controller.moveDraggedNotesForLibrary(at: [savedInProjects.url, secondProjectNoteURL], to: archiveFolder)
         #expect(movedURLs.count == 2)
@@ -4831,13 +4686,12 @@ struct MarkdownRichEditorTests {
         let archiveTitles = store.listNotes(limit: 10, roots: [archiveFolder]).map(\.title)
         #expect(archiveTitles.contains("Folder Seed"))
         #expect(archiveTitles.contains("Second Drag Seed"))
+        #expect(controller.selectedSourceTitleForLibrary == "Archive")
 
         let renamedArchive = try controller.renameSelectedFolderForLibrary(to: "Renamed Archive")
         #expect(FileManager.default.fileExists(atPath: renamedArchive.path))
         #expect(!FileManager.default.fileExists(atPath: archiveFolder.path))
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Renamed Archive"
-        } == true)
+        #expect(controller.sourceTitlesForLibrary().contains("Renamed Archive"))
 
         try controller.deleteSelectedFolderForLibrary()
         #expect(!FileManager.default.fileExists(atPath: renamedArchive.path))
@@ -4903,35 +4757,24 @@ struct MarkdownRichEditorTests {
         #expect(controller.control(field, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         let createdURL = store.notesDirectory.appendingPathComponent("中文文件夹", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: createdURL.path))
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "中文文件夹"
-        } == true)
+        #expect(controller.sourceTitlesForLibrary().contains("中文文件夹"))
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
 
-        let createdButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "中文文件夹"
-        })
-        let createdRow = try #require(createdButton.superview as? LibrarySourceRowView)
-        let renameItem = try #require(createdRow.menu?.items.first { $0.title == "重命名文件夹" })
-        #expect(NSApp.sendAction(try #require(renameItem.action), to: renameItem.target, from: renameItem))
+        controller.beginInlineFolderRenameForLibrary(at: createdURL)
         let renameField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         #expect(renameField.stringValue == "中文文件夹")
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "中文文件夹"
-        } == false)
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("中文文件夹"))
         let renameEditor = NSTextView()
         renameField.stringValue = "Renamed Inline Folder"
         #expect(controller.control(renameField, textView: renameEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         let renamedURL = store.notesDirectory.appendingPathComponent("Renamed Inline Folder", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: renamedURL.path))
         #expect(!FileManager.default.fileExists(atPath: createdURL.path))
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
-            $0.title == "Renamed Inline Folder"
-        } == true)
+        #expect(controller.sourceTitlesForLibrary().contains("Renamed Inline Folder"))
 
         controller.beginInlineFolderCreationForLibrary()
         let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
@@ -4975,7 +4818,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let window = try #require(controller.window)
+        _ = try #require(controller.window)
         let moreMenu = controller.makeMoreActionsMenuForLibrary()
         let moreMenuTitles = moreMenu.items.map(\.title)
         #expect(moreMenuTitles.contains("独立窗口打开"))
@@ -5017,19 +4860,13 @@ struct MarkdownRichEditorTests {
         let trashedURL = try #require(store.listTrashedNotes(limit: 10).first?.url)
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
 
-        let trashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Recently Deleted"
-        })
-        trashButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
         #expect(!controller.canDeleteSelectedNotesFromMenuForLibrary)
         #expect(controller.canRestoreSelectedNotesFromMenuForLibrary)
         #expect(controller.titleField.stringValue == "Trash Seed")
         #expect(!controller.titleField.isEditable)
         #expect(!controller.editorTextView.isEditable)
-        let trashCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-3"
-        })
-        #expect(trashCount.stringValue == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Recently Deleted") == "1")
 
         let trashMoreMenu = controller.makeMoreActionsMenuForLibrary()
         let trashMenuTitles = trashMoreMenu.items.map(\.title)
@@ -5059,10 +4896,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.editorTextView.isEditable)
 
         try controller.deleteSelectedNoteForLibrary()
-        let restoredTrashButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Recently Deleted"
-        })
-        restoredTrashButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
         #expect(controller.titleField.stringValue == "Trash Seed")
         try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
@@ -5110,10 +4944,7 @@ struct MarkdownRichEditorTests {
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
-        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.title == "Recently Deleted"
-        })
-        trashButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
         #expect(controller.titleField.stringValue == "Keyboard Seed")
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
@@ -5781,11 +5612,7 @@ struct MarkdownRichEditorTests {
             atomically: true,
             encoding: .utf8
         )
-        let allNotesButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceButton-0"
-        })
-
-        allNotesButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
 
         let deadline = Date().addingTimeInterval(6)
@@ -5825,11 +5652,7 @@ struct MarkdownRichEditorTests {
 
         let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
         _ = try store.trashNote(at: noteURL)
-        let trashButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySourceButton-3"
-        })
-
-        trashButton.performClick(nil)
+        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
 
         let deadline = Date().addingTimeInterval(6)
