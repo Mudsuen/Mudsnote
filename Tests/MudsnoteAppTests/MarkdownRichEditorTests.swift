@@ -4277,6 +4277,7 @@ struct MarkdownRichEditorTests {
         let initialProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
         })
+        #expect(initialProjectsDisclosure.accessibilityLabel() == "展开 Projects")
         initialProjectsDisclosure.performClick(nil)
 
         let clientButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
@@ -4299,6 +4300,7 @@ struct MarkdownRichEditorTests {
         let projectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
         })
+        #expect(projectsDisclosure.accessibilityLabel() == "折叠 Projects")
         projectsDisclosure.performClick(nil)
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
@@ -4308,6 +4310,7 @@ struct MarkdownRichEditorTests {
         let collapsedProjectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibraryFolderDisclosure-11"
         })
+        #expect(collapsedProjectsDisclosure.accessibilityLabel() == "展开 Projects")
         collapsedProjectsDisclosure.performClick(nil)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Client"

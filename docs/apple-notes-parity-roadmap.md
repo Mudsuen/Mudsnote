@@ -213,7 +213,7 @@ Objective: close visible mismatch and edge-state gaps.
 - hover/selection/focus polish
 - empty, loading, no-result, trash, and locked/unavailable states
 - toolbar disabled states
-- accessibility labels and concise three-pane VoiceOver semantics
+- accessibility labels, concise three-pane VoiceOver semantics, and stateful folder-disclosure actions
 - keyboard navigation
 - resize behavior and minimum-width layout
 

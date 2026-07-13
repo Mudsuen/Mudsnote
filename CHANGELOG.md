@@ -1075,6 +1075,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added stable accessibility labels to the core library controls, merged each source count into its source button's accessibility value, and removed the duplicate visual count label from the accessibility tree.
 - Lesson: A native-feeling Notes clone needs a concise semantic hierarchy as well as matching pixels; decorative metadata should not become separate navigation stops when it belongs to an actionable row.
 
+### 180. Stateful folder disclosure names
+
+- Problem: Folder disclosure arrows exposed only the generic description "展开或折叠文件夹", so VoiceOver users could not tell which folder or action an arrow represented.
+- Fix: Each disclosure button now names its concrete folder and current action, for example "展开 Projects" or "折叠 Projects"; rebuilt rows naturally refresh the name with disclosure state.
+- Lesson: Hierarchy controls need object-specific, stateful actions rather than generic icon descriptions.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

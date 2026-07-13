@@ -122,6 +122,11 @@
 - The source surface, note list, search scope, title field, editor body, and modification-date label now expose stable accessibility names.
 - Visual source-count labels are excluded from the accessibility tree; the owning source button exposes the count as its accessibility value instead.
 
+## Latest iteration (180)
+
+- Nested-folder disclosure buttons expose the concrete folder name and current expand/collapse action to VoiceOver.
+- The label is regenerated with each source-row rebuild, so it stays aligned with persisted disclosure state.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

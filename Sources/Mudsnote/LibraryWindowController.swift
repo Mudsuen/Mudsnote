@@ -3078,6 +3078,8 @@ final class LibraryWindowController: NSWindowController,
             target: self,
             action: #selector(folderDisclosurePressed(_:))
         )
+        let folderName = folderTitle(for: folderRow.url)
+        button.setAccessibilityLabel(isCollapsed ? "展开 \(folderName)" : "折叠 \(folderName)")
         button.identifier = NSUserInterfaceItemIdentifier("LibraryFolderDisclosure-\(tag)")
         button.tag = tag
         button.isBordered = false
