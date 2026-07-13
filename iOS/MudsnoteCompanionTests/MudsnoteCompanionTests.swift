@@ -533,6 +533,73 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(folders.first?.totalNoteCount, 1)
     }
 
+    func testMarkdownTrashRestoreAvoidsCollisionAndRefreshesInventory() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let original = projects.appendingPathComponent("Plan.md")
+        try "# Original plan\n".write(to: original, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.trashMarkdownDocument(
+            relativePath: "Projects/Plan.md",
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: original.path))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.count, 1)
+        XCTAssertEqual(snapshot.summary.recentlyDeletedCount, 1)
+        let trashed = try XCTUnwrap(snapshot.trashedFiles.first)
+        XCTAssertEqual(trashed.originalRelativePath, "Projects/Plan.md")
+
+        try "# Replacement plan\n".write(to: original, atomically: true, encoding: .utf8)
+        let restored = try await store.restoreTrashedMarkdownDocument(id: trashed.id)
+
+        XCTAssertEqual(restored.relativePath, "Projects/Plan 2.md")
+        XCTAssertEqual(
+            try String(contentsOf: projects.appendingPathComponent("Plan 2.md"), encoding: .utf8),
+            "# Original plan\n"
+        )
+        XCTAssertEqual(try String(contentsOf: original, encoding: .utf8), "# Replacement plan\n")
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.trashedFiles.isEmpty)
+        XCTAssertEqual(snapshot.summary.recentlyDeletedCount, 0)
+    }
+
+    func testMarkdownTrashPermanentDeleteAndProtectedPaths() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let note = root.appendingPathComponent("Disposable.md")
+        try "# Disposable\n".write(to: note, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.trashMarkdownDocument(relativePath: "Disposable.md")
+        let trashSnapshot = try await store.loadLibrarySnapshot()
+        let trashed = try XCTUnwrap(trashSnapshot.trashedFiles.first)
+        try await store.permanentlyDeleteTrashedMarkdownDocument(id: trashed.id)
+
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.trashedFiles.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: note.path))
+        await XCTAssertThrowsErrorAsync(
+            try await store.trashMarkdownDocument(relativePath: "Inbox.md")
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
+        }
+        let daily = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath.hasPrefix("Daily/") })
+        await XCTAssertThrowsErrorAsync(
+            try await store.trashMarkdownDocument(relativePath: daily.relativePath)
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
+        }
+    }
+
     func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

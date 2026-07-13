@@ -1658,6 +1658,51 @@
           }
         }
       }
+    },
+    "Cancel": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消" } } }
+    },
+    "Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近删除" } } }
+    },
+    "Move to Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移到最近删除" } } }
+    },
+    "Moved to Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已移到最近删除" } } }
+    },
+    "Restore": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "恢复" } } }
+    },
+    "Restored": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已恢复" } } }
+    },
+    "Delete Permanently": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除" } } }
+    },
+    "Delete Permanently?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除？" } } }
+    },
+    "Deleted Permanently": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已永久删除" } } }
+    },
+    "No Recently Deleted Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最近删除中没有笔记" } } }
+    },
+    "Deleted notes appear here until you remove them permanently.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已删除的笔记会保留在这里，直到被永久移除。" } } }
+    },
+    "This action cannot be undone.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此操作无法撤销。" } } }
+    },
+    "Inbox and Daily notes cannot be moved to Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 和 Daily 系统笔记不能移到最近删除。" } } }
+    },
+    "This note is no longer available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此笔记已不可用。" } } }
+    },
+    "This deleted note has invalid recovery information.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此删除笔记的恢复信息无效。" } } }
     }
   },
   "version": "1.0"

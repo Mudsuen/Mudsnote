@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var libraryFiles: [RecentMarkdownFile] = []
     @Published var recentFiles: [RecentMarkdownFile] = []
     @Published var folders: [LibraryFolderNode] = []
+    @Published var trashedFiles: [TrashedMarkdownFile] = []
     @Published var attachments: [LibraryAttachment] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
@@ -107,6 +108,7 @@ final class AppModel: ObservableObject {
         libraryFiles = []
         recentFiles = []
         folders = []
+        trashedFiles = []
         attachments = []
         librarySummary = LibrarySummary()
         tagSummaries = []
@@ -330,6 +332,55 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func canMoveToRecentlyDeleted(_ file: RecentMarkdownFile) -> Bool {
+        file.relativePath != "Inbox.md" && !file.relativePath.hasPrefix("Daily/")
+    }
+
+    func moveToRecentlyDeleted(_ file: RecentMarkdownFile) {
+        guard canMoveToRecentlyDeleted(file) else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            return
+        }
+        Task {
+            do {
+                try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
+                if selectedDocument?.relativePath == file.relativePath {
+                    selectedDocument = nil
+                }
+                statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    func restore(_ item: TrashedMarkdownFile) {
+        Task {
+            do {
+                _ = try await fileStore.restoreTrashedMarkdownDocument(id: item.id)
+                statusToast = .saved(String(localized: "Restored"))
+                await refreshInbox()
+                await refreshActiveSearchIfNeeded()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    func permanentlyDelete(_ item: TrashedMarkdownFile) {
+        Task {
+            do {
+                try await fileStore.permanentlyDeleteTrashedMarkdownDocument(id: item.id)
+                statusToast = .saved(String(localized: "Deleted Permanently"))
+                await refreshInbox()
+            } catch {
+                statusToast = .error(error.localizedDescription)
+            }
+        }
+    }
+
     func searchLibrary(query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         activeSearchQuery = trimmed
@@ -466,6 +517,7 @@ final class AppModel: ObservableObject {
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
         folders = snapshot.folders
+        trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)

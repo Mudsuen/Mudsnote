@@ -119,14 +119,14 @@ struct LibraryHomeView: View {
                 NavigationLink {
                     FolderNotesListView(
                         title: String(localized: "Daily"),
-                        files: appModel.libraryFiles.filter { $0.relativePath.hasPrefix("Daily/") }
+                        scope: .pathPrefix("Daily/")
                     )
                 } label: {
                     NotesFolderRow(title: String(localized: "Daily"), systemImage: "calendar", count: appModel.librarySummary.dailyCount)
                 }
 
                 NavigationLink {
-                    FolderNotesListView(title: String(localized: "All Notes"), files: appModel.libraryFiles)
+                    FolderNotesListView(title: String(localized: "All Notes"), scope: .all)
                 } label: {
                     NotesFolderRow(title: String(localized: "All Notes"), systemImage: "doc.text", count: appModel.librarySummary.allNotesCount)
                 }
@@ -138,6 +138,16 @@ struct LibraryHomeView: View {
                     NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
                 }
                 .accessibilityIdentifier("attachments-link")
+
+                NavigationLink {
+                    RecentlyDeletedView()
+                } label: {
+                    NotesFolderRow(
+                        title: String(localized: "Recently Deleted"),
+                        systemImage: "trash",
+                        count: appModel.librarySummary.recentlyDeletedCount
+                    )
+                }
 
                 NavigationLink {
                     SettingsRulesView(chooseFolder: chooseFolder)
@@ -251,7 +261,11 @@ private struct SearchResultRow: View {
 struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
     var title: String
-    var files: [RecentMarkdownFile]
+    var scope: LibraryFileScope
+
+    private var files: [RecentMarkdownFile] {
+        scope.files(from: appModel.libraryFiles)
+    }
 
     var body: some View {
         List {
@@ -267,6 +281,7 @@ struct FolderNotesListView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("markdown-file-row-\(file.id)")
+                    .modifier(NoteLifecycleActions(file: file))
                 }
             }
         }
@@ -277,6 +292,20 @@ struct FolderNotesListView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle(title)
+    }
+}
+
+enum LibraryFileScope {
+    case all
+    case pathPrefix(String)
+
+    func files(from inventory: [RecentMarkdownFile]) -> [RecentMarkdownFile] {
+        switch self {
+        case .all:
+            inventory
+        case .pathPrefix(let prefix):
+            inventory.filter { $0.relativePath.hasPrefix(prefix) }
+        }
     }
 }
 
@@ -313,6 +342,7 @@ struct LibraryFolderView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("markdown-file-row-\(file.id)")
+                .modifier(NoteLifecycleActions(file: file))
             }
 
             if folder.children.isEmpty, directFiles.isEmpty {
@@ -327,6 +357,128 @@ struct LibraryFolderView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle(folder.name)
+    }
+}
+
+private struct NoteLifecycleActions: ViewModifier {
+    @EnvironmentObject private var appModel: AppModel
+    var file: RecentMarkdownFile
+
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if appModel.canMoveToRecentlyDeleted(file) {
+                    Button(role: .destructive) {
+                        appModel.moveToRecentlyDeleted(file)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+            }
+            .contextMenu {
+                if appModel.canMoveToRecentlyDeleted(file) {
+                    Button(role: .destructive) {
+                        appModel.moveToRecentlyDeleted(file)
+                    } label: {
+                        Label("Move to Recently Deleted", systemImage: "trash")
+                    }
+                }
+            }
+    }
+}
+
+struct RecentlyDeletedView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @State private var pendingPermanentDelete: TrashedMarkdownFile?
+
+    var body: some View {
+        List {
+            if appModel.trashedFiles.isEmpty {
+                ContentUnavailableView(
+                    "No Recently Deleted Notes",
+                    systemImage: "trash",
+                    description: Text("Deleted notes appear here until you remove them permanently.")
+                )
+                .listRowBackground(Color.clear)
+            } else {
+                ForEach(appModel.trashedFiles) { item in
+                    TrashedMarkdownRow(item: item)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                appModel.restore(item)
+                            } label: {
+                                Label("Restore", systemImage: "arrow.uturn.backward")
+                            }
+                            .tint(.blue)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                pendingPermanentDelete = item
+                            } label: {
+                                Label("Delete Permanently", systemImage: "trash.slash")
+                            }
+                        }
+                        .contextMenu {
+                            Button {
+                                appModel.restore(item)
+                            } label: {
+                                Label("Restore", systemImage: "arrow.uturn.backward")
+                            }
+                            Button(role: .destructive) {
+                                pendingPermanentDelete = item
+                            } label: {
+                                Label("Delete Permanently", systemImage: "trash.slash")
+                            }
+                        }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .refreshable {
+            await appModel.refreshInbox()
+        }
+        .navigationTitle("Recently Deleted")
+        .alert(
+            "Delete Permanently?",
+            isPresented: Binding(
+                get: { pendingPermanentDelete != nil },
+                set: { if !$0 { pendingPermanentDelete = nil } }
+            ),
+            presenting: pendingPermanentDelete
+        ) { item in
+            Button("Cancel", role: .cancel) {
+                pendingPermanentDelete = nil
+            }
+            Button("Delete Permanently", role: .destructive) {
+                pendingPermanentDelete = nil
+                appModel.permanentlyDelete(item)
+            }
+        } message: { _ in
+            Text("This action cannot be undone.")
+        }
+    }
+}
+
+private struct TrashedMarkdownRow: View {
+    var item: TrashedMarkdownFile
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(item.title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(MudsnoteColors.text)
+                .lineLimit(1)
+            Text(item.originalRelativePath)
+                .font(.subheadline)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(1)
+            Text(item.trashedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+        }
+        .padding(.vertical, 4)
     }
 }
 

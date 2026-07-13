@@ -107,6 +107,7 @@ enum FolderInitializer {
         try ensureDirectory(root.appendingPathComponent("Daily"))
         try ensureDirectory(root.appendingPathComponent("Attachments"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote"))
+        try ensureDirectory(root.appendingPathComponent(".mudsnote/Trash"))
 
         try ensureFile(
             root.appendingPathComponent("Inbox.md"),

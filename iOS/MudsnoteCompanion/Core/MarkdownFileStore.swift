@@ -96,6 +96,7 @@ actor MarkdownFileStore {
             .prefix(24)
             .map { $0 }
         let allFiles = markdownFiles.sorted { $0.modifiedAt > $1.modifiedAt }
+        let trashedFiles = try loadTrashedFiles(root: root)
         let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
             allFiles: allFiles,
@@ -104,12 +105,14 @@ actor MarkdownFileStore {
                 directoryPaths: folderPaths,
                 files: markdownFiles
             ),
+            trashedFiles: trashedFiles,
             attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
                 dailyCount: dailyCount,
-                attachmentCount: attachmentCount
+                attachmentCount: attachmentCount,
+                recentlyDeletedCount: trashedFiles.count
             ),
             conflictWarnings: conflictWarnings.sorted()
         )
@@ -373,6 +376,189 @@ actor MarkdownFileStore {
             relativePath: relativePath,
             markdown: markdown
         )
+    }
+
+    func trashMarkdownDocument(relativePath: String, now: Date = Date()) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownLifecycleError.protectedNote
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+
+        let trashID = UUID().uuidString.lowercased()
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        try fileManager.createDirectory(at: trashRoot, withIntermediateDirectories: true)
+        let trashedFile = trashRoot.appendingPathComponent("\(trashID).md")
+        let metadataURL = trashRoot.appendingPathComponent("\(trashID).json")
+        let metadata = TrashedMarkdownMetadata(
+            id: trashID,
+            originalRelativePath: relativePath,
+            title: source.deletingPathExtension().lastPathComponent,
+            trashedAt: now
+        )
+        try JSONEncoder.mudsnote.encode(metadata).write(to: metadataURL, options: .atomic)
+        do {
+            try coordinatedMove(from: source, to: trashedFile)
+        } catch {
+            try? fileManager.removeItem(at: metadataURL)
+            throw error
+        }
+        invalidateAfterMutation(relativePaths: [relativePath])
+    }
+
+    func restoreTrashedMarkdownDocument(id: String) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let item = try trashItem(id: id, root: root)
+        guard Self.isMutableNotePath(item.originalRelativePath),
+              let requestedDestination = AuthorizedLibraryPath.resolve(item.originalRelativePath, within: root) else {
+            throw MarkdownLifecycleError.invalidTrashMetadata
+        }
+        let destination = uniqueMarkdownURL(for: requestedDestination)
+        try fileManager.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try coordinatedMove(from: item.fileURL, to: destination)
+        do {
+            try fileManager.removeItem(at: item.metadataURL)
+        } catch {
+            try? coordinatedMove(from: destination, to: item.fileURL)
+            throw error
+        }
+        let relativePath = Self.relativePath(for: destination, root: root)
+        invalidateAfterMutation(relativePaths: [relativePath])
+        let modifiedAt = try destination.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate ?? .distantPast
+        return RecentMarkdownFile(
+            id: relativePath,
+            relativePath: relativePath,
+            title: destination.deletingPathExtension().lastPathComponent,
+            modifiedAt: modifiedAt
+        )
+    }
+
+    func permanentlyDeleteTrashedMarkdownDocument(id: String) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let item = try trashItem(id: id, root: root)
+        try fileManager.removeItem(at: item.fileURL)
+        do {
+            try fileManager.removeItem(at: item.metadataURL)
+        } catch {
+            // A missing payload is ignored by inventory and can be cleaned on refresh.
+            throw error
+        }
+        cachedLibrarySnapshot = nil
+    }
+
+    private func loadTrashedFiles(root: URL) throws -> [TrashedMarkdownFile] {
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        guard fileManager.fileExists(atPath: trashRoot.path) else { return [] }
+        let urls = try fileManager.contentsOfDirectory(
+            at: trashRoot,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        return urls
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .compactMap { metadataURL -> TrashedMarkdownFile? in
+                guard let data = try? Data(contentsOf: metadataURL),
+                      let metadata = try? JSONDecoder.mudsnote.decode(
+                        TrashedMarkdownMetadata.self,
+                        from: data
+                      ),
+                      UUID(uuidString: metadata.id) != nil,
+                      metadata.id == metadataURL.deletingPathExtension().lastPathComponent.lowercased()
+                else { return nil }
+                let fileURL = trashRoot.appendingPathComponent("\(metadata.id).md")
+                guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+                return TrashedMarkdownFile(
+                    id: metadata.id,
+                    originalRelativePath: metadata.originalRelativePath,
+                    title: metadata.title,
+                    trashedAt: metadata.trashedAt
+                )
+            }
+            .sorted { $0.trashedAt > $1.trashedAt }
+    }
+
+    private func trashItem(id: String, root: URL) throws -> (
+        originalRelativePath: String,
+        fileURL: URL,
+        metadataURL: URL
+    ) {
+        guard UUID(uuidString: id) != nil else {
+            throw MarkdownLifecycleError.invalidTrashMetadata
+        }
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        let metadataURL = trashRoot.appendingPathComponent("\(id.lowercased()).json")
+        let fileURL = trashRoot.appendingPathComponent("\(id.lowercased()).md")
+        guard let metadataData = try? Data(contentsOf: metadataURL),
+              let metadata = try? JSONDecoder.mudsnote.decode(
+                TrashedMarkdownMetadata.self,
+                from: metadataData
+              ),
+              metadata.id == id.lowercased(),
+              fileManager.fileExists(atPath: fileURL.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+        return (metadata.originalRelativePath, fileURL, metadataURL)
+    }
+
+    private func coordinatedMove(from source: URL, to destination: URL) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var moveError: Error?
+        coordinator.coordinate(
+            writingItemAt: source,
+            options: .forMoving,
+            error: &coordinationError
+        ) { coordinatedSource in
+            do {
+                try fileManager.moveItem(at: coordinatedSource, to: destination)
+            } catch {
+                moveError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let moveError { throw moveError }
+    }
+
+    private func uniqueMarkdownURL(for requested: URL) -> URL {
+        guard fileManager.fileExists(atPath: requested.path) else { return requested }
+        let directory = requested.deletingLastPathComponent()
+        let stem = requested.deletingPathExtension().lastPathComponent
+        var suffix = 2
+        while true {
+            let candidate = directory.appendingPathComponent("\(stem) \(suffix).md")
+            if !fileManager.fileExists(atPath: candidate.path) { return candidate }
+            suffix += 1
+        }
+    }
+
+    private func invalidateAfterMutation(relativePaths: [String]) {
+        cachedLibrarySnapshot = nil
+        for path in relativePaths {
+            searchCache.removeValue(forKey: path)
+        }
+    }
+
+    private static func isMutableNotePath(_ relativePath: String) -> Bool {
+        guard relativePath != "Inbox.md",
+              !relativePath.hasPrefix("Daily/"),
+              !relativePath.hasPrefix("Attachments/"),
+              !relativePath.hasPrefix(".mudsnote/") else { return false }
+        return true
     }
 
     private func boundedSearchText(from url: URL) throws -> String {
@@ -679,9 +865,24 @@ struct MarkdownLibrarySnapshot: Equatable {
     var allFiles: [RecentMarkdownFile]
     var recentFiles: [RecentMarkdownFile]
     var folders: [LibraryFolderNode]
+    var trashedFiles: [TrashedMarkdownFile]
     var attachments: [LibraryAttachment]
     var summary: LibrarySummary
     var conflictWarnings: [String]
+}
+
+struct TrashedMarkdownFile: Identifiable, Equatable {
+    var id: String
+    var originalRelativePath: String
+    var title: String
+    var trashedAt: Date
+}
+
+private struct TrashedMarkdownMetadata: Codable {
+    var id: String
+    var originalRelativePath: String
+    var title: String
+    var trashedAt: Date
 }
 
 struct LibraryFolderNode: Identifiable, Equatable {
@@ -845,6 +1046,41 @@ struct LibrarySummary: Equatable {
     var inboxCount = 0
     var dailyCount = 0
     var attachmentCount = 0
+    var recentlyDeletedCount = 0
+}
+
+enum MarkdownLifecycleError: LocalizedError, Equatable {
+    case protectedNote
+    case noteNotFound
+    case invalidTrashMetadata
+
+    var errorDescription: String? {
+        switch self {
+        case .protectedNote:
+            String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted.")
+        case .noteNotFound:
+            String(localized: "This note is no longer available.")
+        case .invalidTrashMetadata:
+            String(localized: "This deleted note has invalid recovery information.")
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static var mudsnote: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var mudsnote: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
 }
 
 enum InboxMutation: Equatable {
