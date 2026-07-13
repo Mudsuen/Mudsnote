@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var isFolderImporterPresented = false
+    @State private var readerDetent: PresentationDetent = .medium
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -58,16 +59,22 @@ struct RootView: View {
                 .presentationBackground(MudsnoteColors.panel.opacity(0.96))
         }
         .sheet(item: $appModel.selectedMemo) { memo in
-            MarkdownPreviewView(memo: memo)
-                .presentationDetents([.medium, .large])
+            MarkdownPreviewView(memo: memo, detent: $readerDetent)
+                .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
         .sheet(item: $appModel.selectedDocument) { document in
-            MarkdownPreviewView(document: document)
-                .presentationDetents([.medium, .large])
+            MarkdownPreviewView(document: document, detent: $readerDetent)
+                .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
+        }
+        .onChange(of: appModel.selectedMemo?.id) { _, id in
+            if id != nil { readerDetent = .medium }
+        }
+        .onChange(of: appModel.selectedDocument?.id) { _, id in
+            if id != nil { readerDetent = .medium }
         }
     }
 

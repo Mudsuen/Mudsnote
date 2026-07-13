@@ -9,7 +9,7 @@ struct MarkdownPreviewView: View {
     }
 
     @EnvironmentObject private var appModel: AppModel
-    @FocusState private var editorFocused: Bool
+    @Binding private var detent: PresentationDetent
     private var source: Source
     private var title: String
     private var metadata: String
@@ -17,10 +17,13 @@ struct MarkdownPreviewView: View {
     @State private var originalMarkdown: String
     @State private var isEditing = false
     @State private var isSaving = false
+    @State private var editorFocused = false
+    @State private var editingCommand: MarkdownEditingCommand?
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
 
-    init(memo: MemoBlock) {
+    init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
+        _detent = detent
         source = .memo(memo)
         title = String(localized: "Markdown")
         metadata = memo.dateText
@@ -28,7 +31,8 @@ struct MarkdownPreviewView: View {
         _originalMarkdown = State(initialValue: memo.body)
     }
 
-    init(document: MarkdownDocument) {
+    init(document: MarkdownDocument, detent: Binding<PresentationDetent>) {
+        _detent = detent
         source = .document(document)
         title = document.title
         metadata = document.relativePath
@@ -38,39 +42,47 @@ struct MarkdownPreviewView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text(metadata)
-                        .font(.system(.headline, design: .rounded, weight: .semibold))
-                        .foregroundStyle(MudsnoteColors.text)
-
-                    if isEditing {
-                        TextEditor(text: $draftMarkdown)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .scrollContentBackground(.hidden)
-                            .focused($editorFocused)
-                            .frame(minHeight: 420)
-                            .accessibilityIdentifier("markdown-editor")
-                    } else {
-                        markdownBody
-                            .accessibilityElement(children: .contain)
-                            .accessibilityIdentifier("rendered-markdown")
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                isEditing = true
-                                editorFocused = true
-                            }
+            Group {
+                if isEditing {
+                    VStack(alignment: .leading, spacing: 12) {
+                        metadataLabel
+                        MarkdownTextEditor(
+                            text: $draftMarkdown,
+                            isFocused: $editorFocused,
+                            command: $editingCommand
+                        )
+                        .accessibilityIdentifier("markdown-editor")
+                    }
+                    .padding(MudsnoteSpacing.safeHorizontal)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            metadataLabel
+                            markdownBody
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("rendered-markdown")
+                                .contentShape(Rectangle())
+                                .onTapGesture(perform: beginEditing)
+                        }
+                        .padding(MudsnoteSpacing.safeHorizontal)
                     }
                 }
-                .padding(MudsnoteSpacing.safeHorizontal)
             }
             .background(MudsnoteColors.canvas)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isEditing { markdownToolbar }
+            }
             .toolbar {
-                if isEditing {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button(action: toggleDetent) {
+                        Image(systemName: detent == .large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    }
+                    .accessibilityLabel(detent == .large ? "Collapse editor" : "Expand editor")
+                    .accessibilityIdentifier(detent == .large ? "collapse-markdown-editor" : "expand-markdown-editor")
+
+                    if isEditing {
                         Button {
                             Task { await saveAndFinishEditing() }
                         } label: {
@@ -82,6 +94,7 @@ struct MarkdownPreviewView: View {
                         }
                         .disabled(isSaving)
                         .accessibilityLabel("Save note")
+                        .accessibilityIdentifier("save-markdown-button")
                     }
                 }
             }
@@ -89,6 +102,62 @@ struct MarkdownPreviewView: View {
         .interactiveDismissDisabled(isEditing && draftMarkdown != originalMarkdown)
         .onAppear(perform: beginLibraryAccess)
         .onDisappear(perform: endLibraryAccess)
+    }
+
+    private var metadataLabel: some View {
+        Text(metadata)
+            .font(.system(.headline, design: .rounded, weight: .semibold))
+            .foregroundStyle(MudsnoteColors.text)
+    }
+
+    private var markdownToolbar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                formatButton("textformat.size", .heading)
+                formatButton("bold", .bold)
+                formatButton("italic", .italic)
+                formatButton("list.bullet", .bullet)
+                formatButton("checklist", .checklist)
+                formatButton("text.quote", .quote)
+                formatButton("chevron.left.forwardslash.chevron.right", .code)
+                formatButton("link", .link)
+                formatButton("arrow.uturn.backward", .undo)
+                formatButton("arrow.uturn.forward", .redo)
+            }
+            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+            .padding(.vertical, 8)
+        }
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) { Rectangle().fill(MudsnoteColors.line).frame(height: 1) }
+    }
+
+    private func formatButton(_ systemImage: String, _ kind: MarkdownEditingCommand.Kind) -> some View {
+        Button {
+            editingCommand = MarkdownEditingCommand(kind: kind)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(MudsnoteColors.text)
+                .frame(width: 40, height: 40)
+                .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("markdown-format-\(kind.identifier)")
+    }
+
+    private func beginEditing() {
+        isEditing = true
+        withAnimation(.snappy(duration: 0.28)) { detent = .large }
+        Task { @MainActor in
+            await Task.yield()
+            editorFocused = true
+        }
+    }
+
+    private func toggleDetent() {
+        withAnimation(.snappy(duration: 0.28)) {
+            detent = detent == .large ? .medium : .large
+        }
     }
 
     private var markdownBody: some View {
@@ -218,6 +287,199 @@ struct MarkdownPreviewView: View {
         } else {
             editorFocused = true
         }
+    }
+}
+
+struct MarkdownEditingCommand: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case heading
+        case bold
+        case italic
+        case bullet
+        case checklist
+        case quote
+        case code
+        case link
+        case undo
+        case redo
+
+        var identifier: String {
+            switch self {
+            case .heading: "heading"
+            case .bold: "bold"
+            case .italic: "italic"
+            case .bullet: "bullet"
+            case .checklist: "checklist"
+            case .quote: "quote"
+            case .code: "code"
+            case .link: "link"
+            case .undo: "undo"
+            case .redo: "redo"
+            }
+        }
+    }
+
+    let id = UUID()
+    var kind: Kind
+}
+
+private struct MarkdownTextEditor: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    @Binding var command: MarkdownEditingCommand?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.textColor = UIColor(MudsnoteColors.text)
+        view.tintColor = UIColor(MudsnoteColors.primary)
+        view.font = .monospacedSystemFont(ofSize: 17, weight: .regular)
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.alwaysBounceVertical = true
+        view.keyboardDismissMode = .interactive
+        view.autocorrectionType = .yes
+        view.smartDashesType = .no
+        view.smartQuotesType = .no
+        view.text = text
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.parent = self
+        if view.text != text {
+            let selection = view.selectedRange
+            view.text = text
+            view.selectedRange = NSRange(
+                location: min(selection.location, (text as NSString).length),
+                length: 0
+            )
+        }
+        if isFocused, !view.isFirstResponder {
+            view.becomeFirstResponder()
+        } else if !isFocused, view.isFirstResponder {
+            view.resignFirstResponder()
+        }
+        if let command, context.coordinator.lastCommandID != command.id {
+            context.coordinator.lastCommandID = command.id
+            context.coordinator.apply(command.kind, to: view)
+            DispatchQueue.main.async { self.command = nil }
+        }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MarkdownTextEditor
+        var lastCommandID: UUID?
+
+        init(parent: MarkdownTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            parent.isFocused = true
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            parent.isFocused = false
+        }
+
+        func apply(_ kind: MarkdownEditingCommand.Kind, to textView: UITextView) {
+            switch kind {
+            case .heading:
+                toggleLinePrefix("## ", in: textView)
+            case .bold:
+                wrapSelection(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
+            case .italic:
+                wrapSelection(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+            case .bullet:
+                toggleLinePrefix("- ", in: textView)
+            case .checklist:
+                toggleLinePrefix("- [ ] ", in: textView)
+            case .quote:
+                toggleLinePrefix("> ", in: textView)
+            case .code:
+                wrapSelection(prefix: "`", suffix: "`", placeholder: "code", in: textView)
+            case .link:
+                let range = textView.selectedRange
+                let selected = (textView.text as NSString).substring(with: range)
+                let label = selected.isEmpty ? "text" : selected
+                replace(range, with: "[\(label)](https://)", selecting: NSRange(location: range.location + 1, length: (label as NSString).length), in: textView)
+            case .undo:
+                textView.undoManager?.undo()
+            case .redo:
+                textView.undoManager?.redo()
+            }
+            parent.text = textView.text
+        }
+
+        private func wrapSelection(
+            prefix: String,
+            suffix: String,
+            placeholder: String,
+            in textView: UITextView
+        ) {
+            let range = textView.selectedRange
+            let selected = (textView.text as NSString).substring(with: range)
+            let content = selected.isEmpty ? placeholder : selected
+            replace(
+                range,
+                with: prefix + content + suffix,
+                selecting: NSRange(location: range.location + (prefix as NSString).length, length: (content as NSString).length),
+                in: textView
+            )
+        }
+
+        private func toggleLinePrefix(_ prefix: String, in textView: UITextView) {
+            let source = textView.text as NSString
+            let lineRange = source.lineRange(for: textView.selectedRange)
+            let block = source.substring(with: lineRange)
+            let endsWithNewline = block.hasSuffix("\n")
+            var lines = block.components(separatedBy: "\n")
+            if endsWithNewline { lines.removeLast() }
+            let contentLines = lines.filter { !$0.isEmpty }
+            let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy { $0.hasPrefix(prefix) }
+            lines = lines.map { line in
+                guard !line.isEmpty else { return line }
+                return shouldRemove ? String(line.dropFirst(prefix.count)) : prefix + line
+            }
+            var replacement = lines.joined(separator: "\n")
+            if endsWithNewline { replacement += "\n" }
+            replace(
+                lineRange,
+                with: replacement,
+                selecting: NSRange(location: lineRange.location, length: (replacement as NSString).length),
+                in: textView
+            )
+        }
+
+        private func replace(
+            _ range: NSRange,
+            with replacement: String,
+            selecting selection: NSRange,
+            in textView: UITextView
+        ) {
+            guard let textRange = textView.textRange(from: range) else { return }
+            textView.replace(textRange, withText: replacement)
+            textView.selectedRange = selection
+            textViewDidChange(textView)
+        }
+    }
+}
+
+private extension UITextView {
+    func textRange(from range: NSRange) -> UITextRange? {
+        guard let start = position(from: beginningOfDocument, offset: range.location),
+              let end = position(from: start, offset: range.length) else { return nil }
+        return textRange(from: start, to: end)
     }
 }
 

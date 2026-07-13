@@ -69,7 +69,16 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
         rendered.tap()
-        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
+
+        let bold = app.buttons["markdown-format-bold"]
+        XCTAssertTrue(bold.waitForExistence(timeout: 5))
+        bold.tap()
+        editor.typeText("Styled")
+        XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)
+        XCTAssertTrue(app.buttons["save-markdown-button"].exists)
     }
 
     func testCaptureCommandsStayInSingleRow() {
