@@ -224,6 +224,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         fileMenu.addItem(newFolderItem)
         fileMenu.addItem(.separator())
 
+        let deleteNoteItem = NSMenuItem(
+            title: "移到最近删除",
+            action: #selector(deleteSelectedNotesFromMainMenu),
+            keyEquivalent: ""
+        )
+        deleteNoteItem.target = self
+        fileMenu.addItem(deleteNoteItem)
+
+        let restoreNoteItem = NSMenuItem(
+            title: "恢复笔记",
+            action: #selector(restoreSelectedNotesFromMainMenu),
+            keyEquivalent: ""
+        )
+        restoreNoteItem.target = self
+        fileMenu.addItem(restoreNoteItem)
+        fileMenu.addItem(.separator())
+
         let closeItem = NSMenuItem(title: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         closeItem.target = nil
         closeItem.keyEquivalentModifierMask = [.command]
@@ -519,6 +536,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func deleteSelectedNotesFromMainMenu() {
+        do {
+            try libraryWindowController?.deleteSelectedNotesForLibrary()
+        } catch {
+            presentErrorAlert(message: "删除失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    func restoreSelectedNotesFromMainMenu() {
+        do {
+            _ = try libraryWindowController?.restoreSelectedNoteForLibrary()
+        } catch {
+            presentErrorAlert(message: "恢复失败", details: error.localizedDescription)
+        }
+    }
+
+    @objc
     func focusLibrarySearchFromMainMenu() {
         showLibraryWindow()
         libraryWindowController?.focusSearchForLibrary()
@@ -546,6 +581,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(deleteSelectedNotesFromMainMenu):
+            return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
+        case #selector(restoreSelectedNotesFromMainMenu):
+            return libraryWindowController?.canRestoreSelectedNotesFromMenuForLibrary ?? false
         case #selector(sortLibraryNotesFromMainMenu(_:)):
             let currentOrder = libraryWindowController?.noteListSortOrder
                 ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)

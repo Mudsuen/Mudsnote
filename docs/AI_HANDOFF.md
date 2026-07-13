@@ -132,6 +132,11 @@
 - `scripts/library_smoke.sh` exercises the installed three-pane app against an isolated temporary library.
 - It currently proves direct library launch, `Command-N`, title/body editing, autosave to exact Markdown, and search filtering; deletion/restore, folder move, and attachment rendering remain explicit follow-up smoke coverage.
 
+## Latest iteration (182)
+
+- The File menu now exposes state-validated "移到最近删除" and "恢复笔记" actions while leaving the compact toolbar unchanged.
+- `scripts/library_smoke.sh` proves both actions against isolated filesystem state; folder move and attachment rendering remain the installed-smoke follow-ups.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

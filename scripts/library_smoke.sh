@@ -228,7 +228,66 @@ if grep -Fq "Existing Seed" <<<"$SEARCH_EVIDENCE"; then
   exit 1
 fi
 
+osascript <<'APPLESCRIPT' >/dev/null
+tell application "Mudsnote" to activate
+tell application "System Events" to tell process "Mudsnote"
+  set frontmost to true
+  key code 125
+  key code 36
+  delay 0.5
+  click menu item "移到最近删除" of menu 1 of menu bar item "文件" of menu bar 1
+end tell
+APPLESCRIPT
+
+TRASHED_NOTE=""
+for _ in {1..30}; do
+  TRASHED_NOTE="$(find "$APP_SUPPORT_DIR/Trash" -maxdepth 1 -type f -name '*installed-smoke-note.md' -print -quit 2>/dev/null || true)"
+  if [[ -n "$TRASHED_NOTE" && ! -e "$SAVED_NOTE" ]]; then
+    break
+  fi
+  sleep 0.2
+done
+if [[ -z "$TRASHED_NOTE" || -e "$SAVED_NOTE" ]]; then
+  echo "Installed app did not move the smoke note to Recently Deleted." >&2
+  exit 1
+fi
+
+osascript <<'APPLESCRIPT' >/dev/null
+tell application "Mudsnote" to activate
+tell application "System Events" to tell process "Mudsnote"
+  set frontmost to true
+  set trashButtonIndex to 0
+  set elements to entire contents of window 1
+  repeat with index from 1 to count elements
+    set candidate to item index of elements
+    try
+      set candidateRole to role of candidate as text
+      set candidateDescription to description of candidate as text
+      if candidateRole = "AXButton" then
+        if candidateDescription = "Recently Deleted" then set trashButtonIndex to index
+      end if
+    end try
+  end repeat
+  if trashButtonIndex = 0 then error "Could not locate Recently Deleted"
+  perform action "AXPress" of item trashButtonIndex of elements
+  delay 1
+  click menu item "恢复笔记" of menu 1 of menu bar item "文件" of menu bar 1
+end tell
+APPLESCRIPT
+
+for _ in {1..30}; do
+  if [[ -e "$SAVED_NOTE" && ! -e "$TRASHED_NOTE" ]]; then
+    break
+  fi
+  sleep 0.2
+done
+if [[ ! -e "$SAVED_NOTE" || -e "$TRASHED_NOTE" ]]; then
+  echo "Installed app did not restore the smoke note from Recently Deleted." >&2
+  exit 1
+fi
+
 echo "Installed library smoke passed"
 echo "app=$APP_PATH"
 echo "fixture=$OUTPUT_DIR"
 echo "saved_note=$SAVED_NOTE"
+echo "trash_restore=passed"

@@ -146,7 +146,7 @@ Use this checklist to decide whether future work is moving toward the goal.
 ### 7. Verification
 
 - Unit tests cover store behavior, editor serialization, list filtering, trash, folders, attachments, and shortcuts.
-- Packaged app smoke now covers direct launch, create/edit/save, and search through `scripts/library_smoke.sh`; delete/restore, folder move, and attachment rendering still need installed-app smoke coverage.
+- Packaged app smoke now covers direct launch, create/edit/save, search, delete to Recently Deleted, and restore through `scripts/library_smoke.sh`; folder move and attachment rendering still need installed-app smoke coverage.
 - Visual QA captures the same window state as the Apple Notes reference and records remaining deltas.
 
 ## Implementation Phases

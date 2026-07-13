@@ -1087,6 +1087,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added `scripts/library_smoke.sh`. It launches `/Applications/Mudsnote.app` with an isolated temporary store, creates a note through `Command-N`, edits title/body through Accessibility values, verifies exact autosaved Markdown, and confirms toolbar search filters an unrelated fixture note.
 - Lesson: Installed UI smoke must avoid the active input method and user data. `AXValue` provides deterministic text entry under Chinese input methods, while isolated store arguments keep the real library untouched.
 
+### 182. Native delete and restore menu workflow
+
+- Problem: Delete and restore worked through row/context actions, but the main File menu did not expose those core note lifecycle commands, and the installed-app smoke stopped before trash behavior.
+- Fix: Added context-validated "移到最近删除" and "恢复笔记" File-menu commands without adding toolbar chrome. Extended `library_smoke.sh` to select the search result, delete it through the installed app menu, verify the isolated Trash file, enter Recently Deleted, restore through the menu, and verify the original path returns.
+- Lesson: Core lifecycle commands belong in the native menu as well as context menus; they improve keyboard/menu discoverability and provide a stable end-to-end verification path.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -5098,6 +5098,14 @@ final class LibraryWindowController: NSWindowController,
         try deleteSelectedNotesForLibrary()
     }
 
+    var canDeleteSelectedNotesFromMenuForLibrary: Bool {
+        selectedScope != .trash && canUseSelectedNote
+    }
+
+    var canRestoreSelectedNotesFromMenuForLibrary: Bool {
+        canRestoreSelectedNote
+    }
+
     func deleteSelectedNotesForLibrary() throws {
         let urls = selectedMarkdownFileURLsForLibrary()
         guard !urls.isEmpty else { return }
