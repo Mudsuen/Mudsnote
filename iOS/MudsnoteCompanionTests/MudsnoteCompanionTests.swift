@@ -1027,6 +1027,47 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
     }
 
+    func testMarkdownDocumentStoresPortableGenericFileAttachment() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Projects/Files.md")
+        try FileManager.default.createDirectory(
+            at: documentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Files\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let attachment = try CaptureAttachment.validatedFile(
+            data: Data("portable pdf".utf8),
+            suggestedName: "Launch Brief.pdf"
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Files.md")
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 13,
+            hour: 12
+        )))
+
+        let updated = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: attachment,
+            now: now
+        )
+
+        let relativePath = "Attachments/2026/07/Launch Brief-20260713-120000.pdf"
+        XCTAssertTrue(updated.markdown.contains("[Launch Brief-20260713-120000.pdf](\(relativePath))"))
+        XCTAssertEqual(
+            try Data(contentsOf: root.appendingPathComponent(relativePath)),
+            Data("portable pdf".utf8)
+        )
+        XCTAssertEqual(MarkdownAttachmentLine("[Brief](\(relativePath))")?.kind, .file)
+    }
+
     func testInboxMemoEditRejectsStaleBody() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

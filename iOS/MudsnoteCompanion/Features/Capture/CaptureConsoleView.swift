@@ -200,6 +200,8 @@ struct CaptureConsoleView: View {
             return String(localized: "Image")
         case .audio:
             return String(localized: "Audio")
+        case .file(_, _, let preferredBaseName):
+            return preferredBaseName
         }
     }
 
@@ -209,6 +211,8 @@ struct CaptureConsoleView: View {
             return "photo"
         case .audio:
             return "waveform"
+        case .file:
+            return "doc"
         }
     }
 

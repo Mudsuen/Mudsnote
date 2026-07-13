@@ -638,6 +638,47 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func attachFile(
+        _ url: URL,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
+            if let byteCount = values.fileSize,
+               byteCount > CaptureAttachmentPolicy.maximumFileBytes {
+                throw CaptureAttachmentError.tooLarge(
+                    maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
+                )
+            }
+            let attachment = try CaptureAttachment.validatedFile(
+                data: Data(contentsOf: url, options: .mappedIfSafe),
+                suggestedName: url.lastPathComponent
+            )
+            let updated = try await fileStore.attachToMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachment: attachment
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "File attached"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     func removeAttachment(
         line: String,
         from document: MarkdownDocument,

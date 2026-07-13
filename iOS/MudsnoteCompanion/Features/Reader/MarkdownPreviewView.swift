@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct MarkdownPreviewView: View {
     private enum Source {
@@ -39,6 +40,7 @@ struct MarkdownPreviewView: View {
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isFileImporterPresented = false
     @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
@@ -162,6 +164,14 @@ struct MarkdownPreviewView: View {
         } message: {
             Text("The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.")
         }
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            Task { await attachFile(url) }
+        }
     }
 
     private var metadataLabel: some View {
@@ -204,6 +214,20 @@ struct MarkdownPreviewView: View {
                     .disabled(isSaving || appModel.isPreparingAttachment)
                     .accessibilityLabel("Add image")
                     .accessibilityIdentifier("markdown-add-image")
+
+                    Button {
+                        isFileImporterPresented = true
+                    } label: {
+                        Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .frame(width: 40, height: 40)
+                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving || appModel.isPreparingAttachment)
+                    .accessibilityLabel("Add file")
+                    .accessibilityIdentifier("markdown-add-file")
                 }
                 formatButton("textformat.size", .heading)
                 formatButton("bold", .bold)
@@ -441,6 +465,27 @@ struct MarkdownPreviewView: View {
         saveState = .saving
         if let updated = await appModel.attachPhoto(
             item,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
+    private func attachFile(_ url: URL) async {
+        guard case .document(let document) = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown else { return }
+        saveState = .saving
+        if let updated = await appModel.attachFile(
+            url,
             to: document,
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
@@ -1288,8 +1333,8 @@ private final class AudioPlaybackController: NSObject, ObservableObject, AVAudio
     }
 }
 
-private struct MarkdownAttachmentLine {
-    enum Kind {
+struct MarkdownAttachmentLine {
+    enum Kind: Equatable {
         case image
         case audio
         case file
@@ -1320,8 +1365,13 @@ private struct MarkdownAttachmentLine {
 
         if let match = Self.match(line, pattern: #"^\[[^\]]+\]\(([^)]+)\)$"#) {
             path = match
-            systemImage = "waveform"
-            kind = .audio
+            if LibraryAttachment.Kind(fileExtension: (match as NSString).pathExtension) == .audio {
+                systemImage = "waveform"
+                kind = .audio
+            } else {
+                systemImage = "doc"
+                kind = .file
+            }
             return
         }
 

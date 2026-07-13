@@ -67,6 +67,7 @@ enum CaptureTarget: Equatable, Identifiable {
 enum CaptureAttachment: Equatable {
     case image(data: Data, preferredExtension: String)
     case audio(data: Data, preferredExtension: String)
+    case file(data: Data, preferredExtension: String, preferredBaseName: String)
 
     var markdownTag: String {
         switch self {
@@ -74,6 +75,8 @@ enum CaptureAttachment: Equatable {
             return "#图片"
         case .audio:
             return "#语音"
+        case .file:
+            return "#附件"
         }
     }
 
@@ -83,19 +86,21 @@ enum CaptureAttachment: Equatable {
             return "IMG"
         case .audio:
             return "audio"
+        case .file(_, _, let preferredBaseName):
+            return preferredBaseName
         }
     }
 
     var data: Data {
         switch self {
-        case .image(let data, _), .audio(let data, _):
+        case .image(let data, _), .audio(let data, _), .file(let data, _, _):
             return data
         }
     }
 
     var preferredExtension: String {
         switch self {
-        case .image(_, let preferredExtension), .audio(_, let preferredExtension):
+        case .image(_, let preferredExtension), .audio(_, let preferredExtension), .file(_, let preferredExtension, _):
             return preferredExtension
         }
     }
@@ -106,6 +111,8 @@ enum CaptureAttachment: Equatable {
             return .image
         case .audio:
             return .audio
+        case .file:
+            return .file
         }
     }
 
@@ -133,12 +140,30 @@ enum CaptureAttachment: Equatable {
             preferredExtension: preferredExtension.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).lowercased()
         )
     }
+
+    static func validatedFile(data: Data, suggestedName: String) throws -> CaptureAttachment {
+        guard data.isEmpty == false else { throw CaptureAttachmentError.empty }
+        let rawName = (suggestedName as NSString).deletingPathExtension
+        let baseName = rawName
+            .replacingOccurrences(of: #"[/\\:\x00]"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawExtension = (suggestedName as NSString).pathExtension
+        let fileExtension = rawExtension
+            .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            .lowercased()
+        return .file(
+            data: data,
+            preferredExtension: fileExtension.isEmpty ? "bin" : fileExtension,
+            preferredBaseName: baseName.isEmpty ? "file" : String(baseName.prefix(80))
+        )
+    }
 }
 
 enum CaptureAttachmentPolicy {
     static let maximumAttachmentCount = 8
     static let maximumImageBytes = 15 * 1_024 * 1_024
     static let maximumAudioBytes = 25 * 1_024 * 1_024
+    static let maximumFileBytes = 25 * 1_024 * 1_024
     static let maximumDraftBytes = 32 * 1_024 * 1_024
 
     static func validateAppending(_ attachment: CaptureAttachment, to existing: [CaptureAttachment]) throws {
@@ -151,6 +176,8 @@ enum CaptureAttachmentPolicy {
             individualLimit = maximumImageBytes
         case .audio:
             individualLimit = maximumAudioBytes
+        case .file:
+            individualLimit = maximumFileBytes
         }
         guard attachment.data.count <= individualLimit else {
             throw CaptureAttachmentError.tooLarge(maximumBytes: individualLimit)
@@ -212,6 +239,7 @@ enum CaptureAttachmentError: LocalizedError, Equatable {
 enum MarkdownAttachmentKind: String, Equatable {
     case image
     case audio
+    case file
 }
 
 struct MarkdownAttachmentReference: Equatable {

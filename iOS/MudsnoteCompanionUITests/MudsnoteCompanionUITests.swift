@@ -73,6 +73,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-add-image"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["markdown-add-file"].exists)
         let displayMode = app.buttons["markdown-display-mode"]
         XCTAssertTrue(displayMode.exists)
         displayMode.tap()

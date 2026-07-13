@@ -1715,6 +1715,8 @@ extension MarkdownAttachmentReference {
             return "![Image](\(relativePath))"
         case .audio:
             return "[Audio](\(relativePath))"
+        case .file:
+            return "[\((relativePath as NSString).lastPathComponent)](\(relativePath))"
         }
     }
 }
