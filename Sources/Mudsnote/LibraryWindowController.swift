@@ -315,9 +315,12 @@ enum LibraryNotesLayout {
     static let toolbarSearchWrapperWidth: CGFloat = 160
     static let toolbarSearchWrapperHeight: CGFloat = 36
     static let toolbarEditorToolsWidth: CGFloat = 155
+    static let toolbarEditorToolsSlotWidth: CGFloat = 162
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26
+    static let toolbarEditorToolSymbolPointSize: CGFloat = 14
+    static let toolbarEditorFormatFontSize: CGFloat = 13
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarNewNoteWrapperWidth: CGFloat = 44
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
@@ -2493,6 +2496,7 @@ final class LibraryWindowController: NSWindowController,
         item.paletteLabel = "编辑工具"
         item.toolTip = "编辑工具"
         item.visibilityPriority = .high
+        item.isBordered = false
 
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -2511,10 +2515,9 @@ final class LibraryWindowController: NSWindowController,
             cornerRadius: LibraryNotesLayout.toolbarEditorToolsHeight / 2
         )
         let buttons = [
-            toolbarEditorToolButton(
+            toolbarEditorFormatButton(
                 identifier: Self.formatToolbarItemIdentifier,
                 label: "格式",
-                image: makeFormatToolbarImage(),
                 action: #selector(formatPressed(_:))
             ),
             toolbarEditorToolButton(
@@ -2548,9 +2551,35 @@ final class LibraryWindowController: NSWindowController,
             stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight)
         ])
 
-        item.view = capsule
+        let slot = NSView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: LibraryNotesLayout.toolbarEditorToolsSlotWidth,
+            height: LibraryNotesLayout.toolbarEditorToolsHeight
+        ))
+        slot.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorToolsSlot")
+        slot.translatesAutoresizingMaskIntoConstraints = false
+        slot.addSubview(capsule)
+        NSLayoutConstraint.activate([
+            slot.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsSlotWidth),
+            slot.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsHeight),
+            capsule.trailingAnchor.constraint(equalTo: slot.trailingAnchor),
+            capsule.centerYAnchor.constraint(equalTo: slot.centerYAnchor)
+        ])
+
+        item.view = slot
         setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
         return item
+    }
+
+    private func toolbarEditorFormatButton(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        action: Selector
+    ) -> NSButton {
+        let button = NSButton(title: "Aa", target: self, action: action)
+        button.font = .systemFont(ofSize: LibraryNotesLayout.toolbarEditorFormatFontSize, weight: .regular)
+        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
     }
 
     private func toolbarEditorToolButton(
@@ -2559,7 +2588,7 @@ final class LibraryWindowController: NSWindowController,
         symbolName: String,
         action: Selector
     ) -> NSButton {
-        let image = toolbarSymbolImage(symbolName: symbolName, label: label)
+        let image = toolbarEditorToolSymbolImage(symbolName: symbolName, label: label)
         image?.isTemplate = true
         return toolbarEditorToolButton(identifier: identifier, label: label, image: image, action: action)
     }
@@ -2571,6 +2600,14 @@ final class LibraryWindowController: NSWindowController,
         action: Selector
     ) -> NSButton {
         let button = NSButton(image: image ?? NSImage(), target: self, action: action)
+        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
+    }
+
+    private func configureToolbarEditorToolButton(
+        _ button: NSButton,
+        identifier: NSToolbarItem.Identifier,
+        label: String
+    ) -> NSButton {
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
@@ -2578,7 +2615,7 @@ final class LibraryWindowController: NSWindowController,
         button.isBordered = true
         button.showsBorderOnlyWhileMouseInside = true
         button.focusRingType = .none
-        button.imagePosition = .imageOnly
+        button.imagePosition = button.image == nil ? .noImage : .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = toolbarIconTintColor(isEnabled: true)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -2673,6 +2710,14 @@ final class LibraryWindowController: NSWindowController,
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
         return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
             pointSize: LibraryNotesLayout.toolbarCircularButtonSymbolPointSize,
+            weight: .regular
+        )) ?? image
+    }
+
+    private func toolbarEditorToolSymbolImage(symbolName: String, label: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: label)
+        return image?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.toolbarEditorToolSymbolPointSize,
             weight: .regular
         )) ?? image
     }

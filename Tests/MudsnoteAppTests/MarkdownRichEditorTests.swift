@@ -1057,7 +1057,12 @@ struct MarkdownRichEditorTests {
         let editorToolsItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
         })
-        let editorToolsGlass = try #require(editorToolsItem.view as? NSGlassEffectView)
+        #expect(!editorToolsItem.isBordered)
+        let editorToolsSlot = try #require(editorToolsItem.view)
+        #expect(editorToolsSlot.identifier?.rawValue == "LibraryToolbarEditorToolsSlot")
+        #expect(editorToolsSlot.frame.width == LibraryNotesLayout.toolbarEditorToolsSlotWidth)
+        #expect(LibraryNotesLayout.toolbarEditorToolsSlotWidth == 162)
+        let editorToolsGlass = try #require(editorToolsSlot.allSubviews.compactMap { $0 as? NSGlassEffectView }.first)
         #expect(editorToolsGlass.frame.width == LibraryNotesLayout.toolbarEditorToolsWidth)
         #expect(editorToolsGlass.frame.height == LibraryNotesLayout.toolbarEditorToolsHeight)
         #expect(editorToolsGlass.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
@@ -1074,6 +1079,14 @@ struct MarkdownRichEditorTests {
         #expect(editorToolButtons.allSatisfy { $0.bezelStyle == .toolbar })
         #expect(editorToolButtons.allSatisfy { $0.isBordered })
         #expect(editorToolButtons.allSatisfy { $0.showsBorderOnlyWhileMouseInside })
+        let formatButton = try #require(editorToolButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.format"
+        })
+        #expect(formatButton.title == "Aa")
+        #expect(formatButton.image == nil)
+        #expect(formatButton.font?.pointSize == LibraryNotesLayout.toolbarEditorFormatFontSize)
+        #expect(LibraryNotesLayout.toolbarEditorFormatFontSize == 13)
+        #expect(LibraryNotesLayout.toolbarEditorToolSymbolPointSize == 14)
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
         #expect(splitView.arrangedSubviews.count == 3)
         let sourceTrackingSeparator = try #require((window.toolbar?.items ?? []).first {

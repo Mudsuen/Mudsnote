@@ -1208,6 +1208,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Expanded and collapsed packaged-app comparisons are `/tmp/mudsnote-visual-qa-200-final-expanded/apple-notes-vs-mudsnote.png` and `/tmp/mudsnote-visual-qa-200-final-collapsed/apple-notes-vs-mudsnote.png`. Full tests, installed-app library smoke, packaging, and strict signature validation passed.
 - Lesson: A system symbol's configured point size is not its final `NSImage.size`; compact native bezels need a symbol configuration based on the resulting image canvas, not the nominal point value alone.
 
+### 201. Reference-aligned editor tool capsule
+
+- Problem: The editor-tools capsule began about `7pt` left of the normalized Notes reference, its generic `19pt` SF Symbols crowded the five compact tracks, `Aa` was rendered into a bitmap, and AppKit drew an extra item-level outline around the shifted glass surface.
+- Fix: Added a transparent `162pt` toolbar slot with the existing `155x32pt` native glass capsule trailing-aligned, introduced an editor-only `14pt` SF Symbol configuration, replaced the bitmap `Aa` with a native `13pt` regular text button, and disabled the outer `NSToolbarItem` border so only the glass material draws the capsule.
+- Verification: The final packaged comparison is `/tmp/mudsnote-visual-qa-201-editor-tools-final/apple-notes-vs-mudsnote.png`; its toolbar crop shows reference-aligned capsule bounds and one outline. Full tests, installed-app library smoke, packaging, and strict signature validation passed.
+- Lesson: Use a transparent layout slot to position a native material without changing its geometry, and explicitly suppress item chrome when the contained AppKit view already owns the visible surface.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

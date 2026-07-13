@@ -247,6 +247,14 @@
 - Keep expanded toolbar symbols on the existing `19pt` configuration and proportional scaling. The compact correction is intentionally isolated to `.glass` controls.
 - Final expanded and collapsed visual evidence lives under `/tmp/mudsnote-visual-qa-200-final-expanded` and `/tmp/mudsnote-visual-qa-200-final-collapsed`.
 
+## Latest iteration (201)
+
+- The editor-tools item now uses a transparent `162pt` layout slot with the unchanged `155x32pt` `NSGlassEffectView` trailing-aligned, moving the visible capsule right by `7pt` without moving Search or changing hit targets.
+- Grouped checklist/table/link/attachment icons use an editor-only `14pt` SF Symbol configuration; expanded source controls retain their existing `19pt` symbols.
+- Grouped `Aa` is a native `13pt` regular text button instead of a custom bitmap image.
+- `NSToolbarItem.isBordered` is explicitly false for the group, preventing a second shifted outline around the glass capsule.
+- Final packaged visual evidence is `/tmp/mudsnote-visual-qa-201-editor-tools-final/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
