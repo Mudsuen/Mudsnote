@@ -16,6 +16,11 @@ struct MarkdownPreviewView: View {
         case failed
     }
 
+    private enum EditorDisplayMode: String {
+        case rich
+        case source
+    }
+
     private struct AutosaveID: Hashable {
         var markdown: String
         var isEditing: Bool
@@ -24,7 +29,6 @@ struct MarkdownPreviewView: View {
     @EnvironmentObject private var appModel: AppModel
     @Binding private var detent: PresentationDetent
     private var source: Source
-    private var title: String
     private var metadata: String
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
@@ -35,13 +39,13 @@ struct MarkdownPreviewView: View {
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
         source = .memo(memo)
-        title = String(localized: "Markdown")
         metadata = memo.dateText
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
@@ -50,7 +54,6 @@ struct MarkdownPreviewView: View {
     init(document: MarkdownDocument, detent: Binding<PresentationDetent>) {
         _detent = detent
         source = .document(document)
-        title = document.title
         metadata = document.relativePath
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
@@ -65,7 +68,8 @@ struct MarkdownPreviewView: View {
                         MarkdownTextEditor(
                             text: $draftMarkdown,
                             isFocused: $editorFocused,
-                            command: $editingCommand
+                            command: $editingCommand,
+                            displaysSource: editorDisplayMode == .source
                         )
                         .accessibilityIdentifier("markdown-editor")
                     }
@@ -85,13 +89,32 @@ struct MarkdownPreviewView: View {
                 }
             }
             .background(MudsnoteColors.canvas)
-            .navigationTitle(title)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if isEditing { markdownToolbar }
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if isEditing {
+                        Menu {
+                            Button {
+                                editorDisplayMode = .rich
+                            } label: {
+                                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
+                            }
+                            Button {
+                                editorDisplayMode = .source
+                            } label: {
+                                Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
+                            }
+                        } label: {
+                            Image(systemName: editorDisplayMode == .rich ? "textformat" : "chevron.left.forwardslash.chevron.right")
+                        }
+                        .accessibilityLabel("Editor Display")
+                        .accessibilityIdentifier("markdown-display-mode")
+                    }
+
                     Button(action: toggleDetent) {
                         Image(systemName: detent == .large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }
@@ -480,10 +503,140 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
     var kind: Kind
 }
 
+@MainActor
+enum MarkdownEditorPresentation {
+    static func apply(to textView: UITextView, displaysSource: Bool) {
+        let storage = textView.textStorage
+        let fullRange = NSRange(location: 0, length: storage.length)
+        let selection = textView.selectedRange
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        paragraph.paragraphSpacing = 3
+        let bodyFont: UIFont = displaysSource
+            ? .monospacedSystemFont(ofSize: 17, weight: .regular)
+            : .preferredFont(forTextStyle: .body)
+        let baseAttributes: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: UIColor(MudsnoteColors.text),
+            .paragraphStyle: paragraph,
+        ]
+
+        storage.beginEditing()
+        if fullRange.length > 0 {
+            storage.setAttributes(baseAttributes, range: fullRange)
+        }
+        guard !displaysSource, storage.length <= 512 * 1_024 else {
+            storage.endEditing()
+            textView.typingAttributes = baseAttributes
+            textView.selectedRange = clamped(selection, length: storage.length)
+            return
+        }
+
+        let source = storage.string as NSString
+        applyHeadings(in: source, storage: storage)
+        applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
+        applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
+        applyDelimited(#"(?<!\*)\*([^*\n]+?)\*(?!\*)"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
+        applyDelimited(#"_([^_\n]+?)_"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
+        applyCode(in: source, storage: storage)
+        applyLinks(in: source, storage: storage)
+        storage.endEditing()
+        textView.typingAttributes = baseAttributes
+        textView.selectedRange = clamped(selection, length: storage.length)
+    }
+
+    private static func applyHeadings(in source: NSString, storage: NSTextStorage) {
+        matches(#"(?m)^(#{1,6})[ \t]+([^\n]*)"#, in: source).forEach { match in
+            let marker = match.range(at: 1)
+            let level = marker.length
+            let size: CGFloat = switch level {
+            case 1: 28
+            case 2: 24
+            case 3: 21
+            default: 18
+            }
+            storage.addAttribute(
+                .font,
+                value: UIFont.systemFont(ofSize: size, weight: .bold),
+                range: match.range
+            )
+            conceal(NSRange(location: marker.location, length: marker.length + 1), in: storage)
+        }
+    }
+
+    private static func applyDelimited(
+        _ pattern: String,
+        markerLength: Int,
+        trait: UIFontDescriptor.SymbolicTraits?,
+        in source: NSString,
+        storage: NSTextStorage,
+        extra: [NSAttributedString.Key: Any] = [:]
+    ) {
+        matches(pattern, in: source).forEach { match in
+            let content = match.range(at: 1)
+            if let trait, content.length > 0 {
+                let current = storage.attribute(.font, at: content.location, effectiveRange: nil) as? UIFont
+                    ?? .preferredFont(forTextStyle: .body)
+                if let descriptor = current.fontDescriptor.withSymbolicTraits(
+                    current.fontDescriptor.symbolicTraits.union(trait)
+                ) {
+                    storage.addAttribute(.font, value: UIFont(descriptor: descriptor, size: current.pointSize), range: content)
+                }
+            }
+            if !extra.isEmpty { storage.addAttributes(extra, range: content) }
+            conceal(NSRange(location: match.range.location, length: markerLength), in: storage)
+            conceal(NSRange(location: NSMaxRange(match.range) - markerLength, length: markerLength), in: storage)
+        }
+    }
+
+    private static func applyCode(in source: NSString, storage: NSTextStorage) {
+        matches(#"`([^`\n]+?)`"#, in: source).forEach { match in
+            let content = match.range(at: 1)
+            storage.addAttributes([
+                .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .regular),
+                .backgroundColor: UIColor.secondarySystemFill,
+            ], range: content)
+            conceal(NSRange(location: match.range.location, length: 1), in: storage)
+            conceal(NSRange(location: NSMaxRange(match.range) - 1, length: 1), in: storage)
+        }
+    }
+
+    private static func applyLinks(in source: NSString, storage: NSTextStorage) {
+        matches(#"\[([^\]\n]+)\]\(([^)\n]+)\)"#, in: source).forEach { match in
+            let label = match.range(at: 1)
+            storage.addAttributes([
+                .foregroundColor: UIColor(MudsnoteColors.primary),
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: label)
+            conceal(NSRange(location: match.range.location, length: 1), in: storage)
+            conceal(NSRange(location: NSMaxRange(label), length: NSMaxRange(match.range) - NSMaxRange(label)), in: storage)
+        }
+    }
+
+    private static func conceal(_ range: NSRange, in storage: NSTextStorage) {
+        guard range.location >= 0, NSMaxRange(range) <= storage.length else { return }
+        storage.addAttributes([
+            .foregroundColor: UIColor.clear,
+            .font: UIFont.systemFont(ofSize: 1),
+        ], range: range)
+    }
+
+    private static func matches(_ pattern: String, in source: NSString) -> [NSTextCheckingResult] {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return expression.matches(in: source as String, range: NSRange(location: 0, length: source.length))
+    }
+
+    private static func clamped(_ range: NSRange, length: Int) -> NSRange {
+        let location = min(max(range.location, 0), length)
+        return NSRange(location: location, length: min(range.length, length - location))
+    }
+}
+
 private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     @Binding var command: MarkdownEditingCommand?
+    var displaysSource: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -504,6 +657,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
+        MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
         return view
     }
 
@@ -517,6 +671,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 length: 0
             )
         }
+        MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
         } else if !isFocused, view.isFirstResponder {
@@ -539,6 +694,10 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
+            MarkdownEditorPresentation.apply(
+                to: textView,
+                displaysSource: parent.displaysSource
+            )
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -576,6 +735,10 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 textView.undoManager?.redo()
             }
             parent.text = textView.text
+            MarkdownEditorPresentation.apply(
+                to: textView,
+                displaysSource: parent.displaysSource
+            )
         }
 
         private func wrapSelection(

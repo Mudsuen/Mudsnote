@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
@@ -1199,6 +1200,34 @@ final class MudsnoteCompanionTests: XCTestCase {
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
             "File Name"
         )
+    }
+
+    @MainActor
+    func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
+        let markdown = "# Heading\n\n**Bold** and `code` with [Link](https://example.com)"
+        let view = UITextView()
+        view.text = markdown
+
+        MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+        XCTAssertEqual(view.text, markdown)
+        let storage = try XCTUnwrap(view.textStorage)
+        let source = markdown as NSString
+        let headingMarker = source.range(of: "#")
+        let headingText = source.range(of: "Heading")
+        let boldText = source.range(of: "Bold")
+        let linkText = source.range(of: "Link")
+        let markerColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: headingMarker.location, effectiveRange: nil) as? UIColor)
+        XCTAssertEqual(markerColor.cgColor.alpha, 0, accuracy: 0.01)
+        let headingFont = try XCTUnwrap(storage.attribute(.font, at: headingText.location, effectiveRange: nil) as? UIFont)
+        let boldFont = try XCTUnwrap(storage.attribute(.font, at: boldText.location, effectiveRange: nil) as? UIFont)
+        XCTAssertGreaterThan(headingFont.pointSize, 20)
+        XCTAssertTrue(boldFont.fontDescriptor.symbolicTraits.contains(.traitBold))
+        XCTAssertNotNil(storage.attribute(.underlineStyle, at: linkText.location, effectiveRange: nil))
+
+        MarkdownEditorPresentation.apply(to: view, displaysSource: true)
+        XCTAssertEqual(view.text, markdown)
+        let sourceMarkerColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: headingMarker.location, effectiveRange: nil) as? UIColor)
+        XCTAssertGreaterThan(sourceMarkerColor.cgColor.alpha, 0.9)
     }
 
     func testLibrarySnapshotPublishesAndRefreshesListMetadata() async throws {

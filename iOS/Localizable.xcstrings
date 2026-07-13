@@ -1832,6 +1832,15 @@
     },
     "This attachment is no longer referenced by the note.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记已不再引用此附件。" } } }
+    },
+    "Rich Text": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "富文本" } } }
+    },
+    "Markdown Source": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Markdown 源码" } } }
+    },
+    "Editor Display": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑器显示" } } }
     }
   },
   "version": "1.0"

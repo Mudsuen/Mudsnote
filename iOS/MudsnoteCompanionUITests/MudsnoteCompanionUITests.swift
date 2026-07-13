@@ -73,6 +73,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-add-image"].waitForExistence(timeout: 5))
+        let displayMode = app.buttons["markdown-display-mode"]
+        XCTAssertTrue(displayMode.exists)
+        displayMode.tap()
+        XCTAssertTrue(app.buttons["Rich Text"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Markdown Source"].exists)
+        app.buttons["Rich Text"].tap()
+        editor.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+
+        let richEditorScreenshot = XCTAttachment(screenshot: app.screenshot())
+        richEditorScreenshot.name = "Rendered Markdown editor"
+        richEditorScreenshot.lifetime = .keepAlways
+        add(richEditorScreenshot)
 
         let bold = app.buttons["markdown-format-bold"]
         XCTAssertTrue(bold.waitForExistence(timeout: 5))
