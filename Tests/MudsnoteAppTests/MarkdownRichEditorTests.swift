@@ -1444,6 +1444,14 @@ struct MarkdownRichEditorTests {
         #expect(editorDateRow.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
         })
+        #expect(editorDateRow.constraints.contains {
+            $0.firstItem === controller.statusLabel
+                && $0.firstAttribute == .centerX
+                && $0.secondItem === editorDateRow
+                && $0.secondAttribute == .centerX
+                && $0.constant == LibraryNotesLayout.editorStatusHorizontalOffset
+        })
+        #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)

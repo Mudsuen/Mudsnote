@@ -226,6 +226,13 @@
 - Treat the date row and title/body content as independently calibrated vertical relationships; do not move the whole editor stack when only the date baseline differs.
 - Final empty and content captures both measure the Mudsnote date at exactly `y=123.0px`; the collapsed editor title remains `y=184px` versus Apple Notes `y=186px`.
 
+## Latest iteration (198)
+
+- After vertical alignment, the Apple Notes date center remained stable at about `x=1311.9px` in both normalized empty and content references, while Mudsnote centered at `x=1328–1329px` over the full editor pane.
+- The status label now uses an independent `-8.5pt` horizontal center offset, matching Apple Notes' visible editing region without moving the title, body, pane, or toolbar.
+- Keep date-row centering separate from the editor content insets; the native reference accounts for the right-side scrolling region in its perceived center.
+- Final empty-state OCR centers Mudsnote and Apple Notes at `x=1311.9px`; content-state Mudsnote centers at `x=1310.6px`, within `1.3px` of the same reference center. The `y=123px` baseline and collapsed title remain unchanged.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

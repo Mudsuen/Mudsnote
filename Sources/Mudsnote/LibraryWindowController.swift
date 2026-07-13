@@ -387,6 +387,7 @@ enum LibraryNotesLayout {
     static let editorDateRowHeight: CGFloat = 20
     static let editorDateToTitleSpacing: CGFloat = 10.75
     static let editorTitleToBodySpacing: CGFloat = 8
+    static let editorStatusHorizontalOffset: CGFloat = -8.5
     static let editorStatusFontSize: CGFloat = 13
     static let editorTitleFontSize: CGFloat = 24
     static let editorBodyFontSize: CGFloat = 15
@@ -2046,7 +2047,10 @@ final class LibraryWindowController: NSWindowController,
         dateRow.identifier = NSUserInterfaceItemIdentifier("LibraryEditorDateRow")
         dateRow.addSubview(statusLabel)
         NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(equalTo: dateRow.centerXAnchor),
+            statusLabel.centerXAnchor.constraint(
+                equalTo: dateRow.centerXAnchor,
+                constant: LibraryNotesLayout.editorStatusHorizontalOffset
+            ),
             statusLabel.topAnchor.constraint(equalTo: dateRow.topAnchor),
             statusLabel.bottomAnchor.constraint(equalTo: dateRow.bottomAnchor),
             statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: dateRow.leadingAnchor, constant: 20),

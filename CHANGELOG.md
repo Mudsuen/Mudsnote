@@ -1187,6 +1187,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Final empty and content OCR both measure the Mudsnote date at `y=123.0px`, exactly matching Apple Notes. The collapsed editor title remains `y=184px` versus `y=186px`. Full tests, installed smoke, packaging, and signature validation passed.
 - Lesson: When one row in a vertical stack is misaligned but downstream content is correct, preserve the cumulative downstream offset and redistribute spacing before moving the entire stack.
 
+### 198. Reference-aligned editor date center
+
+- Problem: With the date baseline fixed, Apple Notes centered the date near `x=1311.9px` in both normalized empty and content references, while Mudsnote remained around `x=1328–1329px` because it centered over the entire editor pane.
+- Fix: Added an independent `-8.5pt` horizontal center offset to the date label, matching the visible editor region without moving title/body content or changing pane geometry.
+- Verification: Final empty-state OCR centers Apple Notes and Mudsnote at `x=1311.9px`; content-state Mudsnote centers at `x=1310.6px`, within `1.3px` of the `x=1311.9px` reference. The `y=123px` baseline and collapsed title remain unchanged. Full tests, installed smoke, packaging, and signature validation passed.
+- Lesson: Perceived centering in a scrollable editor may use the unobstructed content region rather than the full pane bounds; calibrate the status row independently when the content origin is already correct.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
