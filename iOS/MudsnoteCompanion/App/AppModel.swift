@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     @Published var isSendingDraft = false
     @Published private(set) var isAudioTransitioning = false
     @Published private(set) var isTranscribingAudio = false
+    @Published private(set) var attachmentPreparationCount = 0
     @Published var statusToast: StatusToast?
     @Published var query = ""
     @Published var syncStatus: SyncStatus = .idle
@@ -43,6 +44,8 @@ final class AppModel: ObservableObject {
     private var queue: PendingWriteQueue?
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
+
+    var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
     init(bootstrapImmediately: Bool = true) {
         if bootstrapImmediately {
@@ -114,77 +117,54 @@ final class AppModel: ObservableObject {
     func sendDraft(continueCapturing: Bool = true) {
         guard draft.canSend,
               !isSendingDraft,
+              !isPreparingAttachment,
               !isAudioTransitioning,
-              !isTranscribingAudio else { return }
-        let nextTarget = draft.target
-        let canUseInboxDelta = nextTarget == .inbox && draft.attachments.isEmpty
+              !isTranscribingAudio,
+              !audioRecorder.isRecording else { return }
+        let submittedDraft = draft
+        let canUseInboxDelta = submittedDraft.target == .inbox && submittedDraft.attachments.isEmpty
         isSendingDraft = true
         Task {
             defer { isSendingDraft = false }
             do {
-                try await appendCurrentDraft()
-                draft = CaptureDraft(target: nextTarget)
-                captureRoute = .text
-                if !continueCapturing {
-                    isCapturePresented = false
-                }
+                try await appendDraft(submittedDraft)
+                let finished = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
                 statusToast = .saved(
-                    continueCapturing
-                        ? String(localized: "Saved. Ready for next")
-                        : String(localized: "Saved")
+                    finished
+                        ? (continueCapturing
+                            ? String(localized: "Saved. Ready for next")
+                            : String(localized: "Saved"))
+                        : String(localized: "Saved. New changes kept")
                 )
                 await refreshAfterWrite(canUseInboxDelta: canUseInboxDelta)
             } catch {
+                if let draftSaveError = error as? DraftSaveError,
+                   case .queuedForReplay = draftSaveError {
+                    _ = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
+                    syncStatus = .pending
+                    statusToast = .pending(String(localized: "Saved to pending queue"))
+                    return
+                }
                 if let draftSaveError = error as? DraftSaveError {
                     statusToast = .error(draftSaveError.localizedDescription)
                     return
                 }
-                let pendingCount = await queue?.pendingCount() ?? 0
-                if pendingCount > 0 {
-                    syncStatus = .pending
-                    statusToast = .pending(String(localized: "Saved to pending queue"))
-                } else {
-                    statusToast = .error(String(localized: "Could not save. Draft kept open"))
-                }
+                statusToast = .error(String(localized: "Could not save. Draft kept open"))
             }
         }
     }
 
     func attachPhoto(_ item: PhotosPickerItem?) {
-        guard let item else { return }
+        guard let item, !isSendingDraft else { return }
+        attachmentPreparationCount += 1
         Task {
+            defer { attachmentPreparationCount -= 1 }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
                     statusToast = .error(String(localized: "Image data unavailable"))
                     return
                 }
                 let attachment = try CaptureAttachment.validatedImage(data: data)
-                try appendAttachment(attachment)
-                statusToast = .saved(String(localized: "Image attached"))
-            } catch {
-                statusToast = .error(error.localizedDescription)
-            }
-        }
-    }
-
-    func attachImageFile(_ url: URL) {
-        Task {
-            do {
-                let accessed = url.startAccessingSecurityScopedResource()
-                defer {
-                    if accessed { url.stopAccessingSecurityScopedResource() }
-                }
-                if let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-                   fileSize > CaptureAttachmentPolicy.maximumImageBytes {
-                    throw CaptureAttachmentError.tooLarge(
-                        maximumBytes: CaptureAttachmentPolicy.maximumImageBytes
-                    )
-                }
-                let data = try Data(contentsOf: url)
-                let attachment = try CaptureAttachment.validatedImage(
-                    data: data,
-                    suggestedExtension: url.pathExtension
-                )
                 try appendAttachment(attachment)
                 statusToast = .saved(String(localized: "Image attached"))
             } catch {
@@ -486,7 +466,7 @@ final class AppModel: ObservableObject {
         presentPendingCaptureIfPossible()
     }
 
-    private func appendCurrentDraft() async throws {
+    private func appendDraft(_ draft: CaptureDraft) async throws {
         guard let root = folderAccess.currentRoot, let queue else {
             throw FolderAccessError.missingFolder
         }
@@ -497,8 +477,23 @@ final class AppModel: ObservableObject {
         } catch {
             throw DraftSaveError.pendingQueueRejected(error.localizedDescription)
         }
-        try await fileStore.performPendingWrite(pending)
-        try await queue.remove(id: pending.id)
+        do {
+            try await fileStore.performPendingWrite(pending)
+            try await queue.remove(id: pending.id)
+        } catch {
+            throw DraftSaveError.queuedForReplay
+        }
+    }
+
+    @discardableResult
+    private func finishSubmission(_ submittedDraft: CaptureDraft, continueCapturing: Bool) -> Bool {
+        guard draft == submittedDraft else { return false }
+        draft = CaptureDraft(target: submittedDraft.target)
+        captureRoute = .text
+        if !continueCapturing {
+            isCapturePresented = false
+        }
+        return true
     }
 
     private func openSystemCapture(_ route: CaptureRoute) {
@@ -546,6 +541,7 @@ final class AppModel: ObservableObject {
 
 enum DraftSaveError: LocalizedError {
     case pendingQueueRejected(String)
+    case queuedForReplay
 
     var errorDescription: String? {
         switch self {
@@ -555,6 +551,8 @@ enum DraftSaveError: LocalizedError {
                 locale: .current,
                 reason
             )
+        case .queuedForReplay:
+            return String(localized: "Saved to pending queue")
         }
     }
 }

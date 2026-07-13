@@ -62,9 +62,10 @@ struct CaptureConsoleView: View {
                 selectedRoute = .image
                 isPhotoPickerPresented = true
             } label: {
-                Image(systemName: "photo")
+                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "photo")
             }
             .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
             .accessibilityLabel("Add image")
 
             Button {
@@ -74,7 +75,12 @@ struct CaptureConsoleView: View {
                 Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
             }
             .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
-            .disabled(appModel.isAudioTransitioning || appModel.isTranscribingAudio)
+            .disabled(
+                appModel.isSendingDraft
+                    || appModel.isPreparingAttachment
+                    || appModel.isAudioTransitioning
+                    || appModel.isTranscribingAudio
+            )
             .accessibilityLabel(
                 Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
             )
@@ -91,9 +97,11 @@ struct CaptureConsoleView: View {
                 Image(systemName: "textformat")
             }
             .buttonStyle(IconCircleButtonStyle())
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
             .accessibilityLabel("Formatting")
 
             TargetMenuView()
+                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
 
             Spacer()
 
@@ -109,6 +117,7 @@ struct CaptureConsoleView: View {
             .disabled(
                 !appModel.draft.canSend
                     || appModel.isSendingDraft
+                    || appModel.isPreparingAttachment
                     || appModel.audioRecorder.isRecording
                     || appModel.isAudioTransitioning
                     || appModel.isTranscribingAudio
@@ -130,6 +139,7 @@ struct CaptureConsoleView: View {
                 .padding(.horizontal, 2)
                 .padding(.vertical, 4)
                 .background(MudsnoteColors.panel)
+                .disabled(appModel.isSendingDraft)
                 .accessibilityIdentifier("capture-body-editor")
 
             if appModel.draft.body.isEmpty {
@@ -170,6 +180,7 @@ struct CaptureConsoleView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                         .accessibilityLabel("Remove attachment")
+                        .disabled(appModel.isSendingDraft)
                     }
                     .font(.caption)
                     .foregroundStyle(MudsnoteColors.text)
