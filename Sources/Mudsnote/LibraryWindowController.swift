@@ -317,6 +317,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
+    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -7
     static let toolbarAddFolderWrapperWidth: CGFloat = 68
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
@@ -1165,6 +1166,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceButtons: [NSButton] = []
     private var sourceCountLabels: [Int: NSTextField] = [:]
     private var sourceFolderRows: [LibraryFolderRow] = []
+    private var sourceFolderTreeRows: [LibraryFolderRow] = []
     private var sourceTagNames: [String] = []
     private var collapsedFolderPaths = Set<String>()
     private var expandedFolderPaths = Set<String>()
@@ -1748,7 +1750,8 @@ final class LibraryWindowController: NSWindowController,
         let tagHeader = makeSourceSectionHeader(.tags)
         sourceTagHeaderButton = tagHeader
 
-        sourceFolderRows = rootFolderRowsForSourceList()
+        sourceFolderTreeRows = rootFolderRowsForSourceList()
+        sourceFolderRows = sourceFolderTreeRows
         rebuildSourceRows(includeTags: sourceTagsLoaded)
 
         let stack = NSStackView(views: [
@@ -2795,8 +2798,9 @@ final class LibraryWindowController: NSWindowController,
         let collapsedPaths = collapsedFolderPaths
         let expandedPaths = expandedFolderPaths
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let rows = Self.folderRowsForSourceList(
-                from: preferredDirectories,
+            let treeRows = Self.folderTreeRowsForSourceList(from: preferredDirectories)
+            let rows = Self.visibleFolderRowsForSourceList(
+                from: treeRows,
                 collapsedFolderPaths: collapsedPaths,
                 expandedFolderPaths: expandedPaths
             )
@@ -2804,6 +2808,7 @@ final class LibraryWindowController: NSWindowController,
                 guard let self else { return }
                 self.sourceFoldersLoaded = true
                 self.sourceFoldersLoading = false
+                self.sourceFolderTreeRows = treeRows
                 self.sourceFolderRows = rows
                 self.rebuildSourceRows(includeTags: self.sourceTagsLoaded)
                 self.reloadNotesForNavigation(selecting: self.selectedURL, loadFirstIfNeeded: false)
@@ -2854,20 +2859,17 @@ final class LibraryWindowController: NSWindowController,
     private func reloadSourceFolderRowsForCurrentState() {
         sourceFoldersLoaded = true
         sourceFoldersLoading = false
-        sourceFolderRows = folderRowsForSourceList()
+        sourceFolderTreeRows = Self.folderTreeRowsForSourceList(from: noteStore.preferredDirectories)
+        sourceFolderRows = Self.visibleFolderRowsForSourceList(
+            from: sourceFolderTreeRows,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
         rebuildSourceRows(includeTags: sourceTagsLoaded)
     }
 
     private func rootFolderRowsForSourceList() -> [LibraryFolderRow] {
         Self.rootFolderRowsForSourceList(from: noteStore.preferredDirectories)
-    }
-
-    private func folderRowsForSourceList() -> [LibraryFolderRow] {
-        Self.folderRowsForSourceList(
-            from: noteStore.preferredDirectories,
-            collapsedFolderPaths: collapsedFolderPaths,
-            expandedFolderPaths: expandedFolderPaths
-        )
     }
 
     nonisolated private static func rootFolderRowsForSourceList(from directories: [URL]) -> [LibraryFolderRow] {
@@ -2876,28 +2878,52 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    nonisolated private static func folderRowsForSourceList(
-        from directories: [URL],
-        collapsedFolderPaths: Set<String>,
-        expandedFolderPaths: Set<String>
-    ) -> [LibraryFolderRow] {
+    nonisolated private static func folderTreeRowsForSourceList(from directories: [URL]) -> [LibraryFolderRow] {
         let preferredRoots = rootPreferredDirectories(from: directories)
         var seenPaths = Set<String>()
         var rows: [LibraryFolderRow] = []
 
         for root in preferredRoots {
-            appendFolderRows(
+            appendFolderTreeRows(
                 root,
                 depth: 0,
                 maxDepth: 3,
-                collapsedFolderPaths: collapsedFolderPaths,
-                expandedFolderPaths: expandedFolderPaths,
                 seenPaths: &seenPaths,
                 rows: &rows
             )
         }
 
         return rows
+    }
+
+    nonisolated private static func visibleFolderRowsForSourceList(
+        from treeRows: [LibraryFolderRow],
+        collapsedFolderPaths: Set<String>,
+        expandedFolderPaths: Set<String>
+    ) -> [LibraryFolderRow] {
+        var hiddenDescendantDepth: Int?
+        var visibleRows: [LibraryFolderRow] = []
+
+        for row in treeRows {
+            if let hiddenDepth = hiddenDescendantDepth {
+                if row.depth > hiddenDepth {
+                    continue
+                }
+                hiddenDescendantDepth = nil
+            }
+
+            visibleRows.append(row)
+            if !isSourceFolderExpanded(
+                path: row.url.standardizedFileURL.path,
+                depth: row.depth,
+                collapsedFolderPaths: collapsedFolderPaths,
+                expandedFolderPaths: expandedFolderPaths
+            ) {
+                hiddenDescendantDepth = row.depth
+            }
+        }
+
+        return visibleRows
     }
 
     nonisolated private static func rootPreferredDirectories(from directories: [URL]) -> [URL] {
@@ -2909,12 +2935,10 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    nonisolated private static func appendFolderRows(
+    nonisolated private static func appendFolderTreeRows(
         _ folderURL: URL,
         depth: Int,
         maxDepth: Int,
-        collapsedFolderPaths: Set<String>,
-        expandedFolderPaths: Set<String>,
         seenPaths: inout Set<String>,
         rows: inout [LibraryFolderRow]
     ) {
@@ -2922,20 +2946,13 @@ final class LibraryWindowController: NSWindowController,
         guard seenPaths.insert(standardized.path).inserted else { return }
         let children = childFolderURLs(of: standardized)
         rows.append(LibraryFolderRow(url: standardized, depth: depth, hasChildren: !children.isEmpty))
-        guard depth < maxDepth, isSourceFolderExpanded(
-            path: standardized.path,
-            depth: depth,
-            collapsedFolderPaths: collapsedFolderPaths,
-            expandedFolderPaths: expandedFolderPaths
-        ) else { return }
+        guard depth < maxDepth else { return }
 
         for child in children {
-            appendFolderRows(
+            appendFolderTreeRows(
                 child,
                 depth: depth + 1,
                 maxDepth: maxDepth,
-                collapsedFolderPaths: collapsedFolderPaths,
-                expandedFolderPaths: expandedFolderPaths,
                 seenPaths: &seenPaths,
                 rows: &rows
             )
@@ -4075,7 +4092,12 @@ final class LibraryWindowController: NSWindowController,
         }
 
         persistSourceDisclosureState()
-        reloadSourceFolderRowsForCurrentState()
+        sourceFolderRows = Self.visibleFolderRowsForSourceList(
+            from: sourceFolderTreeRows,
+            collapsedFolderPaths: collapsedFolderPaths,
+            expandedFolderPaths: expandedFolderPaths
+        )
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotesForNavigation(loadFirstIfNeeded: true)
     }
 
@@ -5618,7 +5640,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
-        noteListToolbarTitleLeadingConstraint?.constant = isVisible ? 0 : -58
+        noteListToolbarTitleLeadingConstraint?.constant = isVisible
+            ? 0
+            : LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
             case Self.addFolderToolbarItemIdentifier,

@@ -100,7 +100,7 @@
 ## Latest iteration (175)
 
 - Collapsed Sidebar Toggle uses a trailing-aligned `34pt` wrapper around the existing `30pt` glass control; expanded state remains unchanged.
-- The collapsed list title uses a `-58pt` state offset, putting button and title within about `2–2.5pt` of the checked-in Apple Notes crop.
+- The collapsed list title originally used a `-58pt` state offset; iteration 186 recalibrated it to `-7pt` and added a non-overlap geometry contract for the current toolbar layout.
 
 ## Latest iteration (176)
 
@@ -151,6 +151,11 @@
 
 - `scripts/library_smoke.sh` now pastes a real Finder PDF into the installed app and verifies its local copy plus portable relative Markdown link.
 - Accessibility evidence proves both the rendered editor attachment and note-list indicator before and after a full app relaunch.
+
+## Latest iteration (186)
+
+- Folder hierarchy loading now produces a complete bounded tree snapshot off the main thread; source disclosure projects visible rows from that snapshot without filesystem I/O.
+- The collapsed note-list title uses a measured `-7pt` offset and a geometric test prevents it from intersecting the compact sidebar button.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 

@@ -1111,6 +1111,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Extended `library_smoke.sh` to paste a PDF into the moved smoke note, verify the copied `Attachments/yyyy/mm` file and portable relative Markdown link, assert the rendered editor object and note-list attachment indicator through Accessibility, relaunch `/Applications/Mudsnote.app`, and assert the saved attachment renders again.
 - Lesson: Installed attachment evidence must cover both durable filesystem state and observable native UI state; either side alone can miss a broken serialization or rendering boundary.
 
+### 186. Snapshot-backed folder disclosure and collapsed-toolbar repair
+
+- Problem: Expanding or collapsing a source folder synchronously rebuilt the hierarchy with recursive `contentsOfDirectory` calls on the main thread. The required collapsed-state visual check also exposed the note-list title overlapping the sidebar button because the old `-58pt` offset no longer matched the current toolbar geometry.
+- Fix: Split the folder hierarchy into a complete background-loaded tree snapshot and an in-memory visible-row projection, so disclosure changes no longer touch the filesystem. Added a regression test that proves disclosure uses the loaded snapshot until an explicit refresh. Recalibrated the collapsed title offset to `-7pt` and added a geometric non-overlap assertion.
+- Lesson: Navigation disclosure should be a pure projection of loaded state, and compact-toolbar alignment needs intersection assertions in addition to fixed-value checks and screenshots.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -1123,7 +1123,12 @@ struct MarkdownRichEditorTests {
         let collapsedTitleLeadingConstraint = try #require(collapsedTitleStack.superview?.constraints.first {
             $0.firstItem === collapsedTitleStack && $0.firstAttribute == .leading
         })
-        #expect(collapsedTitleLeadingConstraint.constant == -58)
+        #expect(collapsedTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset)
+        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -7)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let collapsedToggleFrame = collapsedToggleWrapper.convert(collapsedToggleWrapper.bounds, to: nil)
+        let collapsedTitleFrame = collapsedTitleStack.convert(collapsedTitleStack.bounds, to: nil)
+        #expect(collapsedTitleFrame.minX >= collapsedToggleFrame.maxX)
         let collapsedToggleButton = try #require(collapsedToggleGlass.contentView as? NSButton)
         collapsedToggleButton.performClick(nil)
         #expect(controller.isSourceListVisibleForLibrary)
@@ -4332,6 +4337,58 @@ struct MarkdownRichEditorTests {
         #expect(reopenedController.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "Client"
         } == true)
+    }
+
+    @MainActor
+    @Test
+    func folderDisclosureProjectsLoadedSnapshotWithoutSynchronousRescan() throws {
+        let suiteName = "mudsnote.folder-snapshot-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-folder-snapshot-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let projectsFolder = try store.createFolder(named: "Projects")
+        let clientFolder = projectsFolder.appendingPathComponent("Client", isDirectory: true)
+        try FileManager.default.createDirectory(at: clientFolder, withIntermediateDirectories: true)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == false)
+
+        try FileManager.default.removeItem(at: clientFolder)
+        let projectsDisclosure = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.accessibilityLabel() == "展开 Projects"
+        })
+        projectsDisclosure.performClick(nil)
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == true)
+
+        controller.loadSourceFoldersForLibrary()
+        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
+            $0.title == "Client"
+        } == false)
     }
 
     @MainActor
