@@ -122,6 +122,25 @@ struct MarkdownPreviewView: View {
                         .accessibilityIdentifier("markdown-display-mode")
                     }
 
+                    if !isEditing {
+                        switch source {
+                        case .memo:
+                            ShareLink(item: draftMarkdown) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .accessibilityLabel("Share Note")
+                            .accessibilityIdentifier("share-note-button")
+                        case .document(let document):
+                            if let url = localFileURL(for: document.relativePath) {
+                                ShareLink(item: url) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .accessibilityLabel("Share Note")
+                                .accessibilityIdentifier("share-note-button")
+                            }
+                        }
+                    }
+
                     Button(action: toggleDetent) {
                         Image(systemName: detent == .large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }

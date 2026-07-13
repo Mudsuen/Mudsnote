@@ -1967,6 +1967,9 @@
     "Share Attachment": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "分享附件" } } }
     },
+    "Share Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "分享笔记" } } }
+    },
     "Attachment Renamed": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已重命名" } } }
     },

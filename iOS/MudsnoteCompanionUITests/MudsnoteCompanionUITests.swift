@@ -360,6 +360,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
     }
 
+    func testRenderedNoteExposesLocalSystemShare() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let share = app.buttons["share-note-button"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+    }
+
     func testAttachmentContextMenuRenamesAndOffersSystemShare() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
