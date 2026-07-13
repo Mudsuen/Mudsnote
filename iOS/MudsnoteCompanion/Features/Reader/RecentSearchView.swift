@@ -10,6 +10,8 @@ struct LibraryHomeView: View {
     @EnvironmentObject private var appModel: AppModel
     @FocusState private var isSearchFocused: Bool
     @State private var searchQuery = ""
+    @State private var isCreatingFolder = false
+    @State private var newFolderName = ""
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -54,7 +56,8 @@ struct LibraryHomeView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        chooseFolder()
+                        newFolderName = ""
+                        isCreatingFolder = true
                     } label: {
                         Image(systemName: "folder.badge.plus")
                             .font(.system(size: 17, weight: .semibold))
@@ -66,8 +69,18 @@ struct LibraryHomeView: View {
                             }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Choose library folder")
+                    .accessibilityLabel("New Folder")
+                    .accessibilityIdentifier("new-folder-button")
                 }
+            }
+            .alert("New Folder", isPresented: $isCreatingFolder) {
+                TextField("Folder Name", text: $newFolderName)
+                Button("Cancel", role: .cancel) {}
+                Button("Create") {
+                    let name = newFolderName
+                    Task { _ = await appModel.createFolder(named: name) }
+                }
+                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .safeAreaInset(edge: .bottom) {
                 NotesBottomCommandBar(
@@ -312,7 +325,16 @@ enum LibraryFileScope {
 
 struct LibraryFolderView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
     var folder: LibraryFolderNode
+    @State private var isCreatingFolder = false
+    @State private var isRenamingFolder = false
+    @State private var isConfirmingDelete = false
+    @State private var folderName = ""
+
+    private var currentFolder: LibraryFolderNode {
+        appModel.allFolders.first { $0.id == folder.id } ?? folder
+    }
 
     private var directFiles: [RecentMarkdownFile] {
         appModel.libraryFiles.filter {
@@ -322,7 +344,7 @@ struct LibraryFolderView: View {
 
     var body: some View {
         List {
-            ForEach(folder.children) { child in
+            ForEach(currentFolder.children) { child in
                 NavigationLink {
                     LibraryFolderView(folder: child)
                 } label: {
@@ -346,7 +368,7 @@ struct LibraryFolderView: View {
                 .modifier(NoteLifecycleActions(file: file))
             }
 
-            if folder.children.isEmpty, directFiles.isEmpty {
+            if currentFolder.children.isEmpty, directFiles.isEmpty {
                 ContentUnavailableView("No Notes", systemImage: "folder")
                     .listRowBackground(Color.clear)
             }
@@ -357,7 +379,74 @@ struct LibraryFolderView: View {
         .refreshable {
             await appModel.refreshInbox()
         }
-        .navigationTitle(folder.name)
+        .navigationTitle(currentFolder.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        folderName = ""
+                        isCreatingFolder = true
+                    } label: {
+                        Label("New Folder", systemImage: "folder.badge.plus")
+                    }
+                    Button {
+                        folderName = currentFolder.name
+                        isRenamingFolder = true
+                    } label: {
+                        Label("Rename Folder", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        isConfirmingDelete = true
+                    } label: {
+                        Label("Delete Folder", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Folder Actions")
+            }
+        }
+        .alert("New Folder", isPresented: $isCreatingFolder) {
+            TextField("Folder Name", text: $folderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Create") {
+                let name = folderName
+                let parent = currentFolder.relativePath
+                Task { _ = await appModel.createFolder(named: name, parent: parent) }
+            }
+            .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .alert("Rename Folder", isPresented: $isRenamingFolder) {
+            TextField("Folder Name", text: $folderName)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                let name = folderName
+                let target = currentFolder
+                Task {
+                    if await appModel.renameFolder(target, to: name) {
+                        dismiss()
+                    }
+                }
+            }
+            .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .confirmationDialog(
+            "Delete Folder?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move Notes to Recently Deleted", role: .destructive) {
+                let target = currentFolder
+                Task {
+                    if await appModel.deleteFolder(target) {
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
+        }
     }
 }
 
@@ -377,6 +466,17 @@ private struct NoteLifecycleActions: ViewModifier {
                 }
             }
             .contextMenu {
+                if appModel.canMoveToRecentlyDeleted(file), !appModel.allFolders.isEmpty {
+                    Menu {
+                        ForEach(appModel.allFolders) { folder in
+                            Button(folder.relativePath) {
+                                appModel.move(file, to: folder)
+                            }
+                        }
+                    } label: {
+                        Label("Move Note", systemImage: "folder")
+                    }
+                }
                 if appModel.canMoveToRecentlyDeleted(file) {
                     Button(role: .destructive) {
                         appModel.moveToRecentlyDeleted(file)

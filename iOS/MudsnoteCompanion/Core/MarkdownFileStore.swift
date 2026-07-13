@@ -762,13 +762,26 @@ actor MarkdownFileStore {
     ) throws {
         let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
         guard fileManager.fileExists(atPath: trashRoot.path) else { return }
+        var updates: [(url: URL, original: Data, updated: Data)] = []
         for metadataURL in try fileManager.contentsOfDirectory(at: trashRoot, includingPropertiesForKeys: nil)
             where metadataURL.pathExtension.lowercased() == "json" {
             let data = try Data(contentsOf: metadataURL)
             var metadata = try JSONDecoder.mudsnote.decode(TrashedMarkdownMetadata.self, from: data)
             guard metadata.originalRelativePath.hasPrefix(oldPrefix + "/") else { continue }
             metadata.originalRelativePath = newPrefix + metadata.originalRelativePath.dropFirst(oldPrefix.count)
-            try JSONEncoder.mudsnote.encode(metadata).write(to: metadataURL, options: .atomic)
+            updates.append((metadataURL, data, try JSONEncoder.mudsnote.encode(metadata)))
+        }
+        var written: [(url: URL, original: Data)] = []
+        do {
+            for update in updates {
+                try update.updated.write(to: update.url, options: .atomic)
+                written.append((update.url, update.original))
+            }
+        } catch {
+            for update in written.reversed() {
+                try? update.original.write(to: update.url, options: .atomic)
+            }
+            throw error
         }
     }
 

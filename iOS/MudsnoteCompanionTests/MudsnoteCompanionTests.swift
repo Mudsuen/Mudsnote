@@ -600,6 +600,115 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testFolderCreateRenameAndMoveNoteAvoidCollisions() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let projects = try await store.createFolder(named: "Projects")
+        let duplicate = try await store.createFolder(named: "Projects")
+        let nested = try await store.createFolder(
+            named: "Launch",
+            parentRelativePath: projects.relativePath
+        )
+        XCTAssertEqual(projects.relativePath, "Projects")
+        XCTAssertEqual(duplicate.relativePath, "Projects 2")
+        XCTAssertEqual(nested.relativePath, "Projects/Launch")
+
+        let rootNote = root.appendingPathComponent("Plan.md")
+        let existing = root.appendingPathComponent("Projects/Launch/Plan.md")
+        try "# Root plan\n".write(to: rootNote, atomically: true, encoding: .utf8)
+        try "# Existing plan\n".write(to: existing, atomically: true, encoding: .utf8)
+        let moved = try await store.moveMarkdownDocument(
+            relativePath: "Plan.md",
+            toFolder: nested.relativePath
+        )
+        XCTAssertEqual(moved.relativePath, "Projects/Launch/Plan 2.md")
+
+        let trashed = try await store.trashMarkdownDocument(
+            relativePath: "Projects/Launch/Plan 2.md"
+        )
+        let renamed = try await store.renameFolder(
+            relativePath: "Projects",
+            to: "Active"
+        )
+        XCTAssertEqual(renamed, "Active")
+        let restored = try await store.restoreTrashedMarkdownDocument(id: trashed.id)
+        XCTAssertEqual(restored.relativePath, "Active/Launch/Plan 2.md")
+    }
+
+    func testFolderDeleteMovesMarkdownToTrashAndPreservesUnsupportedFiles() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let archive = root.appendingPathComponent("Archive/Sub", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        try "# One\n".write(
+            to: root.appendingPathComponent("Archive/One.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Two\n".write(
+            to: archive.appendingPathComponent("Two.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try await store.trashFolder(relativePath: "Archive")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Archive").path))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.count, 2)
+        let nested = try XCTUnwrap(snapshot.trashedFiles.first { $0.originalRelativePath.hasSuffix("Sub/Two.md") })
+        _ = try await store.restoreTrashedMarkdownDocument(id: nested.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Archive/Sub/Two.md").path))
+
+        let protected = root.appendingPathComponent("Protected", isDirectory: true)
+        try FileManager.default.createDirectory(at: protected, withIntermediateDirectories: true)
+        try "# Keep\n".write(
+            to: protected.appendingPathComponent("Keep.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try Data([0x01]).write(to: protected.appendingPathComponent("keep.bin"))
+        await XCTAssertThrowsErrorAsync(
+            try await store.trashFolder(relativePath: "Protected")
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .folderContainsUnsupportedItems)
+        }
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.contains { $0.relativePath == "Protected/Keep.md" })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: protected.appendingPathComponent("keep.bin").path))
+    }
+
+    func testFolderOperationsRejectReservedPathsAndInvalidNames() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.createFolder(named: "../Escape")
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolderName)
+        }
+        await XCTAssertThrowsErrorAsync(
+            try await store.createFolder(named: "Nested", parentRelativePath: "Attachments")
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
+        }
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameFolder(relativePath: "Daily", to: "Renamed")
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
+        }
+    }
+
     func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

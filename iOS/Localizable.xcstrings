@@ -1703,6 +1703,63 @@
     },
     "This deleted note has invalid recovery information.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此删除笔记的恢复信息无效。" } } }
+    },
+    "New Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建文件夹" } } }
+    },
+    "Folder Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹名称" } } }
+    },
+    "Create": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "创建" } } }
+    },
+    "Rename Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名文件夹" } } }
+    },
+    "Rename": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名" } } }
+    },
+    "Delete Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除文件夹" } } }
+    },
+    "Folder Actions": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹操作" } } }
+    },
+    "Delete Folder?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除文件夹？" } } }
+    },
+    "Move Notes to Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "将笔记移到最近删除" } } }
+    },
+    "Notes in this folder will move to Recently Deleted. Other files will be preserved.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹中的笔记将移到最近删除，其他文件会保留。" } } }
+    },
+    "Move Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动笔记" } } }
+    },
+    "Folder Created": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹已创建" } } }
+    },
+    "Folder Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹已重命名" } } }
+    },
+    "Folder Moved to Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹中的笔记已移到最近删除" } } }
+    },
+    "Note Moved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已移动" } } }
+    },
+    "Finish pending captures before changing folders.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待处理的快速笔记，再更改文件夹。" } } }
+    },
+    "This folder is no longer available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹已不可用。" } } }
+    },
+    "Enter a valid folder name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的文件夹名称。" } } }
+    },
+    "This folder contains files Mudsnote will not delete.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹包含 Mudsnote 不会删除的其他文件。" } } }
     }
   },
   "version": "1.0"
