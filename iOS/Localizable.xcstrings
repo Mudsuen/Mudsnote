@@ -1949,6 +1949,24 @@
     "Attachment removed from note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已从笔记中移除" } } }
     },
+    "Rename Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名附件" } } }
+    },
+    "Attachment Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件名称" } } }
+    },
+    "Share Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "分享附件" } } }
+    },
+    "Attachment Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已重命名" } } }
+    },
+    "Enter a valid attachment name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的附件名称。" } } }
+    },
+    "This attachment is also used by another note and cannot be renamed safely.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此附件也被其他笔记使用，无法安全重命名。" } } }
+    },
     "This attachment is no longer referenced by the note.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记已不再引用此附件。" } } }
     },

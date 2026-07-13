@@ -583,6 +583,81 @@ actor MarkdownFileStore {
         )
     }
 
+    func renameAttachmentInMarkdownDocument(
+        relativePath: String,
+        markdown: String,
+        expectedMarkdown: String,
+        attachmentLine: String,
+        attachmentRelativePath: String,
+        to name: String
+    ) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard markdown.components(separatedBy: .newlines).contains(where: {
+            $0.trimmingCharacters(in: .whitespaces)
+                == attachmentLine.trimmingCharacters(in: .whitespaces)
+        }), attachmentLine.contains(attachmentRelativePath) else {
+            throw MarkdownDocumentError.attachmentReferenceNotFound
+        }
+        guard let source = AuthorizedLibraryPath.resolve(
+            attachmentRelativePath,
+            within: root,
+            constrainedTo: "Attachments"
+        ), fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownDocumentError.attachmentReferenceNotFound
+        }
+        let baseName = try Self.validatedAttachmentBaseName(
+            name,
+            preservingExtension: source.pathExtension
+        )
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent(baseName)
+            .appendingPathExtension(source.pathExtension)
+        if requested.standardizedFileURL == source.standardizedFileURL {
+            return MarkdownDocument(
+                id: relativePath,
+                title: ((relativePath as NSString).lastPathComponent as NSString).deletingPathExtension,
+                relativePath: relativePath,
+                markdown: markdown
+            )
+        }
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        if try attachmentIsReferencedOutsideDocument(
+            attachmentRelativePath,
+            documentRelativePath: relativePath,
+            root: root
+        ) {
+            throw MarkdownDocumentError.attachmentReferencedElsewhere
+        }
+        let destination = uniqueAttachmentDestination(for: requested, root: root)
+        let destinationPath = Self.relativePath(for: destination, root: root)
+        let renamedLine = Self.renamedAttachmentLine(
+            attachmentLine,
+            oldPath: attachmentRelativePath,
+            newPath: destinationPath
+        )
+        let updatedMarkdown = markdown.components(separatedBy: .newlines).map { line in
+            if line.trimmingCharacters(in: .whitespaces)
+                == attachmentLine.trimmingCharacters(in: .whitespaces) {
+                return renamedLine
+            }
+            return line.replacingOccurrences(of: attachmentRelativePath, with: destinationPath)
+        }.joined(separator: "\n")
+
+        try coordinatedMove(from: source, to: destination)
+        do {
+            return try saveMarkdownDocument(
+                relativePath: relativePath,
+                markdown: updatedMarkdown,
+                expectedMarkdown: expectedMarkdown
+            )
+        } catch {
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
+    }
+
     @discardableResult
     func trashMarkdownDocument(
         relativePath: String,
@@ -1310,6 +1385,64 @@ actor MarkdownFileStore {
         }
     }
 
+    private static func validatedAttachmentBaseName(
+        _ name: String,
+        preservingExtension fileExtension: String
+    ) throws -> String {
+        var value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = fileExtension.isEmpty ? "" : ".\(fileExtension)"
+        if !suffix.isEmpty, value.lowercased().hasSuffix(suffix.lowercased()) {
+            value.removeLast(suffix.count)
+        }
+        guard !value.isEmpty,
+              value.count <= 120,
+              value != ".",
+              value != "..",
+              !value.hasPrefix("."),
+              !value.contains("/"),
+              !value.contains(":"),
+              value.rangeOfCharacter(from: .controlCharacters) == nil else {
+            throw MarkdownDocumentError.invalidAttachmentName
+        }
+        return value
+    }
+
+    private static func renamedAttachmentLine(
+        _ line: String,
+        oldPath: String,
+        newPath: String
+    ) -> String {
+        if line.hasPrefix("![[") {
+            return line.replacingOccurrences(of: oldPath, with: newPath)
+        }
+        guard line.range(of: "](") != nil else {
+            return line.replacingOccurrences(of: oldPath, with: newPath)
+        }
+        let prefix = line.hasPrefix("![") ? "![" : "["
+        let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+        let displayName = (newPath as NSString).lastPathComponent
+        return "\(indentation)\(prefix)\(displayName)](\(newPath))"
+    }
+
+    private func attachmentIsReferencedOutsideDocument(
+        _ attachmentPath: String,
+        documentRelativePath: String,
+        root: URL
+    ) throws -> Bool {
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
+            guard Self.relativePath(for: url, root: root) != documentRelativePath else { continue }
+            if try String(contentsOf: url, encoding: .utf8).contains(attachmentPath) {
+                return true
+            }
+        }
+        return false
+    }
+
     private func appendPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
         let marker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
         let block = pending.markdownBlock + marker + "\n"
@@ -1768,6 +1901,8 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
     case invalidPath
     case changedExternally
     case attachmentReferenceNotFound
+    case invalidAttachmentName
+    case attachmentReferencedElsewhere
 
     var errorDescription: String? {
         switch self {
@@ -1777,6 +1912,10 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
             String(localized: "This note changed elsewhere. Reopen it before editing again.")
         case .attachmentReferenceNotFound:
             String(localized: "This attachment is no longer referenced by the note.")
+        case .invalidAttachmentName:
+            String(localized: "Enter a valid attachment name.")
+        case .attachmentReferencedElsewhere:
+            String(localized: "This attachment is also used by another note and cannot be renamed safely.")
         }
     }
 }

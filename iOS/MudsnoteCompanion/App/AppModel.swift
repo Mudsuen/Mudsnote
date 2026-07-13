@@ -890,6 +890,34 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func renameAttachment(
+        line: String,
+        path: String,
+        to name: String,
+        in document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        do {
+            let updated = try await fileStore.renameAttachmentInMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachmentLine: line,
+                attachmentRelativePath: path,
+                to: name
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Attachment Renamed"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     private func refreshActiveSearchIfNeeded() async {
         guard !activeSearchQuery.isEmpty else { return }
         await searchLibrary(query: activeSearchQuery, scope: activeSearchScope)

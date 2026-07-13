@@ -360,6 +360,33 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
     }
 
+    func testAttachmentContextMenuRenamesAndOffersSystemShare() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let preview = app.buttons["preview-attachment-Attachments/ui-test.txt"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        preview.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Share Attachment"].waitForExistence(timeout: 3))
+        app.buttons["Rename Attachment"].tap()
+        let alert = app.alerts["Rename Attachment"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        let name = alert.textFields["Attachment Name"]
+        XCTAssertEqual(name.value as? String, "ui-test")
+        name.tap()
+        name.typeText("-renamed")
+        alert.buttons["Rename"].tap()
+
+        XCTAssertTrue(
+            app.buttons["preview-attachment-Attachments/ui-test-renamed.txt"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func testLibrarySearchScopesNotesAndInboxWithoutStaleResults() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))

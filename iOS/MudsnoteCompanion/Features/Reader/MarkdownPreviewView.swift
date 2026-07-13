@@ -45,6 +45,8 @@ struct MarkdownPreviewView: View {
     @State private var isScannerPresented = false
     @State private var scanErrorMessage: String?
     @State private var previewURL: URL?
+    @State private var attachmentBeingRenamed: MarkdownAttachmentLine?
+    @State private var attachmentName = ""
     @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
@@ -209,6 +211,20 @@ struct MarkdownPreviewView: View {
             Button("OK", role: .cancel) { scanErrorMessage = nil }
         } message: {
             Text(scanErrorMessage ?? "Try scanning the document again.")
+        }
+        .alert("Rename Attachment", isPresented: Binding(
+            get: { attachmentBeingRenamed != nil },
+            set: { if !$0 { attachmentBeingRenamed = nil } }
+        )) {
+            TextField("Attachment Name", text: $attachmentName)
+            Button("Cancel", role: .cancel) { attachmentBeingRenamed = nil }
+            Button("Rename") {
+                guard let attachment = attachmentBeingRenamed else { return }
+                let name = attachmentName
+                attachmentBeingRenamed = nil
+                Task { await renameAttachment(attachment, to: name) }
+            }
+            .disabled(attachmentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 
@@ -451,6 +467,18 @@ struct MarkdownPreviewView: View {
         }
         .contextMenu {
             if case .document = source {
+                if let url = localFileURL(for: attachment.path) {
+                    ShareLink(item: url) {
+                        Label("Share Attachment", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Button {
+                    let fileName = (attachment.path as NSString).lastPathComponent
+                    attachmentName = (fileName as NSString).deletingPathExtension
+                    attachmentBeingRenamed = attachment
+                } label: {
+                    Label("Rename Attachment", systemImage: "pencil")
+                }
                 Button(role: .destructive) {
                     Task { await removeAttachment(attachment) }
                 } label: {
@@ -660,6 +688,23 @@ struct MarkdownPreviewView: View {
         } else {
             saveState = .failed
             isSaveFailurePresented = true
+        }
+    }
+
+    private func renameAttachment(_ attachment: MarkdownAttachmentLine, to name: String) async {
+        guard case .document(let document) = source else { return }
+        if let updated = await appModel.renameAttachment(
+            line: attachment.rawLine,
+            path: attachment.path,
+            to: name,
+            in: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
         }
     }
 }

@@ -1336,6 +1336,78 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(MarkdownAttachmentLine("[Brief](\(relativePath))")?.kind, .file)
     }
 
+    func testAttachmentRenameMovesFileAndProtectsSharedReferences() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Files\n".write(
+            to: root.appendingPathComponent("Projects/Files.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let attachment = try CaptureAttachment.validatedFile(
+            data: Data("portable pdf".utf8),
+            suggestedName: "Launch Brief.pdf"
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Files.md")
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 13,
+            hour: 12
+        )))
+        let attached = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: attachment,
+            now: now
+        )
+        let oldPath = "Attachments/2026/07/Launch Brief-20260713-120000.pdf"
+        let oldLine = "[Launch Brief-20260713-120000.pdf](\(oldPath))"
+
+        let renamed = try await store.renameAttachmentInMarkdownDocument(
+            relativePath: attached.relativePath,
+            markdown: attached.markdown,
+            expectedMarkdown: attached.markdown,
+            attachmentLine: oldLine,
+            attachmentRelativePath: oldPath,
+            to: "Investor Brief.pdf"
+        )
+        let newPath = "Attachments/2026/07/Investor Brief.pdf"
+        XCTAssertTrue(renamed.markdown.contains("[Investor Brief.pdf](\(newPath))"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(oldPath).path))
+        XCTAssertEqual(
+            try Data(contentsOf: root.appendingPathComponent(newPath)),
+            Data("portable pdf".utf8)
+        )
+
+        try "[Shared](\(newPath))\n".write(
+            to: root.appendingPathComponent("Projects/Shared.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameAttachmentInMarkdownDocument(
+                relativePath: renamed.relativePath,
+                markdown: renamed.markdown,
+                expectedMarkdown: renamed.markdown,
+                attachmentLine: "[Investor Brief.pdf](\(newPath))",
+                attachmentRelativePath: newPath,
+                to: "Unsafe Rename"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownDocumentError, .attachmentReferencedElsewhere)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(newPath).path))
+    }
+
     func testInboxMemoEditRejectsStaleBody() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
