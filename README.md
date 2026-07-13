@@ -49,6 +49,14 @@ Package and install the macOS app bundle:
 
 The packaged app is installed to `/Applications/Mudsnote.app`.
 
+Run the isolated installed-app library smoke:
+
+```bash
+./scripts/library_smoke.sh
+```
+
+This launches `/Applications/Mudsnote.app` against a temporary library and verifies native `Command-N`, title/body editing, autosave, and toolbar search without touching the user's notes.
+
 ## Development Notes
 
 - See `docs/AI_HANDOFF.md` for project architecture, current product state, verification expectations, and takeover guidance for another AI.

@@ -1081,6 +1081,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Each disclosure button now names its concrete folder and current action, for example "展开 Projects" or "折叠 Projects"; rebuilt rows naturally refresh the name with disclosure state.
 - Lesson: Hierarchy controls need object-specific, stateful actions rather than generic icon descriptions.
 
+### 181. Installed Notes-library smoke harness
+
+- Problem: The roadmap required installed-app workflow evidence, but macOS verification relied on unit tests, packaging, and visual capture; there was no repeatable isolated smoke for the real Notes window.
+- Fix: Added `scripts/library_smoke.sh`. It launches `/Applications/Mudsnote.app` with an isolated temporary store, creates a note through `Command-N`, edits title/body through Accessibility values, verifies exact autosaved Markdown, and confirms toolbar search filters an unrelated fixture note.
+- Lesson: Installed UI smoke must avoid the active input method and user data. `AXValue` provides deterministic text entry under Chinese input methods, while isolated store arguments keep the real library untouched.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

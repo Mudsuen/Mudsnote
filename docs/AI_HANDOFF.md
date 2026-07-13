@@ -127,6 +127,11 @@
 - Nested-folder disclosure buttons expose the concrete folder name and current expand/collapse action to VoiceOver.
 - The label is regenerated with each source-row rebuild, so it stays aligned with persisted disclosure state.
 
+## Latest iteration (181)
+
+- `scripts/library_smoke.sh` exercises the installed three-pane app against an isolated temporary library.
+- It currently proves direct library launch, `Command-N`, title/body editing, autosave to exact Markdown, and search filtering; deletion/restore, folder move, and attachment rendering remain explicit follow-up smoke coverage.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
@@ -275,6 +280,7 @@ For meaningful UI or editor changes, use this baseline:
 1. `swift test`
 2. `./scripts/package_app.sh`
 3. Launch the packaged app, not only the debug binary
+4. Run `./scripts/library_smoke.sh` when the change touches the three-pane library's create/edit/save/search path
 
 Useful launch modes:
 
