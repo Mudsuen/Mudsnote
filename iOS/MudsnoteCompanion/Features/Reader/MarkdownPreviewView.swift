@@ -209,6 +209,7 @@ struct MarkdownPreviewView: View {
                 formatButton("bold", .bold)
                 formatButton("italic", .italic)
                 formatButton("list.bullet", .bullet)
+                formatButton("list.number", .ordered)
                 formatButton("checklist", .checklist)
                 formatButton("text.quote", .quote)
                 formatButton("chevron.left.forwardslash.chevron.right", .code)
@@ -476,6 +477,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case bold
         case italic
         case bullet
+        case ordered
         case checklist
         case quote
         case code
@@ -489,6 +491,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .bold: "bold"
             case .italic: "italic"
             case .bullet: "bullet"
+            case .ordered: "ordered"
             case .checklist: "checklist"
             case .quote: "quote"
             case .code: "code"
@@ -503,26 +506,122 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
     var kind: Kind
 }
 
+struct MarkdownListEdit: Equatable {
+    var range: NSRange
+    var replacement: String
+    var selection: NSRange
+}
+
+enum MarkdownListEditing {
+    private enum Kind {
+        case bullet(marker: String)
+        case ordered(indent: String, number: Int, delimiter: String)
+        case checklist(indent: String)
+    }
+
+    private struct Item {
+        var prefix: String
+        var body: String
+        var kind: Kind
+    }
+
+    static func returnEdit(in markdown: String, selection: NSRange) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+        let lineRange = source.lineRange(for: NSRange(location: selection.location, length: 0))
+        let line = source.substring(with: lineRange).trimmingCharacters(in: .newlines)
+        guard let item = item(in: line) else { return nil }
+
+        if item.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let prefixLength = (item.prefix as NSString).length
+            return MarkdownListEdit(
+                range: NSRange(location: lineRange.location, length: prefixLength),
+                replacement: "",
+                selection: NSRange(location: lineRange.location, length: 0)
+            )
+        }
+
+        let continuation: String
+        switch item.kind {
+        case .bullet(let marker):
+            continuation = marker
+        case .ordered(let indent, let number, let delimiter):
+            continuation = "\(indent)\(number + 1)\(delimiter) "
+        case .checklist(let indent):
+            continuation = "\(indent)- [ ] "
+        }
+        let replacement = "\n" + continuation
+        return MarkdownListEdit(
+            range: selection,
+            replacement: replacement,
+            selection: NSRange(
+                location: selection.location + (replacement as NSString).length,
+                length: 0
+            )
+        )
+    }
+
+    static func backspaceEdit(in markdown: String, deletionRange: NSRange) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location >= 0,
+              NSMaxRange(deletionRange) <= source.length else { return nil }
+        let caret = NSMaxRange(deletionRange)
+        let lineRange = source.lineRange(for: NSRange(location: caret, length: 0))
+        let line = source.substring(with: lineRange).trimmingCharacters(in: .newlines)
+        guard let item = item(in: line) else { return nil }
+        let prefixLength = (item.prefix as NSString).length
+        guard caret == lineRange.location + prefixLength else { return nil }
+        return MarkdownListEdit(
+            range: NSRange(location: lineRange.location, length: prefixLength),
+            replacement: "",
+            selection: NSRange(location: lineRange.location, length: 0)
+        )
+    }
+
+    private static func item(in line: String) -> Item? {
+        if let groups = groups(for: #"^([ \t]*)(- \[[ xX]\] )(.*)$"#, in: line) {
+            return Item(prefix: groups[0] + groups[1], body: groups[2], kind: .checklist(indent: groups[0]))
+        }
+        if let groups = groups(for: #"^([ \t]*)([-*+] )(.*)$"#, in: line) {
+            return Item(prefix: groups[0] + groups[1], body: groups[2], kind: .bullet(marker: groups[0] + groups[1]))
+        }
+        if let groups = groups(for: #"^([ \t]*)([0-9]+)([.)]) (.*)$"#, in: line),
+           let number = Int(groups[1]) {
+            let prefix = groups[0] + groups[1] + groups[2] + " "
+            return Item(prefix: prefix, body: groups[3], kind: .ordered(indent: groups[0], number: number, delimiter: groups[2]))
+        }
+        return nil
+    }
+
+    private static func groups(for pattern: String, in value: String) -> [String]? {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let source = value as NSString
+        guard let match = expression.firstMatch(
+            in: value,
+            range: NSRange(location: 0, length: source.length)
+        ) else { return nil }
+        return (1..<match.numberOfRanges).map { index in
+            let range = match.range(at: index)
+            return range.location == NSNotFound ? "" : source.substring(with: range)
+        }
+    }
+}
+
 @MainActor
 final class MarkdownRichTextView: UITextView {
     var checklistMarkers: [MarkdownEditorPresentation.ChecklistMarker] = [] {
         didSet { setNeedsDisplay() }
     }
+    var bulletMarkers: [MarkdownEditorPresentation.BulletMarker] = [] {
+        didSet { setNeedsDisplay() }
+    }
 
     override func draw(_ rect: CGRect) {
         super.draw(rect)
-        guard !checklistMarkers.isEmpty else { return }
         for marker in checklistMarkers {
-            let glyphRange = layoutManager.glyphRange(
-                forCharacterRange: marker.range,
-                actualCharacterRange: nil
-            )
-            var markerRect = layoutManager.boundingRect(
-                forGlyphRange: glyphRange,
-                in: textContainer
-            )
-            markerRect.origin.x += textContainerInset.left
-            markerRect.origin.y += textContainerInset.top
+            let markerRect = renderedRect(for: marker.range)
             let symbolRect = CGRect(
                 x: markerRect.minX + 1,
                 y: markerRect.midY - 10,
@@ -536,19 +635,35 @@ final class MarkdownRichTextView: UITextView {
                 .withTintColor(UIColor(MudsnoteColors.primary), renderingMode: .alwaysOriginal)
                 .draw(in: symbolRect)
         }
+        UIColor(MudsnoteColors.text).setFill()
+        for marker in bulletMarkers {
+            let markerRect = renderedRect(for: marker.range)
+            let diameter: CGFloat = 6
+            let bulletRect = CGRect(
+                x: markerRect.minX + 7,
+                y: markerRect.midY - diameter / 2,
+                width: diameter,
+                height: diameter
+            )
+            UIBezierPath(ovalIn: bulletRect).fill()
+        }
     }
 
     func checklistMarker(at point: CGPoint) -> MarkdownEditorPresentation.ChecklistMarker? {
         checklistMarkers.first { marker in
-            let glyphRange = layoutManager.glyphRange(
-                forCharacterRange: marker.range,
-                actualCharacterRange: nil
-            )
-            var markerRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            markerRect.origin.x += textContainerInset.left
-            markerRect.origin.y += textContainerInset.top
-            return markerRect.insetBy(dx: -8, dy: -8).contains(point)
+            renderedRect(for: marker.range).insetBy(dx: -8, dy: -8).contains(point)
         }
+    }
+
+    private func renderedRect(for range: NSRange) -> CGRect {
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: range,
+            actualCharacterRange: nil
+        )
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        rect.origin.x += textContainerInset.left
+        rect.origin.y += textContainerInset.top
+        return rect
     }
 }
 
@@ -557,6 +672,10 @@ enum MarkdownEditorPresentation {
     struct ChecklistMarker: Equatable {
         var range: NSRange
         var checked: Bool
+    }
+
+    struct BulletMarker: Equatable {
+        var range: NSRange
     }
 
     static func apply(to textView: UITextView, displaysSource: Bool) {
@@ -581,6 +700,7 @@ enum MarkdownEditorPresentation {
         }
         guard !displaysSource, storage.length <= 512 * 1_024 else {
             (textView as? MarkdownRichTextView)?.checklistMarkers = []
+            (textView as? MarkdownRichTextView)?.bulletMarkers = []
             storage.endEditing()
             textView.typingAttributes = baseAttributes
             textView.selectedRange = clamped(selection, length: storage.length)
@@ -596,6 +716,14 @@ enum MarkdownEditorPresentation {
             ], range: marker.range)
         }
         (textView as? MarkdownRichTextView)?.checklistMarkers = checklistMarkers
+        let bulletMarkers = bullets(in: source as String)
+        for marker in bulletMarkers {
+            storage.addAttributes([
+                .foregroundColor: UIColor.clear,
+                .font: UIFont.preferredFont(forTextStyle: .body),
+            ], range: marker.range)
+        }
+        (textView as? MarkdownRichTextView)?.bulletMarkers = bulletMarkers
         applyHeadings(in: source, storage: storage)
         applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
@@ -706,6 +834,13 @@ enum MarkdownEditorPresentation {
         }
     }
 
+    static func bullets(in markdown: String) -> [BulletMarker] {
+        let source = markdown as NSString
+        return matches(#"(?m)^[ \t]*([-*+] )(?!\[[ xX]\] )"#, in: source).map { match in
+            BulletMarker(range: match.range(at: 1))
+        }
+    }
+
     static func togglingChecklist(in markdown: String, marker: ChecklistMarker) -> String? {
         let source = NSMutableString(string: markdown)
         let stateLocation = marker.range.location + 3
@@ -800,6 +935,30 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             parent.isFocused = false
         }
 
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText text: String
+        ) -> Bool {
+            guard !parent.displaysSource else { return true }
+            let edit: MarkdownListEdit?
+            if text == "\n" {
+                edit = MarkdownListEditing.returnEdit(in: textView.text, selection: range)
+            } else if text.isEmpty {
+                edit = MarkdownListEditing.backspaceEdit(in: textView.text, deletionRange: range)
+            } else {
+                edit = nil
+            }
+            guard let edit else { return true }
+            replace(
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
+                in: textView
+            )
+            return false
+        }
+
         @objc func handleChecklistTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended,
                   !parent.displaysSource,
@@ -826,6 +985,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 wrapSelection(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
             case .bullet:
                 toggleLinePrefix("- ", in: textView)
+            case .ordered:
+                toggleOrderedList(in: textView)
             case .checklist:
                 toggleLinePrefix("- [ ] ", in: textView)
             case .quote:
@@ -878,6 +1039,50 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             lines = lines.map { line in
                 guard !line.isEmpty else { return line }
                 return shouldRemove ? String(line.dropFirst(prefix.count)) : prefix + line
+            }
+            var replacement = lines.joined(separator: "\n")
+            if endsWithNewline { replacement += "\n" }
+            replace(
+                lineRange,
+                with: replacement,
+                selecting: NSRange(location: lineRange.location, length: (replacement as NSString).length),
+                in: textView
+            )
+        }
+
+        private func toggleOrderedList(in textView: UITextView) {
+            let source = textView.text as NSString
+            let lineRange = source.lineRange(for: textView.selectedRange)
+            let block = source.substring(with: lineRange)
+            let endsWithNewline = block.hasSuffix("\n")
+            var lines = block.components(separatedBy: "\n")
+            if endsWithNewline { lines.removeLast() }
+            let expression = try? NSRegularExpression(pattern: #"^([ \t]*)[0-9]+[.)] "#)
+            let contentLines = lines.filter { !$0.isEmpty }
+            let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy { line in
+                let value = line as NSString
+                return expression?.firstMatch(
+                    in: line,
+                    range: NSRange(location: 0, length: value.length)
+                ) != nil
+            }
+            var nextNumber = 1
+            lines = lines.map { line in
+                guard !line.isEmpty else { return line }
+                let value = line as NSString
+                if shouldRemove,
+                   let match = expression?.firstMatch(
+                    in: line,
+                    range: NSRange(location: 0, length: value.length)
+                   ) {
+                    let prefix = value.substring(with: match.range)
+                    let indentation = prefix.prefix { $0 == " " || $0 == "\t" }
+                    return String(indentation) + value.substring(from: NSMaxRange(match.range))
+                }
+                let indentation = line.prefix { $0 == " " || $0 == "\t" }
+                let body = line.dropFirst(indentation.count)
+                defer { nextNumber += 1 }
+                return "\(indentation)\(nextNumber). \(body)"
             }
             var replacement = lines.joined(separator: "\n")
             if endsWithNewline { replacement += "\n" }

@@ -1204,7 +1204,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
     @MainActor
     func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
-        let markdown = "# Heading\n\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"
+        let markdown = "# Heading\n\n- Bullet\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"
         let view = MarkdownRichTextView()
         view.text = markdown
 
@@ -1223,6 +1223,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertGreaterThan(headingFont.pointSize, 20)
         XCTAssertTrue(boldFont.fontDescriptor.symbolicTraits.contains(.traitBold))
         XCTAssertNotNil(storage.attribute(.underlineStyle, at: linkText.location, effectiveRange: nil))
+        XCTAssertEqual(view.bulletMarkers.count, 1)
         XCTAssertEqual(view.checklistMarkers.map(\.checked), [false, true])
         let firstMarker = try XCTUnwrap(view.checklistMarkers.first)
         let toggled = try XCTUnwrap(MarkdownEditorPresentation.togglingChecklist(
@@ -1237,6 +1238,73 @@ final class MudsnoteCompanionTests: XCTestCase {
         let sourceMarkerColor = try XCTUnwrap(storage.attribute(.foregroundColor, at: headingMarker.location, effectiveRange: nil) as? UIColor)
         XCTAssertGreaterThan(sourceMarkerColor.cgColor.alpha, 0.9)
         XCTAssertTrue(view.checklistMarkers.isEmpty)
+        XCTAssertTrue(view.bulletMarkers.isEmpty)
+    }
+
+    func testMarkdownListsContinueWithNativeReturnSemantics() {
+        XCTAssertEqual(
+            MarkdownListEditing.returnEdit(
+                in: "- Ship",
+                selection: NSRange(location: 6, length: 0)
+            ),
+            MarkdownListEdit(
+                range: NSRange(location: 6, length: 0),
+                replacement: "\n- ",
+                selection: NSRange(location: 9, length: 0)
+            )
+        )
+        XCTAssertEqual(
+            MarkdownListEditing.returnEdit(
+                in: "  7) Review",
+                selection: NSRange(location: 11, length: 0)
+            )?.replacement,
+            "\n  8) "
+        )
+        XCTAssertEqual(
+            MarkdownListEditing.returnEdit(
+                in: "- [x] Complete",
+                selection: NSRange(location: 14, length: 0)
+            )?.replacement,
+            "\n- [ ] "
+        )
+    }
+
+    func testReturnOnEmptyMarkdownListItemExitsList() {
+        for markdown in ["- ", "- [ ] ", "12. "] {
+            let length = (markdown as NSString).length
+            XCTAssertEqual(
+                MarkdownListEditing.returnEdit(
+                    in: markdown,
+                    selection: NSRange(location: length, length: 0)
+                ),
+                MarkdownListEdit(
+                    range: NSRange(location: 0, length: length),
+                    replacement: "",
+                    selection: NSRange(location: 0, length: 0)
+                )
+            )
+        }
+    }
+
+    func testBackspaceAtMarkdownListContentStartRemovesFormatting() {
+        let markdown = "Intro\n- [ ] Item"
+        XCTAssertEqual(
+            MarkdownListEditing.backspaceEdit(
+                in: markdown,
+                deletionRange: NSRange(location: 11, length: 1)
+            ),
+            MarkdownListEdit(
+                range: NSRange(location: 6, length: 6),
+                replacement: "",
+                selection: NSRange(location: 6, length: 0)
+            )
+        )
+        XCTAssertNil(
+            MarkdownListEditing.backspaceEdit(
+                in: markdown,
+                deletionRange: NSRange(location: 12, length: 1)
+            )
+        )
     }
 
     func testLibrarySnapshotPublishesAndRefreshesListMetadata() async throws {
