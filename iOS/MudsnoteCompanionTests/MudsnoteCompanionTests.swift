@@ -62,6 +62,59 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(model.libraryRevision, 1)
     }
 
+    @MainActor
+    func testSceneActivationReloadsSharedQueueAndExternalMarkdownChanges() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.resume.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let access = FolderAccessService(defaults: defaults)
+        let model = AppModel(bootstrapImmediately: false, folderAccess: access)
+        model.selectFolder(root)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case .ready = model.folderStatus else {
+            return XCTFail("The test library never became ready")
+        }
+
+        try "# External note\n\nChanged while the app was inactive.\n".write(
+            to: root.appendingPathComponent("External.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let extensionQueue = PendingWriteQueue(root: root)
+        try await extensionQueue.load()
+        try await extensionQueue.enqueue(
+            PendingWrite(
+                id: UUID(),
+                createdAt: .now,
+                targetRelativePath: "Inbox.md",
+                markdownBlock: "Captured by an extension while inactive\n",
+                attachments: []
+            )
+        )
+
+        let revisionBeforeResume = model.libraryRevision
+        await model.refreshAfterSceneActivation()
+
+        XCTAssertTrue(model.libraryFiles.contains { $0.relativePath == "External.md" })
+        XCTAssertGreaterThan(model.libraryRevision, revisionBeforeResume)
+        XCTAssertEqual(model.syncStatus, .idle)
+        XCTAssertTrue(
+            try String(contentsOf: root.appendingPathComponent("Inbox.md"), encoding: .utf8)
+                .contains("Captured by an extension while inactive")
+        )
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let remainingCount = await verificationQueue.pendingCount()
+        XCTAssertEqual(remainingCount, 0)
+    }
+
     func testMarkdownBlockFormat() {
         let date = Date(timeIntervalSince1970: 1_717_747_920)
         let block = MarkdownFileStore.markdownBlock(

@@ -369,6 +369,48 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func refreshAfterSceneActivation() async {
+        guard case .ready = folderStatus,
+              let queue,
+              !isSendingDraft else { return }
+
+        let pendingCount: Int
+        do {
+            let queueLoadResult = try await queue.load()
+            if case .quarantined(let filename) = queueLoadResult {
+                queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
+                statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
+            }
+
+            pendingCount = await queue.pendingCount()
+            if pendingCount > 0 {
+                try await queue.replay { [fileStore] item in
+                    try await fileStore.performPendingWrite(item)
+                }
+            }
+        } catch {
+            let remainingCount = await queue.pendingCount()
+            if remainingCount > 0 { syncStatus = .pending }
+            statusToast = .error(String(localized: "Queue replay failed"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return
+        }
+
+        do {
+            let snapshot = try await fileStore.loadLibrarySnapshot()
+            let remainingCount = await queue.pendingCount()
+            apply(snapshot, pendingCount: remainingCount)
+            libraryRevision += 1
+            await refreshActiveSearchIfNeeded()
+            if pendingCount > 0, remainingCount == 0 {
+                statusToast = .saved(String(localized: "Pending queue replayed"))
+            }
+        } catch {
+            statusToast = .error(String(localized: "Inbox refresh failed"))
+        }
+    }
+
     func deleteMemo(_ memo: MemoBlock) {
         Task {
             do {
@@ -880,11 +922,7 @@ final class AppModel: ObservableObject {
         case .ready:
             queueRecoveryWarning = nil
         case .quarantined(let filename):
-            queueRecoveryWarning = String(
-                format: String(localized: "pending.queue_quarantined.format"),
-                locale: .current,
-                filename
-            )
+            queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
         }
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
@@ -912,6 +950,14 @@ final class AppModel: ObservableObject {
         }
         presentPendingCaptureIfPossible()
         return true
+    }
+
+    private static func queueRecoveryWarning(filename: String) -> String {
+        String(
+            format: String(localized: "pending.queue_quarantined.format"),
+            locale: .current,
+            filename
+        )
     }
 
     private func announceRecoveredDraftIfPossible() {

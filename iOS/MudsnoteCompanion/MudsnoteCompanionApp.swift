@@ -21,6 +21,7 @@ struct MudsnoteCompanionApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         appModel.consumeSystemEntryRequest()
+                        Task { await appModel.refreshAfterSceneActivation() }
                     } else {
                         appModel.persistCaptureDraftNow()
                     }
