@@ -1040,6 +1040,11 @@ struct MarkdownRichEditorTests {
         let noteListHeaderStack = try #require(noteListTitleToolbarView.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryToolbarNoteListHeaderStack"
         })
+        let noteListTitleLeadingConstraint = try #require(noteListHeaderStack.superview?.constraints.first {
+            $0.firstItem === noteListHeaderStack && $0.firstAttribute == .leading
+        })
+        #expect(noteListTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarExpandedTitleLeadingOffset)
+        #expect(LibraryNotesLayout.toolbarExpandedTitleLeadingOffset == 12)
         #expect(noteListHeaderStack.arrangedSubviews.contains(controller.searchScopeControl))
         #expect(controller.searchScopeControl.isHidden)
         #expect(controller.searchScopeControl.accessibilityLabel() == "搜索范围")
@@ -1172,7 +1177,7 @@ struct MarkdownRichEditorTests {
         #expect(toggleSourceItem.view is NSButton)
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
-        #expect(collapsedTitleLeadingConstraint.constant == 0)
+        #expect(collapsedTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarExpandedTitleLeadingOffset)
         let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryNoteListStack"
         })

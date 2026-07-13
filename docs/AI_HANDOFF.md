@@ -210,7 +210,14 @@
 
 - Vision OCR on the normalized collapsed captures measured the Apple Notes `All iCloud` title at `x=309.7px` and Mudsnote at `x=300.0px`; their vertical origins already matched.
 - The collapsed title leading offset is `-11.5pt`, moving only the title about `4.5pt` right while preserving the aligned sidebar button, list card, and editor origins. The `-11pt` and `-12pt` probes landed `2.2px` right and `1.7px` left of the reference respectively, so the final value uses the Retina half-point between them.
-- Keep the expanded title offset at `0`; this correction belongs only to the source-hidden toolbar state.
+- At iteration 195 the expanded title still used `0`; iteration 196 supersedes that historical value with the independently measured `12pt` expanded offset.
+
+## Latest iteration (196)
+
+- Normalized expanded OCR measured the top `All iCloud` title at `x=455.0px` in Apple Notes and `x=430.9px` in Mudsnote, while the `Today` list heading already matched at `x=444.4px`.
+- The source-visible title now uses an independent `12pt` leading offset. The source-hidden title retains its measured `-11.5pt` offset, so expanded and collapsed toolbar states no longer share an incorrect local origin.
+- State-transition coverage verifies the constraint switches to the collapsed value and restores the expanded value after reopening the source sidebar.
+- Final normalized OCR measures expanded Mudsnote at `x=454.9px` versus Apple Notes `x=455.0px`, while collapsed remains `x=309.9px` versus `x=309.7px`.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 

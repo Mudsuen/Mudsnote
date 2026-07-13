@@ -1173,6 +1173,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Vision OCR measured the pre-fix title origins at `x=309.7px` for Apple Notes and `x=300.0px` for Mudsnote; the final `-11.5pt` capture measures `x=309.9px`, a `0.2px` difference. The full Swift test suite, installed-app smoke, code-signature check, and toolbar-state regression passed.
 - Lesson: Normalize the reference first, then remeasure each independent toolbar relationship; a global origin correction does not imply every local constraint should move by the same amount.
 
+### 196. Reference-aligned expanded toolbar title
+
+- Problem: The expanded top `All iCloud` title started `24.1px` left of Apple Notes at `2x`, even though the list's `Today` heading and pane divider already matched. Reusing a zero leading offset in the expanded state made the toolbar title visibly detach from the list's native header relationship.
+- Fix: Added an independent `12pt` expanded title offset while retaining the measured `-11.5pt` collapsed offset. The visibility transition now restores the correct state-specific value instead of returning to zero.
+- Verification: Normalized pre-fix OCR measured `x=455.0px` for Apple Notes and `x=430.9px` for Mudsnote; final expanded Mudsnote measures `x=454.9px`. The collapsed regression remains `x=309.9px` versus `x=309.7px`. The state-transition regression, full tests, installed smoke, packaging, and signature verification passed.
+- Lesson: A toolbar item can occupy different AppKit tracks as neighboring items appear or disappear; expanded and collapsed title origins must be calibrated and restored independently.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

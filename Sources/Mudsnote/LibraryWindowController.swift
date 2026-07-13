@@ -320,6 +320,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
+    static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarAddFolderWrapperWidth: CGFloat = 63
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
@@ -2369,7 +2370,7 @@ final class LibraryWindowController: NSWindowController,
         headerStack.translatesAutoresizingMaskIntoConstraints = false
         let titleLeadingConstraint = headerStack.leadingAnchor.constraint(
             equalTo: wrapper.leadingAnchor,
-            constant: 0
+            constant: LibraryNotesLayout.toolbarExpandedTitleLeadingOffset
         )
         noteListToolbarTitleLeadingConstraint = titleLeadingConstraint
         NSLayoutConstraint.activate([
@@ -5791,7 +5792,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
         noteListToolbarTitleLeadingConstraint?.constant = isVisible
-            ? 0
+            ? LibraryNotesLayout.toolbarExpandedTitleLeadingOffset
             : LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
