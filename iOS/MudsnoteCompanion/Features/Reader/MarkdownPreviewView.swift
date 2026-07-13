@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import PhotosUI
+import QuickLook
 import UIKit
 import UniformTypeIdentifiers
 
@@ -41,6 +42,7 @@ struct MarkdownPreviewView: View {
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isFileImporterPresented = false
+    @State private var previewURL: URL?
     @State private var editorDisplayMode: EditorDisplayMode = .rich
     @State private var accessedRoot: URL?
     @State private var accessRevision = 0
@@ -172,6 +174,7 @@ struct MarkdownPreviewView: View {
             guard case .success(let urls) = result, let url = urls.first else { return }
             Task { await attachFile(url) }
         }
+        .quickLookPreview($previewURL)
     }
 
     private var metadataLabel: some View {
@@ -313,6 +316,11 @@ struct MarkdownPreviewView: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(MudsnoteColors.line, lineWidth: 1)
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            previewURL = localFileURL(for: attachment.path)
+                        }
+                        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
                 } else {
                     attachmentLabel(attachment)
                 }
@@ -320,7 +328,13 @@ struct MarkdownPreviewView: View {
                 if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
                     AudioAttachmentPlayer(url: url, title: attachment.path)
                 } else if let url = localFileURL(for: attachment.path) {
-                    Link(destination: url) { attachmentLabel(attachment) }
+                    Button {
+                        previewURL = url
+                    } label: {
+                        attachmentLabel(attachment)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
                 } else {
                     attachmentLabel(attachment)
                 }

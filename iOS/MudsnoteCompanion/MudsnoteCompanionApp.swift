@@ -65,9 +65,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                         options: .atomic
                     )
                 }
+                try Data("Quick Look fixture".utf8).write(
+                    to: root.appendingPathComponent("Attachments/ui-test.txt"),
+                    options: .atomic
+                )
                 let projects = root.appendingPathComponent("Projects", isDirectory: true)
                 try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-                try "# UI Lifecycle\n\nRestore this note end to end.\n".write(
+                try "# UI Lifecycle\n\nRestore this note end to end.\n\n[QA Document](Attachments/ui-test.txt)\n".write(
                     to: projects.appendingPathComponent("UI Lifecycle.md"),
                     atomically: true,
                     encoding: .utf8

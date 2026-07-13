@@ -109,7 +109,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        rendered.tap()
+        let bodyText = rendered.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 5))
+        bodyText.tap()
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -133,6 +135,31 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(note))
         note.tap()
         XCTAssertTrue(app.staticTexts["Autosaved UI edit"].waitForExistence(timeout: 5))
+    }
+
+    func testGenericAttachmentOpensSystemQuickLook() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let preview = app.buttons["preview-attachment-Attachments/ui-test.txt"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        preview.tap()
+        let quickLook = app.otherElements["QLPreviewControllerView"]
+        let close = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
+        XCTAssertTrue(quickLook.waitForExistence(timeout: 5))
+        XCTAssertTrue(close.exists)
+        XCTAssertTrue(app.navigationBars["ui-test"].waitForExistence(timeout: 5))
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Generic attachment Quick Look"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        close.tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
     }
 
     func testLibrarySearchScopesNotesAndInboxWithoutStaleResults() {
