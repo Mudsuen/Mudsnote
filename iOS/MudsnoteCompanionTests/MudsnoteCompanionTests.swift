@@ -826,6 +826,55 @@ final class MudsnoteCompanionTests: XCTestCase {
         } else {
             XCTFail("Expected an individual Inbox memo result")
         }
+
+        let fileQueryInInbox = try await store.search(
+            query: "commercial architecture",
+            scope: .inbox
+        )
+        let memoQueryInNotes = try await store.search(
+            query: "unique strategy",
+            scope: .notes
+        )
+        let fileQueryInNotes = try await store.search(
+            query: "commercial architecture",
+            scope: .notes
+        )
+        let memoQueryInInbox = try await store.search(
+            query: "unique strategy",
+            scope: .inbox
+        )
+        XCTAssertEqual(fileQueryInInbox, [])
+        XCTAssertEqual(memoQueryInNotes, [])
+        XCTAssertEqual(fileQueryInNotes.map(\.location), ["Projects/Launch.md"])
+        XCTAssertEqual(memoQueryInInbox.map(\.location), [String(localized: "Inbox")])
+    }
+
+    @MainActor
+    func testAppModelPublishesCompletedSearchIdentity() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try "# Scoped result\nNeedle body".write(
+            to: root.appendingPathComponent("Scoped.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+        let model = AppModel(bootstrapImmediately: false, fileStore: store)
+
+        await model.searchLibrary(query: "  needle  ", scope: .notes)
+
+        XCTAssertEqual(model.completedSearchQuery, "needle")
+        XCTAssertEqual(model.completedSearchScope, .notes)
+        XCTAssertFalse(model.isSearching)
+        XCTAssertEqual(model.searchResults.map(\.location), ["Scoped.md"])
+
+        model.clearSearch()
+        XCTAssertEqual(model.completedSearchQuery, "")
+        XCTAssertEqual(model.completedSearchScope, .all)
+        XCTAssertTrue(model.searchResults.isEmpty)
     }
 
     func testAttachmentPreviewCopiesAuthorizedFileAndRejectsTraversal() async throws {

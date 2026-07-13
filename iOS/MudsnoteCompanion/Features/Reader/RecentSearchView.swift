@@ -4,12 +4,14 @@ import SwiftUI
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
+        var scope: MarkdownSearchScope
         var libraryRevision: Int
     }
 
     @EnvironmentObject private var appModel: AppModel
     @FocusState private var isSearchFocused: Bool
     @State private var searchQuery = ""
+    @State private var searchScope = MarkdownSearchScope.all
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     var chooseFolder: () -> Void
@@ -17,7 +19,7 @@ struct LibraryHomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if searchQuery.isEmpty {
+                if normalizedSearchQuery.isEmpty {
                     VStack(alignment: .leading, spacing: 22) {
                         accountSection
                         if !appModel.folders.isEmpty {
@@ -43,15 +45,19 @@ struct LibraryHomeView: View {
                 await appModel.refreshInbox()
             }
             .navigationTitle("Library")
-            .task(id: SearchTaskID(query: searchQuery, libraryRevision: appModel.libraryRevision)) {
-                let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            .task(id: SearchTaskID(
+                query: searchQuery,
+                scope: searchScope,
+                libraryRevision: appModel.libraryRevision
+            )) {
+                let trimmed = normalizedSearchQuery
                 guard !trimmed.isEmpty else {
                     appModel.clearSearch()
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(180))
                 guard !Task.isCancelled else { return }
-                await appModel.searchLibrary(query: trimmed)
+                await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -198,7 +204,15 @@ struct LibraryHomeView: View {
 
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if appModel.isSearching {
+            Picker("Search Scope", selection: $searchScope) {
+                ForEach(MarkdownSearchScope.allCases) { scope in
+                    Text(scope.label).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("search-scope-picker")
+
+            if searchIsPending {
                 ProgressView("Searching…")
                     .frame(maxWidth: .infinity)
                     .padding(24)
@@ -218,10 +232,21 @@ struct LibraryHomeView: View {
                             SearchResultRow(result: result)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-result-\(result.id)")
                     }
                 }
             }
         }
+    }
+
+    private var normalizedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var searchIsPending: Bool {
+        appModel.isSearching
+            || appModel.completedSearchQuery != normalizedSearchQuery
+            || appModel.completedSearchScope != searchScope
     }
 
     private var rootSectionTitle: String {
@@ -921,6 +946,7 @@ struct NotesBottomCommandBar: View {
                     .focused(searchFocused)
                     .textInputAutocapitalization(.never)
                     .submitLabel(.search)
+                    .accessibilityIdentifier("library-search-field")
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -931,6 +957,7 @@ struct NotesBottomCommandBar: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
+                    .accessibilityIdentifier("clear-library-search")
                 }
                 Button(action: record) {
                     Image(systemName: "mic")

@@ -134,6 +134,30 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Autosaved UI edit"].waitForExistence(timeout: 5))
     }
 
+    func testLibrarySearchScopesNotesAndInboxWithoutStaleResults() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+
+        let search = app.textFields["library-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Restore")
+
+        let result = app.buttons["search-result-file:Projects/UI Lifecycle.md"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        let scope = app.segmentedControls["search-scope-picker"]
+        XCTAssertTrue(scope.exists)
+
+        scope.buttons["Inbox"].tap()
+        XCTAssertTrue(app.staticTexts["No Results"].waitForExistence(timeout: 5))
+        XCTAssertFalse(result.exists)
+
+        scope.buttons["Notes"].tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        app.buttons["clear-library-search"].tap()
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 5))
+    }
+
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

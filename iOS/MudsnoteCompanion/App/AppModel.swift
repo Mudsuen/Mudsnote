@@ -38,6 +38,8 @@ final class AppModel: ObservableObject {
     @Published var conflictWarnings: [String] = []
     @Published private(set) var searchResults: [MarkdownSearchResult] = []
     @Published private(set) var isSearching = false
+    @Published private(set) var completedSearchQuery = ""
+    @Published private(set) var completedSearchScope = MarkdownSearchScope.all
     @Published private(set) var libraryRevision = 0
 
     let folderAccess: FolderAccessService
@@ -47,6 +49,8 @@ final class AppModel: ObservableObject {
     private var queue: PendingWriteQueue?
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
+    private var activeSearchScope = MarkdownSearchScope.all
+    private var searchGeneration = 0
     private var libraryConfigurationID = UUID()
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
@@ -482,32 +486,53 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func searchLibrary(query: String) async {
+    func searchLibrary(
+        query: String,
+        scope: MarkdownSearchScope = .all
+    ) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchGeneration += 1
+        let generation = searchGeneration
         activeSearchQuery = trimmed
+        activeSearchScope = scope
         guard !trimmed.isEmpty else {
             searchResults = []
             isSearching = false
+            completedSearchQuery = ""
+            completedSearchScope = scope
             return
         }
         isSearching = true
         do {
-            let results = try await fileStore.search(query: trimmed)
-            guard !Task.isCancelled else { return }
+            let results = try await fileStore.search(query: trimmed, scope: scope)
+            guard !Task.isCancelled,
+                  searchGeneration == generation,
+                  activeSearchQuery == trimmed,
+                  activeSearchScope == scope else { return }
             searchResults = results
+            completedSearchQuery = trimmed
+            completedSearchScope = scope
         } catch is CancellationError {
+            if searchGeneration == generation { isSearching = false }
             return
         } catch {
+            guard searchGeneration == generation else { return }
             searchResults = []
+            completedSearchQuery = trimmed
+            completedSearchScope = scope
             statusToast = .error(String(localized: "Search could not be completed"))
         }
-        isSearching = false
+        if searchGeneration == generation { isSearching = false }
     }
 
     func clearSearch() {
+        searchGeneration += 1
         activeSearchQuery = ""
+        activeSearchScope = .all
         searchResults = []
         isSearching = false
+        completedSearchQuery = ""
+        completedSearchScope = .all
     }
 
     func openSearchResult(_ result: MarkdownSearchResult) {
@@ -639,7 +664,7 @@ final class AppModel: ObservableObject {
 
     private func refreshActiveSearchIfNeeded() async {
         guard !activeSearchQuery.isEmpty else { return }
-        await searchLibrary(query: activeSearchQuery)
+        await searchLibrary(query: activeSearchQuery, scope: activeSearchScope)
     }
 
     func previewURL(for attachment: LibraryAttachment) async -> URL? {
@@ -709,8 +734,13 @@ final class AppModel: ObservableObject {
         let configurationID = UUID()
         libraryConfigurationID = configurationID
         folderStatus = .loading
+        searchGeneration += 1
+        activeSearchQuery = ""
+        activeSearchScope = .all
         searchResults = []
         isSearching = false
+        completedSearchQuery = ""
+        completedSearchScope = .all
         return configurationID
     }
 

@@ -231,7 +231,11 @@ actor MarkdownFileStore {
         )
     }
 
-    func search(query: String, limit: Int = 80) throws -> [MarkdownSearchResult] {
+    func search(
+        query: String,
+        scope: MarkdownSearchScope = .all,
+        limit: Int = 80
+    ) throws -> [MarkdownSearchResult] {
         guard let root else { throw FolderAccessError.missingFolder }
         let terms = MarkdownSearch.normalizedTerms(query)
         guard !terms.isEmpty else { return [] }
@@ -250,8 +254,10 @@ actor MarkdownFileStore {
         var activePaths = Set<String>()
         for file in files {
             try Task.checkCancellation()
-            guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
             activePaths.insert(file.relativePath)
+            if scope == .notes, file.relativePath == "Inbox.md" { continue }
+            if scope == .inbox, file.relativePath != "Inbox.md" { continue }
+            guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             let modifiedAt = values?.contentModificationDate ?? file.modifiedAt
             let byteCount = values?.fileSize ?? 0
@@ -1352,6 +1358,22 @@ struct MarkdownSearchResult: Identifiable, Equatable {
     var score: Int
     var modifiedAt: Date
     var destination: Destination
+}
+
+enum MarkdownSearchScope: String, CaseIterable, Identifiable, Equatable {
+    case all
+    case notes
+    case inbox
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: String(localized: "All")
+        case .notes: String(localized: "Notes")
+        case .inbox: String(localized: "Inbox")
+        }
+    }
 }
 
 enum MarkdownSearch {
