@@ -18,6 +18,38 @@ enum LibraryNoteSortOrder: Int {
 }
 
 enum LibraryNoteListProjection {
+    static func upsertByModifiedDate(
+        _ note: NoteSearchResult,
+        into snapshot: inout [NoteSearchResult],
+        replacingPaths: Set<String>,
+        limit: Int
+    ) {
+        guard limit > 0 else {
+            snapshot.removeAll(keepingCapacity: true)
+            return
+        }
+
+        snapshot.removeAll { existing in
+            replacingPaths.contains(existing.url.path)
+        }
+
+        var lowerBound = 0
+        var upperBound = snapshot.count
+        while lowerBound < upperBound {
+            let middle = lowerBound + (upperBound - lowerBound) / 2
+            if snapshot[middle].modifiedAt > note.modifiedAt {
+                lowerBound = middle + 1
+            } else {
+                upperBound = middle
+            }
+        }
+        snapshot.insert(note, at: lowerBound)
+
+        if snapshot.count > limit {
+            snapshot.removeLast(snapshot.count - limit)
+        }
+    }
+
     static func rows(
         for notes: [NoteSearchResult],
         sortOrder: LibraryNoteSortOrder,

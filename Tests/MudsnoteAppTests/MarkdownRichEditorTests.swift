@@ -48,6 +48,95 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
 
 @MainActor
 struct MarkdownRichEditorTests {
+    @Test
+    func noteSnapshotUpsertKeepsModifiedOrderAndReplacesPaths() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-snapshot-upsert-\(UUID().uuidString)", isDirectory: true)
+        let dates = [300.0, 200.0, 100.0]
+        var snapshot = dates.enumerated().map { index, interval in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: "Note \(index)",
+                snippet: "",
+                modifiedAt: Date(timeIntervalSince1970: interval),
+                tags: [],
+                hasAttachments: false,
+                thumbnailURL: nil
+            )
+        }
+        let previousURL = snapshot[2].url
+        let savedURL = root.appendingPathComponent("renamed.md")
+        let updated = NoteSearchResult(
+            url: savedURL,
+            title: "Updated",
+            snippet: "Body",
+            modifiedAt: Date(timeIntervalSince1970: 250),
+            tags: ["updated"],
+            hasAttachments: false,
+            thumbnailURL: nil
+        )
+
+        LibraryNoteListProjection.upsertByModifiedDate(
+            updated,
+            into: &snapshot,
+            replacingPaths: Set([previousURL.path, savedURL.path]),
+            limit: 3
+        )
+
+        #expect(snapshot.map(\.title) == ["Note 0", "Updated", "Note 1"])
+        #expect(snapshot.map(\.modifiedAt) == snapshot.map(\.modifiedAt).sorted(by: >))
+        #expect(snapshot.filter { $0.url.standardizedFileURL == savedURL.standardizedFileURL }.count == 1)
+        #expect(snapshot.allSatisfy { $0.url.standardizedFileURL != previousURL.standardizedFileURL })
+
+        LibraryNoteListProjection.upsertByModifiedDate(
+            updated,
+            into: &snapshot,
+            replacingPaths: [savedURL.path],
+            limit: 0
+        )
+        #expect(snapshot.isEmpty)
+    }
+
+    @Test
+    func noteSnapshotUpsertStaysInteractiveAtSnapshotLimit() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-snapshot-performance", isDirectory: true)
+        var snapshot = (0..<10_000).map { index in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: "Note \(index)",
+                snippet: "",
+                modifiedAt: Date(timeIntervalSince1970: Double(10_000 - index)),
+                tags: [],
+                hasAttachments: false,
+                thumbnailURL: nil
+            )
+        }
+        let replacement = NoteSearchResult(
+            url: root.appendingPathComponent("replacement.md"),
+            title: "Replacement",
+            snippet: "",
+            modifiedAt: Date(timeIntervalSince1970: 9_500.5),
+            tags: [],
+            hasAttachments: false,
+            thumbnailURL: nil
+        )
+
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            LibraryNoteListProjection.upsertByModifiedDate(
+                replacement,
+                into: &snapshot,
+                replacingPaths: [root.appendingPathComponent("note-500.md").path],
+                limit: 10_000
+            )
+        }
+
+        #expect(elapsed < .milliseconds(50))
+        #expect(snapshot.count == 10_000)
+        #expect(snapshot.map(\.modifiedAt) == snapshot.map(\.modifiedAt).sorted(by: >))
+    }
+
     private let theme = MarkdownEditorTheme(
         textColor: NSColor.white,
         mutedTextColor: NSColor.white.withAlphaComponent(0.7),

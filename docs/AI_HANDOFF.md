@@ -255,6 +255,14 @@
 - `NSToolbarItem.isBordered` is explicitly false for the group, preventing a second shifted outline around the glass capsule.
 - Final packaged visual evidence is `/tmp/mudsnote-visual-qa-201-editor-tools-final/apple-notes-vs-mudsnote.png`.
 
+## Latest iteration (202)
+
+- Post-save `sourceCountSnapshot` maintenance no longer re-sorts up to `10,000` notes on the main actor.
+- `LibraryNoteListProjection.upsertByModifiedDate` removes old/new paths, binary-searches the descending modified-date insertion point, inserts once, and enforces the existing limit.
+- The save boundary supplies both raw and standardized paths; the hot removal loop compares `.path` directly and does not normalize every snapshot URL.
+- Regression coverage includes rename replacement, duplicate prevention, ordering, capacity, and a debug-build `10,000`-entry update budget below `50ms`.
+- Collapsed visual regression evidence is `/tmp/mudsnote-visual-qa-202-collapsed/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

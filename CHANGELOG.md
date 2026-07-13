@@ -1215,6 +1215,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: The final packaged comparison is `/tmp/mudsnote-visual-qa-201-editor-tools-final/apple-notes-vs-mudsnote.png`; its toolbar crop shows reference-aligned capsule bounds and one outline. Full tests, installed-app library smoke, packaging, and strict signature validation passed.
 - Lesson: Use a transparent layout slot to position a native material without changing its geometry, and explicitly suppress item chrome when the contained AppKit view already owns the visible surface.
 
+### 202. Linear post-save snapshot update
+
+- Problem: Every autosave removed the edited note from the up-to-`10,000`-entry library snapshot, appended its replacement, then sorted the entire array on the main thread. The first linear prototype still spent about `60ms` standardizing every URL in the removal loop.
+- Fix: Added a pure ordered-snapshot upsert that removes matching raw paths, finds the modified-date insertion point with binary search, inserts once, and trims once. URL normalization now happens at the save boundary, with raw and normalized old/new paths supplied to the hot loop.
+- Verification: Ordering, rename replacement, duplicate prevention, capacity, autosave, and date-group sorting tests pass. A debug-build `10,000`-entry update stays below the `50ms` regression gate across three consecutive runs. Full tests, packaging, installed-app smoke, strict signature verification, and collapsed-state visual QA passed.
+- Lesson: Moving from sort to insertion is not enough when per-element normalization dominates; canonicalize identifiers at mutation boundaries and keep the array loop allocation-light.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

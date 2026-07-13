@@ -5247,11 +5247,7 @@ final class LibraryWindowController: NSWindowController,
     ) {
         let previousPath = previousURL?.standardizedFileURL.path
         let savedPath = savedURL.standardizedFileURL.path
-        sourceCountSnapshot.removeAll { note in
-            let notePath = note.url.standardizedFileURL.path
-            return notePath == previousPath || notePath == savedPath
-        }
-        sourceCountSnapshot.append(NoteSearchResult(
+        let updatedNote = NoteSearchResult(
             url: savedURL,
             title: title,
             snippet: libraryFirstMeaningfulLine(from: body) ?? "",
@@ -5259,11 +5255,18 @@ final class LibraryWindowController: NSWindowController,
             tags: tags,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
-        ))
-        sourceCountSnapshot.sort { $0.modifiedAt > $1.modifiedAt }
-        if sourceCountSnapshot.count > Self.sourceCountSnapshotLimit {
-            sourceCountSnapshot.removeLast(sourceCountSnapshot.count - Self.sourceCountSnapshotLimit)
-        }
+        )
+        LibraryNoteListProjection.upsertByModifiedDate(
+            updatedNote,
+            into: &sourceCountSnapshot,
+            replacingPaths: Set([
+                previousURL?.path,
+                previousPath,
+                savedURL.path,
+                savedPath
+            ].compactMap { $0 }),
+            limit: Self.sourceCountSnapshotLimit
+        )
     }
 
     private func refreshVisibleNoteListAfterSave(selecting savedURL: URL) {
