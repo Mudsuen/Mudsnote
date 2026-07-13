@@ -212,6 +212,30 @@ actor MarkdownFileStore {
         cachedLibrarySnapshot = nil
     }
 
+    func setPinned(_ isPinned: Bool, relativePaths: [String]) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let paths = Array(Set(relativePaths)).sorted()
+        guard !paths.isEmpty else { return }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        for relativePath in paths {
+            guard Self.isPinnableNotePath(relativePath),
+                  let url = AuthorizedLibraryPath.resolve(relativePath, within: root),
+                  url.pathExtension.lowercased() == "md",
+                  fileManager.fileExists(atPath: url.path) else {
+                throw MarkdownLifecycleError.noteNotFound
+            }
+        }
+        var pins = try loadPinnedPaths(root: root)
+        if isPinned {
+            pins.formUnion(paths)
+        } else {
+            pins.subtract(paths)
+        }
+        try savePinnedPaths(pins, root: root)
+        cachedLibrarySnapshot = nil
+    }
+
     func createMarkdownDocument(inFolder relativeFolderPath: String? = nil) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -775,6 +799,42 @@ actor MarkdownFileStore {
         )
     }
 
+    func trashMarkdownDocuments(
+        relativePaths: [String],
+        now: Date = Date()
+    ) throws -> [TrashedMarkdownFile] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let paths = Array(Set(relativePaths)).sorted()
+        guard !paths.isEmpty else { return [] }
+        for relativePath in paths {
+            guard Self.isMutableNotePath(relativePath),
+                  let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+                  source.pathExtension.lowercased() == "md",
+                  fileManager.fileExists(atPath: source.path) else {
+                throw MarkdownLifecycleError.protectedNote
+            }
+        }
+
+        var trashed: [TrashedMarkdownFile] = []
+        do {
+            for path in paths {
+                trashed.append(try trashMarkdownDocument(relativePath: path, now: now))
+            }
+            return trashed
+        } catch {
+            var rollbackFailed = false
+            for item in trashed.reversed() {
+                do {
+                    _ = try restoreTrashedMarkdownDocument(id: item.id)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
+            throw error
+        }
+    }
+
     func createFolder(named name: String, parentRelativePath: String? = nil) throws -> LibraryFolderNode {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -909,6 +969,84 @@ actor MarkdownFileStore {
         }
         invalidateAfterMutation(relativePaths: [relativePath, moved.relativePath])
         return moved
+    }
+
+    func moveMarkdownDocuments(
+        relativePaths: [String],
+        toFolder targetFolder: String?
+    ) throws -> [RecentMarkdownFile] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let paths = Array(Set(relativePaths)).sorted()
+        guard !paths.isEmpty else { return [] }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let targetDirectory = try userFolderURL(
+            relativePath: targetFolder,
+            root: root,
+            allowRoot: true
+        )
+        let sources: [(path: String, url: URL)] = try paths.map { path in
+            guard Self.isMutableNotePath(path),
+                  let source = AuthorizedLibraryPath.resolve(path, within: root),
+                  source.pathExtension.lowercased() == "md" else {
+                throw MarkdownLifecycleError.protectedNote
+            }
+            guard fileManager.fileExists(atPath: source.path) else {
+                throw MarkdownLifecycleError.noteNotFound
+            }
+            return (path, source)
+        }
+        let originalPins = try loadPinnedPaths(root: root)
+        var moves: [(source: URL, destination: URL, oldPath: String, newPath: String)] = []
+        var destinations: [URL] = []
+
+        do {
+            for item in sources {
+                if item.url.deletingLastPathComponent().standardizedFileURL
+                    == targetDirectory.standardizedFileURL {
+                    destinations.append(item.url)
+                    continue
+                }
+                let destination = uniqueMarkdownURL(
+                    for: targetDirectory.appendingPathComponent(item.url.lastPathComponent)
+                )
+                try coordinatedMove(from: item.url, to: destination)
+                let newPath = Self.relativePath(for: destination, root: root)
+                moves.append((item.url, destination, item.path, newPath))
+                destinations.append(destination)
+            }
+            var updatedPins = originalPins
+            for move in moves where updatedPins.remove(move.oldPath) != nil {
+                updatedPins.insert(move.newPath)
+            }
+            if updatedPins != originalPins {
+                try savePinnedPaths(updatedPins, root: root)
+            }
+            let moved = try destinations.map { try recentFile(at: $0, root: root) }
+            invalidateAfterMutation(
+                relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+            )
+            return moved
+        } catch {
+            var rollbackFailed = false
+            for move in moves.reversed() {
+                do {
+                    try coordinatedMove(from: move.destination, to: move.source)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            do {
+                try savePinnedPaths(originalPins, root: root)
+            } catch {
+                rollbackFailed = true
+            }
+            invalidateAfterMutation(
+                relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+            )
+            if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
+            throw error
+        }
     }
 
     func trashFolder(relativePath: String, now: Date = Date()) throws {
@@ -2148,6 +2286,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     case invalidFolderName
     case folderContainsUnsupportedItems
     case invalidConflictCopy
+    case batchRollbackFailed
 
     var errorDescription: String? {
         switch self {
@@ -2165,6 +2304,8 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
             String(localized: "This folder contains files Mudsnote will not delete.")
         case .invalidConflictCopy:
             String(localized: "This file is not a recoverable conflict copy.")
+        case .batchRollbackFailed:
+            String(localized: "Some selected notes could not be restored after the operation failed.")
         }
     }
 }

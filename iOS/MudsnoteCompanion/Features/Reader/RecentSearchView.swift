@@ -465,20 +465,26 @@ enum NoteListPresentation {
     }
 }
 
-private struct NoteListSortMenu: View {
+private struct NoteListOptionsMenu: View {
     @Binding var sortOrderRawValue: String
     @Binding var groupByDate: Bool
+    var selectNotes: () -> Void
 
     var body: some View {
         Menu {
+            Button(action: selectNotes) {
+                Label("Select Notes", systemImage: "checkmark.circle")
+            }
+            Divider()
             NoteListSortMenuContent(
                 sortOrderRawValue: $sortOrderRawValue,
                 groupByDate: $groupByDate
             )
         } label: {
-            Image(systemName: "arrow.up.arrow.down.circle")
+            Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Sort Notes")
+        .accessibilityIdentifier("note-list-options")
     }
 }
 
@@ -505,6 +511,8 @@ struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
+    @State private var isSelecting = false
+    @State private var selectedPaths = Set<String>()
     var title: String
     var scope: LibraryFileScope
 
@@ -525,6 +533,9 @@ struct FolderNotesListView: View {
             groupByDate: groupByDate
         )
     }
+    private var selectedFiles: [RecentMarkdownFile] {
+        files.filter { selectedPaths.contains($0.relativePath) }
+    }
 
     var body: some View {
         List {
@@ -535,14 +546,14 @@ struct FolderNotesListView: View {
                 if !pinnedFiles.isEmpty {
                     Section("Pinned") {
                         ForEach(pinnedFiles) { file in
-                            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+                            noteRow(file)
                         }
                     }
                 }
                 ForEach(otherSections) { section in
                     Section {
                         ForEach(section.files) { file in
-                            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+                            noteRow(file)
                         }
                     } header: {
                         if let title = section.title {
@@ -560,15 +571,75 @@ struct FolderNotesListView: View {
         .refreshable {
             await appModel.refreshInbox()
         }
-        .navigationTitle(title)
+        .navigationTitle(
+            isSelecting
+                ? String(
+                    format: String(localized: "notes.selected.format"),
+                    locale: .current,
+                    selectedPaths.count
+                )
+                : title
+        )
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if isSelecting {
+                    Button(selectedPaths.count == files.count ? "Deselect All" : "Select All") {
+                        if selectedPaths.count == files.count {
+                            selectedPaths.removeAll()
+                        } else {
+                            selectedPaths = Set(files.map(\.relativePath))
+                        }
+                    }
+                    .accessibilityIdentifier("toggle-select-all-notes")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                NoteListSortMenu(
-                    sortOrderRawValue: $sortOrderRawValue,
-                    groupByDate: $groupByDate
+                if isSelecting {
+                    Button("Done") { finishSelecting() }
+                        .accessibilityIdentifier("finish-note-selection")
+                } else {
+                    NoteListOptionsMenu(
+                        sortOrderRawValue: $sortOrderRawValue,
+                        groupByDate: $groupByDate,
+                        selectNotes: { isSelecting = true }
+                    )
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelecting {
+                SelectedNotesActionBar(
+                    files: selectedFiles,
+                    destinations: appModel.allFolders,
+                    finish: finishSelecting
                 )
             }
         }
+        .onChange(of: files.map(\.relativePath)) { _, paths in
+            selectedPaths.formIntersection(paths)
+        }
+    }
+
+    @ViewBuilder
+    private func noteRow(_ file: RecentMarkdownFile) -> some View {
+        if isSelecting {
+            SelectableNoteFileRow(
+                file: file,
+                dateBasis: sortOrder.dateBasis,
+                isSelected: selectedPaths.contains(file.relativePath)
+            ) {
+                if !selectedPaths.insert(file.relativePath).inserted {
+                    selectedPaths.remove(file.relativePath)
+                }
+            }
+        } else {
+            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+        }
+    }
+
+    private func finishSelecting() {
+        selectedPaths.removeAll()
+        isSelecting = false
     }
 }
 
@@ -594,6 +665,8 @@ struct LibraryFolderView: View {
     @State private var isRenamingFolder = false
     @State private var isConfirmingDelete = false
     @State private var folderName = ""
+    @State private var isSelecting = false
+    @State private var selectedPaths = Set<String>()
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
 
@@ -626,35 +699,40 @@ struct LibraryFolderView: View {
                 && !$0.relativePath.hasPrefix(currentFolder.relativePath + "/")
         }
     }
+    private var selectedFiles: [RecentMarkdownFile] {
+        directFiles.filter { selectedPaths.contains($0.relativePath) }
+    }
 
     var body: some View {
         List {
-            ForEach(currentFolder.children) { child in
-                NavigationLink {
-                    LibraryFolderView(folder: child)
-                } label: {
-                    LibraryFolderRow(
-                        title: child.name,
-                        subtitle: child.relativePath,
-                        systemImage: "folder.fill",
-                        count: child.totalNoteCount
-                    )
+            if !isSelecting {
+                ForEach(currentFolder.children) { child in
+                    NavigationLink {
+                        LibraryFolderView(folder: child)
+                    } label: {
+                        LibraryFolderRow(
+                            title: child.name,
+                            subtitle: child.relativePath,
+                            systemImage: "folder.fill",
+                            count: child.totalNoteCount
+                        )
+                    }
+                    .accessibilityIdentifier("folder-row-\(child.relativePath)")
+                    .modifier(FolderLifecycleActions(folder: child))
                 }
-                .accessibilityIdentifier("folder-row-\(child.relativePath)")
-                .modifier(FolderLifecycleActions(folder: child))
             }
 
             if !pinnedFiles.isEmpty {
                 Section("Pinned") {
                     ForEach(pinnedFiles) { file in
-                        NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+                        noteRow(file)
                     }
                 }
             }
             ForEach(otherSections) { section in
                 Section {
                     ForEach(section.files) { file in
-                        NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+                        noteRow(file)
                     }
                 } header: {
                     if let title = section.title {
@@ -676,10 +754,40 @@ struct LibraryFolderView: View {
         .refreshable {
             await appModel.refreshInbox()
         }
-        .navigationTitle(currentFolder.name)
+        .navigationTitle(
+            isSelecting
+                ? String(
+                    format: String(localized: "notes.selected.format"),
+                    locale: .current,
+                    selectedPaths.count
+                )
+                : currentFolder.name
+        )
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if isSelecting {
+                    Button(selectedPaths.count == directFiles.count ? "Deselect All" : "Select All") {
+                        if selectedPaths.count == directFiles.count {
+                            selectedPaths.removeAll()
+                        } else {
+                            selectedPaths = Set(directFiles.map(\.relativePath))
+                        }
+                    }
+                    .accessibilityIdentifier("toggle-select-all-notes")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
+                if isSelecting {
+                    Button("Done") { finishSelecting() }
+                        .accessibilityIdentifier("finish-note-selection")
+                } else {
+                    Menu {
+                    Button {
+                        isSelecting = true
+                    } label: {
+                        Label("Select Notes", systemImage: "checkmark.circle")
+                    }
+                    Divider()
                     Button {
                         folderName = ""
                         isCreatingFolder = true
@@ -735,6 +843,17 @@ struct LibraryFolderView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .accessibilityLabel("Folder Actions")
+                .accessibilityIdentifier("folder-actions")
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelecting {
+                SelectedNotesActionBar(
+                    files: selectedFiles,
+                    destinations: moveDestinations,
+                    finish: finishSelecting
+                )
             }
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -778,6 +897,31 @@ struct LibraryFolderView: View {
         } message: {
             Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
         }
+        .onChange(of: directFiles.map(\.relativePath)) { _, paths in
+            selectedPaths.formIntersection(paths)
+        }
+    }
+
+    @ViewBuilder
+    private func noteRow(_ file: RecentMarkdownFile) -> some View {
+        if isSelecting {
+            SelectableNoteFileRow(
+                file: file,
+                dateBasis: sortOrder.dateBasis,
+                isSelected: selectedPaths.contains(file.relativePath)
+            ) {
+                if !selectedPaths.insert(file.relativePath).inserted {
+                    selectedPaths.remove(file.relativePath)
+                }
+            }
+        } else {
+            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+        }
+    }
+
+    private func finishSelecting() {
+        selectedPaths.removeAll()
+        isSelecting = false
     }
 }
 
@@ -877,6 +1021,130 @@ private struct FolderLifecycleActions: ViewModifier {
             } message: {
                 Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
             }
+    }
+}
+
+private struct SelectableNoteFileRow: View {
+    var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis
+    var isSelected: Bool
+    var toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
+                RecentFileRow(file: file, dateBasis: dateBasis)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("selectable-note-row-\(file.id)")
+    }
+}
+
+private struct SelectedNotesActionBar: View {
+    @EnvironmentObject private var appModel: AppModel
+    @State private var isConfirmingDelete = false
+    var files: [RecentMarkdownFile]
+    var destinations: [LibraryFolderNode]
+    var finish: () -> Void
+
+    private var canMoveOrDelete: Bool {
+        !files.isEmpty && files.allSatisfy(appModel.canMoveToRecentlyDeleted)
+    }
+
+    private var shouldPin: Bool {
+        !files.allSatisfy(\.isPinned)
+    }
+
+    var body: some View {
+        HStack(spacing: 22) {
+            Text(
+                String(
+                    format: String(localized: "notes.selected.format"),
+                    locale: .current,
+                    files.count
+                )
+            )
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(MudsnoteColors.muted)
+            .frame(minWidth: 68, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach(destinations) { destination in
+                    Button(destination.relativePath) {
+                        let selected = files
+                        Task {
+                            if await appModel.move(selected, to: destination) {
+                                finish()
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "folder")
+                    .frame(width: 34, height: 34)
+            }
+            .disabled(!canMoveOrDelete || destinations.isEmpty)
+            .accessibilityLabel("Move Selected Notes")
+            .accessibilityIdentifier("move-selected-notes")
+
+            Button {
+                let selected = files
+                let pin = shouldPin
+                Task {
+                    if await appModel.setPinned(selected, isPinned: pin) {
+                        finish()
+                    }
+                }
+            } label: {
+                Image(systemName: shouldPin ? "pin" : "pin.slash")
+                    .frame(width: 34, height: 34)
+            }
+            .disabled(files.isEmpty)
+            .accessibilityLabel(shouldPin ? "Pin Selected Notes" : "Unpin Selected Notes")
+            .accessibilityIdentifier("pin-selected-notes")
+
+            Button(role: .destructive) {
+                isConfirmingDelete = true
+            } label: {
+                Image(systemName: "trash")
+                    .frame(width: 34, height: 34)
+            }
+            .disabled(!canMoveOrDelete)
+            .accessibilityLabel("Delete Selected Notes")
+            .accessibilityIdentifier("delete-selected-notes")
+        }
+        .font(.title3)
+        .foregroundStyle(MudsnoteColors.text)
+        .padding(.horizontal, 18)
+        .frame(height: 58)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1)
+        }
+        .confirmationDialog(
+            "Move Selected Notes to Recently Deleted?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Move to Recently Deleted", role: .destructive) {
+                let selected = files
+                Task {
+                    if await appModel.moveToRecentlyDeleted(selected) {
+                        finish()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You can restore these notes later from Recently Deleted.")
+        }
     }
 }
 

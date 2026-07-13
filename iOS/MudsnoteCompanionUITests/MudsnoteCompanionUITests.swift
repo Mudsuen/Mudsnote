@@ -124,6 +124,37 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Tagged quick capture #project"].exists)
     }
 
+    func testNotesStyleSelectionPinsMultipleMarkdownNotes() {
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let options = app.buttons["note-list-options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        app.buttons["Select Notes"].tap()
+
+        let first = app.buttons["selectable-note-row-Projects/UI Lifecycle.md"]
+        let second = app.buttons["selectable-note-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        first.tap()
+        second.tap()
+        XCTAssertTrue(app.navigationBars["2 Selected"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["toggle-select-all-notes"].exists)
+
+        let pin = app.buttons["pin-selected-notes"]
+        XCTAssertTrue(pin.exists)
+        pin.tap()
+        XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.images["pin-indicator-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.images["pin-indicator-Projects/Second UI Note.md"].exists)
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let quickNoteButton = app.buttons["quick-note-button"]
@@ -619,7 +650,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         damagedDraft: Bool = false,
         damagedQueue: Bool = false,
         conflictCopy: Bool = false,
-        fileTag: Bool = false
+        fileTag: Bool = false,
+        batchNotes: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -631,7 +663,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             damagedDraft ? "-ui-testing-damaged-draft" : nil,
             damagedQueue ? "-ui-testing-damaged-queue" : nil,
             conflictCopy ? "-ui-testing-conflict-copy" : nil,
-            fileTag ? "-ui-testing-file-tag" : nil
+            fileTag ? "-ui-testing-file-tag" : nil,
+            batchNotes ? "-ui-testing-batch-notes" : nil
         ].compactMap { $0 }
         app.launch()
         return app

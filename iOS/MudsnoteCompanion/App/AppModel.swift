@@ -523,6 +523,36 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func moveToRecentlyDeleted(_ files: [RecentMarkdownFile]) async -> Bool {
+        guard !files.isEmpty else { return false }
+        guard files.allSatisfy(canMoveToRecentlyDeleted) else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            return false
+        }
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            _ = try await fileStore.trashMarkdownDocuments(
+                relativePaths: files.map(\.relativePath)
+            )
+            if let selectedDocument,
+               files.contains(where: { $0.relativePath == selectedDocument.relativePath }) {
+                self.selectedDocument = nil
+            }
+            statusToast = .saved(String(localized: "Selected Notes Moved to Recently Deleted"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            await refreshInbox()
+            return false
+        }
+    }
+
     func togglePinned(_ file: RecentMarkdownFile) {
         Task {
             do {
@@ -535,6 +565,28 @@ final class AppModel: ObservableObject {
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
+        }
+    }
+
+    @discardableResult
+    func setPinned(_ files: [RecentMarkdownFile], isPinned: Bool) async -> Bool {
+        guard !files.isEmpty else { return false }
+        do {
+            try await fileStore.setPinned(
+                isPinned,
+                relativePaths: files.map(\.relativePath)
+            )
+            statusToast = .saved(
+                isPinned
+                    ? String(localized: "Selected Notes Pinned")
+                    : String(localized: "Selected Notes Unpinned")
+            )
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
         }
     }
 
@@ -685,6 +737,39 @@ final class AppModel: ObservableObject {
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
+        }
+    }
+
+    @discardableResult
+    func move(_ files: [RecentMarkdownFile], to folder: LibraryFolderNode) async -> Bool {
+        guard !files.isEmpty else { return false }
+        guard files.allSatisfy(canMoveToRecentlyDeleted) else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
+            return false
+        }
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            _ = try await fileStore.moveMarkdownDocuments(
+                relativePaths: files.map(\.relativePath),
+                toFolder: folder.relativePath
+            )
+            if let selectedDocument,
+               files.contains(where: {
+                   $0.relativePath == selectedDocument.relativePath
+               }) {
+                self.selectedDocument = nil
+            }
+            statusToast = .saved(String(localized: "Selected Notes Moved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            await refreshInbox()
+            return false
         }
     }
 

@@ -1120,6 +1120,67 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == recovered.relativePath }?.isPinned == true)
     }
 
+    func testBatchNoteLifecycleMovesPinsAndRejectsProtectedSelectionAtomically() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        for folder in ["A", "B", "Archive"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(folder, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+        try "# First\n".write(
+            to: root.appendingPathComponent("A/Same.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Second\n".write(
+            to: root.appendingPathComponent("B/Same.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Protected\n".write(
+            to: root.appendingPathComponent("Daily/Protected.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let originalPaths = ["A/Same.md", "B/Same.md"]
+        try await store.setPinned(true, relativePaths: originalPaths)
+        let moved = try await store.moveMarkdownDocuments(
+            relativePaths: originalPaths,
+            toFolder: "Archive"
+        )
+        let movedPaths = moved.map(\.relativePath)
+        XCTAssertEqual(Set(movedPaths), Set(["Archive/Same.md", "Archive/Same 2.md"]))
+
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(
+            snapshot.allFiles.filter { movedPaths.contains($0.relativePath) }
+                .allSatisfy(\.isPinned)
+        )
+        await XCTAssertThrowsErrorAsync(
+            try await store.trashMarkdownDocuments(
+                relativePaths: [movedPaths[0], "Daily/Protected.md"]
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(movedPaths[0]).path))
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.trashedFiles.isEmpty)
+
+        try await store.setPinned(false, relativePaths: movedPaths)
+        let trashed = try await store.trashMarkdownDocuments(relativePaths: movedPaths)
+        XCTAssertEqual(trashed.count, 2)
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.trashedFiles.count, 2)
+        XCTAssertFalse(snapshot.allFiles.contains { movedPaths.contains($0.relativePath) })
+    }
+
     func testDamagedPinMetadataDoesNotBlockLibrary() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

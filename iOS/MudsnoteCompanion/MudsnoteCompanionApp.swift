@@ -42,6 +42,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let damagedQueueArgument = "-ui-testing-damaged-queue"
     private static let conflictCopyArgument = "-ui-testing-conflict-copy"
     private static let fileTagArgument = "-ui-testing-file-tag"
+    private static let batchNotesArgument = "-ui-testing-batch-notes"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -54,6 +55,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(damagedQueueArgument)
                 || arguments.contains(conflictCopyArgument)
                 || arguments.contains(fileTagArgument)
+                || arguments.contains(batchNotesArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -105,6 +107,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                 if arguments.contains(conflictCopyArgument) {
                     try "# Conflicted UI Lifecycle\n\nReview both versions safely.\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle conflicted copy.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
+                if arguments.contains(batchNotesArgument) {
+                    try "# Second UI Note\n\nManage these notes together.\n".write(
+                        to: projects.appendingPathComponent("Second UI Note.md"),
                         atomically: true,
                         encoding: .utf8
                     )

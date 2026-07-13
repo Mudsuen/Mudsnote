@@ -2044,6 +2044,57 @@
     },
     "This file is not a recoverable conflict copy.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件不是可恢复的冲突副本。" } } }
+    },
+    "Select Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择笔记" } } }
+    },
+    "Select All": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全选" } } }
+    },
+    "Deselect All": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消全选" } } }
+    },
+    "notes.selected.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld Selected" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已选择 %lld 项" } }
+      }
+    },
+    "Move Selected Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动所选笔记" } } }
+    },
+    "Pin Selected Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "置顶所选笔记" } } }
+    },
+    "Unpin Selected Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消置顶所选笔记" } } }
+    },
+    "Delete Selected Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除所选笔记" } } }
+    },
+    "Selected Notes Pinned": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已置顶" } } }
+    },
+    "Selected Notes Unpinned": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已取消置顶" } } }
+    },
+    "Selected Notes Moved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已移动" } } }
+    },
+    "Selected Notes Moved to Recently Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选笔记已移到最近删除" } } }
+    },
+    "Move Selected Notes to Recently Deleted?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "将所选笔记移到最近删除？" } } }
+    },
+    "You can restore these notes later from Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "你稍后可以从最近删除中恢复这些笔记。" } } }
+    },
+    "Inbox and Daily notes cannot be moved between folders.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "收件箱和每日笔记不能在文件夹之间移动。" } } }
+    },
+    "Some selected notes could not be restored after the operation failed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "操作失败后，部分所选笔记无法恢复。" } } }
     }
   },
   "version": "1.0"
