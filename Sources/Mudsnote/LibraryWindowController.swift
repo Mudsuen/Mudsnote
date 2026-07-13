@@ -1052,7 +1052,7 @@ final class LibraryNoteTableView: NSTableView {
     }
 
     func reconcilePointerHover(at location: NSPoint?) {
-        guard let location, bounds.contains(location) else {
+        guard let location, visibleRect.contains(location) else {
             setPointerHoveredRow(nil)
             return
         }
