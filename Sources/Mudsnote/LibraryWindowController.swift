@@ -320,7 +320,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolButtonHeight: CGFloat = 26
     static let toolbarCircularButtonSize: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
-    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -16
+    static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarAddFolderWrapperWidth: CGFloat = 63
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 16
     static let toolbarIconEnabledAlpha: CGFloat = 0.76

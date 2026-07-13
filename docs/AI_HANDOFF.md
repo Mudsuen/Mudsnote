@@ -206,6 +206,12 @@
 - Normalized collapsed comparison supersedes iteration 193's margin-bearing coordinates: the selected card now matches Apple Notes at `20,204–345,339px`, with `10/27pt` card insets, a `35pt` text start, and a trailing text constraint that keeps long titles inside the card.
 - The collapsed title, list stack, and editor content origins were shifted by the same normalized-reference delta. Tightened Add Folder and Search wrappers keep every required toolbar item visible at the smaller canonical width without an overflow chevron.
 
+## Latest iteration (195)
+
+- Vision OCR on the normalized collapsed captures measured the Apple Notes `All iCloud` title at `x=309.7px` and Mudsnote at `x=300.0px`; their vertical origins already matched.
+- The collapsed title leading offset is `-11.5pt`, moving only the title about `4.5pt` right while preserving the aligned sidebar button, list card, and editor origins. The `-11pt` and `-12pt` probes landed `2.2px` right and `1.7px` left of the reference respectively, so the final value uses the Retina half-point between them.
+- Keep the expanded title offset at `0`; this correction belongs only to the source-hidden toolbar state.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

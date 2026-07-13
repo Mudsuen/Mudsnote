@@ -1166,6 +1166,13 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Full `swift test`, installed-app smoke, code-signature validation, and expanded, collapsed, and content-state visual comparisons passed. The normalized expanded dividers align at `x=416/816px` and the collapsed selected card aligns at `20,204–345,339px` at `2x`.
 - Lesson: Compare window content to window content. Capture margins must be normalized before any pixel-derived layout constant is accepted.
 
+### 195. Reference-aligned collapsed toolbar title
+
+- Problem: After reference-margin normalization, the collapsed `All iCloud` title remained about `10px` left of Apple Notes at `2x`, making the gap from the sidebar button visibly too tight even though the rest of the collapsed layout was aligned.
+- Fix: Changed only the collapsed title leading offset from `-16pt` to `-11.5pt`; expanded geometry remains unchanged. The `-11pt` and `-12pt` probes landed `2.2px` right and `1.7px` left of the reference, so the final constraint uses the Retina half-point between them.
+- Verification: Vision OCR measured the pre-fix title origins at `x=309.7px` for Apple Notes and `x=300.0px` for Mudsnote; the final `-11.5pt` capture measures `x=309.9px`, a `0.2px` difference. The full Swift test suite, installed-app smoke, code-signature check, and toolbar-state regression passed.
+- Lesson: Normalize the reference first, then remeasure each independent toolbar relationship; a global origin correction does not imply every local constraint should move by the same amount.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

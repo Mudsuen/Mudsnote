@@ -1157,7 +1157,7 @@ struct MarkdownRichEditorTests {
             $0.firstItem === collapsedTitleStack && $0.firstAttribute == .leading
         })
         #expect(collapsedTitleLeadingConstraint.constant == LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset)
-        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -16)
+        #expect(LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset == -11.5)
         window.contentView?.layoutSubtreeIfNeeded()
         let collapsedToggleFrame = collapsedToggleWrapper.convert(collapsedToggleWrapper.bounds, to: nil)
         let collapsedTitleFrame = collapsedTitleStack.convert(collapsedTitleStack.bounds, to: nil)
