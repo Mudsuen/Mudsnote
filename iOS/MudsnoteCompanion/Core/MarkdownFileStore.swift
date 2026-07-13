@@ -7,15 +7,23 @@ actor MarkdownFileStore {
         var markdown: String
     }
 
+    private struct ListMetadataCacheEntry {
+        var modifiedAt: Date
+        var byteCount: Int
+        var metadata: MarkdownListMetadata
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
+    private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
     private let fileManager = FileManager.default
 
     func configure(root: URL) {
         self.root = root
         cachedLibrarySnapshot = nil
         searchCache = [:]
+        listMetadataCache = [:]
     }
 
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
@@ -30,6 +38,7 @@ actor MarkdownFileStore {
         let inboxItems = InboxParser.parse(inboxMarkdown)
         let resourceKeys: Set<URLResourceKey> = [
             .contentModificationDateKey,
+            .creationDateKey,
             .fileSizeKey,
             .isDirectoryKey,
             .isRegularFileKey,
@@ -82,17 +91,29 @@ actor MarkdownFileStore {
                 if relativePath.hasPrefix("Daily/") {
                     dailyCount += 1
                 }
+                let modifiedAt = values.contentModificationDate ?? .distantPast
+                let byteCount = values.fileSize ?? 0
+                let listMetadata = try metadataForList(
+                    relativePath: relativePath,
+                    url: url,
+                    modifiedAt: modifiedAt,
+                    byteCount: byteCount
+                )
                 markdownFiles.append(RecentMarkdownFile(
                     id: relativePath,
                     relativePath: relativePath,
-                    title: url.deletingPathExtension().lastPathComponent,
-                    modifiedAt: values.contentModificationDate ?? .distantPast
+                    title: listMetadata.title,
+                    modifiedAt: modifiedAt,
+                    createdAt: values.creationDate ?? modifiedAt,
+                    preview: listMetadata.preview,
+                    hasAttachments: listMetadata.hasAttachments
                 ))
             }
         }
 
         let storedPinnedPaths = try loadPinnedPaths(root: root)
         let activePaths = Set(markdownFiles.map(\.relativePath))
+        listMetadataCache = listMetadataCache.filter { activePaths.contains($0.key) }
         let pinnedPaths = storedPinnedPaths.intersection(activePaths)
         if pinnedPaths != storedPinnedPaths {
             try savePinnedPaths(pinnedPaths, root: root)
@@ -142,14 +163,22 @@ actor MarkdownFileStore {
         let inboxURL = root.appendingPathComponent("Inbox.md")
         let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
         let inboxItems = InboxParser.parse(inboxMarkdown)
-        let modifiedAt = try inboxURL.resourceValues(
-            forKeys: [.contentModificationDateKey]
-        ).contentModificationDate ?? .distantPast
+        let inboxValues = try inboxURL.resourceValues(
+            forKeys: [.contentModificationDateKey, .creationDateKey]
+        )
+        let modifiedAt = inboxValues.contentModificationDate ?? .distantPast
+        let metadata = MarkdownListMetadata.extract(
+            from: inboxMarkdown,
+            fallbackTitle: String(localized: "Inbox")
+        )
         let inboxFile = RecentMarkdownFile(
             id: "Inbox.md",
             relativePath: "Inbox.md",
-            title: "Inbox",
-            modifiedAt: modifiedAt
+            title: metadata.title,
+            modifiedAt: modifiedAt,
+            createdAt: inboxValues.creationDate ?? modifiedAt,
+            preview: metadata.preview,
+            hasAttachments: metadata.hasAttachments
         )
 
         snapshot.inboxItems = inboxItems
@@ -842,6 +871,9 @@ actor MarkdownFileStore {
     private func invalidatePathPrefix(_ prefix: String) {
         cachedLibrarySnapshot = nil
         searchCache = searchCache.filter { !$0.key.hasPrefix(prefix + "/") && $0.key != prefix }
+        listMetadataCache = listMetadataCache.filter {
+            !$0.key.hasPrefix(prefix + "/") && $0.key != prefix
+        }
     }
 
     private func loadPinnedPaths(root: URL) throws -> Set<String> {
@@ -900,6 +932,7 @@ actor MarkdownFileStore {
         cachedLibrarySnapshot = nil
         for path in relativePaths {
             searchCache.removeValue(forKey: path)
+            listMetadataCache.removeValue(forKey: path)
         }
     }
 
@@ -924,6 +957,48 @@ actor MarkdownFileStore {
         defer { try? handle.close() }
         let data = try handle.read(upToCount: maximumBytes) ?? Data()
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private func metadataForList(
+        relativePath: String,
+        url: URL,
+        modifiedAt: Date,
+        byteCount: Int
+    ) throws -> MarkdownListMetadata {
+        if let cached = listMetadataCache[relativePath],
+           cached.modifiedAt == modifiedAt,
+           cached.byteCount == byteCount {
+            return cached.metadata
+        }
+
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: 64 * 1_024) ?? Data()
+        let markdown = String(decoding: data, as: UTF8.self)
+        let metadata = MarkdownListMetadata.extract(
+            from: markdown,
+            fallbackTitle: url.deletingPathExtension().lastPathComponent
+        )
+        listMetadataCache[relativePath] = ListMetadataCacheEntry(
+            modifiedAt: modifiedAt,
+            byteCount: byteCount,
+            metadata: metadata
+        )
+        trimListMetadataCacheIfNeeded()
+        return metadata
+    }
+
+    private func trimListMetadataCacheIfNeeded() {
+        let maximumEntries = 2_048
+        guard listMetadataCache.count > maximumEntries else { return }
+        let overflow = listMetadataCache.count - maximumEntries
+        let oldestKeys = listMetadataCache
+            .sorted { $0.value.modifiedAt < $1.value.modifiedAt }
+            .prefix(overflow)
+            .map(\.key)
+        for key in oldestKeys {
+            listMetadataCache.removeValue(forKey: key)
+        }
     }
 
     private func trimSearchCacheIfNeeded() {
@@ -1126,7 +1201,57 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var relativePath: String
     var title: String
     var modifiedAt: Date
+    var createdAt: Date = .distantPast
+    var preview = ""
+    var hasAttachments = false
     var isPinned = false
+}
+
+struct MarkdownListMetadata: Equatable {
+    var title: String
+    var preview: String
+    var hasAttachments: Bool
+
+    static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        let title = lines.lazy.compactMap { line -> String? in
+            let value = line.trimmingCharacters(in: .whitespaces)
+            guard value.hasPrefix("# ") else { return nil }
+            let heading = String(value.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            return heading.isEmpty ? nil : heading
+        }.first ?? fallbackTitle
+
+        var previewParts: [String] = []
+        for line in lines {
+            var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty,
+                  !value.hasPrefix("#"),
+                  !value.hasPrefix("<!--"),
+                  !value.hasPrefix("!["),
+                  !(value.hasPrefix("[") && value.contains("](Attachments/")),
+                  !value.hasPrefix("---") else { continue }
+            value = value.replacingOccurrences(
+                of: #"^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|>\s*|\d+[.)]\s+)"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
+                of: #"[*_`~]"#,
+                with: "",
+                options: .regularExpression
+            )
+            guard !value.isEmpty, !value.hasPrefix("#") else { continue }
+            previewParts.append(value)
+            if previewParts.joined(separator: " ").count >= 180 { break }
+        }
+        let joinedPreview = previewParts.joined(separator: " ")
+        let preview = String(joinedPreview.prefix(180))
+        return MarkdownListMetadata(
+            title: title,
+            preview: preview,
+            hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/")
+        )
+    }
 }
 
 struct MarkdownSearchResult: Identifiable, Equatable {

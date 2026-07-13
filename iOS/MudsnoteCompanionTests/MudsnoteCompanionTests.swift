@@ -1115,6 +1115,91 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testMarkdownListMetadataExtractsHeadingPreviewAndAttachments() {
+        let metadata = MarkdownListMetadata.extract(
+            from: """
+            # Launch Plan
+
+            ![Cover](Attachments/cover.png)
+            - [x] **Ship** the iPhone build
+            Follow up with the release notes.
+            """,
+            fallbackTitle: "Fallback"
+        )
+
+        XCTAssertEqual(metadata.title, "Launch Plan")
+        XCTAssertEqual(metadata.preview, "Ship the iPhone build Follow up with the release notes.")
+        XCTAssertTrue(metadata.hasAttachments)
+        XCTAssertEqual(
+            MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
+            "File Name"
+        )
+    }
+
+    func testLibrarySnapshotPublishesAndRefreshesListMetadata() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let noteURL = root.appendingPathComponent("Projects/Plan.md")
+        try FileManager.default.createDirectory(
+            at: noteURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# First Title\nInitial preview".write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        var snapshot = try await store.loadLibrarySnapshot()
+        var note = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath == "Projects/Plan.md" })
+        XCTAssertEqual(note.title, "First Title")
+        XCTAssertEqual(note.preview, "Initial preview")
+        XCTAssertFalse(note.hasAttachments)
+
+        try "# Updated Title\nUpdated preview\n![Photo](Attachments/photo.jpg)".write(
+            to: noteURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(2)],
+            ofItemAtPath: noteURL.path
+        )
+        snapshot = try await store.loadLibrarySnapshot()
+        note = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath == "Projects/Plan.md" })
+        XCTAssertEqual(note.title, "Updated Title")
+        XCTAssertEqual(note.preview, "Updated preview")
+        XCTAssertTrue(note.hasAttachments)
+        XCTAssertNotEqual(note.createdAt, .distantPast)
+    }
+
+    func testNoteListPresentationSortsAndBuildsDateSections() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-13T12:00:00Z"))
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: now))
+        let lastWeek = try XCTUnwrap(calendar.date(byAdding: .day, value: -5, to: now))
+        let files = [
+            RecentMarkdownFile(id: "B.md", relativePath: "B.md", title: "Beta", modifiedAt: yesterday),
+            RecentMarkdownFile(id: "A.md", relativePath: "A.md", title: "Alpha", modifiedAt: now),
+            RecentMarkdownFile(id: "C.md", relativePath: "C.md", title: "Charlie", modifiedAt: lastWeek),
+        ]
+
+        XCTAssertEqual(NoteListPresentation.sorted(files, by: .title).map(\.title), ["Alpha", "Beta", "Charlie"])
+        let sections = NoteListPresentation.sections(
+            for: files,
+            sortedBy: .modified,
+            groupByDate: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(sections.map(\.id), ["today", "yesterday", "previous-7"])
+        XCTAssertEqual(sections.flatMap(\.files).map(\.title), ["Alpha", "Beta", "Charlie"])
+        XCTAssertEqual(
+            NoteListPresentation.sections(for: files, sortedBy: .title, groupByDate: true).count,
+            1
+        )
+    }
+
     func testPerformanceMaximumAttachmentDraftPreparation() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

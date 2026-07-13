@@ -272,8 +272,155 @@ private struct SearchResultRow: View {
     }
 }
 
+enum NoteSortOrder: String, CaseIterable, Identifiable {
+    case modified
+    case created
+    case title
+
+    var id: String { rawValue }
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .modified: "Date Edited"
+        case .created: "Date Created"
+        case .title: "Title"
+        }
+    }
+
+    var dateBasis: NoteDateBasis {
+        self == .created ? .created : .modified
+    }
+}
+
+enum NoteDateBasis {
+    case modified
+    case created
+
+    func date(for file: RecentMarkdownFile) -> Date {
+        if self == .created, file.createdAt != .distantPast {
+            return file.createdAt
+        }
+        return file.modifiedAt
+    }
+}
+
+struct NoteDateSection: Identifiable, Equatable {
+    var id: String
+    var title: String?
+    var files: [RecentMarkdownFile]
+}
+
+enum NoteListPresentation {
+    static func sorted(
+        _ files: [RecentMarkdownFile],
+        by order: NoteSortOrder
+    ) -> [RecentMarkdownFile] {
+        files.sorted { lhs, rhs in
+            switch order {
+            case .modified:
+                if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+            case .created:
+                let lhsDate = lhs.createdAt == .distantPast ? lhs.modifiedAt : lhs.createdAt
+                let rhsDate = rhs.createdAt == .distantPast ? rhs.modifiedAt : rhs.createdAt
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+            case .title:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            }
+            return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+        }
+    }
+
+    static func sections(
+        for files: [RecentMarkdownFile],
+        sortedBy order: NoteSortOrder,
+        groupByDate: Bool,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [NoteDateSection] {
+        let ordered = sorted(files, by: order)
+        guard groupByDate, order != .title, !ordered.isEmpty else {
+            return ordered.isEmpty ? [] : [NoteDateSection(id: "notes", title: nil, files: ordered)]
+        }
+
+        var sections: [NoteDateSection] = []
+        for file in ordered {
+            let date = order.dateBasis.date(for: file)
+            let bucket = dateBucket(for: date, now: now, calendar: calendar)
+            if sections.last?.id == bucket.id {
+                sections[sections.count - 1].files.append(file)
+            } else {
+                sections.append(NoteDateSection(id: bucket.id, title: bucket.title, files: [file]))
+            }
+        }
+        return sections
+    }
+
+    private static func dateBucket(
+        for date: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> (id: String, title: String) {
+        let today = calendar.startOfDay(for: now)
+        let day = calendar.startOfDay(for: date)
+        if day >= today {
+            return ("today", String(localized: "Today"))
+        }
+        if day >= (calendar.date(byAdding: .day, value: -1, to: today) ?? today) {
+            return ("yesterday", String(localized: "Yesterday"))
+        }
+        if day >= (calendar.date(byAdding: .day, value: -7, to: today) ?? today) {
+            return ("previous-7", String(localized: "Previous 7 Days"))
+        }
+        if day >= (calendar.date(byAdding: .day, value: -30, to: today) ?? today) {
+            return ("previous-30", String(localized: "Previous 30 Days"))
+        }
+        let components = calendar.dateComponents([.year, .month], from: day)
+        let id = String(format: "%04d-%02d", components.year ?? 0, components.month ?? 0)
+        return (id, day.formatted(.dateTime.month(.wide).year()))
+    }
+}
+
+private struct NoteListSortMenu: View {
+    @Binding var sortOrderRawValue: String
+    @Binding var groupByDate: Bool
+
+    var body: some View {
+        Menu {
+            NoteListSortMenuContent(
+                sortOrderRawValue: $sortOrderRawValue,
+                groupByDate: $groupByDate
+            )
+        } label: {
+            Image(systemName: "arrow.up.arrow.down.circle")
+        }
+        .accessibilityLabel("Sort Notes")
+    }
+}
+
+private struct NoteListSortMenuContent: View {
+    @Binding var sortOrderRawValue: String
+    @Binding var groupByDate: Bool
+
+    private var sortOrder: NoteSortOrder {
+        NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
+    }
+
+    var body: some View {
+        Picker("Sort By", selection: $sortOrderRawValue) {
+            ForEach(NoteSortOrder.allCases) { order in
+                Text(order.label).tag(order.rawValue)
+            }
+        }
+        Toggle("Group By Date", isOn: $groupByDate)
+            .disabled(sortOrder == .title)
+    }
+}
+
 struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
+    @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
     var title: String
     var scope: LibraryFileScope
 
@@ -281,8 +428,19 @@ struct FolderNotesListView: View {
         scope.files(from: appModel.libraryFiles)
     }
 
-    private var pinnedFiles: [RecentMarkdownFile] { files.filter(\.isPinned) }
-    private var otherFiles: [RecentMarkdownFile] { files.filter { !$0.isPinned } }
+    private var sortOrder: NoteSortOrder {
+        NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
+    }
+    private var pinnedFiles: [RecentMarkdownFile] {
+        NoteListPresentation.sorted(files.filter(\.isPinned), by: sortOrder)
+    }
+    private var otherSections: [NoteDateSection] {
+        NoteListPresentation.sections(
+            for: files.filter { !$0.isPinned },
+            sortedBy: sortOrder,
+            groupByDate: groupByDate
+        )
+    }
 
     var body: some View {
         List {
@@ -293,17 +451,21 @@ struct FolderNotesListView: View {
                 if !pinnedFiles.isEmpty {
                     Section("Pinned") {
                         ForEach(pinnedFiles) { file in
-                            NoteFileButton(file: file)
+                            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
                         }
                     }
                 }
-                if !otherFiles.isEmpty {
+                ForEach(otherSections) { section in
                     Section {
-                        ForEach(otherFiles) { file in
-                            NoteFileButton(file: file)
+                        ForEach(section.files) { file in
+                            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
                         }
                     } header: {
-                        if !pinnedFiles.isEmpty { Text("Notes") }
+                        if let title = section.title {
+                            Text(title)
+                        } else if !pinnedFiles.isEmpty {
+                            Text("Notes")
+                        }
                     }
                 }
             }
@@ -315,6 +477,14 @@ struct FolderNotesListView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle(title)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NoteListSortMenu(
+                    sortOrderRawValue: $sortOrderRawValue,
+                    groupByDate: $groupByDate
+                )
+            }
+        }
     }
 }
 
@@ -340,6 +510,8 @@ struct LibraryFolderView: View {
     @State private var isRenamingFolder = false
     @State private var isConfirmingDelete = false
     @State private var folderName = ""
+    @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
 
     private var currentFolder: LibraryFolderNode {
         appModel.allFolders.first { $0.id == folder.id } ?? folder
@@ -351,8 +523,19 @@ struct LibraryFolderView: View {
         }
     }
 
-    private var pinnedFiles: [RecentMarkdownFile] { directFiles.filter(\.isPinned) }
-    private var otherFiles: [RecentMarkdownFile] { directFiles.filter { !$0.isPinned } }
+    private var sortOrder: NoteSortOrder {
+        NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
+    }
+    private var pinnedFiles: [RecentMarkdownFile] {
+        NoteListPresentation.sorted(directFiles.filter(\.isPinned), by: sortOrder)
+    }
+    private var otherSections: [NoteDateSection] {
+        NoteListPresentation.sections(
+            for: directFiles.filter { !$0.isPinned },
+            sortedBy: sortOrder,
+            groupByDate: groupByDate
+        )
+    }
 
     var body: some View {
         List {
@@ -372,17 +555,21 @@ struct LibraryFolderView: View {
             if !pinnedFiles.isEmpty {
                 Section("Pinned") {
                     ForEach(pinnedFiles) { file in
-                        NoteFileButton(file: file)
+                        NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
                     }
                 }
             }
-            if !otherFiles.isEmpty {
+            ForEach(otherSections) { section in
                 Section {
-                    ForEach(otherFiles) { file in
-                        NoteFileButton(file: file)
+                    ForEach(section.files) { file in
+                        NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
                     }
                 } header: {
-                    if !pinnedFiles.isEmpty { Text("Notes") }
+                    if let title = section.title {
+                        Text(title)
+                    } else if !pinnedFiles.isEmpty {
+                        Text("Notes")
+                    }
                 }
             }
 
@@ -418,6 +605,11 @@ struct LibraryFolderView: View {
                     } label: {
                         Label("Delete Folder", systemImage: "trash")
                     }
+                    Divider()
+                    NoteListSortMenuContent(
+                        sortOrderRawValue: $sortOrderRawValue,
+                        groupByDate: $groupByDate
+                    )
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -471,12 +663,13 @@ struct LibraryFolderView: View {
 private struct NoteFileButton: View {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis = .modified
 
     var body: some View {
         Button {
             appModel.openFile(file)
         } label: {
-            RecentFileRow(file: file)
+            RecentFileRow(file: file, dateBasis: dateBasis)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
@@ -1003,16 +1196,50 @@ struct LibraryFolderRow: View {
 
 struct RecentFileRow: View {
     var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis = .modified
+
+    private var displayedDate: Date { dateBasis.date(for: file) }
+
+    private var dateText: String {
+        if Calendar.autoupdatingCurrent.isDateInToday(displayedDate) {
+            return displayedDate.formatted(date: .omitted, time: .shortened)
+        }
+        return displayedDate.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private var folderName: String {
+        let parent = (file.relativePath as NSString).deletingLastPathComponent
+        return parent.isEmpty ? String(localized: "Mudsnote") : (parent as NSString).lastPathComponent
+    }
 
     var body: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(file.title)
-                    .font(.system(.body, design: .rounded, weight: .medium))
+                    .font(.system(.body, design: .rounded, weight: .semibold))
                     .foregroundStyle(MudsnoteColors.text)
-                Text(file.relativePath)
+                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    Text(dateText)
+                        .foregroundStyle(MudsnoteColors.muted)
+                    if !file.preview.isEmpty {
+                        Text(file.preview)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+                .font(.subheadline)
+                HStack(spacing: 5) {
+                    Image(systemName: "folder")
+                    Text(folderName)
+                    if file.hasAttachments {
+                        Image(systemName: "paperclip")
+                            .padding(.leading, 4)
+                    }
+                }
                     .font(.caption)
                     .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(1)
             }
             Spacer(minLength: 8)
             if file.isPinned {

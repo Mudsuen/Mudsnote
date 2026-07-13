@@ -81,6 +81,33 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["save-markdown-button"].exists)
     }
 
+    func testNotesStyleListShowsMetadataAndSortControls() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let lifecycleNote = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(lifecycleNote.waitForExistence(timeout: 5))
+        XCTAssertTrue(lifecycleNote.label.contains("UI Lifecycle"))
+        XCTAssertTrue(lifecycleNote.label.contains("Restore this note end to end."))
+        XCTAssertTrue(lifecycleNote.label.contains("Projects"))
+        XCTAssertTrue(app.staticTexts["Today"].exists)
+
+        let sortButton = app.buttons["Sort Notes"]
+        XCTAssertTrue(sortButton.exists)
+        sortButton.tap()
+        XCTAssertTrue(app.buttons["Date Edited"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Date Created"].exists)
+        XCTAssertTrue(app.buttons["Title"].exists)
+
+        app.tap()
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style metadata list"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testCaptureCommandsStayInSingleRow() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
