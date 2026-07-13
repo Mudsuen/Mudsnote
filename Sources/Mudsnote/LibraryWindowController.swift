@@ -328,7 +328,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolsEnabledAlpha: CGFloat = 1.0
     static let toolbarEditorToolsDisabledAlpha: CGFloat = 0.42
     static let toolbarSymbolPointSize: CGFloat = 19
-    static let sourceSymbolPointSize: CGFloat = 16
+    static let sourceSymbolPointSize: CGFloat = 15
     static let sourceDisclosureSymbolPointSize: CGFloat = 10
     static let windowScreenMargin: CGFloat = 72
     static let sourceRowHeight: CGFloat = 32
@@ -354,10 +354,10 @@ enum LibraryNotesLayout {
     static let sourceCountWidth: CGFloat = 32
     static let noteGroupRowHeight: CGFloat = 45
     static let noteRowHeight: CGFloat = 76
-    static let sourceGroupFontSize: CGFloat = 13.5
-    static let sourceButtonFontSize: CGFloat = 15
-    static let sourceSelectedButtonFontWeight: NSFont.Weight = .semibold
-    static let sourceUnselectedButtonFontWeight: NSFont.Weight = .medium
+    static let sourceGroupFontSize: CGFloat = 12
+    static let sourceButtonFontSize: CGFloat = 13.5
+    static let sourceSelectedButtonFontWeight: NSFont.Weight = .regular
+    static let sourceUnselectedButtonFontWeight: NSFont.Weight = .regular
     static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
     static let sourceCountFontSize: CGFloat = 13
     static let sourceSymbolWeight: NSFont.Weight = .medium
