@@ -90,6 +90,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let bold = app.buttons["markdown-format-bold"]
         XCTAssertTrue(bold.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-format-ordered"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-outdent"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-indent"].exists)
         bold.tap()
         editor.typeText("Styled")
         XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)

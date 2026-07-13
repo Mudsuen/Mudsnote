@@ -211,6 +211,8 @@ struct MarkdownPreviewView: View {
                 formatButton("list.bullet", .bullet)
                 formatButton("list.number", .ordered)
                 formatButton("checklist", .checklist)
+                formatButton("decrease.indent", .outdent)
+                formatButton("increase.indent", .indent)
                 formatButton("text.quote", .quote)
                 formatButton("chevron.left.forwardslash.chevron.right", .code)
                 formatButton("link", .link)
@@ -479,6 +481,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case bullet
         case ordered
         case checklist
+        case outdent
+        case indent
         case quote
         case code
         case link
@@ -493,6 +497,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .bullet: "bullet"
             case .ordered: "ordered"
             case .checklist: "checklist"
+            case .outdent: "outdent"
+            case .indent: "indent"
             case .quote: "quote"
             case .code: "code"
             case .link: "link"
@@ -513,6 +519,11 @@ struct MarkdownListEdit: Equatable {
 }
 
 enum MarkdownListEditing {
+    enum IndentationDirection {
+        case increase
+        case decrease
+    }
+
     private enum Kind {
         case bullet(marker: String)
         case ordered(indent: String, number: Int, delimiter: String)
@@ -580,6 +591,57 @@ enum MarkdownListEditing {
         )
     }
 
+    static func indentationEdit(
+        in markdown: String,
+        selection: NSRange,
+        direction: IndentationDirection
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+        let lastSelectedCharacter = NSMaxRange(selection) - 1
+        let selectionEndsWithNewline = selection.length > 0
+            && source.character(at: lastSelectedCharacter) == 10
+        let effectiveLength = selectionEndsWithNewline ? selection.length - 1 : selection.length
+        let lineRange = source.lineRange(
+            for: NSRange(location: selection.location, length: effectiveLength)
+        )
+        let block = source.substring(with: lineRange)
+        let endsWithNewline = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+        var changed = false
+        lines = lines.map { line in
+            guard isListItem(line) else { return line }
+            switch direction {
+            case .increase:
+                changed = true
+                return "  " + line
+            case .decrease:
+                if line.hasPrefix("  ") {
+                    changed = true
+                    return String(line.dropFirst(2))
+                }
+                if line.hasPrefix("\t") || line.hasPrefix(" ") {
+                    changed = true
+                    return String(line.dropFirst())
+                }
+                return line
+            }
+        }
+        guard changed else { return nil }
+        var replacement = lines.joined(separator: "\n")
+        if endsWithNewline { replacement += "\n" }
+        return MarkdownListEdit(
+            range: lineRange,
+            replacement: replacement,
+            selection: NSRange(
+                location: lineRange.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
+
     private static func item(in line: String) -> Item? {
         if let groups = groups(for: #"^([ \t]*)(- \[[ xX]\] )(.*)$"#, in: line) {
             return Item(prefix: groups[0] + groups[1], body: groups[2], kind: .checklist(indent: groups[0]))
@@ -606,6 +668,10 @@ enum MarkdownListEditing {
             let range = match.range(at: index)
             return range.location == NSNotFound ? "" : source.substring(with: range)
         }
+    }
+
+    private static func isListItem(_ line: String) -> Bool {
+        groups(for: #"^[ \t]*(?:[-*+] |[0-9]+[.)] )"#, in: line) != nil
     }
 }
 
@@ -989,6 +1055,10 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 toggleOrderedList(in: textView)
             case .checklist:
                 toggleLinePrefix("- [ ] ", in: textView)
+            case .outdent:
+                changeListIndentation(.decrease, in: textView)
+            case .indent:
+                changeListIndentation(.increase, in: textView)
             case .quote:
                 toggleLinePrefix("> ", in: textView)
             case .code:
@@ -1090,6 +1160,23 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 lineRange,
                 with: replacement,
                 selecting: NSRange(location: lineRange.location, length: (replacement as NSString).length),
+                in: textView
+            )
+        }
+
+        private func changeListIndentation(
+            _ direction: MarkdownListEditing.IndentationDirection,
+            in textView: UITextView
+        ) {
+            guard let edit = MarkdownListEditing.indentationEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                direction: direction
+            ) else { return }
+            replace(
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
                 in: textView
             )
         }

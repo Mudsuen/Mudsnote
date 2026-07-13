@@ -1307,6 +1307,37 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testMarkdownListIndentationChangesOnlySelectedListLines() throws {
+        let markdown = "- One\n1. Two\nBody"
+        let indented = try XCTUnwrap(
+            MarkdownListEditing.indentationEdit(
+                in: markdown,
+                selection: NSRange(location: 0, length: 12),
+                direction: .increase
+            )
+        )
+        XCTAssertEqual(indented.range, NSRange(location: 0, length: 13))
+        XCTAssertEqual(indented.replacement, "  - One\n  1. Two\n")
+        XCTAssertEqual(indented.selection, NSRange(location: 0, length: 17))
+
+        let nested = indented.replacement + "Body"
+        let outdented = try XCTUnwrap(
+            MarkdownListEditing.indentationEdit(
+                in: nested,
+                selection: indented.selection,
+                direction: .decrease
+            )
+        )
+        XCTAssertEqual(outdented.replacement, "- One\n1. Two\n")
+        XCTAssertNil(
+            MarkdownListEditing.indentationEdit(
+                in: markdown,
+                selection: NSRange(location: 0, length: 12),
+                direction: .decrease
+            )
+        )
+    }
+
     func testLibrarySnapshotPublishesAndRefreshesListMetadata() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
