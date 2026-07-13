@@ -269,6 +269,11 @@ The user has repeatedly pushed `Mudsnote` toward a more native macOS utility-pan
 
 The current desktop goal is full Apple Notes core-function and UI parity for the macOS library window, bounded by local-first Markdown storage. Use `docs/apple-notes-parity-roadmap.md` as the checklist before choosing new desktop UI work.
 
+The iPhone goal is now the same core Apple Notes product model, with Mudsnote's
+capture flow replacing conventional New Note and Quick Note entry. Use
+`docs/ios-apple-notes-parity-roadmap.md` for the iOS scope, exclusions, architecture,
+and verification contract. iPhone work is no longer capture-only.
+
 The important quick-capture direction remains:
 
 - quick capture is not a shrunken full editor
