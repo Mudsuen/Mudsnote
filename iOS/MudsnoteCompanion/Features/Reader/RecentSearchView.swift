@@ -121,6 +121,8 @@ struct LibraryHomeView: View {
                             count: folder.totalNoteCount
                         )
                     }
+                    .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+                    .modifier(FolderLifecycleActions(folder: folder))
                 }
             }
         }
@@ -579,6 +581,8 @@ struct LibraryFolderView: View {
                         count: child.totalNoteCount
                     )
                 }
+                .accessibilityIdentifier("folder-row-\(child.relativePath)")
+                .modifier(FolderLifecycleActions(folder: child))
             }
 
             if !pinnedFiles.isEmpty {
@@ -691,6 +695,78 @@ struct LibraryFolderView: View {
         } message: {
             Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
         }
+    }
+}
+
+private struct FolderLifecycleActions: ViewModifier {
+    @EnvironmentObject private var appModel: AppModel
+    var folder: LibraryFolderNode
+    @State private var folderName = ""
+    @State private var isCreatingSubfolder = false
+    @State private var isRenaming = false
+    @State private var isConfirmingDelete = false
+
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+            .contextMenu {
+                Button {
+                    folderName = ""
+                    isCreatingSubfolder = true
+                } label: {
+                    Label("New Subfolder", systemImage: "folder.badge.plus")
+                }
+                Button {
+                    folderName = folder.name
+                    isRenaming = true
+                } label: {
+                    Label("Rename Folder", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Label("Delete Folder", systemImage: "trash")
+                }
+            }
+            .alert("New Subfolder", isPresented: $isCreatingSubfolder) {
+                TextField("Folder Name", text: $folderName)
+                Button("Cancel", role: .cancel) {}
+                Button("Create") {
+                    let name = folderName
+                    let parent = folder.relativePath
+                    Task { _ = await appModel.createFolder(named: name, parent: parent) }
+                }
+                .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .alert("Rename Folder", isPresented: $isRenaming) {
+                TextField("Folder Name", text: $folderName)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") {
+                    let name = folderName
+                    let target = folder
+                    Task { _ = await appModel.renameFolder(target, to: name) }
+                }
+                .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .confirmationDialog(
+                "Delete Folder?",
+                isPresented: $isConfirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Move Notes to Recently Deleted", role: .destructive) {
+                    let target = folder
+                    Task { _ = await appModel.deleteFolder(target) }
+                }
+            } message: {
+                Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
+            }
     }
 }
 

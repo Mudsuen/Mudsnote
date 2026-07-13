@@ -118,6 +118,25 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testFolderRowContextMenuCreatesNestedFolder() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.press(forDuration: 1)
+
+        let newSubfolder = app.buttons["New Subfolder"]
+        XCTAssertTrue(newSubfolder.waitForExistence(timeout: 5))
+        newSubfolder.tap()
+        let alert = app.alerts["New Subfolder"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.textFields["Folder Name"].typeText("Launch")
+        alert.buttons["Create"].tap()
+
+        XCTAssertTrue(waitForHittable(projects))
+        projects.tap()
+        XCTAssertTrue(app.buttons["folder-row-Projects/Launch"].waitForExistence(timeout: 5))
+    }
+
     func testNewNoteCreatesStandaloneMarkdownAndOpensFullEditor() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
