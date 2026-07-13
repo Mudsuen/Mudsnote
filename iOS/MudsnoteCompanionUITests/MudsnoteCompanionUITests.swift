@@ -108,6 +108,22 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
     }
 
+    func testMarkdownFileTagsAppearInUnifiedTagNavigation() {
+        let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
+        let tag = app.buttons["tag-link-#project"]
+        XCTAssertTrue(tag.waitForExistence(timeout: 8))
+        tag.tap()
+
+        XCTAssertTrue(app.navigationBars["#project"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Notes"].exists)
+        XCTAssertTrue(app.staticTexts["Quick Notes"].exists)
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["Tagged quick capture #project"].exists)
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let quickNoteButton = app.buttons["quick-note-button"]
@@ -602,7 +618,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         invalidBookmark: Bool = false,
         damagedDraft: Bool = false,
         damagedQueue: Bool = false,
-        conflictCopy: Bool = false
+        conflictCopy: Bool = false,
+        fileTag: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -613,7 +630,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,
             damagedDraft ? "-ui-testing-damaged-draft" : nil,
             damagedQueue ? "-ui-testing-damaged-queue" : nil,
-            conflictCopy ? "-ui-testing-conflict-copy" : nil
+            conflictCopy ? "-ui-testing-conflict-copy" : nil,
+            fileTag ? "-ui-testing-file-tag" : nil
         ].compactMap { $0 }
         app.launch()
         return app

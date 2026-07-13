@@ -104,7 +104,8 @@ actor MarkdownFileStore {
                     modifiedAt: modifiedAt,
                     createdAt: values.creationDate ?? modifiedAt,
                     preview: listMetadata.preview,
-                    hasAttachments: listMetadata.hasAttachments
+                    hasAttachments: listMetadata.hasAttachments,
+                    tags: listMetadata.tags
                 ))
             }
         }
@@ -176,7 +177,8 @@ actor MarkdownFileStore {
             modifiedAt: modifiedAt,
             createdAt: inboxValues.creationDate ?? modifiedAt,
             preview: metadata.preview,
-            hasAttachments: metadata.hasAttachments
+            hasAttachments: metadata.hasAttachments,
+            tags: metadata.tags
         )
 
         snapshot.inboxItems = inboxItems
@@ -1699,15 +1701,17 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var preview = ""
     var hasAttachments = false
     var isPinned = false
+    var tags: [String] = []
 }
 
 struct MarkdownListMetadata: Equatable {
     var title: String
     var preview: String
     var hasAttachments: Bool
+    var tags: [String] = []
 
     static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = visibleMarkdownLines(from: markdown)
         let headingTitle = lines.enumerated().lazy.compactMap { index, line -> (Int, String)? in
             let value = line.trimmingCharacters(in: .whitespaces)
             guard value.hasPrefix("# ") else { return nil }
@@ -1766,8 +1770,68 @@ struct MarkdownListMetadata: Equatable {
         return MarkdownListMetadata(
             title: title,
             preview: preview,
-            hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/")
+            hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
+            tags: extractTags(from: markdown)
         )
+    }
+
+    private static func extractTags(from markdown: String) -> [String] {
+        var searchableLines: [String] = []
+        for line in visibleMarkdownLines(from: markdown) {
+            searchableLines.append(
+                line.replacingOccurrences(
+                    of: #"`[^`]*`"#,
+                    with: " ",
+                    options: .regularExpression
+                )
+            )
+        }
+
+        let searchable = searchableLines.joined(separator: "\n")
+        guard let expression = try? NSRegularExpression(
+            pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)"#
+        ) else { return [] }
+        let nsRange = NSRange(searchable.startIndex..<searchable.endIndex, in: searchable)
+        var seen = Set<String>()
+        var tags: [String] = []
+        expression.enumerateMatches(in: searchable, range: nsRange) { match, _, _ in
+            guard let match,
+                  let range = Range(match.range(at: 0), in: searchable) else { return }
+            let tag = String(searchable[range])
+            let key = tag.folding(
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                locale: .current
+            )
+            if seen.insert(key).inserted {
+                tags.append(tag)
+            }
+        }
+        return tags.sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+    }
+
+    private static func visibleMarkdownLines(from markdown: String) -> [String] {
+        var visible: [String] = []
+        var activeFence: Character?
+        for rawLine in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let marker = trimmed.first,
+               (marker == "`" || marker == "~"),
+               trimmed.prefix(3).allSatisfy({ $0 == marker }) {
+                if activeFence == nil {
+                    activeFence = marker
+                } else if activeFence == marker {
+                    activeFence = nil
+                }
+                continue
+            }
+            if activeFence == nil {
+                visible.append(line)
+            }
+        }
+        return visible
     }
 }
 

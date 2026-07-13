@@ -1760,6 +1760,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             ![Cover](Attachments/cover.png)
             - [x] **Ship** the iPhone build
             Follow up with the release notes.
+            #release #发布 #Release
+            `#inline-code`
+            ```swift
+            #ignored-code
+            ```
             """,
             fallbackTitle: "Fallback"
         )
@@ -1767,10 +1772,34 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(metadata.title, "Launch Plan")
         XCTAssertEqual(metadata.preview, "Ship the iPhone build Follow up with the release notes.")
         XCTAssertTrue(metadata.hasAttachments)
+        XCTAssertEqual(Set(metadata.tags), Set(["#release", "#发布"]))
         XCTAssertEqual(
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
             "Plain body"
         )
+    }
+
+    func testLibrarySnapshotIndexesTagsFromOrdinaryMarkdownNotes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Tagged Plan\n\nShip it. #project #发布\n".write(
+            to: root.appendingPathComponent("Projects/Tagged Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+        let file = try XCTUnwrap(
+            snapshot.allFiles.first { $0.relativePath == "Projects/Tagged Plan.md" }
+        )
+        XCTAssertEqual(Set(file.tags), Set(["#project", "#发布"]))
     }
 
     func testMarkdownTableInsertionAndRenderedBlockParsing() throws {

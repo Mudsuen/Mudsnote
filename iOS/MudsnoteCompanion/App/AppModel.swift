@@ -1052,7 +1052,7 @@ final class AppModel: ObservableObject {
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
         librarySummary = snapshot.summary
-        tagSummaries = Self.tagSummaries(from: inboxItems)
+        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
         conflictWarnings = snapshot.conflictWarnings
         if let queueRecoveryWarning {
             conflictWarnings.append(queueRecoveryWarning)
@@ -1194,15 +1194,35 @@ final class AppModel: ObservableObject {
         return route
     }
 
-    private static func tagSummaries(from memos: [MemoBlock]) -> [TagSummary] {
-        let counts = memos
-            .flatMap(\.tags)
-            .reduce(into: [String: Int]()) { partialResult, tag in
-                partialResult[tag, default: 0] += 1
+    private static func tagSummaries(
+        from memos: [MemoBlock],
+        files: [RecentMarkdownFile]
+    ) -> [TagSummary] {
+        var summaries: [String: TagSummary] = [:]
+        func countTags(_ tags: [String]) {
+            var countedInNote = Set<String>()
+            for tag in tags {
+                let key = tag.folding(
+                    options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                    locale: .current
+                )
+                guard countedInNote.insert(key).inserted else { continue }
+                if var summary = summaries[key] {
+                    summary.count += 1
+                    summaries[key] = summary
+                } else {
+                    summaries[key] = TagSummary(name: tag, count: 1)
+                }
             }
+        }
+        for memo in memos {
+            countTags(memo.tags)
+        }
+        for file in files where file.relativePath != "Inbox.md" {
+            countTags(file.tags)
+        }
 
-        return counts
-            .map { TagSummary(name: $0.key, count: $0.value) }
+        return summaries.values
             .sorted {
                 if $0.count == $1.count {
                     return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending

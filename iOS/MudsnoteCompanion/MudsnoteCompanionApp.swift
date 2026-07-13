@@ -41,6 +41,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let damagedDraftArgument = "-ui-testing-damaged-draft"
     private static let damagedQueueArgument = "-ui-testing-damaged-queue"
     private static let conflictCopyArgument = "-ui-testing-conflict-copy"
+    private static let fileTagArgument = "-ui-testing-file-tag"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -52,6 +53,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(damagedDraftArgument)
                 || arguments.contains(damagedQueueArgument)
                 || arguments.contains(conflictCopyArgument)
+                || arguments.contains(fileTagArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -86,6 +88,20 @@ private enum MudsnoteUITestLaunchConfiguration {
                     atomically: true,
                     encoding: .utf8
                 )
+                if arguments.contains(fileTagArgument) {
+                    try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project\n".write(
+                        to: projects.appendingPathComponent("UI Lifecycle.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    let inbox = root.appendingPathComponent("Inbox.md")
+                    let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
+                    try (existingInbox + "\n## 2026-07-13 20:00\n\nTagged quick capture\n\n#project\n").write(
+                        to: inbox,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
                 if arguments.contains(conflictCopyArgument) {
                     try "# Conflicted UI Lifecycle\n\nReview both versions safely.\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle conflicted copy.md"),

@@ -191,11 +191,12 @@ struct LibraryHomeView: View {
             FlowLayout(spacing: 10, rowSpacing: 10) {
                 ForEach(appModel.tagSummaries) { tag in
                     NavigationLink {
-                        TagMemoListView(tag: tag.name)
+                        TagNotesListView(tag: tag.name)
                     } label: {
                         TagChip(title: tag.name)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("tag-link-\(tag.name)")
                 }
             }
             .padding(16)
@@ -1263,17 +1264,26 @@ struct FlowLayout: Layout {
     }
 }
 
-struct TagMemoListView: View {
+struct TagNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
     var tag: String
 
+    private var files: [RecentMarkdownFile] {
+        appModel.libraryFiles.filter { file in
+            file.relativePath != "Inbox.md"
+                && file.tags.contains(where: matchesTag)
+        }
+    }
+
     private var memos: [MemoBlock] {
-        appModel.inboxItems.filter { $0.tags.contains(tag) }
+        appModel.inboxItems.filter { memo in
+            memo.tags.contains(where: matchesTag)
+        }
     }
 
     var body: some View {
         List {
-            if memos.isEmpty {
+            if files.isEmpty, memos.isEmpty {
                 EmptyReaderStateView(
                     title: String(localized: "No Notes"),
                     message: String(
@@ -1285,7 +1295,16 @@ struct TagMemoListView: View {
                     .frame(maxWidth: .infinity)
                     .listRowBackground(MudsnoteColors.canvas)
                     .listRowSeparator(.hidden)
-            } else {
+            }
+            if !files.isEmpty {
+                Section("Notes") {
+                    ForEach(files) { file in
+                        NoteFileButton(file: file)
+                    }
+                }
+            }
+            if !memos.isEmpty {
+                Section("Quick Notes") {
                 ForEach(memos) { memo in
                     MemoCardView(memo: memo)
                         .contentShape(Rectangle())
@@ -1317,6 +1336,7 @@ struct TagMemoListView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(MudsnoteColors.canvas)
                 }
+                }
             }
         }
         .listStyle(.plain)
@@ -1326,6 +1346,15 @@ struct TagMemoListView: View {
         }
         .background(MudsnoteColors.canvas)
         .navigationTitle(tag)
+    }
+
+    private func matchesTag(_ candidate: String) -> Bool {
+        candidate.compare(
+            tag,
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            range: nil,
+            locale: .current
+        ) == .orderedSame
     }
 }
 
