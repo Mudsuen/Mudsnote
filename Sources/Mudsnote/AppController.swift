@@ -3,7 +3,7 @@ import Foundation
 import MudsnoteCore
 
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private let noteStore: NoteStore
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments: Set<String>
@@ -25,6 +25,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var libraryWindowController: LibraryWindowController?
     private var searchWindowController: SearchWindowController?
     private var preferencesWindowController: PreferencesWindowController?
+    private var fileMoveNoteMenu: NSMenu?
 
     override init() {
         let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
@@ -223,6 +224,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         newFolderItem.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(newFolderItem)
         fileMenu.addItem(.separator())
+
+        let moveNoteItem = NSMenuItem(
+            title: "移到文件夹",
+            action: #selector(moveSelectedNotesFromMainMenu),
+            keyEquivalent: ""
+        )
+        moveNoteItem.target = self
+        let moveNoteMenu = NSMenu(title: "移到文件夹")
+        moveNoteMenu.delegate = self
+        moveNoteItem.submenu = moveNoteMenu
+        fileMoveNoteMenu = moveNoteMenu
+        fileMenu.addItem(moveNoteItem)
 
         let deleteNoteItem = NSMenuItem(
             title: "移到最近删除",
@@ -554,6 +567,25 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func moveSelectedNotesFromMainMenu() {}
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === fileMoveNoteMenu else { return }
+        menu.removeAllItems()
+        guard let sourceMenu = libraryWindowController?.makeMoveNoteMenuForLibrary(),
+              !sourceMenu.items.isEmpty else {
+            let emptyItem = NSMenuItem(title: "无可用文件夹", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            menu.addItem(emptyItem)
+            return
+        }
+        while let item = sourceMenu.items.first {
+            sourceMenu.removeItem(item)
+            menu.addItem(item)
+        }
+    }
+
+    @objc
     func focusLibrarySearchFromMainMenu() {
         showLibraryWindow()
         libraryWindowController?.focusSearchForLibrary()
@@ -581,6 +613,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(moveSelectedNotesFromMainMenu):
+            return libraryWindowController?.canMoveSelectedNotesFromMenuForLibrary ?? false
         case #selector(deleteSelectedNotesFromMainMenu):
             return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
         case #selector(restoreSelectedNotesFromMainMenu):

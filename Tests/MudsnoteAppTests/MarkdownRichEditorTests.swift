@@ -4287,6 +4287,10 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.noteListTitleLabel.stringValue == "Client")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Client Seed"])
+        #expect(controller.canMoveSelectedNotesFromMenuForLibrary)
+        #expect(controller.makeMoveNoteMenuForLibrary().items.contains { item in
+            item.representedObject as? URL == projectsFolder.standardizedFileURL
+        })
 
         let moveMenu = try #require(controller.makeMoreActionsMenuForLibrary().items.first {
             $0.title == "移到文件夹"
@@ -4955,6 +4959,14 @@ struct MarkdownRichEditorTests {
         #expect(restoreNoteItem.target === controller)
         #expect(restoreNoteItem.action == #selector(AppController.restoreSelectedNotesFromMainMenu))
         #expect(!controller.validateMenuItem(restoreNoteItem))
+        let moveNoteItem = try #require(fileMenu.items.first { $0.title == "移到文件夹" })
+        #expect(moveNoteItem.target === controller)
+        #expect(moveNoteItem.action == #selector(AppController.moveSelectedNotesFromMainMenu))
+        #expect(!controller.validateMenuItem(moveNoteItem))
+        let moveNoteMenu = try #require(moveNoteItem.submenu)
+        controller.menuNeedsUpdate(moveNoteMenu)
+        #expect(moveNoteMenu.items.map(\.title) == ["无可用文件夹"])
+        #expect(moveNoteMenu.items.allSatisfy { !$0.isEnabled })
         #expect(fileMenu.items.first { $0.title == "关闭窗口" }?.keyEquivalent == "w")
 
         let editMenu = try #require(mainMenu.items.first { $0.title == "编辑" }?.submenu)

@@ -1093,6 +1093,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added context-validated "移到最近删除" and "恢复笔记" File-menu commands without adding toolbar chrome. Extended `library_smoke.sh` to select the search result, delete it through the installed app menu, verify the isolated Trash file, enter Recently Deleted, restore through the menu, and verify the original path returns.
 - Lesson: Core lifecycle commands belong in the native menu as well as context menus; they improve keyboard/menu discoverability and provide a stable end-to-end verification path.
 
+### 183. Native move-to-folder menu workflow
+
+- Problem: Moving notes was available through contextual actions, but the main File menu lacked the command and the installed-app smoke did not prove the move lifecycle.
+- Fix: Added a state-validated "移到文件夹" File submenu that dynamically reuses the library controller's current folder targets. Extended `library_smoke.sh` to move the restored smoke note into an isolated folder and verify the exact filesystem transition.
+- Lesson: Dynamic native menus should reuse the same target objects and handlers as contextual actions so availability, hierarchy, and behavior cannot drift between entry points.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -5106,6 +5106,14 @@ final class LibraryWindowController: NSWindowController,
         canRestoreSelectedNote
     }
 
+    var canMoveSelectedNotesFromMenuForLibrary: Bool {
+        canMoveSelectedNote
+    }
+
+    func makeMoveNoteMenuForLibrary() -> NSMenu {
+        makeMoveNoteMenu()
+    }
+
     func deleteSelectedNotesForLibrary() throws {
         let urls = selectedMarkdownFileURLsForLibrary()
         guard !urls.isEmpty else { return }

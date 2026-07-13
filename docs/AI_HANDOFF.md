@@ -135,7 +135,12 @@
 ## Latest iteration (182)
 
 - The File menu now exposes state-validated "移到最近删除" and "恢复笔记" actions while leaving the compact toolbar unchanged.
-- `scripts/library_smoke.sh` proves both actions against isolated filesystem state; folder move and attachment rendering remain the installed-smoke follow-ups.
+- `scripts/library_smoke.sh` proves both actions against isolated filesystem state.
+
+## Latest iteration (183)
+
+- The File menu now exposes a state-validated "移到文件夹" submenu populated from the current library hierarchy without adding toolbar chrome.
+- `scripts/library_smoke.sh` proves the restored note can be moved into an isolated folder; attachment rendering remains the installed-smoke follow-up.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 

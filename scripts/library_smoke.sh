@@ -5,6 +5,7 @@ APP_PATH="${MUDSNOTE_APP_PATH:-/Applications/Mudsnote.app}"
 OUTPUT_DIR="${1:-$(mktemp -d /tmp/mudsnote-library-smoke.XXXXXX)}"
 NOTES_DIR="$OUTPUT_DIR/Notes"
 APP_SUPPORT_DIR="$OUTPUT_DIR/AppSupport"
+MOVE_FOLDER="$NOTES_DIR/Smoke Folder"
 DEFAULTS_SUITE="local.codex.mudsnote.library-smoke.$$"
 NOTE_TITLE="Installed Smoke Note"
 NOTE_BODY="Smoke body line"
@@ -15,7 +16,7 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 rm -rf "$OUTPUT_DIR"
-mkdir -p "$NOTES_DIR" "$APP_SUPPORT_DIR"
+mkdir -p "$NOTES_DIR" "$APP_SUPPORT_DIR" "$MOVE_FOLDER"
 printf '# Existing Seed\n\nUnrelated body\n' >"$NOTES_DIR/Existing Seed.md"
 defaults delete "$DEFAULTS_SUITE" >/dev/null 2>&1 || true
 
@@ -286,8 +287,34 @@ if [[ ! -e "$SAVED_NOTE" || -e "$TRASHED_NOTE" ]]; then
   exit 1
 fi
 
+osascript <<'APPLESCRIPT' >/dev/null
+tell application "Mudsnote" to activate
+tell application "System Events" to tell process "Mudsnote"
+  set frontmost to true
+  click menu bar item "文件" of menu bar 1
+  delay 0.3
+  set moveItem to menu item "移到文件夹" of menu 1 of menu bar item "文件" of menu bar 1
+  click moveItem
+  delay 0.3
+  click menu item "  Smoke Folder" of menu 1 of moveItem
+end tell
+APPLESCRIPT
+
+MOVED_NOTE="$MOVE_FOLDER/$(basename "$SAVED_NOTE")"
+for _ in {1..30}; do
+  if [[ -e "$MOVED_NOTE" && ! -e "$SAVED_NOTE" ]]; then
+    break
+  fi
+  sleep 0.2
+done
+if [[ ! -e "$MOVED_NOTE" || -e "$SAVED_NOTE" ]]; then
+  echo "Installed app did not move the smoke note into Smoke Folder." >&2
+  exit 1
+fi
+
 echo "Installed library smoke passed"
 echo "app=$APP_PATH"
 echo "fixture=$OUTPUT_DIR"
 echo "saved_note=$SAVED_NOTE"
 echo "trash_restore=passed"
+echo "folder_move=$MOVED_NOTE"
