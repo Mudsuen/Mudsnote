@@ -1345,6 +1345,9 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceListTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceSymbolPointSize == 15)
         #expect(LibraryNotesLayout.sourceRowCornerRadius == 8)
+        #expect(LibraryNotesLayout.sourceRowHighlightLeadingInset == 10)
+        #expect(LibraryNotesLayout.sourceRowHighlightTrailingInset == 10)
+        #expect(LibraryNotesLayout.sourceRowHighlightVerticalInset == 0)
         #expect(LibraryNotesLayout.sourceFolderIndentStep == 14)
         #expect(LibraryNotesLayout.sourceCellContentLeadingInset == 7.5)
         #expect(LibraryNotesLayout.sourceIconWidth == 22)
@@ -1633,8 +1636,9 @@ struct MarkdownRichEditorTests {
             atRow: controller.sourceOutlineView.selectedRow,
             makeIfNecessary: false
         ) as? LibrarySourceOutlineRowView)
-        #expect(LibrarySourceOutlineRowView.leadingInset == LibraryNotesLayout.sourceListLeadingInset)
-        #expect(LibrarySourceOutlineRowView.trailingInset == LibraryNotesLayout.sourceListTrailingInset)
+        #expect(LibrarySourceOutlineRowView.leadingInset == LibraryNotesLayout.sourceRowHighlightLeadingInset)
+        #expect(LibrarySourceOutlineRowView.trailingInset == LibraryNotesLayout.sourceRowHighlightTrailingInset)
+        #expect(LibrarySourceOutlineRowView.verticalInset == LibraryNotesLayout.sourceRowHighlightVerticalInset)
         #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent < 0.5)
         #expect(!allSourceRow.isPointerHovered)
         allSourceRow.setPointerHovered(true)

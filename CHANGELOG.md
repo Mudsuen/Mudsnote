@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 160. Reference-aligned source row highlights
+- Problem: Source-row selection and hover reused the scroll content insets, shifting their rounded surface `4pt` right and shrinking a `32pt` row to a `30pt` highlight even though the icon and label content was already aligned.
+- Fix: Added independent `10/10/0pt` highlight insets for `LibrarySourceOutlineRowView`, moving selection and hover left without changing outline indentation, content insets, row content, or scroll geometry.
+- Lesson: Scroll content padding and row highlight geometry are separate contracts; sharing constants can compound native outline insets and hide a systematic offset.
+
 ### 159. Reference-sized toolbar and source icons
 - Problem: After the expanded source actions were corrected, New Note remained slightly undersized, grouped editor symbols were slightly oversized, `Aa` was visibly too small, and source-row symbols were still downscaled by an undersized image slot.
 - Fix: Gave New Note its own `13pt` symbol configuration, changed grouped symbols to `13pt`, restored native `Aa` to `17pt`, and enlarged source-row image slots to preserve the existing `15pt` system-symbol canvas while keeping label origins aligned.

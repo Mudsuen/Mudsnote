@@ -304,6 +304,13 @@
 - Source-row symbols retain their `15pt` configuration but render in a `22x20pt` image slot instead of being downscaled inside `18x18pt`; the icon trailing edges and title origins align with the reference.
 - Expanded comparison is `/tmp/mudsnote-all-icons-probe-208/apple-notes-vs-mudsnote.png`, collapsed comparison is `/tmp/mudsnote-editor-toolbar-icons-collapsed-208/apple-notes-vs-mudsnote.png`, and real-pointer hover evidence is `/tmp/mudsnote-window-hover-crop-208.png`.
 
+## Latest iteration (209)
+
+- Source selection and hover surfaces now use independent `10pt` leading/trailing and zero vertical insets instead of reusing `14/6pt` scroll content padding.
+- At `2x`, Apple Notes and Mudsnote both render the expanded selected source surface at `x=36...395px`, width `360px`, height `64px` inside the same `200pt` pane.
+- Outline indentation, source icon/title/count geometry, scroll insets, drag targets, and the collapsed library state are unchanged.
+- Expanded comparison is `/tmp/mudsnote-source-highlight-probe-209/apple-notes-vs-mudsnote.png`; collapsed comparison is `/tmp/mudsnote-source-highlight-collapsed-209/apple-notes-vs-mudsnote.png`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

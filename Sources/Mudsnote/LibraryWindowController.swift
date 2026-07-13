@@ -511,8 +511,9 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
 @MainActor
 final class LibrarySourceOutlineRowView: NSTableRowView {
     static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
-    static let leadingInset: CGFloat = LibraryNotesLayout.sourceListLeadingInset
-    static let trailingInset: CGFloat = LibraryNotesLayout.sourceListTrailingInset
+    static let leadingInset: CGFloat = LibraryNotesLayout.sourceRowHighlightLeadingInset
+    static let trailingInset: CGFloat = LibraryNotesLayout.sourceRowHighlightTrailingInset
+    static let verticalInset: CGFloat = LibraryNotesLayout.sourceRowHighlightVerticalInset
     private var trackingAreaForHover: NSTrackingArea?
     private(set) var isPointerHovered = false
 
@@ -569,9 +570,9 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     private var highlightBounds: NSRect {
         NSRect(
             x: bounds.minX + Self.leadingInset,
-            y: bounds.minY + 1,
+            y: bounds.minY + Self.verticalInset,
             width: max(0, bounds.width - Self.leadingInset - Self.trailingInset),
-            height: max(0, bounds.height - 2)
+            height: max(0, bounds.height - (Self.verticalInset * 2))
         )
     }
 }
@@ -636,6 +637,9 @@ enum LibraryNotesLayout {
     static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceRowCornerRadius: CGFloat = 8
+    static let sourceRowHighlightLeadingInset: CGFloat = 10
+    static let sourceRowHighlightTrailingInset: CGFloat = 10
+    static let sourceRowHighlightVerticalInset: CGFloat = 0
     static let sourceFolderIndentStep: CGFloat = 14
     static let sourceCellContentLeadingInset: CGFloat = 7.5
     static let sourceIconWidth: CGFloat = 22
