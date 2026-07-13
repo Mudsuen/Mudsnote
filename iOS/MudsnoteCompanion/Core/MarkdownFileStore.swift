@@ -685,6 +685,52 @@ actor MarkdownFileStore {
         return newRelativePath
     }
 
+    func moveFolder(relativePath: String, toParent targetParent: String?) throws -> String {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let source = try userFolderURL(relativePath: relativePath, root: root)
+        if let targetParent,
+           targetParent == relativePath || targetParent.hasPrefix(relativePath + "/") {
+            throw MarkdownLifecycleError.invalidFolder
+        }
+        let targetDirectory = try userFolderURL(
+            relativePath: targetParent,
+            root: root,
+            allowRoot: true
+        )
+        if source.deletingLastPathComponent().standardizedFileURL == targetDirectory.standardizedFileURL {
+            return relativePath
+        }
+        let requested = targetDirectory.appendingPathComponent(
+            source.lastPathComponent,
+            isDirectory: true
+        )
+        let destination = uniqueFolderURL(for: requested)
+        try coordinatedMove(from: source, to: destination)
+        let newRelativePath = Self.relativePath(for: destination, root: root)
+        do {
+            try rewriteTrashedOriginalPathPrefix(
+                from: relativePath,
+                to: newRelativePath,
+                root: root
+            )
+            try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
+        } catch {
+            try? rewriteTrashedOriginalPathPrefix(
+                from: newRelativePath,
+                to: relativePath,
+                root: root
+            )
+            try? rewritePinnedPathPrefix(from: newRelativePath, to: relativePath, root: root)
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
+        invalidatePathPrefix(relativePath)
+        invalidatePathPrefix(newRelativePath)
+        return newRelativePath
+    }
+
     func moveMarkdownDocument(
         relativePath: String,
         toFolder targetFolder: String?

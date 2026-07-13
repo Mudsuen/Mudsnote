@@ -888,6 +888,62 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: protected.appendingPathComponent("keep.bin").path))
     }
 
+    func testFolderMoveRewritesPinnedAndRecentlyDeletedPaths() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Archive/Sub", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Active\n".write(
+            to: root.appendingPathComponent("Archive/Sub/Active.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Deleted\n".write(
+            to: root.appendingPathComponent("Archive/Sub/Deleted.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Archive/Sub/Active.md")
+        let trashed = try await store.trashMarkdownDocument(
+            relativePath: "Archive/Sub/Deleted.md"
+        )
+
+        let moved = try await store.moveFolder(
+            relativePath: "Archive",
+            toParent: "Projects"
+        )
+        XCTAssertEqual(moved, "Projects/Archive")
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(
+            snapshot.allFiles.first { $0.relativePath == "Projects/Archive/Sub/Active.md" }?.isPinned == true
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Archive").path))
+
+        let restored = try await store.restoreTrashedMarkdownDocument(id: trashed.id)
+        XCTAssertEqual(restored.relativePath, "Projects/Archive/Sub/Deleted.md")
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.contains { $0.relativePath == restored.relativePath })
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.moveFolder(
+                relativePath: "Projects",
+                toParent: "Projects/Archive/Sub"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
+        }
+    }
+
     func testFolderOperationsRejectReservedPathsAndInvalidNames() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

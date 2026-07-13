@@ -137,6 +137,34 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["folder-row-Projects/Launch"].waitForExistence(timeout: 5))
     }
 
+    func testFolderContextMenuMovesNestedFolderToTopLevel() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.press(forDuration: 1)
+        app.buttons["New Subfolder"].tap()
+        let alert = app.alerts["New Subfolder"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.textFields["Folder Name"].typeText("Launch")
+        alert.buttons["Create"].tap()
+        XCTAssertTrue(waitForHittable(projects))
+        projects.tap()
+
+        let launch = app.buttons["folder-row-Projects/Launch"]
+        XCTAssertTrue(launch.waitForExistence(timeout: 5))
+        launch.press(forDuration: 1)
+        let moveFolder = app.buttons["Move Folder"]
+        XCTAssertTrue(moveFolder.waitForExistence(timeout: 5))
+        moveFolder.tap()
+        let topLevel = app.buttons["Top Level"]
+        XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
+        topLevel.tap()
+        XCTAssertTrue(waitForNonexistence(launch))
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["folder-row-Launch"].waitForExistence(timeout: 5))
+    }
+
     func testNewNoteCreatesStandaloneMarkdownAndOpensFullEditor() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]

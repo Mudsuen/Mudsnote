@@ -1853,6 +1853,15 @@
     "Folder Renamed": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹已重命名" } } }
     },
+    "Move Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动文件夹" } } }
+    },
+    "Top Level": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "顶层" } } }
+    },
+    "Folder Moved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹已移动" } } }
+    },
     "Folder Moved to Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件夹中的笔记已移到最近删除" } } }
     },

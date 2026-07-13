@@ -567,6 +567,12 @@ struct LibraryFolderView: View {
             groupByDate: groupByDate
         )
     }
+    private var moveDestinations: [LibraryFolderNode] {
+        appModel.allFolders.filter {
+            $0.relativePath != currentFolder.relativePath
+                && !$0.relativePath.hasPrefix(currentFolder.relativePath + "/")
+        }
+    }
 
     var body: some View {
         List {
@@ -632,6 +638,30 @@ struct LibraryFolderView: View {
                         isRenamingFolder = true
                     } label: {
                         Label("Rename Folder", systemImage: "pencil")
+                    }
+                    Menu {
+                        if currentFolder.relativePath.contains("/") {
+                            Button {
+                                let target = currentFolder
+                                Task {
+                                    if await appModel.moveFolder(target, to: nil) { dismiss() }
+                                }
+                            } label: {
+                                Label("Top Level", systemImage: "tray")
+                            }
+                        }
+                        ForEach(moveDestinations) { destination in
+                            Button {
+                                let target = currentFolder
+                                Task {
+                                    if await appModel.moveFolder(target, to: destination) { dismiss() }
+                                }
+                            } label: {
+                                Label(destination.relativePath, systemImage: "folder")
+                            }
+                        }
+                    } label: {
+                        Label("Move Folder", systemImage: "folder.badge.arrow.forward")
                     }
                     Button {
                         appModel.createStandaloneNote(inFolder: currentFolder.relativePath)
@@ -706,6 +736,13 @@ private struct FolderLifecycleActions: ViewModifier {
     @State private var isRenaming = false
     @State private var isConfirmingDelete = false
 
+    private var moveDestinations: [LibraryFolderNode] {
+        appModel.allFolders.filter {
+            $0.relativePath != folder.relativePath
+                && !$0.relativePath.hasPrefix(folder.relativePath + "/")
+        }
+    }
+
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -727,6 +764,26 @@ private struct FolderLifecycleActions: ViewModifier {
                     isRenaming = true
                 } label: {
                     Label("Rename Folder", systemImage: "pencil")
+                }
+                Menu {
+                    if folder.relativePath.contains("/") {
+                        Button {
+                            let target = folder
+                            Task { _ = await appModel.moveFolder(target, to: nil) }
+                        } label: {
+                            Label("Top Level", systemImage: "tray")
+                        }
+                    }
+                    ForEach(moveDestinations) { destination in
+                        Button {
+                            let target = folder
+                            Task { _ = await appModel.moveFolder(target, to: destination) }
+                        } label: {
+                            Label(destination.relativePath, systemImage: "folder")
+                        }
+                    }
+                } label: {
+                    Label("Move Folder", systemImage: "folder.badge.arrow.forward")
                 }
                 Button(role: .destructive) {
                     isConfirmingDelete = true

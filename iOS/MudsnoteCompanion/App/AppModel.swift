@@ -564,6 +564,35 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
+    func moveFolder(_ folder: LibraryFolderNode, to parent: LibraryFolderNode?) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            let movedPath = try await fileStore.moveFolder(
+                relativePath: folder.relativePath,
+                toParent: parent?.relativePath
+            )
+            if let selectedDocument,
+               selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
+                let updatedPath = movedPath
+                    + selectedDocument.relativePath.dropFirst(folder.relativePath.count)
+                self.selectedDocument = try await fileStore.loadMarkdownDocument(
+                    relativePath: updatedPath
+                )
+            }
+            statusToast = .saved(String(localized: "Folder Moved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
     func deleteFolder(_ folder: LibraryFolderNode) async -> Bool {
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
