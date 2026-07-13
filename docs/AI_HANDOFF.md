@@ -163,6 +163,11 @@
 - The compact note-list title/group typography is `13pt/15pt`, the collapsed title offset is `-11pt`, and attributed list previews retain tail ellipsis behavior.
 - Editor date-to-title spacing is `4pt`, moving only the title/body rhythm upward while preserving the calibrated date-row origin.
 
+## Latest iteration (188)
+
+- Source labels use `13.5pt` regular text, source section headings use `12pt`, and source symbols use `15pt`; the existing `32pt` rows and pane geometry are unchanged.
+- Equal-scale Vision OCR reduced the main source-label width mismatch from roughly `14–16%` to about `1–4%` for Notes, Resources, Archives, and Recently Deleted.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

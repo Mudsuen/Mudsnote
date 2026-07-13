@@ -1123,6 +1123,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a deterministic collapsed-reference fixture, tightened the collapsed title offset and compact header/group typography, preserved tail truncation in highlighted attributed strings, and reduced date-to-title spacing from `8pt` to `4pt` without moving the date row.
 - Lesson: Visual parity needs deterministic content state as well as matching window geometry; semantic row spacing should be adjusted independently when only one element needs to move.
 
+### 188. Reference-scaled source typography
+
+- Problem: Source-list labels, section headings, and folder symbols remained visibly larger and heavier than Apple Notes even though the pane width and `32pt` row rhythm were already aligned.
+- Fix: Used Vision OCR on equal-scale screenshots to measure the mismatch, then reduced source labels to `13.5pt` regular, section headings to `12pt`, and symbols to `15pt` while preserving row geometry and counts.
+- Lesson: Typography should be calibrated independently from container geometry; equal row heights can still look oversized when text width and weight are off by more than ten percent.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
