@@ -168,6 +168,11 @@
 - Source labels use `13.5pt` regular text, source section headings use `12pt`, and source symbols use `15pt`; the existing `32pt` rows and pane geometry are unchanged.
 - Equal-scale Vision OCR reduced the main source-label width mismatch from roughly `14–16%` to about `1–4%` for Notes, Resources, Archives, and Recently Deleted.
 
+## Latest iteration (189)
+
+- The note table owns a single weak hover row and recomputes it from the current pointer plus `visibleRect` whenever its clip view scrolls, preventing stale hover paint on traversed rows.
+- Note text now compresses and tail-truncates within a boundary `10pt` inside the selected card's trailing edge; long-title installed screenshots no longer overflow the gold selection surface.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

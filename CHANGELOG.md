@@ -1129,6 +1129,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Used Vision OCR on equal-scale screenshots to measure the mismatch, then reduced source labels to `13.5pt` regular, section headings to `12pt`, and symbols to `15pt` while preserving row geometry and counts.
 - Lesson: Typography should be calibrated independently from container geometry; equal row heights can still look oversized when text width and weight are off by more than ten percent.
 
+### 189. Scroll-safe hover and bounded note cards
+
+- Problem: Scrolling under a stationary pointer could leave every traversed note row painted with the hover background, and long selected-note titles could draw beyond the gold card's right edge.
+- Fix: Made the table own one weak hovered-row reference, reconcile it from the current pointer and visible table rect on every clip-view scroll, and clear the prior row before activating another. Reduced text compression resistance and reserved a tested `10pt` text inset inside the selected-card trailing edge so long titles and previews truncate in bounds.
+- Lesson: Tracking-area enter/exit events are not a sufficient state model during scrolling; reusable rows need table-owned pointer reconciliation, and text geometry must be constrained against the visible selection surface rather than only the cell edge.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
