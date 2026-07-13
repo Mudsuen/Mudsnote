@@ -317,6 +317,14 @@
 - Scope switching preserves modified-date order, allocates at most the 240 visible results, and stops scanning once that limit is reached.
 - The 10,000-entry regression proves 240 alternating matches require only 479 predicate evaluations.
 
+## Latest iteration (211)
+
+- Title and creation-date sorting now select the true first 240 notes from the complete active scope instead of sorting only the 240 most recently edited notes.
+- A chunked top-K projection retains at most 480 candidates, precomputes date-group and pinned keys once, and preserves the default edit-date early-stop path.
+- Grouping/sorting changes reproject from the loaded snapshot; regressions cover results beyond the old window, date groups, pinned notes, a real 241-file controller flow, and a 10,000-note `<100ms` debug gate.
+- Installed smoke file verification uses a bounded retry window so it proves live autosave without racing the debounce or accepting close-time persistence.
+- Native source cells expose `AXPress` through the same scope-activation path as outline selection; accessibility and smoke navigation no longer depend on the pre-outline `AXButton` implementation.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

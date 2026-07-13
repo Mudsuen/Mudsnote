@@ -36,6 +36,64 @@ enum LibraryNoteListProjection {
         return matches
     }
 
+    static func rankedPrefix<Notes: Sequence>(
+        _ notes: Notes,
+        limit: Int,
+        sortOrder: LibraryNoteSortOrder,
+        groupsByDate: Bool,
+        includesPinnedGroup: Bool,
+        pinnedPaths: Set<String>,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        where predicate: (NoteSearchResult) -> Bool
+    ) -> [NoteSearchResult] where Notes.Element == NoteSearchResult {
+        guard limit > 0 else { return [] }
+
+        let batchLimit = limit > Int.max / 2 ? Int.max : limit * 2
+        var candidates: [RankedNote] = []
+        candidates.reserveCapacity(batchLimit)
+
+        let orderedBefore: (RankedNote, RankedNote) -> Bool = { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned {
+                return lhs.isPinned
+            }
+
+            if let lhsGroup = lhs.dateGroupTitle,
+               let rhsGroup = rhs.dateGroupTitle,
+               lhsGroup != rhsGroup {
+                if lhs.prepared.note.modifiedAt != rhs.prepared.note.modifiedAt {
+                    return lhs.prepared.note.modifiedAt > rhs.prepared.note.modifiedAt
+                }
+                return lhs.prepared.standardizedPath < rhs.prepared.standardizedPath
+            }
+
+            return isOrderedBefore(lhs.prepared, rhs.prepared, by: sortOrder)
+        }
+
+        for note in notes where predicate(note) {
+            let prepared = PreparedNote(note)
+            let isPinned = includesPinnedGroup && pinnedPaths.contains(prepared.standardizedPath)
+            let dateGroupTitle = groupsByDate && sortOrder == .title && !isPinned
+                ? groupTitle(for: note.modifiedAt, now: now, calendar: calendar)
+                : nil
+            candidates.append(RankedNote(
+                prepared: prepared,
+                isPinned: isPinned,
+                dateGroupTitle: dateGroupTitle
+            ))
+            if candidates.count == batchLimit {
+                candidates.sort(by: orderedBefore)
+                candidates.removeLast(candidates.count - limit)
+            }
+        }
+
+        candidates.sort(by: orderedBefore)
+        if candidates.count > limit {
+            candidates.removeLast(candidates.count - limit)
+        }
+        return candidates.map(\.prepared.note)
+    }
+
     static func upsertByModifiedDate(
         _ note: NoteSearchResult,
         into snapshot: inout [NoteSearchResult],
@@ -152,31 +210,43 @@ enum LibraryNoteListProjection {
         }
     }
 
+    private struct RankedNote {
+        let prepared: PreparedNote
+        let isPinned: Bool
+        let dateGroupTitle: String?
+    }
+
     private static func sorted(
         _ notes: [PreparedNote],
         by sortOrder: LibraryNoteSortOrder
     ) -> [PreparedNote] {
-        notes.sorted { lhs, rhs in
-            switch sortOrder {
-            case .dateEdited:
-                if lhs.note.modifiedAt != rhs.note.modifiedAt {
-                    return lhs.note.modifiedAt > rhs.note.modifiedAt
-                }
-            case .dateCreated:
-                if lhs.note.createdAt != rhs.note.createdAt {
-                    return lhs.note.createdAt > rhs.note.createdAt
-                }
-            case .title:
-                let titleComparison = lhs.note.title.localizedCaseInsensitiveCompare(rhs.note.title)
-                if titleComparison != .orderedSame {
-                    return titleComparison == .orderedAscending
-                }
-                if lhs.note.modifiedAt != rhs.note.modifiedAt {
-                    return lhs.note.modifiedAt > rhs.note.modifiedAt
-                }
+        notes.sorted { isOrderedBefore($0, $1, by: sortOrder) }
+    }
+
+    private static func isOrderedBefore(
+        _ lhs: PreparedNote,
+        _ rhs: PreparedNote,
+        by sortOrder: LibraryNoteSortOrder
+    ) -> Bool {
+        switch sortOrder {
+        case .dateEdited:
+            if lhs.note.modifiedAt != rhs.note.modifiedAt {
+                return lhs.note.modifiedAt > rhs.note.modifiedAt
             }
-            return lhs.standardizedPath < rhs.standardizedPath
+        case .dateCreated:
+            if lhs.note.createdAt != rhs.note.createdAt {
+                return lhs.note.createdAt > rhs.note.createdAt
+            }
+        case .title:
+            let titleComparison = lhs.note.title.localizedCaseInsensitiveCompare(rhs.note.title)
+            if titleComparison != .orderedSame {
+                return titleComparison == .orderedAscending
+            }
+            if lhs.note.modifiedAt != rhs.note.modifiedAt {
+                return lhs.note.modifiedAt > rhs.note.modifiedAt
+            }
         }
+        return lhs.standardizedPath < rhs.standardizedPath
     }
 
     private static func groupTitle(for date: Date, now: Date, calendar: Calendar) -> String {

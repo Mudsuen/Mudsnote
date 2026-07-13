@@ -66,6 +66,124 @@ struct MarkdownRichEditorTests {
         }.isEmpty)
     }
 
+    @Test func rankedNoteProjectionFindsGlobalResultsBeyondModifiedDatePrefix() {
+        let now = Date()
+        var notes = (0..<1_000).map { index in
+            NoteSearchResult(
+                url: URL(fileURLWithPath: "/tmp/ranked-\(index).md"),
+                title: String(format: "Zulu %04d", index),
+                snippet: "",
+                modifiedAt: now.addingTimeInterval(TimeInterval(-index)),
+                createdAt: now.addingTimeInterval(TimeInterval(-index - 10_000))
+            )
+        }
+        notes[900] = NoteSearchResult(
+            url: notes[900].url,
+            title: "Alpha Global",
+            snippet: "",
+            modifiedAt: notes[900].modifiedAt,
+            createdAt: now.addingTimeInterval(1_000)
+        )
+
+        let titleResults = LibraryNoteListProjection.rankedPrefix(
+            notes,
+            limit: 240,
+            sortOrder: .title,
+            groupsByDate: false,
+            includesPinnedGroup: false,
+            pinnedPaths: []
+        ) { _ in true }
+        let creationResults = LibraryNoteListProjection.rankedPrefix(
+            notes,
+            limit: 240,
+            sortOrder: .dateCreated,
+            groupsByDate: true,
+            includesPinnedGroup: false,
+            pinnedPaths: []
+        ) { _ in true }
+
+        #expect(titleResults.count == 240)
+        #expect(titleResults.first?.title == "Alpha Global")
+        #expect(creationResults.count == 240)
+        #expect(creationResults.first?.title == "Alpha Global")
+    }
+
+    @Test func groupedTitleProjectionPrioritizesRecentDateGroupsAndPinnedNotes() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 7,
+            day: 13,
+            hour: 12
+        )))
+        let recentURL = URL(fileURLWithPath: "/tmp/zulu-today.md")
+        let oldURL = URL(fileURLWithPath: "/tmp/alpha-old.md")
+        let pinnedURL = URL(fileURLWithPath: "/tmp/pinned-old.md")
+        let notes = [
+            NoteSearchResult(url: oldURL, title: "Alpha Old", snippet: "", modifiedAt: now.addingTimeInterval(-40 * 86_400)),
+            NoteSearchResult(url: recentURL, title: "Zulu Today", snippet: "", modifiedAt: now),
+            NoteSearchResult(url: pinnedURL, title: "Pinned Old", snippet: "", modifiedAt: now.addingTimeInterval(-80 * 86_400))
+        ]
+
+        let recentFirst = LibraryNoteListProjection.rankedPrefix(
+            notes,
+            limit: 1,
+            sortOrder: .title,
+            groupsByDate: true,
+            includesPinnedGroup: false,
+            pinnedPaths: [],
+            now: now,
+            calendar: calendar
+        ) { _ in true }
+        let pinnedFirst = LibraryNoteListProjection.rankedPrefix(
+            notes,
+            limit: 1,
+            sortOrder: .title,
+            groupsByDate: true,
+            includesPinnedGroup: true,
+            pinnedPaths: [pinnedURL.standardizedFileURL.path],
+            now: now,
+            calendar: calendar
+        ) { _ in true }
+
+        #expect(recentFirst.first?.url == recentURL)
+        #expect(pinnedFirst.first?.url == pinnedURL)
+    }
+
+    @Test func rankedTitleProjectionStaysInteractiveAtSnapshotLimit() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-ranked-projection-performance", isDirectory: true)
+        let now = Date()
+        let notes = (0..<10_000).map { index in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: String(format: "Note %05d", 10_000 - index),
+                snippet: "",
+                modifiedAt: now.addingTimeInterval(TimeInterval(-index)),
+                createdAt: now.addingTimeInterval(TimeInterval(index))
+            )
+        }
+
+        let clock = ContinuousClock()
+        var results: [NoteSearchResult] = []
+        let elapsed = clock.measure {
+            results = LibraryNoteListProjection.rankedPrefix(
+                notes,
+                limit: 240,
+                sortOrder: .title,
+                groupsByDate: true,
+                includesPinnedGroup: true,
+                pinnedPaths: [notes[9_000].url.standardizedFileURL.path],
+                now: now
+            ) { _ in true }
+        }
+
+        #expect(elapsed < .milliseconds(100))
+        #expect(results.count == 240)
+        #expect(results.first?.url == notes[9_000].url)
+    }
+
     @Test
     func noteSnapshotUpsertKeepsModifiedOrderAndReplacesPaths() throws {
         let root = FileManager.default.temporaryDirectory
@@ -1666,6 +1784,13 @@ struct MarkdownRichEditorTests {
         })
         #expect(folderCount.stringValue == "1")
         #expect(!controller.sourceTitlesForLibrary().contains("#library"))
+        let trashSourceCell = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibrarySourceOutlineCellView
+        }.first {
+            $0.identifier?.rawValue == "LibrarySourceRow-3"
+        })
+        #expect(trashSourceCell.accessibilityPerformPress())
+        #expect(controller.selectedSourceTitleForLibrary == "Recently Deleted")
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
@@ -1892,6 +2017,61 @@ struct MarkdownRichEditorTests {
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == todayURL.standardizedFileURL.path)
         #expect(store.libraryNoteSortOrderRawValue == LibraryNoteSortOrder.title.rawValue)
         #expect(!store.libraryGroupsNotesByDate)
+    }
+
+    @MainActor
+    @Test
+    func libraryCustomSortReprojectsBeyondTheModifiedDateWindow() throws {
+        let suiteName = "mudsnote-global-sort-window-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-global-sort-window-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let now = Date()
+        for index in 0...240 {
+            let title = index == 240 ? "Alpha Global" : String(format: "Zulu %03d", index)
+            let url = notesDirectory.appendingPathComponent("note-\(index).md")
+            try "# \(title)\n\nBody".write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(TimeInterval(-index))],
+                ofItemAtPath: url.path
+            )
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        func listedNoteTitles() -> [String] {
+            (0..<controller.numberOfRows(in: controller.tableView)).compactMap { row in
+                (controller.tableView(controller.tableView, viewFor: nil, row: row) as? LibraryNoteCellView)?
+                    .titleLabel.stringValue
+            }
+        }
+
+        controller.setNoteListGroupingForLibrary(false)
+        #expect(!listedNoteTitles().contains("Alpha Global"))
+
+        controller.setNoteListSortOrderForLibrary(.title)
+        #expect(listedNoteTitles().count == 240)
+        #expect(listedNoteTitles().first == "Alpha Global")
     }
 
     @MainActor

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 162. Correct full-library custom sorting
+- Problem: Title and creation-date sorting only reordered the 240 most recently edited notes, so a globally first title, newest creation date, or older pinned note could remain outside the visible result window.
+- Fix: Added a bounded-memory, chunked top-K projection over the complete selected scope. Sorting and grouping changes now reproject from the loaded snapshot, preserve date-group and pinned ordering, and retain the fast early-stop path for default edit-date navigation. Native source cells now expose `AXPress`, and the installed-app smoke uses that current semantic while waiting within a fixed window for autosave instead of racing its `800ms` debounce.
+- Lesson: A visible-result limit must be applied after the active global ordering, not before it; bounded top-K selection provides correct semantics without materializing or fully sorting all 10,000 records.
+
 ### 161. Bounded source-scope projection
 - Problem: Inbox, folder, and tag navigation filtered the complete 10,000-note snapshot into a temporary array before keeping only the first 240 visible notes, creating avoidable main-thread scanning and allocation.
 - Fix: Added a shared bounded projection that preserves snapshot order, stops as soon as the visible limit is reached, and allocates only the result capacity. A regression proves 240 alternating matches visit 479 of 10,000 inputs instead of all 10,000.

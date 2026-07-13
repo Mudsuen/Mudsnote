@@ -453,6 +453,7 @@ final class LibrarySourceOutlineView: NSOutlineView {
 @MainActor
 final class LibrarySourceOutlineCellView: NSTableCellView {
     let countLabel = NSTextField(labelWithString: "")
+    var accessibilityPressHandler: (() -> Bool)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -505,6 +506,10 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        accessibilityPressHandler?() ?? super.accessibilityPerformPress()
     }
 }
 
@@ -3692,6 +3697,57 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func notesForSelectedScope(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
+        guard noteListSortOrder != .dateEdited else {
+            return notesForSelectedScopeByModifiedDate(limit: limit, allNotes: allNotes)
+        }
+
+        let candidates: [NoteSearchResult]
+        let predicate: (NoteSearchResult) -> Bool
+        switch selectedScope {
+        case .all:
+            candidates = allNotes
+            predicate = { _ in true }
+        case .recent:
+            candidates = recentNoteResults(limit: 80, allNotes: allNotes)
+            predicate = { _ in true }
+        case .inbox:
+            candidates = allNotes
+            predicate = { note in
+                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+                    || note.title.localizedCaseInsensitiveContains("Inbox")
+            }
+        case .trash:
+            candidates = trashedNotesSnapshot
+            predicate = { _ in true }
+        case .folder(let url):
+            candidates = allNotes
+            let folderPath = url.standardizedFileURL.path
+            predicate = { note in
+                let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
+                return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+            }
+        case .tag(let tag):
+            candidates = allNotes
+            predicate = { note in
+                note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+            }
+        }
+
+        return LibraryNoteListProjection.rankedPrefix(
+            candidates,
+            limit: limit,
+            sortOrder: noteListSortOrder,
+            groupsByDate: groupsNoteListByDate,
+            includesPinnedGroup: selectedScope != .trash,
+            pinnedPaths: Set(noteStore.libraryPinnedNotePaths),
+            where: predicate
+        )
+    }
+
+    private func notesForSelectedScopeByModifiedDate(
+        limit: Int,
+        allNotes: [NoteSearchResult]
+    ) -> [NoteSearchResult] {
         switch selectedScope {
         case .all:
             return Array(allNotes.prefix(limit))
@@ -3860,6 +3916,9 @@ final class LibraryWindowController: NSWindowController,
     private func rebuildNoteListRowsForDisplayOptions() {
         let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map { $0.standardizedFileURL.path })
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
+        }
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
 
         suppressSelectionChanges = true
@@ -4015,6 +4074,9 @@ final class LibraryWindowController: NSWindowController,
         cell.countLabel.textColor = isSelected
             ? LibrarySourceSelectionPalette.selectedCountColor
             : panelTertiaryTextColor()
+        cell.accessibilityPressHandler = { [weak self] in
+            self?.activateSourceScope(scope) ?? false
+        }
         cell.setAccessibilityLabel(title)
         cell.setAccessibilityValue("\(item.count) 条笔记")
     }

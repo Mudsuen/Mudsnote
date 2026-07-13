@@ -77,6 +77,9 @@ if [[ "$UI_READY" != true ]]; then
   exit 1
 fi
 
+open "$APP_PATH"
+sleep 0.3
+
 osascript - "$NOTE_TITLE" "$NOTE_BODY" <<'APPLESCRIPT'
 on run arguments
   set noteTitle to item 1 of arguments
@@ -207,7 +210,14 @@ APPLESCRIPT
   sleep 0.2
 done
 
-SAVED_NOTE="$(find "$NOTES_DIR" -maxdepth 1 -type f -name '*installed-smoke-note.md' -print -quit)"
+SAVED_NOTE=""
+for _ in {1..30}; do
+  SAVED_NOTE="$(find "$NOTES_DIR" -maxdepth 1 -type f -name '*installed-smoke-note.md' -print -quit)"
+  if [[ -n "$SAVED_NOTE" ]]; then
+    break
+  fi
+  sleep 0.2
+done
 if [[ -z "$SAVED_NOTE" ]]; then
   echo "Installed app did not autosave the smoke note." >&2
   exit 1
@@ -259,20 +269,20 @@ osascript <<'APPLESCRIPT' >/dev/null
 tell application "Mudsnote" to activate
 tell application "System Events" to tell process "Mudsnote"
   set frontmost to true
-  set trashButtonIndex to 0
+  set trashCellIndex to 0
   set elements to entire contents of window 1
   repeat with index from 1 to count elements
     set candidate to item index of elements
     try
       set candidateRole to role of candidate as text
       set candidateDescription to description of candidate as text
-      if candidateRole = "AXButton" then
-        if candidateDescription = "Recently Deleted" then set trashButtonIndex to index
+      if candidateRole = "AXCell" then
+        if candidateDescription = "Recently Deleted" then set trashCellIndex to index
       end if
     end try
   end repeat
-  if trashButtonIndex = 0 then error "Could not locate Recently Deleted"
-  perform action "AXPress" of item trashButtonIndex of elements
+  if trashCellIndex = 0 then error "Could not locate Recently Deleted"
+  perform action "AXPress" of item trashCellIndex of elements
   delay 1
   click menu item "恢复笔记" of menu 1 of menu bar item "文件" of menu bar 1
 end tell
@@ -313,6 +323,9 @@ if [[ ! -e "$MOVED_NOTE" || -e "$SAVED_NOTE" ]]; then
   echo "Installed app did not move the smoke note into Smoke Folder." >&2
   exit 1
 fi
+
+open "$APP_PATH"
+sleep 0.3
 
 osascript - "$ATTACHMENT_SOURCE" <<'APPLESCRIPT' >/dev/null
 on run arguments
