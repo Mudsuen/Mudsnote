@@ -25,6 +25,42 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(model.captureRoute, .audio)
     }
 
+    @MainActor
+    func testLatestFolderSelectionWinsAndOnlyPublishesReadySnapshot() async throws {
+        let firstRoot = try temporaryRoot()
+        let secondRoot = try temporaryRoot()
+        defer {
+            try? FileManager.default.removeItem(at: firstRoot)
+            try? FileManager.default.removeItem(at: secondRoot)
+        }
+        let suiteName = "MudsnoteCompanionTests.switch.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let access = FolderAccessService(defaults: defaults)
+        let model = AppModel(bootstrapImmediately: false, folderAccess: access)
+        model.draft.target = .recent("Projects/Old.md")
+
+        model.selectFolder(firstRoot)
+        model.selectFolder(secondRoot)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if case .ready(let root) = model.folderStatus, root == secondRoot {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        guard case .ready(let selectedRoot) = model.folderStatus else {
+            return XCTFail("The latest folder never became ready")
+        }
+        XCTAssertEqual(selectedRoot, secondRoot)
+        XCTAssertEqual(access.currentRoot, secondRoot)
+        XCTAssertEqual(model.draft.target, .inbox)
+        XCTAssertEqual(model.libraryFiles.count, 2)
+        XCTAssertEqual(model.libraryRevision, 1)
+    }
+
     func testMarkdownBlockFormat() {
         let date = Date(timeIntervalSince1970: 1_717_747_920)
         let block = MarkdownFileStore.markdownBlock(

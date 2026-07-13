@@ -2,6 +2,11 @@ import QuickLook
 import SwiftUI
 
 struct LibraryHomeView: View {
+    private struct SearchTaskID: Hashable {
+        var query: String
+        var libraryRevision: Int
+    }
+
     @EnvironmentObject private var appModel: AppModel
     @FocusState private var isSearchFocused: Bool
     @State private var searchQuery = ""
@@ -33,7 +38,7 @@ struct LibraryHomeView: View {
                 await appModel.refreshInbox()
             }
             .navigationTitle("Library")
-            .task(id: searchQuery) {
+            .task(id: SearchTaskID(query: searchQuery, libraryRevision: appModel.libraryRevision)) {
                 let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else {
                     appModel.clearSearch()

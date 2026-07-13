@@ -36,43 +36,62 @@ final class AppModel: ObservableObject {
     @Published var conflictWarnings: [String] = []
     @Published private(set) var searchResults: [MarkdownSearchResult] = []
     @Published private(set) var isSearching = false
+    @Published private(set) var libraryRevision = 0
 
-    let folderAccess = FolderAccessService()
-    let fileStore = MarkdownFileStore()
+    let folderAccess: FolderAccessService
+    let fileStore: MarkdownFileStore
     let audioRecorder = AudioCaptureService()
 
     private var queue: PendingWriteQueue?
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
+    private var libraryConfigurationID = UUID()
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
-    init(bootstrapImmediately: Bool = true) {
+    init(
+        bootstrapImmediately: Bool = true,
+        folderAccess: FolderAccessService = FolderAccessService(),
+        fileStore: MarkdownFileStore = MarkdownFileStore()
+    ) {
+        self.folderAccess = folderAccess
+        self.fileStore = fileStore
         if bootstrapImmediately {
             Task { await bootstrap() }
         }
     }
 
     func bootstrap() async {
+        let configurationID = beginLibraryConfiguration()
         do {
+            guard libraryConfigurationID == configurationID else { return }
             if let root = try folderAccess.resolvePersistedFolder() {
-                try await configureFolder(root)
-            } else {
+                _ = try await configureFolder(root, configurationID: configurationID)
+            } else if libraryConfigurationID == configurationID {
                 folderStatus = .missing
             }
         } catch {
+            guard libraryConfigurationID == configurationID else { return }
             folderStatus = .error(error.localizedDescription)
             statusToast = .error(String(localized: "Folder access failed"))
         }
     }
 
     func selectFolder(_ url: URL) {
+        let configurationID = beginLibraryConfiguration()
+        if case .recent = draft.target {
+            draft.target = .inbox
+        }
         Task {
             do {
+                guard libraryConfigurationID == configurationID else { return }
                 try folderAccess.persistFolder(url)
-                try await configureFolder(url)
-                statusToast = .saved(String(localized: "Folder ready"))
+                guard try await configureFolder(url, configurationID: configurationID) else { return }
+                if libraryConfigurationID == configurationID {
+                    statusToast = .saved(String(localized: "Folder ready"))
+                }
             } catch {
+                guard libraryConfigurationID == configurationID else { return }
                 folderStatus = .error(error.localizedDescription)
                 statusToast = .error(String(localized: "Could not prepare folder"))
             }
@@ -80,6 +99,7 @@ final class AppModel: ObservableObject {
     }
 
     func forgetFolderAndChooseAgain() {
+        libraryConfigurationID = UUID()
         folderAccess.forgetPersistedFolder()
         folderStatus = .missing
         inboxItems = []
@@ -89,7 +109,13 @@ final class AppModel: ObservableObject {
         librarySummary = LibrarySummary()
         tagSummaries = []
         conflictWarnings = []
+        searchResults = []
+        isSearching = false
+        libraryRevision += 1
         queue = nil
+        if case .recent = draft.target {
+            draft.target = .inbox
+        }
     }
 
     func showCapture(_ route: CaptureRoute = .text) {
@@ -429,6 +455,11 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(_ snapshot: MarkdownLibrarySnapshot) async {
+        let pendingCount = await queue?.pendingCount() ?? 0
+        apply(snapshot, pendingCount: pendingCount)
+    }
+
+    private func apply(_ snapshot: MarkdownLibrarySnapshot, pendingCount: Int) {
         inboxItems = snapshot.inboxItems
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
@@ -436,7 +467,6 @@ final class AppModel: ObservableObject {
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems)
         conflictWarnings = snapshot.conflictWarnings
-        let pendingCount = await queue?.pendingCount() ?? 0
         if conflictWarnings.isEmpty == false {
             syncStatus = .conflict
         } else if pendingCount > 0 {
@@ -446,24 +476,48 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func configureFolder(_ root: URL) async throws {
+    private func beginLibraryConfiguration() -> UUID {
+        let configurationID = UUID()
+        libraryConfigurationID = configurationID
+        folderStatus = .loading
+        searchResults = []
+        isSearching = false
+        return configurationID
+    }
+
+    private func configureFolder(_ root: URL, configurationID: UUID) async throws -> Bool {
+        guard libraryConfigurationID == configurationID else { return false }
         try folderAccess.withAccess(to: root) {
             try FolderInitializer.initialize(root)
         }
+        guard libraryConfigurationID == configurationID else { return false }
         await fileStore.configure(root: root)
-        queue = PendingWriteQueue(root: root)
-        folderStatus = .ready(root)
-        try await queue?.load()
+        guard libraryConfigurationID == configurationID else { return false }
+        let nextQueue = PendingWriteQueue(root: root)
+        try await nextQueue.load()
+        guard libraryConfigurationID == configurationID else { return false }
+        var replayFailed = false
         do {
-            try await queue?.replay { [fileStore] item in
+            try await nextQueue.replay { [fileStore] item in
                 try await fileStore.performPendingWrite(item)
             }
         } catch {
+            replayFailed = true
+        }
+        guard libraryConfigurationID == configurationID else { return false }
+        let snapshot = try await fileStore.loadLibrarySnapshot()
+        let pendingCount = await nextQueue.pendingCount()
+        guard libraryConfigurationID == configurationID else { return false }
+        queue = nextQueue
+        apply(snapshot, pendingCount: pendingCount)
+        folderStatus = .ready(root)
+        libraryRevision += 1
+        if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
         }
-        await refreshInbox()
         presentPendingCaptureIfPossible()
+        return true
     }
 
     private func appendDraft(_ draft: CaptureDraft) async throws {
