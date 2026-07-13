@@ -1187,6 +1187,7 @@ final class LibraryWindowController: NSWindowController,
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
+    private let fileModificationDateLoader: @Sendable (URL) -> Date?
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
@@ -1292,6 +1293,7 @@ final class LibraryWindowController: NSWindowController,
         usesCanonicalWindowSize: Bool = false,
         prefersExternalScreen: Bool = false,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
+        fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
@@ -1306,6 +1308,7 @@ final class LibraryWindowController: NSWindowController,
             noteStore.libraryWindowFrame = LibraryNotesLayout.migratedDefaultWindowFrame(noteStore.libraryWindowFrame)
         }
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
+        self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
@@ -4761,6 +4764,7 @@ final class LibraryWindowController: NSWindowController,
         notePrefetchTask = nil
         if let cached = cachedLoadedNote(for: note) {
             applyLoadedNote(cached, for: note)
+            scheduleCachedNoteValidation(cached, for: note)
             return
         }
 
@@ -4807,11 +4811,15 @@ final class LibraryWindowController: NSWindowController,
         noteLoadGeneration += 1
     }
 
-    private func applyLoadedNoteResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
+    private func applyLoadedNoteResult(
+        _ result: Result<LoadedLibraryNote, Error>,
+        for note: NoteSearchResult,
+        fileModifiedAt: Date? = nil
+    ) {
         isLoadingInitialNote = false
         switch result {
         case .success(let loaded):
-            let cached = cacheLoadedNote(loaded, for: note)
+            let cached = cacheLoadedNote(loaded, for: note, fileModifiedAt: fileModifiedAt)
             applyLoadedNote(cached, for: note)
         case .failure(let error):
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
@@ -4868,27 +4876,71 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func cachedLoadedNote(for note: NoteSearchResult) -> LoadedLibraryNoteCacheEntry? {
-        let key = loadedNoteCacheKey(for: note.url)
-        guard let cached = loadedNoteCache.entry(forKey: key),
-              let currentModifiedAt = fileModificationDate(at: note.url),
-              abs(currentModifiedAt.timeIntervalSince(cached.fileModifiedAt)) < 0.001 else {
-            loadedNoteCache.removeEntry(forKey: key)
-            return nil
-        }
-        return cached
+        loadedNoteCache.entry(forKey: loadedNoteCacheKey(for: note.url))
     }
 
     @discardableResult
     private func cacheLoadedNote(
         _ loaded: LoadedLibraryNote,
-        for note: NoteSearchResult
+        for note: NoteSearchResult,
+        fileModifiedAt: Date? = nil
     ) -> LoadedLibraryNoteCacheEntry {
         let cached = LoadedLibraryNoteCacheEntry(
             loaded: loaded,
-            fileModifiedAt: fileModificationDate(at: note.url) ?? note.modifiedAt
+            fileModifiedAt: fileModifiedAt ?? note.modifiedAt
         )
         loadedNoteCache.insert(cached, forKey: loadedNoteCacheKey(for: note.url))
         return cached
+    }
+
+    private func scheduleCachedNoteValidation(
+        _ cached: LoadedLibraryNoteCacheEntry,
+        for note: NoteSearchResult
+    ) {
+        let generation = noteLoadGeneration
+        let fileModificationDateLoader = fileModificationDateLoader
+        let noteLoader = noteLoader
+        let cachedModifiedAt = cached.fileModifiedAt
+        let task = Task.detached(priority: .utility) { [weak self] in
+            guard let currentModifiedAt = fileModificationDateLoader(note.url),
+                  !Task.isCancelled else {
+                await MainActor.run {
+                    guard let self, generation == self.noteLoadGeneration else { return }
+                    self.noteLoadTask = nil
+                }
+                return
+            }
+
+            guard abs(currentModifiedAt.timeIntervalSince(cachedModifiedAt)) >= 0.001 else {
+                await MainActor.run {
+                    guard let self, generation == self.noteLoadGeneration else { return }
+                    self.noteLoadTask = nil
+                }
+                return
+            }
+
+            let result = Result<LoadedLibraryNote, Error> {
+                try noteLoader(note.url)
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      !Task.isCancelled,
+                      generation == self.noteLoadGeneration,
+                      self.selectedNoteStillMatchesInitialLoad(note) else {
+                    return
+                }
+                self.noteLoadTask = nil
+                self.loadedNoteCache.removeEntry(forKey: self.loadedNoteCacheKey(for: note.url))
+                guard !self.isDirty else { return }
+                self.applyLoadedNoteResult(
+                    result,
+                    for: note,
+                    fileModifiedAt: currentModifiedAt
+                )
+            }
+        }
+        noteLoadTask = task
     }
 
     private func prefetchAdjacentNotes(around note: NoteSearchResult) {

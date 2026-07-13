@@ -24,6 +24,28 @@ private actor LibraryFileSystemChangeRecorder {
     }
 }
 
+private final class DelayedFileModificationDateProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var readCount = 0
+    private var observedMainThread = false
+
+    func read(_ url: URL) -> Date? {
+        Thread.sleep(forTimeInterval: 0.35)
+        let isMainThread = Thread.isMainThread
+        lock.lock()
+        readCount += 1
+        observedMainThread = observedMainThread || isMainThread
+        lock.unlock()
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
+    }
+
+    func snapshot() -> (readCount: Int, observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (readCount, observedMainThread)
+    }
+}
+
 @MainActor
 struct MarkdownRichEditorTests {
     private let theme = MarkdownEditorTheme(
@@ -4883,7 +4905,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryLoadedNoteCacheInvalidatesAfterExternalMarkdownChange() throws {
+    func libraryLoadedNoteCacheInvalidatesAfterExternalMarkdownChange() async throws {
         let suiteName = "mudsnote.library-load-cache-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -4931,8 +4953,73 @@ struct MarkdownRichEditorTests {
         })
         controller.tableView.selectRowIndexes(IndexSet(integer: newerRow), byExtendingSelection: false)
         controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
+        await controller.waitForActiveNoteLoadForLibrary()
 
         #expect(controller.editorTextView.string.contains("Externally changed body"))
+    }
+
+    @MainActor
+    @Test
+    func cachedNoteVersionValidationDoesNotBlockKeyboardNavigation() async throws {
+        let suiteName = "mudsnote.library-cache-validation-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-cache-validation-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Cached First", body: "First body")
+        _ = try store.saveNewNote(title: "Cached Second", body: "Second body")
+        let probe = DelayedFileModificationDateProbe()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            fileModificationDateLoader: { probe.read($0) },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let initiallySelectedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        let otherRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            guard let writer = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else {
+                return false
+            }
+            return (writer as URL).standardizedFileURL != initiallySelectedURL.standardizedFileURL
+        })
+        controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+
+        let initialRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            guard let writer = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else {
+                return false
+            }
+            return (writer as URL).standardizedFileURL == initiallySelectedURL.standardizedFileURL
+        })
+        let selectionStartedAt = Date()
+        controller.tableView.selectRowIndexes(IndexSet(integer: initialRow), byExtendingSelection: false)
+        let selectionDuration = Date().timeIntervalSince(selectionStartedAt)
+
+        #expect(selectionDuration < 0.15)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == initiallySelectedURL.standardizedFileURL)
+        await controller.waitForActiveNoteLoadForLibrary()
+        let probeSnapshot = probe.snapshot()
+        #expect(probeSnapshot.readCount >= 1)
+        #expect(!probeSnapshot.observedMainThread)
     }
 
     @MainActor

@@ -1135,6 +1135,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Made the table own one weak hovered-row reference, reconcile it from the current pointer and visible table rect on every clip-view scroll, and clear the prior row before activating another. Reduced text compression resistance and reserved a tested `10pt` text inset inside the selected-card trailing edge so long titles and previews truncate in bounds.
 - Lesson: Tracking-area enter/exit events are not a sufficient state model during scrolling; reusable rows need table-owned pointer reconciliation, and text geometry must be constrained against the visible selection surface rather than only the cell edge.
 
+### 190. Nonblocking cached-note validation
+
+- Problem: Returning to an already cached note still synchronously read its filesystem modification date on the main thread before painting the editor. Slow or contended storage could therefore stall keyboard navigation even though the note content and rendered body were already in memory.
+- Fix: Cache hits now paint immediately, then validate the file modification date and reload stale Markdown in a detached utility task. Selection generation, selected-path, cancellation, and dirty-editor guards prevent delayed validation from overwriting a newer note or unsaved edits.
+- Lesson: A memory-cache hit is only interaction-safe when every freshness check on that path is asynchronous; stale-result protection must cover validation and reload as one operation.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

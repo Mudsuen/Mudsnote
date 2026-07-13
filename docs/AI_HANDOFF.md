@@ -173,6 +173,12 @@
 - The note table owns a single weak hover row and recomputes it from the current pointer plus `visibleRect` whenever its clip view scrolls, preventing stale hover paint on traversed rows.
 - Note text now compresses and tail-truncates within a boundary `10pt` inside the selected card's trailing edge; long-title installed screenshots no longer overflow the gold selection surface.
 
+## Latest iteration (190)
+
+- Loaded-note cache hits paint their cached document immediately without reading filesystem metadata on the main actor.
+- A detached utility task validates the file modification date and reloads externally changed Markdown; cancellation, selection generation, selected-path, and dirty-editor checks reject stale or destructive results.
+- The regression injects a `350ms` metadata read and requires cached-note selection to return within `150ms` while proving the read never executes on the main thread.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
