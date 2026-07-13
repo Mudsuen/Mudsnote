@@ -89,7 +89,7 @@
 
 ## Latest iteration (173)
 
-- The editor content stack begins `12pt` below the safe-area boundary instead of `18pt`.
+- The editor content stack began `12pt` below the safe-area boundary instead of `18pt`; iteration 184 refined this to `6pt` from the newer clear reference.
 - Date, title, and body move upward together; their internal spacing and shared horizontal reading edge remain unchanged.
 
 ## Latest iteration (174)
@@ -141,6 +141,11 @@
 
 - The File menu now exposes a state-validated "移到文件夹" submenu populated from the current library hierarchy without adding toolbar chrome.
 - `scripts/library_smoke.sh` proves the restored note can be moved into an isolated folder; attachment rendering remains the installed-smoke follow-up.
+
+## Latest iteration (184)
+
+- The editor stack now begins `6pt` below its safe-area boundary, moving the centered date, title, and body upward together.
+- The calibrated `8pt` date-to-title spacing, typography, horizontal reading edge, toolbar, and pane geometry remain unchanged.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 

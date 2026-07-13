@@ -1099,6 +1099,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added a state-validated "移到文件夹" File submenu that dynamically reuses the library controller's current folder targets. Extended `library_smoke.sh` to move the restored smoke note into an isolated folder and verify the exact filesystem transition.
 - Lesson: Dynamic native menus should reuse the same target objects and handlers as contextual actions so availability, hierarchy, and behavior cannot drift between entry points.
 
+### 184. Higher editor content baseline
+
+- Problem: The clear Apple Notes crop still placed the editor title slightly higher than Mudsnote after the earlier safe-area adjustment.
+- Fix: Reduced the editor stack's safe-area top inset from `12pt` to `6pt`, moving the date, title, and body upward together while preserving the calibrated date-to-title and title-to-body spacing.
+- Lesson: Once internal editor rhythm is stable, residual vertical mismatch should be corrected at the shared content origin rather than by distorting the spacing between text elements.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

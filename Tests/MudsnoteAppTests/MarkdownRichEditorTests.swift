@@ -1345,7 +1345,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 8)
         #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
-        #expect(LibraryNotesLayout.editorTopInset == 12)
+        #expect(LibraryNotesLayout.editorTopInset == 6)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)
