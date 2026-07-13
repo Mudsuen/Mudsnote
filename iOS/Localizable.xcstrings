@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Could not protect the quick note draft": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保护快速笔记草稿"
+          }
+        }
+      }
+    },
+    "The saved quick note is damaged and could not be restored.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存的快速笔记草稿已损坏，无法恢复。"
+          }
+        }
+      }
+    },
+    "The saved quick note was created by an incompatible app version.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存的快速笔记草稿来自不兼容的应用版本。"
+          }
+        }
+      }
+    },
+    "Unsaved quick note restored": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复未保存的快速笔记"
+          }
+        }
+      }
+    },
     "A pending capture is damaged and was not written.": {
       "localizations": {
         "zh-Hans": {

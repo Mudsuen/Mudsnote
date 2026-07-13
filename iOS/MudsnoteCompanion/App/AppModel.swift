@@ -25,7 +25,9 @@ final class AppModel: ObservableObject {
     @Published var selectedDocument: MarkdownDocument?
     @Published var librarySummary = LibrarySummary()
     @Published var tagSummaries: [TagSummary] = []
-    @Published var draft = CaptureDraft()
+    @Published var draft = CaptureDraft() {
+        didSet { scheduleDraftPersistenceIfNeeded() }
+    }
     @Published var captureRoute: CaptureRoute = .text
     @Published var isCapturePresented = false
     @Published var isSendingDraft = false
@@ -44,6 +46,7 @@ final class AppModel: ObservableObject {
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
+    let draftRecoveryStore: CaptureDraftRecoveryStore
     let audioRecorder = AudioCaptureService()
 
     private var queue: PendingWriteQueue?
@@ -52,6 +55,9 @@ final class AppModel: ObservableObject {
     private var activeSearchScope = MarkdownSearchScope.all
     private var searchGeneration = 0
     private var libraryConfigurationID = UUID()
+    private var draftPersistenceTask: Task<Void, Never>?
+    private var draftRecoveryEnabled = false
+    private var recoveredDraftNeedsAnnouncement = false
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
@@ -62,10 +68,17 @@ final class AppModel: ObservableObject {
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
-        fileStore: MarkdownFileStore = MarkdownFileStore()
+        fileStore: MarkdownFileStore = MarkdownFileStore(),
+        draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
+        restoreDraftImmediately: Bool? = nil
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
+        self.draftRecoveryStore = draftRecoveryStore
+        draftRecoveryEnabled = true
+        if restoreDraftImmediately ?? bootstrapImmediately {
+            Task { await restoreCaptureDraftIfNeeded() }
+        }
         if bootstrapImmediately {
             Task { await bootstrap() }
         }
@@ -150,6 +163,13 @@ final class AppModel: ObservableObject {
         }
         defaults.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
         openSystemCapture(route)
+    }
+
+    func persistCaptureDraftNow() {
+        guard draftRecoveryEnabled else { return }
+        draftPersistenceTask?.cancel()
+        let snapshot = draft
+        draftPersistenceTask = Task { await persistCaptureDraft(snapshot) }
     }
 
     func sendDraft(continueCapturing: Bool = true) {
@@ -251,6 +271,40 @@ final class AppModel: ObservableObject {
     private func appendAttachment(_ attachment: CaptureAttachment) throws {
         try CaptureAttachmentPolicy.validateAppending(attachment, to: draft.attachments)
         draft.attachments.append(attachment)
+    }
+
+    private func scheduleDraftPersistenceIfNeeded() {
+        guard draftRecoveryEnabled else { return }
+        draftPersistenceTask?.cancel()
+        let snapshot = draft
+        draftPersistenceTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            await persistCaptureDraft(snapshot)
+        }
+    }
+
+    private func persistCaptureDraft(_ snapshot: CaptureDraft) async {
+        do {
+            try await draftRecoveryStore.save(snapshot)
+        } catch {
+            guard !Task.isCancelled else { return }
+            statusToast = .error(String(localized: "Could not protect the quick note draft"))
+        }
+    }
+
+    private func restoreCaptureDraftIfNeeded() async {
+        do {
+            guard let recovered = try await draftRecoveryStore.load(),
+                  !draft.canSend else { return }
+            draftRecoveryEnabled = false
+            draft = recovered
+            draftRecoveryEnabled = true
+            recoveredDraftNeedsAnnouncement = true
+            announceRecoveredDraftIfPossible()
+        } catch {
+            statusToast = .error(error.localizedDescription)
+        }
     }
 
     private func transcribe(_ recording: RecordedAudio) async {
@@ -812,12 +866,20 @@ final class AppModel: ObservableObject {
         apply(snapshot, pendingCount: pendingCount)
         folderStatus = .ready(root)
         libraryRevision += 1
+        announceRecoveredDraftIfPossible()
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
         }
         presentPendingCaptureIfPossible()
         return true
+    }
+
+    private func announceRecoveredDraftIfPossible() {
+        guard recoveredDraftNeedsAnnouncement,
+              case .ready = folderStatus else { return }
+        recoveredDraftNeedsAnnouncement = false
+        statusToast = .pending(String(localized: "Unsaved quick note restored"))
     }
 
     private func appendDraft(_ draft: CaptureDraft) async throws {

@@ -21,6 +21,8 @@ struct MudsnoteCompanionApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         appModel.consumeSystemEntryRequest()
+                    } else {
+                        appModel.persistCaptureDraftNow()
                     }
                 }
                 .onOpenURL { url in
@@ -53,6 +55,7 @@ private enum MudsnoteUITestLaunchConfiguration {
             access.forgetPersistedFolder()
             UserDefaults.standard.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
             try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: CaptureDraftRecoveryStore.defaultDirectory)
         }
 
         if arguments.contains(fixtureFolderArgument) {

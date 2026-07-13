@@ -246,3 +246,233 @@ struct MarkdownAttachmentReference: Equatable {
     var relativePath: String
     var kind: MarkdownAttachmentKind
 }
+
+actor CaptureDraftRecoveryStore {
+    static let defaultDirectory = FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+    )[0]
+    .appendingPathComponent("Mudsnote/CaptureDraft", isDirectory: true)
+
+    private struct Metadata: Codable {
+        var version: Int
+        var body: String
+        var tags: String
+        var target: Target
+        var createdAt: Date
+        var attachments: [Attachment]
+    }
+
+    private enum Target: Codable {
+        case inbox
+        case daily(Date)
+        case recent(String)
+    }
+
+    private struct Attachment: Codable {
+        enum Kind: String, Codable {
+            case image
+            case audio
+            case file
+        }
+
+        var kind: Kind
+        var filename: String
+        var preferredExtension: String
+        var preferredBaseName: String?
+    }
+
+    private let directory: URL
+    private let metadataURL: URL
+    private var lastAttachments: [CaptureAttachment]?
+    private var lastMetadata: Metadata?
+
+    init(directory: URL = CaptureDraftRecoveryStore.defaultDirectory) {
+        self.directory = directory
+        self.metadataURL = directory.appendingPathComponent("draft.json")
+    }
+
+    func load() throws -> CaptureDraft? {
+        guard FileManager.default.fileExists(atPath: metadataURL.path) else {
+            lastAttachments = []
+            lastMetadata = nil
+            return nil
+        }
+        let metadata = try JSONDecoder.captureDraftRecovery.decode(
+            Metadata.self,
+            from: Data(contentsOf: metadataURL)
+        )
+        guard metadata.version == 1 else { throw CaptureDraftRecoveryError.unsupportedVersion }
+        let attachments = try metadata.attachments.map { entry -> CaptureAttachment in
+            guard entry.filename == URL(fileURLWithPath: entry.filename).lastPathComponent else {
+                throw CaptureDraftRecoveryError.damaged
+            }
+            let fileURL = directory.appendingPathComponent(entry.filename)
+            let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            switch entry.kind {
+            case .image:
+                return try CaptureAttachment.validatedImage(
+                    data: data,
+                    suggestedExtension: entry.preferredExtension
+                )
+            case .audio:
+                return try CaptureAttachment.validatedAudio(
+                    data: data,
+                    preferredExtension: entry.preferredExtension
+                )
+            case .file:
+                return try CaptureAttachment.validatedFile(
+                    data: data,
+                    suggestedName: "\(entry.preferredBaseName ?? "file").\(entry.preferredExtension)"
+                )
+            }
+        }
+        try CaptureAttachmentPolicy.validate(attachments)
+        let draft = CaptureDraft(
+            body: metadata.body,
+            tags: metadata.tags,
+            target: captureTarget(metadata.target),
+            attachments: attachments,
+            createdAt: metadata.createdAt
+        )
+        guard draft.canSend else {
+            try clear()
+            return nil
+        }
+        lastAttachments = attachments
+        lastMetadata = metadata
+        return draft
+    }
+
+    func save(_ draft: CaptureDraft) throws {
+        guard draft.canSend else {
+            try clear()
+            return
+        }
+        try CaptureAttachmentPolicy.validate(draft.attachments)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+
+        var entries: [Attachment] = []
+        for (index, attachment) in draft.attachments.enumerated() {
+            if let previous = lastAttachments,
+               let metadata = lastMetadata,
+               previous.indices.contains(index),
+               metadata.attachments.indices.contains(index),
+               previous[index] == attachment,
+               FileManager.default.fileExists(
+                   atPath: directory.appendingPathComponent(metadata.attachments[index].filename).path
+               ) {
+                entries.append(metadata.attachments[index])
+                continue
+            }
+
+            let filename = "attachment-\(UUID().uuidString.lowercased()).\(attachment.preferredExtension)"
+            let fileURL = directory.appendingPathComponent(filename)
+            try attachment.data.write(
+                to: fileURL,
+                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+            )
+            entries.append(Attachment(
+                kind: attachmentKind(attachment),
+                filename: filename,
+                preferredExtension: attachment.preferredExtension,
+                preferredBaseName: attachmentBaseName(attachment)
+            ))
+        }
+
+        let metadata = Metadata(
+            version: 1,
+            body: draft.body,
+            tags: draft.tags,
+            target: storedTarget(draft.target),
+            createdAt: draft.createdAt,
+            attachments: entries
+        )
+        let data = try JSONEncoder.captureDraftRecovery.encode(metadata)
+        try data.write(
+            to: metadataURL,
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        )
+        let retained = Set(entries.map(\.filename) + [metadataURL.lastPathComponent])
+        for url in try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) where !retained.contains(url.lastPathComponent) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        lastAttachments = draft.attachments
+        lastMetadata = metadata
+    }
+
+    func clear() throws {
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+        lastAttachments = []
+        lastMetadata = nil
+    }
+
+    private func storedTarget(_ target: CaptureTarget) -> Target {
+        switch target {
+        case .inbox: .inbox
+        case .daily(let date): .daily(date)
+        case .recent(let path): .recent(path)
+        }
+    }
+
+    private func captureTarget(_ target: Target) -> CaptureTarget {
+        switch target {
+        case .inbox: .inbox
+        case .daily(let date): .daily(date)
+        case .recent(let path): .recent(path)
+        }
+    }
+
+    private func attachmentKind(_ attachment: CaptureAttachment) -> Attachment.Kind {
+        switch attachment {
+        case .image: .image
+        case .audio: .audio
+        case .file: .file
+        }
+    }
+
+    private func attachmentBaseName(_ attachment: CaptureAttachment) -> String? {
+        guard case .file(_, _, let baseName) = attachment else { return nil }
+        return baseName
+    }
+}
+
+enum CaptureDraftRecoveryError: LocalizedError, Equatable {
+    case damaged
+    case unsupportedVersion
+
+    var errorDescription: String? {
+        switch self {
+        case .damaged:
+            String(localized: "The saved quick note is damaged and could not be restored.")
+        case .unsupportedVersion:
+            String(localized: "The saved quick note was created by an incompatible app version.")
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static var captureDraftRecovery: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var captureDraftRecovery: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}

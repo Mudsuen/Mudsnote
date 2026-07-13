@@ -51,6 +51,34 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(editor.exists)
     }
 
+    func testQuickCaptureDraftRestoresAfterProcessTermination() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("Recovered after termination")
+        let persisted = expectation(description: "Draft debounce completed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { persisted.fulfill() }
+        wait(for: [persisted], timeout: 2)
+
+        app.terminate()
+        app.launchArguments = [
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+            "-ui-testing-fixture-folder"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Unsaved quick note restored"].waitForExistence(timeout: 8))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        newNoteButton.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue((editor.value as? String)?.contains("Recovered after termination") == true)
+    }
+
     func testSimplifiedLibraryOpensRealMarkdownFile() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

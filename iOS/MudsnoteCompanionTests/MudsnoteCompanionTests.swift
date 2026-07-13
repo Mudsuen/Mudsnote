@@ -146,6 +146,46 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(draft.canSend)
     }
 
+    func testQuickCaptureDraftRecoversBodyTargetAndAttachmentsAcrossLaunches() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("CaptureDraft", isDirectory: true)
+        let image = try CaptureAttachment.validatedImage(
+            data: try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        )
+        let audio = try CaptureAttachment.validatedAudio(data: Data([0x01, 0x02, 0x03]))
+        let file = try CaptureAttachment.validatedFile(
+            data: Data("launch brief".utf8),
+            suggestedName: "Launch Brief.pdf"
+        )
+        let date = Date(timeIntervalSince1970: 1_752_384_000)
+        var draft = CaptureDraft(
+            body: "Recovered thought",
+            tags: "#launch",
+            target: .daily(date),
+            attachments: [image, audio, file],
+            createdAt: date
+        )
+        let store = CaptureDraftRecoveryStore(directory: directory)
+
+        try await store.save(draft)
+        let initialFiles = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        draft.body += " updated"
+        try await store.save(draft)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted(),
+            initialFiles.sorted()
+        )
+
+        let relaunchedStore = CaptureDraftRecoveryStore(directory: directory)
+        let recovered = try await relaunchedStore.load()
+        XCTAssertEqual(recovered, draft)
+        try await relaunchedStore.save(CaptureDraft())
+        let cleared = try await relaunchedStore.load()
+        XCTAssertNil(cleared)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     func testEmptyDraftCannotPreparePendingWrite() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
