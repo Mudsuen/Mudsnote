@@ -336,7 +336,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let inbox = app.buttons["markdown-file-row-Inbox.md"]
         XCTAssertTrue(inbox.waitForExistence(timeout: 5))
         inbox.tap()
-        XCTAssertTrue(app.staticTexts["Inbox.md"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["note-modified-date"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Inbox.md"].exists)
         XCTAssertFalse(app.buttons["Raw"].exists)
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))

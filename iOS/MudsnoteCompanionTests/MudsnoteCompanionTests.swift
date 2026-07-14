@@ -1444,6 +1444,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        let expectedModifiedAt = Date(timeIntervalSince1970: 1_717_777_777)
+        var resourceValues = URLResourceValues()
+        resourceValues.contentModificationDate = expectedModifiedAt
+        var mutableDocumentURL = documentURL
+        try mutableDocumentURL.setResourceValues(resourceValues)
         let store = MarkdownFileStore()
         await store.configure(root: root)
 
@@ -1451,6 +1456,9 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(document.title, "Launch")
         XCTAssertEqual(document.relativePath, "Projects/Launch.md")
         XCTAssertTrue(document.markdown.contains("Commercial-ready reader"))
+        XCTAssertEqual(try XCTUnwrap(document.modifiedAt).timeIntervalSince1970,
+                       expectedModifiedAt.timeIntervalSince1970,
+                       accuracy: 1)
 
         do {
             _ = try await store.loadMarkdownDocument(relativePath: "../outside.md")
@@ -1477,6 +1485,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(saved.markdown, "# Updated\n")
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Updated\n")
+        let actualModifiedAt = try documentURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate
+        XCTAssertEqual(saved.modifiedAt, actualModifiedAt)
 
         try "# External change\n".write(to: documentURL, atomically: true, encoding: .utf8)
         await XCTAssertThrowsErrorAsync(

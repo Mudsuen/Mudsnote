@@ -277,17 +277,13 @@ struct MarkdownPreviewView: View {
     }
 
     private var metadataLabel: some View {
-        HStack(spacing: 8) {
+        ZStack(alignment: .trailing) {
             Text(metadata)
-                .font(.system(.headline, design: .rounded, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.text)
-            Spacer(minLength: 8)
-            if isEditing {
-                Text(saveStatusText)
-                    .font(.caption)
-                    .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
-                    .accessibilityIdentifier("markdown-save-status")
-            }
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityIdentifier("note-modified-date")
+
             if noteAudioRecorder.isRecording {
                 Text("Recording")
                     .font(.caption.weight(.semibold))
@@ -296,8 +292,14 @@ struct MarkdownPreviewView: View {
                 Text("Audio Not Attached")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
+            } else if isEditing {
+                Text(saveStatusText)
+                    .font(.caption)
+                    .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
+                    .accessibilityIdentifier("markdown-save-status")
             }
         }
+        .frame(minHeight: 18)
     }
 
     private var saveStatusText: LocalizedStringKey {
@@ -450,7 +452,8 @@ struct MarkdownPreviewView: View {
     private var metadata: String {
         switch source {
         case .memo(let memo): memo.dateText
-        case .document(let document): document.relativePath
+        case .document(let document):
+            (document.modifiedAt ?? Date()).formatted(date: .abbreviated, time: .shortened)
         }
     }
 

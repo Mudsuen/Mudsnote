@@ -256,6 +256,7 @@ actor MarkdownFileStore {
             title: destination.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
             markdown: "",
+            modifiedAt: modificationDate(for: destination),
             isNew: true
         )
     }
@@ -292,7 +293,8 @@ actor MarkdownFileStore {
                 id: renamedPath,
                 title: preferredStem,
                 relativePath: renamedPath,
-                markdown: markdown
+                markdown: markdown,
+                modifiedAt: modificationDate(for: destination) ?? saved.modifiedAt
             )
         } catch {
             return saved
@@ -326,7 +328,8 @@ actor MarkdownFileStore {
             id: relativePath,
             title: fileURL.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
-            markdown: try String(contentsOf: fileURL, encoding: .utf8)
+            markdown: try String(contentsOf: fileURL, encoding: .utf8),
+            modifiedAt: modificationDate(for: fileURL)
         )
     }
 
@@ -538,7 +541,8 @@ actor MarkdownFileStore {
             id: relativePath,
             title: fileURL.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
-            markdown: markdown
+            markdown: markdown,
+            modifiedAt: modificationDate(for: fileURL) ?? Date()
         )
     }
 
@@ -637,11 +641,13 @@ actor MarkdownFileStore {
             .appendingPathComponent(baseName)
             .appendingPathExtension(source.pathExtension)
         if requested.standardizedFileURL == source.standardizedFileURL {
+            let documentURL = AuthorizedLibraryPath.resolve(relativePath, within: root)
             return MarkdownDocument(
                 id: relativePath,
                 title: ((relativePath as NSString).lastPathComponent as NSString).deletingPathExtension,
                 relativePath: relativePath,
-                markdown: markdown
+                markdown: markdown,
+                modifiedAt: documentURL.flatMap(modificationDate(for:))
             )
         }
 
@@ -1453,6 +1459,10 @@ actor MarkdownFileStore {
             title: url.deletingPathExtension().lastPathComponent,
             modifiedAt: modifiedAt
         )
+    }
+
+    private func modificationDate(for url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     private func folderDeletionInventory(
@@ -2370,6 +2380,7 @@ struct MarkdownDocument: Identifiable, Equatable {
     var title: String
     var relativePath: String
     var markdown: String
+    var modifiedAt: Date? = nil
     var isNew = false
 }
 
