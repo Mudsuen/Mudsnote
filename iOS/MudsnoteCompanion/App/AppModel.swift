@@ -504,22 +504,33 @@ final class AppModel: ObservableObject {
     }
 
     func moveToRecentlyDeleted(_ file: RecentMarkdownFile) {
+        Task {
+            _ = await trashNote(file)
+        }
+    }
+
+    @discardableResult
+    func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
-            return
+            return false
         }
-        Task {
-            do {
-                try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
-                if selectedDocument?.relativePath == file.relativePath {
-                    selectedDocument = nil
-                }
-                statusToast = .saved(String(localized: "Moved to Recently Deleted"))
-                await refreshInbox()
-                await refreshActiveSearchIfNeeded()
-            } catch {
-                statusToast = .error(error.localizedDescription)
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
+            if selectedDocument?.relativePath == file.relativePath {
+                selectedDocument = nil
             }
+            statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
         }
     }
 
@@ -743,27 +754,45 @@ final class AppModel: ObservableObject {
     }
 
     func move(_ file: RecentMarkdownFile, to folder: LibraryFolderNode) {
+        Task {
+            _ = await moveNote(
+                relativePath: file.relativePath,
+                toFolder: folder.relativePath
+            )
+        }
+    }
+
+    @discardableResult
+    func moveNote(
+        relativePath: String,
+        toFolder targetFolder: String?
+    ) async -> MarkdownDocument? {
+        guard relativePath != "Inbox.md", !relativePath.hasPrefix("Daily/") else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
+            return nil
+        }
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
-            return
+            return nil
         }
-        Task {
-            do {
-                let moved = try await fileStore.moveMarkdownDocument(
-                    relativePath: file.relativePath,
-                    toFolder: folder.relativePath
-                )
-                if selectedDocument?.relativePath == file.relativePath {
-                    selectedDocument = try await fileStore.loadMarkdownDocument(
-                        relativePath: moved.relativePath
-                    )
-                }
-                statusToast = .saved(String(localized: "Note Moved"))
-                await refreshInbox()
-                await refreshActiveSearchIfNeeded()
-            } catch {
-                statusToast = .error(error.localizedDescription)
+        do {
+            let moved = try await fileStore.moveMarkdownDocument(
+                relativePath: relativePath,
+                toFolder: targetFolder
+            )
+            let document = try await fileStore.loadMarkdownDocument(
+                relativePath: moved.relativePath
+            )
+            if selectedDocument?.relativePath == relativePath {
+                selectedDocument = document
             }
+            statusToast = .saved(String(localized: "Note Moved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return document
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
         }
     }
 

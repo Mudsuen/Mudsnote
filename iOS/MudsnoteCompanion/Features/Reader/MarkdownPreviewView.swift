@@ -30,6 +30,7 @@ struct MarkdownPreviewView: View {
     }
 
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
     @Binding private var detent: PresentationDetent
     @State private var source: Source
     @State private var draftMarkdown: String
@@ -57,6 +58,7 @@ struct MarkdownPreviewView: View {
     @State private var isAudioAttachmentFailurePresented = false
     @State private var noteName = ""
     @State private var isRenamingNote = false
+    @State private var isConfirmingNoteDeletion = false
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
@@ -138,10 +140,48 @@ struct MarkdownPreviewView: View {
                             .accessibilityLabel("Share Note")
                             .accessibilityIdentifier("share-note-button")
                         case .document(let document):
-                            if let url = localFileURL(for: document.relativePath) {
-                                Menu {
+                            Menu {
+                                if let url = localFileURL(for: document.relativePath) {
                                     ShareLink(item: url) {
                                         Label("Share Note", systemImage: "square.and.arrow.up")
+                                    }
+                                }
+                                if let file = currentFile, canManage(document) {
+                                    Divider()
+                                    Button {
+                                        appModel.togglePinned(file)
+                                    } label: {
+                                        Label(
+                                            file.isPinned ? "Unpin" : "Pin",
+                                            systemImage: file.isPinned ? "pin.slash" : "pin"
+                                        )
+                                    }
+                                    if canMoveToTopLevel || !moveDestinations.isEmpty {
+                                        Menu {
+                                            if canMoveToTopLevel {
+                                                Button {
+                                                    Task { await moveCurrentDocument(toFolder: nil) }
+                                                } label: {
+                                                    Label("Top Level", systemImage: "tray")
+                                                }
+                                            }
+                                            ForEach(moveDestinations) { folder in
+                                                Button(folder.relativePath) {
+                                                    Task {
+                                                        await moveCurrentDocument(
+                                                            toFolder: folder.relativePath
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        } label: {
+                                            Label("Move Note", systemImage: "folder")
+                                        }
+                                    }
+                                    Button {
+                                        appModel.duplicate(file)
+                                    } label: {
+                                        Label("Duplicate Note", systemImage: "plus.square.on.square")
                                     }
                                     Button {
                                         noteName = document.title
@@ -149,13 +189,18 @@ struct MarkdownPreviewView: View {
                                     } label: {
                                         Label("Rename Note", systemImage: "pencil")
                                     }
-                                    .disabled(!canRename(document))
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        isConfirmingNoteDeletion = true
+                                    } label: {
+                                        Label("Move to Recently Deleted", systemImage: "trash")
+                                    }
                                 }
-                                .accessibilityLabel("Note Options")
-                                .accessibilityIdentifier("note-options-menu")
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
                             }
+                            .accessibilityLabel("Note Options")
+                            .accessibilityIdentifier("note-options-menu")
                         }
                     }
 
@@ -255,6 +300,18 @@ struct MarkdownPreviewView: View {
             }
             .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .confirmationDialog(
+            "Move Note to Recently Deleted?",
+            isPresented: $isConfirmingNoteDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Recently Deleted", role: .destructive) {
+                Task { await trashCurrentDocument() }
+            }
+        } message: {
+            Text("You can restore this note from Recently Deleted.")
+        }
         .fileImporter(
             isPresented: $isFileImporterPresented,
             allowedContentTypes: [.item],
@@ -329,9 +386,25 @@ struct MarkdownPreviewView: View {
         .frame(minHeight: 18)
     }
 
-    private func canRename(_ document: MarkdownDocument) -> Bool {
+    private func canManage(_ document: MarkdownDocument) -> Bool {
         document.relativePath != "Inbox.md"
             && !document.relativePath.hasPrefix("Daily/")
+    }
+
+    private var currentFile: RecentMarkdownFile? {
+        guard case .document(let document) = source else { return nil }
+        return appModel.libraryFiles.first { $0.relativePath == document.relativePath }
+    }
+
+    private var moveDestinations: [LibraryFolderNode] {
+        guard case .document(let document) = source else { return [] }
+        let currentFolder = (document.relativePath as NSString).deletingLastPathComponent
+        return appModel.allFolders.filter { $0.relativePath != currentFolder }
+    }
+
+    private var canMoveToTopLevel: Bool {
+        guard case .document(let document) = source else { return false }
+        return !(document.relativePath as NSString).deletingLastPathComponent.isEmpty
     }
 
     private func renameCurrentDocument(to name: String) async {
@@ -341,6 +414,22 @@ struct MarkdownPreviewView: View {
                 to: name
               ) else { return }
         source = .document(renamed)
+    }
+
+    private func moveCurrentDocument(toFolder folder: String?) async {
+        guard case .document(let document) = source,
+              let moved = await appModel.moveNote(
+                relativePath: document.relativePath,
+                toFolder: folder
+              ) else { return }
+        source = .document(moved)
+    }
+
+    private func trashCurrentDocument() async {
+        guard let file = currentFile else { return }
+        if await appModel.trashNote(file) {
+            dismiss()
+        }
     }
 
     private var saveStatusText: LocalizedStringKey {

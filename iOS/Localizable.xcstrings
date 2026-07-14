@@ -1853,6 +1853,12 @@
     "Move to Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移到最近删除" } } }
     },
+    "Move Note to Recently Deleted?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "将笔记移到最近删除？" } } }
+    },
+    "You can restore this note from Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "你可以从最近删除中恢复此笔记。" } } }
+    },
     "Moved to Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已移到最近删除" } } }
     },

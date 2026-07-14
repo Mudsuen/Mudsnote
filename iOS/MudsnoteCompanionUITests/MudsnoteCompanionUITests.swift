@@ -471,7 +471,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
         XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Pin"].exists)
+        XCTAssertTrue(app.buttons["Move Note"].exists)
+        XCTAssertTrue(app.buttons["Duplicate Note"].exists)
         XCTAssertTrue(app.buttons["Rename Note"].exists)
+        XCTAssertTrue(app.buttons["Move to Recently Deleted"].exists)
     }
 
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
@@ -510,6 +514,43 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(renamed.waitForExistence(timeout: 5))
         renamed.press(forDuration: 1)
         XCTAssertTrue(app.buttons["Rename Note"].waitForExistence(timeout: 3))
+    }
+
+    func testOpenedNoteCanMoveAndDeleteWithoutReturningForListActions() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        app.buttons["Move Note"].tap()
+        let topLevel = app.buttons["Top Level"]
+        XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
+        topLevel.tap()
+
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
+        options.tap()
+
+        let optionsScreenshot = XCTAttachment(screenshot: app.screenshot())
+        optionsScreenshot.name = "Complete opened note actions"
+        optionsScreenshot.lifetime = .keepAlways
+        add(optionsScreenshot)
+
+        app.buttons["Move to Recently Deleted"].tap()
+        let confirmation = app.sheets["Move Note to Recently Deleted?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        confirmation.buttons["Move to Recently Deleted"].tap()
+
+        XCTAssertTrue(waitForNonexistence(options))
+        XCTAssertTrue(waitForNonexistence(app.buttons["markdown-file-row-UI Lifecycle.md"]))
+        app.navigationBars["All Notes"].buttons.firstMatch.tap()
+        app.buttons["recently-deleted-link"].tap()
+        XCTAssertTrue(app.staticTexts["UI Lifecycle"].waitForExistence(timeout: 5))
     }
 
     func testAttachmentContextMenuRenamesAndOffersSystemShare() {
