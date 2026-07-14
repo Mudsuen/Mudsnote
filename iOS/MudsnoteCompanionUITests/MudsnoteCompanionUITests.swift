@@ -155,6 +155,44 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.images["pin-indicator-Projects/Second UI Note.md"].exists)
     }
 
+    func testNotesStyleSelectionMovesMultipleNotesToTopLevel() {
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+
+        let options = app.buttons["note-list-options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        app.buttons["Select Notes"].tap()
+
+        let first = app.buttons["selectable-note-row-Projects/UI Lifecycle.md"]
+        let second = app.buttons["selectable-note-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        first.tap()
+        second.tap()
+
+        let move = app.buttons["move-selected-notes"]
+        XCTAssertTrue(move.waitForExistence(timeout: 5))
+        move.tap()
+        let topLevel = app.buttons["Top Level"]
+        XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Move selected notes to top level"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        topLevel.tap()
+        XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["markdown-file-row-Second UI Note.md"].exists)
+        XCTAssertFalse(app.buttons["markdown-file-row-Projects/UI Lifecycle.md"].exists)
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let quickNoteButton = app.buttons["quick-note-button"]

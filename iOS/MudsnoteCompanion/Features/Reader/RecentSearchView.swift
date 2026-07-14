@@ -1060,6 +1060,21 @@ private struct SelectedNotesActionBar: View {
         !files.allSatisfy(\.isPinned)
     }
 
+    private var canMoveToTopLevel: Bool {
+        files.contains {
+            !(($0.relativePath as NSString).deletingLastPathComponent).isEmpty
+        }
+    }
+
+    private var availableDestinations: [LibraryFolderNode] {
+        destinations.filter { destination in
+            files.contains {
+                ($0.relativePath as NSString).deletingLastPathComponent
+                    != destination.relativePath
+            }
+        }
+    }
+
     var body: some View {
         HStack(spacing: 22) {
             Text(
@@ -1076,11 +1091,26 @@ private struct SelectedNotesActionBar: View {
             Spacer(minLength: 0)
 
             Menu {
-                ForEach(destinations) { destination in
+                if canMoveToTopLevel {
+                    Button {
+                        let selected = files
+                        Task {
+                            if await appModel.moveNotes(selected, toFolder: nil) {
+                                finish()
+                            }
+                        }
+                    } label: {
+                        Label("Top Level", systemImage: "tray")
+                    }
+                }
+                ForEach(availableDestinations) { destination in
                     Button(destination.relativePath) {
                         let selected = files
                         Task {
-                            if await appModel.move(selected, to: destination) {
+                            if await appModel.moveNotes(
+                                selected,
+                                toFolder: destination.relativePath
+                            ) {
                                 finish()
                             }
                         }
@@ -1090,7 +1120,10 @@ private struct SelectedNotesActionBar: View {
                 Image(systemName: "folder")
                     .frame(width: 34, height: 34)
             }
-            .disabled(!canMoveOrDelete || destinations.isEmpty)
+            .disabled(
+                !canMoveOrDelete
+                    || (!canMoveToTopLevel && availableDestinations.isEmpty)
+            )
             .accessibilityLabel("Move Selected Notes")
             .accessibilityIdentifier("move-selected-notes")
 
@@ -1171,6 +1204,14 @@ private struct NoteLifecycleActions: ViewModifier {
     @State private var noteName = ""
     @State private var isRenaming = false
 
+    private var currentFolder: String {
+        (file.relativePath as NSString).deletingLastPathComponent
+    }
+
+    private var moveDestinations: [LibraryFolderNode] {
+        appModel.allFolders.filter { $0.relativePath != currentFolder }
+    }
+
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -1211,9 +1252,23 @@ private struct NoteLifecycleActions: ViewModifier {
                         Label("Rename Note", systemImage: "pencil")
                     }
                 }
-                if appModel.canMoveToRecentlyDeleted(file), !appModel.allFolders.isEmpty {
+                if appModel.canMoveToRecentlyDeleted(file),
+                   !currentFolder.isEmpty || !moveDestinations.isEmpty {
                     Menu {
-                        ForEach(appModel.allFolders) { folder in
+                        if !currentFolder.isEmpty {
+                            Button {
+                                let path = file.relativePath
+                                Task {
+                                    _ = await appModel.moveNote(
+                                        relativePath: path,
+                                        toFolder: nil
+                                    )
+                                }
+                            } label: {
+                                Label("Top Level", systemImage: "tray")
+                            }
+                        }
+                        ForEach(moveDestinations) { folder in
                             Button(folder.relativePath) {
                                 appModel.move(file, to: folder)
                             }

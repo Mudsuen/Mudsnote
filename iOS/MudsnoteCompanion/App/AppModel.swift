@@ -798,6 +798,14 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func move(_ files: [RecentMarkdownFile], to folder: LibraryFolderNode) async -> Bool {
+        await moveNotes(files, toFolder: folder.relativePath)
+    }
+
+    @discardableResult
+    func moveNotes(
+        _ files: [RecentMarkdownFile],
+        toFolder targetFolder: String?
+    ) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
@@ -810,7 +818,7 @@ final class AppModel: ObservableObject {
         do {
             _ = try await fileStore.moveMarkdownDocuments(
                 relativePaths: files.map(\.relativePath),
-                toFolder: folder.relativePath
+                toFolder: targetFolder
             )
             if let selectedDocument,
                files.contains(where: {
