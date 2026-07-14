@@ -10,6 +10,24 @@
     "New Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建笔记" } } }
     },
+    "Note Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记选项" } } }
+    },
+    "Rename Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名笔记" } } }
+    },
+    "Note Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记名称" } } }
+    },
+    "Note Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已重命名" } } }
+    },
+    "Enter a valid note name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的笔记名称。" } } }
+    },
+    "Finish pending captures before renaming notes.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待保存的快速记录，再重命名笔记。" } } }
+    },
     "Add Attachment": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加附件" } } }
     },

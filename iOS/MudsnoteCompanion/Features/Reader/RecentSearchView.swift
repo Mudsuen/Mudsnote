@@ -1168,6 +1168,8 @@ private struct NoteFileButton: View {
 private struct NoteLifecycleActions: ViewModifier {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
+    @State private var noteName = ""
+    @State private var isRenaming = false
 
     func body(content: Content) -> some View {
         content
@@ -1202,6 +1204,12 @@ private struct NoteLifecycleActions: ViewModifier {
                     } label: {
                         Label("Duplicate Note", systemImage: "plus.square.on.square")
                     }
+                    Button {
+                        noteName = file.title
+                        isRenaming = true
+                    } label: {
+                        Label("Rename Note", systemImage: "pencil")
+                    }
                 }
                 if appModel.canMoveToRecentlyDeleted(file), !appModel.allFolders.isEmpty {
                     Menu {
@@ -1221,6 +1229,16 @@ private struct NoteLifecycleActions: ViewModifier {
                         Label("Move to Recently Deleted", systemImage: "trash")
                     }
                 }
+            }
+            .alert("Rename Note", isPresented: $isRenaming) {
+                TextField("Note Name", text: $noteName)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") {
+                    let path = file.relativePath
+                    let name = noteName
+                    Task { _ = await appModel.renameNote(relativePath: path, to: name) }
+                }
+                .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
     }
 }

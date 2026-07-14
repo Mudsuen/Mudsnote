@@ -609,6 +609,33 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func renameNote(relativePath: String, to name: String) async -> MarkdownDocument? {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before renaming notes."))
+            return nil
+        }
+        do {
+            let renamed = try await fileStore.renameMarkdownDocument(
+                relativePath: relativePath,
+                to: name
+            )
+            let document = try await fileStore.loadMarkdownDocument(
+                relativePath: renamed.relativePath
+            )
+            if selectedDocument?.relativePath == relativePath {
+                selectedDocument = document
+            }
+            statusToast = .saved(String(localized: "Note Renamed"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return document
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     func keepConflictCopy(_ file: RecentMarkdownFile) {
         Task {
             do {

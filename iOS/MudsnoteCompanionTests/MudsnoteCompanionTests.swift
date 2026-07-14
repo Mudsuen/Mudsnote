@@ -1116,6 +1116,78 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testRenameNoteAvoidsCollisionsPreservesContentAndPinState() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let markdown = "# Plan\n\nPortable body\n"
+        try markdown.write(
+            to: root.appendingPathComponent("Projects/Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Existing\n".write(
+            to: root.appendingPathComponent("Projects/Roadmap.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Projects/Plan.md")
+        let renamed = try await store.renameMarkdownDocument(
+            relativePath: "Projects/Plan.md",
+            to: "Roadmap"
+        )
+
+        XCTAssertEqual(renamed.relativePath, "Projects/Roadmap 2.md")
+        XCTAssertEqual(
+            try String(
+                contentsOf: root.appendingPathComponent(renamed.relativePath),
+                encoding: .utf8
+            ),
+            markdown
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Projects/Plan.md").path
+        ))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first {
+            $0.relativePath == renamed.relativePath
+        }?.isPinned == true)
+
+        let final = try await store.renameMarkdownDocument(
+            relativePath: renamed.relativePath,
+            to: "Final.md"
+        )
+        XCTAssertEqual(final.relativePath, "Projects/Final.md")
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first {
+            $0.relativePath == final.relativePath
+        }?.isPinned == true)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameMarkdownDocument(
+                relativePath: final.relativePath,
+                to: "../Escape"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidNoteName)
+        }
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameMarkdownDocument(
+                relativePath: "Inbox.md",
+                to: "Renamed"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
+        }
+    }
+
     func testDuplicateNotePreservesMarkdownWithoutCopyingPinState() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -55,6 +55,8 @@ struct MarkdownPreviewView: View {
     @State private var isAudioTransitioning = false
     @State private var pendingAudioRecording: RecordedAudio?
     @State private var isAudioAttachmentFailurePresented = false
+    @State private var noteName = ""
+    @State private var isRenamingNote = false
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
@@ -137,11 +139,22 @@ struct MarkdownPreviewView: View {
                             .accessibilityIdentifier("share-note-button")
                         case .document(let document):
                             if let url = localFileURL(for: document.relativePath) {
-                                ShareLink(item: url) {
-                                    Image(systemName: "square.and.arrow.up")
+                                Menu {
+                                    ShareLink(item: url) {
+                                        Label("Share Note", systemImage: "square.and.arrow.up")
+                                    }
+                                    Button {
+                                        noteName = document.title
+                                        isRenamingNote = true
+                                    } label: {
+                                        Label("Rename Note", systemImage: "pencil")
+                                    }
+                                    .disabled(!canRename(document))
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
                                 }
-                                .accessibilityLabel("Share Note")
-                                .accessibilityIdentifier("share-note-button")
+                                .accessibilityLabel("Note Options")
+                                .accessibilityIdentifier("note-options-menu")
                             }
                         }
                     }
@@ -234,6 +247,14 @@ struct MarkdownPreviewView: View {
         } message: {
             Text("The recording is still available. Retry after resolving the note conflict, or discard it.")
         }
+        .alert("Rename Note", isPresented: $isRenamingNote) {
+            TextField("Note Name", text: $noteName)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                Task { await renameCurrentDocument(to: noteName) }
+            }
+            .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
         .fileImporter(
             isPresented: $isFileImporterPresented,
             allowedContentTypes: [.item],
@@ -306,6 +327,20 @@ struct MarkdownPreviewView: View {
             }
         }
         .frame(minHeight: 18)
+    }
+
+    private func canRename(_ document: MarkdownDocument) -> Bool {
+        document.relativePath != "Inbox.md"
+            && !document.relativePath.hasPrefix("Daily/")
+    }
+
+    private func renameCurrentDocument(to name: String) async {
+        guard case .document(let document) = source,
+              let renamed = await appModel.renameNote(
+                relativePath: document.relativePath,
+                to: name
+              ) else { return }
+        source = .document(renamed)
     }
 
     private var saveStatusText: LocalizedStringKey {

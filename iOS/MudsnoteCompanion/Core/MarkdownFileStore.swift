@@ -723,6 +723,42 @@ actor MarkdownFileStore {
         }
     }
 
+    func renameMarkdownDocument(
+        relativePath: String,
+        to name: String
+    ) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownLifecycleError.protectedNote
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+
+        let stem = try Self.validatedNoteName(name)
+        if source.deletingPathExtension().lastPathComponent == stem {
+            return try recentFile(at: source, root: root)
+        }
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent("\(stem).md")
+        let destination = uniqueMarkdownURL(for: requested)
+        let destinationPath = Self.relativePath(for: destination, root: root)
+        try coordinatedMove(from: source, to: destination)
+        do {
+            try replacePinnedPath(relativePath, with: destinationPath, root: root)
+            let renamed = try recentFile(at: destination, root: root)
+            invalidateAfterMutation(relativePaths: [relativePath, destinationPath])
+            return renamed
+        } catch {
+            try? coordinatedMove(from: destination, to: source)
+            throw error
+        }
+    }
+
     func keepConflictCopy(relativePath: String) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
         guard Self.isMutableNotePath(relativePath),
@@ -1435,6 +1471,24 @@ actor MarkdownFileStore {
               !value.contains("/"),
               !value.contains(":") else {
             throw MarkdownLifecycleError.invalidFolderName
+        }
+        return value
+    }
+
+    private static func validatedNoteName(_ name: String) throws -> String {
+        var value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.lowercased().hasSuffix(".md") {
+            value = String(value.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !value.isEmpty,
+              value != ".",
+              value != "..",
+              !value.hasPrefix("."),
+              !value.contains("/"),
+              !value.contains(":"),
+              !value.contains("\n"),
+              !value.contains("\r") else {
+            throw MarkdownLifecycleError.invalidNoteName
         }
         return value
     }
@@ -2448,6 +2502,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     case invalidTrashMetadata
     case invalidFolder
     case invalidFolderName
+    case invalidNoteName
     case folderContainsUnsupportedItems
     case invalidConflictCopy
     case batchRollbackFailed
@@ -2464,6 +2519,8 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
             String(localized: "This folder is no longer available.")
         case .invalidFolderName:
             String(localized: "Enter a valid folder name.")
+        case .invalidNoteName:
+            String(localized: "Enter a valid note name.")
         case .folderContainsUnsupportedItems:
             String(localized: "This folder contains files Mudsnote will not delete.")
         case .invalidConflictCopy:

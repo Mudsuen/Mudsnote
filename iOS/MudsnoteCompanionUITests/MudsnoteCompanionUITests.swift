@@ -467,8 +467,49 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let share = app.buttons["share-note-button"]
-        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Rename Note"].exists)
+    }
+
+    func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        let rename = app.buttons["Rename Note"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 3))
+
+        let optionsScreenshot = XCTAttachment(screenshot: app.screenshot())
+        optionsScreenshot.name = "Opened note options"
+        optionsScreenshot.lifetime = .keepAlways
+        add(optionsScreenshot)
+
+        rename.tap()
+        let alert = app.alerts["Rename Note"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        let name = alert.textFields["Note Name"]
+        XCTAssertEqual(name.value as? String, "UI Lifecycle")
+        name.tap()
+        name.typeText("-Renamed")
+        alert.buttons["Rename"].tap()
+
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+        let renamed = app.buttons["markdown-file-row-Projects/UI Lifecycle-Renamed.md"]
+        XCTAssertTrue(renamed.waitForExistence(timeout: 5))
+        renamed.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Rename Note"].waitForExistence(timeout: 3))
     }
 
     func testAttachmentContextMenuRenamesAndOffersSystemShare() {
