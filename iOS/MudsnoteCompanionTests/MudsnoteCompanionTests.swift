@@ -2072,6 +2072,50 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testInlineMarkdownFormattingTogglesInsteadOfNestingMarkers() throws {
+        let wrapped = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Ship it",
+            selection: NSRange(location: 0, length: 4),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(wrapped.range, NSRange(location: 0, length: 4))
+        XCTAssertEqual(wrapped.replacement, "~~Ship~~")
+        XCTAssertEqual(wrapped.selection, NSRange(location: 2, length: 4))
+
+        let unwrappedContent = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "~~Ship~~ it",
+            selection: NSRange(location: 2, length: 4),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(unwrappedContent.range, NSRange(location: 0, length: 8))
+        XCTAssertEqual(unwrappedContent.replacement, "Ship")
+        XCTAssertEqual(unwrappedContent.selection, NSRange(location: 0, length: 4))
+
+        let unwrappedMarkers = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "~~Ship~~ it",
+            selection: NSRange(location: 0, length: 8),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(unwrappedMarkers.replacement, "Ship")
+        XCTAssertEqual(unwrappedMarkers.selection, NSRange(location: 0, length: 4))
+
+        let placeholder = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "",
+            selection: NSRange(location: 0, length: 0),
+            prefix: "**",
+            suffix: "**",
+            placeholder: "bold"
+        ))
+        XCTAssertEqual(placeholder.replacement, "**bold**")
+        XCTAssertEqual(placeholder.selection, NSRange(location: 2, length: 4))
+    }
+
     func testFindInNoteIndexesRenderedMarkdownQuotesAndTableCells() throws {
         let blocks = MarkdownRenderBlock.parse(
             "# Plan\n\n**Restore** this note, then restore it.\n\n> RESTORE quote\n\n| Item | Status |\n| --- | --- |\n| Restore | Ready |\n\n[Backup](Attachments/restore.txt)"

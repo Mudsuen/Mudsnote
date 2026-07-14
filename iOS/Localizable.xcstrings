@@ -61,6 +61,9 @@
     "Italic": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "斜体" } } }
     },
+    "Strikethrough": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除线" } } }
+    },
     "Numbered List": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编号列表" } } }
     },

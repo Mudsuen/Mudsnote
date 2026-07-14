@@ -643,6 +643,7 @@ struct MarkdownPreviewView: View {
                     Divider()
                     formatMenuButton("Bold", systemImage: "bold", command: .bold)
                     formatMenuButton("Italic", systemImage: "italic", command: .italic)
+                    formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
                     Divider()
                     formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
                     formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
@@ -1279,6 +1280,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case body
         case bold
         case italic
+        case strikethrough
         case bullet
         case ordered
         case checklist
@@ -1299,6 +1301,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .body: "body"
             case .bold: "bold"
             case .italic: "italic"
+            case .strikethrough: "strikethrough"
             case .bullet: "bullet"
             case .ordered: "ordered"
             case .checklist: "checklist"
@@ -1316,6 +1319,77 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 
     let id = UUID()
     var kind: Kind
+}
+
+enum MarkdownInlineEditing {
+    static func toggleEdit(
+        in markdown: String,
+        selection: NSRange,
+        prefix: String,
+        suffix: String,
+        placeholder: String
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length,
+              !prefix.isEmpty,
+              !suffix.isEmpty else { return nil }
+
+        let prefixLength = (prefix as NSString).length
+        let suffixLength = (suffix as NSString).length
+        let selected = source.substring(with: selection)
+
+        if selection.length >= prefixLength + suffixLength,
+           selected.hasPrefix(prefix),
+           selected.hasSuffix(suffix) {
+            let contentRange = NSRange(
+                location: prefixLength,
+                length: selection.length - prefixLength - suffixLength
+            )
+            let content = (selected as NSString).substring(with: contentRange)
+            return MarkdownListEdit(
+                range: selection,
+                replacement: content,
+                selection: NSRange(location: selection.location, length: contentRange.length)
+            )
+        }
+
+        if selection.location >= prefixLength,
+           NSMaxRange(selection) + suffixLength <= source.length {
+            let before = source.substring(with: NSRange(
+                location: selection.location - prefixLength,
+                length: prefixLength
+            ))
+            let after = source.substring(with: NSRange(
+                location: NSMaxRange(selection),
+                length: suffixLength
+            ))
+            if before == prefix, after == suffix {
+                return MarkdownListEdit(
+                    range: NSRange(
+                        location: selection.location - prefixLength,
+                        length: prefixLength + selection.length + suffixLength
+                    ),
+                    replacement: selected,
+                    selection: NSRange(
+                        location: selection.location - prefixLength,
+                        length: selection.length
+                    )
+                )
+            }
+        }
+
+        let content = selected.isEmpty ? placeholder : selected
+        let replacement = prefix + content + suffix
+        return MarkdownListEdit(
+            range: selection,
+            replacement: replacement,
+            selection: NSRange(
+                location: selection.location + prefixLength,
+                length: (content as NSString).length
+            )
+        )
+    }
 }
 
 enum MarkdownRenderBlock: Equatable {
@@ -2136,9 +2210,11 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             case .body:
                 applyParagraphStyle(.body, in: textView)
             case .bold:
-                wrapSelection(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
+                toggleInlineStyle(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
             case .italic:
-                wrapSelection(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+                toggleInlineStyle(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+            case .strikethrough:
+                toggleInlineStyle(prefix: "~~", suffix: "~~", placeholder: "strikethrough", in: textView)
             case .bullet:
                 toggleLinePrefix("- ", in: textView)
             case .ordered:
@@ -2152,7 +2228,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             case .quote:
                 toggleLinePrefix("> ", in: textView)
             case .code:
-                wrapSelection(prefix: "`", suffix: "`", placeholder: "code", in: textView)
+                toggleInlineStyle(prefix: "`", suffix: "`", placeholder: "code", in: textView)
             case .link:
                 let range = textView.selectedRange
                 let selected = (textView.text as NSString).substring(with: range)
@@ -2177,6 +2253,27 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             )
         }
 
+        private func toggleInlineStyle(
+            prefix: String,
+            suffix: String,
+            placeholder: String,
+            in textView: UITextView
+        ) {
+            guard let edit = MarkdownInlineEditing.toggleEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                prefix: prefix,
+                suffix: suffix,
+                placeholder: placeholder
+            ) else { return }
+            replace(
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
+                in: textView
+            )
+        }
+
         private func applyParagraphStyle(
             _ style: MarkdownParagraphEditing.Style,
             in textView: UITextView
@@ -2190,23 +2287,6 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 edit.range,
                 with: edit.replacement,
                 selecting: edit.selection,
-                in: textView
-            )
-        }
-
-        private func wrapSelection(
-            prefix: String,
-            suffix: String,
-            placeholder: String,
-            in textView: UITextView
-        ) {
-            let range = textView.selectedRange
-            let selected = (textView.text as NSString).substring(with: range)
-            let content = selected.isEmpty ? placeholder : selected
-            replace(
-                range,
-                with: prefix + content + suffix,
-                selecting: NSRange(location: range.location + (prefix as NSString).length, length: (content as NSString).length),
                 in: textView
             )
         }

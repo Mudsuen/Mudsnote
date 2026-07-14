@@ -418,6 +418,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Heading"].exists)
         XCTAssertTrue(app.buttons["Subheading"].exists)
         XCTAssertTrue(app.buttons["Body"].exists)
+        XCTAssertTrue(app.buttons["Strikethrough"].exists)
         XCTAssertTrue(app.buttons["Numbered List"].exists)
         XCTAssertTrue(app.buttons["Decrease Indent"].exists)
         XCTAssertTrue(app.buttons["Increase Indent"].exists)
@@ -430,6 +431,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         bold.tap()
         editor.typeText("Styled")
         XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)
+        app.buttons["markdown-format-menu"].tap()
+        let strikethrough = app.buttons["Strikethrough"]
+        XCTAssertTrue(strikethrough.waitForExistence(timeout: 3))
+        strikethrough.tap()
+        editor.typeText("Archived")
+        XCTAssertTrue((editor.value as? String)?.contains("~~Archived~~") == true)
         XCTAssertTrue(app.buttons["save-markdown-button"].exists)
     }
 
