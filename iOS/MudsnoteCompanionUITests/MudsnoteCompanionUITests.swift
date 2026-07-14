@@ -419,6 +419,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Subheading"].exists)
         XCTAssertTrue(app.buttons["Body"].exists)
         XCTAssertTrue(app.buttons["Underline"].exists)
+        XCTAssertTrue(app.buttons["Highlight"].exists)
         XCTAssertTrue(app.buttons["Strikethrough"].exists)
         XCTAssertTrue(app.buttons["Numbered List"].exists)
         XCTAssertTrue(app.buttons["Decrease Indent"].exists)
@@ -438,6 +439,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         underline.tap()
         editor.typeText("Important")
         XCTAssertTrue((editor.value as? String)?.contains("<u>Important</u>") == true)
+        app.buttons["markdown-format-menu"].tap()
+        let highlight = app.buttons["Highlight"]
+        XCTAssertTrue(highlight.waitForExistence(timeout: 3))
+        highlight.tap()
+        editor.typeText("Emphasized")
+        XCTAssertTrue((editor.value as? String)?.contains("<mark>Emphasized</mark>") == true)
         app.buttons["markdown-format-menu"].tap()
         let strikethrough = app.buttons["Strikethrough"]
         XCTAssertTrue(strikethrough.waitForExistence(timeout: 3))
@@ -487,8 +494,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "Important")
         ).firstMatch
         XCTAssertTrue(renderedImportant.waitForExistence(timeout: 3))
+        let renderedEmphasized = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Emphasized")
+        ).firstMatch
+        XCTAssertTrue(renderedEmphasized.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "<u>")
+        ).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "<mark>")
         ).firstMatch.exists)
 
         let renderedFormatsScreenshot = XCTAttachment(screenshot: app.screenshot())

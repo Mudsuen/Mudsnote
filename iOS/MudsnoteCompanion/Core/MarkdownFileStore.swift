@@ -2087,7 +2087,7 @@ struct MarkdownListMetadata: Equatable {
                 options: .regularExpression
             )
             value = value.replacingOccurrences(
-                of: #"</?u>"#,
+                of: #"</?(?:u|mark)>"#,
                 with: "",
                 options: .regularExpression
             )
@@ -2117,7 +2117,7 @@ struct MarkdownListMetadata: Equatable {
                 options: .regularExpression
             )
             value = value.replacingOccurrences(
-                of: #"</?u>"#,
+                of: #"</?(?:u|mark)>"#,
                 with: "",
                 options: .regularExpression
             )

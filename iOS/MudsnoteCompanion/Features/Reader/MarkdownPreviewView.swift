@@ -671,6 +671,7 @@ struct MarkdownPreviewView: View {
                     formatMenuButton("Bold", systemImage: "bold", command: .bold)
                     formatMenuButton("Italic", systemImage: "italic", command: .italic)
                     formatMenuButton("Underline", systemImage: "underline", command: .underline)
+                    formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
                     formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
                     Divider()
                     formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
@@ -1384,6 +1385,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case bold
         case italic
         case underline
+        case highlight
         case strikethrough
         case bullet
         case ordered
@@ -1408,6 +1410,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .bold: "bold"
             case .italic: "italic"
             case .underline: "underline"
+            case .highlight: "highlight"
             case .strikethrough: "strikethrough"
             case .bullet: "bullet"
             case .ordered: "ordered"
@@ -1883,30 +1886,50 @@ enum MarkdownParagraphEditing {
 enum MarkdownInlineRendering {
     private static let underlineStart = "\u{E000}"
     private static let underlineEnd = "\u{E001}"
+    private static let highlightStart = "\u{E002}"
+    private static let highlightEnd = "\u{E003}"
 
     static func attributedText(for markdown: String) -> AttributedString {
         let prepared = markdown
             .replacingOccurrences(of: "<u>", with: underlineStart)
             .replacingOccurrences(of: "</u>", with: underlineEnd)
+            .replacingOccurrences(of: "<mark>", with: highlightStart)
+            .replacingOccurrences(of: "</mark>", with: highlightEnd)
         let parsed = (try? AttributedString(markdown: prepared))
             ?? AttributedString(prepared)
         let attributed = NSMutableAttributedString(
             attributedString: NSAttributedString(parsed)
         )
-        applyUnderlines(in: attributed)
+        applyDelimitedStyle(
+            in: attributed,
+            start: underlineStart,
+            end: underlineEnd,
+            attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]
+        )
+        applyDelimitedStyle(
+            in: attributed,
+            start: highlightStart,
+            end: highlightEnd,
+            attributes: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)]
+        )
         return AttributedString(attributed)
     }
 
-    private static func applyUnderlines(in attributed: NSMutableAttributedString) {
+    private static func applyDelimitedStyle(
+        in attributed: NSMutableAttributedString,
+        start: String,
+        end: String,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
         while true {
             let source = attributed.string as NSString
-            let opening = source.range(of: underlineStart)
+            let opening = source.range(of: start)
             guard opening.location != NSNotFound else { break }
             let trailingRange = NSRange(
                 location: NSMaxRange(opening),
                 length: source.length - NSMaxRange(opening)
             )
-            let closing = source.range(of: underlineEnd, range: trailingRange)
+            let closing = source.range(of: end, range: trailingRange)
             guard closing.location != NSNotFound else {
                 attributed.deleteCharacters(in: opening)
                 continue
@@ -1915,15 +1938,14 @@ enum MarkdownInlineRendering {
             attributed.deleteCharacters(in: closing)
             attributed.deleteCharacters(in: opening)
             if contentLength > 0 {
-                attributed.addAttribute(
-                    .underlineStyle,
-                    value: NSUnderlineStyle.single.rawValue,
+                attributed.addAttributes(
+                    attributes,
                     range: NSRange(location: opening.location, length: contentLength)
                 )
             }
         }
         attributed.mutableString.replaceOccurrences(
-            of: underlineEnd,
+            of: end,
             with: "",
             range: NSRange(location: 0, length: attributed.length)
         )
@@ -2205,6 +2227,7 @@ enum MarkdownEditorPresentation {
         applyHeadings(in: source, storage: storage)
         applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
         applyDelimited(#"<u>([^\n]+?)</u>"#, markerLength: 3, suffixMarkerLength: 4, trait: nil, in: source, storage: storage, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue])
+        applyDelimited(#"<mark>([^\n]+?)</mark>"#, markerLength: 6, suffixMarkerLength: 7, trait: nil, in: source, storage: storage, extra: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)])
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
         applyDelimited(#"(?<!\*)\*([^*\n]+?)\*(?!\*)"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
         applyDelimited(#"_([^_\n]+?)_"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
@@ -2479,6 +2502,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 toggleInlineStyle(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
             case .underline:
                 toggleInlineStyle(prefix: "<u>", suffix: "</u>", placeholder: "underline", in: textView)
+            case .highlight:
+                toggleInlineStyle(prefix: "<mark>", suffix: "</mark>", placeholder: "highlight", in: textView)
             case .strikethrough:
                 toggleInlineStyle(prefix: "~~", suffix: "~~", placeholder: "strikethrough", in: textView)
             case .bullet:

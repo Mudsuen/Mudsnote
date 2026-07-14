@@ -2124,15 +2124,35 @@ final class MudsnoteCompanionTests: XCTestCase {
         ))
         XCTAssertEqual(underline.replacement, "<u>Important</u>")
         XCTAssertEqual(underline.selection, NSRange(location: 3, length: 9))
+
+        let highlight = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Notice",
+            selection: NSRange(location: 0, length: 6),
+            prefix: "<mark>",
+            suffix: "</mark>",
+            placeholder: "highlight"
+        ))
+        XCTAssertEqual(highlight.replacement, "<mark>Notice</mark>")
+        XCTAssertEqual(highlight.selection, NSRange(location: 6, length: 6))
+
+        let unhighlight = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "<mark>Notice</mark>",
+            selection: NSRange(location: 6, length: 6),
+            prefix: "<mark>",
+            suffix: "</mark>",
+            placeholder: "highlight"
+        ))
+        XCTAssertEqual(unhighlight.replacement, "Notice")
+        XCTAssertEqual(unhighlight.selection, NSRange(location: 0, length: 6))
     }
 
-    func testUnderlineMarkdownRendersAndIndexesWithoutLeakingHTMLMarkers() {
+    func testInlineHTMLFormattingRendersAndIndexesWithoutLeakingMarkers() {
         let rendered = NSAttributedString(
             MarkdownInlineRendering.attributedText(
-                for: "**Bold** and <u>underlined</u> with [Link](https://example.com)"
+                for: "**Bold** and <u>underlined</u> plus <mark>highlighted</mark> with [Link](https://example.com)"
             )
         )
-        XCTAssertEqual(rendered.string, "Bold and underlined with Link")
+        XCTAssertEqual(rendered.string, "Bold and underlined plus highlighted with Link")
         let underlinedRange = (rendered.string as NSString).range(of: "underlined")
         XCTAssertEqual(
             rendered.attribute(
@@ -2142,13 +2162,21 @@ final class MudsnoteCompanionTests: XCTestCase {
             ) as? Int,
             NSUnderlineStyle.single.rawValue
         )
+        let highlightedRange = (rendered.string as NSString).range(of: "highlighted")
+        XCTAssertNotNil(
+            rendered.attribute(
+                .backgroundColor,
+                at: highlightedRange.location,
+                effectiveRange: nil
+            ) as? UIColor
+        )
         XCTAssertEqual(
-            NoteFindIndex.visibleText(for: "Find <u>important</u> text"),
-            "Find important text"
+            NoteFindIndex.visibleText(for: "Find <u>important</u> and <mark>urgent</mark> text"),
+            "Find important and urgent text"
         )
 
         let metadata = MarkdownListMetadata.extract(
-            from: "<u>Important title</u>\n\nKeep <u>this preview</u> clean",
+            from: "<mark>Important title</mark>\n\nKeep <u>this preview</u> <mark>clean</mark>",
             fallbackTitle: "Fallback"
         )
         XCTAssertEqual(metadata.title, "Important title")
