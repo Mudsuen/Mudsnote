@@ -41,6 +41,7 @@ struct MarkdownPreviewView: View {
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
+    @State private var linkDraft: MarkdownLinkDraft?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
     @State private var isFileImporterPresented = false
@@ -89,6 +90,7 @@ struct MarkdownPreviewView: View {
                             text: $draftMarkdown,
                             isFocused: $editorFocused,
                             command: $editingCommand,
+                            linkDraft: $linkDraft,
                             displaysSource: editorDisplayMode == .source
                         )
                         .accessibilityIdentifier("markdown-editor")
@@ -345,6 +347,23 @@ struct MarkdownPreviewView: View {
             guard case .success(let urls) = result, let url = urls.first else { return }
             Task { await attachFile(url) }
         }
+        .sheet(item: $linkDraft) { draft in
+            MarkdownLinkEditorSheet(
+                draft: draft,
+                onApply: { label, destination in
+                    linkDraft = nil
+                    applyLinkCommand(
+                        .applyLink(draft: draft, label: label, destination: destination)
+                    )
+                },
+                onRemove: draft.isExisting ? {
+                    linkDraft = nil
+                    applyLinkCommand(.removeLink(draft: draft))
+                } : nil
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .quickLookPreview($previewURL)
         .fullScreenCover(isPresented: $isScannerPresented) {
             DocumentScannerView(
@@ -409,6 +428,14 @@ struct MarkdownPreviewView: View {
             }
         }
         .frame(minHeight: 18)
+    }
+
+    private func applyLinkCommand(_ kind: MarkdownEditingCommand.Kind) {
+        Task { @MainActor in
+            await Task.yield()
+            editingCommand = MarkdownEditingCommand(kind: kind)
+            editorFocused = true
+        }
     }
 
     private func canManage(_ document: MarkdownDocument) -> Bool {
@@ -1224,6 +1251,81 @@ enum ScannedDocumentPDF {
     }
 }
 
+private struct MarkdownLinkEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let draft: MarkdownLinkDraft
+    let onApply: (String, String) -> Void
+    let onRemove: (() -> Void)?
+    @State private var name: String
+    @State private var destination: String
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case name
+        case destination
+    }
+
+    init(
+        draft: MarkdownLinkDraft,
+        onApply: @escaping (String, String) -> Void,
+        onRemove: (() -> Void)?
+    ) {
+        self.draft = draft
+        self.onApply = onApply
+        self.onRemove = onRemove
+        _name = State(initialValue: draft.label)
+        _destination = State(initialValue: draft.destination)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .accessibilityIdentifier("markdown-link-name")
+                    TextField("Link", text: $destination)
+                        .focused($focusedField, equals: .destination)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("markdown-link-destination")
+                }
+
+                if let onRemove {
+                    Section {
+                        Button("Remove Link", role: .destructive) {
+                            onRemove()
+                        }
+                        .accessibilityIdentifier("remove-markdown-link")
+                    }
+                }
+            }
+            .navigationTitle(draft.isExisting ? "Edit Link" : "Add Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(draft.isExisting ? "Done" : "Add") {
+                        onApply(name, destination)
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(
+                        name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .accessibilityIdentifier("apply-markdown-link")
+                }
+            }
+        }
+        .onAppear {
+            focusedField = name.isEmpty ? .name : .destination
+        }
+    }
+}
+
 struct DocumentScannerView: UIViewControllerRepresentable {
     let onComplete: (Result<[UIImage], Swift.Error>) -> Void
     let onCancel: () -> Void
@@ -1289,6 +1391,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case quote
         case code
         case link
+        case applyLink(draft: MarkdownLinkDraft, label: String, destination: String)
+        case removeLink(draft: MarkdownLinkDraft)
         case table
         case undo
         case redo
@@ -1310,6 +1414,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .quote: "quote"
             case .code: "code"
             case .link: "link"
+            case .applyLink: "apply-link"
+            case .removeLink: "remove-link"
             case .table: "table"
             case .undo: "undo"
             case .redo: "redo"
@@ -1319,6 +1425,106 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 
     let id = UUID()
     var kind: Kind
+}
+
+struct MarkdownLinkDraft: Identifiable, Equatable {
+    let id = UUID()
+    var range: NSRange
+    var label: String
+    var destination: String
+    var isExisting: Bool
+}
+
+enum MarkdownLinkEditing {
+    static func draft(in markdown: String, selection: NSRange) -> MarkdownLinkDraft? {
+        let source = markdown as NSString
+        guard selection.location >= 0, NSMaxRange(selection) <= source.length else { return nil }
+
+        let expression = try? NSRegularExpression(pattern: #"\[([^\]\n]+)\]\(([^)\n]+)\)"#)
+        let matches = expression?.matches(
+            in: markdown,
+            range: NSRange(location: 0, length: source.length)
+        ) ?? []
+        if let match = matches.first(where: { contains(selection, in: $0.range) }) {
+            return MarkdownLinkDraft(
+                range: match.range,
+                label: source.substring(with: match.range(at: 1)),
+                destination: source.substring(with: match.range(at: 2)),
+                isExisting: true
+            )
+        }
+
+        return MarkdownLinkDraft(
+            range: selection,
+            label: source.substring(with: selection),
+            destination: "",
+            isExisting: false
+        )
+    }
+
+    static func insertionEdit(
+        for draft: MarkdownLinkDraft,
+        label: String,
+        destination: String
+    ) -> MarkdownListEdit? {
+        let cleanedLabel = label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "[", with: "(")
+            .replacingOccurrences(of: "]", with: ")")
+        guard !cleanedLabel.isEmpty,
+              let normalizedDestination = normalizedDestination(destination) else { return nil }
+        return MarkdownListEdit(
+            range: draft.range,
+            replacement: "[\(cleanedLabel)](\(normalizedDestination))",
+            selection: NSRange(
+                location: draft.range.location + 1,
+                length: (cleanedLabel as NSString).length
+            )
+        )
+    }
+
+    static func removalEdit(for draft: MarkdownLinkDraft) -> MarkdownListEdit? {
+        guard draft.isExisting else { return nil }
+        return MarkdownListEdit(
+            range: draft.range,
+            replacement: draft.label,
+            selection: NSRange(
+                location: draft.range.location,
+                length: (draft.label as NSString).length
+            )
+        )
+    }
+
+    static func normalizedDestination(_ value: String) -> String? {
+        var destination = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !destination.isEmpty else { return nil }
+        destination = destination
+            .replacingOccurrences(of: " ", with: "%20")
+            .replacingOccurrences(of: "(", with: "%28")
+            .replacingOccurrences(of: ")", with: "%29")
+        let hasScheme = destination.range(
+            of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#,
+            options: .regularExpression
+        ) != nil
+        if !hasScheme,
+           !destination.hasPrefix("#"),
+           !destination.hasPrefix("/"),
+           !destination.hasPrefix("./"),
+           !destination.hasPrefix("../") {
+            destination = destination.contains("@")
+                ? "mailto:\(destination)"
+                : "https://\(destination)"
+        }
+        return destination
+    }
+
+    private static func contains(_ selection: NSRange, in range: NSRange) -> Bool {
+        if selection.length == 0 {
+            return selection.location >= range.location && selection.location <= NSMaxRange(range)
+        }
+        return selection.location >= range.location && NSMaxRange(selection) <= NSMaxRange(range)
+    }
 }
 
 enum MarkdownInlineEditing {
@@ -2081,6 +2287,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     @Binding var command: MarkdownEditingCommand?
+    @Binding var linkDraft: MarkdownLinkDraft?
     var displaysSource: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -2230,10 +2437,23 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             case .code:
                 toggleInlineStyle(prefix: "`", suffix: "`", placeholder: "code", in: textView)
             case .link:
-                let range = textView.selectedRange
-                let selected = (textView.text as NSString).substring(with: range)
-                let label = selected.isEmpty ? "text" : selected
-                replace(range, with: "[\(label)](https://)", selecting: NSRange(location: range.location + 1, length: (label as NSString).length), in: textView)
+                let draft = MarkdownLinkEditing.draft(
+                    in: textView.text,
+                    selection: textView.selectedRange
+                )
+                DispatchQueue.main.async { self.parent.linkDraft = draft }
+            case .applyLink(let draft, let label, let destination):
+                if let edit = MarkdownLinkEditing.insertionEdit(
+                    for: draft,
+                    label: label,
+                    destination: destination
+                ) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
+            case .removeLink(let draft):
+                if let edit = MarkdownLinkEditing.removalEdit(for: draft) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
             case .table:
                 if let edit = MarkdownTableEditing.insertionEdit(
                     in: textView.text,

@@ -2116,6 +2116,54 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(placeholder.selection, NSRange(location: 2, length: 4))
     }
 
+    func testMarkdownLinkEditingAddsUpdatesAndRemovesPortableLinks() throws {
+        let selectedDraft = try XCTUnwrap(MarkdownLinkEditing.draft(
+            in: "Read Mudsnote today",
+            selection: NSRange(location: 5, length: 8)
+        ))
+        XCTAssertEqual(selectedDraft.label, "Mudsnote")
+        XCTAssertFalse(selectedDraft.isExisting)
+
+        let inserted = try XCTUnwrap(MarkdownLinkEditing.insertionEdit(
+            for: selectedDraft,
+            label: selectedDraft.label,
+            destination: "muds.top/docs (ios)"
+        ))
+        XCTAssertEqual(
+            inserted.replacement,
+            "[Mudsnote](https://muds.top/docs%20%28ios%29)"
+        )
+        XCTAssertEqual(inserted.selection, NSRange(location: 6, length: 8))
+
+        let existingMarkdown = "Read [Mudsnote](https://muds.top) today"
+        let existingDraft = try XCTUnwrap(MarkdownLinkEditing.draft(
+            in: existingMarkdown,
+            selection: NSRange(location: 9, length: 0)
+        ))
+        XCTAssertTrue(existingDraft.isExisting)
+        XCTAssertEqual(existingDraft.label, "Mudsnote")
+        XCTAssertEqual(existingDraft.destination, "https://muds.top")
+
+        let updated = try XCTUnwrap(MarkdownLinkEditing.insertionEdit(
+            for: existingDraft,
+            label: "Mudsnote Docs",
+            destination: "https://muds.top/docs"
+        ))
+        XCTAssertEqual(updated.range, existingDraft.range)
+        XCTAssertEqual(updated.replacement, "[Mudsnote Docs](https://muds.top/docs)")
+
+        let removed = try XCTUnwrap(MarkdownLinkEditing.removalEdit(for: existingDraft))
+        XCTAssertEqual(removed.range, existingDraft.range)
+        XCTAssertEqual(removed.replacement, "Mudsnote")
+        XCTAssertEqual(removed.selection, NSRange(location: 5, length: 8))
+
+        XCTAssertEqual(
+            MarkdownLinkEditing.normalizedDestination("hello@example.com"),
+            "mailto:hello@example.com"
+        )
+        XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
+    }
+
     func testFindInNoteIndexesRenderedMarkdownQuotesAndTableCells() throws {
         let blocks = MarkdownRenderBlock.parse(
             "# Plan\n\n**Restore** this note, then restore it.\n\n> RESTORE quote\n\n| Item | Status |\n| --- | --- |\n| Restore | Ready |\n\n[Backup](Attachments/restore.txt)"

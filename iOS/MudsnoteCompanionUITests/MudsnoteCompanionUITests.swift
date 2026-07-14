@@ -437,6 +437,41 @@ final class MudsnoteCompanionUITests: XCTestCase {
         strikethrough.tap()
         editor.typeText("Archived")
         XCTAssertTrue((editor.value as? String)?.contains("~~Archived~~") == true)
+        app.buttons["markdown-format-menu"].tap()
+        let insertLink = app.buttons["Insert Link"]
+        XCTAssertTrue(insertLink.waitForExistence(timeout: 3))
+        insertLink.tap()
+        XCTAssertTrue(app.navigationBars["Add Link"].waitForExistence(timeout: 3))
+        let linkName = app.textFields["markdown-link-name"]
+        let linkDestination = app.textFields["markdown-link-destination"]
+        XCTAssertTrue(linkName.exists)
+        XCTAssertTrue(linkDestination.exists)
+
+        let linkEditorScreenshot = XCTAttachment(screenshot: app.screenshot())
+        linkEditorScreenshot.name = "Notes-style link editor"
+        linkEditorScreenshot.lifetime = .keepAlways
+        add(linkEditorScreenshot)
+
+        linkName.tap()
+        linkName.typeText("Mudsnote")
+        linkDestination.tap()
+        linkDestination.typeText("muds.top")
+        app.buttons["apply-markdown-link"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            (editor.value as? String)?.contains("[Mudsnote](https://muds.top)") == true
+        )
+        app.buttons["markdown-format-menu"].tap()
+        XCTAssertTrue(insertLink.waitForExistence(timeout: 3))
+        insertLink.tap()
+        XCTAssertTrue(app.navigationBars["Edit Link"].waitForExistence(timeout: 3))
+        let removeLink = app.buttons["remove-markdown-link"]
+        XCTAssertTrue(removeLink.exists)
+        removeLink.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        let unlinkedValue = editor.value as? String
+        XCTAssertTrue(unlinkedValue?.contains("Mudsnote") == true)
+        XCTAssertFalse(unlinkedValue?.contains("[Mudsnote](https://muds.top)") == true)
         XCTAssertTrue(app.buttons["save-markdown-button"].exists)
     }
 

@@ -61,6 +61,24 @@
     "Italic": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "斜体" } } }
     },
+    "Add": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加" } } }
+    },
+    "Add Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加链接" } } }
+    },
+    "Edit Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑链接" } } }
+    },
+    "Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "名称" } } }
+    },
+    "Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接" } } }
+    },
+    "Remove Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除链接" } } }
+    },
     "Strikethrough": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除线" } } }
     },
