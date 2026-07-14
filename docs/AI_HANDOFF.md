@@ -325,6 +325,12 @@
 - Installed smoke file verification uses a bounded retry window so it proves live autosave without racing the debounce or accepting close-time persistence.
 - Native source cells expose `AXPress` through the same scope-activation path as outline selection; accessibility and smoke navigation no longer depend on the pre-outline `AXButton` implementation.
 
+## Latest iteration (212)
+
+- Expanded Add Folder and Sidebar Toggle retain the dedicated `13pt` source-action symbol configuration; the collapsed glass toggle remains independently sized.
+- The macOS layout regression now inspects the images on the final AppKit buttons and requires `20x15pt` and `18x14pt` canvases, preventing a generic `19pt` toolbar image from silently returning.
+- `/Applications/Mudsnote.app` was rebuilt from the verified source after the user supplied a screenshot consistent with a stale generic-symbol build.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

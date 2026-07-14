@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 163. Guard expanded source-action icon scale
+- Problem: A runtime screenshot showed Add Folder and Sidebar Toggle at the generic toolbar-symbol scale even though the source-action constant was already calibrated separately.
+- Fix: Added a regression against the images installed on the actual expanded toolbar controls: Add Folder must retain a `20x15pt` configured canvas and Sidebar Toggle an `18x14pt` canvas. Repackaged the current source into `/Applications/Mudsnote.app` so the installed artifact uses the dedicated `13pt` native SF Symbol configuration instead of a stale generic build.
+- Lesson: A layout constant does not prove the image that AppKit ultimately installs on a toolbar button; test the configured runtime control and keep the packaged app synchronized with the verified source.
+
 ### 162. Correct full-library custom sorting
 - Problem: Title and creation-date sorting only reordered the 240 most recently edited notes, so a globally first title, newest creation date, or older pinned note could remain outside the visible result window.
 - Fix: Added a bounded-memory, chunked top-K projection over the complete selected scope. Sorting and grouping changes now reproject from the loaded snapshot, preserve date-group and pinned ordering, and retain the fast early-stop path for default edit-date navigation. Native source cells now expose `AXPress`, and the installed-app smoke uses that current semantic while waiting within a fixed window for autosave instead of racing its `800ms` debounce.

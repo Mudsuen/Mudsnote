@@ -1399,6 +1399,8 @@ struct MarkdownRichEditorTests {
         }.first)
         #expect(expandedToggleButton.image != nil)
         #expect(addFolderButton.image != nil)
+        #expect(addFolderButton.image?.size == NSSize(width: 20, height: 15))
+        #expect(expandedToggleButton.image?.size == NSSize(width: 18, height: 14))
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         expandedToggleButton.performClick(nil)
