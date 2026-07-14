@@ -13,6 +13,12 @@ actor MarkdownFileStore {
         var metadata: MarkdownListMetadata
     }
 
+    private struct MarkdownLinkRewriteBackup {
+        var url: URL
+        var relativePath: String
+        var data: Data
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
@@ -809,12 +815,21 @@ actor MarkdownFileStore {
         let destination = uniqueMarkdownURL(for: requested)
         let destinationPath = Self.relativePath(for: destination, root: root)
         try coordinatedMove(from: source, to: destination)
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            linkBackups = try rewriteNoteLinksAfterMove(
+                from: relativePath,
+                to: destinationPath,
+                root: root
+            )
             try replacePinnedPath(relativePath, with: destinationPath, root: root)
             let renamed = try recentFile(at: destination, root: root)
-            invalidateAfterMutation(relativePaths: [relativePath, destinationPath])
+            invalidateAfterMutation(
+                relativePaths: [relativePath, destinationPath] + linkBackups.map(\.relativePath)
+            )
             return renamed
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? coordinatedMove(from: destination, to: source)
             throw error
         }
@@ -965,12 +980,18 @@ actor MarkdownFileStore {
         let source = try userFolderURL(relativePath: relativePath, root: root)
         let folderName = try Self.validatedFolderName(name)
         if source.lastPathComponent == folderName { return relativePath }
+        let notePaths = try markdownNotePaths(at: source, root: root)
         let requested = source.deletingLastPathComponent()
             .appendingPathComponent(folderName, isDirectory: true)
         let destination = uniqueFolderURL(for: requested)
         try coordinatedMove(from: source, to: destination)
         let newRelativePath = Self.relativePath(for: destination, root: root)
+        let movedPaths = Dictionary(uniqueKeysWithValues: notePaths.map { path in
+            (path, newRelativePath + path.dropFirst(relativePath.count))
+        })
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            linkBackups = try rewriteNoteLinksAfterMoves(movedPaths, root: root)
             try rewriteTrashedOriginalPathPrefix(
                 from: relativePath,
                 to: newRelativePath,
@@ -978,6 +999,7 @@ actor MarkdownFileStore {
             )
             try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? rewriteTrashedOriginalPathPrefix(
                 from: newRelativePath,
                 to: relativePath,
@@ -987,6 +1009,7 @@ actor MarkdownFileStore {
             throw error
         }
         invalidatePathPrefix(relativePath)
+        invalidateAfterMutation(relativePaths: linkBackups.map(\.relativePath))
         return newRelativePath
     }
 
@@ -1007,6 +1030,7 @@ actor MarkdownFileStore {
         if source.deletingLastPathComponent().standardizedFileURL == targetDirectory.standardizedFileURL {
             return relativePath
         }
+        let notePaths = try markdownNotePaths(at: source, root: root)
         let requested = targetDirectory.appendingPathComponent(
             source.lastPathComponent,
             isDirectory: true
@@ -1014,7 +1038,12 @@ actor MarkdownFileStore {
         let destination = uniqueFolderURL(for: requested)
         try coordinatedMove(from: source, to: destination)
         let newRelativePath = Self.relativePath(for: destination, root: root)
+        let movedPaths = Dictionary(uniqueKeysWithValues: notePaths.map { path in
+            (path, newRelativePath + path.dropFirst(relativePath.count))
+        })
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            linkBackups = try rewriteNoteLinksAfterMoves(movedPaths, root: root)
             try rewriteTrashedOriginalPathPrefix(
                 from: relativePath,
                 to: newRelativePath,
@@ -1022,6 +1051,7 @@ actor MarkdownFileStore {
             )
             try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? rewriteTrashedOriginalPathPrefix(
                 from: newRelativePath,
                 to: relativePath,
@@ -1033,6 +1063,7 @@ actor MarkdownFileStore {
         }
         invalidatePathPrefix(relativePath)
         invalidatePathPrefix(newRelativePath)
+        invalidateAfterMutation(relativePaths: linkBackups.map(\.relativePath))
         return newRelativePath
     }
 
@@ -1063,15 +1094,24 @@ actor MarkdownFileStore {
             for: targetDirectory.appendingPathComponent(source.lastPathComponent)
         )
         try coordinatedMove(from: source, to: destination)
-        let moved = try recentFile(at: destination, root: root)
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            let moved = try recentFile(at: destination, root: root)
+            linkBackups = try rewriteNoteLinksAfterMove(
+                from: relativePath,
+                to: moved.relativePath,
+                root: root
+            )
             try replacePinnedPath(relativePath, with: moved.relativePath, root: root)
+            invalidateAfterMutation(
+                relativePaths: [relativePath, moved.relativePath] + linkBackups.map(\.relativePath)
+            )
+            return moved
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? coordinatedMove(from: destination, to: source)
             throw error
         }
-        invalidateAfterMutation(relativePaths: [relativePath, moved.relativePath])
-        return moved
     }
 
     func moveMarkdownDocuments(
@@ -1102,6 +1142,7 @@ actor MarkdownFileStore {
         let originalPins = try loadPinnedPaths(root: root)
         var moves: [(source: URL, destination: URL, oldPath: String, newPath: String)] = []
         var destinations: [URL] = []
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
 
         do {
             for item in sources {
@@ -1118,6 +1159,10 @@ actor MarkdownFileStore {
                 moves.append((item.url, destination, item.path, newPath))
                 destinations.append(destination)
             }
+            linkBackups = try rewriteNoteLinksAfterMoves(
+                Dictionary(uniqueKeysWithValues: moves.map { ($0.oldPath, $0.newPath) }),
+                root: root
+            )
             var updatedPins = originalPins
             for move in moves where updatedPins.remove(move.oldPath) != nil {
                 updatedPins.insert(move.newPath)
@@ -1128,10 +1173,12 @@ actor MarkdownFileStore {
             let moved = try destinations.map { try recentFile(at: $0, root: root) }
             invalidateAfterMutation(
                 relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+                    + linkBackups.map(\.relativePath)
             )
             return moved
         } catch {
             var rollbackFailed = false
+            restoreMarkdownLinkRewrites(linkBackups)
             for move in moves.reversed() {
                 do {
                     try coordinatedMove(from: move.destination, to: move.source)
@@ -1146,6 +1193,7 @@ actor MarkdownFileStore {
             }
             invalidateAfterMutation(
                 relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+                    + linkBackups.map(\.relativePath)
             )
             if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
             throw error
@@ -1610,6 +1658,31 @@ actor MarkdownFileStore {
         return (notes.sorted(), directories)
     }
 
+    private func markdownNotePaths(at folder: URL, root: URL) throws -> [String] {
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: folder,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var paths: [String] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            if values.isRegularFile == true, url.pathExtension.lowercased() == "md" {
+                paths.append(Self.relativePath(for: url, root: root))
+            }
+        }
+        return paths.sorted()
+    }
+
     private func rewriteTrashedOriginalPathPrefix(
         from oldPrefix: String,
         to newPrefix: String,
@@ -1637,6 +1710,83 @@ actor MarkdownFileStore {
                 try? update.original.write(to: update.url, options: .atomic)
             }
             throw error
+        }
+    }
+
+    private func rewriteNoteLinksAfterMove(
+        from oldPath: String,
+        to newPath: String,
+        root: URL
+    ) throws -> [MarkdownLinkRewriteBackup] {
+        try rewriteNoteLinksAfterMoves([oldPath: newPath], root: root)
+    }
+
+    private func rewriteNoteLinksAfterMoves(
+        _ movedPaths: [String: String],
+        root: URL
+    ) throws -> [MarkdownLinkRewriteBackup] {
+        guard !movedPaths.isEmpty else { return [] }
+        let originalPathByCurrentPath = Dictionary(
+            uniqueKeysWithValues: movedPaths.map { ($0.value, $0.key) }
+        )
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var updates: [(backup: MarkdownLinkRewriteBackup, updated: Data)] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isDirectory != true,
+                  values.isRegularFile == true,
+                  url.pathExtension.lowercased() == "md" else { continue }
+            let currentPath = Self.relativePath(for: url, root: root)
+            let sourceBefore = originalPathByCurrentPath[currentPath] ?? currentPath
+            let originalData = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard let markdown = String(data: originalData, encoding: .utf8) else { continue }
+            let rewritten = MarkdownNoteLink.rewritingLinks(
+                in: markdown,
+                sourceBefore: sourceBefore,
+                sourceAfter: currentPath,
+                movedPaths: movedPaths
+            )
+            guard rewritten != markdown,
+                  let updatedData = rewritten.data(using: .utf8) else { continue }
+            updates.append((
+                MarkdownLinkRewriteBackup(
+                    url: url,
+                    relativePath: currentPath,
+                    data: originalData
+                ),
+                updatedData
+            ))
+        }
+
+        var written: [MarkdownLinkRewriteBackup] = []
+        do {
+            for update in updates {
+                try update.updated.write(to: update.backup.url, options: .atomic)
+                written.append(update.backup)
+            }
+            return written
+        } catch {
+            restoreMarkdownLinkRewrites(written)
+            throw error
+        }
+    }
+
+    private func restoreMarkdownLinkRewrites(_ backups: [MarkdownLinkRewriteBackup]) {
+        for backup in backups.reversed() {
+            try? backup.data.write(to: backup.url, options: .atomic)
         }
     }
 

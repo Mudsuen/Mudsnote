@@ -76,6 +76,18 @@
     "Link": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接" } } }
     },
+    "Link to Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接到笔记" } } }
+    },
+    "Search Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索笔记" } } }
+    },
+    "Previous Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "上一则笔记" } } }
+    },
+    "Linked note not found": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "找不到链接的笔记" } } }
+    },
     "Remove Link": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除链接" } } }
     },

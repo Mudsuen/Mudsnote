@@ -74,6 +74,7 @@ struct MarkdownPreviewView: View {
     @State private var findQuery = ""
     @State private var activeFindIndex = 0
     @State private var collapsedHeadingIndices: Set<Int> = []
+    @State private var linkedSourceHistory: [Source] = []
     @FocusState private var isFindFocused: Bool
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
@@ -113,6 +114,9 @@ struct MarkdownPreviewView: View {
                             VStack(alignment: .leading, spacing: 18) {
                                 metadataLabel
                                 markdownBody
+                                    .environment(\.openURL, OpenURLAction { url in
+                                        handleMarkdownURL(url)
+                                    })
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("rendered-markdown")
                                     .contentShape(Rectangle())
@@ -143,6 +147,16 @@ struct MarkdownPreviewView: View {
                 }
             }
             .toolbar {
+                if !linkedSourceHistory.isEmpty, !isEditing {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: returnToPreviousLinkedNote) {
+                            Image(systemName: "chevron.left")
+                        }
+                        .accessibilityLabel("Previous Note")
+                        .accessibilityIdentifier("previous-linked-note")
+                    }
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isEditing {
                         Menu {
@@ -361,6 +375,8 @@ struct MarkdownPreviewView: View {
         .sheet(item: $linkDraft) { draft in
             MarkdownLinkEditorSheet(
                 draft: draft,
+                notes: linkableNotes,
+                sourceRelativePath: currentSourceRelativePath,
                 onApply: { label, destination in
                     linkDraft = nil
                     applyLinkCommand(
@@ -466,6 +482,23 @@ struct MarkdownPreviewView: View {
     private var currentFile: RecentMarkdownFile? {
         guard case .document(let document) = source else { return nil }
         return appModel.libraryFiles.first { $0.relativePath == document.relativePath }
+    }
+
+    private var currentSourceRelativePath: String {
+        switch source {
+        case .memo:
+            "Inbox.md"
+        case .document(let document):
+            document.relativePath
+        }
+    }
+
+    private var linkableNotes: [RecentMarkdownFile] {
+        appModel.libraryFiles
+            .filter { $0.relativePath != currentSourceRelativePath }
+            .sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
     }
 
     private var moveDestinations: [LibraryFolderNode] {
@@ -781,6 +814,51 @@ struct MarkdownPreviewView: View {
         isEditing = true
         withAnimation(.snappy(duration: 0.28)) { detent = .large }
         focusEditorAfterPresentation()
+    }
+
+    private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {
+        guard let relativePath = MarkdownNoteLink.resolvedRelativePath(
+            for: url.relativeString,
+            from: currentSourceRelativePath
+        ) else { return .systemAction }
+        guard let target = appModel.libraryFiles.first(where: {
+            $0.relativePath == relativePath
+        }) else {
+            appModel.statusToast = .error(String(localized: "Linked note not found"))
+            return .handled
+        }
+        Task { await openLinkedNote(target) }
+        return .handled
+    }
+
+    private func openLinkedNote(_ file: RecentMarkdownFile) async {
+        guard !isEditing,
+              file.relativePath != currentSourceRelativePath,
+              let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
+        linkedSourceHistory.append(source)
+        showLinkedSource(.document(target))
+    }
+
+    private func returnToPreviousLinkedNote() {
+        guard let previous = linkedSourceHistory.popLast() else { return }
+        showLinkedSource(previous)
+    }
+
+    private func showLinkedSource(_ linkedSource: Source) {
+        closeFindInNote()
+        collapsedHeadingIndices.removeAll()
+        source = linkedSource
+        switch linkedSource {
+        case .memo(let memo):
+            draftMarkdown = memo.body
+            originalMarkdown = memo.body
+            noteName = ""
+        case .document(let document):
+            draftMarkdown = document.markdown
+            originalMarkdown = document.markdown
+            noteName = document.title
+        }
+        saveState = .idle
     }
 
     private func focusEditorAfterPresentation() {
@@ -1345,6 +1423,8 @@ struct MarkdownPreviewView: View {
 private struct MarkdownLinkEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     let draft: MarkdownLinkDraft
+    let notes: [RecentMarkdownFile]
+    let sourceRelativePath: String
     let onApply: (String, String) -> Void
     let onRemove: (() -> Void)?
     @State private var name: String
@@ -1358,10 +1438,14 @@ private struct MarkdownLinkEditorSheet: View {
 
     init(
         draft: MarkdownLinkDraft,
+        notes: [RecentMarkdownFile],
+        sourceRelativePath: String,
         onApply: @escaping (String, String) -> Void,
         onRemove: (() -> Void)?
     ) {
         self.draft = draft
+        self.notes = notes
+        self.sourceRelativePath = sourceRelativePath
         self.onApply = onApply
         self.onRemove = onRemove
         _name = State(initialValue: draft.label)
@@ -1381,6 +1465,30 @@ private struct MarkdownLinkEditorSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("markdown-link-destination")
+                }
+
+                if !notes.isEmpty {
+                    Section {
+                        NavigationLink {
+                            MarkdownNoteLinkPicker(
+                                notes: notes,
+                                selectedDestination: destination,
+                                sourceRelativePath: sourceRelativePath
+                            ) { note in
+                                guard let relativeDestination = MarkdownNoteLink.relativeDestination(
+                                    from: sourceRelativePath,
+                                    to: note.relativePath
+                                ) else { return }
+                                destination = relativeDestination
+                                if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    name = note.title
+                                }
+                            }
+                        } label: {
+                            Label("Link to Note", systemImage: "note.text.badge.plus")
+                        }
+                        .accessibilityIdentifier("choose-note-link")
+                    }
                 }
 
                 if let onRemove {
@@ -1414,6 +1522,69 @@ private struct MarkdownLinkEditorSheet: View {
         .onAppear {
             focusedField = name.isEmpty ? .name : .destination
         }
+    }
+}
+
+private struct MarkdownNoteLinkPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let notes: [RecentMarkdownFile]
+    let selectedDestination: String
+    let sourceRelativePath: String
+    let onSelect: (RecentMarkdownFile) -> Void
+    @State private var query = ""
+
+    private var filteredNotes: [RecentMarkdownFile] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return notes }
+        return notes.filter {
+            $0.title.localizedCaseInsensitiveContains(term)
+                || $0.relativePath.localizedCaseInsensitiveContains(term)
+        }
+    }
+
+    var body: some View {
+        List(filteredNotes) { note in
+            Button {
+                onSelect(note)
+                dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "note.text")
+                        .foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(note.title)
+                            .foregroundStyle(MudsnoteColors.text)
+                        Text(note.relativePath)
+                            .font(.caption)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if isSelected(note) {
+                        Image(systemName: "checkmark")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("note-link-candidate-\(note.relativePath)")
+        }
+        .overlay {
+            if filteredNotes.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .navigationTitle("Link to Note")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Search Notes")
+    }
+
+    private func isSelected(_ note: RecentMarkdownFile) -> Bool {
+        MarkdownNoteLink.resolvedRelativePath(
+            for: selectedDestination,
+            from: sourceRelativePath
+        ) == note.relativePath
     }
 }
 
@@ -2037,6 +2208,17 @@ enum MarkdownInlineRendering {
             end: highlightEnd,
             attributes: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)]
         )
+        attributed.enumerateAttribute(
+            .link,
+            in: NSRange(location: 0, length: attributed.length)
+        ) { value, range, _ in
+            guard value != nil else { return }
+            attributed.addAttribute(
+                .foregroundColor,
+                value: UIColor.systemYellow,
+                range: range
+            )
+        }
         return AttributedString(attributed)
     }
 
@@ -2926,15 +3108,18 @@ struct MarkdownAttachmentLine {
     init?(_ line: String) {
         rawLine = line
         if line.hasPrefix("![[") {
-            path = line
+            let candidate = line
                 .replacingOccurrences(of: "![[", with: "")
                 .replacingOccurrences(of: "]]", with: "")
+            guard Self.isAttachmentPath(candidate) else { return nil }
+            path = candidate
             systemImage = "paperclip"
             kind = .file
             return
         }
 
         if let match = Self.match(line, pattern: #"^!\[[^\]]*\]\(([^)]+)\)$"#) {
+            guard Self.isAttachmentPath(match) else { return nil }
             path = match
             systemImage = "photo"
             kind = .image
@@ -2942,6 +3127,7 @@ struct MarkdownAttachmentLine {
         }
 
         if let match = Self.match(line, pattern: #"^\[[^\]]+\]\(([^)]+)\)$"#) {
+            guard Self.isAttachmentPath(match) else { return nil }
             path = match
             if LibraryAttachment.Kind(fileExtension: (match as NSString).pathExtension) == .audio {
                 systemImage = "waveform"
@@ -2965,6 +3151,11 @@ struct MarkdownAttachmentLine {
             return nil
         }
         return String(matched[matched.index(after: open)..<close])
+    }
+
+    private static func isAttachmentPath(_ value: String) -> Bool {
+        let decoded = value.removingPercentEncoding ?? value
+        return decoded.hasPrefix("Attachments/")
     }
 }
 

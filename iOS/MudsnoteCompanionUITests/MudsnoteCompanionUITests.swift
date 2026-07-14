@@ -512,6 +512,73 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(renderedFormatsScreenshot)
     }
 
+    func testEditorLinksToAnotherNoteAndReturnsThroughHistory() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let inbox = app.buttons["markdown-file-row-Inbox.md"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+        inbox.tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.tap()
+
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        app.buttons["markdown-format-menu"].tap()
+        let insertLink = app.buttons["Insert Link"]
+        XCTAssertTrue(insertLink.waitForExistence(timeout: 3))
+        insertLink.tap()
+
+        XCTAssertTrue(app.navigationBars["Add Link"].waitForExistence(timeout: 3))
+        let chooseNote = app.buttons["choose-note-link"]
+        XCTAssertTrue(chooseNote.waitForExistence(timeout: 3))
+        chooseNote.tap()
+        XCTAssertTrue(app.navigationBars["Link to Note"].waitForExistence(timeout: 3))
+
+        let candidate = app.buttons["note-link-candidate-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(candidate.waitForExistence(timeout: 3))
+        candidate.tap()
+        XCTAssertTrue(app.navigationBars["Add Link"].waitForExistence(timeout: 3))
+
+        let name = app.textFields["markdown-link-name"]
+        let destination = app.textFields["markdown-link-destination"]
+        XCTAssertEqual(name.value as? String, "UI Lifecycle")
+        XCTAssertEqual(destination.value as? String, "./Projects/UI%20Lifecycle.md")
+        app.buttons["apply-markdown-link"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            (editor.value as? String)?.contains(
+                "[UI Lifecycle](./Projects/UI%20Lifecycle.md)"
+            ) == true
+        )
+
+        app.buttons["save-markdown-button"].tap()
+        let linkedText = app.links["UI Lifecycle"]
+        XCTAssertTrue(linkedText.waitForExistence(timeout: 5))
+        let readerSettled = expectation(description: "Reader toolbar transition settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { readerSettled.fulfill() }
+        wait(for: [readerSettled], timeout: 1)
+
+        let linkScreenshot = XCTAttachment(screenshot: app.screenshot())
+        linkScreenshot.name = "Rendered local note link"
+        linkScreenshot.lifetime = .keepAlways
+        add(linkScreenshot)
+
+        linkedText.tap()
+        let targetBody = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Restore this note end to end.")
+        ).firstMatch
+        XCTAssertTrue(targetBody.waitForExistence(timeout: 5))
+        let previous = app.buttons["previous-linked-note"]
+        XCTAssertTrue(previous.exists)
+        previous.tap()
+        XCTAssertTrue(app.links["UI Lifecycle"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["previous-linked-note"].exists)
+    }
+
     func testDocumentDrawingSavesAsPortableMarkdownImage() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

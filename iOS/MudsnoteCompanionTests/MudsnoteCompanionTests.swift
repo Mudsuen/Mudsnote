@@ -2442,6 +2442,157 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
     }
 
+    func testMarkdownNoteLinksArePortableRelativeAndTraversalSafe() throws {
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Inbox.md",
+                to: "Projects/UI Lifecycle.md"
+            ),
+            "./Projects/UI%20Lifecycle.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Projects/Current.md",
+                to: "Projects/Next.md"
+            ),
+            "./Next.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Projects/Current.md",
+                to: "Reference/设计规范.md"
+            ),
+            "../Reference/%E8%AE%BE%E8%AE%A1%E8%A7%84%E8%8C%83.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.resolvedRelativePath(
+                for: "../Reference/%E8%AE%BE%E8%AE%A1%E8%A7%84%E8%8C%83.md#section",
+                from: "Projects/Current.md"
+            ),
+            "Reference/设计规范.md"
+        )
+        XCTAssertNil(MarkdownNoteLink.relativeDestination(
+            from: "Projects/Current.md",
+            to: "Projects/Current.md"
+        ))
+        XCTAssertNil(MarkdownNoteLink.resolvedRelativePath(
+            for: "../Outside.md",
+            from: "Inbox.md"
+        ))
+        XCTAssertNil(MarkdownNoteLink.resolvedRelativePath(
+            for: "https://example.com/Note.md",
+            from: "Inbox.md"
+        ))
+
+        let rendered = MarkdownInlineRendering.attributedText(
+            for: "See [UI Lifecycle](Projects/UI%20Lifecycle.md)"
+        )
+        XCTAssertEqual(
+            rendered.runs.compactMap(\.link).first?.relativeString,
+            "Projects/UI%20Lifecycle.md"
+        )
+        XCTAssertNil(MarkdownAttachmentLine(
+            "[UI Lifecycle](./Projects/UI%20Lifecycle.md)"
+        ))
+        XCTAssertNil(MarkdownAttachmentLine(
+            "[Website](https://example.com)"
+        ))
+        XCTAssertEqual(
+            MarkdownAttachmentLine("[Scan](Attachments/Scanned%20Document.pdf)")?.kind,
+            .file
+        )
+    }
+
+    func testNoteLinksSurviveRenameSingleMoveFolderRenameAndBatchMove() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        let reference = root.appendingPathComponent("Reference", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: reference, withIntermediateDirectories: true)
+        try "# Source\n\n[Target](./Target.md)\n\n[Web](https://example.com)\n".write(
+            to: projects.appendingPathComponent("Source.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Target\n\n[Other](../Reference/Other.md)\n".write(
+            to: projects.appendingPathComponent("Target.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Other\n\n[Target](../Projects/Target.md)\n".write(
+            to: reference.appendingPathComponent("Other.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let renamed = try await store.renameMarkdownDocument(
+            relativePath: "Projects/Target.md",
+            to: "Renamed"
+        )
+        XCTAssertEqual(renamed.relativePath, "Projects/Renamed.md")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: reference.appendingPathComponent("Other.md"),
+            encoding: .utf8
+        ).contains("[Target](../Projects/Renamed.md)"))
+
+        let moved = try await store.moveMarkdownDocument(
+            relativePath: renamed.relativePath,
+            toFolder: "Reference"
+        )
+        XCTAssertEqual(moved.relativePath, "Reference/Renamed.md")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](../Reference/Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: reference.appendingPathComponent("Renamed.md"),
+            encoding: .utf8
+        ).contains("[Other](./Other.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Web](https://example.com)"))
+
+        let renamedFolder = try await store.renameFolder(
+            relativePath: "Reference",
+            to: "Knowledge"
+        )
+        XCTAssertEqual(renamedFolder, "Knowledge")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](../Knowledge/Renamed.md)"))
+
+        let batchMoved = try await store.moveMarkdownDocuments(
+            relativePaths: ["Knowledge/Renamed.md", "Knowledge/Other.md"],
+            toFolder: "Projects"
+        )
+        XCTAssertEqual(Set(batchMoved.map(\.relativePath)), Set([
+            "Projects/Renamed.md",
+            "Projects/Other.md",
+        ]))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Renamed.md"),
+            encoding: .utf8
+        ).contains("[Other](./Other.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Other.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+    }
+
     func testFindInNoteIndexesRenderedMarkdownQuotesAndTableCells() throws {
         let blocks = MarkdownRenderBlock.parse(
             "# Plan\n\n**Restore** this note, then restore it.\n\n> RESTORE quote\n\n| Item | Status |\n| --- | --- |\n| Restore | Ready |\n\n[Backup](Attachments/restore.txt)"

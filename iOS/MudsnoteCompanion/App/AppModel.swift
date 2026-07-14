@@ -489,6 +489,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func loadDocument(relativePath: String) async -> MarkdownDocument? {
+        do {
+            return try await fileStore.loadMarkdownDocument(relativePath: relativePath)
+        } catch {
+            statusToast = .error(String(localized: "Could not open Markdown file"))
+            return nil
+        }
+    }
+
     func createStandaloneNote(inFolder relativeFolderPath: String? = nil) {
         guard case .ready = folderStatus else { return }
         Task {
