@@ -631,6 +631,44 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
     }
 
+    func testRenderedHeadingCollapsesSectionAndFindRevealsItsContent() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let body = app.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        let toggle = app.buttons["markdown-section-toggle-0"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertTrue(waitForNonexistence(body))
+
+        let collapsedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        collapsedScreenshot.name = "Collapsed Markdown heading"
+        collapsedScreenshot.lifetime = .keepAlways
+        add(collapsedScreenshot)
+
+        toggle.tap()
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        toggle.tap()
+        XCTAssertTrue(waitForNonexistence(body))
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.exists)
+        options.tap()
+        let find = app.buttons["Find in Note"]
+        XCTAssertTrue(find.waitForExistence(timeout: 3))
+        find.tap()
+        let field = app.textFields["find-in-note-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Restore")
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["find-in-note-count"].label, "1 of 1")
+    }
+
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))

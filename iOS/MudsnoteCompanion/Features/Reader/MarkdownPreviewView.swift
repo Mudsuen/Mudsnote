@@ -29,6 +29,14 @@ struct MarkdownPreviewView: View {
         var isEditing: Bool
     }
 
+    private struct RenderedBlockItem: Identifiable {
+        var index: Int
+        var block: MarkdownRenderBlock
+        var hasCollapsibleContent: Bool
+
+        var id: Int { index }
+    }
+
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
     @Binding private var detent: PresentationDetent
@@ -63,6 +71,7 @@ struct MarkdownPreviewView: View {
     @State private var isFindingInNote = false
     @State private var findQuery = ""
     @State private var activeFindIndex = 0
+    @State private var collapsedHeadingIndices: Set<Int> = []
     @FocusState private var isFindFocused: Bool
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
@@ -592,6 +601,16 @@ struct MarkdownPreviewView: View {
 
     private func scrollToActiveFindMatch(using proxy: ScrollViewProxy) {
         guard let match = activeFindMatch else { return }
+        let hiddenSections = MarkdownSectionProjection.collapsedHeadings(
+            containing: match.location.blockIndex,
+            in: renderBlocks,
+            collapsed: collapsedHeadingIndices
+        )
+        if !hiddenSections.isEmpty {
+            withAnimation(.snappy(duration: 0.22)) {
+                collapsedHeadingIndices.subtract(hiddenSections)
+            }
+        }
         Task { @MainActor in
             await Task.yield()
             withAnimation(.snappy(duration: 0.2)) {
@@ -760,17 +779,44 @@ struct MarkdownPreviewView: View {
 
     private var markdownBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(renderBlocks.enumerated()), id: \.offset) { index, block in
+            ForEach(visibleRenderBlockItems) { item in
                 Group {
-                    switch block {
+                    switch item.block {
                     case .line(let line):
-                        markdownLine(line, blockIndex: index)
+                        markdownLine(
+                            line,
+                            blockIndex: item.index,
+                            hasCollapsibleContent: item.hasCollapsibleContent
+                        )
                     case .table(let headers, let rows):
-                        markdownTable(headers: headers, rows: rows, blockIndex: index)
+                        markdownTable(
+                            headers: headers,
+                            rows: rows,
+                            blockIndex: item.index
+                        )
                     }
                 }
-                .id(index)
+                .id(item.index)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+        .animation(.snappy(duration: 0.22), value: collapsedHeadingIndices)
+    }
+
+    private var visibleRenderBlockItems: [RenderedBlockItem] {
+        let blocks = renderBlocks
+        return MarkdownSectionProjection.visibleIndices(
+            in: blocks,
+            collapsed: collapsedHeadingIndices
+        ).map { index in
+            RenderedBlockItem(
+                index: index,
+                block: blocks[index],
+                hasCollapsibleContent: MarkdownSectionProjection.hasCollapsibleContent(
+                    after: index,
+                    in: blocks
+                )
+            )
         }
     }
 
@@ -783,9 +829,42 @@ struct MarkdownPreviewView: View {
     }
 
     @ViewBuilder
-    private func markdownLine(_ line: String, blockIndex: Int) -> some View {
+    private func markdownLine(
+        _ line: String,
+        blockIndex: Int,
+        hasCollapsibleContent: Bool
+    ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
             attachmentView(attachment)
+        } else if MarkdownHeading(line) != nil {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if hasCollapsibleContent {
+                    Button {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            if collapsedHeadingIndices.contains(blockIndex) {
+                                collapsedHeadingIndices.remove(blockIndex)
+                            } else {
+                                collapsedHeadingIndices.insert(blockIndex)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .rotationEffect(
+                                .degrees(collapsedHeadingIndices.contains(blockIndex) ? 0 : 90)
+                            )
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("markdown-section-toggle-\(blockIndex)")
+                }
+
+                markdownText(
+                    line,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                )
+            }
         } else if line.hasPrefix(">") {
             markdownText(
                 line,
@@ -1000,6 +1079,7 @@ struct MarkdownPreviewView: View {
 
         isSaving = false
         if finishEditing, succeeded, draftMarkdown == originalMarkdown {
+            collapsedHeadingIndices.removeAll()
             isEditing = false
         } else if !succeeded {
             editorFocused = true
@@ -1654,6 +1734,90 @@ enum MarkdownRenderBlock: Equatable {
         return cells.allSatisfy { cell in
             cell.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
         }
+    }
+}
+
+struct MarkdownHeading: Equatable {
+    var level: Int
+    var title: String
+
+    init(level: Int, title: String) {
+        self.level = level
+        self.title = title
+    }
+
+    init?(_ line: String) {
+        let markerCount = line.prefix { $0 == "#" }.count
+        guard (1...6).contains(markerCount),
+              line.count > markerCount,
+              line[line.index(line.startIndex, offsetBy: markerCount)] == " " else {
+            return nil
+        }
+        let title = String(line.dropFirst(markerCount + 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        self.level = markerCount
+        self.title = title
+    }
+}
+
+enum MarkdownSectionProjection {
+    static func visibleIndices(
+        in blocks: [MarkdownRenderBlock],
+        collapsed: Set<Int>
+    ) -> [Int] {
+        var result: [Int] = []
+        var hiddenUntilHeadingLevel: Int?
+
+        for (index, block) in blocks.enumerated() {
+            let heading = parsedHeading(in: block)
+            if let hiddenLevel = hiddenUntilHeadingLevel {
+                guard let heading, heading.level <= hiddenLevel else { continue }
+                hiddenUntilHeadingLevel = nil
+            }
+
+            result.append(index)
+            if let heading, collapsed.contains(index) {
+                hiddenUntilHeadingLevel = heading.level
+            }
+        }
+        return result
+    }
+
+    static func hasCollapsibleContent(
+        after headingIndex: Int,
+        in blocks: [MarkdownRenderBlock]
+    ) -> Bool {
+        guard blocks.indices.contains(headingIndex),
+              let currentHeading = parsedHeading(in: blocks[headingIndex]),
+              blocks.indices.contains(headingIndex + 1) else { return false }
+        if let nextHeading = parsedHeading(in: blocks[headingIndex + 1]) {
+            return nextHeading.level > currentHeading.level
+        }
+        return true
+    }
+
+    static func collapsedHeadings(
+        containing blockIndex: Int,
+        in blocks: [MarkdownRenderBlock],
+        collapsed: Set<Int>
+    ) -> Set<Int> {
+        guard blocks.indices.contains(blockIndex) else { return [] }
+        return Set(collapsed.filter { headingIndex in
+            guard headingIndex < blockIndex,
+                  blocks.indices.contains(headingIndex),
+                  let currentHeading = parsedHeading(in: blocks[headingIndex]) else { return false }
+            let end = blocks.indices.dropFirst(headingIndex + 1).first { candidate in
+                guard let candidateHeading = parsedHeading(in: blocks[candidate]) else { return false }
+                return candidateHeading.level <= currentHeading.level
+            } ?? blocks.endIndex
+            return blockIndex < end
+        })
+    }
+
+    private static func parsedHeading(in block: MarkdownRenderBlock) -> MarkdownHeading? {
+        guard case .line(let line) = block else { return nil }
+        return MarkdownHeading(line)
     }
 }
 

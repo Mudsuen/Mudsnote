@@ -2072,6 +2072,46 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testMarkdownHeadingSectionsCollapseByLevelAndRevealFindTargets() {
+        let blocks: [MarkdownRenderBlock] = [
+            .line("# Plan"),
+            .line("Overview"),
+            .line("## Tasks"),
+            .line("Ship the app"),
+            .line("# Notes"),
+            .line("Done")
+        ]
+
+        XCTAssertEqual(MarkdownHeading("# Plan"), MarkdownHeading(level: 1, title: "Plan"))
+        XCTAssertNil(MarkdownHeading("#tag"))
+        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 0, in: blocks))
+        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 2, in: blocks))
+        XCTAssertEqual(
+            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [0]),
+            [0, 4, 5]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [2]),
+            [0, 1, 2, 4, 5]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.collapsedHeadings(
+                containing: 3,
+                in: blocks,
+                collapsed: [0, 2]
+            ),
+            [0, 2]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.collapsedHeadings(
+                containing: 5,
+                in: blocks,
+                collapsed: [0, 2]
+            ),
+            []
+        )
+    }
+
     func testInlineMarkdownFormattingTogglesInsteadOfNestingMarkers() throws {
         let wrapped = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
             in: "Ship it",
