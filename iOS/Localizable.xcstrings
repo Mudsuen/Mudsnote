@@ -286,6 +286,66 @@
         }
       }
     },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部符合"
+          }
+        }
+      }
+    },
+    "Any": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任一符合"
+          }
+        }
+      }
+    },
+    "Clear Filters": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除筛选"
+          }
+        }
+      }
+    },
+    "Match Tags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签匹配"
+          }
+        }
+      }
+    },
+    "No notes match these tags.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有符合这些标签的笔记。"
+          }
+        }
+      }
+    },
+    "Tap once to include a tag. Tap again to exclude it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻点一次包含标签，再次轻点将其排除。"
+          }
+        }
+      }
+    },
     "Attachments": {
       "localizations": {
         "zh-Hans": {

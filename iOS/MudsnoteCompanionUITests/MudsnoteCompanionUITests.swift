@@ -112,6 +112,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
         let tag = app.buttons["tag-link-#project"]
         XCTAssertTrue(tag.waitForExistence(timeout: 8))
+        if !tag.isHittable {
+            app.swipeUp()
+        }
+        if tag.frame.maxY > app.frame.maxY - 180 {
+            app.swipeUp()
+        }
+        XCTAssertTrue(waitForHittable(tag))
         tag.tap()
 
         XCTAssertTrue(app.navigationBars["#project"].waitForExistence(timeout: 5))
@@ -121,7 +128,52 @@ final class MudsnoteCompanionUITests: XCTestCase {
             app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.staticTexts["Tagged quick capture #project"].exists)
+        XCTAssertTrue(app.staticTexts["Tagged quick capture #project #quick"].exists)
+    }
+
+    func testAllTagsBrowserCombinesAndExcludesTags() {
+        let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
+        let allTags = app.buttons["all-tags-link"]
+        XCTAssertTrue(allTags.waitForExistence(timeout: 8))
+        allTags.tap()
+
+        XCTAssertTrue(app.navigationBars["All Tags"].waitForExistence(timeout: 5))
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let quickNote = app.staticTexts["Tagged quick capture #project #quick"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertTrue(quickNote.exists)
+
+        let work = app.buttons["tag-filter-#work"]
+        XCTAssertTrue(work.exists)
+        work.tap()
+        XCTAssertTrue(note.exists)
+        XCTAssertTrue(waitForNonexistence(quickNote))
+
+        work.tap()
+        XCTAssertTrue(waitForNonexistence(note))
+        XCTAssertTrue(quickNote.waitForExistence(timeout: 5))
+
+        work.tap()
+        let project = app.buttons["tag-filter-#project"]
+        let quick = app.buttons["tag-filter-#quick"]
+        project.tap()
+        quick.tap()
+        XCTAssertTrue(app.segmentedControls["tag-match-mode"].exists)
+        XCTAssertTrue(note.exists)
+        XCTAssertTrue(quickNote.exists)
+
+        app.buttons["All"].tap()
+        XCTAssertTrue(waitForNonexistence(note))
+        XCTAssertTrue(quickNote.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style multi-tag browser"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.buttons["clear-tag-filters"].tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertTrue(quickNote.exists)
     }
 
     func testNotesStyleSelectionPinsMultipleMarkdownNotes() {

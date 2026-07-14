@@ -4,6 +4,34 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testTagSelectionFilterSupportsAnyAllAndExclusions() {
+        var filter = TagSelectionFilter()
+
+        XCTAssertTrue(filter.matches(tags: ["#project"]))
+        XCTAssertFalse(filter.matches(tags: []))
+
+        filter.cycle("#project")
+        XCTAssertEqual(filter.state(for: "#PROJECT"), .included)
+        XCTAssertTrue(filter.matches(tags: ["#Project", "#work"]))
+        XCTAssertFalse(filter.matches(tags: ["#quick"]))
+
+        filter.cycle("#quick")
+        XCTAssertTrue(filter.matches(tags: ["#quick"]))
+        filter.matchMode = .all
+        XCTAssertTrue(filter.matches(tags: ["#project", "#quick"]))
+        XCTAssertFalse(filter.matches(tags: ["#project", "#work"]))
+
+        filter.cycle("#quick")
+        XCTAssertEqual(filter.state(for: "#quick"), .excluded)
+        XCTAssertFalse(filter.matches(tags: ["#project", "#quick"]))
+        XCTAssertTrue(filter.matches(tags: ["#project", "#work"]))
+
+        filter.cycle("#quick")
+        filter.clear()
+        XCTAssertTrue(filter.isEmpty)
+        XCTAssertTrue(filter.matches(tags: ["#work"]))
+    }
+
     @MainActor
     func testDrawingExportProducesBoundedPortablePNG() throws {
         let points = [

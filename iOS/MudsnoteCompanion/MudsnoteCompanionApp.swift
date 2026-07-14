@@ -94,14 +94,14 @@ private enum MudsnoteUITestLaunchConfiguration {
                     encoding: .utf8
                 )
                 if arguments.contains(fileTagArgument) {
-                    try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project\n".write(
+                    try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project #work\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle.md"),
                         atomically: true,
                         encoding: .utf8
                     )
                     let inbox = root.appendingPathComponent("Inbox.md")
                     let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
-                    try (existingInbox + "\n## 2026-07-13 20:00\n\nTagged quick capture\n\n#project\n").write(
+                    try (existingInbox + "\n## 2026-07-13 20:00\n\nTagged quick capture\n\n#project #quick\n").write(
                         to: inbox,
                         atomically: true,
                         encoding: .utf8

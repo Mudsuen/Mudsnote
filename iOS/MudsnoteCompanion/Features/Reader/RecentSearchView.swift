@@ -188,6 +188,22 @@ struct LibraryHomeView: View {
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             NotesSectionHeader(title: String(localized: "Tags"))
+            NavigationLink {
+                TagsBrowserView()
+            } label: {
+                NotesFolderRow(
+                    title: String(localized: "All Tags"),
+                    systemImage: "number",
+                    count: appModel.tagSummaries.count
+                )
+            }
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
+            .overlay {
+                RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+                    .stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+            .accessibilityIdentifier("all-tags-link")
+
             FlowLayout(spacing: 10, rowSpacing: 10) {
                 ForEach(appModel.tagSummaries) { tag in
                     NavigationLink {
@@ -1643,6 +1659,121 @@ struct TagChip: View {
     }
 }
 
+enum TagMatchMode: String, CaseIterable, Identifiable {
+    case any
+    case all
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .any: String(localized: "Any")
+        case .all: String(localized: "All")
+        }
+    }
+}
+
+enum TagFilterState: Equatable {
+    case inactive
+    case included
+    case excluded
+}
+
+struct TagSelectionFilter: Equatable {
+    var included = Set<String>()
+    var excluded = Set<String>()
+    var matchMode = TagMatchMode.any
+
+    var isEmpty: Bool { included.isEmpty && excluded.isEmpty }
+
+    mutating func cycle(_ tag: String) {
+        switch state(for: tag) {
+        case .inactive:
+            included.insert(tag)
+        case .included:
+            included.remove(tag)
+            excluded.insert(tag)
+        case .excluded:
+            excluded.remove(tag)
+        }
+    }
+
+    mutating func clear() {
+        included.removeAll()
+        excluded.removeAll()
+    }
+
+    func state(for tag: String) -> TagFilterState {
+        if contains(tag, in: included) { return .included }
+        if contains(tag, in: excluded) { return .excluded }
+        return .inactive
+    }
+
+    func matches(tags: [String]) -> Bool {
+        let candidateKeys = Set(tags.map(Self.key))
+        guard !candidateKeys.isEmpty else { return false }
+        let excludedKeys = Set(excluded.map(Self.key))
+        guard candidateKeys.isDisjoint(with: excludedKeys) else { return false }
+
+        let includedKeys = Set(included.map(Self.key))
+        guard !includedKeys.isEmpty else { return true }
+        switch matchMode {
+        case .any:
+            return !candidateKeys.isDisjoint(with: includedKeys)
+        case .all:
+            return includedKeys.isSubset(of: candidateKeys)
+        }
+    }
+
+    private func contains(_ tag: String, in values: Set<String>) -> Bool {
+        let key = Self.key(tag)
+        return values.contains { Self.key($0) == key }
+    }
+
+    private static func key(_ tag: String) -> String {
+        tag.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
+    }
+}
+
+private struct TagFilterChip: View {
+    var title: String
+    var state: TagFilterState
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if state != .inactive {
+                Image(systemName: state == .included ? "checkmark" : "minus")
+                    .font(.caption.weight(.bold))
+            }
+            Text(title)
+                .strikethrough(state == .excluded)
+        }
+        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+        .foregroundStyle(state == .included ? Color.black : MudsnoteColors.text)
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+        .background(chipBackground, in: Capsule())
+        .overlay {
+            Capsule().stroke(chipBorder, lineWidth: 1)
+        }
+    }
+
+    private var chipBackground: Color {
+        switch state {
+        case .inactive: NotesCloneColors.chip
+        case .included: NotesCloneColors.folderYellow
+        case .excluded: MudsnoteColors.card
+        }
+    }
+
+    private var chipBorder: Color {
+        state == .inactive ? MudsnoteColors.line : NotesCloneColors.folderYellow.opacity(0.8)
+    }
+}
+
 struct NotesBottomCommandBar: View {
     @Binding var searchText: String
     var searchFocused: FocusState<Bool>.Binding
@@ -1774,6 +1905,129 @@ struct FlowLayout: Layout {
             currentX += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+struct TagsBrowserView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @State private var filter = TagSelectionFilter()
+
+    private var files: [RecentMarkdownFile] {
+        appModel.libraryFiles.filter { file in
+            file.relativePath != "Inbox.md" && filter.matches(tags: file.tags)
+        }
+    }
+
+    private var memos: [MemoBlock] {
+        appModel.inboxItems.filter { filter.matches(tags: $0.tags) }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                FlowLayout(spacing: 10, rowSpacing: 10) {
+                    ForEach(appModel.tagSummaries) { tag in
+                        Button {
+                            filter.cycle(tag.name)
+                        } label: {
+                            TagFilterChip(
+                                title: tag.name,
+                                state: filter.state(for: tag.name)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("tag-filter-\(tag.name)")
+                    }
+                }
+                .padding(.vertical, 8)
+
+                if filter.included.count > 1 {
+                    Picker("Match Tags", selection: $filter.matchMode) {
+                        ForEach(TagMatchMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("tag-match-mode")
+                }
+            } footer: {
+                Text("Tap once to include a tag. Tap again to exclude it.")
+            }
+
+            if files.isEmpty, memos.isEmpty {
+                EmptyReaderStateView(
+                    title: String(localized: "No Notes"),
+                    message: String(localized: "No notes match these tags.")
+                )
+                .frame(maxWidth: .infinity)
+                .listRowBackground(MudsnoteColors.canvas)
+                .listRowSeparator(.hidden)
+            }
+
+            if !files.isEmpty {
+                Section("Notes") {
+                    ForEach(files) { file in
+                        NoteFileButton(file: file)
+                    }
+                }
+            }
+
+            if !memos.isEmpty {
+                Section("Quick Notes") {
+                    ForEach(memos) { memo in
+                        MemoCardView(memo: memo)
+                            .contentShape(Rectangle())
+                            .onTapGesture { appModel.selectedMemo = memo }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    appModel.deleteMemo(memo)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button {
+                                    appModel.pinMemo(memo)
+                                } label: {
+                                    Label("Pin", systemImage: "pin")
+                                }
+                                .tint(.yellow)
+                            }
+                            .listRowInsets(.init(
+                                top: 6,
+                                leading: MudsnoteSpacing.safeHorizontal,
+                                bottom: 6,
+                                trailing: MudsnoteSpacing.safeHorizontal
+                            ))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(MudsnoteColors.canvas)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .navigationTitle("All Tags")
+        .refreshable { await appModel.refreshInbox() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if !filter.isEmpty {
+                    Button("Clear Filters") { filter.clear() }
+                        .accessibilityIdentifier("clear-tag-filters")
+                }
+            }
+        }
+        .onChange(of: appModel.tagSummaries.map(\.name)) { _, tags in
+            let activeKeys = Set(tags.map(tagKey))
+            filter.included = filter.included.filter { activeKeys.contains(tagKey($0)) }
+            filter.excluded = filter.excluded.filter { activeKeys.contains(tagKey($0)) }
+        }
+    }
+
+    private func tagKey(_ tag: String) -> String {
+        tag.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
     }
 }
 
