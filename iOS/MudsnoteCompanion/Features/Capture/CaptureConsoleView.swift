@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import VisionKit
 
 struct CaptureConsoleView: View {
     @EnvironmentObject private var appModel: AppModel
@@ -7,6 +8,9 @@ struct CaptureConsoleView: View {
     @State private var selectedRoute: CaptureRoute
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
+    @State private var isScannerPresented = false
+    @State private var scanErrorMessage: String?
+    @State private var refocusAfterScanner = false
 
     init(initialRoute: CaptureRoute) {
         _selectedRoute = State(initialValue: initialRoute)
@@ -51,6 +55,42 @@ struct CaptureConsoleView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+        .fullScreenCover(
+            isPresented: $isScannerPresented,
+            onDismiss: refocusCaptureAfterScannerIfNeeded
+        ) {
+            DocumentScannerView(
+                onComplete: { result in
+                    switch result {
+                    case .success(let pages):
+                        Task {
+                            scanErrorMessage = await appModel.attachScannedDocument(pages)
+                            refocusAfterScanner = scanErrorMessage == nil
+                            isScannerPresented = false
+                        }
+                    case .failure(let error):
+                        scanErrorMessage = error.localizedDescription
+                        isScannerPresented = false
+                    }
+                },
+                onCancel: {
+                    refocusAfterScanner = true
+                    isScannerPresented = false
+                }
+            )
+            .ignoresSafeArea()
+        }
+        .alert("Couldn’t Scan Document", isPresented: Binding(
+            get: { scanErrorMessage != nil },
+            set: { if !$0 { scanErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                scanErrorMessage = nil
+                isBodyFocused = true
+            }
+        } message: {
+            Text(scanErrorMessage ?? "Try scanning the document again.")
+        }
         .onDisappear {
             appModel.cancelAudioRecording()
         }
@@ -58,15 +98,30 @@ struct CaptureConsoleView: View {
 
     private var commandBar: some View {
         HStack(spacing: 10) {
-            Button {
-                selectedRoute = .image
-                isPhotoPickerPresented = true
+            Menu {
+                Button {
+                    selectedRoute = .image
+                    isPhotoPickerPresented = true
+                } label: {
+                    Label("Add image from Photos", systemImage: "photo")
+                }
+                .accessibilityIdentifier("capture-add-image")
+
+                Button {
+                    isBodyFocused = false
+                    isScannerPresented = true
+                } label: {
+                    Label("Scan Document", systemImage: "doc.viewfinder")
+                }
+                .disabled(!VNDocumentCameraViewController.isSupported)
+                .accessibilityIdentifier("capture-scan-document")
             } label: {
-                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "photo")
+                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
             }
             .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
             .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("Add image")
+            .accessibilityLabel("Add Attachment")
+            .accessibilityIdentifier("capture-attachment-menu")
 
             Button {
                 selectedRoute = .audio
@@ -223,5 +278,14 @@ struct CaptureConsoleView: View {
             appModel.draft.body += token
         }
         isBodyFocused = true
+    }
+
+    private func refocusCaptureAfterScannerIfNeeded() {
+        guard refocusAfterScanner else { return }
+        refocusAfterScanner = false
+        Task { @MainActor in
+            await Task.yield()
+            isBodyFocused = true
+        }
     }
 }

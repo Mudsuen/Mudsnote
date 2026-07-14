@@ -94,6 +94,21 @@
     "Scan Document": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文稿" } } }
     },
+    "Scanned document attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加扫描文稿" } } }
+    },
+    "Couldn’t Scan Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法扫描文稿" } } }
+    },
+    "Try scanning the document again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试扫描文稿。" } } }
+    },
+    "No scanned pages were available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的扫描页面。" } } }
+    },
+    "A scanned page could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理某个扫描页面。" } } }
+    },
     "New Subfolder": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建子文件夹" } } }
     },

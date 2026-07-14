@@ -2536,6 +2536,53 @@ final class MudsnoteCompanionTests: XCTestCase {
         let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
         XCTAssertEqual(try XCTUnwrap(CGPDFDocument(provider)).numberOfPages, 2)
         XCTAssertThrowsError(try ScannedDocumentPDF.data(for: []))
+        XCTAssertThrowsError(try ScannedDocumentPDF.data(for: [UIImage()])) { error in
+            XCTAssertEqual(error as? ScannedDocumentPDF.Error, .invalidPage)
+        }
+    }
+
+    @MainActor
+    func testQuickCaptureAcceptsScannedDocumentAsPortableFile() async throws {
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+        let page = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 500)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 500))
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 30, y: 40, width: 240, height: 20))
+        }
+
+        let errorMessage = await model.attachScannedDocument([page, page])
+
+        XCTAssertNil(errorMessage)
+        XCTAssertTrue(model.draft.canSend)
+        XCTAssertEqual(model.draft.attachments.count, 1)
+        guard case .file(let data, let fileExtension, let baseName) = model.draft.attachments[0] else {
+            return XCTFail("The scan should use the portable file attachment pipeline")
+        }
+        XCTAssertEqual(fileExtension, "pdf")
+        XCTAssertEqual(baseName, "Scanned Document")
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
+        XCTAssertEqual(try XCTUnwrap(CGPDFDocument(provider)).numberOfPages, 2)
+
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let pending = try await MarkdownFileStore().preparePendingWrite(
+            for: model.draft,
+            root: root,
+            now: Date(timeIntervalSince1970: 1_752_384_000)
+        )
+        XCTAssertEqual(pending.targetRelativePath, "Inbox.md")
+        XCTAssertEqual(pending.attachments.count, 1)
+        XCTAssertTrue(pending.attachments[0].relativePath.contains("/Scanned Document-"))
+        XCTAssertTrue(pending.attachments[0].relativePath.hasSuffix(".pdf"))
+        XCTAssertTrue(pending.markdownBlock.contains("[Scanned Document-"))
+        XCTAssertTrue(pending.markdownBlock.contains("](Attachments/"))
+        XCTAssertTrue(pending.markdownBlock.contains("#附件"))
     }
 
     @MainActor

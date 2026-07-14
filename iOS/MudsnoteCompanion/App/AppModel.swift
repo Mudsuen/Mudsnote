@@ -1,6 +1,7 @@
 import Foundation
 import PhotosUI
 import SwiftUI
+import UIKit
 
 enum CaptureRoute: String {
     case text
@@ -259,6 +260,25 @@ final class AppModel: ObservableObject {
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
+        }
+    }
+
+    func attachScannedDocument(_ pages: [UIImage]) async -> String? {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let data = try ScannedDocumentPDF.data(for: pages)
+            let attachment = try CaptureAttachment.validatedFile(
+                data: data,
+                suggestedName: ScannedDocumentPDF.suggestedFileName
+            )
+            try appendAttachment(attachment)
+            statusToast = .saved(String(localized: "Scanned document attached"))
+            return nil
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return error.localizedDescription
         }
     }
 

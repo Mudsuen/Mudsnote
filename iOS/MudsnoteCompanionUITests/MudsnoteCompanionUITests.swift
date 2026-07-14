@@ -919,7 +919,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
         quickNoteButton.tap()
 
-        let labels = ["Add image", "Record audio", "Formatting", "capture-target-menu", "save-memo-button"]
+        let labels = ["capture-attachment-menu", "Record audio", "Formatting", "capture-target-menu", "save-memo-button"]
         let controls = labels.map { app.buttons[$0] }
         for control in controls {
             XCTAssertTrue(control.waitForExistence(timeout: 5))
@@ -934,6 +934,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.name = "Single-row capture console"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+
+        controls[0].tap()
+        XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Scan Document"].exists)
+
+        let attachmentMenuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        attachmentMenuScreenshot.name = "Quick capture attachment menu"
+        attachmentMenuScreenshot.lifetime = .keepAlways
+        add(attachmentMenuScreenshot)
     }
 
     func testAttachmentLibraryShowsStoredFiles() {
