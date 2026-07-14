@@ -26,7 +26,13 @@
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑器选项" } } }
     },
     "Heading": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标题" } } }
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "大标题" } } }
+    },
+    "Subheading": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "副标题" } } }
+    },
+    "Body": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正文" } } }
     },
     "Increase Indent": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "增加缩进" } } }

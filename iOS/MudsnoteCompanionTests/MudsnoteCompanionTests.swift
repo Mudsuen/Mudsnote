@@ -2000,6 +2000,50 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testMarkdownParagraphStylesAreNativeAndIdempotent() throws {
+        let source = "Intro\n## Existing\n#tag stays\n"
+        let existingRange = (source as NSString).range(of: "## Existing")
+        let titleEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: source,
+            selection: existingRange,
+            style: .title
+        ))
+        let titled = (source as NSString).replacingCharacters(
+            in: titleEdit.range,
+            with: titleEdit.replacement
+        )
+        XCTAssertEqual(titled, "Intro\n# Existing\n#tag stays\n")
+
+        let repeatedTitleEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: titled,
+            selection: (titled as NSString).range(of: "# Existing"),
+            style: .title
+        ))
+        XCTAssertEqual(repeatedTitleEdit.replacement, "# Existing\n")
+
+        let bodyEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: titled,
+            selection: (titled as NSString).range(of: "# Existing"),
+            style: .body
+        ))
+        XCTAssertEqual(bodyEdit.replacement, "Existing\n")
+
+        let multiple = "First\n### Second\n\n"
+        let headingEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: multiple,
+            selection: NSRange(location: 0, length: (multiple as NSString).length),
+            style: .heading
+        ))
+        XCTAssertEqual(headingEdit.replacement, "## First\n## Second\n\n")
+
+        let tagEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: "#tag stays",
+            selection: NSRange(location: 0, length: 10),
+            style: .body
+        ))
+        XCTAssertEqual(tagEdit.replacement, "#tag stays")
+    }
+
     func testScannedDocumentCreatesPortableMultiPagePDF() throws {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 500))
         let first = renderer.image { context in

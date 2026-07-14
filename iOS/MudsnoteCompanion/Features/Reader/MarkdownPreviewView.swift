@@ -371,7 +371,11 @@ struct MarkdownPreviewView: View {
                 }
 
                 Menu {
+                    formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
                     formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
+                    formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
+                    formatMenuButton("Body", systemImage: "textformat", command: .body)
+                    Divider()
                     formatMenuButton("Bold", systemImage: "bold", command: .bold)
                     formatMenuButton("Italic", systemImage: "italic", command: .italic)
                     Divider()
@@ -965,7 +969,10 @@ struct DocumentScannerView: UIViewControllerRepresentable {
 
 struct MarkdownEditingCommand: Identifiable, Equatable {
     enum Kind: Equatable {
+        case title
         case heading
+        case subheading
+        case body
         case bold
         case italic
         case bullet
@@ -982,7 +989,10 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 
         var identifier: String {
             switch self {
+            case .title: "title"
             case .heading: "heading"
+            case .subheading: "subheading"
+            case .body: "body"
             case .bold: "bold"
             case .italic: "italic"
             case .bullet: "bullet"
@@ -1084,6 +1094,79 @@ struct MarkdownListEdit: Equatable {
     var range: NSRange
     var replacement: String
     var selection: NSRange
+}
+
+enum MarkdownParagraphEditing {
+    enum Style {
+        case title
+        case heading
+        case subheading
+        case body
+
+        var prefix: String? {
+            switch self {
+            case .title: "# "
+            case .heading: "## "
+            case .subheading: "### "
+            case .body: nil
+            }
+        }
+    }
+
+    static func styleEdit(
+        in markdown: String,
+        selection: NSRange,
+        style: Style
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+
+        let lineRange = source.lineRange(for: selection)
+        let block = source.substring(with: lineRange)
+        let endsWithNewline = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+
+        let headingExpression = try? NSRegularExpression(
+            pattern: #"^([ \t]*)#{1,6}[ \t]+"#
+        )
+        let indentationExpression = try? NSRegularExpression(pattern: #"^[ \t]*"#)
+        lines = lines.map { line in
+            guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return line
+            }
+
+            let fullRange = NSRange(location: 0, length: (line as NSString).length)
+            let body = headingExpression?.stringByReplacingMatches(
+                in: line,
+                range: fullRange,
+                withTemplate: "$1"
+            ) ?? line
+            guard let prefix = style.prefix else { return body }
+
+            let bodyRange = NSRange(location: 0, length: (body as NSString).length)
+            let indentationRange = indentationExpression?.firstMatch(
+                in: body,
+                range: bodyRange
+            )?.range ?? NSRange(location: 0, length: 0)
+            let bodySource = body as NSString
+            let indentation = bodySource.substring(with: indentationRange)
+            let content = bodySource.substring(from: NSMaxRange(indentationRange))
+            return indentation + prefix + content
+        }
+
+        var replacement = lines.joined(separator: "\n")
+        if endsWithNewline { replacement += "\n" }
+        return MarkdownListEdit(
+            range: lineRange,
+            replacement: replacement,
+            selection: NSRange(
+                location: lineRange.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
 }
 
 enum MarkdownListEditing {
@@ -1611,8 +1694,14 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func apply(_ kind: MarkdownEditingCommand.Kind, to textView: UITextView) {
             switch kind {
+            case .title:
+                applyParagraphStyle(.title, in: textView)
             case .heading:
-                toggleLinePrefix("## ", in: textView)
+                applyParagraphStyle(.heading, in: textView)
+            case .subheading:
+                applyParagraphStyle(.subheading, in: textView)
+            case .body:
+                applyParagraphStyle(.body, in: textView)
             case .bold:
                 wrapSelection(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
             case .italic:
@@ -1652,6 +1741,23 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             MarkdownEditorPresentation.apply(
                 to: textView,
                 displaysSource: parent.displaysSource
+            )
+        }
+
+        private func applyParagraphStyle(
+            _ style: MarkdownParagraphEditing.Style,
+            in textView: UITextView
+        ) {
+            guard let edit = MarkdownParagraphEditing.styleEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                style: style
+            ) else { return }
+            replace(
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
+                in: textView
             )
         }
 

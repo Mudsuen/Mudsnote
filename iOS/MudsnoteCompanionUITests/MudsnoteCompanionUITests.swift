@@ -376,9 +376,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["markdown-format-menu"].tap()
         let bold = app.buttons["Bold"]
         XCTAssertTrue(bold.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Title"].exists)
+        XCTAssertTrue(app.buttons["Heading"].exists)
+        XCTAssertTrue(app.buttons["Subheading"].exists)
+        XCTAssertTrue(app.buttons["Body"].exists)
         XCTAssertTrue(app.buttons["Numbered List"].exists)
         XCTAssertTrue(app.buttons["Decrease Indent"].exists)
         XCTAssertTrue(app.buttons["Increase Indent"].exists)
+
+        let paragraphStylesScreenshot = XCTAttachment(screenshot: app.screenshot())
+        paragraphStylesScreenshot.name = "Paragraph styles menu"
+        paragraphStylesScreenshot.lifetime = .keepAlways
+        add(paragraphStylesScreenshot)
+
         bold.tap()
         editor.typeText("Styled")
         XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)
