@@ -59,6 +59,10 @@ struct MarkdownPreviewView: View {
     @State private var noteName = ""
     @State private var isRenamingNote = false
     @State private var isConfirmingNoteDeletion = false
+    @State private var isFindingInNote = false
+    @State private var findQuery = ""
+    @State private var activeFindIndex = 0
+    @FocusState private var isFindFocused: Bool
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
         _detent = detent
@@ -91,16 +95,27 @@ struct MarkdownPreviewView: View {
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            metadataLabel
-                            markdownBody
-                                .accessibilityElement(children: .contain)
-                                .accessibilityIdentifier("rendered-markdown")
-                                .contentShape(Rectangle())
-                                .onTapGesture(perform: beginEditing)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 18) {
+                                metadataLabel
+                                markdownBody
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("rendered-markdown")
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if !isFindingInNote { beginEditing() }
+                                    }
+                            }
+                            .padding(MudsnoteSpacing.safeHorizontal)
                         }
-                        .padding(MudsnoteSpacing.safeHorizontal)
+                        .onChange(of: findQuery) { _, _ in
+                            activeFindIndex = 0
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: activeFindIndex) { _, _ in
+                            scrollToActiveFindMatch(using: proxy)
+                        }
                     }
                 }
             }
@@ -108,7 +123,11 @@ struct MarkdownPreviewView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isEditing { markdownToolbar }
+                if isEditing {
+                    markdownToolbar
+                } else if isFindingInNote {
+                    noteFindBar
+                }
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -146,6 +165,12 @@ struct MarkdownPreviewView: View {
                                         Label("Share Note", systemImage: "square.and.arrow.up")
                                     }
                                 }
+                                Button {
+                                    beginFindingInNote()
+                                } label: {
+                                    Label("Find in Note", systemImage: "magnifyingglass")
+                                }
+                                .disabled(draftMarkdown.isEmpty)
                                 if let file = currentFile, canManage(document) {
                                     Divider()
                                     Button {
@@ -432,6 +457,122 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private var renderBlocks: [MarkdownRenderBlock] {
+        MarkdownRenderBlock.parse(draftMarkdown)
+    }
+
+    private var findMatches: [NoteFindMatch] {
+        NoteFindIndex.matches(in: renderBlocks, query: findQuery)
+    }
+
+    private var activeFindMatch: NoteFindMatch? {
+        guard !findMatches.isEmpty else { return nil }
+        return findMatches[min(activeFindIndex, findMatches.count - 1)]
+    }
+
+    private var findCountLabel: String {
+        let total = findMatches.count
+        let current = total == 0 ? 0 : min(activeFindIndex, total - 1) + 1
+        return String(
+            format: String(localized: "note.find_count.format"),
+            locale: .current,
+            current,
+            total
+        )
+    }
+
+    private var noteFindBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(MudsnoteColors.muted)
+                TextField("Find in Note", text: $findQuery)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($isFindFocused)
+                    .submitLabel(.search)
+                    .accessibilityIdentifier("find-in-note-field")
+                if !findQuery.isEmpty {
+                    Button {
+                        findQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear Find")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+
+            Text(findCountLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(minWidth: 42)
+                .accessibilityIdentifier("find-in-note-count")
+
+            Button { stepFindMatch(by: -1) } label: {
+                Image(systemName: "chevron.up")
+                    .frame(width: 30, height: 34)
+            }
+            .disabled(findMatches.isEmpty)
+            .accessibilityLabel("Previous Match")
+            .accessibilityIdentifier("find-in-note-previous")
+
+            Button { stepFindMatch(by: 1) } label: {
+                Image(systemName: "chevron.down")
+                    .frame(width: 30, height: 34)
+            }
+            .disabled(findMatches.isEmpty)
+            .accessibilityLabel("Next Match")
+            .accessibilityIdentifier("find-in-note-next")
+
+            Button("Done", action: closeFindInNote)
+                .font(.subheadline.weight(.semibold))
+                .accessibilityIdentifier("finish-find-in-note")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1)
+        }
+    }
+
+    private func beginFindingInNote() {
+        isFindingInNote = true
+        activeFindIndex = 0
+        withAnimation(.snappy(duration: 0.28)) { detent = .large }
+        Task { @MainActor in
+            await Task.yield()
+            isFindFocused = true
+        }
+    }
+
+    private func closeFindInNote() {
+        isFindFocused = false
+        findQuery = ""
+        activeFindIndex = 0
+        isFindingInNote = false
+    }
+
+    private func stepFindMatch(by offset: Int) {
+        guard !findMatches.isEmpty else { return }
+        activeFindIndex = (activeFindIndex + offset + findMatches.count) % findMatches.count
+    }
+
+    private func scrollToActiveFindMatch(using proxy: ScrollViewProxy) {
+        guard let match = activeFindMatch else { return }
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation(.snappy(duration: 0.2)) {
+                proxy.scrollTo(match.location.blockIndex, anchor: .center)
+            }
+        }
+    }
+
     private var saveStatusText: LocalizedStringKey {
         switch saveState {
         case .idle: draftMarkdown == originalMarkdown ? "Saved" : "Edited"
@@ -589,13 +730,16 @@ struct MarkdownPreviewView: View {
 
     private var markdownBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(MarkdownRenderBlock.parse(draftMarkdown).enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .line(let line):
-                    markdownLine(line)
-                case .table(let headers, let rows):
-                    markdownTable(headers: headers, rows: rows)
+            ForEach(Array(renderBlocks.enumerated()), id: \.offset) { index, block in
+                Group {
+                    switch block {
+                    case .line(let line):
+                        markdownLine(line, blockIndex: index)
+                    case .table(let headers, let rows):
+                        markdownTable(headers: headers, rows: rows, blockIndex: index)
+                    }
                 }
+                .id(index)
             }
         }
     }
@@ -609,11 +753,14 @@ struct MarkdownPreviewView: View {
     }
 
     @ViewBuilder
-    private func markdownLine(_ line: String) -> some View {
+    private func markdownLine(_ line: String, blockIndex: Int) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
             attachmentView(attachment)
         } else if line.hasPrefix(">") {
-            Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "> ")))
+            markdownText(
+                line,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
                 .font(.body.italic())
                 .foregroundStyle(MudsnoteColors.muted)
                 .padding(.leading, 12)
@@ -621,17 +768,34 @@ struct MarkdownPreviewView: View {
                     Rectangle().fill(MudsnoteColors.line).frame(width: 3)
                 }
         } else {
-            markdownText(line)
+            markdownText(
+                line,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
         }
     }
 
-    private func markdownTable(headers: [String], rows: [[String]]) -> some View {
+    private func markdownTable(
+        headers: [String],
+        rows: [[String]],
+        blockIndex: Int
+    ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                markdownTableRow(headers, isHeader: true)
+                markdownTableRow(
+                    headers,
+                    isHeader: true,
+                    blockIndex: blockIndex,
+                    cellOffset: 0
+                )
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    markdownTableRow(row, isHeader: false)
+                    markdownTableRow(
+                        row,
+                        isHeader: false,
+                        blockIndex: blockIndex,
+                        cellOffset: (index + 1) * headers.count
+                    )
                         .background(index.isMultiple(of: 2) ? Color.clear : MudsnoteColors.card.opacity(0.45))
                     if index < rows.count - 1 { Divider() }
                 }
@@ -646,10 +810,21 @@ struct MarkdownPreviewView: View {
         .accessibilityIdentifier("rendered-markdown-table")
     }
 
-    private func markdownTableRow(_ cells: [String], isHeader: Bool) -> some View {
+    private func markdownTableRow(
+        _ cells: [String],
+        isHeader: Bool,
+        blockIndex: Int,
+        cellOffset: Int
+    ) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
-                markdownText(cell)
+                markdownText(
+                    cell,
+                    location: NoteFindLocation(
+                        blockIndex: blockIndex,
+                        cellIndex: cellOffset + index
+                    )
+                )
                     .font(isHeader ? .headline : .body)
                     .frame(width: 132, alignment: .leading)
                     .padding(.horizontal, 10)
@@ -754,12 +929,17 @@ struct MarkdownPreviewView: View {
         accessedRoot = nil
     }
 
-    private func markdownText(_ line: String) -> Text {
-        if let attributed = try? AttributedString(markdown: line) {
-            return Text(attributed)
-                .foregroundStyle(MudsnoteColors.text)
-        }
-        return Text(line).foregroundStyle(MudsnoteColors.text)
+    private func markdownText(
+        _ line: String,
+        location: NoteFindLocation
+    ) -> Text {
+        Text(NoteFindIndex.highlightedText(
+            for: line,
+            query: findQuery,
+            location: location,
+            activeMatch: activeFindMatch
+        ))
+        .foregroundStyle(MudsnoteColors.text)
     }
 
     @MainActor
@@ -1188,6 +1368,135 @@ enum MarkdownRenderBlock: Equatable {
         return cells.allSatisfy { cell in
             cell.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
         }
+    }
+}
+
+struct NoteFindLocation: Hashable {
+    var blockIndex: Int
+    var cellIndex: Int?
+}
+
+struct NoteFindMatch: Identifiable, Equatable {
+    var location: NoteFindLocation
+    var occurrence: Int
+
+    var id: String {
+        "\(location.blockIndex):\(location.cellIndex ?? -1):\(occurrence)"
+    }
+}
+
+enum NoteFindIndex {
+    static func matches(
+        in blocks: [MarkdownRenderBlock],
+        query: String
+    ) -> [NoteFindMatch] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        var results: [NoteFindMatch] = []
+        for (blockIndex, block) in blocks.enumerated() {
+            switch block {
+            case .line(let line):
+                guard MarkdownAttachmentLine(line) == nil else { continue }
+                let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                results.append(contentsOf: matches(
+                    in: visibleText(for: line),
+                    term: term,
+                    location: location
+                ))
+            case .table(let headers, let rows):
+                let cells = headers + rows.flatMap { $0 }
+                for (cellIndex, cell) in cells.enumerated() {
+                    let location = NoteFindLocation(
+                        blockIndex: blockIndex,
+                        cellIndex: cellIndex
+                    )
+                    results.append(contentsOf: matches(
+                        in: visibleText(for: cell),
+                        term: term,
+                        location: location
+                    ))
+                }
+            }
+        }
+        return results
+    }
+
+    static func visibleText(for markdown: String) -> String {
+        let source: String
+        if markdown.hasPrefix(">") {
+            source = markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
+        } else {
+            source = markdown
+        }
+        if let attributed = try? AttributedString(markdown: source) {
+            return String(attributed.characters)
+        }
+        return source
+    }
+
+    static func highlightedText(
+        for markdown: String,
+        query: String,
+        location: NoteFindLocation,
+        activeMatch: NoteFindMatch?
+    ) -> AttributedString {
+        let source = markdown.hasPrefix(">")
+            ? markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
+            : markdown
+        guard let rendered = try? AttributedString(markdown: source) else {
+            return AttributedString(source)
+        }
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return rendered }
+
+        let attributed = NSMutableAttributedString(
+            attributedString: NSAttributedString(rendered)
+        )
+        for (occurrence, range) in ranges(in: attributed.string, term: term).enumerated() {
+            let isActive = activeMatch?.location == location
+                && activeMatch?.occurrence == occurrence
+            attributed.addAttribute(
+                .backgroundColor,
+                value: isActive
+                    ? UIColor.systemOrange
+                    : UIColor.systemYellow.withAlphaComponent(0.55),
+                range: range
+            )
+            if isActive {
+                attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
+            }
+        }
+        return AttributedString(attributed)
+    }
+
+    private static func matches(
+        in text: String,
+        term: String,
+        location: NoteFindLocation
+    ) -> [NoteFindMatch] {
+        ranges(in: text, term: term).indices.map {
+            NoteFindMatch(location: location, occurrence: $0)
+        }
+    }
+
+    private static func ranges(in text: String, term: String) -> [NSRange] {
+        let source = text as NSString
+        guard source.length > 0 else { return [] }
+        var results: [NSRange] = []
+        var searchRange = NSRange(location: 0, length: source.length)
+        while searchRange.length > 0 {
+            let match = source.range(
+                of: term,
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                range: searchRange
+            )
+            guard match.location != NSNotFound else { break }
+            results.append(match)
+            let nextLocation = NSMaxRange(match)
+            guard nextLocation < source.length else { break }
+            searchRange = NSRange(location: nextLocation, length: source.length - nextLocation)
+        }
+        return results
     }
 }
 

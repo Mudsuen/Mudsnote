@@ -509,11 +509,48 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
         XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Find in Note"].exists)
         XCTAssertTrue(app.buttons["Pin"].exists)
         XCTAssertTrue(app.buttons["Move Note"].exists)
         XCTAssertTrue(app.buttons["Duplicate Note"].exists)
         XCTAssertTrue(app.buttons["Rename Note"].exists)
         XCTAssertTrue(app.buttons["Move to Recently Deleted"].exists)
+    }
+
+    func testRenderedNoteFindHighlightsAndNavigatesMatches() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        let find = app.buttons["Find in Note"]
+        XCTAssertTrue(find.waitForExistence(timeout: 3))
+        find.tap()
+
+        let field = app.textFields["find-in-note-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        field.typeText("Restore")
+        let count = app.staticTexts["find-in-note-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 3))
+        XCTAssertEqual(count.label, "1 of 1")
+        XCTAssertTrue(app.buttons["find-in-note-previous"].isEnabled)
+        XCTAssertTrue(app.buttons["find-in-note-next"].isEnabled)
+        app.buttons["find-in-note-next"].tap()
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Find in rendered note"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.buttons["finish-find-in-note"].tap()
+        XCTAssertTrue(waitForNonexistence(field))
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
     }
 
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
@@ -849,11 +886,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(duplicate.waitForExistence(timeout: 3))
         duplicate.tap()
 
+        XCTAssertTrue(app.staticTexts["Note Duplicated"].waitForExistence(timeout: 3))
         XCTAssertTrue(
             app.buttons["markdown-file-row-Projects/UI Lifecycle Copy.md"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.staticTexts["Note Duplicated"].exists)
     }
 
     @discardableResult

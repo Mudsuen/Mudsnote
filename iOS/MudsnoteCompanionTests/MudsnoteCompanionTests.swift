@@ -2072,6 +2072,43 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testFindInNoteIndexesRenderedMarkdownQuotesAndTableCells() throws {
+        let blocks = MarkdownRenderBlock.parse(
+            "# Plan\n\n**Restore** this note, then restore it.\n\n> RESTORE quote\n\n| Item | Status |\n| --- | --- |\n| Restore | Ready |\n\n[Backup](Attachments/restore.txt)"
+        )
+        let matches = NoteFindIndex.matches(in: blocks, query: "restore")
+
+        XCTAssertEqual(matches.count, 4)
+        XCTAssertEqual(
+            matches.map(\.location),
+            [
+                NoteFindLocation(blockIndex: 1, cellIndex: nil),
+                NoteFindLocation(blockIndex: 1, cellIndex: nil),
+                NoteFindLocation(blockIndex: 2, cellIndex: nil),
+                NoteFindLocation(blockIndex: 3, cellIndex: 2)
+            ]
+        )
+        XCTAssertEqual(matches.map(\.occurrence), [0, 1, 0, 0])
+        XCTAssertEqual(NoteFindIndex.visibleText(for: "**Restore** this"), "Restore this")
+        XCTAssertTrue(NoteFindIndex.matches(in: blocks, query: "   ").isEmpty)
+
+        let highlighted = NoteFindIndex.highlightedText(
+            for: "Restore and restore",
+            query: "restore",
+            location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+            activeMatch: NoteFindMatch(
+                location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+                occurrence: 1
+            )
+        )
+        let rendered = NSAttributedString(highlighted)
+        XCTAssertNotNil(rendered.attribute(.backgroundColor, at: 0, effectiveRange: nil))
+        XCTAssertEqual(
+            rendered.attribute(.backgroundColor, at: 12, effectiveRange: nil) as? UIColor,
+            UIColor.systemOrange
+        )
+    }
+
     func testMarkdownParagraphStylesAreNativeAndIdempotent() throws {
         let source = "Intro\n## Existing\n#tag stays\n"
         let existingRange = (source as NSString).range(of: "## Existing")

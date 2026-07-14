@@ -2176,6 +2176,24 @@
     },
     "Delete Selected Notes Permanently?": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除所选笔记？" } } }
+    },
+    "Find in Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "在笔记中查找" } } }
+    },
+    "Clear Find": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "清除查找" } } }
+    },
+    "Previous Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "上一个匹配项" } } }
+    },
+    "Next Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "下一个匹配项" } } }
+    },
+    "note.find_count.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$lld/%2$lld" } }
+      }
     }
   },
   "version": "1.0"
