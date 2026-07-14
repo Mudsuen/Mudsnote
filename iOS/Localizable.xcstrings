@@ -2216,6 +2216,39 @@
     "Next Match": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "下一个匹配项" } } }
     },
+    "Add Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加绘图" } } }
+    },
+    "Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "绘图" } } }
+    },
+    "Drawing attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加绘图" } } }
+    },
+    "Draw with your finger": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "用手指绘图" } } }
+    },
+    "Discard Drawing?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃绘图？" } } }
+    },
+    "Discard Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃绘图" } } }
+    },
+    "Keep Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续绘图" } } }
+    },
+    "Couldn’t Add Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法添加绘图" } } }
+    },
+    "Try saving the drawing again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试保存绘图。" } } }
+    },
+    "Undo Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "撤销绘图" } } }
+    },
+    "Redo Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重做绘图" } } }
+    },
     "note.find_count.format": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },

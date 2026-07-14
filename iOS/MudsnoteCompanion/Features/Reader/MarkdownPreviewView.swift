@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import PencilKit
 import PhotosUI
 import QuickLook
 import UIKit
@@ -54,6 +55,7 @@ struct MarkdownPreviewView: View {
     @State private var isPhotoPickerPresented = false
     @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
+    @State private var isDrawingPresented = false
     @State private var scanErrorMessage: String?
     @State private var previewURL: URL?
     @State private var attachmentBeingRenamed: MarkdownAttachmentLine?
@@ -389,6 +391,15 @@ struct MarkdownPreviewView: View {
             )
             .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $isDrawingPresented) {
+            MarkdownDrawingEditor(
+                onCancel: { isDrawingPresented = false },
+                onSave: { data in
+                    isDrawingPresented = false
+                    Task { await attachDrawing(data) }
+                }
+            )
+        }
         .alert("Couldn’t Scan Document", isPresented: Binding(
             get: { scanErrorMessage != nil },
             set: { if !$0 { scanErrorMessage = nil } }
@@ -640,6 +651,14 @@ struct MarkdownPreviewView: View {
                             Label("Add image from Photos", systemImage: "photo")
                         }
                         .accessibilityIdentifier("markdown-add-image")
+
+                        Button {
+                            editorFocused = false
+                            isDrawingPresented = true
+                        } label: {
+                            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
+                        }
+                        .accessibilityIdentifier("markdown-add-drawing")
 
                         Button {
                             isFileImporterPresented = true
@@ -1139,6 +1158,29 @@ struct MarkdownPreviewView: View {
         saveState = .saving
         if let updated = await appModel.attachPhoto(
             item,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
+    private func attachDrawing(_ data: Data) async {
+        guard case .document = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
+        saveState = .saving
+        if let updated = await appModel.attachDrawing(
+            data,
             to: document,
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
@@ -3004,5 +3046,196 @@ struct MarkdownAttachmentLine {
             return nil
         }
         return String(matched[matched.index(after: open)..<close])
+    }
+}
+
+@MainActor
+enum MarkdownDrawingExport {
+    static let padding: CGFloat = 24
+    static let maximumPixelDimension: CGFloat = 4_096
+
+    static func pngData(for drawing: PKDrawing, screenScale: CGFloat = 3) throws -> Data {
+        guard drawing.strokes.isEmpty == false else { throw CaptureAttachmentError.empty }
+        let bounds = drawing.bounds
+            .insetBy(dx: -padding, dy: -padding)
+            .integral
+        guard bounds.width > 0, bounds.height > 0 else { throw CaptureAttachmentError.empty }
+
+        let largestDimension = max(bounds.width, bounds.height)
+        let scale = max(0.1, min(screenScale, maximumPixelDimension / largestDimension))
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = true
+        format.scale = scale
+        var renderedDrawing: UIImage?
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+            renderedDrawing = drawing.image(from: bounds, scale: scale)
+        }
+        guard let renderedDrawing else { throw CaptureAttachmentError.empty }
+        let image = UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: bounds.size))
+            renderedDrawing.draw(in: CGRect(origin: .zero, size: bounds.size))
+        }
+        guard let data = image.pngData() else { throw CaptureAttachmentError.empty }
+        return data
+    }
+}
+
+@MainActor
+private final class MarkdownDrawingController: NSObject, ObservableObject, PKCanvasViewDelegate {
+    let canvasView = PKCanvasView()
+    private let toolPicker = PKToolPicker()
+    @Published private(set) var drawing = PKDrawing()
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
+    private var isConfigured = false
+
+    func configureIfNeeded() {
+        guard !isConfigured else { return }
+        isConfigured = true
+        canvasView.delegate = self
+        canvasView.drawingPolicy = .anyInput
+        canvasView.tool = PKInkingTool(.pen, color: .black, width: 5)
+        canvasView.backgroundColor = .white
+        canvasView.isOpaque = true
+        canvasView.overrideUserInterfaceStyle = .light
+        canvasView.alwaysBounceVertical = false
+        canvasView.alwaysBounceHorizontal = false
+        canvasView.accessibilityIdentifier = "markdown-drawing-canvas"
+        toolPicker.addObserver(canvasView)
+        toolPicker.setVisible(true, forFirstResponder: canvasView)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            canvasView.becomeFirstResponder()
+            canvasView.tool = PKInkingTool(.pen, color: .black, width: 5)
+        }
+    }
+
+    func undo() {
+        canvasView.undoManager?.undo()
+        publishDrawingState()
+    }
+
+    func redo() {
+        canvasView.undoManager?.redo()
+        publishDrawingState()
+    }
+
+    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        publishDrawingState()
+    }
+
+    private func publishDrawingState() {
+        drawing = canvasView.drawing
+        canUndo = canvasView.undoManager?.canUndo == true
+        canRedo = canvasView.undoManager?.canRedo == true
+    }
+}
+
+private struct MarkdownDrawingCanvas: UIViewRepresentable {
+    @ObservedObject var controller: MarkdownDrawingController
+
+    func makeUIView(context: Context) -> PKCanvasView {
+        controller.configureIfNeeded()
+        return controller.canvasView
+    }
+
+    func updateUIView(_ uiView: PKCanvasView, context: Context) {
+        controller.configureIfNeeded()
+    }
+}
+
+private struct MarkdownDrawingEditor: View {
+    @StateObject private var controller = MarkdownDrawingController()
+    @State private var isConfirmingDiscard = false
+    @State private var exportErrorMessage: String?
+    var onCancel: () -> Void
+    var onSave: (Data) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+                MarkdownDrawingCanvas(controller: controller)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                if controller.drawing.strokes.isEmpty {
+                    Text("Draw with your finger")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .allowsHitTesting(false)
+                }
+            }
+            .navigationTitle("Drawing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        if controller.drawing.strokes.isEmpty {
+                            onCancel()
+                        } else {
+                            isConfirmingDiscard = true
+                        }
+                    }
+                    .accessibilityIdentifier("cancel-markdown-drawing")
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        controller.undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .disabled(!controller.canUndo)
+                    .accessibilityLabel("Undo Drawing")
+                    .accessibilityIdentifier("undo-markdown-drawing")
+
+                    Button {
+                        controller.redo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    .disabled(!controller.canRedo)
+                    .accessibilityLabel("Redo Drawing")
+                    .accessibilityIdentifier("redo-markdown-drawing")
+
+                    Button("Add") {
+                        saveDrawing()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(controller.drawing.strokes.isEmpty)
+                    .accessibilityIdentifier("save-markdown-drawing")
+                }
+            }
+            .confirmationDialog(
+                "Discard Drawing?",
+                isPresented: $isConfirmingDiscard,
+                titleVisibility: .visible
+            ) {
+                Button("Discard Drawing", role: .destructive, action: onCancel)
+                Button("Keep Drawing", role: .cancel) {}
+            }
+            .alert("Couldn’t Add Drawing", isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "Try saving the drawing again.")
+            }
+        }
+    }
+
+    private func saveDrawing() {
+        do {
+            onSave(try MarkdownDrawingExport.pngData(for: controller.drawing))
+        } catch {
+            exportErrorMessage = error.localizedDescription
+        }
     }
 }

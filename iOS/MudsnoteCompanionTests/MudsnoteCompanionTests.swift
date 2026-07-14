@@ -1,8 +1,58 @@
 import XCTest
+import PencilKit
 import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    @MainActor
+    func testDrawingExportProducesBoundedPortablePNG() throws {
+        let points = [
+            PKStrokePoint(
+                location: CGPoint(x: 20, y: 30),
+                timeOffset: 0,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            ),
+            PKStrokePoint(
+                location: CGPoint(x: 120, y: 80),
+                timeOffset: 0.1,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            ),
+            PKStrokePoint(
+                location: CGPoint(x: 220, y: 130),
+                timeOffset: 0.2,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            )
+        ]
+        let stroke = PKStroke(
+            ink: PKInk(.pen, color: .black),
+            path: PKStrokePath(controlPoints: points, creationDate: Date())
+        )
+        let drawing = PKDrawing(strokes: [stroke])
+        let data = try MarkdownDrawingExport.pngData(
+            for: drawing,
+            screenScale: 3
+        )
+        let image = try XCTUnwrap(UIImage(data: data))
+        let pixelData = try XCTUnwrap(image.cgImage?.dataProvider?.data as Data?)
+
+        XCTAssertEqual(data.prefix(8), Data([137, 80, 78, 71, 13, 10, 26, 10]))
+        XCTAssertTrue(pixelData.contains { $0 < 200 }, "The exported PNG should contain visible ink")
+        XCTAssertLessThanOrEqual(max(image.size.width * image.scale, image.size.height * image.scale), 4_096)
+        XCTAssertThrowsError(try MarkdownDrawingExport.pngData(for: PKDrawing()))
+    }
+
     func testAudioCaptureErrorsExplainRecovery() {
         XCTAssertNotNil(AudioCaptureError.microphonePermissionDenied.errorDescription)
         XCTAssertNotNil(AudioCaptureError.couldNotStart.errorDescription)

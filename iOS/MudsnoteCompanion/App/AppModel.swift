@@ -1058,6 +1058,37 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func attachDrawing(
+        _ data: Data,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment = try CaptureAttachment.validatedImage(
+                data: data,
+                suggestedExtension: "png"
+            )
+            let updated = try await fileStore.attachToMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachment: attachment
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Drawing attached"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     func attachFile(
         _ url: URL,
         to document: MarkdownDocument,

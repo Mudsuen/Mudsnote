@@ -393,6 +393,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
         attachmentMenu.tap()
         XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Add Drawing"].exists)
         XCTAssertTrue(app.buttons["Add File"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.18)).tap()
@@ -509,6 +510,63 @@ final class MudsnoteCompanionUITests: XCTestCase {
         renderedFormatsScreenshot.name = "Rendered inline formats"
         renderedFormatsScreenshot.lifetime = .keepAlways
         add(renderedFormatsScreenshot)
+    }
+
+    func testDocumentDrawingSavesAsPortableMarkdownImage() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let inbox = app.buttons["markdown-file-row-Inbox.md"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+        inbox.tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.tap()
+
+        let attachmentMenu = app.buttons["markdown-attachment-menu"]
+        XCTAssertTrue(attachmentMenu.waitForExistence(timeout: 5))
+        attachmentMenu.tap()
+        let addDrawing = app.buttons["Add Drawing"]
+        XCTAssertTrue(addDrawing.waitForExistence(timeout: 3))
+        addDrawing.tap()
+
+        let canvas = app.descendants(matching: .any)["markdown-drawing-canvas"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 5))
+        let saveDrawing = app.buttons["save-markdown-drawing"]
+        XCTAssertTrue(saveDrawing.exists)
+        XCTAssertFalse(saveDrawing.isEnabled)
+
+        let start = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.3))
+        let end = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.55))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: saveDrawing
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+
+        let drawingScreenshot = XCTAttachment(screenshot: app.screenshot())
+        drawingScreenshot.name = "Notes-style drawing editor"
+        drawingScreenshot.lifetime = .keepAlways
+        add(drawingScreenshot)
+
+        saveDrawing.tap()
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 8))
+        let displayMode = app.buttons["markdown-display-mode"]
+        XCTAssertTrue(displayMode.waitForExistence(timeout: 5))
+        displayMode.tap()
+        XCTAssertTrue(app.buttons["Markdown Source"].waitForExistence(timeout: 3))
+        app.buttons["Markdown Source"].tap()
+
+        let containsPortableImage = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@", "![Image](Attachments/"),
+            object: editor
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [containsPortableImage], timeout: 8), .completed)
+        XCTAssertTrue((editor.value as? String)?.contains(".png)") == true)
     }
 
     func testMarkdownEditorAutosavesBeforeSheetDismissal() {
