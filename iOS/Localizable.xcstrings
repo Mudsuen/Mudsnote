@@ -10,6 +10,39 @@
     "New Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建笔记" } } }
     },
+    "Add Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加附件" } } }
+    },
+    "Add File": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加文件" } } }
+    },
+    "Bulleted List": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目符号列表" } } }
+    },
+    "Decrease Indent": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "减少缩进" } } }
+    },
+    "Editor Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑器选项" } } }
+    },
+    "Heading": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标题" } } }
+    },
+    "Increase Indent": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "增加缩进" } } }
+    },
+    "Insert Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "插入链接" } } }
+    },
+    "Italic": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "斜体" } } }
+    },
+    "Numbered List": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编号列表" } } }
+    },
+    "Scan Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文稿" } } }
+    },
     "New Subfolder": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建子文件夹" } } }
     },

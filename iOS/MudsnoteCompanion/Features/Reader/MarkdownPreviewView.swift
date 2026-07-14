@@ -41,6 +41,7 @@ struct MarkdownPreviewView: View {
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isPhotoPickerPresented = false
     @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
     @State private var scanErrorMessage: String?
@@ -120,9 +121,9 @@ struct MarkdownPreviewView: View {
                                 Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
                             }
                         } label: {
-                            Image(systemName: editorDisplayMode == .rich ? "textformat" : "chevron.left.forwardslash.chevron.right")
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel("Editor Display")
+                        .accessibilityLabel("Editor Options")
                         .accessibilityIdentifier("markdown-display-mode")
                     }
 
@@ -199,6 +200,11 @@ struct MarkdownPreviewView: View {
             guard item != nil else { return }
             Task { await attachPhoto(item) }
         }
+        .photosPicker(
+            isPresented: $isPhotoPickerPresented,
+            selection: $selectedPhotoItem,
+            matching: .images
+        )
         .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
             guard isEditing, draftMarkdown != originalMarkdown else { return }
             try? await Task.sleep(for: .milliseconds(700))
@@ -316,61 +322,43 @@ struct MarkdownPreviewView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 if case .document = source {
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "photo")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add image")
-                    .accessibilityIdentifier("markdown-add-image")
+                    Menu {
+                        Button {
+                            isPhotoPickerPresented = true
+                        } label: {
+                            Label("Add image from Photos", systemImage: "photo")
+                        }
+                        .accessibilityIdentifier("markdown-add-image")
 
-                    Button {
-                        isFileImporterPresented = true
-                    } label: {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add file")
-                    .accessibilityIdentifier("markdown-add-file")
+                        Button {
+                            isFileImporterPresented = true
+                        } label: {
+                            Label("Add File", systemImage: "doc")
+                        }
+                        .accessibilityIdentifier("markdown-add-file")
 
-                    Button {
-                        isScannerPresented = true
+                        Button {
+                            isScannerPresented = true
+                        } label: {
+                            Label("Scan Document", systemImage: "doc.viewfinder")
+                        }
+                        .disabled(!VNDocumentCameraViewController.isSupported)
+                        .accessibilityIdentifier("markdown-scan-document")
                     } label: {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "doc.viewfinder")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                        editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(
-                        isSaving
-                            || appModel.isPreparingAttachment
-                            || !VNDocumentCameraViewController.isSupported
-                    )
-                    .accessibilityLabel("Scan document")
-                    .accessibilityIdentifier("markdown-scan-document")
+                    .disabled(isSaving || appModel.isPreparingAttachment)
+                    .accessibilityLabel("Add Attachment")
+                    .accessibilityIdentifier("markdown-attachment-menu")
 
                     Button {
                         Task { await toggleDocumentAudioRecording() }
                     } label: {
-                        Image(systemName: audioButtonSystemImage)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(noteAudioRecorder.isRecording ? Color.white : MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(
-                                noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.card,
-                                in: RoundedRectangle(cornerRadius: 10)
-                            )
+                        editorToolIcon(
+                            audioButtonSystemImage,
+                            foreground: noteAudioRecorder.isRecording ? .white : MudsnoteColors.text,
+                            background: noteAudioRecorder.isRecording ? .red : MudsnoteColors.card
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(
@@ -381,17 +369,31 @@ struct MarkdownPreviewView: View {
                     .accessibilityLabel(audioButtonAccessibilityLabel)
                     .accessibilityIdentifier("markdown-record-audio")
                 }
-                formatButton("textformat.size", .heading)
-                formatButton("bold", .bold)
-                formatButton("italic", .italic)
-                formatButton("list.bullet", .bullet)
-                formatButton("list.number", .ordered)
+
+                Menu {
+                    formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
+                    formatMenuButton("Bold", systemImage: "bold", command: .bold)
+                    formatMenuButton("Italic", systemImage: "italic", command: .italic)
+                    Divider()
+                    formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
+                    formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
+                    formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
+                    formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
+                    Divider()
+                    formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
+                    formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
+                    formatMenuButton("Insert Link", systemImage: "link", command: .link)
+                } label: {
+                    Text("Aa")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .frame(width: 40, height: 40)
+                        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .accessibilityLabel("Formatting")
+                .accessibilityIdentifier("markdown-format-menu")
+
                 formatButton("checklist", .checklist)
-                formatButton("decrease.indent", .outdent)
-                formatButton("increase.indent", .indent)
-                formatButton("text.quote", .quote)
-                formatButton("chevron.left.forwardslash.chevron.right", .code)
-                formatButton("link", .link)
                 formatButton("tablecells", .table)
                 formatButton("arrow.uturn.backward", .undo)
                 formatButton("arrow.uturn.forward", .redo)
@@ -407,14 +409,35 @@ struct MarkdownPreviewView: View {
         Button {
             editingCommand = MarkdownEditingCommand(kind: kind)
         } label: {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.text)
-                .frame(width: 40, height: 40)
-                .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+            editorToolIcon(systemImage)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
+    }
+
+    private func formatMenuButton(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        command: MarkdownEditingCommand.Kind
+    ) -> some View {
+        Button {
+            editingCommand = MarkdownEditingCommand(kind: command)
+        } label: {
+            Label(title, systemImage: systemImage)
+        }
+        .accessibilityIdentifier("markdown-format-\(command.identifier)")
+    }
+
+    private func editorToolIcon(
+        _ systemImage: String,
+        foreground: Color = MudsnoteColors.text,
+        background: Color = MudsnoteColors.card
+    ) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(foreground)
+            .frame(width: 40, height: 40)
+            .background(background, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func beginEditing() {

@@ -345,11 +345,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["markdown-add-image"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["markdown-add-file"].exists)
-        XCTAssertTrue(app.buttons["markdown-scan-document"].exists)
+        let attachmentMenu = app.buttons["markdown-attachment-menu"]
+        XCTAssertTrue(attachmentMenu.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-record-audio"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-menu"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-checklist"].exists)
         XCTAssertTrue(app.buttons["markdown-format-table"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-undo"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
+        attachmentMenu.tap()
+        XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Add File"].exists)
+        XCTAssertTrue(app.buttons["Scan Document"].exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.18)).tap()
+        XCTAssertTrue(waitForNonexistence(app.buttons["Add File"]))
         let displayMode = app.buttons["markdown-display-mode"]
         XCTAssertTrue(displayMode.exists)
         displayMode.tap()
@@ -364,11 +373,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         richEditorScreenshot.lifetime = .keepAlways
         add(richEditorScreenshot)
 
-        let bold = app.buttons["markdown-format-bold"]
+        app.buttons["markdown-format-menu"].tap()
+        let bold = app.buttons["Bold"]
         XCTAssertTrue(bold.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["markdown-format-ordered"].exists)
-        XCTAssertTrue(app.buttons["markdown-format-outdent"].exists)
-        XCTAssertTrue(app.buttons["markdown-format-indent"].exists)
+        XCTAssertTrue(app.buttons["Numbered List"].exists)
+        XCTAssertTrue(app.buttons["Decrease Indent"].exists)
+        XCTAssertTrue(app.buttons["Increase Indent"].exists)
         bold.tap()
         editor.typeText("Styled")
         XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)
