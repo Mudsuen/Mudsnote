@@ -2087,6 +2087,11 @@ struct MarkdownListMetadata: Equatable {
                 options: .regularExpression
             )
             value = value.replacingOccurrences(
+                of: #"</?u>"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
                 of: #"[*_`~]"#,
                 with: "",
                 options: .regularExpression
@@ -2108,6 +2113,11 @@ struct MarkdownListMetadata: Equatable {
                   !value.hasPrefix("---") else { continue }
             value = value.replacingOccurrences(
                 of: #"^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|>\s*|\d+[.)]\s+)"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
+                of: #"</?u>"#,
                 with: "",
                 options: .regularExpression
             )

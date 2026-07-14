@@ -670,6 +670,7 @@ struct MarkdownPreviewView: View {
                     Divider()
                     formatMenuButton("Bold", systemImage: "bold", command: .bold)
                     formatMenuButton("Italic", systemImage: "italic", command: .italic)
+                    formatMenuButton("Underline", systemImage: "underline", command: .underline)
                     formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
                     Divider()
                     formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
@@ -1382,6 +1383,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case body
         case bold
         case italic
+        case underline
         case strikethrough
         case bullet
         case ordered
@@ -1405,6 +1407,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .body: "body"
             case .bold: "bold"
             case .italic: "italic"
+            case .underline: "underline"
             case .strikethrough: "strikethrough"
             case .bullet: "bullet"
             case .ordered: "ordered"
@@ -1708,10 +1711,7 @@ enum NoteFindIndex {
         } else {
             source = markdown
         }
-        if let attributed = try? AttributedString(markdown: source) {
-            return String(attributed.characters)
-        }
-        return source
+        return String(MarkdownInlineRendering.attributedText(for: source).characters)
     }
 
     static func highlightedText(
@@ -1723,9 +1723,7 @@ enum NoteFindIndex {
         let source = markdown.hasPrefix(">")
             ? markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
             : markdown
-        guard let rendered = try? AttributedString(markdown: source) else {
-            return AttributedString(source)
-        }
+        let rendered = MarkdownInlineRendering.attributedText(for: source)
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return rendered }
 
@@ -1878,6 +1876,56 @@ enum MarkdownParagraphEditing {
                 location: lineRange.location,
                 length: (replacement as NSString).length
             )
+        )
+    }
+}
+
+enum MarkdownInlineRendering {
+    private static let underlineStart = "\u{E000}"
+    private static let underlineEnd = "\u{E001}"
+
+    static func attributedText(for markdown: String) -> AttributedString {
+        let prepared = markdown
+            .replacingOccurrences(of: "<u>", with: underlineStart)
+            .replacingOccurrences(of: "</u>", with: underlineEnd)
+        let parsed = (try? AttributedString(markdown: prepared))
+            ?? AttributedString(prepared)
+        let attributed = NSMutableAttributedString(
+            attributedString: NSAttributedString(parsed)
+        )
+        applyUnderlines(in: attributed)
+        return AttributedString(attributed)
+    }
+
+    private static func applyUnderlines(in attributed: NSMutableAttributedString) {
+        while true {
+            let source = attributed.string as NSString
+            let opening = source.range(of: underlineStart)
+            guard opening.location != NSNotFound else { break }
+            let trailingRange = NSRange(
+                location: NSMaxRange(opening),
+                length: source.length - NSMaxRange(opening)
+            )
+            let closing = source.range(of: underlineEnd, range: trailingRange)
+            guard closing.location != NSNotFound else {
+                attributed.deleteCharacters(in: opening)
+                continue
+            }
+            let contentLength = closing.location - NSMaxRange(opening)
+            attributed.deleteCharacters(in: closing)
+            attributed.deleteCharacters(in: opening)
+            if contentLength > 0 {
+                attributed.addAttribute(
+                    .underlineStyle,
+                    value: NSUnderlineStyle.single.rawValue,
+                    range: NSRange(location: opening.location, length: contentLength)
+                )
+            }
+        }
+        attributed.mutableString.replaceOccurrences(
+            of: underlineEnd,
+            with: "",
+            range: NSRange(location: 0, length: attributed.length)
         )
     }
 }
@@ -2156,6 +2204,7 @@ enum MarkdownEditorPresentation {
         (textView as? MarkdownRichTextView)?.bulletMarkers = bulletMarkers
         applyHeadings(in: source, storage: storage)
         applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
+        applyDelimited(#"<u>([^\n]+?)</u>"#, markerLength: 3, suffixMarkerLength: 4, trait: nil, in: source, storage: storage, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue])
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
         applyDelimited(#"(?<!\*)\*([^*\n]+?)\*(?!\*)"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
         applyDelimited(#"_([^_\n]+?)_"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
@@ -2188,6 +2237,7 @@ enum MarkdownEditorPresentation {
     private static func applyDelimited(
         _ pattern: String,
         markerLength: Int,
+        suffixMarkerLength: Int? = nil,
         trait: UIFontDescriptor.SymbolicTraits?,
         in source: NSString,
         storage: NSTextStorage,
@@ -2205,8 +2255,15 @@ enum MarkdownEditorPresentation {
                 }
             }
             if !extra.isEmpty { storage.addAttributes(extra, range: content) }
+            let trailingMarkerLength = suffixMarkerLength ?? markerLength
             conceal(NSRange(location: match.range.location, length: markerLength), in: storage)
-            conceal(NSRange(location: NSMaxRange(match.range) - markerLength, length: markerLength), in: storage)
+            conceal(
+                NSRange(
+                    location: NSMaxRange(match.range) - trailingMarkerLength,
+                    length: trailingMarkerLength
+                ),
+                in: storage
+            )
         }
     }
 
@@ -2420,6 +2477,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 toggleInlineStyle(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
             case .italic:
                 toggleInlineStyle(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+            case .underline:
+                toggleInlineStyle(prefix: "<u>", suffix: "</u>", placeholder: "underline", in: textView)
             case .strikethrough:
                 toggleInlineStyle(prefix: "~~", suffix: "~~", placeholder: "strikethrough", in: textView)
             case .bullet:

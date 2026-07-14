@@ -418,6 +418,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Heading"].exists)
         XCTAssertTrue(app.buttons["Subheading"].exists)
         XCTAssertTrue(app.buttons["Body"].exists)
+        XCTAssertTrue(app.buttons["Underline"].exists)
         XCTAssertTrue(app.buttons["Strikethrough"].exists)
         XCTAssertTrue(app.buttons["Numbered List"].exists)
         XCTAssertTrue(app.buttons["Decrease Indent"].exists)
@@ -431,6 +432,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         bold.tap()
         editor.typeText("Styled")
         XCTAssertTrue((editor.value as? String)?.contains("**Styled**") == true)
+        app.buttons["markdown-format-menu"].tap()
+        let underline = app.buttons["Underline"]
+        XCTAssertTrue(underline.waitForExistence(timeout: 3))
+        underline.tap()
+        editor.typeText("Important")
+        XCTAssertTrue((editor.value as? String)?.contains("<u>Important</u>") == true)
         app.buttons["markdown-format-menu"].tap()
         let strikethrough = app.buttons["Strikethrough"]
         XCTAssertTrue(strikethrough.waitForExistence(timeout: 3))
@@ -472,7 +479,22 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let unlinkedValue = editor.value as? String
         XCTAssertTrue(unlinkedValue?.contains("Mudsnote") == true)
         XCTAssertFalse(unlinkedValue?.contains("[Mudsnote](https://muds.top)") == true)
-        XCTAssertTrue(app.buttons["save-markdown-button"].exists)
+        let save = app.buttons["save-markdown-button"]
+        XCTAssertTrue(save.exists)
+        save.tap()
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        let renderedImportant = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Important")
+        ).firstMatch
+        XCTAssertTrue(renderedImportant.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "<u>")
+        ).firstMatch.exists)
+
+        let renderedFormatsScreenshot = XCTAttachment(screenshot: app.screenshot())
+        renderedFormatsScreenshot.name = "Rendered inline formats"
+        renderedFormatsScreenshot.lifetime = .keepAlways
+        add(renderedFormatsScreenshot)
     }
 
     func testMarkdownEditorAutosavesBeforeSheetDismissal() {

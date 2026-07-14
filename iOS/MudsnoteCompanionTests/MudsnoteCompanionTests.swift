@@ -2114,6 +2114,45 @@ final class MudsnoteCompanionTests: XCTestCase {
         ))
         XCTAssertEqual(placeholder.replacement, "**bold**")
         XCTAssertEqual(placeholder.selection, NSRange(location: 2, length: 4))
+
+        let underline = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Important",
+            selection: NSRange(location: 0, length: 9),
+            prefix: "<u>",
+            suffix: "</u>",
+            placeholder: "underline"
+        ))
+        XCTAssertEqual(underline.replacement, "<u>Important</u>")
+        XCTAssertEqual(underline.selection, NSRange(location: 3, length: 9))
+    }
+
+    func testUnderlineMarkdownRendersAndIndexesWithoutLeakingHTMLMarkers() {
+        let rendered = NSAttributedString(
+            MarkdownInlineRendering.attributedText(
+                for: "**Bold** and <u>underlined</u> with [Link](https://example.com)"
+            )
+        )
+        XCTAssertEqual(rendered.string, "Bold and underlined with Link")
+        let underlinedRange = (rendered.string as NSString).range(of: "underlined")
+        XCTAssertEqual(
+            rendered.attribute(
+                .underlineStyle,
+                at: underlinedRange.location,
+                effectiveRange: nil
+            ) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        XCTAssertEqual(
+            NoteFindIndex.visibleText(for: "Find <u>important</u> text"),
+            "Find important text"
+        )
+
+        let metadata = MarkdownListMetadata.extract(
+            from: "<u>Important title</u>\n\nKeep <u>this preview</u> clean",
+            fallbackTitle: "Fallback"
+        )
+        XCTAssertEqual(metadata.title, "Important title")
+        XCTAssertEqual(metadata.preview, "Keep this preview clean")
     }
 
     func testMarkdownLinkEditingAddsUpdatesAndRemovesPortableLinks() throws {
