@@ -857,6 +857,35 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 5))
     }
 
+    func testLibrarySearchFindsTextInsideImageAttachment() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            ocrAttachment: true
+        )
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        let search = app.textFields["library-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("ORBITAL")
+
+        let result = app.buttons["search-result-file:Projects/OCR Attachment.md"]
+        XCTAssertTrue(result.waitForExistence(timeout: 20))
+        XCTAssertTrue(result.label.localizedCaseInsensitiveContains("ORBITAL"))
+        XCTAssertTrue(result.label.contains("ocr-search.png"))
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Attachment OCR search result"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        result.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["preview-attachment-Attachments/ocr-search.png"]
+                .waitForExistence(timeout: 8)
+        )
+    }
+
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]
@@ -1076,7 +1105,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         damagedQueue: Bool = false,
         conflictCopy: Bool = false,
         fileTag: Bool = false,
-        batchNotes: Bool = false
+        batchNotes: Bool = false,
+        ocrAttachment: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1089,7 +1119,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             damagedQueue ? "-ui-testing-damaged-queue" : nil,
             conflictCopy ? "-ui-testing-conflict-copy" : nil,
             fileTag ? "-ui-testing-file-tag" : nil,
-            batchNotes ? "-ui-testing-batch-notes" : nil
+            batchNotes ? "-ui-testing-batch-notes" : nil,
+            ocrAttachment ? "-ui-testing-ocr-attachment" : nil
         ].compactMap { $0 }
         app.launch()
         return app

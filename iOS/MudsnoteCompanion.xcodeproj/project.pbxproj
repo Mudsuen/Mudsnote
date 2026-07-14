@@ -16,6 +16,7 @@
 		8E684EC683074A7F918B9D84 /* FolderAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EE5A9B767B480199D4A54D /* FolderAccessService.swift */; };
 		2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */; };
 		58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */; };
+		A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* AttachmentTextIndex.swift */; };
 		BE055DEB12F946209B43C4E3 /* InboxParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A58139815644A9B64A433D /* InboxParser.swift */; };
 		6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */; };
 		5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */; };
@@ -93,6 +94,7 @@
 		33EE5A9B767B480199D4A54D /* FolderAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/FolderAccessService.swift; sourceTree = "<group>"; };
 		D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/PendingWriteQueue.swift; sourceTree = "<group>"; };
 		B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownFileStore.swift; sourceTree = "<group>"; };
+		A50000000000000000000002 /* AttachmentTextIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentTextIndex.swift; sourceTree = "<group>"; };
 		25A58139815644A9B64A433D /* InboxParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/InboxParser.swift; sourceTree = "<group>"; };
 		678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AudioCaptureService.swift; sourceTree = "<group>"; };
 		60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 				33EE5A9B767B480199D4A54D /* FolderAccessService.swift */,
 				D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */,
 				B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */,
+				A50000000000000000000002 /* AttachmentTextIndex.swift */,
 				25A58139815644A9B64A433D /* InboxParser.swift */,
 				678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */,
 				60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */,
@@ -392,6 +395,7 @@
 				8E684EC683074A7F918B9D84 /* FolderAccessService.swift in Sources */,
 				2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */,
 				58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */,
+				A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */,
 				BE055DEB12F946209B43C4E3 /* InboxParser.swift in Sources */,
 				6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */,
 				5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */,

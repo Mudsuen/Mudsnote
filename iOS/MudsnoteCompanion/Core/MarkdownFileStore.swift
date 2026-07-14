@@ -18,6 +18,11 @@ actor MarkdownFileStore {
     private var searchCache: [String: SearchCacheEntry] = [:]
     private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
     private let fileManager = FileManager.default
+    private let attachmentTextIndex: AttachmentTextIndex
+
+    init(attachmentTextIndex: AttachmentTextIndex = AttachmentTextIndex()) {
+        self.attachmentTextIndex = attachmentTextIndex
+    }
 
     func configure(root: URL) {
         self.root = root
@@ -337,7 +342,7 @@ actor MarkdownFileStore {
         query: String,
         scope: MarkdownSearchScope = .all,
         limit: Int = 80
-    ) throws -> [MarkdownSearchResult] {
+    ) async throws -> [MarkdownSearchResult] {
         guard let root else { throw FolderAccessError.missingFolder }
         let terms = MarkdownSearch.normalizedTerms(query)
         guard !terms.isEmpty else { return [] }
@@ -386,10 +391,39 @@ actor MarkdownFileStore {
                 for memo in InboxParser.parse(markdown) {
                     if let result = MarkdownSearch.match(memo: memo, terms: terms) {
                         matches.append(result)
+                        continue
+                    }
+                    let attachments = try await searchableAttachmentDocuments(
+                        in: memo.body,
+                        root: root
+                    )
+                    if let result = MarkdownSearch.match(
+                        memo: memo,
+                        terms: terms,
+                        attachmentDocuments: attachments
+                    ) {
+                        matches.append(result)
                     }
                 }
-            } else if let result = MarkdownSearch.match(file: file, markdown: markdown, terms: terms) {
+            } else if let result = MarkdownSearch.match(
+                file: file,
+                markdown: markdown,
+                terms: terms
+            ) {
                 matches.append(result)
+            } else {
+                let attachments = try await searchableAttachmentDocuments(
+                    in: markdown,
+                    root: root
+                )
+                if let result = MarkdownSearch.match(
+                    file: file,
+                    markdown: markdown,
+                    terms: terms,
+                    attachmentDocuments: attachments
+                ) {
+                    matches.append(result)
+                }
             }
         }
         searchCache = searchCache.filter { activePaths.contains($0.key) }
@@ -401,6 +435,33 @@ actor MarkdownFileStore {
             }
             .prefix(limit)
             .map { $0 }
+    }
+
+    private func searchableAttachmentDocuments(
+        in markdown: String,
+        root: URL
+    ) async throws -> [AttachmentSearchDocument] {
+        var documents: [AttachmentSearchDocument] = []
+        for relativePath in MarkdownAttachmentSearch.relativePaths(in: markdown) {
+            try Task.checkCancellation()
+            do {
+                if let text = try await attachmentTextIndex.text(
+                    relativePath: relativePath,
+                    root: root
+                ) {
+                    documents.append(AttachmentSearchDocument(
+                        relativePath: relativePath,
+                        text: text
+                    ))
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A damaged or unsupported attachment must not make note search fail.
+                continue
+            }
+        }
+        return documents
     }
 
     func prepareAttachmentPreview(relativePath: String) throws -> URL {
@@ -2242,12 +2303,19 @@ enum MarkdownSearch {
     static func match(
         file: RecentMarkdownFile,
         markdown: String,
-        terms: [String]
+        terms: [String],
+        attachmentDocuments: [AttachmentSearchDocument] = []
     ) -> MarkdownSearchResult? {
         let title = normalize(file.title)
         let path = normalize(file.relativePath)
         let body = normalize(markdown)
-        guard terms.allSatisfy({ title.contains($0) || path.contains($0) || body.contains($0) }) else {
+        let attachmentTexts = attachmentDocuments.map { ($0, normalize($0.text)) }
+        guard terms.allSatisfy({ term in
+            title.contains(term)
+                || path.contains(term)
+                || body.contains(term)
+                || attachmentTexts.contains(where: { $0.1.contains(term) })
+        }) else {
             return nil
         }
         let score = terms.reduce(into: 0) { total, term in
@@ -2256,31 +2324,51 @@ enum MarkdownSearch {
             else if title.contains(term) { total += 500 }
             if path.contains(term) { total += 180 }
             if body.contains(term) { total += 80 }
+            if attachmentTexts.contains(where: { $0.1.contains(term) }) { total += 70 }
         }
+        let matchedAttachment = attachmentTexts.first { document, normalizedText in
+            terms.contains(where: normalizedText.contains)
+        }?.0
         return MarkdownSearchResult(
             id: "file:\(file.relativePath)",
             title: file.title,
-            context: context(in: markdown, matching: terms),
-            location: file.relativePath,
+            context: matchedAttachment.map { context(in: $0.text, matching: terms) }
+                ?? context(in: markdown, matching: terms),
+            location: matchedAttachment.map { "\(file.relativePath) · \($0.fileName)" }
+                ?? file.relativePath,
             score: score,
             modifiedAt: file.modifiedAt,
             destination: .file(file)
         )
     }
 
-    static func match(memo: MemoBlock, terms: [String]) -> MarkdownSearchResult? {
+    static func match(
+        memo: MemoBlock,
+        terms: [String],
+        attachmentDocuments: [AttachmentSearchDocument] = []
+    ) -> MarkdownSearchResult? {
         let searchable = normalize([memo.body, memo.tags.joined(separator: " "), memo.dateText].joined(separator: " "))
-        guard terms.allSatisfy(searchable.contains) else { return nil }
+        let attachmentTexts = attachmentDocuments.map { ($0, normalize($0.text)) }
+        guard terms.allSatisfy({ term in
+            searchable.contains(term)
+                || attachmentTexts.contains(where: { $0.1.contains(term) })
+        }) else { return nil }
         let tagText = normalize(memo.tags.joined(separator: " "))
         let score = terms.reduce(into: 300) { total, term in
             if tagText.contains(term) { total += 250 }
             if searchable.contains(term) { total += 100 }
+            if attachmentTexts.contains(where: { $0.1.contains(term) }) { total += 70 }
         }
+        let matchedAttachment = attachmentTexts.first { document, normalizedText in
+            terms.contains(where: normalizedText.contains)
+        }?.0
         return MarkdownSearchResult(
             id: "memo:\(memo.id)",
             title: memo.body.split(separator: "\n").first.map(String.init) ?? String(localized: "Untitled memo"),
-            context: context(in: memo.body, matching: terms),
-            location: String(localized: "Inbox"),
+            context: matchedAttachment.map { context(in: $0.text, matching: terms) }
+                ?? context(in: memo.body, matching: terms),
+            location: matchedAttachment.map { "\(String(localized: "Inbox")) · \($0.fileName)" }
+                ?? String(localized: "Inbox"),
             score: score,
             modifiedAt: .distantPast,
             destination: .memo(memo)

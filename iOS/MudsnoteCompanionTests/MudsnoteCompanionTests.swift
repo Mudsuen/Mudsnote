@@ -1490,6 +1490,127 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(memoQueryInInbox.map(\.location), [String(localized: "Inbox")])
     }
 
+    func testAttachmentReferenceSearchParserIgnoresCodeAndTraversal() {
+        let markdown = """
+        ![Receipt](Attachments/receipt%202026.png)
+        [Scan](Attachments/report.pdf)
+        ![[Attachments/handwriting.jpg]]
+        ![Duplicate](Attachments/receipt%202026.png)
+        [Outside](../Secrets/private.pdf)
+        ```markdown
+        ![Example](Attachments/not-real.png)
+        ```
+        """
+
+        XCTAssertEqual(
+            MarkdownAttachmentSearch.relativePaths(in: markdown),
+            [
+                "Attachments/receipt 2026.png",
+                "Attachments/report.pdf",
+                "Attachments/handwriting.jpg",
+            ]
+        )
+    }
+
+    func testAttachmentOCRSearchCombinesNoteMetadataAndCachedRecognizedText() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachment = root.appendingPathComponent("Attachments/receipt.png")
+        try Data([0x01]).write(to: attachment, options: .atomic)
+        try "# Quarterly Review\n\n![Receipt](Attachments/receipt.png)\n".write(
+            to: root.appendingPathComponent("Quarterly Review.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let recognizer = StubAttachmentTextRecognizer(text: "Project Orbital invoice total 428")
+        let cacheURL = root.appendingPathComponent(".test-cache/attachment-text.json")
+        let index = AttachmentTextIndex(recognizer: recognizer, cacheURL: cacheURL)
+        let store = MarkdownFileStore(attachmentTextIndex: index)
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+
+        let combined = try await store.search(query: "quarterly orbital")
+        XCTAssertEqual(combined.count, 1)
+        XCTAssertEqual(
+            combined.first?.location,
+            "Quarterly Review.md · receipt.png"
+        )
+        XCTAssertEqual(combined.first?.context, "Project Orbital invoice total 428")
+        _ = try await store.search(query: "orbital")
+        let cachedCallCount = await recognizer.callCount()
+        XCTAssertEqual(cachedCallCount, 1)
+
+        let restoredRecognizer = StubAttachmentTextRecognizer(
+            text: "Project Orbital invoice total 428"
+        )
+        let restoredIndex = AttachmentTextIndex(
+            recognizer: restoredRecognizer,
+            cacheURL: cacheURL
+        )
+        let restoredStore = MarkdownFileStore(attachmentTextIndex: restoredIndex)
+        await restoredStore.configure(root: root)
+        _ = try await restoredStore.loadLibrarySnapshot()
+        let restoredResults = try await restoredStore.search(query: "orbital")
+        XCTAssertEqual(restoredResults.count, 1)
+        let restoredCacheCallCount = await restoredRecognizer.callCount()
+        XCTAssertEqual(restoredCacheCallCount, 0)
+
+        try Data([0x01, 0x02]).write(to: attachment, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(5)],
+            ofItemAtPath: attachment.path
+        )
+        _ = try await restoredStore.search(query: "orbital")
+        let invalidatedCallCount = await restoredRecognizer.callCount()
+        XCTAssertEqual(invalidatedCallCount, 1)
+    }
+
+    func testVisionRecognizerReadsLargePrintedAttachmentText() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("ocr.png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1_400, height: 420)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_400, height: 420))
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 112, weight: .bold),
+                .foregroundColor: UIColor.black,
+            ]
+            NSString(string: "ORBITAL 428").draw(
+                at: CGPoint(x: 80, y: 120),
+                withAttributes: attributes
+            )
+        }
+        try XCTUnwrap(image.pngData()).write(to: url, options: .atomic)
+
+        let text = try await VisionAttachmentTextRecognizer().recognizeText(at: url)
+
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("ORBITAL"))
+        XCTAssertTrue(text.contains("428"))
+
+        let pdfURL = root.appendingPathComponent("scan.pdf")
+        let pdfBounds = CGRect(x: 0, y: 0, width: 1_200, height: 500)
+        let pdfData = UIGraphicsPDFRenderer(bounds: pdfBounds).pdfData { renderer in
+            renderer.beginPage()
+            UIColor.white.setFill()
+            renderer.cgContext.fill(pdfBounds)
+            NSString(string: "NEBULA 731").draw(
+                at: CGPoint(x: 80, y: 150),
+                withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 104, weight: .bold),
+                    .foregroundColor: UIColor.black,
+                ]
+            )
+        }
+        try pdfData.write(to: pdfURL, options: .atomic)
+
+        let pdfText = try await VisionAttachmentTextRecognizer().recognizeText(at: pdfURL)
+
+        XCTAssertTrue(pdfText.localizedCaseInsensitiveContains("NEBULA"))
+        XCTAssertTrue(pdfText.contains("731"))
+    }
+
     func testSearchHighlightingMatchesMultipleTermsWithoutCaseOrDiacriticSensitivity() {
         let text = "Résumé restore RESTORE"
         let matches = SearchHighlighting.ranges(
@@ -2686,4 +2807,20 @@ final class MudsnoteCompanionTests: XCTestCase {
 
     private static let onePixelPNG =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+}
+
+private actor StubAttachmentTextRecognizer: AttachmentTextRecognizing {
+    private let text: String
+    private var calls = 0
+
+    init(text: String) {
+        self.text = text
+    }
+
+    func recognizeText(at url: URL) async throws -> String {
+        calls += 1
+        return text
+    }
+
+    func callCount() -> Int { calls }
 }
