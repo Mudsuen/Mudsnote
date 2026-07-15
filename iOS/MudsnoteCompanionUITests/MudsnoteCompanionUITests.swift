@@ -1184,6 +1184,34 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testRecordedAudioTranscriptRendersAndRemainsFindable() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            audioTranscript: true
+        )
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/Recorded Meeting.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        XCTAssertTrue(app.staticTexts["Audio transcription"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Project ORBITAL is approved for launch."].exists)
+        let options = app.buttons["note-options-menu"]
+        options.tap()
+        app.buttons["Find in Note"].tap()
+        let field = app.textFields["find-in-note-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("ORBITAL")
+        XCTAssertEqual(app.staticTexts["find-in-note-count"].label, "1 of 1")
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Searchable recorded audio transcript"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]
@@ -1493,7 +1521,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         conflictCopy: Bool = false,
         fileTag: Bool = false,
         batchNotes: Bool = false,
-        ocrAttachment: Bool = false
+        ocrAttachment: Bool = false,
+        audioTranscript: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1507,7 +1536,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             conflictCopy ? "-ui-testing-conflict-copy" : nil,
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
-            ocrAttachment ? "-ui-testing-ocr-attachment" : nil
+            ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
+            audioTranscript ? "-ui-testing-audio-transcript" : nil
         ].compactMap { $0 }
         app.launch()
         return app

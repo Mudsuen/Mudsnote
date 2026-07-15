@@ -439,6 +439,16 @@
         }
       }
     },
+    "Audio attached and transcribed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频已附加并完成转写"
+          }
+        }
+      }
+    },
     "Audio recording could not start. Try again.": {
       "localizations": {
         "zh-Hans": {
@@ -2553,6 +2563,12 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$lld/%2$lld" } }
+      }
+    },
+    "note.audio_transcription_failed.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Audio attached, but transcription failed: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "音频已附加，但转写失败：%@" } }
       }
     }
   },

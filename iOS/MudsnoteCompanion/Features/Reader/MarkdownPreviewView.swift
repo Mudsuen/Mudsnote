@@ -72,6 +72,7 @@ struct MarkdownPreviewView: View {
     @State private var accessRevision = 0
     @StateObject private var noteAudioRecorder = AudioCaptureService()
     @State private var isAudioTransitioning = false
+    @State private var isTranscribingDocumentAudio = false
     @State private var pendingAudioRecording: RecordedAudio?
     @State private var isAudioAttachmentFailurePresented = false
     @State private var noteName = ""
@@ -361,7 +362,7 @@ struct MarkdownPreviewView: View {
                 editorFocused = true
             }
             Button("Retry") {
-                Task { await attachPendingAudioRecording() }
+                Task { await retryPendingAudioRecording() }
             }
             Button("Discard Recording", role: .destructive) {
                 discardPendingAudioRecording()
@@ -477,6 +478,10 @@ struct MarkdownPreviewView: View {
                 Text("Recording")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.red)
+            } else if isTranscribingDocumentAudio {
+                Text("Transcribing...")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
             } else if pendingAudioRecording != nil {
                 Text("Audio Not Attached")
                     .font(.caption.weight(.semibold))
@@ -1450,6 +1455,7 @@ struct MarkdownPreviewView: View {
     }
 
     private var audioButtonAccessibilityLabel: String {
+        if isTranscribingDocumentAudio { return String(localized: "Transcribing...") }
         if pendingAudioRecording != nil { return String(localized: "Retry audio attachment") }
         return String(localized: noteAudioRecorder.isRecording ? "Stop recording" : "Record audio")
     }
@@ -1491,17 +1497,57 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
-            try? FileManager.default.removeItem(at: recording.temporaryURL)
-            pendingAudioRecording = nil
             source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
-            editorFocused = true
+            isTranscribingDocumentAudio = true
+            appModel.statusToast = .pending(String(localized: "Transcribing..."))
+            defer {
+                try? FileManager.default.removeItem(at: recording.temporaryURL)
+                pendingAudioRecording = nil
+                isTranscribingDocumentAudio = false
+                editorFocused = true
+            }
+            do {
+                let transcript = try await noteAudioRecorder.transcribe(
+                    url: recording.temporaryURL
+                )
+                let updatedMarkdown = MarkdownAudioTranscript.appending(
+                    transcript,
+                    to: updated.markdown
+                )
+                guard updatedMarkdown != updated.markdown else {
+                    appModel.statusToast = .pending(
+                        String(localized: "No speech detected. Audio kept.")
+                    )
+                    return
+                }
+                draftMarkdown = updatedMarkdown
+                await persistDraft(finishEditing: false, announce: false)
+                if draftMarkdown == originalMarkdown {
+                    appModel.statusToast = .saved(String(localized: "Audio attached and transcribed"))
+                }
+            } catch is CancellationError {
+                appModel.statusToast = .pending(String(localized: "Audio attached"))
+            } catch {
+                appModel.statusToast = .error(String(
+                    format: String(localized: "note.audio_transcription_failed.format"),
+                    locale: .current,
+                    error.localizedDescription
+                ))
+            }
         } else {
             saveState = .failed
             isAudioAttachmentFailurePresented = true
         }
+    }
+
+    private func retryPendingAudioRecording() async {
+        guard !isAudioTransitioning else { return }
+        isAudioTransitioning = true
+        defer { isAudioTransitioning = false }
+        await attachPendingAudioRecording()
     }
 
     private func discardPendingAudioRecording() {
@@ -2082,6 +2128,20 @@ enum MarkdownSectionProjection {
 struct NoteFindLocation: Hashable {
     var blockIndex: Int
     var cellIndex: Int?
+}
+
+enum MarkdownAudioTranscript {
+    static func appending(_ transcript: String, to markdown: String) -> String {
+        let body = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return markdown }
+        var result = markdown
+        if !result.isEmpty, !result.hasSuffix("\n") { result += "\n" }
+        if !result.isEmpty { result += "\n" }
+        result += "### \(String(localized: "Audio transcription"))\n\n"
+        result += body
+        result += "\n"
+        return result
+    }
 }
 
 struct NoteFindMatch: Identifiable, Equatable {

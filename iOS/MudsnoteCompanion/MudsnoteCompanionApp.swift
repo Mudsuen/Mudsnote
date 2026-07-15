@@ -45,6 +45,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let fileTagArgument = "-ui-testing-file-tag"
     private static let batchNotesArgument = "-ui-testing-batch-notes"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
+    private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -59,6 +60,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(fileTagArgument)
                 || arguments.contains(batchNotesArgument)
                 || arguments.contains(ocrAttachmentArgument)
+                || arguments.contains(audioTranscriptArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -148,6 +150,25 @@ private enum MudsnoteUITestLaunchConfiguration {
                     )
                     try "# OCR Attachment\n\n![Image](Attachments/ocr-search.png)\n".write(
                         to: projects.appendingPathComponent("OCR Attachment.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
+                if arguments.contains(audioTranscriptArgument) {
+                    try Data("audio transcript fixture".utf8).write(
+                        to: root.appendingPathComponent("Attachments/ui-transcript.m4a"),
+                        options: .atomic
+                    )
+                    try """
+                    # Recorded Meeting
+
+                    [Audio](Attachments/ui-transcript.m4a)
+
+                    ### Audio transcription
+
+                    Project ORBITAL is approved for launch.
+                    """.write(
+                        to: projects.appendingPathComponent("Recorded Meeting.md"),
                         atomically: true,
                         encoding: .utf8
                     )

@@ -2210,6 +2210,42 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == original.relativePath }?.hasAttachments == true)
     }
 
+    func testRecordedAudioTranscriptPersistsAsEditableSearchableMarkdown() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Meeting.md")
+        try "# Meeting\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Meeting.md")
+        let attached = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: try CaptureAttachment.validatedAudio(data: Data([0x01, 0x02]))
+        )
+        let transcript = MarkdownAudioTranscript.appending(
+            "Project ORBITAL is approved.",
+            to: attached.markdown
+        )
+        let saved = try await store.saveMarkdownDocument(
+            relativePath: attached.relativePath,
+            markdown: transcript,
+            expectedMarkdown: attached.markdown
+        )
+
+        XCTAssertTrue(saved.markdown.contains("[Audio](Attachments/"))
+        XCTAssertTrue(saved.markdown.contains("### Audio transcription"))
+        XCTAssertTrue(saved.markdown.contains("Project ORBITAL is approved."))
+        XCTAssertEqual(
+            MarkdownAudioTranscript.appending("  \n", to: saved.markdown),
+            saved.markdown
+        )
+        let results = try await store.search(query: "orbital")
+        XCTAssertEqual(results.map(\.location), ["Meeting.md"])
+    }
+
     func testMarkdownDocumentStoresPortableGenericFileAttachment() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

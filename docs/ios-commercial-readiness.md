@@ -12,6 +12,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
 - [x] Rendered notes recognize actionable email addresses, phone numbers, and street addresses without modifying the underlying Markdown; explicit Markdown links retain priority.
 - [x] Attachments can be browsed by photo, audio, and document category; a long press returns to the exact containing note or Inbox memo.
+- [x] Audio recorded inside an open note is attached before local transcription begins; successful speech becomes ordinary editable and searchable Markdown, while empty or failed transcription keeps the recording.
 - [x] Find in Note optionally includes locally recognized text from referenced images and PDFs, combines text and attachment matches into one navigable sequence, and never modifies Markdown.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
@@ -54,7 +55,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] One hundred thirty-five tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
+- [x] One hundred thirty-seven tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
