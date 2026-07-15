@@ -339,6 +339,13 @@
 - Double-click/Return opens the selected card in the same list/editor workspace; New Note also returns to list mode. Empty/search/trash states and persisted-launch toolbar visibility are covered.
 - Installed-app evidence: `/tmp/mudsnote-gallery-vs-notes.jpg`; `Command-1`, `Command-2`, and double-click were also exercised against `/Applications/Mudsnote.app` through accessibility.
 
+## Latest iteration (214)
+
+- Finder and File > Open Markdown events now route into the existing three-pane library window instead of creating a compact editor panel.
+- Explicitly opened external files are projected into All Notes without adding their parent directory as a configured source; background snapshot refreshes merge that bounded projection so selection remains stable.
+- Main-window saves use exact-path updates for those external documents, while managed library notes retain title-based filenames. Pending edits in the current note are flushed before switching to an external file.
+- Quick capture retains its dedicated destination shelf but uses compact `xmark` and `checkmark` icon actions in transparent `26pt` controls instead of wide Cancel/Save pills.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

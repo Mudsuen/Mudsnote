@@ -1292,6 +1292,7 @@ final class LibraryWindowController: NSWindowController,
     private(set) var noteListViewMode: LibraryNoteViewMode = .list
     private var sourceCountSnapshot: [NoteSearchResult] = []
     private var trashedNotesSnapshot: [NoteSearchResult] = []
+    private var externallyOpenedDocumentsByPath: [String: NoteSearchResult] = [:]
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
@@ -1641,13 +1642,14 @@ final class LibraryWindowController: NSWindowController,
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
                 self.trashedNotesSnapshot = trashedNotes
+                let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
                 let currentQuery = self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !currentQuery.isEmpty {
-                    self.sourceCountSnapshot = allNotes
-                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
+                    self.sourceCountSnapshot = mergedAllNotes
+                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
                     self.updateNoteListHeader(query: currentQuery)
                     return
                 }
@@ -1655,7 +1657,7 @@ final class LibraryWindowController: NSWindowController,
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
-                    allNotesSnapshot: allNotes,
+                    allNotesSnapshot: mergedAllNotes,
                     sourceCountIndex: reusableCountIndex
                 )
             }
@@ -3746,26 +3748,27 @@ final class LibraryWindowController: NSWindowController,
                 }
 
                 self.sourceSnapshotValidationTask = nil
+                let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
                 let trashChanged = trashedNotes != self.trashedNotesSnapshot
                 self.trashedNotesSnapshot = trashedNotes
-                guard allNotes != self.sourceCountSnapshot || trashChanged else {
-                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
+                guard mergedAllNotes != self.sourceCountSnapshot || trashChanged else {
+                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
                     return
                 }
 
                 let selectedURL = self.selectedURL
                 let selectedPath = selectedURL?.standardizedFileURL.path
-                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: allNotes)
+                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: mergedAllNotes)
                 let selectionStillExists = selectedPath.map { path in
                     nextNotes.contains { $0.url.standardizedFileURL.path == path }
                 } ?? false
                 self.reloadNotes(
                     selecting: selectionStillExists ? selectedURL : nil,
                     loadFirstIfNeeded: loadFirstIfNeeded && !selectionStillExists,
-                    allNotesSnapshot: allNotes,
+                    allNotesSnapshot: mergedAllNotes,
                     sourceCountIndex: reusableCountIndex
                 )
             }
@@ -4001,6 +4004,19 @@ final class LibraryWindowController: NSWindowController,
                 thumbnailURL: nil
             )
         }
+    }
+
+    private func includingExternallyOpenedDocuments(in notes: [NoteSearchResult]) -> [NoteSearchResult] {
+        var merged = notes
+        for note in externallyOpenedDocumentsByPath.values {
+            LibraryNoteListProjection.upsertByModifiedDate(
+                note,
+                into: &merged,
+                replacingPaths: Set([note.url.standardizedFileURL.path]),
+                limit: Self.sourceCountSnapshotLimit
+            )
+        }
+        return merged
     }
 
     private func buildGroupedRows(
@@ -5932,7 +5948,16 @@ final class LibraryWindowController: NSWindowController,
         let savedURL: URL
         if let previousURL {
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
-            savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
+            if externallyOpenedDocumentsByPath[previousURL.standardizedFileURL.path] != nil {
+                savedURL = try noteStore.updateNoteInPlace(
+                    at: previousURL,
+                    title: title,
+                    body: body,
+                    tags: selectedTags
+                )
+            } else {
+                savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
+            }
         } else {
             savedURL = try noteStore.saveNewNote(
                 title: title,
@@ -5983,6 +6008,10 @@ final class LibraryWindowController: NSWindowController,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
         )
+        if let previousPath,
+           externallyOpenedDocumentsByPath.removeValue(forKey: previousPath) != nil {
+            externallyOpenedDocumentsByPath[savedPath] = updatedNote
+        }
         LibraryNoteListProjection.upsertByModifiedDate(
             updatedNote,
             into: &sourceCountSnapshot,
@@ -6155,6 +6184,38 @@ final class LibraryWindowController: NSWindowController,
 
     func selectedMarkdownFileURLForLibrary() -> URL? {
         selectedMarkdownFileURLsForLibrary().first
+    }
+
+    func openMarkdownDocumentForLibrary(at url: URL) throws {
+        try saveCurrentNoteIfNeeded()
+        let standardizedURL = url.standardizedFileURL
+        let loaded = try noteLoader(standardizedURL)
+        let modifiedAt = fileModificationDateLoader(standardizedURL) ?? Date()
+        let note = NoteSearchResult(
+            url: standardizedURL,
+            title: loaded.title,
+            snippet: libraryFirstMeaningfulLine(from: loaded.body) ?? "",
+            modifiedAt: modifiedAt,
+            tags: loaded.tags,
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: standardizedURL)
+        )
+
+        externallyOpenedDocumentsByPath[standardizedURL.path] = note
+        sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
+        selectedScope = .all
+        searchField.stringValue = ""
+        activeSearchSession = nil
+        _ = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
+        reloadNotes(
+            selecting: standardizedURL,
+            loadFirstIfNeeded: true,
+            allNotesSnapshot: sourceCountSnapshot
+        )
+        if let row = rowIndex(for: standardizedURL.path) {
+            tableView.scrollRowToVisible(row)
+        }
+        window?.makeFirstResponder(editorTextView)
     }
 
     func selectNoteForVisualQA(at url: URL) {

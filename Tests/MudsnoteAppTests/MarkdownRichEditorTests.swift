@@ -5654,12 +5654,12 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func externalEditorSavePreservesOriginalMarkdownFileURL() throws {
-        let suiteName = "mudsnote.external-editor-tests.\(UUID().uuidString)"
+    func externalMarkdownOpensAndSavesInPlaceInLibraryWindow() throws {
+        let suiteName = "mudsnote.external-library-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-external-editor-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("mudsnote-external-library-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -5671,26 +5671,41 @@ struct MarkdownRichEditorTests {
             legacyDefaults: nil,
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try store.ensureNotesDirectory()
+        let managedURL = try store.saveNewNote(title: "Managed Draft", body: "Managed body")
         let externalURL = root.appendingPathComponent("Original Name.markdown")
         try "# Original Heading\n\nOriginal body\n".write(to: externalURL, atomically: true, encoding: .utf8)
         var savedURL: URL?
-        let controller = EditorWindowController(
+        let controller = LibraryWindowController(
             noteStore: store,
-            panelOpacity: NoteStore.defaultPanelOpacity,
-            fileURL: externalURL,
-            preservesOriginalFileURL: true,
-            showsSaveButton: true,
+            defersInitialNoteHydration: false,
+            onOpenInSeparateWindow: { _ in },
             onSave: { savedURL = $0 },
-            onClose: {},
-            onRequestSearch: {},
-            onRequestPreferences: {}
+            onClose: {}
         )
         defer { controller.close() }
 
-        let updated = MarkdownRichTextCodec.render(markdown: "# Changed Heading\n\nUpdated body", theme: controller.theme)
+        controller.titleField.stringValue = "Managed Updated"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
+        try controller.openMarkdownDocumentForLibrary(at: externalURL)
+
+        let managedSavedURL = try #require(savedURL)
+        #expect(!FileManager.default.fileExists(atPath: managedURL.path))
+        #expect(FileManager.default.fileExists(atPath: managedSavedURL.path))
+        #expect(managedSavedURL.lastPathComponent.localizedCaseInsensitiveContains("managed-updated"))
+        #expect(!(controller.window is NSPanel))
+        #expect(controller.selectedMarkdownFileURLForLibrary() == externalURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Original Heading")
+        #expect(controller.editorTextView.string == "Original body")
+        #expect(controller.noteListSearchResultsForLibrary().contains {
+            $0.url.standardizedFileURL == externalURL.standardizedFileURL
+        })
+
+        let updated = MarkdownRichTextCodec.render(markdown: "Updated body", theme: controller.theme)
+        controller.titleField.stringValue = "Changed Heading"
         controller.editorTextView.textStorage?.setAttributedString(updated)
-        let commandS = try keyEvent(keyCode: 1, modifiers: [.command], characters: "s")
-        #expect(controller.handleShortcutEvent(commandS))
+        _ = try controller.saveCurrentNoteForLibrary()
 
         #expect(savedURL == externalURL.standardizedFileURL)
         #expect(FileManager.default.fileExists(atPath: externalURL.path))
@@ -6297,6 +6312,25 @@ struct MarkdownRichEditorTests {
         #expect(button.layer?.borderWidth == 0)
         #expect(button.layer?.backgroundColor != NSColor.clear.cgColor)
         #expect(button.contentTintColor == panelPrimaryTextColor())
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureUsesQuietIconOnlyFooterActions() throws {
+        let harness = try makeEditorControllerHarness(draftID: "quick-capture", showsSaveButton: true)
+        defer { harness.tearDown() }
+
+        let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
+        let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
+
+        #expect(saveButton.title.isEmpty)
+        #expect(saveButton.toolTip == "保存")
+        #expect(saveButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(cancelButton.title.isEmpty)
+        #expect(cancelButton.toolTip == "取消")
+        #expect(cancelButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(saveButton.layer?.backgroundColor == NSColor.clear.cgColor)
+        #expect(cancelButton.layer?.backgroundColor == NSColor.clear.cgColor)
     }
 
     @MainActor

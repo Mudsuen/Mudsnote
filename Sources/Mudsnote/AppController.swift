@@ -538,33 +538,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         controller.showWindowAndFocus()
     }
 
-    private func openEditor(for url: URL, preservesOriginalFileURL: Bool = false) {
+    private func openEditor(for url: URL) {
         cleanupClosedWindows()
         let key = url.standardizedFileURL.path
 
         if let controller = editorControllers[key], controller.window?.isVisible == true {
-            if preservesOriginalFileURL {
-                controller.preservesOriginalFileURL = true
-            }
             controller.showWindowAndFocus()
             return
         }
 
-        let controller = makeEditorWindowController(
-            fileURL: url,
-            preservesOriginalFileURL: preservesOriginalFileURL
-        )
+        let controller = makeEditorWindowController(fileURL: url)
         editorControllers[key] = controller
         controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
         controller.showWindowAndFocus()
     }
 
     private func openExternalMarkdownFiles(_ urls: [URL]) {
-        NSApp.setActivationPolicy(.regular)
+        showLibraryWindow()
         for url in Self.deduplicatedFileURLs(urls) {
-            openEditor(for: url, preservesOriginalFileURL: true)
+            do {
+                try libraryWindowController?.openMarkdownDocumentForLibrary(at: url)
+            } catch {
+                presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+            }
         }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc
@@ -876,16 +873,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         floatingNoteController?.window?.level = noteStore.floatingNoteStaysOnTop ? .statusBar : .normal
     }
 
-    private func makeEditorWindowController(
-        fileURL: URL?,
-        preservesOriginalFileURL: Bool = false,
-        remembersQuickCapturePosition: Bool = false
-    ) -> EditorWindowController {
+    private func makeEditorWindowController(fileURL: URL?, remembersQuickCapturePosition: Bool = false) -> EditorWindowController {
         EditorWindowController(
             noteStore: noteStore,
             panelOpacity: noteStore.panelOpacity,
             fileURL: fileURL,
-            preservesOriginalFileURL: preservesOriginalFileURL,
             initialWindowFrame: remembersQuickCapturePosition ? storedQuickCaptureFrame() : nil,
             draftIDOverride: remembersQuickCapturePosition ? "quick-capture" : nil,
             saveShortcut: HotKeySpec.parse(noteStore.saveShortcutString),

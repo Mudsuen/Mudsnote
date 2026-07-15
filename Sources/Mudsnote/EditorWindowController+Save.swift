@@ -18,22 +18,13 @@ extension EditorWindowController {
             let savedURL: URL
 
             if let existingURL = activeFloatingNoteURL ?? fileURL {
-                if preservesOriginalFileURL {
-                    savedURL = try noteStore.updateNoteInPlace(
-                        at: existingURL,
-                        title: document.title,
-                        body: document.body,
-                        tags: document.tags
-                    )
-                } else {
-                    savedURL = try noteStore.updateNote(
-                        at: existingURL,
-                        title: document.title,
-                        body: document.body,
-                        tags: document.tags,
-                        in: selectedDirectoryURL
-                    )
-                }
+                savedURL = try noteStore.updateNote(
+                    at: existingURL,
+                    title: document.title,
+                    body: document.body,
+                    tags: document.tags,
+                    in: selectedDirectoryURL
+                )
             } else {
                 savedURL = try noteStore.saveNewNote(
                     title: document.title,
