@@ -34,10 +34,7 @@ enum InboxParser {
         func flush() {
             guard let currentDate else { return }
             let body = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            let tags = body
-                .split(whereSeparator: \.isWhitespace)
-                .map(String.init)
-                .filter { $0.hasPrefix("#") }
+            let tags = MarkdownTagSyntax.tags(in: body)
             let id = "\(currentDate)-\(blocks.count)"
             blocks.append(MemoBlock(
                 id: id,

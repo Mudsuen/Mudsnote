@@ -19,6 +19,13 @@ actor MarkdownFileStore {
         var data: Data
     }
 
+    private struct MarkdownTagRewriteBackup {
+        var url: URL
+        var relativePath: String
+        var original: Data
+        var updated: Data
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
@@ -543,6 +550,111 @@ actor MarkdownFileStore {
 
         if let coordinationError { throw coordinationError }
         if let mutationError { throw mutationError }
+    }
+
+    func mutateTag(
+        _ sourceTagInput: String,
+        mutation: MarkdownTagMutation
+    ) throws -> MarkdownTagMutationResult {
+        guard let sourceTag = MarkdownTagSyntax.normalizedTag(sourceTagInput) else {
+            throw MarkdownTagMutationError.invalidTag
+        }
+        let replacementTag: String?
+        switch mutation {
+        case .rename(let input):
+            guard let normalized = MarkdownTagSyntax.normalizedTag(input) else {
+                throw MarkdownTagMutationError.invalidTag
+            }
+            replacementTag = normalized
+        case .delete:
+            replacementTag = nil
+        }
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { throw MarkdownTagMutationError.notFound }
+
+        var occurrenceCount = 0
+        var updates: [MarkdownTagRewriteBackup] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isDirectory != true,
+                  values.isRegularFile == true,
+                  url.pathExtension.lowercased() == "md" else { continue }
+            let original = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard let markdown = String(data: original, encoding: .utf8),
+                  let rewrite = MarkdownTagSyntax.rewriting(
+                    markdown,
+                    tag: sourceTag,
+                    mutation: mutation
+                  ) else { continue }
+            occurrenceCount += rewrite.occurrenceCount
+            guard rewrite.markdown != markdown,
+                  let updated = rewrite.markdown.data(using: .utf8) else { continue }
+            updates.append(MarkdownTagRewriteBackup(
+                url: url,
+                relativePath: Self.relativePath(for: url, root: root),
+                original: original,
+                updated: updated
+            ))
+        }
+        guard occurrenceCount > 0 else { throw MarkdownTagMutationError.notFound }
+
+        var written: [MarkdownTagRewriteBackup] = []
+        do {
+            for update in updates {
+                try coordinatedReplaceTagData(
+                    at: update.url,
+                    relativePath: update.relativePath,
+                    expected: update.original,
+                    replacement: update.updated
+                )
+                written.append(update)
+            }
+        } catch {
+            var rollbackFailed = false
+            for update in written.reversed() {
+                do {
+                    try coordinatedReplaceTagData(
+                        at: update.url,
+                        relativePath: update.relativePath,
+                        expected: update.updated,
+                        replacement: update.original
+                    )
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if rollbackFailed { throw MarkdownTagMutationError.rollbackFailed }
+            throw error
+        }
+
+        let changedPaths = updates.map(\.relativePath)
+        cachedLibrarySnapshot = nil
+        for path in changedPaths {
+            searchCache.removeValue(forKey: path)
+            listMetadataCache.removeValue(forKey: path)
+        }
+        return MarkdownTagMutationResult(
+            sourceTag: sourceTag,
+            replacementTag: replacementTag,
+            changedPaths: changedPaths,
+            occurrenceCount: occurrenceCount
+        )
     }
 
     func preparePendingWrite(for draft: CaptureDraft, root: URL, now: Date = Date()) async throws -> PendingWrite {
@@ -1509,6 +1621,34 @@ actor MarkdownFileStore {
         if let moveError { throw moveError }
     }
 
+    private func coordinatedReplaceTagData(
+        at url: URL,
+        relativePath: String,
+        expected: Data,
+        replacement: Data
+    ) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var writeError: Error?
+        coordinator.coordinate(
+            writingItemAt: url,
+            options: .forMerging,
+            error: &coordinationError
+        ) { coordinatedURL in
+            do {
+                let current = try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+                guard current == expected else {
+                    throw MarkdownTagMutationError.changedExternally(relativePath)
+                }
+                try replacement.write(to: coordinatedURL, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
+    }
+
     private func coordinatedCopy(from source: URL, to destination: URL) throws {
         let coordinator = NSFileCoordinator()
         var coordinationError: NSError?
@@ -2347,44 +2487,8 @@ struct MarkdownListMetadata: Equatable {
             title: title,
             preview: preview,
             hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
-            tags: extractTags(from: markdown)
+            tags: MarkdownTagSyntax.tags(in: markdown)
         )
-    }
-
-    private static func extractTags(from markdown: String) -> [String] {
-        var searchableLines: [String] = []
-        for line in visibleMarkdownLines(from: markdown) {
-            searchableLines.append(
-                line.replacingOccurrences(
-                    of: #"`[^`]*`"#,
-                    with: " ",
-                    options: .regularExpression
-                )
-            )
-        }
-
-        let searchable = searchableLines.joined(separator: "\n")
-        guard let expression = try? NSRegularExpression(
-            pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)"#
-        ) else { return [] }
-        let nsRange = NSRange(searchable.startIndex..<searchable.endIndex, in: searchable)
-        var seen = Set<String>()
-        var tags: [String] = []
-        expression.enumerateMatches(in: searchable, range: nsRange) { match, _, _ in
-            guard let match,
-                  let range = Range(match.range(at: 0), in: searchable) else { return }
-            let tag = String(searchable[range])
-            let key = tag.folding(
-                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                locale: .current
-            )
-            if seen.insert(key).inserted {
-                tags.append(tag)
-            }
-        }
-        return tags.sorted {
-            $0.localizedStandardCompare($1) == .orderedAscending
-        }
     }
 
     private static func visibleMarkdownLines(from markdown: String) -> [String] {
@@ -2742,6 +2846,33 @@ struct LibrarySummary: Equatable {
     var dailyCount = 0
     var attachmentCount = 0
     var recentlyDeletedCount = 0
+}
+
+struct MarkdownTagMutationResult: Equatable {
+    var sourceTag: String
+    var replacementTag: String?
+    var changedPaths: [String]
+    var occurrenceCount: Int
+}
+
+enum MarkdownTagMutationError: LocalizedError, Equatable {
+    case invalidTag
+    case notFound
+    case changedExternally(String)
+    case rollbackFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidTag:
+            String(localized: "Enter a valid tag name.")
+        case .notFound:
+            String(localized: "This tag is no longer used by any active note.")
+        case .changedExternally:
+            String(localized: "A note changed elsewhere before the tag update completed.")
+        case .rollbackFailed:
+            String(localized: "Some tag changes could not be restored after the update failed.")
+        }
+    }
 }
 
 enum MarkdownLifecycleError: LocalizedError, Equatable {

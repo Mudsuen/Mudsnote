@@ -286,6 +286,48 @@
         }
       }
     },
+    "A note changed elsewhere before the tag update completed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签更新完成前，有笔记已在其他位置发生更改。" } } }
+    },
+    "Delete Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除标签" } } }
+    },
+    "Enter a valid tag name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的标签名称。" } } }
+    },
+    "Finish pending captures before changing tags.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待处理的速记，再更改标签。" } } }
+    },
+    "Rename Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名标签" } } }
+    },
+    "Remove %@?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除 %@？" } } }
+    },
+    "Remove Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除标签" } } }
+    },
+    "Some tag changes could not be restored after the update failed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "更新失败后，部分标签更改无法恢复。" } } }
+    },
+    "Tag Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签已删除" } } }
+    },
+    "Tag Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签名称" } } }
+    },
+    "Tag Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签已重命名" } } }
+    },
+    "The tag will be removed from every active note and quick note. This cannot be undone.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签将从所有有效笔记和快速笔记中移除，且无法撤销。" } } }
+    },
+    "The tag will be renamed in every active note and quick note.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签将在所有有效笔记和快速笔记中重命名。" } } }
+    },
+    "This tag is no longer used by any active note.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前没有有效笔记使用此标签。" } } }
+    },
     "All": {
       "localizations": {
         "zh-Hans": {

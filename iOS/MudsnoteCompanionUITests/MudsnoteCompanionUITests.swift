@@ -176,6 +176,55 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(quickNote.exists)
     }
 
+    func testTagContextMenuRenamesAndDeletesAcrossNotes() {
+        let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
+        let allTags = app.buttons["all-tags-link"]
+        XCTAssertTrue(allTags.waitForExistence(timeout: 8))
+        allTags.tap()
+
+        let project = app.buttons["tag-filter-#project"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5))
+        project.press(forDuration: 1)
+        let rename = app.buttons["Rename #project"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 3))
+        rename.tap()
+
+        let renameAlert = app.alerts["Rename Tag"]
+        XCTAssertTrue(renameAlert.waitForExistence(timeout: 3))
+        let name = renameAlert.textFields["Tag Name"]
+        XCTAssertEqual(name.value as? String, "project")
+        name.tap()
+        name.typeText("-client")
+        renameAlert.buttons["Rename"].tap()
+
+        let renamed = app.buttons["tag-filter-#project-client"]
+        XCTAssertTrue(renamed.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForNonexistence(project))
+        XCTAssertTrue(app.staticTexts["Tagged quick capture #project-client #quick"].exists)
+
+        let quick = app.buttons["tag-filter-#quick"]
+        quick.press(forDuration: 1)
+        let delete = app.buttons["Delete #quick"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
+        delete.tap()
+        XCTAssertTrue(
+            app.staticTexts[
+                "The tag will be removed from every active note and quick note. This cannot be undone."
+            ].waitForExistence(timeout: 3)
+        )
+        app.buttons["Remove Tag"].tap()
+
+        XCTAssertTrue(waitForNonexistence(quick))
+        XCTAssertTrue(
+            app.staticTexts["Tagged quick capture #project-client"].waitForExistence(timeout: 8)
+        )
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style tag rename and delete"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testNotesStyleSelectionPinsMultipleMarkdownNotes() {
         let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
         let allNotes = app.buttons["all-notes-link"]

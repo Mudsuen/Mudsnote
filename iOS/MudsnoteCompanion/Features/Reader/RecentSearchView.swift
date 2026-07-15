@@ -1911,6 +1911,9 @@ struct FlowLayout: Layout {
 struct TagsBrowserView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var filter = TagSelectionFilter()
+    @State private var tagToRename: String?
+    @State private var tagToDelete: String?
+    @State private var tagName = ""
 
     private var files: [RecentMarkdownFile] {
         appModel.libraryFiles.filter { file in
@@ -1927,18 +1930,38 @@ struct TagsBrowserView: View {
             Section {
                 FlowLayout(spacing: 10, rowSpacing: 10) {
                     ForEach(appModel.tagSummaries) { tag in
-                        Button {
-                            filter.cycle(tag.name)
+                        Menu {
+                            Button {
+                                beginRenamingTag(tag.name)
+                            } label: {
+                                Label("Rename Tag", systemImage: "pencil")
+                            }
+                            .accessibilityLabel("Rename \(tag.name)")
+                            .accessibilityIdentifier("rename-tag-\(tag.name)")
+                            .disabled(appModel.activeTagMutation != nil)
+
+                            Button(role: .destructive) {
+                                beginDeletingTag(tag.name)
+                            } label: {
+                                Label("Delete Tag", systemImage: "trash")
+                            }
+                            .accessibilityLabel("Delete \(tag.name)")
+                            .accessibilityIdentifier("delete-tag-\(tag.name)")
+                            .disabled(appModel.activeTagMutation != nil)
                         } label: {
                             TagFilterChip(
                                 title: tag.name,
                                 state: filter.state(for: tag.name)
                             )
+                        } primaryAction: {
+                            filter.cycle(tag.name)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("tag-filter-\(tag.name)")
+                        .id(tag.name)
                     }
                 }
+                .id(tagLayoutIdentity)
                 .padding(.vertical, 8)
 
                 if filter.included.count > 1 {
@@ -2016,6 +2039,33 @@ struct TagsBrowserView: View {
                 }
             }
         }
+        .alert("Rename Tag", isPresented: tagRenamePresented) {
+            TextField("Tag Name", text: $tagName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                guard let source = tagToRename else { return }
+                let name = tagName
+                Task { _ = await appModel.renameTag(source, to: name) }
+            }
+            .disabled(!canRenameTag)
+        } message: {
+            Text("The tag will be renamed in every active note and quick note.")
+        }
+        .confirmationDialog(
+            deleteTagTitle,
+            isPresented: tagDeletePresented,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove Tag", role: .destructive) {
+                guard let source = tagToDelete else { return }
+                Task { _ = await appModel.deleteTag(source) }
+            }
+        } message: {
+            Text("The tag will be removed from every active note and quick note. This cannot be undone.")
+        }
         .onChange(of: appModel.tagSummaries.map(\.name)) { _, tags in
             let activeKeys = Set(tags.map(tagKey))
             filter.included = filter.included.filter { activeKeys.contains(tagKey($0)) }
@@ -2028,6 +2078,48 @@ struct TagsBrowserView: View {
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: .current
         )
+    }
+
+    private var tagLayoutIdentity: String {
+        appModel.tagSummaries.map(\.name).joined(separator: "|")
+    }
+
+    private var tagRenamePresented: Binding<Bool> {
+        Binding(
+            get: { tagToRename != nil },
+            set: { if !$0 { tagToRename = nil } }
+        )
+    }
+
+    private var tagDeletePresented: Binding<Bool> {
+        Binding(
+            get: { tagToDelete != nil },
+            set: { if !$0 { tagToDelete = nil } }
+        )
+    }
+
+    private var deleteTagTitle: String {
+        String(
+            format: String(localized: "Remove %@?"),
+            locale: .current,
+            tagToDelete ?? ""
+        )
+    }
+
+    private var canRenameTag: Bool {
+        guard let source = tagToRename,
+              let current = MarkdownTagSyntax.normalizedTag(source),
+              let replacement = MarkdownTagSyntax.normalizedTag(tagName) else { return false }
+        return current != replacement && appModel.activeTagMutation == nil
+    }
+
+    private func beginRenamingTag(_ tag: String) {
+        tagToRename = tag
+        tagName = String(tag.dropFirst())
+    }
+
+    private func beginDeletingTag(_ tag: String) {
+        tagToDelete = tag
     }
 }
 

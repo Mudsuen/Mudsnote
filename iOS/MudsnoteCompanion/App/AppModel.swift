@@ -45,6 +45,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var completedSearchScope = MarkdownSearchScope.all
     @Published private(set) var libraryRevision = 0
     @Published private(set) var draftRecoveryIssue: String?
+    @Published private(set) var activeTagMutation: String?
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -474,6 +475,53 @@ final class AppModel: ObservableObject {
             } catch {
                 statusToast = .error(String(localized: "Tag failed"))
             }
+        }
+    }
+
+    @discardableResult
+    func renameTag(_ tag: String, to name: String) async -> Bool {
+        await mutateTag(tag, mutation: .rename(to: name))
+    }
+
+    @discardableResult
+    func deleteTag(_ tag: String) async -> Bool {
+        await mutateTag(tag, mutation: .delete)
+    }
+
+    private func mutateTag(
+        _ tag: String,
+        mutation: MarkdownTagMutation
+    ) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing tags."))
+            return false
+        }
+        guard activeTagMutation == nil else { return false }
+        activeTagMutation = tag
+        defer { activeTagMutation = nil }
+        do {
+            let result = try await fileStore.mutateTag(tag, mutation: mutation)
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            if let selectedDocument,
+               result.changedPaths.contains(selectedDocument.relativePath) {
+                self.selectedDocument = try await fileStore.loadMarkdownDocument(
+                    relativePath: selectedDocument.relativePath
+                )
+            }
+            if let selectedMemo {
+                self.selectedMemo = inboxItems.first { $0.id == selectedMemo.id }
+            }
+            switch mutation {
+            case .rename:
+                statusToast = .saved(String(localized: "Tag Renamed"))
+            case .delete:
+                statusToast = .saved(String(localized: "Tag Deleted"))
+            }
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
         }
     }
 

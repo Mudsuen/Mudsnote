@@ -4,6 +4,108 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testMarkdownTagSyntaxRewritesOnlyVisibleExactTags() throws {
+        let markdown = """
+        # Heading
+
+        Visible #Project and #project.
+        `#project` and ``#project`` stay code.
+        https://example.com/#project and (#project) stay destinations.
+
+        ~~~text
+        #project
+        ~~~
+        """
+
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag(" client-work "), "#client-work")
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#项目_2"), "#项目_2")
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("two words"))
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad/tag"))
+        XCTAssertEqual(MarkdownTagSyntax.tags(in: markdown), ["#Project"])
+
+        let renamed = try XCTUnwrap(MarkdownTagSyntax.rewriting(
+            markdown,
+            tag: "#PROJECT",
+            mutation: .rename(to: "#client")
+        ))
+        XCTAssertEqual(renamed.occurrenceCount, 2)
+        XCTAssertTrue(renamed.markdown.contains("Visible #client and #client."))
+        XCTAssertTrue(renamed.markdown.contains("`#project` and ``#project``"))
+        XCTAssertTrue(renamed.markdown.contains("https://example.com/#project and (#project)"))
+        XCTAssertTrue(renamed.markdown.contains("~~~text\n#project\n~~~"))
+
+        let deleted = try XCTUnwrap(MarkdownTagSyntax.rewriting(
+            "before #project after\n#project #keep\nend #PROJECT",
+            tag: "project",
+            mutation: .delete
+        ))
+        XCTAssertEqual(deleted.occurrenceCount, 3)
+        XCTAssertEqual(deleted.markdown, "before after\n#keep\nend")
+    }
+
+    func testTagMutationRenamesAndDeletesAcrossNotesAndInbox() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try "# Alpha\n\n#project #work\n`#project`\n".write(
+            to: projects.appendingPathComponent("Alpha.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Beta\n\nReview #PROJECT.\n".write(
+            to: projects.appendingPathComponent("Beta.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let inbox = try String(contentsOf: inboxURL, encoding: .utf8)
+        try (inbox + "\n## 2026-07-15 07:10\n\nQuick #project\n").write(
+            to: inboxURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let trashNote = root.appendingPathComponent(".mudsnote/Trash/hidden.md")
+        try "#project\n".write(to: trashNote, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+        let renamed = try await store.mutateTag("#Project", mutation: .rename(to: "#client"))
+
+        XCTAssertEqual(renamed.occurrenceCount, 3)
+        XCTAssertEqual(Set(renamed.changedPaths), [
+            "Inbox.md",
+            "Projects/Alpha.md",
+            "Projects/Beta.md",
+        ])
+        XCTAssertTrue(
+            try String(contentsOf: projects.appendingPathComponent("Alpha.md"), encoding: .utf8)
+                .contains("#client #work\n`#project`")
+        )
+        XCTAssertTrue(
+            try String(contentsOf: projects.appendingPathComponent("Beta.md"), encoding: .utf8)
+                .contains("Review #client.")
+        )
+        XCTAssertTrue(try String(contentsOf: inboxURL, encoding: .utf8).contains("Quick #client"))
+        XCTAssertEqual(try String(contentsOf: trashNote, encoding: .utf8), "#project\n")
+
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.contains { $0.tags.contains("#client") })
+        XCTAssertTrue(snapshot.inboxItems.contains { $0.tags == ["#client"] })
+
+        let deleted = try await store.mutateTag("client", mutation: .delete)
+        XCTAssertEqual(deleted.occurrenceCount, 3)
+        XCTAssertFalse(try String(contentsOf: inboxURL, encoding: .utf8).contains("#client"))
+        do {
+            _ = try await store.mutateTag("#missing", mutation: .delete)
+            XCTFail("Missing tags should not report a successful mutation")
+        } catch {
+            XCTAssertEqual(error as? MarkdownTagMutationError, .notFound)
+        }
+    }
+
     func testTagSelectionFilterSupportsAnyAllAndExclusions() {
         var filter = TagSelectionFilter()
 
