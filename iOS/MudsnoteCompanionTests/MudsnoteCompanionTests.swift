@@ -2673,6 +2673,52 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(metadata.preview, "Keep this preview clean")
     }
 
+    func testRenderedMarkdownDetectsActionableContentWithoutOverridingExplicitLinks() throws {
+        let rendered = NSAttributedString(
+            MarkdownInlineRendering.attributedText(
+                for: "Email support@example.com, call +1 (415) 555-0123, visit 1 Apple Park Way, Cupertino, CA 95014, or use [Help](https://muds.top/help)."
+            )
+        )
+        let source = rendered.string as NSString
+        let emailRange = source.range(of: "support@example.com")
+        let phoneRange = source.range(of: "+1 (415) 555-0123")
+        let addressRange = source.range(of: "1 Apple Park Way, Cupertino, CA 95014")
+        let helpRange = source.range(of: "Help")
+
+        let emailURL = try XCTUnwrap(
+            rendered.attribute(.link, at: emailRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(emailURL.absoluteString, "mailto:support@example.com")
+        XCTAssertEqual(
+            rendered.attribute(.underlineStyle, at: emailRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+
+        let phoneURL = try XCTUnwrap(
+            rendered.attribute(.link, at: phoneRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(phoneURL.absoluteString, "tel:+14155550123")
+        XCTAssertEqual(
+            rendered.attribute(.underlineStyle, at: phoneRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+
+        let addressURL = try XCTUnwrap(
+            rendered.attribute(.link, at: addressRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(addressURL.host, "maps.apple.com")
+        XCTAssertEqual(
+            URLComponents(url: addressURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "q" })?.value,
+            "1 Apple Park Way, Cupertino, CA 95014"
+        )
+
+        let explicitURL = try XCTUnwrap(
+            rendered.attribute(.link, at: helpRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(explicitURL.absoluteString, "https://muds.top/help")
+    }
+
     func testMarkdownLinkEditingAddsUpdatesAndRemovesPortableLinks() throws {
         let selectedDraft = try XCTUnwrap(MarkdownLinkEditing.draft(
             in: "Read Mudsnote today",

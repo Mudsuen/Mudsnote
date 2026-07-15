@@ -2208,6 +2208,7 @@ enum MarkdownInlineRendering {
             end: highlightEnd,
             attributes: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)]
         )
+        MarkdownDataDetection.apply(to: attributed)
         attributed.enumerateAttribute(
             .link,
             in: NSRange(location: 0, length: attributed.length)
@@ -2256,6 +2257,69 @@ enum MarkdownInlineRendering {
             with: "",
             range: NSRange(location: 0, length: attributed.length)
         )
+    }
+}
+
+enum MarkdownDataDetection {
+    private static let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue
+            | NSTextCheckingResult.CheckingType.phoneNumber.rawValue
+            | NSTextCheckingResult.CheckingType.address.rawValue
+    )
+
+    static func apply(to attributed: NSMutableAttributedString) {
+        guard attributed.length > 0, let detector else { return }
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        for match in detector.matches(in: attributed.string, range: fullRange) {
+            if !containsExistingLink(in: match.range, attributed: attributed) {
+                guard let destination = destination(for: match, in: attributed.string) else {
+                    continue
+                }
+                attributed.addAttribute(.link, value: destination, range: match.range)
+            }
+            attributed.addAttribute(
+                .underlineStyle,
+                value: NSUnderlineStyle.single.rawValue,
+                range: match.range
+            )
+        }
+    }
+
+    private static func destination(
+        for match: NSTextCheckingResult,
+        in source: String
+    ) -> URL? {
+        switch match.resultType {
+        case .link:
+            return match.url
+        case .phoneNumber:
+            guard let phoneNumber = match.phoneNumber else { return nil }
+            let dialable = phoneNumber.filter { character in
+                character.isNumber || "+*#".contains(character)
+            }
+            guard !dialable.isEmpty else { return nil }
+            return URL(string: "tel:\(dialable)")
+        case .address:
+            let address = (source as NSString).substring(with: match.range)
+            var components = URLComponents(string: "https://maps.apple.com/")
+            components?.queryItems = [URLQueryItem(name: "q", value: address)]
+            return components?.url
+        default:
+            return nil
+        }
+    }
+
+    private static func containsExistingLink(
+        in range: NSRange,
+        attributed: NSAttributedString
+    ) -> Bool {
+        var containsLink = false
+        attributed.enumerateAttribute(.link, in: range) { value, _, stop in
+            guard value != nil else { return }
+            containsLink = true
+            stop.pointee = true
+        }
+        return containsLink
     }
 }
 

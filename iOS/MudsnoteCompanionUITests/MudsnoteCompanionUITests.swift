@@ -748,6 +748,27 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["previous-linked-note"].exists)
     }
 
+    func testRenderedNoteDetectsEmailAndPhoneActions() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let email = app.links["support@example.com"]
+        let phone = app.links["+1 (415) 555-0123"]
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
+        XCTAssertTrue(phone.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style detected email and phone actions"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testDocumentDrawingSavesAsPortableMarkdownImage() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

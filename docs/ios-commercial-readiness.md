@@ -1,6 +1,6 @@
 # Mudsnote iOS commercial readiness
 
-Last reviewed: 2026-07-11
+Last reviewed: 2026-07-15
 
 This checklist tracks the iOS companion only. A checked item requires current source or artifact evidence; unchecked items remain release work.
 
@@ -10,6 +10,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Inbox, Daily, recent-file targets, text, photo, and audio capture exist.
 - [x] Quick Capture widget and App Intents build into the app bundle.
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
+- [x] Rendered notes recognize actionable email addresses, phone numbers, and street addresses without modifying the underlying Markdown; explicit Markdown links retain priority.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
 - [x] App and Widget ship one reviewed English/Simplified Chinese String Catalog; dynamic status, recovery, attachment, transcription, and accessibility copy use localized runtime strings.
@@ -51,7 +52,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] Twenty-three tests pass on the iPhone 17 Pro / iOS 26.5 Simulator: twenty unit/performance tests plus three end-to-end UI tests.
+- [x] One hundred thirty-two tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
