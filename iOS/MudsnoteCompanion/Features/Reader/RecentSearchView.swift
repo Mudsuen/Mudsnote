@@ -14,6 +14,8 @@ struct LibraryHomeView: View {
     @State private var searchScope = MarkdownSearchScope.all
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
+    @State private var smartFolderEditor: SmartFolderDefinition?
+    @State private var smartFolderToDelete: SmartFolderDefinition?
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -22,6 +24,9 @@ struct LibraryHomeView: View {
                 if normalizedSearchQuery.isEmpty {
                     VStack(alignment: .leading, spacing: 22) {
                         accountSection
+                        if !appModel.smartFolders.isEmpty {
+                            smartFoldersSection
+                        }
                         if !appModel.folders.isEmpty {
                             foldersSection
                         }
@@ -82,11 +87,35 @@ struct LibraryHomeView: View {
             .alert("New Folder", isPresented: $isCreatingFolder) {
                 TextField("Folder Name", text: $newFolderName)
                 Button("Cancel", role: .cancel) {}
+                Button("Make Into Smart Folder") {
+                    smartFolderEditor = SmartFolderDefinition(name: newFolderName)
+                }
+                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("Create") {
                     let name = newFolderName
                     Task { _ = await appModel.createFolder(named: name) }
                 }
                 .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .sheet(item: $smartFolderEditor) { definition in
+                SmartFolderEditorView(
+                    definition: definition,
+                    isNew: !appModel.smartFolders.contains(where: { $0.id == definition.id })
+                )
+                .environmentObject(appModel)
+            }
+            .confirmationDialog(
+                "Delete Smart Folder?",
+                isPresented: smartFolderDeletePresented,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete Smart Folder", role: .destructive) {
+                    guard let smartFolderToDelete else { return }
+                    Task { _ = await appModel.deleteSmartFolder(smartFolderToDelete) }
+                }
+            } message: {
+                Text("Notes stay in their original folders.")
             }
             .safeAreaInset(edge: .bottom) {
                 NotesBottomCommandBar(
@@ -185,6 +214,42 @@ struct LibraryHomeView: View {
     }
 
     @ViewBuilder
+    private var smartFoldersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NotesSectionHeader(title: String(localized: "Smart Folders"))
+            notesCard {
+                ForEach(appModel.smartFolders) { definition in
+                    NavigationLink {
+                        SmartFolderNotesView(smartFolderID: definition.id)
+                    } label: {
+                        NotesFolderRow(
+                            title: definition.name,
+                            systemImage: "folder.badge.gearshape",
+                            count: smartFolderCount(definition)
+                        )
+                    }
+                    .accessibilityIdentifier("smart-folder-row-\(definition.id.uuidString)")
+                    .contextMenu {
+                        Button {
+                            smartFolderEditor = definition
+                        } label: {
+                            Label("Edit Smart Folder", systemImage: "slider.horizontal.3")
+                        }
+                        .accessibilityIdentifier("edit-smart-folder-\(definition.id.uuidString)")
+
+                        Button(role: .destructive) {
+                            smartFolderToDelete = definition
+                        } label: {
+                            Label("Delete Smart Folder", systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("delete-smart-folder-\(definition.id.uuidString)")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             NotesSectionHeader(title: String(localized: "Tags"))
@@ -273,6 +338,19 @@ struct LibraryHomeView: View {
         appModel.isSearching
             || appModel.completedSearchQuery != normalizedSearchQuery
             || appModel.completedSearchScope != searchScope
+    }
+
+    private var smartFolderDeletePresented: Binding<Bool> {
+        Binding(
+            get: { smartFolderToDelete != nil },
+            set: { if !$0 { smartFolderToDelete = nil } }
+        )
+    }
+
+    private func smartFolderCount(_ definition: SmartFolderDefinition) -> Int {
+        appModel.libraryFiles.lazy.filter {
+            $0.relativePath != "Inbox.md" && definition.matches(file: $0)
+        }.count + appModel.inboxItems.lazy.filter { definition.matches(memo: $0) }.count
     }
 
     private var rootSectionTitle: String {
@@ -1905,6 +1983,240 @@ struct FlowLayout: Layout {
             currentX += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+struct SmartFolderEditorView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: SmartFolderDefinition
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+    var isNew: Bool
+
+    init(definition: SmartFolderDefinition, isNew: Bool) {
+        _draft = State(initialValue: definition)
+        self.isNew = isNew
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Smart Folder Name", text: $draft.name)
+                        .textInputAutocapitalization(.words)
+                        .accessibilityIdentifier("smart-folder-name")
+                }
+
+                Section {
+                    Picker("Match", selection: $draft.matchMode) {
+                        ForEach(SmartFolderMatchMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("smart-folder-match-mode")
+                } footer: {
+                    Text("Choose whether notes must match all filters or any filter.")
+                }
+
+                Section {
+                    if appModel.tagSummaries.isEmpty {
+                        Text("No tags are currently used in your notes.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        FlowLayout(spacing: 10, rowSpacing: 10) {
+                            ForEach(appModel.tagSummaries) { tag in
+                                Button {
+                                    cycleTag(tag.name)
+                                } label: {
+                                    TagFilterChip(
+                                        title: tag.name,
+                                        state: tagState(for: tag.name)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("smart-folder-tag-\(tag.name)")
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                } header: {
+                    Text("Tags")
+                } footer: {
+                    Text("Tap once to include a tag. Tap again to exclude it.")
+                }
+
+                Section("Filters") {
+                    Picker("Date", selection: $draft.dateFilter) {
+                        Text("Any Date").tag(nil as SmartFolderDateFilter?)
+                        ForEach(SmartFolderDateFilter.allCases) { filter in
+                            Text(filter.label).tag(Optional(filter))
+                        }
+                    }
+                    .accessibilityIdentifier("smart-folder-date-filter")
+
+                    Picker("Attachments", selection: $draft.attachmentFilter) {
+                        Text("Any").tag(nil as SmartFolderAttachmentFilter?)
+                        ForEach(SmartFolderAttachmentFilter.allCases) { filter in
+                            Text(filter.label).tag(Optional(filter))
+                        }
+                    }
+                    .accessibilityIdentifier("smart-folder-attachment-filter")
+
+                    Picker("Checklists", selection: $draft.checklistFilter) {
+                        Text("Any").tag(nil as SmartFolderChecklistFilter?)
+                        ForEach(SmartFolderChecklistFilter.allCases) { filter in
+                            Text(filter.label).tag(Optional(filter))
+                        }
+                    }
+                    .accessibilityIdentifier("smart-folder-checklist-filter")
+
+                    Picker("Pinned", selection: $draft.pinned) {
+                        Text("Any").tag(nil as Bool?)
+                        Text("Pinned Only").tag(Optional(true))
+                        Text("Not Pinned").tag(Optional(false))
+                    }
+                    .accessibilityIdentifier("smart-folder-pinned-filter")
+                }
+            }
+            .navigationTitle(isNew ? "New Smart Folder" : "Edit Smart Folder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { save() }
+                        .disabled(!canSave || isSaving)
+                        .accessibilityIdentifier("save-smart-folder")
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+            .alert("Could Not Save Smart Folder", isPresented: errorPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "Try again.")
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        draft.normalized != nil
+    }
+
+    private var errorPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func save() {
+        guard let normalized = draft.normalized else { return }
+        isSaving = true
+        Task {
+            let succeeded = isNew
+                ? await appModel.createSmartFolder(normalized)
+                : await appModel.updateSmartFolder(normalized)
+            isSaving = false
+            if succeeded {
+                dismiss()
+            } else {
+                errorMessage = appModel.statusToast?.message
+                    ?? String(localized: "Could Not Save Smart Folder")
+            }
+        }
+    }
+
+    private func tagState(for tag: String) -> TagFilterState {
+        let key = SmartFolderDefinition.tagKey(tag)
+        if draft.includedTags.contains(where: { SmartFolderDefinition.tagKey($0) == key }) {
+            return .included
+        }
+        if draft.excludedTags.contains(where: { SmartFolderDefinition.tagKey($0) == key }) {
+            return .excluded
+        }
+        return .inactive
+    }
+
+    private func cycleTag(_ tag: String) {
+        let key = SmartFolderDefinition.tagKey(tag)
+        switch tagState(for: tag) {
+        case .inactive:
+            draft.includedTags.append(tag)
+        case .included:
+            draft.includedTags.removeAll { SmartFolderDefinition.tagKey($0) == key }
+            draft.excludedTags.append(tag)
+        case .excluded:
+            draft.excludedTags.removeAll { SmartFolderDefinition.tagKey($0) == key }
+        }
+    }
+}
+
+struct SmartFolderNotesView: View {
+    @EnvironmentObject private var appModel: AppModel
+    var smartFolderID: UUID
+
+    private var definition: SmartFolderDefinition? {
+        appModel.smartFolders.first { $0.id == smartFolderID }
+    }
+
+    private var files: [RecentMarkdownFile] {
+        guard let definition else { return [] }
+        let now = Date()
+        return appModel.libraryFiles.filter {
+            $0.relativePath != "Inbox.md" && definition.matches(file: $0, now: now)
+        }
+    }
+
+    private var memos: [MemoBlock] {
+        guard let definition else { return [] }
+        let now = Date()
+        return appModel.inboxItems.filter { definition.matches(memo: $0, now: now) }
+    }
+
+    var body: some View {
+        List {
+            if files.isEmpty, memos.isEmpty {
+                EmptyReaderStateView(
+                    title: String(localized: "No Notes"),
+                    message: String(localized: "No notes currently match this Smart Folder.")
+                )
+                .frame(maxWidth: .infinity)
+                .listRowBackground(MudsnoteColors.canvas)
+                .listRowSeparator(.hidden)
+            }
+            if !files.isEmpty {
+                Section("Notes") {
+                    ForEach(files) { file in
+                        NoteFileButton(file: file)
+                    }
+                }
+            }
+            if !memos.isEmpty {
+                Section("Quick Notes") {
+                    ForEach(memos) { memo in
+                        MemoCardView(memo: memo)
+                            .contentShape(Rectangle())
+                            .onTapGesture { appModel.selectedMemo = memo }
+                            .listRowInsets(.init(
+                                top: 6,
+                                leading: MudsnoteSpacing.safeHorizontal,
+                                bottom: 6,
+                                trailing: MudsnoteSpacing.safeHorizontal
+                            ))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(MudsnoteColors.canvas)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .navigationTitle(definition?.name ?? String(localized: "Smart Folder"))
+        .refreshable { await appModel.refreshInbox() }
     }
 }
 

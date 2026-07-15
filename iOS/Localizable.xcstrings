@@ -2378,6 +2378,123 @@
     "Redo Drawing": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重做绘图" } } }
     },
+    "Smart Folders": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹" } } }
+    },
+    "Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹" } } }
+    },
+    "Smart Folder Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹名称" } } }
+    },
+    "New Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建智能文件夹" } } }
+    },
+    "Edit Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑智能文件夹" } } }
+    },
+    "Make Into Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "设为智能文件夹" } } }
+    },
+    "Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "匹配" } } }
+    },
+    "Choose whether notes must match all filters or any filter.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择笔记需要匹配全部筛选条件，还是任一条件。" } } }
+    },
+    "No tags are currently used in your notes.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前笔记中还没有标签。" } } }
+    },
+    "Tap once to include a tag. Tap again to exclude it.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "轻点一次包含标签，再点一次排除标签。" } } }
+    },
+    "Filters": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "筛选条件" } } }
+    },
+    "Date": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "日期" } } }
+    },
+    "Any Date": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "任意日期" } } }
+    },
+    "Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "核对清单" } } }
+    },
+    "Edited Today": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "今天编辑" } } }
+    },
+    "Edited in Last 7 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 7 天编辑" } } }
+    },
+    "Edited in Last 30 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 30 天编辑" } } }
+    },
+    "Created Today": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "今天创建" } } }
+    },
+    "Created in Last 7 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 7 天创建" } } }
+    },
+    "Created in Last 30 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 30 天创建" } } }
+    },
+    "With Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含附件" } } }
+    },
+    "Without Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "不含附件" } } }
+    },
+    "With Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含核对清单" } } }
+    },
+    "With Unchecked Items": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含未勾选项目" } } }
+    },
+    "Without Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "不含核对清单" } } }
+    },
+    "Pinned Only": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅置顶" } } }
+    },
+    "Not Pinned": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未置顶" } } }
+    },
+    "Could Not Save Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法保存智能文件夹" } } }
+    },
+    "Delete Smart Folder?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除智能文件夹？" } } }
+    },
+    "Delete Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除智能文件夹" } } }
+    },
+    "Notes stay in their original folders.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记会保留在原文件夹中。" } } }
+    },
+    "No notes currently match this Smart Folder.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前没有符合此智能文件夹条件的笔记。" } } }
+    },
+    "Choose a name and at least one Smart Folder filter.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入名称并至少选择一个智能文件夹筛选条件。" } } }
+    },
+    "A Smart Folder with this name already exists.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已存在同名智能文件夹。" } } }
+    },
+    "This Smart Folder is no longer available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此智能文件夹已不可用。" } } }
+    },
+    "Smart Folder settings could not be read.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取智能文件夹设置。" } } }
+    },
+    "Smart Folder Created": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已创建" } } }
+    },
+    "Smart Folder Updated": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已更新" } } }
+    },
+    "Smart Folder Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已删除" } } }
+    },
     "note.find_count.format": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },

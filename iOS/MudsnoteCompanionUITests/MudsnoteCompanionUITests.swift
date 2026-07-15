@@ -381,6 +381,74 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["folder-row-Launch"].waitForExistence(timeout: 5))
     }
 
+    func testSmartFolderCreatesEditsAndDeletesWithoutMovingNotes() {
+        let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
+        let newFolder = app.buttons["new-folder-button"]
+        XCTAssertTrue(newFolder.waitForExistence(timeout: 8))
+        newFolder.tap()
+
+        let folderAlert = app.alerts["New Folder"]
+        XCTAssertTrue(folderAlert.waitForExistence(timeout: 3))
+        let name = folderAlert.textFields["Folder Name"]
+        name.tap()
+        name.typeText("Project Notes")
+        folderAlert.buttons["Make Into Smart Folder"].tap()
+
+        XCTAssertTrue(app.navigationBars["New Smart Folder"].waitForExistence(timeout: 5))
+        let project = app.buttons["smart-folder-tag-#project"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5))
+        project.tap()
+        app.buttons["save-smart-folder"].tap()
+
+        let row = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "smart-folder-row-")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Project Notes"].exists)
+        row.tap()
+
+        XCTAssertTrue(app.navigationBars["Project Notes"].waitForExistence(timeout: 5))
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let quickNote = app.staticTexts["Tagged quick capture #project #quick"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertTrue(quickNote.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style Smart Folder"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.navigationBars["Project Notes"].buttons.firstMatch.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.press(forDuration: 1)
+        let edit = app.buttons["Edit Smart Folder"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
+
+        XCTAssertTrue(app.navigationBars["Edit Smart Folder"].waitForExistence(timeout: 5))
+        let quick = app.buttons["smart-folder-tag-#quick"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 3))
+        quick.tap()
+        app.buttons["save-smart-folder"].tap()
+
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+        XCTAssertTrue(quickNote.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForNonexistence(note))
+
+        app.navigationBars["Project Notes"].buttons.firstMatch.tap()
+        row.press(forDuration: 1)
+        let delete = app.buttons["Delete Smart Folder"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
+        delete.tap()
+        XCTAssertTrue(app.staticTexts["Notes stay in their original folders."].waitForExistence(timeout: 3))
+        app.buttons["Delete Smart Folder"].tap()
+        XCTAssertTrue(waitForNonexistence(row))
+
+        app.buttons["all-notes-link"].tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+    }
+
     func testNewNoteCreatesStandaloneMarkdownAndOpensFullEditor() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]

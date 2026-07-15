@@ -134,6 +134,147 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(filter.matches(tags: ["#work"]))
     }
 
+    func testSmartFolderDefinitionNormalizesAndMatchesAllSupportedFilters() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-15T12:00:00Z"))
+        let recent = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: now))
+        let old = try XCTUnwrap(calendar.date(byAdding: .day, value: -45, to: now))
+
+        let normalized = try XCTUnwrap(SmartFolderDefinition(
+            name: "  Active Projects  ",
+            includedTags: ["project", "#PROJECT", "#work"],
+            excludedTags: ["#archive", "#Project"],
+            dateFilter: .editedPast7Days,
+            attachmentFilter: .withAttachments,
+            checklistFilter: .withUncheckedItems,
+            pinned: true
+        ).normalized)
+        XCTAssertEqual(normalized.name, "Active Projects")
+        XCTAssertEqual(normalized.includedTags, ["#project", "#work"])
+        XCTAssertEqual(normalized.excludedTags, ["#archive"])
+        XCTAssertEqual(normalized.filterCount, 7)
+
+        let matchingFile = RecentMarkdownFile(
+            id: "Plan.md",
+            relativePath: "Plan.md",
+            title: "Plan",
+            modifiedAt: recent,
+            createdAt: old,
+            preview: "",
+            hasAttachments: true,
+            hasChecklist: true,
+            hasUncheckedChecklist: true,
+            isPinned: true,
+            tags: ["#Project", "#work"]
+        )
+        XCTAssertTrue(normalized.matches(file: matchingFile, now: now, calendar: calendar))
+
+        var rejected = matchingFile
+        rejected.tags.append("#archive")
+        XCTAssertFalse(normalized.matches(file: rejected, now: now, calendar: calendar))
+        rejected = matchingFile
+        rejected.hasUncheckedChecklist = false
+        XCTAssertFalse(normalized.matches(file: rejected, now: now, calendar: calendar))
+
+        let any = try XCTUnwrap(SmartFolderDefinition(
+            name: "Any Project Signal",
+            matchMode: .any,
+            includedTags: ["#quick"],
+            attachmentFilter: .withAttachments
+        ).normalized)
+        XCTAssertTrue(any.matches(file: matchingFile, now: now, calendar: calendar))
+
+        let memo = MemoBlock(
+            id: "memo",
+            dateText: "2026-07-15 08:30",
+            body: "- [ ] Follow up\n![Photo](Attachments/photo.png)",
+            tags: ["#quick"]
+        )
+        XCTAssertTrue(any.matches(memo: memo, now: now, calendar: calendar))
+        XCTAssertNil(SmartFolderDefinition(name: "No Filters").normalized)
+        XCTAssertNil(SmartFolderDefinition(name: "Bad/Name", includedTags: ["#project"]).normalized)
+    }
+
+    func testSmartFolderStorePersistsLifecycleWithoutMovingNotes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let noteURL = root.appendingPathComponent("Project.md")
+        let markdown = "# Project\n\nShip it. #project\n"
+        try markdown.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let created = try await store.createSmartFolder(SmartFolderDefinition(
+            name: "Projects",
+            includedTags: ["#project"]
+        ))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.smartFolders, [created])
+        XCTAssertTrue(snapshot.smartFolders[0].matches(file: try XCTUnwrap(
+            snapshot.allFiles.first { $0.relativePath == "Project.md" }
+        )))
+        XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), markdown)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.createSmartFolder(SmartFolderDefinition(
+                name: "projects",
+                includedTags: ["#work"]
+            ))
+        ) { error in
+            XCTAssertEqual(error as? SmartFolderStoreError, .duplicateName)
+        }
+
+        var updated = created
+        updated.name = "Active Projects"
+        updated.matchMode = .any
+        updated.includedTags.append("#work")
+        _ = try await store.updateSmartFolder(updated)
+
+        let reopenedStore = MarkdownFileStore()
+        await reopenedStore.configure(root: root)
+        snapshot = try await reopenedStore.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.smartFolders, [try XCTUnwrap(updated.normalized)])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: noteURL.path))
+
+        try await reopenedStore.deleteSmartFolder(id: created.id)
+        snapshot = try await reopenedStore.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.smartFolders.isEmpty)
+        XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), markdown)
+    }
+
+    func testDamagedSmartFolderMetadataDoesNotBlockLibraryOrGetOverwritten() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let configurationURL = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        let damagedData = Data("not-json".utf8)
+        try damagedData.write(to: configurationURL)
+        try "# Still Available\n".write(
+            to: root.appendingPathComponent("Available.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.smartFolders.isEmpty)
+        XCTAssertTrue(snapshot.allFiles.contains { $0.relativePath == "Available.md" })
+        XCTAssertEqual(try Data(contentsOf: configurationURL), damagedData)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.createSmartFolder(SmartFolderDefinition(
+                name: "Projects",
+                includedTags: ["#project"]
+            ))
+        ) { error in
+            XCTAssertEqual(error as? SmartFolderStoreError, .damagedConfiguration)
+        }
+        XCTAssertEqual(try Data(contentsOf: configurationURL), damagedData)
+    }
+
     @MainActor
     func testDrawingExportProducesBoundedPortablePNG() throws {
         let points = [
@@ -2316,7 +2457,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(metadata.title, "Launch Plan")
         XCTAssertEqual(metadata.preview, "Ship the iPhone build Follow up with the release notes.")
         XCTAssertTrue(metadata.hasAttachments)
+        XCTAssertTrue(metadata.hasChecklist)
+        XCTAssertFalse(metadata.hasUncheckedChecklist)
         XCTAssertEqual(Set(metadata.tags), Set(["#release", "#发布"]))
+        let unchecked = MarkdownListMetadata.extract(
+            from: "- [ ] Follow up",
+            fallbackTitle: "Task"
+        )
+        XCTAssertTrue(unchecked.hasChecklist)
+        XCTAssertTrue(unchecked.hasUncheckedChecklist)
         XCTAssertEqual(
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
             "Plain body"

@@ -26,6 +26,11 @@ actor MarkdownFileStore {
         var updated: Data
     }
 
+    private struct SmartFolderConfiguration: Codable {
+        var version: Int
+        var folders: [SmartFolderDefinition]
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
@@ -123,6 +128,8 @@ actor MarkdownFileStore {
                     createdAt: values.creationDate ?? modifiedAt,
                     preview: listMetadata.preview,
                     hasAttachments: listMetadata.hasAttachments,
+                    hasChecklist: listMetadata.hasChecklist,
+                    hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
                     tags: listMetadata.tags
                 ))
             }
@@ -144,6 +151,10 @@ actor MarkdownFileStore {
             .map { $0 }
         let allFiles = markdownFiles.sorted(by: Self.notesOrder)
         let trashedFiles = try loadTrashedFiles(root: root)
+        // Smart Folders are optional metadata. A damaged configuration must not
+        // make the Markdown library unavailable; mutations still use the strict
+        // loader below and preserve the unreadable file until the user repairs it.
+        let smartFolders = (try? loadSmartFolders(root: root)) ?? []
         let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
             allFiles: allFiles,
@@ -154,6 +165,7 @@ actor MarkdownFileStore {
             ),
             trashedFiles: trashedFiles,
             attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
+            smartFolders: smartFolders,
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
@@ -196,6 +208,8 @@ actor MarkdownFileStore {
             createdAt: inboxValues.creationDate ?? modifiedAt,
             preview: metadata.preview,
             hasAttachments: metadata.hasAttachments,
+            hasChecklist: metadata.hasChecklist,
+            hasUncheckedChecklist: metadata.hasUncheckedChecklist,
             tags: metadata.tags
         )
 
@@ -228,6 +242,59 @@ actor MarkdownFileStore {
         }
         try savePinnedPaths(pins, root: root)
         cachedLibrarySnapshot = nil
+    }
+
+    func createSmartFolder(_ definition: SmartFolderDefinition) throws -> SmartFolderDefinition {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let normalized = definition.normalized else {
+            throw SmartFolderStoreError.invalidDefinition
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        guard !folders.contains(where: { Self.sameSmartFolderName($0.name, normalized.name) }) else {
+            throw SmartFolderStoreError.duplicateName
+        }
+        folders.append(normalized)
+        folders.sort(by: Self.smartFolderOrder)
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
+        return normalized
+    }
+
+    func updateSmartFolder(_ definition: SmartFolderDefinition) throws -> SmartFolderDefinition {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let normalized = definition.normalized else {
+            throw SmartFolderStoreError.invalidDefinition
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        guard let index = folders.firstIndex(where: { $0.id == normalized.id }) else {
+            throw SmartFolderStoreError.notFound
+        }
+        guard !folders.contains(where: {
+            $0.id != normalized.id && Self.sameSmartFolderName($0.name, normalized.name)
+        }) else { throw SmartFolderStoreError.duplicateName }
+        folders[index] = normalized
+        folders.sort(by: Self.smartFolderOrder)
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
+        return normalized
+    }
+
+    func deleteSmartFolder(id: UUID) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        let originalCount = folders.count
+        folders.removeAll(where: { $0.id == id })
+        guard folders.count != originalCount else {
+            throw SmartFolderStoreError.notFound
+        }
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
     }
 
     func setPinned(_ isPinned: Bool, relativePaths: [String]) throws {
@@ -1948,6 +2015,57 @@ actor MarkdownFileStore {
         return Set(paths.filter(Self.isPinnableNotePath))
     }
 
+    private func loadSmartFolders(root: URL) throws -> [SmartFolderDefinition] {
+        let url = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 1_048_576 else {
+            throw SmartFolderStoreError.damagedConfiguration
+        }
+        do {
+            let configuration = try JSONDecoder.mudsnote.decode(
+                SmartFolderConfiguration.self,
+                from: Data(contentsOf: url)
+            )
+            guard configuration.version == 1 else {
+                throw SmartFolderStoreError.damagedConfiguration
+            }
+            let normalized = configuration.folders.compactMap(\.normalized)
+            let ids = Set(normalized.map(\.id))
+            let names = Set(normalized.map { SmartFolderDefinition.tagKey($0.name) })
+            guard normalized.count == configuration.folders.count,
+                  ids.count == normalized.count,
+                  names.count == normalized.count else {
+                throw SmartFolderStoreError.damagedConfiguration
+            }
+            return normalized.sorted(by: Self.smartFolderOrder)
+        } catch let error as SmartFolderStoreError {
+            throw error
+        } catch {
+            throw SmartFolderStoreError.damagedConfiguration
+        }
+    }
+
+    private func saveSmartFolders(
+        _ folders: [SmartFolderDefinition],
+        root: URL
+    ) throws {
+        let url = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        let configuration = SmartFolderConfiguration(version: 1, folders: folders)
+        try JSONEncoder.mudsnote.encode(configuration).write(to: url, options: .atomic)
+    }
+
+    private static func sameSmartFolderName(_ lhs: String, _ rhs: String) -> Bool {
+        SmartFolderDefinition.tagKey(lhs) == SmartFolderDefinition.tagKey(rhs)
+    }
+
+    private static func smartFolderOrder(
+        _ lhs: SmartFolderDefinition,
+        _ rhs: SmartFolderDefinition
+    ) -> Bool {
+        lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+    }
+
     private func savePinnedPaths(_ paths: Set<String>, root: URL) throws {
         let url = root.appendingPathComponent(".mudsnote/pins.json")
         let data = try JSONEncoder().encode(paths.sorted())
@@ -2406,6 +2524,8 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var createdAt: Date = .distantPast
     var preview = ""
     var hasAttachments = false
+    var hasChecklist = false
+    var hasUncheckedChecklist = false
     var isPinned = false
     var tags: [String] = []
 }
@@ -2414,6 +2534,8 @@ struct MarkdownListMetadata: Equatable {
     var title: String
     var preview: String
     var hasAttachments: Bool
+    var hasChecklist: Bool
+    var hasUncheckedChecklist: Bool
     var tags: [String] = []
 
     static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
@@ -2487,6 +2609,18 @@ struct MarkdownListMetadata: Equatable {
             title: title,
             preview: preview,
             hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
+            hasChecklist: lines.contains { line in
+                line.range(
+                    of: #"^\s*[-*+]\s+\[[ xX]\]\s+"#,
+                    options: .regularExpression
+                ) != nil
+            },
+            hasUncheckedChecklist: lines.contains { line in
+                line.range(
+                    of: #"^\s*[-*+]\s+\[ \]\s+"#,
+                    options: .regularExpression
+                ) != nil
+            },
             tags: MarkdownTagSyntax.tags(in: markdown)
         )
     }
@@ -2654,6 +2788,7 @@ struct MarkdownLibrarySnapshot: Equatable {
     var folders: [LibraryFolderNode]
     var trashedFiles: [TrashedMarkdownFile]
     var attachments: [LibraryAttachment]
+    var smartFolders: [SmartFolderDefinition]
     var summary: LibrarySummary
     var conflictWarnings: [String]
 }

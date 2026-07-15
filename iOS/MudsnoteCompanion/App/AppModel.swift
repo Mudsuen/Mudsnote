@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
     @Published var folders: [LibraryFolderNode] = []
     @Published var trashedFiles: [TrashedMarkdownFile] = []
     @Published var attachments: [LibraryAttachment] = []
+    @Published var smartFolders: [SmartFolderDefinition] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
     @Published var librarySummary = LibrarySummary()
@@ -145,6 +146,7 @@ final class AppModel: ObservableObject {
         folders = []
         trashedFiles = []
         attachments = []
+        smartFolders = []
         librarySummary = LibrarySummary()
         tagSummaries = []
         conflictWarnings = []
@@ -762,6 +764,66 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
+    func createSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            let created = try await fileStore.createSmartFolder(definition)
+            smartFolders.append(created)
+            smartFolders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Created"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func updateSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            let updated = try await fileStore.updateSmartFolder(definition)
+            guard let index = smartFolders.firstIndex(where: { $0.id == updated.id }) else {
+                await refreshInbox()
+                return true
+            }
+            smartFolders[index] = updated
+            smartFolders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Updated"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            try await fileStore.deleteSmartFolder(id: definition.id)
+            smartFolders.removeAll { $0.id == definition.id }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Deleted"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
     func renameFolder(_ folder: LibraryFolderNode, to name: String) async -> Bool {
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
@@ -1343,6 +1405,7 @@ final class AppModel: ObservableObject {
         folders = snapshot.folders
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
+        smartFolders = snapshot.smartFolders
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
         conflictWarnings = snapshot.conflictWarnings
