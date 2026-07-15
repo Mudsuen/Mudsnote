@@ -196,6 +196,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var floatingNoteBrowserController: FloatingNoteBrowserController?
 
     var fileURL: URL?
+    var preservesOriginalFileURL: Bool
     var selectedDirectoryURL: URL
     var observers: [NSObjectProtocol] = []
     var autosaveTimer: Timer?
@@ -237,6 +238,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         noteStore: NoteStore,
         panelOpacity: Double,
         fileURL: URL?,
+        preservesOriginalFileURL: Bool = false,
         initialWindowFrame: NSRect? = nil,
         draftIDOverride: String? = nil,
         saveShortcut: HotKeySpec? = nil,
@@ -251,6 +253,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.noteStore = noteStore
         self.currentPanelOpacity = panelOpacity
         self.fileURL = fileURL
+        self.preservesOriginalFileURL = preservesOriginalFileURL
         self.initialWindowFrame = initialWindowFrame
         self.draftIDOverride = draftIDOverride
         self.saveShortcut = saveShortcut

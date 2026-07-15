@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 165. Native Markdown document opening
+- Problem: The packaged app did not declare Markdown document support or handle Launch Services open-file events, so Finder could not deliver `.md` files to Mudsnote.
+- Fix: Registered `.md` and `.markdown` as editable document types, added cold- and warm-launch AppKit file-event handling, and added native File > Open and Command-S actions. External documents now save in place without title-based renaming or a save-location prompt.
+- Lesson: Library-note updates and external-document saves need separate path semantics; title-based filenames are appropriate inside the managed library but unsafe for files opened from Finder.
+
 ### 164. Native list and gallery modes
 - Problem: The macOS library could only browse notes in the three-pane list, while Apple Notes also provides a wide visual gallery for scanning note previews.
 - Fix: Added a persistent native `NSCollectionView` gallery behind View > Show as Gallery (`Command-2`) and Show as List (`Command-1`). Gallery mode collapses the note-list split item, reuses the loaded 240-note projection and thumbnail cache, preserves multi-selection and context actions, opens cards back into the same editor, and returns to list mode for New Note. Hidden gallery state keeps only its lightweight projection and never instantiates preview cells or triggers thumbnail work. The installed app was checked against Apple's official gallery reference and the first compressed-card layout found by real-app QA was corrected.

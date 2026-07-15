@@ -157,6 +157,14 @@ extension EditorWindowController {
     }
 
     func handleShortcutEvent(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if preservesOriginalFileURL,
+           modifiers == [.command],
+           event.charactersIgnoringModifiers?.lowercased() == "s" {
+            savePressed()
+            return true
+        }
+
         if let saveShortcut, saveShortcut.matches(event) {
             savePressed()
             return true
@@ -185,7 +193,6 @@ extension EditorWindowController {
             }
         }
 
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if handleEditorShortcut(keyCode: event.keyCode, modifiers: modifiers) { return true }
 
         if modifiers.intersection([.command, .option]).isEmpty == false {

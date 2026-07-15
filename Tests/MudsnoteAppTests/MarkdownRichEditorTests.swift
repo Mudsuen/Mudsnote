@@ -5625,6 +5625,83 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func appControllerAcceptsExistingMarkdownFilesAndRejectsOtherItems() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-open-file-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let markdownURL = root.appendingPathComponent("Direct Open.MD")
+        let longMarkdownURL = root.appendingPathComponent("Second.markdown")
+        let textURL = root.appendingPathComponent("Ignored.txt")
+        let directoryURL = root.appendingPathComponent("Folder.md", isDirectory: true)
+        try "# Direct Open".write(to: markdownURL, atomically: true, encoding: .utf8)
+        try "Second".write(to: longMarkdownURL, atomically: true, encoding: .utf8)
+        try "Ignored".write(to: textURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let urls = AppController.markdownFileURLs(from: [
+            markdownURL.path,
+            markdownURL.path,
+            longMarkdownURL.path,
+            textURL.path,
+            directoryURL.path,
+            root.appendingPathComponent("Missing.md").path
+        ])
+
+        #expect(urls.map(\.path) == [markdownURL.standardizedFileURL.path, longMarkdownURL.standardizedFileURL.path])
+    }
+
+    @MainActor
+    @Test
+    func externalEditorSavePreservesOriginalMarkdownFileURL() throws {
+        let suiteName = "mudsnote.external-editor-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-external-editor-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let externalURL = root.appendingPathComponent("Original Name.markdown")
+        try "# Original Heading\n\nOriginal body\n".write(to: externalURL, atomically: true, encoding: .utf8)
+        var savedURL: URL?
+        let controller = EditorWindowController(
+            noteStore: store,
+            panelOpacity: NoteStore.defaultPanelOpacity,
+            fileURL: externalURL,
+            preservesOriginalFileURL: true,
+            showsSaveButton: true,
+            onSave: { savedURL = $0 },
+            onClose: {},
+            onRequestSearch: {},
+            onRequestPreferences: {}
+        )
+        defer { controller.close() }
+
+        let updated = MarkdownRichTextCodec.render(markdown: "# Changed Heading\n\nUpdated body", theme: controller.theme)
+        controller.editorTextView.textStorage?.setAttributedString(updated)
+        let commandS = try keyEvent(keyCode: 1, modifiers: [.command], characters: "s")
+        #expect(controller.handleShortcutEvent(commandS))
+
+        #expect(savedURL == externalURL.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: externalURL.path))
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Changed Heading.md").path))
+        let loaded = try store.loadNote(at: externalURL)
+        #expect(loaded.title == "Changed Heading")
+        #expect(loaded.body == "Updated body")
+    }
+
+    @MainActor
+    @Test
     func applicationMainMenuProvidesNotesLikeCoreCommands() throws {
         let controller = AppController()
         let mainMenu = controller.makeMainMenuForApplication()
@@ -5642,6 +5719,17 @@ struct MarkdownRichEditorTests {
         #expect(newFolderItem.action == #selector(AppController.newFolderFromMainMenu))
         #expect(newFolderItem.keyEquivalent == "n")
         #expect(newFolderItem.keyEquivalentModifierMask == [.command, .shift])
+        let openItem = try #require(fileMenu.items.first { $0.title == "打开..." })
+        #expect(openItem.target === controller)
+        #expect(openItem.action == #selector(AppController.openDocumentFromMainMenu))
+        #expect(openItem.keyEquivalent == "o")
+        #expect(openItem.keyEquivalentModifierMask == [.command])
+        let saveItem = try #require(fileMenu.items.first { $0.title == "保存" })
+        #expect(saveItem.target === controller)
+        #expect(saveItem.action == #selector(AppController.saveDocumentFromMainMenu))
+        #expect(saveItem.keyEquivalent == "s")
+        #expect(saveItem.keyEquivalentModifierMask == [.command])
+        #expect(!controller.validateMenuItem(saveItem))
         let deleteNoteItem = try #require(fileMenu.items.first { $0.title == "移到最近删除" })
         #expect(deleteNoteItem.target === controller)
         #expect(deleteNoteItem.action == #selector(AppController.deleteSelectedNotesFromMainMenu))

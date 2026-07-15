@@ -29,6 +29,27 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func inPlaceUpdatePreservesExternalMarkdownPathAndExtension() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let externalURL = harness.root.appendingPathComponent("External Document.markdown")
+        try "# Original\n\nBody\n".write(to: externalURL, atomically: true, encoding: .utf8)
+
+        let savedURL = try store.updateNoteInPlace(
+            at: externalURL,
+            title: "Renamed Heading",
+            body: "Updated body"
+        )
+
+        #expect(savedURL == externalURL.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: externalURL.path))
+        #expect(!FileManager.default.fileExists(atPath: harness.root.appendingPathComponent("Renamed Heading.md").path))
+        let loaded = try store.loadNote(at: externalURL)
+        #expect(loaded.title == "Renamed Heading")
+        #expect(loaded.body == "Updated body")
+    }
+
+    @Test
     func recentFilesAreListedWithoutSynchronousFileMetadataReads() throws {
         let harness = try TestHarness()
         let missingPath = harness.root
