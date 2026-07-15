@@ -30,6 +30,13 @@ struct MarkdownPreviewView: View {
         var isEditing: Bool
     }
 
+    private struct FindAttachmentLoadID: Hashable {
+        var relativePath: String
+        var markdown: String
+        var isFinding: Bool
+        var includesAttachments: Bool
+    }
+
     private struct RenderedBlockItem: Identifiable {
         var index: Int
         var block: MarkdownRenderBlock
@@ -73,6 +80,9 @@ struct MarkdownPreviewView: View {
     @State private var isFindingInNote = false
     @State private var findQuery = ""
     @State private var activeFindIndex = 0
+    @State private var includesAttachmentsInFind = false
+    @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
+    @State private var isLoadingFindAttachments = false
     @State private var collapsedHeadingIndices: Set<Int> = []
     @State private var linkedSourceHistory: [Source] = []
     @FocusState private var isFindFocused: Bool
@@ -131,6 +141,13 @@ struct MarkdownPreviewView: View {
                             scrollToActiveFindMatch(using: proxy)
                         }
                         .onChange(of: activeFindIndex) { _, _ in
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: findResults.map(\.id)) { _, _ in
+                            activeFindIndex = min(
+                                activeFindIndex,
+                                max(0, findResults.count - 1)
+                            )
                             scrollToActiveFindMatch(using: proxy)
                         }
                     }
@@ -320,6 +337,14 @@ struct MarkdownPreviewView: View {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             await persistDraft(finishEditing: false, announce: false)
+        }
+        .task(id: FindAttachmentLoadID(
+            relativePath: currentSourceRelativePath,
+            markdown: draftMarkdown,
+            isFinding: isFindingInNote,
+            includesAttachments: includesAttachmentsInFind
+        )) {
+            await loadFindAttachmentDocumentsIfNeeded()
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
             Button("Keep Editing", role: .cancel) {
@@ -541,17 +566,46 @@ struct MarkdownPreviewView: View {
         MarkdownRenderBlock.parse(draftMarkdown)
     }
 
-    private var findMatches: [NoteFindMatch] {
+    private var textFindMatches: [NoteFindMatch] {
         NoteFindIndex.matches(in: renderBlocks, query: findQuery)
     }
 
+    private var attachmentFindMatches: [NoteAttachmentFindMatch] {
+        guard includesAttachmentsInFind else { return [] }
+        return NoteFindIndex.attachmentMatches(
+            in: renderBlocks,
+            documents: findAttachmentDocuments,
+            query: findQuery
+        )
+    }
+
+    private var findResults: [NoteFindResult] {
+        (textFindMatches.map(NoteFindResult.text)
+            + attachmentFindMatches.map(NoteFindResult.attachment))
+            .sorted { lhs, rhs in
+                if lhs.location.blockIndex == rhs.location.blockIndex {
+                    return lhs.sortOrder < rhs.sortOrder
+                }
+                return lhs.location.blockIndex < rhs.location.blockIndex
+            }
+    }
+
     private var activeFindMatch: NoteFindMatch? {
-        guard !findMatches.isEmpty else { return nil }
-        return findMatches[min(activeFindIndex, findMatches.count - 1)]
+        guard !findResults.isEmpty,
+              case .text(let match) = findResults[min(activeFindIndex, findResults.count - 1)]
+        else { return nil }
+        return match
+    }
+
+    private var activeAttachmentFindMatch: NoteAttachmentFindMatch? {
+        guard !findResults.isEmpty,
+              case .attachment(let match) = findResults[min(activeFindIndex, findResults.count - 1)]
+        else { return nil }
+        return match
     }
 
     private var findCountLabel: String {
-        let total = findMatches.count
+        let total = findResults.count
         let current = total == 0 ? 0 : min(activeFindIndex, total - 1) + 1
         return String(
             format: String(localized: "note.find_count.format"),
@@ -587,6 +641,23 @@ struct MarkdownPreviewView: View {
             .frame(height: 38)
             .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
 
+            Menu {
+                Toggle("Include Attachments", isOn: $includesAttachmentsInFind)
+            } label: {
+                Group {
+                    if isLoadingFindAttachments {
+                        ProgressView()
+                    } else {
+                        Image(systemName: includesAttachmentsInFind
+                            ? "doc.text.magnifyingglass"
+                            : "line.3.horizontal.decrease.circle")
+                    }
+                }
+                .frame(width: 30, height: 34)
+            }
+            .accessibilityLabel("Find Options")
+            .accessibilityIdentifier("find-in-note-options")
+
             Text(findCountLabel)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(MudsnoteColors.muted)
@@ -597,7 +668,7 @@ struct MarkdownPreviewView: View {
                 Image(systemName: "chevron.up")
                     .frame(width: 30, height: 34)
             }
-            .disabled(findMatches.isEmpty)
+            .disabled(findResults.isEmpty)
             .accessibilityLabel("Previous Match")
             .accessibilityIdentifier("find-in-note-previous")
 
@@ -605,7 +676,7 @@ struct MarkdownPreviewView: View {
                 Image(systemName: "chevron.down")
                     .frame(width: 30, height: 34)
             }
-            .disabled(findMatches.isEmpty)
+            .disabled(findResults.isEmpty)
             .accessibilityLabel("Next Match")
             .accessibilityIdentifier("find-in-note-next")
 
@@ -635,18 +706,22 @@ struct MarkdownPreviewView: View {
         isFindFocused = false
         findQuery = ""
         activeFindIndex = 0
+        includesAttachmentsInFind = false
+        findAttachmentDocuments = []
+        isLoadingFindAttachments = false
         isFindingInNote = false
     }
 
     private func stepFindMatch(by offset: Int) {
-        guard !findMatches.isEmpty else { return }
-        activeFindIndex = (activeFindIndex + offset + findMatches.count) % findMatches.count
+        guard !findResults.isEmpty else { return }
+        activeFindIndex = (activeFindIndex + offset + findResults.count) % findResults.count
     }
 
     private func scrollToActiveFindMatch(using proxy: ScrollViewProxy) {
-        guard let match = activeFindMatch else { return }
+        guard !findResults.isEmpty else { return }
+        let result = findResults[min(activeFindIndex, findResults.count - 1)]
         let hiddenSections = MarkdownSectionProjection.collapsedHeadings(
-            containing: match.location.blockIndex,
+            containing: result.location.blockIndex,
             in: renderBlocks,
             collapsed: collapsedHeadingIndices
         )
@@ -658,8 +733,30 @@ struct MarkdownPreviewView: View {
         Task { @MainActor in
             await Task.yield()
             withAnimation(.snappy(duration: 0.2)) {
-                proxy.scrollTo(match.location.blockIndex, anchor: .center)
+                proxy.scrollTo(result.location.blockIndex, anchor: .center)
             }
+        }
+    }
+
+    @MainActor
+    private func loadFindAttachmentDocumentsIfNeeded() async {
+        guard isFindingInNote, includesAttachmentsInFind else {
+            findAttachmentDocuments = []
+            isLoadingFindAttachments = false
+            return
+        }
+        isLoadingFindAttachments = true
+        do {
+            let documents = try await appModel.attachmentSearchDocuments(in: draftMarkdown)
+            try Task.checkCancellation()
+            findAttachmentDocuments = documents
+            isLoadingFindAttachments = false
+            activeFindIndex = 0
+        } catch is CancellationError {
+            return
+        } catch {
+            findAttachmentDocuments = []
+            isLoadingFindAttachments = false
         }
     }
 
@@ -932,7 +1029,7 @@ struct MarkdownPreviewView: View {
         hasCollapsibleContent: Bool
     ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
-            attachmentView(attachment)
+            attachmentView(attachment, blockIndex: blockIndex)
         } else if MarkdownHeading(line) != nil {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if hasCollapsibleContent {
@@ -1040,42 +1137,71 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    @ViewBuilder
-    private func attachmentView(_ attachment: MarkdownAttachmentLine) -> some View {
-        Group {
-            switch attachment.kind {
-            case .image:
-                if let image = localImage(for: attachment.path) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(MudsnoteColors.line, lineWidth: 1)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            previewURL = localFileURL(for: attachment.path)
-                        }
-                        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                } else {
-                    attachmentLabel(attachment)
-                }
-            case .audio, .file:
-                if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
-                    AudioAttachmentPlayer(url: url, title: attachment.path)
-                } else if let url = localFileURL(for: attachment.path) {
-                    Button {
-                        previewURL = url
-                    } label: {
+    private func attachmentView(
+        _ attachment: MarkdownAttachmentLine,
+        blockIndex: Int
+    ) -> some View {
+        let findMatch = activeAttachmentFindMatch.flatMap { match in
+            match.relativePath == attachment.path && match.location.blockIndex == blockIndex
+                ? match
+                : nil
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            Group {
+                switch attachment.kind {
+                case .image:
+                    if let image = localImage(for: attachment.path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(MudsnoteColors.line, lineWidth: 1)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                previewURL = localFileURL(for: attachment.path)
+                            }
+                            .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+                    } else {
                         attachmentLabel(attachment)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                } else {
-                    attachmentLabel(attachment)
+                case .audio, .file:
+                    if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
+                        AudioAttachmentPlayer(url: url, title: attachment.path)
+                    } else if let url = localFileURL(for: attachment.path) {
+                        Button {
+                            previewURL = url
+                        } label: {
+                            attachmentLabel(attachment)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+                    } else {
+                        attachmentLabel(attachment)
+                    }
                 }
+            }
+
+            if let findMatch {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Match in Attachment", systemImage: "doc.text.magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.yellow)
+                    Text(findMatch.context)
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(2)
+                }
+                .accessibilityIdentifier("find-attachment-match-\(attachment.path)")
+            }
+        }
+        .padding(findMatch == nil ? 0 : 6)
+        .overlay {
+            if findMatch != nil {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.yellow, lineWidth: 2)
             }
         }
         .contextMenu {
@@ -1967,6 +2093,44 @@ struct NoteFindMatch: Identifiable, Equatable {
     }
 }
 
+struct NoteAttachmentFindMatch: Identifiable, Equatable {
+    var location: NoteFindLocation
+    var relativePath: String
+    var fileName: String
+    var context: String
+    var occurrence: Int
+
+    var id: String {
+        "attachment:\(location.blockIndex):\(relativePath):\(occurrence)"
+    }
+}
+
+enum NoteFindResult: Identifiable, Equatable {
+    case text(NoteFindMatch)
+    case attachment(NoteAttachmentFindMatch)
+
+    var id: String {
+        switch self {
+        case .text(let match): match.id
+        case .attachment(let match): match.id
+        }
+    }
+
+    var location: NoteFindLocation {
+        switch self {
+        case .text(let match): match.location
+        case .attachment(let match): match.location
+        }
+    }
+
+    var sortOrder: Int {
+        switch self {
+        case .text: 0
+        case .attachment: 1
+        }
+    }
+}
+
 enum NoteFindIndex {
     static func matches(
         in blocks: [MarkdownRenderBlock],
@@ -1998,6 +2162,38 @@ enum NoteFindIndex {
                         location: location
                     ))
                 }
+            }
+        }
+        return results
+    }
+
+    static func attachmentMatches(
+        in blocks: [MarkdownRenderBlock],
+        documents: [AttachmentSearchDocument],
+        query: String
+    ) -> [NoteAttachmentFindMatch] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        let documentsByPath = Dictionary(
+            documents.map { ($0.relativePath, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var results: [NoteAttachmentFindMatch] = []
+        for (blockIndex, block) in blocks.enumerated() {
+            guard case .line(let line) = block,
+                  let attachment = MarkdownAttachmentLine(line),
+                  let document = documentsByPath[attachment.path] else { continue }
+            let searchableText = document.fileName + "\n" + document.text
+            let matchedRanges = ranges(in: searchableText, term: term)
+            let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            for (occurrence, range) in matchedRanges.enumerated() {
+                results.append(NoteAttachmentFindMatch(
+                    location: location,
+                    relativePath: document.relativePath,
+                    fileName: document.fileName,
+                    context: excerpt(in: searchableText, around: range),
+                    occurrence: occurrence
+                ))
             }
         }
         return results
@@ -2074,6 +2270,17 @@ enum NoteFindIndex {
             searchRange = NSRange(location: nextLocation, length: source.length - nextLocation)
         }
         return results
+    }
+
+    private static func excerpt(in text: String, around range: NSRange) -> String {
+        let source = text as NSString
+        let radius = 64
+        let start = max(0, range.location - radius)
+        let end = min(source.length, NSMaxRange(range) + radius)
+        let excerpt = source.substring(with: NSRange(location: start, length: end - start))
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (start > 0 ? "…" : "") + excerpt + (end < source.length ? "…" : "")
     }
 }
 

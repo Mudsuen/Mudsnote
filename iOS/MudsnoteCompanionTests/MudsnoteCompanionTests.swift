@@ -1836,6 +1836,42 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testFindInNoteAttachmentMatchesOnlyReferencedDocumentsInBlockOrder() {
+        let blocks = MarkdownRenderBlock.parse("""
+        # Trip
+
+        ![Receipt](Attachments/receipt.png)
+
+        [Scan](Attachments/report.pdf)
+        """)
+        let matches = NoteFindIndex.attachmentMatches(
+            in: blocks,
+            documents: [
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/report.pdf",
+                    text: "The ORBITAL total is 428. ORBITAL is approved."
+                ),
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/receipt.png",
+                    text: "ORBITAL receipt"
+                ),
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/unreferenced.png",
+                    text: "ORBITAL must not appear"
+                ),
+            ],
+            query: "orbital"
+        )
+
+        XCTAssertEqual(matches.map(\.relativePath), [
+            "Attachments/receipt.png",
+            "Attachments/report.pdf",
+            "Attachments/report.pdf",
+        ])
+        XCTAssertEqual(matches.map(\.occurrence), [0, 0, 1])
+        XCTAssertTrue(matches.allSatisfy { $0.context.localizedCaseInsensitiveContains("orbital") })
+    }
+
     func testAttachmentOCRSearchCombinesNoteMetadataAndCachedRecognizedText() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

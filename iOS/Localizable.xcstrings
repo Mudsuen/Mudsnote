@@ -2540,6 +2540,15 @@
     "No additional text": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无其他文本" } } }
     },
+    "Include Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "包括附件" } } }
+    },
+    "Find Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "查找选项" } } }
+    },
+    "Match in Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件中的匹配项" } } }
+    },
     "note.find_count.format": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },

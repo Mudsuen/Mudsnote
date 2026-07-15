@@ -568,6 +568,13 @@ actor MarkdownFileStore {
         return documents
     }
 
+    func attachmentSearchDocuments(in markdown: String) async throws -> [AttachmentSearchDocument] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        return try await searchableAttachmentDocuments(in: markdown, root: root)
+    }
+
     func prepareAttachmentPreview(relativePath: String) throws -> URL {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(

@@ -1143,6 +1143,47 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
     }
 
+    func testFindInNoteIncludesReferencedAttachmentText() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            ocrAttachment: true
+        )
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/OCR Attachment.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        let find = app.buttons["Find in Note"]
+        XCTAssertTrue(find.waitForExistence(timeout: 3))
+        find.tap()
+
+        let findOptions = app.buttons["find-in-note-options"]
+        XCTAssertTrue(findOptions.waitForExistence(timeout: 5))
+        findOptions.tap()
+        let includeAttachments = app.buttons["Include Attachments"]
+        XCTAssertTrue(includeAttachments.waitForExistence(timeout: 3))
+        includeAttachments.tap()
+
+        let field = app.textFields["find-in-note-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("ORBITAL")
+        let match = app.descendants(matching: .any)[
+            "find-attachment-match-Attachments/ocr-search.png"
+        ]
+        XCTAssertTrue(match.waitForExistence(timeout: 20))
+        XCTAssertEqual(app.staticTexts["find-in-note-count"].label, "1 of 1")
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Find text inside current note attachment"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let allNotes = app.buttons["all-notes-link"]

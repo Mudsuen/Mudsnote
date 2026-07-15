@@ -1094,6 +1094,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func attachmentSearchDocuments(in markdown: String) async throws -> [AttachmentSearchDocument] {
+        try await fileStore.attachmentSearchDocuments(in: markdown)
+    }
+
     func saveDocument(
         _ document: MarkdownDocument,
         markdown: String,

@@ -31,7 +31,8 @@ Notes database.
 - Create, rename, reorder/sort, pin, move, trash, restore, and permanently delete.
 - Direct Markdown editing with headings, emphasis, lists, checklists, quotes, code,
   links, undo, and redo.
-- Full-text search across title, path, tags, and body with useful result context.
+- Full-text search across title, path, tags, body, referenced images, and scanned PDFs
+  with useful result context; Find in Note can include those attachments.
 - Images, files, audio notes, attachment browsing, and portable relative Markdown
   references.
 - Offline-first writes, pending replay, external-edit conflict protection, and clear
