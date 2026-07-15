@@ -1,6 +1,27 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Documents": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文稿" } } }
+    },
+    "No Audio": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有音频" } } }
+    },
+    "No Documents": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有文稿" } } }
+    },
+    "No Photos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有照片" } } }
+    },
+    "Photos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "照片" } } }
+    },
+    "Photos, audio, and documents added to notes appear here.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加到笔记的照片、音频和文稿会显示在这里。" } } }
+    },
+    "Show in Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "在笔记中显示" } } }
+    },
     "Could not create note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法新建笔记" } } }
     },

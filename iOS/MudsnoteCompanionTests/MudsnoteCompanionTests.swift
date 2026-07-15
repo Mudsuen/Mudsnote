@@ -991,6 +991,59 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
 
+    func testAttachmentInventoryLinksFilesBackToNotesAndRefreshesInboxOwners() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachments = root.appendingPathComponent("Attachments", isDirectory: true)
+        try Data([0x01, 0x02]).write(to: attachments.appendingPathComponent("photo.png"))
+        try Data([0x03, 0x04]).write(to: attachments.appendingPathComponent("voice.m4a"))
+        try Data("document".utf8).write(to: attachments.appendingPathComponent("brief.txt"))
+        try "# Project Brief\n\n![Photo](Attachments/photo.png)\n\n[Brief](Attachments/brief.txt)\n".write(
+            to: root.appendingPathComponent("Project Brief.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Inbox\n\n## 2026-07-15 09:00\n\nVoice memo\n\n[Audio](Attachments/voice.m4a)\n".write(
+            to: root.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        var snapshot = try await store.loadLibrarySnapshot()
+
+        let photo = try XCTUnwrap(snapshot.attachments.first {
+            $0.relativePath == "Attachments/photo.png"
+        })
+        XCTAssertEqual(photo.kind, .image)
+        XCTAssertEqual(photo.owners.map(\.title), ["Project Brief"])
+        XCTAssertEqual(photo.owners.map(\.destination), [.file("Project Brief.md")])
+        let thumbnailData = try await store.loadAttachmentThumbnailData(
+            relativePath: photo.relativePath
+        )
+        XCTAssertEqual(thumbnailData, Data([0x01, 0x02]))
+
+        let voice = try XCTUnwrap(snapshot.attachments.first {
+            $0.relativePath == "Attachments/voice.m4a"
+        })
+        XCTAssertEqual(voice.kind, .audio)
+        XCTAssertEqual(voice.owners.map(\.destination), [.memo("2026-07-15 09:00-0")])
+
+        try "# Inbox\n\n## 2026-07-15 09:00\n\nVoice memo without attachment\n".write(
+            to: root.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        snapshot = try await store.loadInboxDeltaSnapshot()
+        XCTAssertTrue(
+            snapshot.attachments.first {
+                $0.relativePath == "Attachments/voice.m4a"
+            }?.owners.isEmpty == true
+        )
+    }
+
     func testLibrarySnapshotBuildsNestedFolderTreeAndKeepsEmptyFolders() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

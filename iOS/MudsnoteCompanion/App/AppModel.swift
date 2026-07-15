@@ -1365,6 +1365,32 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func attachmentThumbnailData(for attachment: LibraryAttachment) async -> Data? {
+        guard attachment.kind == .image else { return nil }
+        return try? await fileStore.loadAttachmentThumbnailData(
+            relativePath: attachment.relativePath
+        )
+    }
+
+    func openAttachmentOwner(_ owner: LibraryAttachment.Owner) {
+        switch owner.destination {
+        case .file(let relativePath):
+            guard let file = libraryFiles.first(where: {
+                $0.relativePath == relativePath
+            }) else {
+                statusToast = .error(String(localized: "Linked note not found"))
+                return
+            }
+            openFile(file)
+        case .memo(let id):
+            guard let memo = inboxItems.first(where: { $0.id == id }) else {
+                statusToast = .error(String(localized: "Linked note not found"))
+                return
+            }
+            selectedMemo = memo
+        }
+    }
+
     func refreshInbox() async {
         guard folderAccess.currentRoot != nil else { return }
         do {

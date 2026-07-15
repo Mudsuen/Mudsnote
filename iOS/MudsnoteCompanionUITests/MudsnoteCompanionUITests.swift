@@ -1267,6 +1267,30 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let storedImage = app.buttons["attachment-row-Attachments/ui-test.png"]
         XCTAssertTrue(storedImage.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["ui-test.png"].exists)
+        let storedDocument = app.buttons["attachment-row-Attachments/ui-test.txt"]
+        XCTAssertTrue(storedDocument.exists)
+        XCTAssertTrue(app.buttons["attachment-category-all"].exists)
+        XCTAssertTrue(app.buttons["attachment-category-photos"].exists)
+        XCTAssertTrue(app.buttons["attachment-category-audio"].exists)
+        XCTAssertTrue(app.buttons["attachment-category-documents"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style categorized attachment browser"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.buttons["attachment-category-documents"].tap()
+        XCTAssertTrue(storedDocument.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForNonexistence(storedImage))
+
+        storedDocument.press(forDuration: 1)
+        let showInNote = app.buttons["show-attachment-in-note-Attachments/ui-test.txt"]
+        XCTAssertTrue(showInNote.waitForExistence(timeout: 3))
+        showInNote.tap()
+        XCTAssertTrue(
+            app.buttons["preview-attachment-Attachments/ui-test.txt"]
+                .waitForExistence(timeout: 5)
+        )
         XCTAssertFalse(app.staticTexts["Images and audio are stored in Attachments/yyyy/mm and referenced by relative Markdown links."].exists)
     }
 

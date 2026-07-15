@@ -1,5 +1,6 @@
 import QuickLook
 import SwiftUI
+import ImageIO
 
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
@@ -2902,58 +2903,85 @@ struct TagNotesListView: View {
 }
 
 struct AttachmentLibraryView: View {
+    private enum Category: String, CaseIterable, Identifiable {
+        case all
+        case photos
+        case audio
+        case documents
+
+        var id: String { rawValue }
+
+        var label: LocalizedStringKey {
+            switch self {
+            case .all: "All"
+            case .photos: "Photos"
+            case .audio: "Audio"
+            case .documents: "Documents"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .all: "square.grid.2x2"
+            case .photos: "photo.on.rectangle"
+            case .audio: "waveform"
+            case .documents: "doc"
+            }
+        }
+    }
+
     @EnvironmentObject private var appModel: AppModel
     @State private var previewURL: URL?
+    @State private var category = Category.all
+
+    private var images: [LibraryAttachment] {
+        appModel.attachments.filter { $0.kind == .image }
+    }
+
+    private var audio: [LibraryAttachment] {
+        appModel.attachments.filter { $0.kind == .audio }
+    }
+
+    private var documents: [LibraryAttachment] {
+        appModel.attachments.filter { $0.kind == .other }
+    }
 
     var body: some View {
-        List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                categoryBar
+
             if appModel.attachments.isEmpty {
                 ContentUnavailableView(
                     "No Attachments",
                     systemImage: "paperclip",
-                    description: Text("Images and audio added to notes appear here.")
+                        description: Text("Photos, audio, and documents added to notes appear here.")
                 )
-                .listRowBackground(Color.clear)
             } else {
-                ForEach(appModel.attachments) { attachment in
-                    Button {
-                        Task {
-                            previewURL = await appModel.previewURL(for: attachment)
-                        }
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: attachment.kind.systemImage)
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(MudsnoteColors.primary)
-                                .frame(width: 38, height: 38)
-                                .background(MudsnoteColors.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(attachment.fileName)
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(MudsnoteColors.text)
-                                    .lineLimit(1)
-                                Text(attachmentMetadata(attachment))
-                                    .font(.caption)
-                                    .foregroundStyle(MudsnoteColors.muted)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(MudsnoteColors.muted)
-                        }
-                        .padding(.vertical, 4)
+                    if category == .all || category == .photos {
+                        attachmentImageSection
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("attachment-row-\(attachment.id)")
+                    if category == .all || category == .audio {
+                        attachmentListSection(
+                            title: String(localized: "Audio"),
+                            attachments: audio,
+                            emptyTitle: String(localized: "No Audio"),
+                            emptyImage: "waveform"
+                        )
+                    }
+                    if category == .all || category == .documents {
+                        attachmentListSection(
+                            title: String(localized: "Documents"),
+                            attachments: documents,
+                            emptyTitle: String(localized: "No Documents"),
+                            emptyImage: "doc"
+                        )
+                    }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
         .background(MudsnoteColors.canvas)
         .refreshable {
             await appModel.refreshInbox()
@@ -2962,12 +2990,223 @@ struct AttachmentLibraryView: View {
         .quickLookPreview($previewURL)
     }
 
+    private var categoryBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Category.allCases) { candidate in
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            category = candidate
+                        }
+                    } label: {
+                        Label(candidate.label, systemImage: candidate.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(
+                                category == candidate ? Color.black : MudsnoteColors.text
+                            )
+                            .padding(.horizontal, 13)
+                            .frame(height: 36)
+                            .background(
+                                category == candidate
+                                    ? NotesCloneColors.folderYellow
+                                    : MudsnoteColors.card,
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("attachment-category-\(candidate.rawValue)")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentImageSection: some View {
+        if !images.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Photos")
+                    .font(.title3.bold())
+                    .foregroundStyle(MudsnoteColors.text)
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10),
+                    ],
+                    spacing: 12
+                ) {
+                    ForEach(images) { attachment in
+                        attachmentImageCard(attachment)
+                    }
+                }
+            }
+        } else if category == .photos {
+            ContentUnavailableView("No Photos", systemImage: "photo.on.rectangle")
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func attachmentListSection(
+        title: String,
+        attachments: [LibraryAttachment],
+        emptyTitle: String,
+        emptyImage: String
+    ) -> some View {
+        if !attachments.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.title3.bold())
+                    .foregroundStyle(MudsnoteColors.text)
+                VStack(spacing: 1) {
+                    ForEach(attachments) { attachment in
+                        attachmentRow(attachment)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        } else if category != .all {
+            ContentUnavailableView(emptyTitle, systemImage: emptyImage)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func attachmentImageCard(_ attachment: LibraryAttachment) -> some View {
+        Button {
+            openPreview(attachment)
+        } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                AttachmentImageThumbnail(attachment: attachment)
+                    .frame(height: 126)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                Text(attachment.fileName)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(1)
+                Text(attachmentMetadata(attachment))
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(1)
+            }
+            .padding(8)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("attachment-row-\(attachment.id)")
+        .contextMenu { ownerActions(attachment) }
+    }
+
+    private func attachmentRow(_ attachment: LibraryAttachment) -> some View {
+        Button {
+            openPreview(attachment)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: attachment.kind.systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.primary)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        MudsnoteColors.primary.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 10)
+                    )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(attachment.fileName)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .lineLimit(1)
+                    Text(attachmentMetadata(attachment))
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(12)
+            .background(MudsnoteColors.card)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("attachment-row-\(attachment.id)")
+        .contextMenu { ownerActions(attachment) }
+    }
+
+    @ViewBuilder
+    private func ownerActions(_ attachment: LibraryAttachment) -> some View {
+        if attachment.owners.count == 1, let owner = attachment.owners.first {
+            Button {
+                appModel.openAttachmentOwner(owner)
+            } label: {
+                Label("Show in Note", systemImage: "note.text")
+            }
+            .accessibilityIdentifier("show-attachment-in-note-\(attachment.id)")
+        } else if !attachment.owners.isEmpty {
+            Menu {
+                ForEach(attachment.owners) { owner in
+                    Button(owner.title) {
+                        appModel.openAttachmentOwner(owner)
+                    }
+                }
+            } label: {
+                Label("Show in Note", systemImage: "note.text")
+            }
+        }
+    }
+
+    private func openPreview(_ attachment: LibraryAttachment) {
+        Task {
+            previewURL = await appModel.previewURL(for: attachment)
+        }
+    }
+
     private func attachmentMetadata(_ attachment: LibraryAttachment) -> String {
         let size = ByteCountFormatter.string(
             fromByteCount: attachment.byteCount,
             countStyle: .file
         )
         return "\(size) · \(attachment.modifiedAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+}
+
+private struct AttachmentImageThumbnail: View {
+    @EnvironmentObject private var appModel: AppModel
+    var attachment: LibraryAttachment
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            MudsnoteColors.panel
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "photo")
+                    .font(.title2)
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+        }
+        .clipped()
+        .task(id: attachment.id) {
+            guard let data = await appModel.attachmentThumbnailData(for: attachment) else {
+                return
+            }
+            image = Self.thumbnail(from: data)
+        }
+    }
+
+    private static func thumbnail(from data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 640,
+                ] as CFDictionary
+              ) else { return nil }
+        return UIImage(cgImage: image)
     }
 }
 
