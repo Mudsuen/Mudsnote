@@ -68,6 +68,10 @@ private enum MudsnoteUITestLaunchConfiguration {
         if arguments.contains(resetArgument) {
             access.forgetPersistedFolder()
             UserDefaults.standard.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteViewStyle")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortOrder")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortDirection")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.groupNotesByDate")
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: CaptureDraftRecoveryStore.defaultDirectory)
         }

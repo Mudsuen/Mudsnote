@@ -470,6 +470,29 @@ enum NoteSortOrder: String, CaseIterable, Identifiable {
     }
 }
 
+enum NoteSortDirection: String, CaseIterable, Identifiable {
+    case standard
+    case reversed
+
+    var id: String { rawValue }
+
+    func label(for order: NoteSortOrder) -> LocalizedStringKey {
+        switch (order, self) {
+        case (.title, .standard): "Ascending"
+        case (.title, .reversed): "Descending"
+        case (_, .standard): "Newest First"
+        case (_, .reversed): "Oldest First"
+        }
+    }
+}
+
+enum NoteViewStyle: String, CaseIterable, Identifiable {
+    case list
+    case gallery
+
+    var id: String { rawValue }
+}
+
 enum NoteDateBasis {
     case modified
     case created
@@ -491,32 +514,46 @@ struct NoteDateSection: Identifiable, Equatable {
 enum NoteListPresentation {
     static func sorted(
         _ files: [RecentMarkdownFile],
-        by order: NoteSortOrder
+        by order: NoteSortOrder,
+        direction: NoteSortDirection = .standard
     ) -> [RecentMarkdownFile] {
         files.sorted { lhs, rhs in
+            let orderedAscending: Bool
             switch order {
             case .modified:
-                if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+                if lhs.modifiedAt != rhs.modifiedAt {
+                    orderedAscending = lhs.modifiedAt > rhs.modifiedAt
+                    return direction == .standard ? orderedAscending : !orderedAscending
+                }
             case .created:
                 let lhsDate = lhs.createdAt == .distantPast ? lhs.modifiedAt : lhs.createdAt
                 let rhsDate = rhs.createdAt == .distantPast ? rhs.modifiedAt : rhs.createdAt
-                if lhsDate != rhsDate { return lhsDate > rhsDate }
+                if lhsDate != rhsDate {
+                    orderedAscending = lhsDate > rhsDate
+                    return direction == .standard ? orderedAscending : !orderedAscending
+                }
             case .title:
                 let comparison = lhs.title.localizedStandardCompare(rhs.title)
-                if comparison != .orderedSame { return comparison == .orderedAscending }
+                if comparison != .orderedSame {
+                    orderedAscending = comparison == .orderedAscending
+                    return direction == .standard ? orderedAscending : !orderedAscending
+                }
             }
-            return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+            orderedAscending = lhs.relativePath.localizedStandardCompare(rhs.relativePath)
+                == .orderedAscending
+            return direction == .standard ? orderedAscending : !orderedAscending
         }
     }
 
     static func sections(
         for files: [RecentMarkdownFile],
         sortedBy order: NoteSortOrder,
+        direction: NoteSortDirection = .standard,
         groupByDate: Bool,
         now: Date = Date(),
         calendar: Calendar = .autoupdatingCurrent
     ) -> [NoteDateSection] {
-        let ordered = sorted(files, by: order)
+        let ordered = sorted(files, by: order, direction: direction)
         guard groupByDate, order != .title, !ordered.isEmpty else {
             return ordered.isEmpty ? [] : [NoteDateSection(id: "notes", title: nil, files: ordered)]
         }
@@ -560,7 +597,9 @@ enum NoteListPresentation {
 }
 
 private struct NoteListOptionsMenu: View {
+    @Binding var viewStyleRawValue: String
     @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
     @Binding var groupByDate: Bool
     var selectNotes: () -> Void
 
@@ -570,8 +609,11 @@ private struct NoteListOptionsMenu: View {
                 Label("Select Notes", systemImage: "checkmark.circle")
             }
             Divider()
+            NoteViewStyleMenuContent(viewStyleRawValue: $viewStyleRawValue)
+            Divider()
             NoteListSortMenuContent(
                 sortOrderRawValue: $sortOrderRawValue,
+                sortDirectionRawValue: $sortDirectionRawValue,
                 groupByDate: $groupByDate
             )
         } label: {
@@ -582,8 +624,31 @@ private struct NoteListOptionsMenu: View {
     }
 }
 
+private struct NoteViewStyleMenuContent: View {
+    @Binding var viewStyleRawValue: String
+
+    private var viewStyle: NoteViewStyle {
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .list
+    }
+
+    var body: some View {
+        Button {
+            viewStyleRawValue = viewStyle == .list
+                ? NoteViewStyle.gallery.rawValue
+                : NoteViewStyle.list.rawValue
+        } label: {
+            Label(
+                viewStyle == .list ? "View as Gallery" : "View as List",
+                systemImage: viewStyle == .list ? "square.grid.2x2" : "list.bullet"
+            )
+        }
+        .accessibilityIdentifier("toggle-note-view-style")
+    }
+}
+
 private struct NoteListSortMenuContent: View {
     @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
     @Binding var groupByDate: Bool
 
     private var sortOrder: NoteSortOrder {
@@ -596,6 +661,11 @@ private struct NoteListSortMenuContent: View {
                 Text(order.label).tag(order.rawValue)
             }
         }
+        Picker("Order", selection: $sortDirectionRawValue) {
+            ForEach(NoteSortDirection.allCases) { direction in
+                Text(direction.label(for: sortOrder)).tag(direction.rawValue)
+            }
+        }
         Toggle("Group By Date", isOn: $groupByDate)
             .disabled(sortOrder == .title)
     }
@@ -603,7 +673,9 @@ private struct NoteListSortMenuContent: View {
 
 struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
+    @AppStorage("mudsnote.ios.noteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.noteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
     @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
     @State private var isSelecting = false
     @State private var selectedPaths = Set<String>()
@@ -617,13 +689,24 @@ struct FolderNotesListView: View {
     private var sortOrder: NoteSortOrder {
         NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
     }
+    private var sortDirection: NoteSortDirection {
+        NoteSortDirection(rawValue: sortDirectionRawValue) ?? .standard
+    }
+    private var viewStyle: NoteViewStyle {
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .list
+    }
     private var pinnedFiles: [RecentMarkdownFile] {
-        NoteListPresentation.sorted(files.filter(\.isPinned), by: sortOrder)
+        NoteListPresentation.sorted(
+            files.filter(\.isPinned),
+            by: sortOrder,
+            direction: sortDirection
+        )
     }
     private var otherSections: [NoteDateSection] {
         NoteListPresentation.sections(
             for: files.filter { !$0.isPinned },
             sortedBy: sortOrder,
+            direction: sortDirection,
             groupByDate: groupByDate
         )
     }
@@ -632,35 +715,41 @@ struct FolderNotesListView: View {
     }
 
     var body: some View {
-        List {
-            if files.isEmpty {
-                Text("No Notes")
-                    .foregroundStyle(MudsnoteColors.muted)
+        Group {
+            if viewStyle == .gallery, !files.isEmpty {
+                noteGallery
             } else {
-                if !pinnedFiles.isEmpty {
-                    Section("Pinned") {
-                        ForEach(pinnedFiles) { file in
-                            noteRow(file)
+                List {
+                    if files.isEmpty {
+                        Text("No Notes")
+                            .foregroundStyle(MudsnoteColors.muted)
+                    } else {
+                        if !pinnedFiles.isEmpty {
+                            Section("Pinned") {
+                                ForEach(pinnedFiles) { file in
+                                    noteRow(file)
+                                }
+                            }
+                        }
+                        ForEach(otherSections) { section in
+                            Section {
+                                ForEach(section.files) { file in
+                                    noteRow(file)
+                                }
+                            } header: {
+                                if let title = section.title {
+                                    Text(title)
+                                } else if !pinnedFiles.isEmpty {
+                                    Text("Notes")
+                                }
+                            }
                         }
                     }
                 }
-                ForEach(otherSections) { section in
-                    Section {
-                        ForEach(section.files) { file in
-                            noteRow(file)
-                        }
-                    } header: {
-                        if let title = section.title {
-                            Text(title)
-                        } else if !pinnedFiles.isEmpty {
-                            Text("Notes")
-                        }
-                    }
-                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(MudsnoteColors.canvas)
         .refreshable {
             await appModel.refreshInbox()
@@ -693,7 +782,9 @@ struct FolderNotesListView: View {
                         .accessibilityIdentifier("finish-note-selection")
                 } else {
                     NoteListOptionsMenu(
+                        viewStyleRawValue: $viewStyleRawValue,
                         sortOrderRawValue: $sortOrderRawValue,
+                        sortDirectionRawValue: $sortDirectionRawValue,
                         groupByDate: $groupByDate,
                         selectNotes: { isSelecting = true }
                     )
@@ -712,6 +803,36 @@ struct FolderNotesListView: View {
         .onChange(of: files.map(\.relativePath)) { _, paths in
             selectedPaths.formIntersection(paths)
         }
+    }
+
+    private var noteGallery: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+                if !pinnedFiles.isEmpty {
+                    NoteGallerySection(
+                        title: String(localized: "Pinned"),
+                        files: pinnedFiles,
+                        dateBasis: sortOrder.dateBasis,
+                        isSelecting: isSelecting,
+                        selectedPaths: selectedPaths,
+                        toggleSelection: toggleSelection
+                    )
+                }
+                ForEach(otherSections) { section in
+                    NoteGallerySection(
+                        title: section.title ?? (!pinnedFiles.isEmpty ? String(localized: "Notes") : nil),
+                        files: section.files,
+                        dateBasis: sortOrder.dateBasis,
+                        isSelecting: isSelecting,
+                        selectedPaths: selectedPaths,
+                        toggleSelection: toggleSelection
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .accessibilityIdentifier("note-gallery")
     }
 
     @ViewBuilder
@@ -734,6 +855,12 @@ struct FolderNotesListView: View {
     private func finishSelecting() {
         selectedPaths.removeAll()
         isSelecting = false
+    }
+
+    private func toggleSelection(_ file: RecentMarkdownFile) {
+        if !selectedPaths.insert(file.relativePath).inserted {
+            selectedPaths.remove(file.relativePath)
+        }
     }
 }
 
@@ -761,7 +888,9 @@ struct LibraryFolderView: View {
     @State private var folderName = ""
     @State private var isSelecting = false
     @State private var selectedPaths = Set<String>()
+    @AppStorage("mudsnote.ios.noteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.noteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
     @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
 
     private var currentFolder: LibraryFolderNode {
@@ -777,13 +906,24 @@ struct LibraryFolderView: View {
     private var sortOrder: NoteSortOrder {
         NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
     }
+    private var sortDirection: NoteSortDirection {
+        NoteSortDirection(rawValue: sortDirectionRawValue) ?? .standard
+    }
+    private var viewStyle: NoteViewStyle {
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .list
+    }
     private var pinnedFiles: [RecentMarkdownFile] {
-        NoteListPresentation.sorted(directFiles.filter(\.isPinned), by: sortOrder)
+        NoteListPresentation.sorted(
+            directFiles.filter(\.isPinned),
+            by: sortOrder,
+            direction: sortDirection
+        )
     }
     private var otherSections: [NoteDateSection] {
         NoteListPresentation.sections(
             for: directFiles.filter { !$0.isPinned },
             sortedBy: sortOrder,
+            direction: sortDirection,
             groupByDate: groupByDate
         )
     }
@@ -798,52 +938,58 @@ struct LibraryFolderView: View {
     }
 
     var body: some View {
-        List {
-            if !isSelecting {
-                ForEach(currentFolder.children) { child in
-                    NavigationLink {
-                        LibraryFolderView(folder: child)
-                    } label: {
-                        LibraryFolderRow(
-                            title: child.name,
-                            subtitle: child.relativePath,
-                            systemImage: "folder.fill",
-                            count: child.totalNoteCount
-                        )
+        Group {
+            if viewStyle == .gallery {
+                folderGallery
+            } else {
+                List {
+                    if !isSelecting {
+                        ForEach(currentFolder.children) { child in
+                            NavigationLink {
+                                LibraryFolderView(folder: child)
+                            } label: {
+                                LibraryFolderRow(
+                                    title: child.name,
+                                    subtitle: child.relativePath,
+                                    systemImage: "folder.fill",
+                                    count: child.totalNoteCount
+                                )
+                            }
+                            .accessibilityIdentifier("folder-row-\(child.relativePath)")
+                            .modifier(FolderLifecycleActions(folder: child))
+                        }
                     }
-                    .accessibilityIdentifier("folder-row-\(child.relativePath)")
-                    .modifier(FolderLifecycleActions(folder: child))
-                }
-            }
 
-            if !pinnedFiles.isEmpty {
-                Section("Pinned") {
-                    ForEach(pinnedFiles) { file in
-                        noteRow(file)
+                    if !pinnedFiles.isEmpty {
+                        Section("Pinned") {
+                            ForEach(pinnedFiles) { file in
+                                noteRow(file)
+                            }
+                        }
                     }
-                }
-            }
-            ForEach(otherSections) { section in
-                Section {
-                    ForEach(section.files) { file in
-                        noteRow(file)
+                    ForEach(otherSections) { section in
+                        Section {
+                            ForEach(section.files) { file in
+                                noteRow(file)
+                            }
+                        } header: {
+                            if let title = section.title {
+                                Text(title)
+                            } else if !pinnedFiles.isEmpty {
+                                Text("Notes")
+                            }
+                        }
                     }
-                } header: {
-                    if let title = section.title {
-                        Text(title)
-                    } else if !pinnedFiles.isEmpty {
-                        Text("Notes")
-                    }
-                }
-            }
 
-            if currentFolder.children.isEmpty, directFiles.isEmpty {
-                ContentUnavailableView("No Notes", systemImage: "folder")
-                    .listRowBackground(Color.clear)
+                    if currentFolder.children.isEmpty, directFiles.isEmpty {
+                        ContentUnavailableView("No Notes", systemImage: "folder")
+                            .listRowBackground(Color.clear)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(MudsnoteColors.canvas)
         .refreshable {
             await appModel.refreshInbox()
@@ -929,8 +1075,11 @@ struct LibraryFolderView: View {
                         Label("Delete Folder", systemImage: "trash")
                     }
                     Divider()
+                    NoteViewStyleMenuContent(viewStyleRawValue: $viewStyleRawValue)
+                    Divider()
                     NoteListSortMenuContent(
                         sortOrderRawValue: $sortOrderRawValue,
+                        sortDirectionRawValue: $sortDirectionRawValue,
                         groupByDate: $groupByDate
                     )
                 } label: {
@@ -996,6 +1145,69 @@ struct LibraryFolderView: View {
         }
     }
 
+    private var folderGallery: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+                if !isSelecting, !currentFolder.children.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(currentFolder.children) { child in
+                            NavigationLink {
+                                LibraryFolderView(folder: child)
+                            } label: {
+                                LibraryFolderRow(
+                                    title: child.name,
+                                    subtitle: child.relativePath,
+                                    systemImage: "folder.fill",
+                                    count: child.totalNoteCount
+                                )
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("folder-row-\(child.relativePath)")
+                            .modifier(FolderLifecycleActions(folder: child))
+                        }
+                    }
+                    .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(MudsnoteColors.line, lineWidth: 1)
+                    }
+                }
+
+                if !pinnedFiles.isEmpty {
+                    NoteGallerySection(
+                        title: String(localized: "Pinned"),
+                        files: pinnedFiles,
+                        dateBasis: sortOrder.dateBasis,
+                        isSelecting: isSelecting,
+                        selectedPaths: selectedPaths,
+                        toggleSelection: toggleSelection
+                    )
+                }
+                ForEach(otherSections) { section in
+                    NoteGallerySection(
+                        title: section.title ?? (!pinnedFiles.isEmpty ? String(localized: "Notes") : nil),
+                        files: section.files,
+                        dateBasis: sortOrder.dateBasis,
+                        isSelecting: isSelecting,
+                        selectedPaths: selectedPaths,
+                        toggleSelection: toggleSelection
+                    )
+                }
+
+                if currentFolder.children.isEmpty, directFiles.isEmpty {
+                    ContentUnavailableView("No Notes", systemImage: "folder")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .accessibilityIdentifier("note-gallery")
+    }
+
     @ViewBuilder
     private func noteRow(_ file: RecentMarkdownFile) -> some View {
         if isSelecting {
@@ -1016,6 +1228,12 @@ struct LibraryFolderView: View {
     private func finishSelecting() {
         selectedPaths.removeAll()
         isSelecting = false
+    }
+
+    private func toggleSelection(_ file: RecentMarkdownFile) {
+        if !selectedPaths.insert(file.relativePath).inserted {
+            selectedPaths.remove(file.relativePath)
+        }
     }
 }
 
@@ -1272,6 +1490,160 @@ private struct SelectedNotesActionBar: View {
         } message: {
             Text("You can restore these notes later from Recently Deleted.")
         }
+    }
+}
+
+private struct NoteGallerySection: View {
+    var title: String?
+    var files: [RecentMarkdownFile]
+    var dateBasis: NoteDateBasis
+    var isSelecting: Bool
+    var selectedPaths: Set<String>
+    var toggleSelection: (RecentMarkdownFile) -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
+
+    var body: some View {
+        Section {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                ForEach(files) { file in
+                    if isSelecting {
+                        SelectableNoteGalleryCard(
+                            file: file,
+                            dateBasis: dateBasis,
+                            isSelected: selectedPaths.contains(file.relativePath)
+                        ) {
+                            toggleSelection(file)
+                        }
+                    } else {
+                        NoteGalleryFileButton(file: file, dateBasis: dateBasis)
+                    }
+                }
+            }
+        } header: {
+            if let title {
+                Text(title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MudsnoteColors.canvas)
+            }
+        }
+    }
+}
+
+private struct NoteGalleryFileButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis
+
+    var body: some View {
+        Button {
+            appModel.openFile(file)
+        } label: {
+            NoteGalleryCard(file: file, dateBasis: dateBasis)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("markdown-file-row-\(file.id)")
+        .modifier(NoteLifecycleActions(file: file))
+    }
+}
+
+private struct SelectableNoteGalleryCard: View {
+    var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis
+    var isSelected: Bool
+    var toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            NoteGalleryCard(file: file, dateBasis: dateBasis)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(
+                            isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                        )
+                        .padding(9)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("selectable-note-row-\(file.id)")
+    }
+}
+
+private struct NoteGalleryCard: View {
+    var file: RecentMarkdownFile
+    var dateBasis: NoteDateBasis
+
+    private var displayedDate: Date { dateBasis.date(for: file) }
+
+    private var dateText: String {
+        if Calendar.autoupdatingCurrent.isDateInToday(displayedDate) {
+            return displayedDate.formatted(date: .omitted, time: .shortened)
+        }
+        return displayedDate.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private var folderName: String {
+        let parent = (file.relativePath as NSString).deletingLastPathComponent
+        return parent.isEmpty ? String(localized: "Mudsnote") : (parent as NSString).lastPathComponent
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(file.title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(2)
+                Text(file.preview.isEmpty ? String(localized: "No additional text") : file.preview)
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(5)
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    Image(systemName: "folder")
+                    Text(folderName)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if file.hasAttachments {
+                        Image(systemName: "paperclip")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+
+            HStack(spacing: 5) {
+                Text(dateText)
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+                Spacer(minLength: 0)
+                if file.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(NotesCloneColors.folderYellow)
+                        .accessibilityLabel("Pinned")
+                        .accessibilityIdentifier("pin-indicator-\(file.id)")
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Open Markdown file")
     }
 }
 

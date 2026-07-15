@@ -1141,12 +1141,68 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Date Edited"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Date Created"].exists)
         XCTAssertTrue(app.buttons["Title"].exists)
+        XCTAssertTrue(app.buttons["Newest First"].exists)
+        XCTAssertTrue(app.buttons["Oldest First"].exists)
+        XCTAssertTrue(app.buttons["View as Gallery"].exists)
 
         app.tap()
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Notes-style metadata list"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    func testNotesGalleryViewPersistsAndKeepsSelectionActions() {
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        allNotes.tap()
+
+        let options = app.buttons["note-list-options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        let gallery = app.buttons["View as Gallery"]
+        XCTAssertTrue(gallery.waitForExistence(timeout: 3))
+        gallery.tap()
+
+        let galleryContainer = app.scrollViews["note-gallery"]
+        XCTAssertTrue(galleryContainer.waitForExistence(timeout: 5))
+        let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertEqual(first.frame.midY, second.frame.midY, accuracy: 3)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style gallery view"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        first.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Duplicate Note"].waitForExistence(timeout: 3))
+        app.tap()
+
+        options.tap()
+        let select = app.buttons["Select Notes"]
+        XCTAssertTrue(select.waitForExistence(timeout: 3))
+        select.tap()
+        let selectable = app.buttons["selectable-note-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+        selectable.tap()
+        XCTAssertTrue(app.navigationBars["1 Selected"].exists)
+        app.buttons["finish-note-selection"].tap()
+
+        app.navigationBars["All Notes"].buttons.firstMatch.tap()
+        allNotes.tap()
+        XCTAssertTrue(galleryContainer.waitForExistence(timeout: 5))
+
+        options.tap()
+        let list = app.buttons["View as List"]
+        XCTAssertTrue(list.waitForExistence(timeout: 3))
+        list.tap()
+        XCTAssertTrue(waitForNonexistence(galleryContainer))
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
     }
 
     func testCaptureCommandsStayInSingleRow() {

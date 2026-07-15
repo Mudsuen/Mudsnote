@@ -3200,6 +3200,14 @@ final class MudsnoteCompanionTests: XCTestCase {
         ]
 
         XCTAssertEqual(NoteListPresentation.sorted(files, by: .title).map(\.title), ["Alpha", "Beta", "Charlie"])
+        XCTAssertEqual(
+            NoteListPresentation.sorted(files, by: .title, direction: .reversed).map(\.title),
+            ["Charlie", "Beta", "Alpha"]
+        )
+        XCTAssertEqual(
+            NoteListPresentation.sorted(files, by: .modified, direction: .reversed).map(\.title),
+            ["Charlie", "Beta", "Alpha"]
+        )
         let sections = NoteListPresentation.sections(
             for: files,
             sortedBy: .modified,
@@ -3209,6 +3217,16 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(sections.map(\.id), ["today", "yesterday", "previous-7"])
         XCTAssertEqual(sections.flatMap(\.files).map(\.title), ["Alpha", "Beta", "Charlie"])
+        let reversedSections = NoteListPresentation.sections(
+            for: files,
+            sortedBy: .modified,
+            direction: .reversed,
+            groupByDate: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(reversedSections.map(\.id), ["previous-7", "yesterday", "today"])
+        XCTAssertEqual(reversedSections.flatMap(\.files).map(\.title), ["Charlie", "Beta", "Alpha"])
         XCTAssertEqual(
             NoteListPresentation.sections(for: files, sortedBy: .title, groupByDate: true).count,
             1
