@@ -331,6 +331,14 @@
 - The macOS layout regression now inspects the images on the final AppKit buttons and requires `20x15pt` and `18x14pt` canvases, preventing a generic `19pt` toolbar image from silently returning.
 - `/Applications/Mudsnote.app` was rebuilt from the verified source after the user supplied a screenshot consistent with a stale generic-symbol build.
 
+## Latest iteration (213)
+
+- View > Show as List (`Command-1`) and Show as Gallery (`Command-2`) now switch a persisted macOS library presentation mode.
+- Gallery mode uses a native reusable `NSCollectionView`, collapses the content-list split item with the existing `0.22s` AppKit animation, and dedicates the remaining workspace to grouped note previews while keeping the source sidebar, New Note, and Search.
+- The gallery projects directly from the existing bounded `listRows`, mirrors selection through the canonical table model, reuses thumbnail cache/loading tasks, and introduces no filesystem scan or second note index. Hidden gallery state does not instantiate collection items or request thumbnails. A 10,000-row projection regression completes below `100ms` in debug tests.
+- Double-click/Return opens the selected card in the same list/editor workspace; New Note also returns to list mode. Empty/search/trash states and persisted-launch toolbar visibility are covered.
+- Installed-app evidence: `/tmp/mudsnote-gallery-vs-notes.jpg`; `Command-1`, `Command-2`, and double-click were also exercised against `/Applications/Mudsnote.app` through accessibility.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

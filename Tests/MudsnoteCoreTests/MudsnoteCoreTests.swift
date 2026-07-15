@@ -804,6 +804,7 @@ struct MudsnoteCoreTests {
         #expect(store.floatingNoteStaysOnTop)
         #expect(store.spellCheckingEnabled)
         #expect(store.libraryNoteSortOrderRawValue == 0)
+        #expect(store.libraryNoteViewModeRawValue == 0)
         #expect(store.libraryGroupsNotesByDate)
         #expect(store.libraryCollapsedFolderPaths.isEmpty)
         #expect(store.libraryExpandedFolderPaths.isEmpty)
@@ -820,6 +821,7 @@ struct MudsnoteCoreTests {
         store.floatingNoteStaysOnTop = false
         store.spellCheckingEnabled = false
         store.libraryNoteSortOrderRawValue = 1
+        store.libraryNoteViewModeRawValue = 1
         store.libraryGroupsNotesByDate = false
         store.libraryCollapsedFolderPaths = ["/tmp/Notes"]
         store.libraryExpandedFolderPaths = ["/tmp/Notes/Projects"]
@@ -836,6 +838,7 @@ struct MudsnoteCoreTests {
         #expect(!store.floatingNoteStaysOnTop)
         #expect(!store.spellCheckingEnabled)
         #expect(store.libraryNoteSortOrderRawValue == 1)
+        #expect(store.libraryNoteViewModeRawValue == 1)
         #expect(!store.libraryGroupsNotesByDate)
         #expect(store.libraryCollapsedFolderPaths == ["/tmp/Notes"])
         #expect(store.libraryExpandedFolderPaths == ["/tmp/Notes/Projects"])

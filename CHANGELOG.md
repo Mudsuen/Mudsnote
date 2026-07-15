@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 164. Native list and gallery modes
+- Problem: The macOS library could only browse notes in the three-pane list, while Apple Notes also provides a wide visual gallery for scanning note previews.
+- Fix: Added a persistent native `NSCollectionView` gallery behind View > Show as Gallery (`Command-2`) and Show as List (`Command-1`). Gallery mode collapses the note-list split item, reuses the loaded 240-note projection and thumbnail cache, preserves multi-selection and context actions, opens cards back into the same editor, and returns to list mode for New Note. Hidden gallery state keeps only its lightweight projection and never instantiates preview cells or triggers thumbnail work. The installed app was checked against Apple's official gallery reference and the first compressed-card layout found by real-app QA was corrected.
+- Lesson: A native collection view still needs explicit internal width constraints; item-size configuration alone does not prevent stack views from compressing preview content to its intrinsic minimum.
+
 ### 163. Guard expanded source-action icon scale
 - Problem: A runtime screenshot showed Add Folder and Sidebar Toggle at the generic toolbar-symbol scale even though the source-action constant was already calibrated separately.
 - Fix: Added a regression against the images installed on the actual expanded toolbar controls: Add Folder must retain a `20x15pt` configured canvas and Sidebar Toggle an `18x14pt` canvas. Repackaged the current source into `/Applications/Mudsnote.app` so the installed artifact uses the dedicated `13pt` native SF Symbol configuration instead of a stale generic build.

@@ -276,6 +276,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
 
+        for (title, mode, keyEquivalent) in [
+            ("显示为列表", LibraryNoteViewMode.list, "1"),
+            ("显示为画廊", .gallery, "2")
+        ] {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(setLibraryNoteViewModeFromMainMenu(_:)),
+                keyEquivalent: keyEquivalent
+            )
+            item.target = self
+            item.tag = mode.rawValue
+            item.keyEquivalentModifierMask = [.command]
+            viewMenu.addItem(item)
+        }
+        viewMenu.addItem(.separator())
+
         let findItem = NSMenuItem(title: "搜索笔记", action: #selector(focusLibrarySearchFromMainMenu), keyEquivalent: "f")
         findItem.target = self
         findItem.keyEquivalentModifierMask = [.command]
@@ -598,6 +614,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func setLibraryNoteViewModeFromMainMenu(_ sender: NSMenuItem) {
+        guard let mode = LibraryNoteViewMode(rawValue: sender.tag) else { return }
+        showLibraryWindow()
+        libraryWindowController?.setNoteListViewModeForLibrary(mode)
+    }
+
+    @objc
     func sortLibraryNotesFromMainMenu(_ sender: NSMenuItem) {
         guard let order = LibraryNoteSortOrder(rawValue: sender.tag) else { return }
         showLibraryWindow()
@@ -629,6 +652,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             let groupsByDate = libraryWindowController?.groupsNoteListByDate
                 ?? noteStore.libraryGroupsNotesByDate
             menuItem.state = groupsByDate ? .on : .off
+            return true
+        case #selector(setLibraryNoteViewModeFromMainMenu(_:)):
+            let currentMode = libraryWindowController?.noteListViewMode
+                ?? LibraryNoteViewMode(rawValue: noteStore.libraryNoteViewModeRawValue)
+                ?? .list
+            menuItem.state = menuItem.tag == currentMode.rawValue ? .on : .off
             return true
         default:
             return true

@@ -120,6 +120,7 @@ enum NoteStoreDefaultsKey {
     static let spellCheckingEnabled = "mudsnote.spellCheckingEnabled"
     static let libraryNoteSortOrder = "mudsnote.library.noteSortOrder"
     static let libraryGroupsNotesByDate = "mudsnote.library.groupsNotesByDate"
+    static let libraryNoteViewMode = "mudsnote.library.noteViewMode"
     static let libraryPinnedNotePaths = "mudsnote.library.pinnedNotePaths"
     static let libraryCollapsedFolderPaths = "mudsnote.library.collapsedFolderPaths"
     static let libraryExpandedFolderPaths = "mudsnote.library.expandedFolderPaths"
