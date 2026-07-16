@@ -187,6 +187,17 @@ struct CaptureConsoleView: View {
                 }
                 .disabled(!VNDocumentCameraViewController.isSupported)
                 .accessibilityIdentifier("capture-scan-document")
+
+                Button {
+                    isBodyFocused = true
+                    DispatchQueue.main.async {
+                        _ = CameraTextCapture.start()
+                    }
+                } label: {
+                    Label("Scan Text", systemImage: "text.viewfinder")
+                }
+                .disabled(!CameraTextCapture.isAvailable)
+                .accessibilityIdentifier("capture-scan-text")
             } label: {
                 Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
             }

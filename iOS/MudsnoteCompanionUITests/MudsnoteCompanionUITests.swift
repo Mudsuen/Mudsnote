@@ -628,7 +628,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testSimplifiedLibraryOpensRealMarkdownFile() {
-        let app = launchApp(reset: true, fixtureFolder: true)
+        let app = launchApp(reset: true, fixtureFolder: true, scanText: true)
         let allNotes = app.buttons["all-notes-link"]
         XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
         XCTAssertFalse(app.staticTexts["Quick Notes"].exists)
@@ -663,8 +663,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Add Drawing"].exists)
         XCTAssertTrue(app.buttons["Add File"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.18)).tap()
-        XCTAssertTrue(waitForNonexistence(app.buttons["Add File"]))
+        let scanText = app.buttons["Scan Text"]
+        XCTAssertTrue(scanText.exists)
+        scanText.tap()
+        XCTAssertTrue(
+            waitForValue(of: editor, containing: "Scanned into Markdown")
+        )
         let displayMode = app.buttons["markdown-display-mode"]
         XCTAssertTrue(displayMode.exists)
         displayMode.tap()
@@ -1462,7 +1466,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testCaptureCommandsStayInSingleRow() {
-        let app = launchApp(reset: true, fixtureFolder: true)
+        let app = launchApp(reset: true, fixtureFolder: true, scanText: true)
         let quickNoteButton = app.buttons["quick-note-button"]
         XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
         quickNoteButton.tap()
@@ -1484,15 +1488,29 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
 
         controls[0].tap()
-        XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Take Photo"].exists)
-        XCTAssertTrue(app.buttons["Add File"].exists)
-        XCTAssertTrue(app.buttons["Scan Document"].exists)
+        let attachmentActions = [
+            "Add image from Photos",
+            "Take Photo",
+            "Add File",
+            "Scan Document",
+            "Scan Text",
+        ].map { app.buttons[$0] }
+        for action in attachmentActions {
+            XCTAssertTrue(action.waitForExistence(timeout: 3))
+        }
+        for name in ["Add image from Photos", "Add File", "Scan Text"] {
+            XCTAssertTrue(waitForHittable(app.buttons[name]))
+        }
+        let scanText = app.buttons["Scan Text"]
 
         let attachmentMenuScreenshot = XCTAttachment(screenshot: app.screenshot())
         attachmentMenuScreenshot.name = "Quick capture attachment menu"
         attachmentMenuScreenshot.lifetime = .keepAlways
         add(attachmentMenuScreenshot)
+
+        scanText.tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(waitForValue(of: editor, containing: "Scanned into Markdown"))
     }
 
     func testAttachmentLibraryShowsStoredFiles() {
@@ -1691,7 +1709,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         ocrAttachment: Bool = false,
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
-        interruptedWrite: Bool = false
+        interruptedWrite: Bool = false,
+        scanText: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1708,7 +1727,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,
-            interruptedWrite ? "-ui-testing-interrupted-write" : nil
+            interruptedWrite ? "-ui-testing-interrupted-write" : nil,
+            scanText ? "-ui-testing-scan-text" : nil
         ].compactMap { $0 }
         app.launch()
         return app
@@ -1719,6 +1739,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
             guard let element = evaluated as? XCUIElement else { return false }
             return (element.value as? String)?.isEmpty == true
         }
+        return XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
+            timeout: 5
+        ) == .completed
+    }
+
+    private func waitForValue(of element: XCUIElement, containing text: String) -> Bool {
+        let predicate = NSPredicate(format: "value CONTAINS %@", text)
         return XCTWaiter.wait(
             for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
             timeout: 5

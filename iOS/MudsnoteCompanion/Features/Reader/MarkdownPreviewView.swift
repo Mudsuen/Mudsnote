@@ -849,6 +849,17 @@ struct MarkdownPreviewView: View {
                         }
                         .disabled(!VNDocumentCameraViewController.isSupported)
                         .accessibilityIdentifier("markdown-scan-document")
+
+                        Button {
+                            editorFocused = true
+                            DispatchQueue.main.async {
+                                _ = CameraTextCapture.start()
+                            }
+                        } label: {
+                            Label("Scan Text", systemImage: "text.viewfinder")
+                        }
+                        .disabled(!CameraTextCapture.isAvailable)
+                        .accessibilityIdentifier("markdown-scan-text")
                     } label: {
                         editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
                     }

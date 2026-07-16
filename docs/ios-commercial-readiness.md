@@ -15,6 +15,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Audio recorded inside an open note is attached before local transcription begins; successful speech becomes ordinary editable and searchable Markdown, while empty or failed transcription keeps the recording.
 - [x] Find in Note optionally includes locally recognized text from referenced images and PDFs, combines text and attachment matches into one navigable sequence, and never modifies Markdown.
 - [x] Empty library search presents one-row structured suggestions for pinned notes, attachments, checklists, and notes edited today; suggestions respect All/Notes/Inbox scope and transition cleanly into full-text search.
+- [x] Camera Scan Text inserts recognized content at the active caret in Quick Capture and the full Markdown editor as ordinary editable and searchable Markdown.
 - [x] Gallery cards preview a note's first image and checklist state from cached Markdown list metadata without view-layer file scans.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.

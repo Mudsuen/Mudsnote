@@ -2,6 +2,53 @@ import SwiftUI
 import UIKit
 import VisionKit
 
+@MainActor
+enum CameraTextCapture {
+    static let uiTestingArgument = "-ui-testing-scan-text"
+    static let uiTestingText = "Scanned into Markdown"
+    fileprivate static weak var currentFirstResponder: UIResponder?
+
+    static var isAvailable: Bool {
+        isUITesting || (DataScannerViewController.isSupported && DataScannerViewController.isAvailable)
+    }
+
+    @discardableResult
+    static func start() -> Bool {
+        if isUITesting {
+            guard let input = firstResponder() as? UIKeyInput else { return false }
+            input.insertText(uiTestingText)
+            return true
+        }
+        return UIApplication.shared.sendAction(
+            #selector(UIResponder.captureTextFromCamera(_:)),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+
+    private static var isUITesting: Bool {
+        ProcessInfo.processInfo.arguments.contains(uiTestingArgument)
+    }
+
+    private static func firstResponder() -> UIResponder? {
+        currentFirstResponder = nil
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.mudsnoteStoreFirstResponder(_:)),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+        return currentFirstResponder
+    }
+}
+
+private extension UIResponder {
+    @objc func mudsnoteStoreFirstResponder(_ sender: Any?) {
+        CameraTextCapture.currentFirstResponder = self
+    }
+}
+
 enum CameraPhotoCapture {
     enum Error: LocalizedError, Equatable {
         case invalidImage

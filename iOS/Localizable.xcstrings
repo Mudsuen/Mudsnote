@@ -127,6 +127,9 @@
     "Scan Document": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文稿" } } }
     },
+    "Scan Text": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文本" } } }
+    },
     "Take Photo": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍照" } } }
     },
