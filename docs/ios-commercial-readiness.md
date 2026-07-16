@@ -50,7 +50,7 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] No analytics, accounts, tracking domains, or remote note transmission are present.
 - [x] `PrivacyInfo.xcprivacy` declares UserDefaults and user-authorized file timestamp reasons.
 - [x] Microphone, Photos, camera, and speech usage descriptions are bundled.
-- [ ] Review App Store privacy-label answers against the signed archive.
+- [x] Review the no-data-collected App Store privacy-label draft against the development-signed `1.0 (1)` archive; reconfirm after distribution export.
 
 ## Build and release
 
@@ -60,6 +60,8 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] One hundred forty-five tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
-- [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
+- [x] A generic-device `1.0 (1)` archive completes App Intents SSU generation for English and Simplified Chinese without the prior `appintentsnltrainingprocessor` warning.
 - [ ] Run real-device audio, speech, photo, Widget gallery, App Shortcuts, and interrupted-write smokes.
-- [ ] Set release marketing/build versions and prepare App Store copy, screenshots, support URL, and privacy-policy URL.
+- [x] Release version `1.0 (1)`, bilingual App Store copy, review notes, and privacy-policy URL are prepared and machine-validated.
+- [ ] Replace the provisional GitHub Issues support URL with a public support page containing actual contact information before App Store submission.
+- [ ] Capture and validate App Store screenshots at an accepted iPhone size.
