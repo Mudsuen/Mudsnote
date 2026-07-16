@@ -3566,6 +3566,57 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testLibraryFileScopeFiltersSearchResultsAndDerivesNewNoteFolder() {
+        let project = RecentMarkdownFile(
+            id: "Projects/Plan.md",
+            relativePath: "Projects/Plan.md",
+            title: "Plan",
+            modifiedAt: .now
+        )
+        let daily = RecentMarkdownFile(
+            id: "Daily/2026-07-17.md",
+            relativePath: "Daily/2026-07-17.md",
+            title: "2026-07-17",
+            modifiedAt: .now
+        )
+        let projectResult = MarkdownSearchResult(
+            id: "file:\(project.relativePath)",
+            title: project.title,
+            context: "Launch plan",
+            location: project.relativePath,
+            score: 1,
+            modifiedAt: project.modifiedAt,
+            destination: .file(project)
+        )
+        let dailyResult = MarkdownSearchResult(
+            id: "file:\(daily.relativePath)",
+            title: daily.title,
+            context: "Daily plan",
+            location: daily.relativePath,
+            score: 1,
+            modifiedAt: daily.modifiedAt,
+            destination: .file(daily)
+        )
+        let memo = MemoBlock(id: "memo", dateText: "10:00", body: "Inbox plan", tags: [])
+        let memoResult = MarkdownSearchResult(
+            id: "memo:memo",
+            title: "Inbox plan",
+            context: "Inbox plan",
+            location: "Inbox",
+            score: 1,
+            modifiedAt: .now,
+            destination: .memo(memo)
+        )
+
+        XCTAssertTrue(LibraryFileScope.all.contains(projectResult))
+        XCTAssertTrue(LibraryFileScope.all.contains(memoResult))
+        XCTAssertTrue(LibraryFileScope.pathPrefix("Daily/").contains(dailyResult))
+        XCTAssertFalse(LibraryFileScope.pathPrefix("Daily/").contains(projectResult))
+        XCTAssertFalse(LibraryFileScope.pathPrefix("Daily/").contains(memoResult))
+        XCTAssertNil(LibraryFileScope.all.newNoteFolder)
+        XCTAssertEqual(LibraryFileScope.pathPrefix("/Daily/").newNoteFolder, "Daily")
+    }
+
     func testPerformanceMaximumAttachmentDraftPreparation() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -1374,6 +1374,32 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testNoteListKeepsCaptureBarAndScopesFullTextSearch() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+
+        let search = app.textFields["library-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["quick-note-button"].exists)
+        XCTAssertTrue(app.buttons["new-note-button"].exists)
+
+        search.tap()
+        search.typeText("Restore this note")
+
+        let result = app.buttons["list-search-result-file:Projects/UI Lifecycle.md"]
+        XCTAssertTrue(result.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["list-search-result-file:Daily/2026-07-17.md"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style searchable list capture bar"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        result.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
+    }
+
     func testNotesGalleryViewPersistsAndKeepsSelectionActions() {
         let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
         let allNotes = app.buttons["all-notes-link"]
@@ -1395,6 +1421,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(second.exists)
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertEqual(first.frame.midY, second.frame.midY, accuracy: 3)
+        let gallerySearch = app.textFields["library-search-field"]
+        let galleryNewNote = app.buttons["new-note-button"]
+        XCTAssertTrue(waitForHittable(gallerySearch))
+        XCTAssertTrue(waitForHittable(galleryNewNote))
+        XCTAssertLessThanOrEqual(galleryNewNote.frame.maxY, app.frame.maxY)
+        XCTAssertGreaterThan(galleryNewNote.frame.minY, app.frame.height * 0.75)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Notes-style gallery view"

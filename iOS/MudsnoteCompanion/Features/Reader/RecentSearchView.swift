@@ -2,6 +2,11 @@ import QuickLook
 import SwiftUI
 import ImageIO
 
+private struct NotesListSearchTaskID: Hashable {
+    var query: String
+    var libraryRevision: Int
+}
+
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
@@ -849,14 +854,87 @@ private struct NoteListSortMenuContent: View {
     }
 }
 
+private struct NoteListSearchResultsView: View {
+    var query: String
+    var results: [MarkdownSearchResult]
+    var isPending: Bool
+    var open: (MarkdownSearchResult) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if isPending {
+                    ProgressView("Searching…")
+                        .frame(maxWidth: .infinity)
+                        .padding(32)
+                } else if results.isEmpty {
+                    ContentUnavailableView.search(text: query)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 48)
+                } else {
+                    ForEach(results) { result in
+                        Button {
+                            open(result)
+                        } label: {
+                            SearchResultRow(result: result, query: query)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("list-search-result-\(result.id)")
+
+                        if result.id != results.last?.id {
+                            Divider().padding(.leading, 18)
+                        }
+                    }
+                }
+            }
+            .background(
+                results.isEmpty ? Color.clear : MudsnoteColors.card,
+                in: RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+            )
+            .overlay {
+                if !results.isEmpty {
+                    RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 110)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .accessibilityIdentifier("note-list-search-results")
+    }
+}
+
+private struct NotesListCountLabel: View {
+    var count: Int
+
+    var body: some View {
+        Text(
+            String.localizedStringWithFormat(
+                String(localized: "notes.count.format"),
+                count
+            )
+        )
+        .font(.subheadline)
+        .foregroundStyle(MudsnoteColors.muted)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+        .accessibilityIdentifier("note-list-count")
+    }
+}
+
 struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
+    @FocusState private var isSearchFocused: Bool
     @AppStorage("mudsnote.ios.noteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.noteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
     @AppStorage("mudsnote.ios.groupNotesByDate") private var groupByDate = true
     @State private var isSelecting = false
     @State private var selectedPaths = Set<String>()
+    @State private var searchQuery = ""
     var title: String
     var scope: LibraryFileScope
 
@@ -891,41 +969,65 @@ struct FolderNotesListView: View {
     private var selectedFiles: [RecentMarkdownFile] {
         files.filter { selectedPaths.contains($0.relativePath) }
     }
+    private var normalizedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var scopedSearchResults: [MarkdownSearchResult] {
+        appModel.searchResults.filter(scope.contains)
+    }
+    private var searchIsPending: Bool {
+        appModel.isSearching || appModel.completedSearchQuery != normalizedSearchQuery
+    }
 
     var body: some View {
         Group {
-            if viewStyle == .gallery, !files.isEmpty {
-                noteGallery
+            if !normalizedSearchQuery.isEmpty {
+                NoteListSearchResultsView(
+                    query: normalizedSearchQuery,
+                    results: scopedSearchResults,
+                    isPending: searchIsPending
+                ) { result in
+                    isSearchFocused = false
+                    appModel.openSearchResult(result)
+                }
             } else {
-                List {
-                    if files.isEmpty {
-                        Text("No Notes")
-                            .foregroundStyle(MudsnoteColors.muted)
+                VStack(alignment: .leading, spacing: 0) {
+                    NotesListCountLabel(count: files.count)
+
+                    if viewStyle == .gallery, !files.isEmpty {
+                        noteGallery
                     } else {
-                        if !pinnedFiles.isEmpty {
-                            Section("Pinned") {
-                                ForEach(pinnedFiles) { file in
-                                    noteRow(file)
+                        List {
+                            if files.isEmpty {
+                                Text("No Notes")
+                                    .foregroundStyle(MudsnoteColors.muted)
+                            } else {
+                                if !pinnedFiles.isEmpty {
+                                    Section("Pinned") {
+                                        ForEach(pinnedFiles) { file in
+                                            noteRow(file)
+                                        }
+                                    }
+                                }
+                                ForEach(otherSections) { section in
+                                    Section {
+                                        ForEach(section.files) { file in
+                                            noteRow(file)
+                                        }
+                                    } header: {
+                                        if let title = section.title {
+                                            Text(title)
+                                        } else if !pinnedFiles.isEmpty {
+                                            Text("Notes")
+                                        }
+                                    }
                                 }
                             }
                         }
-                        ForEach(otherSections) { section in
-                            Section {
-                                ForEach(section.files) { file in
-                                    noteRow(file)
-                                }
-                            } header: {
-                                if let title = section.title {
-                                    Text(title)
-                                } else if !pinnedFiles.isEmpty {
-                                    Text("Notes")
-                                }
-                            }
-                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
         .background(MudsnoteColors.canvas)
@@ -976,7 +1078,37 @@ struct FolderNotesListView: View {
                     destinations: appModel.allFolders,
                     finish: finishSelecting
                 )
+            } else {
+                NotesBottomCommandBar(
+                    searchText: $searchQuery,
+                    searchFocused: $isSearchFocused
+                ) {
+                    isSearchFocused = false
+                    appModel.showCapture(.audio)
+                } newNote: {
+                    isSearchFocused = false
+                    appModel.createStandaloneNote(inFolder: scope.newNoteFolder)
+                } quickNote: {
+                    isSearchFocused = false
+                    appModel.showCapture(.text)
+                }
             }
+        }
+        .task(id: NotesListSearchTaskID(
+            query: normalizedSearchQuery,
+            libraryRevision: appModel.libraryRevision
+        )) {
+            guard !normalizedSearchQuery.isEmpty else {
+                appModel.clearSearch()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await appModel.searchLibrary(query: normalizedSearchQuery)
+        }
+        .onDisappear {
+            isSearchFocused = false
+            appModel.clearSearch()
         }
         .onChange(of: files.map(\.relativePath)) { _, paths in
             selectedPaths.formIntersection(paths)
@@ -1054,11 +1186,32 @@ enum LibraryFileScope {
             inventory.filter { $0.relativePath.hasPrefix(prefix) }
         }
     }
+
+    func contains(_ result: MarkdownSearchResult) -> Bool {
+        switch (self, result.destination) {
+        case (.all, _):
+            true
+        case (.pathPrefix(let prefix), .file(let file)):
+            file.relativePath.hasPrefix(prefix)
+        case (.pathPrefix, .memo):
+            false
+        }
+    }
+
+    var newNoteFolder: String? {
+        switch self {
+        case .all:
+            nil
+        case .pathPrefix(let prefix):
+            prefix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+    }
 }
 
 struct LibraryFolderView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var isSearchFocused: Bool
     var folder: LibraryFolderNode
     @State private var isCreatingFolder = false
     @State private var isRenamingFolder = false
@@ -1066,6 +1219,7 @@ struct LibraryFolderView: View {
     @State private var folderName = ""
     @State private var isSelecting = false
     @State private var selectedPaths = Set<String>()
+    @State private var searchQuery = ""
     @AppStorage("mudsnote.ios.noteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.noteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
@@ -1114,58 +1268,86 @@ struct LibraryFolderView: View {
     private var selectedFiles: [RecentMarkdownFile] {
         directFiles.filter { selectedPaths.contains($0.relativePath) }
     }
+    private var normalizedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var scopedSearchResults: [MarkdownSearchResult] {
+        let directPaths = Set(directFiles.map(\.relativePath))
+        return appModel.searchResults.filter { result in
+            guard case .file(let file) = result.destination else { return false }
+            return directPaths.contains(file.relativePath)
+        }
+    }
+    private var searchIsPending: Bool {
+        appModel.isSearching || appModel.completedSearchQuery != normalizedSearchQuery
+    }
 
     var body: some View {
         Group {
-            if viewStyle == .gallery {
-                folderGallery
+            if !normalizedSearchQuery.isEmpty {
+                NoteListSearchResultsView(
+                    query: normalizedSearchQuery,
+                    results: scopedSearchResults,
+                    isPending: searchIsPending
+                ) { result in
+                    isSearchFocused = false
+                    appModel.openSearchResult(result)
+                }
             } else {
-                List {
-                    if !isSelecting {
-                        ForEach(currentFolder.children) { child in
-                            NavigationLink {
-                                LibraryFolderView(folder: child)
-                            } label: {
-                                LibraryFolderRow(
-                                    title: child.name,
-                                    subtitle: child.relativePath,
-                                    systemImage: "folder.fill",
-                                    count: child.totalNoteCount
-                                )
-                            }
-                            .accessibilityIdentifier("folder-row-\(child.relativePath)")
-                            .modifier(FolderLifecycleActions(folder: child))
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    NotesListCountLabel(count: directFiles.count)
 
-                    if !pinnedFiles.isEmpty {
-                        Section("Pinned") {
-                            ForEach(pinnedFiles) { file in
-                                noteRow(file)
+                    if viewStyle == .gallery {
+                        folderGallery
+                    } else {
+                        List {
+                            if !isSelecting {
+                                ForEach(currentFolder.children) { child in
+                                    NavigationLink {
+                                        LibraryFolderView(folder: child)
+                                    } label: {
+                                        LibraryFolderRow(
+                                            title: child.name,
+                                            subtitle: child.relativePath,
+                                            systemImage: "folder.fill",
+                                            count: child.totalNoteCount
+                                        )
+                                    }
+                                    .accessibilityIdentifier("folder-row-\(child.relativePath)")
+                                    .modifier(FolderLifecycleActions(folder: child))
+                                }
                             }
-                        }
-                    }
-                    ForEach(otherSections) { section in
-                        Section {
-                            ForEach(section.files) { file in
-                                noteRow(file)
-                            }
-                        } header: {
-                            if let title = section.title {
-                                Text(title)
-                            } else if !pinnedFiles.isEmpty {
-                                Text("Notes")
-                            }
-                        }
-                    }
 
-                    if currentFolder.children.isEmpty, directFiles.isEmpty {
-                        ContentUnavailableView("No Notes", systemImage: "folder")
-                            .listRowBackground(Color.clear)
+                            if !pinnedFiles.isEmpty {
+                                Section("Pinned") {
+                                    ForEach(pinnedFiles) { file in
+                                        noteRow(file)
+                                    }
+                                }
+                            }
+                            ForEach(otherSections) { section in
+                                Section {
+                                    ForEach(section.files) { file in
+                                        noteRow(file)
+                                    }
+                                } header: {
+                                    if let title = section.title {
+                                        Text(title)
+                                    } else if !pinnedFiles.isEmpty {
+                                        Text("Notes")
+                                    }
+                                }
+                            }
+
+                            if currentFolder.children.isEmpty, directFiles.isEmpty {
+                                ContentUnavailableView("No Notes", systemImage: "folder")
+                                    .listRowBackground(Color.clear)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
         .background(MudsnoteColors.canvas)
@@ -1275,6 +1457,20 @@ struct LibraryFolderView: View {
                     destinations: moveDestinations,
                     finish: finishSelecting
                 )
+            } else {
+                NotesBottomCommandBar(
+                    searchText: $searchQuery,
+                    searchFocused: $isSearchFocused
+                ) {
+                    isSearchFocused = false
+                    appModel.showCapture(.audio)
+                } newNote: {
+                    isSearchFocused = false
+                    appModel.createStandaloneNote(inFolder: currentFolder.relativePath)
+                } quickNote: {
+                    isSearchFocused = false
+                    appModel.showCapture(.text)
+                }
             }
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -1320,6 +1516,22 @@ struct LibraryFolderView: View {
         }
         .onChange(of: directFiles.map(\.relativePath)) { _, paths in
             selectedPaths.formIntersection(paths)
+        }
+        .task(id: NotesListSearchTaskID(
+            query: normalizedSearchQuery,
+            libraryRevision: appModel.libraryRevision
+        )) {
+            guard !normalizedSearchQuery.isEmpty else {
+                appModel.clearSearch()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await appModel.searchLibrary(query: normalizedSearchQuery)
+        }
+        .onDisappear {
+            isSearchFocused = false
+            appModel.clearSearch()
         }
     }
 
