@@ -1114,6 +1114,40 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 5))
     }
 
+    func testLibrarySearchSuggestionsFilterAndReturnToTextSearch() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+
+        let search = app.textFields["library-search-field"]
+        search.tap()
+        let attachments = app.buttons["search-suggestion-attachments"]
+        XCTAssertTrue(attachments.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["search-suggestion-pinned"].exists)
+        XCTAssertTrue(app.buttons["search-suggestion-checklists"].exists)
+        XCTAssertTrue(app.buttons["search-suggestion-editedToday"].exists)
+        attachments.tap()
+
+        let result = app.buttons["search-result-file:Projects/UI Lifecycle.md"]
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes-style attachment search suggestion"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        let scope = app.segmentedControls["search-scope-picker"]
+        scope.buttons["Inbox"].tap()
+        XCTAssertTrue(app.staticTexts["No Results"].waitForExistence(timeout: 5))
+        scope.buttons["All"].tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+
+        search.tap()
+        search.typeText("Restore")
+        XCTAssertFalse(attachments.exists)
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        app.buttons["clear-library-search"].tap()
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 5))
+    }
+
     func testLibrarySearchFindsTextInsideImageAttachment() {
         let app = launchApp(
             reset: true,

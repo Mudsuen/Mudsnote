@@ -379,6 +379,16 @@
         }
       }
     },
+    "Clear Filter": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除筛选"
+          }
+        }
+      }
+    },
     "Match Tags": {
       "localizations": {
         "zh-Hans": {
@@ -1385,6 +1395,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索"
+          }
+        }
+      }
+    },
+    "Suggestions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
+    "Choose a suggestion or start typing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一项建议，或开始输入。"
           }
         }
       }

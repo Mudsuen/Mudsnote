@@ -81,6 +81,96 @@ enum SmartFolderChecklistFilter: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum NotesSearchSuggestion: String, CaseIterable, Identifiable {
+    case pinned
+    case attachments
+    case checklists
+    case editedToday
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pinned: String(localized: "Pinned")
+        case .attachments: String(localized: "With Attachments")
+        case .checklists: String(localized: "With Checklists")
+        case .editedToday: String(localized: "Edited Today")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .pinned: "pin.fill"
+        case .attachments: "paperclip"
+        case .checklists: "checklist"
+        case .editedToday: "clock"
+        }
+    }
+
+    var filter: SmartFolderDefinition {
+        switch self {
+        case .pinned:
+            SmartFolderDefinition(name: label, pinned: true)
+        case .attachments:
+            SmartFolderDefinition(name: label, attachmentFilter: .withAttachments)
+        case .checklists:
+            SmartFolderDefinition(name: label, checklistFilter: .withChecklist)
+        case .editedToday:
+            SmartFolderDefinition(name: label, dateFilter: .editedToday)
+        }
+    }
+
+    func results(
+        files: [RecentMarkdownFile],
+        memos: [MemoBlock],
+        scope: MarkdownSearchScope,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent,
+        limit: Int = 80
+    ) -> [MarkdownSearchResult] {
+        var results: [MarkdownSearchResult] = []
+        if scope != .inbox {
+            results += files.lazy
+                .filter { $0.relativePath != "Inbox.md" }
+                .filter { filter.matches(file: $0, now: now, calendar: calendar) }
+                .map { file in
+                    MarkdownSearchResult(
+                        id: "file:\(file.relativePath)",
+                        title: file.title,
+                        context: file.preview,
+                        location: file.relativePath,
+                        score: 0,
+                        modifiedAt: file.modifiedAt,
+                        destination: .file(file)
+                    )
+                }
+        }
+        if scope != .notes {
+            results += memos.lazy
+                .filter { filter.matches(memo: $0, now: now, calendar: calendar) }
+                .map { memo in
+                    MarkdownSearchResult(
+                        id: "memo:\(memo.id)",
+                        title: memo.body.split(separator: "\n").first.map(String.init)
+                            ?? String(localized: "Untitled memo"),
+                        context: memo.preview,
+                        location: String(localized: "Inbox"),
+                        score: 0,
+                        modifiedAt: SmartFolderMemoDate.date(from: memo.dateText) ?? .distantPast,
+                        destination: .memo(memo)
+                    )
+                }
+        }
+        return results
+            .sorted {
+                if $0.modifiedAt == $1.modifiedAt { return $0.id < $1.id }
+                return $0.modifiedAt > $1.modifiedAt
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+}
+
 struct SmartFolderDefinition: Codable, Equatable, Identifiable {
     var id: UUID
     var name: String

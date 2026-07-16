@@ -32,7 +32,8 @@ Notes database.
 - Direct Markdown editing with headings, emphasis, lists, checklists, quotes, code,
   links, undo, and redo.
 - Full-text search across title, path, tags, body, referenced images, and scanned PDFs
-  with useful result context; Find in Note can include those attachments.
+  with useful result context and structured suggestions; Find in Note can include
+  those attachments.
 - Images, files, audio notes with local recording transcription, attachment browsing,
   and portable relative Markdown references.
 - Offline-first writes, pending replay, external-edit conflict protection, and clear
@@ -47,6 +48,8 @@ Notes database.
 - Apple account/database integration or proprietary Notes import that depends on
   private storage formats.
 - iPad-specific layout and test work.
+- Further iPhone table-authoring expansion is deferred for now; preserve the existing
+  portable Markdown table support without prioritizing additional table UI.
 - Features that require a server account when the same value can be delivered with
   local Markdown and iCloud Drive.
 

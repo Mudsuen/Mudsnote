@@ -13,6 +13,7 @@ struct LibraryHomeView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var searchQuery = ""
     @State private var searchScope = MarkdownSearchScope.all
+    @State private var searchSuggestion: NotesSearchSuggestion?
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @State private var smartFolderEditor: SmartFolderDefinition?
@@ -22,7 +23,7 @@ struct LibraryHomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if normalizedSearchQuery.isEmpty {
+                if !showsSearchExperience {
                     VStack(alignment: .leading, spacing: 22) {
                         accountSection
                         if !appModel.smartFolders.isEmpty {
@@ -46,11 +47,22 @@ struct LibraryHomeView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded {
+                if isSearchFocused { isSearchFocused = false }
+            })
             .background(NotesCloneColors.background)
             .refreshable {
                 await appModel.refreshInbox()
             }
             .navigationTitle("Folders")
+            .onChange(of: searchQuery) { _, value in
+                if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    searchSuggestion = nil
+                }
+            }
+            .onDisappear {
+                isSearchFocused = false
+            }
             .task(id: SearchTaskID(
                 query: searchQuery,
                 scope: searchScope,
@@ -301,7 +313,31 @@ struct LibraryHomeView: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("search-scope-picker")
 
-            if searchIsPending {
+            if normalizedSearchQuery.isEmpty {
+                searchSuggestions
+            }
+
+            if searchSuggestion != nil {
+                if suggestedSearchResults.isEmpty {
+                    Text("No Results")
+                        .foregroundStyle(.secondary)
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
+                } else {
+                    notesCard {
+                        ForEach(suggestedSearchResults) { result in
+                            searchResultButton(result, query: "")
+                        }
+                    }
+                }
+            } else if normalizedSearchQuery.isEmpty {
+                Text("Choose a suggestion or start typing.")
+                    .foregroundStyle(.secondary)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
+            } else if searchIsPending {
                 ProgressView("Searching…")
                     .frame(maxWidth: .infinity)
                     .padding(24)
@@ -314,25 +350,94 @@ struct LibraryHomeView: View {
             } else {
                 notesCard {
                     ForEach(appModel.searchResults) { result in
-                        Button {
-                            isSearchFocused = false
-                            appModel.openSearchResult(result)
-                        } label: {
-                            SearchResultRow(
-                                result: result,
-                                query: appModel.completedSearchQuery
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("search-result-\(result.id)")
+                        searchResultButton(result, query: appModel.completedSearchQuery)
                     }
                 }
             }
         }
     }
 
+    private var searchSuggestions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Suggestions")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+                Spacer()
+                if searchSuggestion != nil {
+                    Button("Clear Filter") {
+                        searchSuggestion = nil
+                        isSearchFocused = false
+                    }
+                    .font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("clear-search-suggestion")
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(NotesSearchSuggestion.allCases) { suggestion in
+                        Button {
+                            searchSuggestion = suggestion
+                            isSearchFocused = false
+                            appModel.clearSearch()
+                        } label: {
+                            Label(suggestion.label, systemImage: suggestion.systemImage)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(
+                                    searchSuggestion == suggestion
+                                        ? Color.black
+                                        : MudsnoteColors.text
+                                )
+                                .padding(.horizontal, 12)
+                                .frame(height: 36)
+                                .background(
+                                    searchSuggestion == suggestion
+                                        ? NotesCloneColors.folderYellow
+                                        : MudsnoteColors.card,
+                                    in: Capsule()
+                                )
+                                .overlay {
+                                    Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("search-suggestion-\(suggestion.id)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func searchResultButton(
+        _ result: MarkdownSearchResult,
+        query: String
+    ) -> some View {
+        Button {
+            isSearchFocused = false
+            appModel.openSearchResult(result)
+        } label: {
+            SearchResultRow(result: result, query: query)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("search-result-\(result.id)")
+    }
+
     private var normalizedSearchQuery: String {
         searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var showsSearchExperience: Bool {
+        isSearchFocused || !normalizedSearchQuery.isEmpty || searchSuggestion != nil
+    }
+
+    private var suggestedSearchResults: [MarkdownSearchResult] {
+        guard let searchSuggestion else { return [] }
+        return searchSuggestion.results(
+            files: appModel.libraryFiles,
+            memos: appModel.inboxItems,
+            scope: searchScope
+        )
     }
 
     private var searchIsPending: Bool {
@@ -2246,6 +2351,7 @@ struct NotesBottomCommandBar: View {
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
+                        searchFocused.wrappedValue = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18, weight: .semibold))

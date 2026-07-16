@@ -196,6 +196,96 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertNil(SmartFolderDefinition(name: "Bad/Name", includedTags: ["#project"]).normalized)
     }
 
+    func testSearchSuggestionsProduceStructuredScopedResultsWithoutFakeQueries() throws {
+        let now = Date()
+        let memoDateFormatter = DateFormatter()
+        memoDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        memoDateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let attached = RecentMarkdownFile(
+            id: "Attached.md",
+            relativePath: "Projects/Attached.md",
+            title: "Attached",
+            modifiedAt: now,
+            preview: "Reference file",
+            hasAttachments: true
+        )
+        let pinned = RecentMarkdownFile(
+            id: "Pinned.md",
+            relativePath: "Pinned.md",
+            title: "Pinned",
+            modifiedAt: now.addingTimeInterval(-3 * 24 * 60 * 60),
+            isPinned: true
+        )
+        let checklist = RecentMarkdownFile(
+            id: "Checklist.md",
+            relativePath: "Checklist.md",
+            title: "Checklist",
+            modifiedAt: now.addingTimeInterval(-120),
+            hasChecklist: true,
+            hasUncheckedChecklist: true
+        )
+        let memo = MemoBlock(
+            id: "attachment-memo",
+            dateText: memoDateFormatter.string(from: now),
+            body: "Quick reference\n![Photo](Attachments/photo.png)",
+            tags: []
+        )
+        let files = [attached, pinned, checklist]
+
+        let allAttachments = NotesSearchSuggestion.attachments.results(
+            files: files,
+            memos: [memo],
+            scope: .all,
+            now: now
+        )
+        XCTAssertEqual(Set(allAttachments.map(\.id)), ["file:Projects/Attached.md", "memo:attachment-memo"])
+        XCTAssertEqual(
+            NotesSearchSuggestion.attachments.results(
+                files: files,
+                memos: [memo],
+                scope: .notes,
+                now: now
+            ).map(\.id),
+            ["file:Projects/Attached.md"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.attachments.results(
+                files: files,
+                memos: [memo],
+                scope: .inbox,
+                now: now
+            ).map(\.id),
+            ["memo:attachment-memo"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.pinned.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id),
+            ["file:Pinned.md"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.checklists.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id),
+            ["file:Checklist.md"]
+        )
+        XCTAssertEqual(
+            Set(NotesSearchSuggestion.editedToday.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id)),
+            ["file:Projects/Attached.md", "file:Checklist.md", "memo:attachment-memo"]
+        )
+    }
+
     func testSmartFolderStorePersistsLifecycleWithoutMovingNotes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
