@@ -130,6 +130,15 @@
     "Take Photo": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍照" } } }
     },
+    "File attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加文件" } } }
+    },
+    "Couldn’t Attach File": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法附加文件" } } }
+    },
+    "Try choosing the file again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请重新选择文件。" } } }
+    },
     "Couldn’t Take Photo": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法拍照" } } }
     },

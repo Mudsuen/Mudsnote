@@ -3296,6 +3296,59 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testQuickCaptureAcceptsGenericFileAndPreservesPortableName() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = root.appendingPathComponent("Launch Brief.v2.pdf")
+        let sourceData = Data("portable quick-capture file".utf8)
+        try sourceData.write(to: sourceURL, options: .atomic)
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+
+        let errorMessage = await model.attachFile(sourceURL)
+
+        XCTAssertNil(errorMessage)
+        XCTAssertTrue(model.draft.canSend)
+        XCTAssertEqual(model.draft.attachments.count, 1)
+        guard case .file(let data, let fileExtension, let baseName) = model.draft.attachments[0] else {
+            return XCTFail("The selected document should use the portable file attachment pipeline")
+        }
+        XCTAssertEqual(data, sourceData)
+        XCTAssertEqual(fileExtension, "pdf")
+        XCTAssertEqual(baseName, "Launch Brief.v2")
+    }
+
+    @MainActor
+    func testQuickCaptureRejectsOversizedGenericFileWithoutChangingDraft() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = root.appendingPathComponent("Too Large.zip")
+        try Data().write(to: sourceURL, options: .atomic)
+        let file = try FileHandle(forWritingTo: sourceURL)
+        try file.truncate(
+            atOffset: UInt64(CaptureAttachmentPolicy.maximumFileBytes + 1)
+        )
+        try file.close()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+
+        let errorMessage = await model.attachFile(sourceURL)
+
+        XCTAssertEqual(
+            errorMessage,
+            CaptureAttachmentError.tooLarge(
+                maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
+            ).localizedDescription
+        )
+        XCTAssertTrue(model.draft.attachments.isEmpty)
+        XCTAssertFalse(model.draft.canSend)
+    }
+
+    @MainActor
     func testMarkdownEditorPresentationKeepsSourceWhileRenderingSyntax() throws {
         let markdown = "# Heading\n\n- Bullet\n- [ ] Ship editor\n- [x] Keep Markdown\n\n**Bold** and `code` with [Link](https://example.com)"
         let view = MarkdownRichTextView()

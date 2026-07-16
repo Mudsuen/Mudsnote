@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import VisionKit
 
 struct CaptureConsoleView: View {
@@ -9,8 +10,10 @@ struct CaptureConsoleView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
     @State private var isCameraPresented = false
+    @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
     @State private var cameraErrorMessage: String?
+    @State private var fileErrorMessage: String?
     @State private var scanErrorMessage: String?
     @State private var refocusAfterCamera = false
     @State private var refocusAfterScanner = false
@@ -58,6 +61,26 @@ struct CaptureConsoleView: View {
             selection: $selectedPhotoItem,
             matching: .images
         )
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    fileErrorMessage = await appModel.attachFile(url)
+                    isBodyFocused = fileErrorMessage == nil
+                }
+            case .failure(let error):
+                if (error as? CocoaError)?.code == .userCancelled {
+                    isBodyFocused = true
+                } else {
+                    fileErrorMessage = error.localizedDescription
+                }
+            }
+        }
         .fullScreenCover(
             isPresented: $isCameraPresented,
             onDismiss: refocusCaptureAfterCameraIfNeeded
@@ -128,6 +151,17 @@ struct CaptureConsoleView: View {
         } message: {
             Text(cameraErrorMessage ?? "Try taking the photo again.")
         }
+        .alert("Couldn’t Attach File", isPresented: Binding(
+            get: { fileErrorMessage != nil },
+            set: { if !$0 { fileErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                fileErrorMessage = nil
+                isBodyFocused = true
+            }
+        } message: {
+            Text(fileErrorMessage ?? "Try choosing the file again.")
+        }
         .onDisappear {
             appModel.cancelAudioRecording()
         }
@@ -152,6 +186,14 @@ struct CaptureConsoleView: View {
                 }
                 .disabled(!CameraPhotoCapture.isAvailable)
                 .accessibilityIdentifier("capture-take-photo")
+
+                Button {
+                    isBodyFocused = false
+                    isFileImporterPresented = true
+                } label: {
+                    Label("Add File", systemImage: "doc")
+                }
+                .accessibilityIdentifier("capture-add-file")
 
                 Button {
                     isBodyFocused = false

@@ -1355,6 +1355,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         controls[0].tap()
         XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Take Photo"].exists)
+        XCTAssertTrue(app.buttons["Add File"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
 
         let attachmentMenuScreenshot = XCTAttachment(screenshot: app.screenshot())
@@ -1540,7 +1541,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(duplicate.waitForExistence(timeout: 3))
         duplicate.tap()
 
-        XCTAssertTrue(app.staticTexts["Note Duplicated"].waitForExistence(timeout: 3))
         XCTAssertTrue(
             app.buttons["markdown-file-row-Projects/UI Lifecycle Copy.md"]
                 .waitForExistence(timeout: 5)

@@ -281,6 +281,21 @@ final class AppModel: ObservableObject {
         statusToast = .saved(String(localized: "Image attached"))
     }
 
+    func attachFile(_ url: URL) async -> String? {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment = try importedFileAttachment(from: url)
+            try appendAttachment(attachment)
+            statusToast = .saved(String(localized: "File attached"))
+            return nil
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return error.localizedDescription
+        }
+    }
+
     func attachScannedDocument(_ pages: [UIImage]) async -> String? {
         guard !isSendingDraft, attachmentPreparationCount == 0 else { return nil }
         attachmentPreparationCount += 1
@@ -1292,21 +1307,8 @@ final class AppModel: ObservableObject {
         guard attachmentPreparationCount == 0 else { return nil }
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
-            let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-            guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
-            if let byteCount = values.fileSize,
-               byteCount > CaptureAttachmentPolicy.maximumFileBytes {
-                throw CaptureAttachmentError.tooLarge(
-                    maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
-                )
-            }
-            let attachment = try CaptureAttachment.validatedFile(
-                data: Data(contentsOf: url, options: .mappedIfSafe),
-                suggestedName: url.lastPathComponent
-            )
+            let attachment = try importedFileAttachment(from: url)
             let updated = try await fileStore.attachToMarkdownDocument(
                 relativePath: document.relativePath,
                 markdown: markdown,
@@ -1322,6 +1324,23 @@ final class AppModel: ObservableObject {
             statusToast = .error(error.localizedDescription)
             return nil
         }
+    }
+
+    private func importedFileAttachment(from url: URL) throws -> CaptureAttachment {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
+        if let byteCount = values.fileSize,
+           byteCount > CaptureAttachmentPolicy.maximumFileBytes {
+            throw CaptureAttachmentError.tooLarge(
+                maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
+            )
+        }
+        return try CaptureAttachment.validatedFile(
+            data: Data(contentsOf: url, options: .mappedIfSafe),
+            suggestedName: url.lastPathComponent
+        )
     }
 
     func attachAudio(
