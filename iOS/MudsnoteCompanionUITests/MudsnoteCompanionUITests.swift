@@ -979,16 +979,71 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         preview.tap()
         let quickLook = app.otherElements["QLPreviewControllerView"]
-        let close = app.buttons["QLOverlayDoneButtonAccessibilityIdentifier"]
+        let close = app.buttons["attachment-preview-done"]
         XCTAssertTrue(quickLook.waitForExistence(timeout: 5))
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["ui-test"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches["QLOverlayMarkupButtonAccessibilityIdentifier"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Generic attachment Quick Look"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         close.tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+    }
+
+    func testPDFAttachmentOpensSystemMarkupPreview() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["rendered-markdown-table"]
+                .waitForExistence(timeout: 5)
+        )
+
+        let preview = app.buttons["preview-attachment-Attachments/ui-test.pdf"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        preview.tap()
+
+        let quickLook = app.otherElements["QLPreviewControllerView"]
+        let markup = app.switches["QLOverlayMarkupButtonAccessibilityIdentifier"]
+        let done = app.buttons["attachment-preview-done"]
+        XCTAssertTrue(quickLook.waitForExistence(timeout: 5))
+        XCTAssertTrue(markup.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["ui-test"].waitForExistence(timeout: 5))
+
+        markup.tap()
+        XCTAssertTrue(waitForNonexistence(markup))
+
+        let strokeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.34, dy: 0.34))
+        let strokeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.66, dy: 0.42))
+        strokeStart.press(forDuration: 0.2, thenDragTo: strokeEnd)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Active PDF markup tools"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        done.tap()
+        XCTAssertTrue(app.staticTexts["PDF markup saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+
+        preview.tap()
+        XCTAssertTrue(quickLook.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["attachment-preview-done"]
+                .waitForExistence(timeout: 5)
+        )
+        let persistedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        persistedScreenshot.name = "Persisted PDF markup"
+        persistedScreenshot.lifetime = .keepAlways
+        add(persistedScreenshot)
+        app.buttons["attachment-preview-done"].tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
     }
 

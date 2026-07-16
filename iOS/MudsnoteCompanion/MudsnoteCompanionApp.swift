@@ -117,9 +117,33 @@ private enum MudsnoteUITestLaunchConfiguration {
                     to: root.appendingPathComponent("Attachments/ui-test.mp4"),
                     options: .atomic
                 )
+                let pdfRenderer = UIGraphicsPDFRenderer(
+                    bounds: CGRect(x: 0, y: 0, width: 612, height: 792)
+                )
+                let pdfData = pdfRenderer.pdfData { context in
+                    context.beginPage()
+                    NSString(string: "Launch Brief").draw(
+                        at: CGPoint(x: 54, y: 64),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 30, weight: .bold),
+                            .foregroundColor: UIColor.black,
+                        ]
+                    )
+                    NSString(string: "Review and mark up this scanned document.").draw(
+                        at: CGPoint(x: 54, y: 118),
+                        withAttributes: [
+                            .font: UIFont.systemFont(ofSize: 18),
+                            .foregroundColor: UIColor.darkGray,
+                        ]
+                    )
+                }
+                try pdfData.write(
+                    to: root.appendingPathComponent("Attachments/ui-test.pdf"),
+                    options: .atomic
+                )
                 let projects = root.appendingPathComponent("Projects", isDirectory: true)
                 try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-                try "# UI Lifecycle\n\nRestore this note end to end.\n\nContact support@example.com or +1 (415) 555-0123.\n\n[Video](Attachments/ui-test.mp4)\n\n[QA Document](Attachments/ui-test.txt)\n\n| Item | Status |\n| --- | --- |\n| Preview | Ready |\n".write(
+                try "# UI Lifecycle\n\nRestore this note end to end.\n\nContact support@example.com or +1 (415) 555-0123.\n\n[Video](Attachments/ui-test.mp4)\n\n[Scanned Brief](Attachments/ui-test.pdf)\n\n[QA Document](Attachments/ui-test.txt)\n\n| Item | Status |\n| --- | --- |\n| Preview | Ready |\n".write(
                     to: projects.appendingPathComponent("UI Lifecycle.md"),
                     atomically: true,
                     encoding: .utf8

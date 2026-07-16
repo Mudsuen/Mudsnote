@@ -1499,14 +1499,36 @@ final class AppModel: ObservableObject {
         await searchLibrary(query: activeSearchQuery, scope: activeSearchScope)
     }
 
-    func previewURL(for attachment: LibraryAttachment) async -> URL? {
+    func prepareAttachmentPreview(relativePath: String) async -> PreparedAttachmentPreview? {
         do {
             return try await fileStore.prepareAttachmentPreview(
-                relativePath: attachment.relativePath
+                relativePath: relativePath
             )
         } catch {
             statusToast = .error(String(localized: "Could not open attachment"))
             return nil
+        }
+    }
+
+    func prepareAttachmentPreview(for attachment: LibraryAttachment) async -> PreparedAttachmentPreview? {
+        await prepareAttachmentPreview(relativePath: attachment.relativePath)
+    }
+
+    func commitEditedAttachmentPreview(
+        _ preview: PreparedAttachmentPreview,
+        editedURL: URL
+    ) async {
+        do {
+            let changed = try await fileStore.commitEditedAttachmentPreview(
+                preview,
+                editedURL: editedURL
+            )
+            guard changed else { return }
+            statusToast = .saved(String(localized: "PDF markup saved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+        } catch {
+            statusToast = .error(error.localizedDescription)
         }
     }
 

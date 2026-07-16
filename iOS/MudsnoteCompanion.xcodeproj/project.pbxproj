@@ -18,6 +18,7 @@
 		58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */; };
 		A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* AttachmentTextIndex.swift */; };
 		A60000000000000000000001 /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000002 /* DocumentScanner.swift */; };
+		D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* AttachmentQuickLookPreview.swift */; };
 		A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000002 /* MarkdownNoteLink.swift */; };
 		A80000000000000000000001 /* MarkdownTagSyntax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000002 /* MarkdownTagSyntax.swift */; };
 		A90000000000000000000001 /* SmartFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000002 /* SmartFolder.swift */; };
@@ -100,6 +101,7 @@
 		B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownFileStore.swift; sourceTree = "<group>"; };
 		A50000000000000000000002 /* AttachmentTextIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentTextIndex.swift; sourceTree = "<group>"; };
 		A60000000000000000000002 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/DocumentScanner.swift; sourceTree = "<group>"; };
+		D10000000000000000000002 /* AttachmentQuickLookPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/AttachmentQuickLookPreview.swift; sourceTree = "<group>"; };
 		A70000000000000000000002 /* MarkdownNoteLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownNoteLink.swift; sourceTree = "<group>"; };
 		A80000000000000000000002 /* MarkdownTagSyntax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownTagSyntax.swift; sourceTree = "<group>"; };
 		A90000000000000000000002 /* SmartFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/SmartFolder.swift; sourceTree = "<group>"; };
@@ -206,6 +208,7 @@
 				B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */,
 				A50000000000000000000002 /* AttachmentTextIndex.swift */,
 				A60000000000000000000002 /* DocumentScanner.swift */,
+				D10000000000000000000002 /* AttachmentQuickLookPreview.swift */,
 				A70000000000000000000002 /* MarkdownNoteLink.swift */,
 				A80000000000000000000002 /* MarkdownTagSyntax.swift */,
 				A90000000000000000000002 /* SmartFolder.swift */,
@@ -409,6 +412,7 @@
 				58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */,
 				A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */,
 				A60000000000000000000001 /* DocumentScanner.swift in Sources */,
+				D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */,
 				A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */,
 				A80000000000000000000001 /* MarkdownTagSyntax.swift in Sources */,
 				A90000000000000000000001 /* SmartFolder.swift in Sources */,

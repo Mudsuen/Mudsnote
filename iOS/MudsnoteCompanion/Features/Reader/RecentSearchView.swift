@@ -1,4 +1,3 @@
-import QuickLook
 import SwiftUI
 import ImageIO
 
@@ -3400,7 +3399,7 @@ struct AttachmentLibraryView: View {
     }
 
     @EnvironmentObject private var appModel: AppModel
-    @State private var previewURL: URL?
+    @State private var attachmentPreview: PreparedAttachmentPreview?
     @State private var category = Category.all
 
     private var images: [LibraryAttachment] {
@@ -3468,7 +3467,21 @@ struct AttachmentLibraryView: View {
             await appModel.refreshInbox()
         }
         .navigationTitle("Attachments")
-        .quickLookPreview($previewURL)
+        .fullScreenCover(item: $attachmentPreview) { preview in
+            AttachmentQuickLookPreview(
+                preview: preview,
+                onDismiss: { attachmentPreview = nil },
+                onSave: { editedURL in
+                    Task {
+                        await appModel.commitEditedAttachmentPreview(
+                            preview,
+                            editedURL: editedURL
+                        )
+                    }
+                }
+            )
+            .ignoresSafeArea()
+        }
     }
 
     private var categoryBar: some View {
@@ -3636,7 +3649,7 @@ struct AttachmentLibraryView: View {
 
     private func openPreview(_ attachment: LibraryAttachment) {
         Task {
-            previewURL = await appModel.previewURL(for: attachment)
+            attachmentPreview = await appModel.prepareAttachmentPreview(for: attachment)
         }
     }
 

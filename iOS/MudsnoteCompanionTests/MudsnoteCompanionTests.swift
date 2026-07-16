@@ -2168,8 +2168,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         let preview = try await store.prepareAttachmentPreview(
             relativePath: "Attachments/preview.png"
         )
-        XCTAssertEqual(try Data(contentsOf: preview), bytes)
-        XCTAssertTrue(preview.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        XCTAssertEqual(try Data(contentsOf: preview.url), bytes)
+        XCTAssertEqual(preview.relativePath, "Attachments/preview.png")
+        XCTAssertTrue(preview.url.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        XCTAssertFalse(preview.isPDF)
 
         do {
             _ = try await store.prepareAttachmentPreview(relativePath: "../outside.png")
@@ -2177,6 +2179,55 @@ final class MudsnoteCompanionTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? AttachmentPreviewError, .invalidPath)
         }
+    }
+
+    func testPDFPreviewMarkupCommitsAtomicallyAndRejectsExternalChanges() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachment = root.appendingPathComponent("Attachments/scan.pdf")
+        let original = Data("%PDF-1.7 original".utf8)
+        try original.write(to: attachment, options: .atomic)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let preview = try await store.prepareAttachmentPreview(
+            relativePath: "Attachments/scan.pdf"
+        )
+        XCTAssertTrue(preview.isPDF)
+        let unchanged = try await store.commitEditedAttachmentPreview(
+            preview,
+            editedURL: preview.url
+        )
+        XCTAssertFalse(unchanged)
+        let edited = Data("%PDF-1.7 annotated".utf8)
+        try edited.write(to: preview.url, options: .atomic)
+        let committed = try await store.commitEditedAttachmentPreview(
+            preview,
+            editedURL: preview.url
+        )
+        XCTAssertTrue(committed)
+        XCTAssertEqual(try Data(contentsOf: attachment), edited)
+
+        let stalePreview = try await store.prepareAttachmentPreview(
+            relativePath: "Attachments/scan.pdf"
+        )
+        let external = Data("%PDF-1.7 external".utf8)
+        try external.write(to: attachment, options: .atomic)
+        try Data("%PDF-1.7 stale markup".utf8).write(
+            to: stalePreview.url,
+            options: .atomic
+        )
+        do {
+            _ = try await store.commitEditedAttachmentPreview(
+                stalePreview,
+                editedURL: stalePreview.url
+            )
+            XCTFail("External attachment edits must not be overwritten")
+        } catch {
+            XCTAssertEqual(error as? AttachmentPreviewError, .changedExternally)
+        }
+        XCTAssertEqual(try Data(contentsOf: attachment), external)
     }
 
     func testMarkdownDocumentLoadsInsideAuthorizedLibraryAndRejectsTraversal() async throws {

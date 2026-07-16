@@ -3,7 +3,6 @@ import AVFoundation
 import AVKit
 import PencilKit
 import PhotosUI
-import QuickLook
 import UIKit
 import UniformTypeIdentifiers
 import VisionKit
@@ -67,7 +66,7 @@ struct MarkdownPreviewView: View {
     @State private var isDrawingPresented = false
     @State private var cameraErrorMessage: String?
     @State private var scanErrorMessage: String?
-    @State private var previewURL: URL?
+    @State private var attachmentPreview: PreparedAttachmentPreview?
     @State private var attachmentBeingRenamed: MarkdownAttachmentLine?
     @State private var attachmentName = ""
     @State private var editorDisplayMode: EditorDisplayMode = .rich
@@ -420,7 +419,21 @@ struct MarkdownPreviewView: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-        .quickLookPreview($previewURL)
+        .fullScreenCover(item: $attachmentPreview) { preview in
+            AttachmentQuickLookPreview(
+                preview: preview,
+                onDismiss: { attachmentPreview = nil },
+                onSave: { editedURL in
+                    Task {
+                        await appModel.commitEditedAttachmentPreview(
+                            preview,
+                            editedURL: editedURL
+                        )
+                    }
+                }
+            )
+            .ignoresSafeArea()
+        }
         .fullScreenCover(isPresented: $isCameraPresented) {
             CameraPhotoCaptureView(
                 onComplete: { result in
@@ -1218,7 +1231,7 @@ struct MarkdownPreviewView: View {
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                previewURL = localFileURL(for: attachment.path)
+                                openAttachmentPreview(attachment.path)
                             }
                             .accessibilityIdentifier("preview-attachment-\(attachment.path)")
                     } else {
@@ -1234,9 +1247,9 @@ struct MarkdownPreviewView: View {
                 case .audio, .file:
                     if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
                         AudioAttachmentPlayer(url: url, title: attachment.path)
-                    } else if let url = localFileURL(for: attachment.path) {
+                    } else if localFileURL(for: attachment.path) != nil {
                         Button {
-                            previewURL = url
+                            openAttachmentPreview(attachment.path)
                         } label: {
                             attachmentLabel(attachment)
                         }
@@ -1298,6 +1311,14 @@ struct MarkdownPreviewView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func openAttachmentPreview(_ relativePath: String) {
+        Task {
+            attachmentPreview = await appModel.prepareAttachmentPreview(
+                relativePath: relativePath
+            )
+        }
     }
 
     private func localImage(for relativePath: String) -> UIImage? {

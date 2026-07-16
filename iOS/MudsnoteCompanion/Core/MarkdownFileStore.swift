@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 actor MarkdownFileStore {
@@ -579,7 +580,7 @@ actor MarkdownFileStore {
         return try await searchableAttachmentDocuments(in: markdown, root: root)
     }
 
-    func prepareAttachmentPreview(relativePath: String) throws -> URL {
+    func prepareAttachmentPreview(relativePath: String) throws -> PreparedAttachmentPreview {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(
             relativePath,
@@ -592,18 +593,85 @@ actor MarkdownFileStore {
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
-        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
-        guard values.isRegularFile == true else {
+        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true,
+              let byteCount = values.fileSize,
+              byteCount > 0,
+              byteCount <= CaptureAttachmentPolicy.maximumFileBytes else {
             throw AttachmentPreviewError.invalidPath
         }
+
+        let originalData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
 
         let previewDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("MudsnoteAttachmentPreview", isDirectory: true)
         try? fileManager.removeItem(at: previewDirectory)
         try fileManager.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
         let previewURL = previewDirectory.appendingPathComponent(fileURL.lastPathComponent)
-        try fileManager.copyItem(at: fileURL, to: previewURL)
-        return previewURL
+        try originalData.write(to: previewURL, options: .atomic)
+        return PreparedAttachmentPreview(
+            url: previewURL,
+            relativePath: relativePath,
+            originalDigest: Data(SHA256.hash(data: originalData))
+        )
+    }
+
+    func commitEditedAttachmentPreview(
+        _ preview: PreparedAttachmentPreview,
+        editedURL: URL
+    ) throws -> Bool {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard preview.isPDF,
+              editedURL.pathExtension.lowercased() == "pdf",
+              let targetURL = AuthorizedLibraryPath.resolve(
+                preview.relativePath,
+                within: root,
+                constrainedTo: "Attachments"
+              ),
+              targetURL.pathExtension.lowercased() == "pdf" else {
+            throw AttachmentPreviewError.unsupportedEditing
+        }
+
+        let editedValues = try editedURL.resourceValues(
+            forKeys: [.isRegularFileKey, .fileSizeKey]
+        )
+        guard editedValues.isRegularFile == true,
+              let editedByteCount = editedValues.fileSize,
+              editedByteCount > 0,
+              editedByteCount <= CaptureAttachmentPolicy.maximumFileBytes else {
+            throw AttachmentPreviewError.invalidPath
+        }
+        let editedData = try Data(contentsOf: editedURL, options: .mappedIfSafe)
+        guard Data(SHA256.hash(data: editedData)) != preview.originalDigest else {
+            return false
+        }
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var updateError: Error?
+        coordinator.coordinate(
+            writingItemAt: targetURL,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            do {
+                let currentData = try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+                guard Data(SHA256.hash(data: currentData)) == preview.originalDigest else {
+                    throw AttachmentPreviewError.changedExternally
+                }
+                try editedData.write(to: coordinatedURL, options: .atomic)
+            } catch {
+                updateError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let updateError { throw updateError }
+
+        cachedLibrarySnapshot = nil
+        searchCache.removeAll(keepingCapacity: true)
+        return true
     }
 
     func loadAttachmentThumbnailData(relativePath: String) throws -> Data {
@@ -3089,11 +3157,29 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
     }
 }
 
+struct PreparedAttachmentPreview: Identifiable, Equatable, Sendable {
+    var url: URL
+    var relativePath: String
+    var originalDigest: Data
+
+    var id: String { "\(relativePath)|\(url.path)" }
+    var isPDF: Bool { url.pathExtension.lowercased() == "pdf" }
+}
+
 enum AttachmentPreviewError: LocalizedError, Equatable {
     case invalidPath
+    case unsupportedEditing
+    case changedExternally
 
     var errorDescription: String? {
-        String(localized: "This attachment is outside the authorized library.")
+        switch self {
+        case .invalidPath:
+            String(localized: "This attachment is outside the authorized library.")
+        case .unsupportedEditing:
+            String(localized: "Only PDF attachments can be marked up here.")
+        case .changedExternally:
+            String(localized: "This attachment changed in another app. Reopen it before marking it up.")
+        }
     }
 }
 
