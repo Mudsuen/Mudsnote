@@ -78,6 +78,65 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(warning.waitForExistence(timeout: 5))
     }
 
+    func testAttachmentFailureStaysInCaptureAndRestoresEditing() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            attachmentError: true
+        )
+        let quickNoteButton = app.buttons["quick-note-button"]
+        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
+        quickNoteButton.tap()
+
+        let alert = app.alerts["Couldn’t Add Attachment"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts["The attachment is empty."].exists)
+        XCTAssertTrue(app.textViews["capture-body-editor"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Quick capture attachment recovery"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        alert.buttons["OK"].tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.typeText("Draft continues after attachment failure")
+        XCTAssertTrue((editor.value as? String)?.contains("Draft continues") == true)
+    }
+
+    func testInterruptedWriteKeepsDraftVisibleAndOffersRetry() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            interruptedWrite: true
+        )
+        let quickNoteButton = app.buttons["quick-note-button"]
+        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
+        quickNoteButton.tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("Keep this interrupted draft")
+
+        app.buttons["save-memo-button"].tap()
+
+        let recoveryTitle = app.staticTexts["Couldn’t Save Quick Note"]
+        XCTAssertTrue(recoveryTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["retry-capture-save"].exists)
+        XCTAssertTrue(editor.exists)
+        XCTAssertTrue((editor.value as? String)?.contains("Keep this interrupted draft") == true)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Quick capture interrupted-write recovery"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.buttons["retry-capture-save"].tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertTrue((editor.value as? String)?.contains("Keep this interrupted draft") == true)
+    }
+
     func testConflictCopyCanBeSafelyKeptAsSeparateNote() {
         let app = launchApp(reset: true, fixtureFolder: true, conflictCopy: true)
         let settings = app.buttons["settings-link"]
@@ -1558,7 +1617,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         fileTag: Bool = false,
         batchNotes: Bool = false,
         ocrAttachment: Bool = false,
-        audioTranscript: Bool = false
+        audioTranscript: Bool = false,
+        attachmentError: Bool = false,
+        interruptedWrite: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1573,7 +1634,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
-            audioTranscript ? "-ui-testing-audio-transcript" : nil
+            audioTranscript ? "-ui-testing-audio-transcript" : nil,
+            attachmentError ? "-ui-testing-attachment-error" : nil,
+            interruptedWrite ? "-ui-testing-interrupted-write" : nil
         ].compactMap { $0 }
         app.launch()
         return app

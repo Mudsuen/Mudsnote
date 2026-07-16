@@ -2000,6 +2000,46 @@
         }
       }
     },
+    "Couldn’t Add Attachment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法添加附件"
+          }
+        }
+      }
+    },
+    "Couldn’t Save Quick Note": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存快速笔记"
+          }
+        }
+      }
+    },
+    "Try Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
+      }
+    },
+    "Try adding the attachment again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新添加附件。"
+          }
+        }
+      }
+    },
     "draft.kept_open.format": {
       "localizations": {
         "en": {

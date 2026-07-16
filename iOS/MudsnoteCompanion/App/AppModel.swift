@@ -47,6 +47,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var libraryRevision = 0
     @Published private(set) var draftRecoveryIssue: String?
     @Published private(set) var activeTagMutation: String?
+    @Published private(set) var captureAttachmentIssue: String?
+    @Published private(set) var captureSubmissionIssue: String?
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -63,6 +65,11 @@ final class AppModel: ObservableObject {
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
+    #if DEBUG
+    private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
+        "-ui-testing-attachment-error"
+    )
+    #endif
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
@@ -163,6 +170,12 @@ final class AppModel: ObservableObject {
     func showCapture(_ route: CaptureRoute = .text) {
         captureRoute = route
         isCapturePresented = true
+        #if DEBUG
+        if shouldPresentAttachmentFailureFixture {
+            shouldPresentAttachmentFailureFixture = false
+            attachCameraPhoto(Data())
+        }
+        #endif
     }
 
     func handle(url: URL) {
@@ -214,6 +227,7 @@ final class AppModel: ObservableObject {
               !isAudioTransitioning,
               !isTranscribingAudio,
               !audioRecorder.isRecording else { return }
+        captureSubmissionIssue = nil
         let submittedDraft = draft
         let canUseInboxDelta = submittedDraft.target == .inbox && submittedDraft.attachments.isEmpty
         isSendingDraft = true
@@ -221,6 +235,7 @@ final class AppModel: ObservableObject {
             defer { isSendingDraft = false }
             do {
                 try await appendDraft(submittedDraft)
+                captureSubmissionIssue = nil
                 let finished = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
                 statusToast = .saved(
                     finished
@@ -239,12 +254,16 @@ final class AppModel: ObservableObject {
                     return
                 }
                 if let draftSaveError = error as? DraftSaveError {
-                    statusToast = .error(draftSaveError.localizedDescription)
+                    captureSubmissionIssue = draftSaveError.localizedDescription
                     return
                 }
-                statusToast = .error(String(localized: "Could not save. Draft kept open"))
+                captureSubmissionIssue = String(localized: "Could not save. Draft kept open")
             }
         }
+    }
+
+    func retryCaptureSubmission() {
+        sendDraft(continueCapturing: false)
     }
 
     func attachPhoto(_ item: PhotosPickerItem?) {
@@ -254,12 +273,12 @@ final class AppModel: ObservableObject {
             defer { attachmentPreparationCount -= 1 }
             do {
                 guard let data = try await item.loadTransferable(type: Data.self) else {
-                    statusToast = .error(String(localized: "Image data unavailable"))
+                    reportCaptureAttachmentFailure(String(localized: "Image data unavailable"))
                     return
                 }
                 try attachImageDataToDraft(data)
             } catch {
-                statusToast = .error(error.localizedDescription)
+                reportCaptureAttachmentFailure(error.localizedDescription)
             }
         }
     }
@@ -271,13 +290,14 @@ final class AppModel: ObservableObject {
         do {
             try attachImageDataToDraft(data)
         } catch {
-            statusToast = .error(error.localizedDescription)
+            reportCaptureAttachmentFailure(error.localizedDescription)
         }
     }
 
     private func attachImageDataToDraft(_ data: Data) throws {
         let attachment = try CaptureAttachment.validatedImage(data: data)
         try appendAttachment(attachment)
+        captureAttachmentIssue = nil
         statusToast = .saved(String(localized: "Image attached"))
     }
 
@@ -288,10 +308,11 @@ final class AppModel: ObservableObject {
         do {
             let attachment = try importedFileAttachment(from: url)
             try appendAttachment(attachment)
+            captureAttachmentIssue = nil
             statusToast = .saved(String(localized: "File attached"))
             return nil
         } catch {
-            statusToast = .error(error.localizedDescription)
+            reportCaptureAttachmentFailure(error.localizedDescription)
             return error.localizedDescription
         }
     }
@@ -307,12 +328,21 @@ final class AppModel: ObservableObject {
                 suggestedName: ScannedDocumentPDF.suggestedFileName
             )
             try appendAttachment(attachment)
+            captureAttachmentIssue = nil
             statusToast = .saved(String(localized: "Scanned document attached"))
             return nil
         } catch {
-            statusToast = .error(error.localizedDescription)
+            reportCaptureAttachmentFailure(error.localizedDescription)
             return error.localizedDescription
         }
+    }
+
+    func reportCaptureAttachmentFailure(_ message: String) {
+        captureAttachmentIssue = message
+    }
+
+    func dismissCaptureAttachmentIssue() {
+        captureAttachmentIssue = nil
     }
 
     func toggleAudioRecording() {
@@ -342,7 +372,7 @@ final class AppModel: ObservableObject {
                     statusToast = .pending(String(localized: "Recording"))
                 }
             } catch {
-                statusToast = .error(error.localizedDescription)
+                reportCaptureAttachmentFailure(error.localizedDescription)
             }
         }
     }
@@ -355,6 +385,7 @@ final class AppModel: ObservableObject {
     private func appendAttachment(_ attachment: CaptureAttachment) throws {
         try CaptureAttachmentPolicy.validateAppending(attachment, to: draft.attachments)
         draft.attachments.append(attachment)
+        captureAttachmentIssue = nil
     }
 
     private func scheduleDraftPersistenceIfNeeded() {

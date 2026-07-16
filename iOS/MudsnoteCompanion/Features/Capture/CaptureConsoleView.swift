@@ -12,9 +12,6 @@ struct CaptureConsoleView: View {
     @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
-    @State private var cameraErrorMessage: String?
-    @State private var fileErrorMessage: String?
-    @State private var scanErrorMessage: String?
     @State private var refocusAfterCamera = false
     @State private var refocusAfterScanner = false
 
@@ -30,12 +27,18 @@ struct CaptureConsoleView: View {
                 attachmentStrip
             }
 
+            if let issue = appModel.captureSubmissionIssue {
+                submissionRecovery(issue)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             commandBar
         }
         .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
         .padding(.top, 12)
         .padding(.bottom, 12)
         .background(MudsnoteColors.panel)
+        .animation(.snappy(duration: 0.24), value: appModel.captureSubmissionIssue != nil)
         .onAppear {
             if selectedRoute == .image {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -70,14 +73,14 @@ struct CaptureConsoleView: View {
             case .success(let urls):
                 guard let url = urls.first else { return }
                 Task {
-                    fileErrorMessage = await appModel.attachFile(url)
-                    isBodyFocused = fileErrorMessage == nil
+                    _ = await appModel.attachFile(url)
+                    isBodyFocused = appModel.captureAttachmentIssue == nil
                 }
             case .failure(let error):
                 if (error as? CocoaError)?.code == .userCancelled {
                     isBodyFocused = true
                 } else {
-                    fileErrorMessage = error.localizedDescription
+                    appModel.reportCaptureAttachmentFailure(error.localizedDescription)
                 }
             }
         }
@@ -91,9 +94,9 @@ struct CaptureConsoleView: View {
                     case .success(let data):
                         selectedRoute = .image
                         appModel.attachCameraPhoto(data)
-                        refocusAfterCamera = true
+                        refocusAfterCamera = appModel.captureAttachmentIssue == nil
                     case .failure(let error):
-                        cameraErrorMessage = error.localizedDescription
+                        appModel.reportCaptureAttachmentFailure(error.localizedDescription)
                     }
                     isCameraPresented = false
                 },
@@ -113,12 +116,12 @@ struct CaptureConsoleView: View {
                     switch result {
                     case .success(let pages):
                         Task {
-                            scanErrorMessage = await appModel.attachScannedDocument(pages)
-                            refocusAfterScanner = scanErrorMessage == nil
+                            _ = await appModel.attachScannedDocument(pages)
+                            refocusAfterScanner = appModel.captureAttachmentIssue == nil
                             isScannerPresented = false
                         }
                     case .failure(let error):
-                        scanErrorMessage = error.localizedDescription
+                        appModel.reportCaptureAttachmentFailure(error.localizedDescription)
                         isScannerPresented = false
                     }
                 },
@@ -129,38 +132,19 @@ struct CaptureConsoleView: View {
             )
             .ignoresSafeArea()
         }
-        .alert("Couldn’t Scan Document", isPresented: Binding(
-            get: { scanErrorMessage != nil },
-            set: { if !$0 { scanErrorMessage = nil } }
+        .alert("Couldn’t Add Attachment", isPresented: Binding(
+            get: { appModel.captureAttachmentIssue != nil },
+            set: { if !$0 { appModel.dismissCaptureAttachmentIssue() } }
         )) {
             Button("OK", role: .cancel) {
-                scanErrorMessage = nil
+                appModel.dismissCaptureAttachmentIssue()
                 isBodyFocused = true
             }
         } message: {
-            Text(scanErrorMessage ?? "Try scanning the document again.")
+            Text(appModel.captureAttachmentIssue ?? "Try adding the attachment again.")
         }
-        .alert("Couldn’t Take Photo", isPresented: Binding(
-            get: { cameraErrorMessage != nil },
-            set: { if !$0 { cameraErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {
-                cameraErrorMessage = nil
-                isBodyFocused = true
-            }
-        } message: {
-            Text(cameraErrorMessage ?? "Try taking the photo again.")
-        }
-        .alert("Couldn’t Attach File", isPresented: Binding(
-            get: { fileErrorMessage != nil },
-            set: { if !$0 { fileErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {
-                fileErrorMessage = nil
-                isBodyFocused = true
-            }
-        } message: {
-            Text(fileErrorMessage ?? "Try choosing the file again.")
+        .onChange(of: appModel.captureSubmissionIssue) { _, issue in
+            if issue != nil { isBodyFocused = true }
         }
         .onDisappear {
             appModel.cancelAudioRecording()
@@ -269,6 +253,41 @@ struct CaptureConsoleView: View {
             .accessibilityIdentifier("save-memo-button")
         }
         .frame(minHeight: 52)
+    }
+
+    private func submissionRecovery(_ issue: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Couldn’t Save Quick Note")
+                    .font(.subheadline.weight(.semibold))
+                Text(issue)
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 4)
+
+            Button("Try Again") {
+                isBodyFocused = false
+                appModel.retryCaptureSubmission()
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .disabled(appModel.isSendingDraft)
+            .accessibilityIdentifier("retry-capture-save")
+        }
+        .foregroundStyle(MudsnoteColors.text)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.red.opacity(0.45), lineWidth: 1)
+        }
     }
 
     private func refocusCaptureAfterCameraIfNeeded() {

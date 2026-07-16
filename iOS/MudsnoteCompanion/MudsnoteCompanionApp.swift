@@ -46,6 +46,8 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let batchNotesArgument = "-ui-testing-batch-notes"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
+    private static let attachmentErrorArgument = "-ui-testing-attachment-error"
+    private static let interruptedWriteArgument = "-ui-testing-interrupted-write"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -61,6 +63,8 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(batchNotesArgument)
                 || arguments.contains(ocrAttachmentArgument)
                 || arguments.contains(audioTranscriptArgument)
+                || arguments.contains(attachmentErrorArgument)
+                || arguments.contains(interruptedWriteArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -177,6 +181,21 @@ private enum MudsnoteUITestLaunchConfiguration {
 
                 if arguments.contains(damagedQueueArgument) {
                     try Data("damaged pending queue".utf8).write(
+                        to: root.appendingPathComponent(".mudsnote/queue.json"),
+                        options: .atomic
+                    )
+                }
+                if arguments.contains(interruptedWriteArgument) {
+                    let interruptedWrites = (0..<PendingWriteQueuePolicy.maximumItemCount).map { index in
+                        PendingWrite(
+                            id: UUID(),
+                            createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                            targetRelativePath: "../blocked-\(index).md",
+                            markdownBlock: "Interrupted write fixture",
+                            attachments: []
+                        )
+                    }
+                    try JSONEncoder.pretty.encode(interruptedWrites).write(
                         to: root.appendingPathComponent(".mudsnote/queue.json"),
                         options: .atomic
                     )

@@ -1,6 +1,6 @@
 # Mudsnote iOS commercial readiness
 
-Last reviewed: 2026-07-15
+Last reviewed: 2026-07-17
 
 This checklist tracks the iOS companion only. A checked item requires current source or artifact evidence; unchecked items remain release work.
 
@@ -41,7 +41,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Current onboarding and primary dark surfaces render correctly on iPhone 17 / iOS 26.5.
 - [x] Onboarding switches to a scrollable accessibility layout at Dynamic Type accessibility sizes; AX XXXL keeps complete text and the folder action reachable.
 - [x] UI automation covers onboarding-to-system-folder-picker presentation, corrupt-bookmark recovery, continuous capture, draft reset, and destination retention.
-- [ ] Add UI tests for attachment errors and interrupted-write states.
+- [x] Attachment errors remain inside Quick Capture and restore editing after dismissal; interrupted writes keep the full draft visible with an inline retry action. Both recovery states have UI regression coverage.
 
 Dedicated accessibility and iPad validation are outside the current iPhone-only product scope.
 
@@ -57,7 +57,7 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] One hundred forty-three tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
+- [x] One hundred forty-five tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [ ] Resolve or prove harmless the Simulator-build `appintentsnltrainingprocessor` SSU archive warning before distribution submission.
