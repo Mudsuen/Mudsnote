@@ -3372,6 +3372,7 @@ struct AttachmentLibraryView: View {
     private enum Category: String, CaseIterable, Identifiable {
         case all
         case photos
+        case videos
         case audio
         case documents
 
@@ -3381,6 +3382,7 @@ struct AttachmentLibraryView: View {
             switch self {
             case .all: "All"
             case .photos: "Photos"
+            case .videos: "Videos"
             case .audio: "Audio"
             case .documents: "Documents"
             }
@@ -3390,6 +3392,7 @@ struct AttachmentLibraryView: View {
             switch self {
             case .all: "square.grid.2x2"
             case .photos: "photo.on.rectangle"
+            case .videos: "video"
             case .audio: "waveform"
             case .documents: "doc"
             }
@@ -3408,6 +3411,10 @@ struct AttachmentLibraryView: View {
         appModel.attachments.filter { $0.kind == .audio }
     }
 
+    private var videos: [LibraryAttachment] {
+        appModel.attachments.filter { $0.kind == .video }
+    }
+
     private var documents: [LibraryAttachment] {
         appModel.attachments.filter { $0.kind == .other }
     }
@@ -3421,11 +3428,19 @@ struct AttachmentLibraryView: View {
                 ContentUnavailableView(
                     "No Attachments",
                     systemImage: "paperclip",
-                        description: Text("Photos, audio, and documents added to notes appear here.")
+                        description: Text("Photos, videos, audio, and documents added to notes appear here.")
                 )
             } else {
                     if category == .all || category == .photos {
                         attachmentImageSection
+                    }
+                    if category == .all || category == .videos {
+                        attachmentListSection(
+                            title: String(localized: "Videos"),
+                            attachments: videos,
+                            emptyTitle: String(localized: "No Videos"),
+                            emptyImage: "video"
+                        )
                     }
                     if category == .all || category == .audio {
                         attachmentListSection(

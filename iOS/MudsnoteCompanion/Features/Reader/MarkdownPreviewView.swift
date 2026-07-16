@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 import PencilKit
 import PhotosUI
 import QuickLook
@@ -333,7 +334,7 @@ struct MarkdownPreviewView: View {
         .photosPicker(
             isPresented: $isPhotoPickerPresented,
             selection: $selectedPhotoItem,
-            matching: .images
+            matching: .any(of: [.images, .videos])
         )
         .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
             guard isEditing, draftMarkdown != originalMarkdown else { return }
@@ -425,8 +426,8 @@ struct MarkdownPreviewView: View {
                 onComplete: { result in
                     isCameraPresented = false
                     switch result {
-                    case .success(let data):
-                        Task { await attachCameraPhoto(data) }
+                    case .success(let media):
+                        Task { await attachCameraPhoto(media) }
                     case .failure(let error):
                         cameraErrorMessage = error.localizedDescription
                     }
@@ -470,7 +471,7 @@ struct MarkdownPreviewView: View {
         } message: {
             Text(scanErrorMessage ?? "Try scanning the document again.")
         }
-        .alert("Couldn’t Take Photo", isPresented: Binding(
+        .alert("Couldn’t Capture Photo or Video", isPresented: Binding(
             get: { cameraErrorMessage != nil },
             set: { if !$0 { cameraErrorMessage = nil } }
         )) {
@@ -479,7 +480,7 @@ struct MarkdownPreviewView: View {
                 editorFocused = true
             }
         } message: {
-            Text(cameraErrorMessage ?? "Try taking the photo again.")
+            Text(cameraErrorMessage ?? "Try capturing the photo or video again.")
         }
         .alert("Rename Attachment", isPresented: Binding(
             get: { attachmentBeingRenamed != nil },
@@ -814,7 +815,7 @@ struct MarkdownPreviewView: View {
                         Button {
                             isPhotoPickerPresented = true
                         } label: {
-                            Label("Add image from Photos", systemImage: "photo")
+                            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
                         }
                         .accessibilityIdentifier("markdown-add-image")
 
@@ -822,7 +823,7 @@ struct MarkdownPreviewView: View {
                             editorFocused = false
                             isCameraPresented = true
                         } label: {
-                            Label("Take Photo", systemImage: "camera")
+                            Label("Take Photo or Video", systemImage: "camera")
                         }
                         .disabled(!CameraPhotoCapture.isAvailable)
                         .accessibilityIdentifier("markdown-take-photo")
@@ -1223,6 +1224,13 @@ struct MarkdownPreviewView: View {
                     } else {
                         attachmentLabel(attachment)
                     }
+                case .video:
+                    if let url = localFileURL(for: attachment.path) {
+                        VideoAttachmentPlayer(url: url, title: attachment.path)
+                            .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+                    } else {
+                        attachmentLabel(attachment)
+                    }
                 case .audio, .file:
                     if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
                         AudioAttachmentPlayer(url: url, title: attachment.path)
@@ -1433,14 +1441,14 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    private func attachCameraPhoto(_ data: Data) async {
+    private func attachCameraPhoto(_ media: CapturedCameraMedia) async {
         guard case .document = source else { return }
         await persistDraft(finishEditing: false, announce: false)
         guard draftMarkdown == originalMarkdown,
               case .document(let document) = source else { return }
         saveState = .saving
         if let updated = await appModel.attachCameraPhoto(
-            data,
+            media,
             to: document,
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
@@ -3413,6 +3421,35 @@ private extension UITextView {
     }
 }
 
+private struct VideoAttachmentPlayer: View {
+    var url: URL
+    var title: String
+    @State private var player: AVPlayer
+
+    init(url: URL, title: String) {
+        self.url = url
+        self.title = title
+        _player = State(initialValue: AVPlayer(url: url))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VideoPlayer(player: player)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+            Text((title as NSString).lastPathComponent)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(1)
+        }
+        .onDisappear { player.pause() }
+    }
+}
+
 private struct AudioAttachmentPlayer: View {
     var url: URL
     var title: String
@@ -3501,6 +3538,7 @@ private final class AudioPlaybackController: NSObject, ObservableObject, AVAudio
 struct MarkdownAttachmentLine {
     enum Kind: Equatable {
         case image
+        case video
         case audio
         case file
     }
@@ -3534,7 +3572,13 @@ struct MarkdownAttachmentLine {
         if let match = Self.match(line, pattern: #"^\[[^\]]+\]\(([^)]+)\)$"#) {
             guard Self.isAttachmentPath(match) else { return nil }
             path = match
-            if LibraryAttachment.Kind(fileExtension: (match as NSString).pathExtension) == .audio {
+            let libraryKind = LibraryAttachment.Kind(
+                fileExtension: (match as NSString).pathExtension
+            )
+            if libraryKind == .video {
+                systemImage = "video"
+                kind = .video
+            } else if libraryKind == .audio {
                 systemImage = "waveform"
                 kind = .audio
             } else {

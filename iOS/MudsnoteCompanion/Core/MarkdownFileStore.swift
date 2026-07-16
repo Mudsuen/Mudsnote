@@ -3010,6 +3010,7 @@ struct LibraryAttachment: Identifiable, Equatable {
 
     enum Kind: Equatable {
         case image
+        case video
         case audio
         case other
 
@@ -3017,6 +3018,8 @@ struct LibraryAttachment: Identifiable, Equatable {
             switch fileExtension.lowercased() {
             case "png", "jpg", "jpeg", "heic", "gif", "webp", "tif", "tiff":
                 self = .image
+            case "mov", "mp4", "m4v":
+                self = .video
             case "m4a", "wav", "mp3", "aac", "caf", "aif", "aiff":
                 self = .audio
             default:
@@ -3027,6 +3030,7 @@ struct LibraryAttachment: Identifiable, Equatable {
         var systemImage: String {
             switch self {
             case .image: "photo"
+            case .video: "video"
             case .audio: "waveform"
             case .other: "doc"
             }
@@ -3207,6 +3211,8 @@ extension MarkdownAttachmentReference {
         switch kind {
         case .image:
             return "![Image](\(relativePath))"
+        case .video:
+            return "[Video](\(relativePath))"
         case .audio:
             return "[Audio](\(relativePath))"
         case .file:

@@ -23,6 +23,19 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testCameraVideoProducesAPortableVideoAttachment() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("Camera Clip.mov")
+        try Data([0x00, 0x01, 0x02]).write(to: url)
+
+        let attachment = try CameraPhotoCapture.videoAttachment(at: url)
+
+        XCTAssertEqual(attachment.referenceKind, .video)
+        XCTAssertEqual(attachment.preferredExtension, "mov")
+        XCTAssertEqual(attachment.filePrefix, "Camera Clip")
+    }
+
     func testMarkdownTagSyntaxRewritesOnlyVisibleExactTags() throws {
         let markdown = """
         # Heading
@@ -552,6 +565,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             tags: "#闪念",
             attachmentReferences: [
                 MarkdownAttachmentReference(relativePath: "Attachments/2026/06/IMG-test.jpg", kind: .image),
+                MarkdownAttachmentReference(relativePath: "Attachments/2026/06/launch-test.mp4", kind: .video),
                 MarkdownAttachmentReference(relativePath: "Attachments/2026/06/audio-test.m4a", kind: .audio)
             ],
             attachmentTags: ["#图片"],
@@ -560,6 +574,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertTrue(block.contains("## 2024-06-07"))
         XCTAssertTrue(block.contains("![Image](Attachments/2026/06/IMG-test.jpg)"))
+        XCTAssertTrue(block.contains("[Video](Attachments/2026/06/launch-test.mp4)"))
         XCTAssertTrue(block.contains("[Audio](Attachments/2026/06/audio-test.m4a)"))
         XCTAssertTrue(block.contains("#闪念 #图片"))
     }
@@ -676,6 +691,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         let image = try CaptureAttachment.validatedImage(
             data: try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         )
+        let video = try CaptureAttachment.validatedVideo(
+            data: Data([0x04, 0x05, 0x06]),
+            suggestedName: "Launch Clip.mp4"
+        )
         let audio = try CaptureAttachment.validatedAudio(data: Data([0x01, 0x02, 0x03]))
         let file = try CaptureAttachment.validatedFile(
             data: Data("launch brief".utf8),
@@ -686,7 +705,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             body: "Recovered thought",
             tags: "#launch",
             target: .daily(date),
-            attachments: [image, audio, file],
+            attachments: [image, video, audio, file],
             createdAt: date
         )
         let store = CaptureDraftRecoveryStore(directory: directory)
@@ -806,6 +825,17 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testVideoAttachmentRejectsNonVideoSuffix() {
+        XCTAssertThrowsError(
+            try CaptureAttachment.validatedVideo(
+                data: Data([0x01]),
+                suggestedName: "Not a Movie.pdf"
+            )
+        ) { error in
+            XCTAssertEqual(error as? CaptureAttachmentError, .unsupportedVideo)
+        }
+    }
+
     func testAttachmentPolicyBoundsCountAndCombinedDraftSize() throws {
         let tinyAudio = try CaptureAttachment.validatedAudio(data: Data([0x01]))
         let existing = Array(
@@ -824,8 +854,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         let largeAudio = try CaptureAttachment.validatedAudio(
             data: Data(count: CaptureAttachmentPolicy.maximumAudioBytes)
         )
+        let largeVideo = try CaptureAttachment.validatedVideo(
+            data: Data(
+                count: CaptureAttachmentPolicy.maximumDraftBytes
+                    - CaptureAttachmentPolicy.maximumAudioBytes + 1
+            ),
+            suggestedName: "Large.mov"
+        )
         XCTAssertThrowsError(
-            try CaptureAttachmentPolicy.validateAppending(largeAudio, to: [largeAudio])
+            try CaptureAttachmentPolicy.validateAppending(largeVideo, to: [largeAudio])
         ) { error in
             XCTAssertEqual(
                 error as? CaptureAttachmentError,
@@ -3069,6 +3106,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             MarkdownAttachmentLine("[Scan](Attachments/Scanned%20Document.pdf)")?.kind,
             .file
         )
+        XCTAssertEqual(
+            MarkdownAttachmentLine("[Video](Attachments/Launch%20Clip.mp4)")?.kind,
+            .video
+        )
+        XCTAssertEqual(LibraryAttachment.Kind(fileExtension: "m4v"), .video)
     }
 
     func testNoteLinksSurviveRenameSingleMoveFolderRenameAndBatchMove() async throws {

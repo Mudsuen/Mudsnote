@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import VisionKit
 
 @MainActor
@@ -52,9 +53,13 @@ private extension UIResponder {
 enum CameraPhotoCapture {
     enum Error: LocalizedError, Equatable {
         case invalidImage
+        case invalidVideo
 
         var errorDescription: String? {
-            String(localized: "The photo could not be prepared.")
+            switch self {
+            case .invalidImage: String(localized: "The photo could not be prepared.")
+            case .invalidVideo: String(localized: "The video could not be prepared.")
+            }
         }
     }
 
@@ -71,10 +76,30 @@ enum CameraPhotoCapture {
         }
         return data
     }
+
+    static func videoAttachment(at url: URL) throws -> CaptureAttachment {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else { throw Error.invalidVideo }
+        if let byteCount = values.fileSize,
+           byteCount > CaptureAttachmentPolicy.maximumVideoBytes {
+            throw CaptureAttachmentError.tooLarge(
+                maximumBytes: CaptureAttachmentPolicy.maximumVideoBytes
+            )
+        }
+        return try CaptureAttachment.validatedVideo(
+            data: Data(contentsOf: url, options: .mappedIfSafe),
+            suggestedName: url.lastPathComponent
+        )
+    }
+}
+
+enum CapturedCameraMedia {
+    case photo(Data)
+    case video(CaptureAttachment)
 }
 
 struct CameraPhotoCaptureView: UIViewControllerRepresentable {
-    let onComplete: (Result<Data, Swift.Error>) -> Void
+    let onComplete: (Result<CapturedCameraMedia, Swift.Error>) -> Void
     let onCancel: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -84,7 +109,9 @@ struct CameraPhotoCaptureView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let controller = UIImagePickerController()
         controller.sourceType = .camera
-        controller.cameraCaptureMode = .photo
+        controller.mediaTypes = [UTType.image.identifier, UTType.movie.identifier]
+        controller.videoQuality = .typeMedium
+        controller.videoMaximumDuration = 60
         controller.allowsEditing = false
         controller.delegate = context.coordinator
         return controller
@@ -93,11 +120,11 @@ struct CameraPhotoCaptureView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
 
     final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let onComplete: (Result<Data, Swift.Error>) -> Void
+        let onComplete: (Result<CapturedCameraMedia, Swift.Error>) -> Void
         let onCancel: () -> Void
 
         init(
-            onComplete: @escaping (Result<Data, Swift.Error>) -> Void,
+            onComplete: @escaping (Result<CapturedCameraMedia, Swift.Error>) -> Void,
             onCancel: @escaping () -> Void
         ) {
             self.onComplete = onComplete
@@ -108,12 +135,20 @@ struct CameraPhotoCaptureView: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
+            if let videoURL = info[.mediaURL] as? URL {
+                do {
+                    onComplete(.success(.video(try CameraPhotoCapture.videoAttachment(at: videoURL))))
+                } catch {
+                    onComplete(.failure(error))
+                }
+                return
+            }
             guard let image = info[.originalImage] as? UIImage else {
                 onComplete(.failure(CameraPhotoCapture.Error.invalidImage))
                 return
             }
             do {
-                onComplete(.success(try CameraPhotoCapture.jpegData(for: image)))
+                onComplete(.success(.photo(try CameraPhotoCapture.jpegData(for: image))))
             } catch {
                 onComplete(.failure(error))
             }

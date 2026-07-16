@@ -113,9 +113,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                     to: root.appendingPathComponent("Attachments/ui-test.txt"),
                     options: .atomic
                 )
+                try Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]).write(
+                    to: root.appendingPathComponent("Attachments/ui-test.mp4"),
+                    options: .atomic
+                )
                 let projects = root.appendingPathComponent("Projects", isDirectory: true)
                 try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-                try "# UI Lifecycle\n\nRestore this note end to end.\n\nContact support@example.com or +1 (415) 555-0123.\n\n[QA Document](Attachments/ui-test.txt)\n\n| Item | Status |\n| --- | --- |\n| Preview | Ready |\n".write(
+                try "# UI Lifecycle\n\nRestore this note end to end.\n\nContact support@example.com or +1 (415) 555-0123.\n\n[Video](Attachments/ui-test.mp4)\n\n[QA Document](Attachments/ui-test.txt)\n\n| Item | Status |\n| --- | --- |\n| Preview | Ready |\n".write(
                     to: projects.appendingPathComponent("UI Lifecycle.md"),
                     atomically: true,
                     encoding: .utf8

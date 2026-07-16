@@ -62,7 +62,7 @@ struct CaptureConsoleView: View {
         .photosPicker(
             isPresented: $isPhotoPickerPresented,
             selection: $selectedPhotoItem,
-            matching: .images
+            matching: .any(of: [.images, .videos])
         )
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -91,9 +91,9 @@ struct CaptureConsoleView: View {
             CameraPhotoCaptureView(
                 onComplete: { result in
                     switch result {
-                    case .success(let data):
+                    case .success(let media):
                         selectedRoute = .image
-                        appModel.attachCameraPhoto(data)
+                        appModel.attachCameraPhoto(media)
                         refocusAfterCamera = appModel.captureAttachmentIssue == nil
                     case .failure(let error):
                         appModel.reportCaptureAttachmentFailure(error.localizedDescription)
@@ -158,7 +158,7 @@ struct CaptureConsoleView: View {
                     selectedRoute = .image
                     isPhotoPickerPresented = true
                 } label: {
-                    Label("Add image from Photos", systemImage: "photo")
+                    Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
                 }
                 .accessibilityIdentifier("capture-add-image")
 
@@ -166,7 +166,7 @@ struct CaptureConsoleView: View {
                     isBodyFocused = false
                     isCameraPresented = true
                 } label: {
-                    Label("Take Photo", systemImage: "camera")
+                    Label("Take Photo or Video", systemImage: "camera")
                 }
                 .disabled(!CameraPhotoCapture.isAvailable)
                 .accessibilityIdentifier("capture-take-photo")
@@ -377,6 +377,8 @@ struct CaptureConsoleView: View {
         switch attachment {
         case .image:
             return String(localized: "Image")
+        case .video:
+            return String(localized: "Video")
         case .audio:
             return String(localized: "Audio")
         case .file(_, _, let preferredBaseName):
@@ -388,6 +390,8 @@ struct CaptureConsoleView: View {
         switch attachment {
         case .image:
             return "photo"
+        case .video:
+            return "video"
         case .audio:
             return "waveform"
         case .file:

@@ -2,6 +2,7 @@ import Foundation
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum CaptureRoute: String {
     case text
@@ -173,7 +174,7 @@ final class AppModel: ObservableObject {
         #if DEBUG
         if shouldPresentAttachmentFailureFixture {
             shouldPresentAttachmentFailureFixture = false
-            attachCameraPhoto(Data())
+            attachCameraPhoto(.photo(Data()))
         }
         #endif
     }
@@ -272,33 +273,57 @@ final class AppModel: ObservableObject {
         Task {
             defer { attachmentPreparationCount -= 1 }
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    reportCaptureAttachmentFailure(String(localized: "Image data unavailable"))
-                    return
-                }
-                try attachImageDataToDraft(data)
+                let attachment = try await photoLibraryAttachment(from: item)
+                try appendAttachment(attachment)
+                statusToast = .saved(attachmentAttachedMessage(attachment))
             } catch {
                 reportCaptureAttachmentFailure(error.localizedDescription)
             }
         }
     }
 
-    func attachCameraPhoto(_ data: Data) {
+    func attachCameraPhoto(_ media: CapturedCameraMedia) {
         guard !isSendingDraft, attachmentPreparationCount == 0 else { return }
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
         do {
-            try attachImageDataToDraft(data)
+            let attachment: CaptureAttachment
+            switch media {
+            case .photo(let data):
+                attachment = try CaptureAttachment.validatedImage(data: data)
+            case .video(let video):
+                attachment = video
+            }
+            try appendAttachment(attachment)
+            statusToast = .saved(attachmentAttachedMessage(attachment))
         } catch {
             reportCaptureAttachmentFailure(error.localizedDescription)
         }
     }
 
-    private func attachImageDataToDraft(_ data: Data) throws {
-        let attachment = try CaptureAttachment.validatedImage(data: data)
-        try appendAttachment(attachment)
-        captureAttachmentIssue = nil
-        statusToast = .saved(String(localized: "Image attached"))
+    private func photoLibraryAttachment(from item: PhotosPickerItem) async throws -> CaptureAttachment {
+        if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+            guard let movie = try await item.loadTransferable(type: PhotoLibraryMovie.self) else {
+                throw CaptureAttachmentError.empty
+            }
+            return try CaptureAttachment.validatedVideo(
+                data: movie.data,
+                suggestedName: movie.suggestedName
+            )
+        }
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw CaptureAttachmentError.empty
+        }
+        return try CaptureAttachment.validatedImage(data: data)
+    }
+
+    private func attachmentAttachedMessage(_ attachment: CaptureAttachment) -> String {
+        switch attachment {
+        case .image: String(localized: "Image attached")
+        case .video: String(localized: "Video attached")
+        case .audio: String(localized: "Audio attached")
+        case .file: String(localized: "File attached")
+        }
     }
 
     func attachFile(_ url: URL) async -> String? {
@@ -1241,11 +1266,9 @@ final class AppModel: ObservableObject {
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else {
-                throw CaptureAttachmentError.empty
-            }
-            return await attachImageData(
-                data,
+            let attachment = try await photoLibraryAttachment(from: item)
+            return await attachMediaAttachment(
+                attachment,
                 to: document,
                 markdown: markdown,
                 expectedMarkdown: expectedMarkdown
@@ -1257,7 +1280,7 @@ final class AppModel: ObservableObject {
     }
 
     func attachCameraPhoto(
-        _ data: Data,
+        _ media: CapturedCameraMedia,
         to document: MarkdownDocument,
         markdown: String,
         expectedMarkdown: String
@@ -1265,22 +1288,33 @@ final class AppModel: ObservableObject {
         guard attachmentPreparationCount == 0 else { return nil }
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
-        return await attachImageData(
-            data,
+        let attachment: CaptureAttachment
+        do {
+            switch media {
+            case .photo(let data):
+                attachment = try CaptureAttachment.validatedImage(data: data)
+            case .video(let video):
+                attachment = video
+            }
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+        return await attachMediaAttachment(
+            attachment,
             to: document,
             markdown: markdown,
             expectedMarkdown: expectedMarkdown
         )
     }
 
-    private func attachImageData(
-        _ data: Data,
+    private func attachMediaAttachment(
+        _ attachment: CaptureAttachment,
         to document: MarkdownDocument,
         markdown: String,
         expectedMarkdown: String
     ) async -> MarkdownDocument? {
         do {
-            let attachment = try CaptureAttachment.validatedImage(data: data)
             let updated = try await fileStore.attachToMarkdownDocument(
                 relativePath: document.relativePath,
                 markdown: markdown,
@@ -1288,7 +1322,7 @@ final class AppModel: ObservableObject {
                 attachment: attachment
             )
             selectedDocument = updated
-            statusToast = .saved(String(localized: "Image attached"))
+            statusToast = .saved(attachmentAttachedMessage(attachment))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return updated
@@ -1362,16 +1396,22 @@ final class AppModel: ObservableObject {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
+        let isVideo = UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        let maximumBytes = isVideo
+            ? CaptureAttachmentPolicy.maximumVideoBytes
+            : CaptureAttachmentPolicy.maximumFileBytes
         if let byteCount = values.fileSize,
-           byteCount > CaptureAttachmentPolicy.maximumFileBytes {
-            throw CaptureAttachmentError.tooLarge(
-                maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
+           byteCount > maximumBytes {
+            throw CaptureAttachmentError.tooLarge(maximumBytes: maximumBytes)
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        if isVideo {
+            return try CaptureAttachment.validatedVideo(
+                data: data,
+                suggestedName: url.lastPathComponent
             )
         }
-        return try CaptureAttachment.validatedFile(
-            data: Data(contentsOf: url, options: .mappedIfSafe),
-            suggestedName: url.lastPathComponent
-        )
+        return try CaptureAttachment.validatedFile(data: data, suggestedName: url.lastPathComponent)
     }
 
     func attachAudio(

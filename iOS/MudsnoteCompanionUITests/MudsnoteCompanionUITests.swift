@@ -658,8 +658,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["markdown-format-undo"].exists)
         XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
         attachmentMenu.tap()
-        XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Take Photo"].exists)
+        XCTAssertTrue(app.buttons["Choose Photo or Video"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Take Photo or Video"].exists)
         XCTAssertTrue(app.buttons["Add Drawing"].exists)
         XCTAssertTrue(app.buttons["Add File"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
@@ -1489,8 +1489,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         controls[0].tap()
         let attachmentActions = [
-            "Add image from Photos",
-            "Take Photo",
+            "Choose Photo or Video",
+            "Take Photo or Video",
             "Add File",
             "Scan Document",
             "Scan Text",
@@ -1498,7 +1498,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         for action in attachmentActions {
             XCTAssertTrue(action.waitForExistence(timeout: 3))
         }
-        for name in ["Add image from Photos", "Add File", "Scan Text"] {
+        for name in ["Choose Photo or Video", "Add File", "Scan Text"] {
             XCTAssertTrue(waitForHittable(app.buttons[name]))
         }
         let scanText = app.buttons["Scan Text"]
@@ -1524,8 +1524,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["ui-test.png"].exists)
         let storedDocument = app.buttons["attachment-row-Attachments/ui-test.txt"]
         XCTAssertTrue(storedDocument.exists)
+        let storedVideo = app.buttons["attachment-row-Attachments/ui-test.mp4"]
+        XCTAssertTrue(storedVideo.exists)
         XCTAssertTrue(app.buttons["attachment-category-all"].exists)
         XCTAssertTrue(app.buttons["attachment-category-photos"].exists)
+        XCTAssertTrue(app.buttons["attachment-category-videos"].exists)
         XCTAssertTrue(app.buttons["attachment-category-audio"].exists)
         XCTAssertTrue(app.buttons["attachment-category-documents"].exists)
 
@@ -1533,6 +1536,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.name = "Notes-style categorized attachment browser"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+
+        app.buttons["attachment-category-videos"].tap()
+        XCTAssertTrue(storedVideo.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForNonexistence(storedImage))
+        XCTAssertTrue(waitForNonexistence(storedDocument))
 
         app.buttons["attachment-category-documents"].tap()
         XCTAssertTrue(storedDocument.waitForExistence(timeout: 3))

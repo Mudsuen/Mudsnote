@@ -133,6 +133,39 @@
     "Take Photo": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍照" } } }
     },
+    "Choose Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择照片或视频" } } }
+    },
+    "Take Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍摄照片或视频" } } }
+    },
+    "Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "视频" } } }
+    },
+    "Videos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "视频" } } }
+    },
+    "No Videos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂无视频" } } }
+    },
+    "Video attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加视频" } } }
+    },
+    "Choose a supported video file.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请选择支持的视频文件。" } } }
+    },
+    "The video could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理该视频。" } } }
+    },
+    "Couldn’t Capture Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法拍摄照片或视频" } } }
+    },
+    "Try capturing the photo or video again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请重新拍摄照片或视频。" } } }
+    },
+    "Photos, videos, audio, and documents added to notes appear here.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加到笔记中的照片、视频、音频和文稿会显示在这里。" } } }
+    },
     "File attached": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加文件" } } }
     },
