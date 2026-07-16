@@ -393,6 +393,44 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testFolderEditModeExposesManagementActionsAndRenamesFolder() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let editButton = app.buttons["edit-folders-button"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 8))
+        XCTAssertEqual(editButton.label, "Edit")
+
+        editButton.tap()
+        XCTAssertEqual(editButton.label, "Done")
+
+        let managementButton = app.buttons["folder-management-Projects"]
+        XCTAssertTrue(managementButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
+
+        let managementScreenshot = XCTAttachment(screenshot: app.screenshot())
+        managementScreenshot.name = "Notes-style folder edit mode"
+        managementScreenshot.lifetime = .keepAlways
+        add(managementScreenshot)
+
+        managementButton.tap()
+        XCTAssertTrue(app.buttons["New Subfolder"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Delete Folder"].exists)
+        app.buttons["Rename Folder"].tap()
+
+        let alert = app.alerts["Rename Folder"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        let nameField = alert.textFields["Folder Name"]
+        nameField.tap()
+        nameField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8))
+        nameField.typeText("Work")
+        alert.buttons["Rename"].tap()
+
+        XCTAssertTrue(app.buttons["folder-management-Work"].waitForExistence(timeout: 5))
+        editButton.tap()
+        XCTAssertEqual(editButton.label, "Edit")
+        XCTAssertTrue(app.buttons["folder-row-Work"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["folder-management-Work"].exists)
+    }
+
     func testFolderRowContextMenuCreatesNestedFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let projects = app.buttons["folder-row-Projects"]

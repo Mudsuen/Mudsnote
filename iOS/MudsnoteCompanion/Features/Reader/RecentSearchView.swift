@@ -16,6 +16,7 @@ struct LibraryHomeView: View {
     @State private var searchSuggestion: NotesSearchSuggestion?
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
+    @State private var isManagingFolders = false
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
     var chooseFolder: () -> Void
@@ -95,6 +96,27 @@ struct LibraryHomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("New Folder")
                     .accessibilityIdentifier("new-folder-button")
+
+                    Button {
+                        isSearchFocused = false
+                        searchQuery = ""
+                        searchSuggestion = nil
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isManagingFolders.toggle()
+                        }
+                    } label: {
+                        Text(isManagingFolders ? "Done" : "Edit")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .padding(.horizontal, 18)
+                            .frame(minWidth: 68, minHeight: 40)
+                            .background(MudsnoteColors.card, in: Capsule())
+                            .overlay {
+                                Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("edit-folders-button")
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -154,17 +176,34 @@ struct LibraryHomeView: View {
             NotesSectionHeader(title: String(localized: "Folders"))
             notesCard {
                 ForEach(appModel.folders) { folder in
-                    NavigationLink {
-                        LibraryFolderView(folder: folder)
-                    } label: {
+                    if isManagingFolders {
                         NotesFolderRow(
                             title: folder.name,
                             systemImage: "folder.fill",
-                            count: folder.totalNoteCount
+                            count: folder.totalNoteCount,
+                            showsChevron: false,
+                            trailingAccessoryWidth: 44
                         )
+                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+                        .modifier(
+                            FolderLifecycleActions(
+                                folder: folder,
+                                isManagementMode: true
+                            )
+                        )
+                    } else {
+                        NavigationLink {
+                            LibraryFolderView(folder: folder)
+                        } label: {
+                            NotesFolderRow(
+                                title: folder.name,
+                                systemImage: "folder.fill",
+                                count: folder.totalNoteCount
+                            )
+                        }
+                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+                        .modifier(FolderLifecycleActions(folder: folder))
                     }
-                    .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                    .modifier(FolderLifecycleActions(folder: folder))
                 }
             }
         }
@@ -232,30 +271,63 @@ struct LibraryHomeView: View {
             NotesSectionHeader(title: String(localized: "Smart Folders"))
             notesCard {
                 ForEach(appModel.smartFolders) { definition in
-                    NavigationLink {
-                        SmartFolderNotesView(smartFolderID: definition.id)
-                    } label: {
-                        NotesFolderRow(
-                            title: definition.name,
-                            systemImage: "folder.badge.gearshape",
-                            count: smartFolderCount(definition)
-                        )
-                    }
-                    .accessibilityIdentifier("smart-folder-row-\(definition.id.uuidString)")
-                    .contextMenu {
-                        Button {
-                            smartFolderEditor = definition
-                        } label: {
-                            Label("Edit Smart Folder", systemImage: "slider.horizontal.3")
-                        }
-                        .accessibilityIdentifier("edit-smart-folder-\(definition.id.uuidString)")
+                    if isManagingFolders {
+                        ZStack(alignment: .trailing) {
+                            NotesFolderRow(
+                                title: definition.name,
+                                systemImage: "folder.badge.gearshape",
+                                count: smartFolderCount(definition),
+                                showsChevron: false,
+                                trailingAccessoryWidth: 44
+                            )
 
-                        Button(role: .destructive) {
-                            smartFolderToDelete = definition
-                        } label: {
-                            Label("Delete Smart Folder", systemImage: "trash")
+                            Menu {
+                                Button {
+                                    smartFolderEditor = definition
+                                } label: {
+                                    Label("Edit Smart Folder", systemImage: "slider.horizontal.3")
+                                }
+                                Button(role: .destructive) {
+                                    smartFolderToDelete = definition
+                                } label: {
+                                    Label("Delete Smart Folder", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(NotesCloneColors.folderYellow)
+                                    .frame(width: 44, height: 44)
+                            }
+                            .accessibilityLabel("Folder Actions")
+                            .accessibilityIdentifier("smart-folder-management-\(definition.id.uuidString)")
+                            .padding(.trailing, 10)
                         }
-                        .accessibilityIdentifier("delete-smart-folder-\(definition.id.uuidString)")
+                    } else {
+                        NavigationLink {
+                            SmartFolderNotesView(smartFolderID: definition.id)
+                        } label: {
+                            NotesFolderRow(
+                                title: definition.name,
+                                systemImage: "folder.badge.gearshape",
+                                count: smartFolderCount(definition)
+                            )
+                        }
+                        .accessibilityIdentifier("smart-folder-row-\(definition.id.uuidString)")
+                        .contextMenu {
+                            Button {
+                                smartFolderEditor = definition
+                            } label: {
+                                Label("Edit Smart Folder", systemImage: "slider.horizontal.3")
+                            }
+                            .accessibilityIdentifier("edit-smart-folder-\(definition.id.uuidString)")
+
+                            Button(role: .destructive) {
+                                smartFolderToDelete = definition
+                            } label: {
+                                Label("Delete Smart Folder", systemImage: "trash")
+                            }
+                            .accessibilityIdentifier("delete-smart-folder-\(definition.id.uuidString)")
+                        }
                     }
                 }
             }
@@ -1346,6 +1418,7 @@ struct LibraryFolderView: View {
 private struct FolderLifecycleActions: ViewModifier {
     @EnvironmentObject private var appModel: AppModel
     var folder: LibraryFolderNode
+    var isManagementMode = false
     @State private var folderName = ""
     @State private var isCreatingSubfolder = false
     @State private var isRenaming = false
@@ -1368,42 +1441,21 @@ private struct FolderLifecycleActions: ViewModifier {
                 }
             }
             .contextMenu {
-                Button {
-                    folderName = ""
-                    isCreatingSubfolder = true
-                } label: {
-                    Label("New Subfolder", systemImage: "folder.badge.plus")
-                }
-                Button {
-                    folderName = folder.name
-                    isRenaming = true
-                } label: {
-                    Label("Rename Folder", systemImage: "pencil")
-                }
-                Menu {
-                    if folder.relativePath.contains("/") {
-                        Button {
-                            let target = folder
-                            Task { _ = await appModel.moveFolder(target, to: nil) }
-                        } label: {
-                            Label("Top Level", systemImage: "tray")
-                        }
+                lifecycleMenuItems
+            }
+            .overlay(alignment: .trailing) {
+                if isManagementMode {
+                    Menu {
+                        lifecycleMenuItems
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(NotesCloneColors.folderYellow)
+                            .frame(width: 44, height: 44)
                     }
-                    ForEach(moveDestinations) { destination in
-                        Button {
-                            let target = folder
-                            Task { _ = await appModel.moveFolder(target, to: destination) }
-                        } label: {
-                            Label(destination.relativePath, systemImage: "folder")
-                        }
-                    }
-                } label: {
-                    Label("Move Folder", systemImage: "folder.badge.arrow.forward")
-                }
-                Button(role: .destructive) {
-                    isConfirmingDelete = true
-                } label: {
-                    Label("Delete Folder", systemImage: "trash")
+                    .accessibilityLabel("Folder Actions")
+                    .accessibilityIdentifier("folder-management-\(folder.relativePath)")
+                    .padding(.trailing, 10)
                 }
             }
             .alert("New Subfolder", isPresented: $isCreatingSubfolder) {
@@ -1439,6 +1491,47 @@ private struct FolderLifecycleActions: ViewModifier {
             } message: {
                 Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
             }
+    }
+
+    @ViewBuilder
+    private var lifecycleMenuItems: some View {
+        Button {
+            folderName = ""
+            isCreatingSubfolder = true
+        } label: {
+            Label("New Subfolder", systemImage: "folder.badge.plus")
+        }
+        Button {
+            folderName = folder.name
+            isRenaming = true
+        } label: {
+            Label("Rename Folder", systemImage: "pencil")
+        }
+        Menu {
+            if folder.relativePath.contains("/") {
+                Button {
+                    let target = folder
+                    Task { _ = await appModel.moveFolder(target, to: nil) }
+                } label: {
+                    Label("Top Level", systemImage: "tray")
+                }
+            }
+            ForEach(moveDestinations) { destination in
+                Button {
+                    let target = folder
+                    Task { _ = await appModel.moveFolder(target, to: destination) }
+                } label: {
+                    Label(destination.relativePath, systemImage: "folder")
+                }
+            }
+        } label: {
+            Label("Move Folder", systemImage: "folder.badge.arrow.forward")
+        }
+        Button(role: .destructive) {
+            isConfirmingDelete = true
+        } label: {
+            Label("Delete Folder", systemImage: "trash")
+        }
     }
 }
 
@@ -2163,6 +2256,8 @@ struct NotesFolderRow: View {
     var systemImage: String
     var iconTint: Color = NotesCloneColors.folderYellow
     var count: Int?
+    var showsChevron = true
+    var trailingAccessoryWidth: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 16) {
@@ -2184,9 +2279,15 @@ struct NotesFolderRow: View {
                     .foregroundStyle(MudsnoteColors.muted)
             }
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+            }
+
+            if trailingAccessoryWidth > 0 {
+                Color.clear.frame(width: trailingAccessoryWidth)
+            }
         }
         .padding(.horizontal, 18)
         .frame(minHeight: 58)
