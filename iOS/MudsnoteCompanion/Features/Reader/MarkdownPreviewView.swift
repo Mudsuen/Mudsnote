@@ -60,9 +60,11 @@ struct MarkdownPreviewView: View {
     @State private var linkDraft: MarkdownLinkDraft?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
+    @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
     @State private var isDrawingPresented = false
+    @State private var cameraErrorMessage: String?
     @State private var scanErrorMessage: String?
     @State private var previewURL: URL?
     @State private var attachmentBeingRenamed: MarkdownAttachmentLine?
@@ -418,6 +420,24 @@ struct MarkdownPreviewView: View {
             .presentationDragIndicator(.visible)
         }
         .quickLookPreview($previewURL)
+        .fullScreenCover(isPresented: $isCameraPresented) {
+            CameraPhotoCaptureView(
+                onComplete: { result in
+                    isCameraPresented = false
+                    switch result {
+                    case .success(let data):
+                        Task { await attachCameraPhoto(data) }
+                    case .failure(let error):
+                        cameraErrorMessage = error.localizedDescription
+                    }
+                },
+                onCancel: {
+                    isCameraPresented = false
+                    editorFocused = true
+                }
+            )
+            .ignoresSafeArea()
+        }
         .fullScreenCover(isPresented: $isScannerPresented) {
             DocumentScannerView(
                 onComplete: { result in
@@ -449,6 +469,17 @@ struct MarkdownPreviewView: View {
             Button("OK", role: .cancel) { scanErrorMessage = nil }
         } message: {
             Text(scanErrorMessage ?? "Try scanning the document again.")
+        }
+        .alert("Couldn’t Take Photo", isPresented: Binding(
+            get: { cameraErrorMessage != nil },
+            set: { if !$0 { cameraErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                cameraErrorMessage = nil
+                editorFocused = true
+            }
+        } message: {
+            Text(cameraErrorMessage ?? "Try taking the photo again.")
         }
         .alert("Rename Attachment", isPresented: Binding(
             get: { attachmentBeingRenamed != nil },
@@ -786,6 +817,15 @@ struct MarkdownPreviewView: View {
                             Label("Add image from Photos", systemImage: "photo")
                         }
                         .accessibilityIdentifier("markdown-add-image")
+
+                        Button {
+                            editorFocused = false
+                            isCameraPresented = true
+                        } label: {
+                            Label("Take Photo", systemImage: "camera")
+                        }
+                        .disabled(!CameraPhotoCapture.isAvailable)
+                        .accessibilityIdentifier("markdown-take-photo")
 
                         Button {
                             editorFocused = false
@@ -1367,6 +1407,29 @@ struct MarkdownPreviewView: View {
         saveState = .saving
         if let updated = await appModel.attachPhoto(
             item,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
+    private func attachCameraPhoto(_ data: Data) async {
+        guard case .document = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
+        saveState = .saving
+        if let updated = await appModel.attachCameraPhoto(
+            data,
             to: document,
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown

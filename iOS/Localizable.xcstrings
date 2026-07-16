@@ -127,6 +127,18 @@
     "Scan Document": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文稿" } } }
     },
+    "Take Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍照" } } }
+    },
+    "Couldn’t Take Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法拍照" } } }
+    },
+    "Try taking the photo again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试拍照。" } } }
+    },
+    "The photo could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理这张照片。" } } }
+    },
     "Scanned document attached": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加扫描文稿" } } }
     },

@@ -562,6 +562,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
         attachmentMenu.tap()
         XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Take Photo"].exists)
         XCTAssertTrue(app.buttons["Add Drawing"].exists)
         XCTAssertTrue(app.buttons["Add File"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
@@ -1353,6 +1354,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         controls[0].tap()
         XCTAssertTrue(app.buttons["Add image from Photos"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Take Photo"].exists)
         XCTAssertTrue(app.buttons["Scan Document"].exists)
 
         let attachmentMenuScreenshot = XCTAttachment(screenshot: app.screenshot())

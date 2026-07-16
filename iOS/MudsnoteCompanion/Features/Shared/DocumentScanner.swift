@@ -2,6 +2,82 @@ import SwiftUI
 import UIKit
 import VisionKit
 
+enum CameraPhotoCapture {
+    enum Error: LocalizedError, Equatable {
+        case invalidImage
+
+        var errorDescription: String? {
+            String(localized: "The photo could not be prepared.")
+        }
+    }
+
+    static var isAvailable: Bool {
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
+    static func jpegData(for image: UIImage, compressionQuality: CGFloat = 0.9) throws -> Data {
+        guard image.size.width > 0,
+              image.size.height > 0,
+              let data = image.jpegData(compressionQuality: compressionQuality),
+              !data.isEmpty else {
+            throw Error.invalidImage
+        }
+        return data
+    }
+}
+
+struct CameraPhotoCaptureView: UIViewControllerRepresentable {
+    let onComplete: (Result<Data, Swift.Error>) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onComplete: onComplete, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let controller = UIImagePickerController()
+        controller.sourceType = .camera
+        controller.cameraCaptureMode = .photo
+        controller.allowsEditing = false
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onComplete: (Result<Data, Swift.Error>) -> Void
+        let onCancel: () -> Void
+
+        init(
+            onComplete: @escaping (Result<Data, Swift.Error>) -> Void,
+            onCancel: @escaping () -> Void
+        ) {
+            self.onComplete = onComplete
+            self.onCancel = onCancel
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            guard let image = info[.originalImage] as? UIImage else {
+                onComplete(.failure(CameraPhotoCapture.Error.invalidImage))
+                return
+            }
+            do {
+                onComplete(.success(try CameraPhotoCapture.jpegData(for: image)))
+            } catch {
+                onComplete(.failure(error))
+            }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onCancel()
+        }
+    }
+}
+
 enum ScannedDocumentPDF {
     enum Error: LocalizedError, Equatable {
         case noPages

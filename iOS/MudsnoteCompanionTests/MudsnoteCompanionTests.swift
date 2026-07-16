@@ -4,6 +4,25 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testCameraPhotoProducesAValidatedJPEGAttachment() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 18)).image { context in
+            UIColor.systemYellow.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 24, height: 18))
+        }
+
+        let data = try CameraPhotoCapture.jpegData(for: image)
+        let attachment = try CaptureAttachment.validatedImage(data: data)
+
+        XCTAssertFalse(data.isEmpty)
+        XCTAssertEqual(attachment.preferredExtension, "jpg")
+    }
+
+    func testCameraPhotoRejectsAnEmptyImage() {
+        XCTAssertThrowsError(try CameraPhotoCapture.jpegData(for: UIImage())) { error in
+            XCTAssertEqual(error as? CameraPhotoCapture.Error, .invalidImage)
+        }
+    }
+
     func testMarkdownTagSyntaxRewritesOnlyVisibleExactTags() throws {
         let markdown = """
         # Heading

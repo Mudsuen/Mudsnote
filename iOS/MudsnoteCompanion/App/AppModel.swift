@@ -257,13 +257,28 @@ final class AppModel: ObservableObject {
                     statusToast = .error(String(localized: "Image data unavailable"))
                     return
                 }
-                let attachment = try CaptureAttachment.validatedImage(data: data)
-                try appendAttachment(attachment)
-                statusToast = .saved(String(localized: "Image attached"))
+                try attachImageDataToDraft(data)
             } catch {
                 statusToast = .error(error.localizedDescription)
             }
         }
+    }
+
+    func attachCameraPhoto(_ data: Data) {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            try attachImageDataToDraft(data)
+        } catch {
+            statusToast = .error(error.localizedDescription)
+        }
+    }
+
+    private func attachImageDataToDraft(_ data: Data) throws {
+        let attachment = try CaptureAttachment.validatedImage(data: data)
+        try appendAttachment(attachment)
+        statusToast = .saved(String(localized: "Image attached"))
     }
 
     func attachScannedDocument(_ pages: [UIImage]) async -> String? {
@@ -1183,6 +1198,42 @@ final class AppModel: ObservableObject {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw CaptureAttachmentError.empty
             }
+            return await attachImageData(
+                data,
+                to: document,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown
+            )
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func attachCameraPhoto(
+        _ data: Data,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        return await attachImageData(
+            data,
+            to: document,
+            markdown: markdown,
+            expectedMarkdown: expectedMarkdown
+        )
+    }
+
+    private func attachImageData(
+        _ data: Data,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        do {
             let attachment = try CaptureAttachment.validatedImage(data: data)
             let updated = try await fileStore.attachToMarkdownDocument(
                 relativePath: document.relativePath,

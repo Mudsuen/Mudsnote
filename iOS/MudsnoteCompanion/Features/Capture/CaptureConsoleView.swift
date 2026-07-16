@@ -8,8 +8,11 @@ struct CaptureConsoleView: View {
     @State private var selectedRoute: CaptureRoute
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
+    @State private var isCameraPresented = false
     @State private var isScannerPresented = false
+    @State private var cameraErrorMessage: String?
     @State private var scanErrorMessage: String?
+    @State private var refocusAfterCamera = false
     @State private var refocusAfterScanner = false
 
     init(initialRoute: CaptureRoute) {
@@ -56,6 +59,29 @@ struct CaptureConsoleView: View {
             matching: .images
         )
         .fullScreenCover(
+            isPresented: $isCameraPresented,
+            onDismiss: refocusCaptureAfterCameraIfNeeded
+        ) {
+            CameraPhotoCaptureView(
+                onComplete: { result in
+                    switch result {
+                    case .success(let data):
+                        selectedRoute = .image
+                        appModel.attachCameraPhoto(data)
+                        refocusAfterCamera = true
+                    case .failure(let error):
+                        cameraErrorMessage = error.localizedDescription
+                    }
+                    isCameraPresented = false
+                },
+                onCancel: {
+                    refocusAfterCamera = true
+                    isCameraPresented = false
+                }
+            )
+            .ignoresSafeArea()
+        }
+        .fullScreenCover(
             isPresented: $isScannerPresented,
             onDismiss: refocusCaptureAfterScannerIfNeeded
         ) {
@@ -91,6 +117,17 @@ struct CaptureConsoleView: View {
         } message: {
             Text(scanErrorMessage ?? "Try scanning the document again.")
         }
+        .alert("Couldn’t Take Photo", isPresented: Binding(
+            get: { cameraErrorMessage != nil },
+            set: { if !$0 { cameraErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                cameraErrorMessage = nil
+                isBodyFocused = true
+            }
+        } message: {
+            Text(cameraErrorMessage ?? "Try taking the photo again.")
+        }
         .onDisappear {
             appModel.cancelAudioRecording()
         }
@@ -106,6 +143,15 @@ struct CaptureConsoleView: View {
                     Label("Add image from Photos", systemImage: "photo")
                 }
                 .accessibilityIdentifier("capture-add-image")
+
+                Button {
+                    isBodyFocused = false
+                    isCameraPresented = true
+                } label: {
+                    Label("Take Photo", systemImage: "camera")
+                }
+                .disabled(!CameraPhotoCapture.isAvailable)
+                .accessibilityIdentifier("capture-take-photo")
 
                 Button {
                     isBodyFocused = false
@@ -181,6 +227,12 @@ struct CaptureConsoleView: View {
             .accessibilityIdentifier("save-memo-button")
         }
         .frame(minHeight: 52)
+    }
+
+    private func refocusCaptureAfterCameraIfNeeded() {
+        guard refocusAfterCamera else { return }
+        refocusAfterCamera = false
+        isBodyFocused = true
     }
 
     private var editor: some View {
