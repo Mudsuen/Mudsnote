@@ -138,6 +138,8 @@ actor MarkdownFileStore {
                     modifiedAt: modifiedAt,
                     createdAt: values.creationDate ?? modifiedAt,
                     preview: listMetadata.preview,
+                    galleryImagePath: listMetadata.galleryImagePath,
+                    galleryChecklistItems: listMetadata.galleryChecklistItems,
                     hasAttachments: listMetadata.hasAttachments,
                     hasChecklist: listMetadata.hasChecklist,
                     hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
@@ -222,6 +224,8 @@ actor MarkdownFileStore {
             modifiedAt: modifiedAt,
             createdAt: inboxValues.creationDate ?? modifiedAt,
             preview: metadata.preview,
+            galleryImagePath: metadata.galleryImagePath,
+            galleryChecklistItems: metadata.galleryChecklistItems,
             hasAttachments: metadata.hasAttachments,
             hasChecklist: metadata.hasChecklist,
             hasUncheckedChecklist: metadata.hasUncheckedChecklist,
@@ -2590,6 +2594,8 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var modifiedAt: Date
     var createdAt: Date = .distantPast
     var preview = ""
+    var galleryImagePath: String?
+    var galleryChecklistItems: [MarkdownGalleryChecklistItem] = []
     var hasAttachments = false
     var hasChecklist = false
     var hasUncheckedChecklist = false
@@ -2597,9 +2603,16 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var tags: [String] = []
 }
 
+struct MarkdownGalleryChecklistItem: Equatable {
+    var text: String
+    var isChecked: Bool
+}
+
 struct MarkdownListMetadata: Equatable {
     var title: String
     var preview: String
+    var galleryImagePath: String?
+    var galleryChecklistItems: [MarkdownGalleryChecklistItem]
     var hasAttachments: Bool
     var hasChecklist: Bool
     var hasUncheckedChecklist: Bool
@@ -2673,9 +2686,15 @@ struct MarkdownListMetadata: Equatable {
         }
         let joinedPreview = previewParts.joined(separator: " ")
         let preview = String(joinedPreview.prefix(180))
+        let galleryImagePath = MarkdownAttachmentSearch.relativePaths(in: markdown).first {
+            LibraryAttachment.Kind(fileExtension: ($0 as NSString).pathExtension) == .image
+        }
+        let galleryChecklistItems = lines.compactMap(Self.galleryChecklistItem(from:)).prefix(4)
         return MarkdownListMetadata(
             title: title,
             preview: preview,
+            galleryImagePath: galleryImagePath,
+            galleryChecklistItems: Array(galleryChecklistItems),
             hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
             hasChecklist: lines.contains { line in
                 line.range(
@@ -2692,6 +2711,24 @@ struct MarkdownListMetadata: Equatable {
             tags: MarkdownTagSyntax.tags(in: markdown),
             attachmentPaths: MarkdownAttachmentSearch.relativePaths(in: markdown)
         )
+    }
+
+    private static func galleryChecklistItem(from line: String) -> MarkdownGalleryChecklistItem? {
+        let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markers: [(String, Bool)] = [
+            ("- [ ] ", false), ("* [ ] ", false), ("+ [ ] ", false),
+            ("- [x] ", true), ("* [x] ", true), ("+ [x] ", true),
+            ("- [X] ", true), ("* [X] ", true), ("+ [X] ", true),
+        ]
+        guard let marker = markers.first(where: { value.hasPrefix($0.0) }) else { return nil }
+        var text = value.dropFirst(marker.0.count).trimmingCharacters(in: .whitespaces)
+        text = text.replacingOccurrences(
+            of: #"</?(?:u|mark)>|[*_`~]"#,
+            with: "",
+            options: .regularExpression
+        )
+        guard !text.isEmpty else { return nil }
+        return MarkdownGalleryChecklistItem(text: text, isChecked: marker.1)
     }
 
     private static func visibleMarkdownLines(from markdown: String) -> [String] {

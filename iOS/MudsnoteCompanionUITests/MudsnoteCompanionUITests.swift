@@ -1419,6 +1419,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(second.exists)
+        XCTAssertTrue(second.label.contains("Capture the idea"))
+        XCTAssertTrue(second.label.contains("Refine the draft"))
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertEqual(first.frame.midY, second.frame.midY, accuracy: 3)
         let gallerySearch = app.textFields["library-search-field"]

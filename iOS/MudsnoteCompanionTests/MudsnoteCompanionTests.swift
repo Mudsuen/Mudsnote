@@ -2678,6 +2678,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
             ![Cover](Attachments/cover.png)
             - [x] **Ship** the iPhone build
+            - [ ] Publish the release notes
             Follow up with the release notes.
             #release #发布 #Release
             `#inline-code`
@@ -2689,10 +2690,18 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
 
         XCTAssertEqual(metadata.title, "Launch Plan")
-        XCTAssertEqual(metadata.preview, "Ship the iPhone build Follow up with the release notes.")
+        XCTAssertEqual(metadata.preview, "Ship the iPhone build Publish the release notes Follow up with the release notes.")
         XCTAssertTrue(metadata.hasAttachments)
+        XCTAssertEqual(metadata.galleryImagePath, "Attachments/cover.png")
+        XCTAssertEqual(
+            metadata.galleryChecklistItems,
+            [
+                MarkdownGalleryChecklistItem(text: "Ship the iPhone build", isChecked: true),
+                MarkdownGalleryChecklistItem(text: "Publish the release notes", isChecked: false),
+            ]
+        )
         XCTAssertTrue(metadata.hasChecklist)
-        XCTAssertFalse(metadata.hasUncheckedChecklist)
+        XCTAssertTrue(metadata.hasUncheckedChecklist)
         XCTAssertEqual(Set(metadata.tags), Set(["#release", "#发布"]))
         let unchecked = MarkdownListMetadata.extract(
             from: "- [ ] Follow up",

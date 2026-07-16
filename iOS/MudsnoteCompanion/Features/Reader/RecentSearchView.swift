@@ -1988,6 +1988,7 @@ private struct SelectableNoteGalleryCard: View {
 }
 
 private struct NoteGalleryCard: View {
+    @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis
 
@@ -2005,6 +2006,13 @@ private struct NoteGalleryCard: View {
         return parent.isEmpty ? String(localized: "Mudsnote") : (parent as NSString).lastPathComponent
     }
 
+    private var galleryImage: LibraryAttachment? {
+        guard let path = file.galleryImagePath else { return nil }
+        return appModel.attachments.first {
+            $0.relativePath == path && $0.kind == .image
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 7) {
@@ -2012,10 +2020,7 @@ private struct NoteGalleryCard: View {
                     .font(.system(.body, design: .rounded, weight: .bold))
                     .foregroundStyle(MudsnoteColors.text)
                     .lineLimit(2)
-                Text(file.preview.isEmpty ? String(localized: "No additional text") : file.preview)
-                    .font(.subheadline)
-                    .foregroundStyle(MudsnoteColors.muted)
-                    .lineLimit(5)
+                galleryPreview
                 Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     Image(systemName: "folder")
@@ -2055,6 +2060,48 @@ private struct NoteGalleryCard: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Open Markdown file")
+    }
+
+    @ViewBuilder
+    private var galleryPreview: some View {
+        if let galleryImage {
+            AttachmentImageThumbnail(attachment: galleryImage)
+                .frame(height: file.galleryChecklistItems.isEmpty ? 88 : 64)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+            if !file.galleryChecklistItems.isEmpty {
+                galleryChecklist(maximumItems: 2)
+            }
+        } else if !file.galleryChecklistItems.isEmpty {
+            galleryChecklist(maximumItems: 4)
+        } else {
+            Text(file.preview.isEmpty ? String(localized: "No additional text") : file.preview)
+                .font(.subheadline)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(5)
+        }
+    }
+
+    private func galleryChecklist(maximumItems: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(file.galleryChecklistItems.prefix(maximumItems).enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(
+                            item.isChecked ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                        )
+                    Text(item.text)
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
     }
 }
 

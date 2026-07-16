@@ -86,7 +86,24 @@ private enum MudsnoteUITestLaunchConfiguration {
             do {
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
                 try FolderInitializer.initialize(root)
-                if let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=") {
+                let galleryFixtureImage = UIGraphicsImageRenderer(
+                    size: CGSize(width: 720, height: 480)
+                ).image { context in
+                    UIColor(red: 0.92, green: 0.76, blue: 0.28, alpha: 1).setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 720, height: 480))
+                    let configuration = UIImage.SymbolConfiguration(
+                        pointSize: 180,
+                        weight: .regular
+                    )
+                    let symbol = UIImage(
+                        systemName: "note.text",
+                        withConfiguration: configuration
+                    )?.withTintColor(.black, renderingMode: .alwaysOriginal)
+                    symbol?.draw(
+                        in: CGRect(x: 250, y: 150, width: 220, height: 180)
+                    )
+                }
+                if let image = galleryFixtureImage.pngData() {
                     try image.write(
                         to: root.appendingPathComponent("Attachments/ui-test.png"),
                         options: .atomic
@@ -125,7 +142,15 @@ private enum MudsnoteUITestLaunchConfiguration {
                     )
                 }
                 if arguments.contains(batchNotesArgument) {
-                    try "# Second UI Note\n\nManage these notes together.\n".write(
+                    try """
+                    # Second UI Note
+
+                    ![Gallery preview](Attachments/ui-test.png)
+
+                    - [x] Capture the idea
+                    - [ ] Refine the draft
+                    - [ ] Ship the note
+                    """.write(
                         to: projects.appendingPathComponent("Second UI Note.md"),
                         atomically: true,
                         encoding: .utf8
