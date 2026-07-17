@@ -21,6 +21,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Empty library search presents one-row structured suggestions for pinned notes, attachments, checklists, and notes edited today; suggestions respect All/Notes/Inbox scope and transition cleanly into full-text search.
 - [x] Camera Scan Text inserts recognized content at the active caret in Quick Capture and the full Markdown editor as ordinary editable and searchable Markdown.
 - [x] Gallery cards preview a note's first image and checklist state from cached Markdown list metadata without view-layer file scans.
+- [x] A left swipe on a movable note exposes Move beside Delete and opens a native half-sheet destination picker; moving to the top level or another folder updates the list through the existing atomic lifecycle operation.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
 - [x] App and Widget ship one reviewed English/Simplified Chinese String Catalog; dynamic status, recovery, attachment, transcription, and accessibility copy use localized runtime strings.
@@ -63,7 +64,7 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] One hundred fifty-six tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
+- [x] One hundred fifty-seven tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [x] A generic-device `1.0 (1)` archive completes App Intents SSU generation for English and Simplified Chinese without the prior `appintentsnltrainingprocessor` warning.

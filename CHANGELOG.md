@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 168. Notes-style swipe-to-move on iPhone
+- Problem: Note rows exposed Delete after a left swipe, but Move remained hidden in the long-press menu, making a common Apple Notes organization flow slower and harder to discover.
+- Fix: Added Move beside Delete in the trailing swipe actions and a native half-sheet destination picker that moves the note atomically to the top level or another folder, refreshes the list in place, and preserves the existing pin, rename, batch, and opened-note lifecycle actions.
+- Lesson: High-frequency lifecycle actions should be reachable from the list gesture users already know; reusing the existing atomic move operation keeps the new surface consistent without duplicating data logic.
+
 ### 167. Notes-style attachment presentation on iPhone
 - Problem: Opened iPhone notes always rendered attachments at their largest presentation, consuming most of a half-sheet and offering no Apple Notes-style per-attachment or per-note density control.
 - Fix: Added persistent Small, Large, and Plain Link choices to every attachment context menu plus Set All to Small/Large in Note Options. Preferences follow note, folder, and attachment renames/moves, clear on permanent deletion, preserve existing attachment actions, and never rewrite portable Markdown.

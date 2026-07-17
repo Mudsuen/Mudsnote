@@ -2275,6 +2275,9 @@
     "Notes in this folder will move to Recently Deleted. Other files will be preserved.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹中的笔记将移到最近删除，其他文件会保留。" } } }
     },
+    "Move": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动" } } }
+    },
     "Move Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动笔记" } } }
     },

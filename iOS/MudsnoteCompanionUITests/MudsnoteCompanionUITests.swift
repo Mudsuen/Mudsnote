@@ -1863,6 +1863,42 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
     }
 
+    func testNoteSwipeOffersMoveAndMovesToTopLevel() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.swipeLeft()
+
+        let move = app.buttons["swipe-move-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(move.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Delete"].exists)
+
+        let swipeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        swipeScreenshot.name = "Notes-style move and delete swipe actions"
+        swipeScreenshot.lifetime = .keepAlways
+        add(swipeScreenshot)
+
+        move.tap()
+        XCTAssertTrue(app.navigationBars["Move Note"].waitForExistence(timeout: 3))
+        let topLevel = app.buttons["move-note-destination-top-level"]
+        XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
+
+        let pickerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        pickerScreenshot.name = "Notes-style move destination picker"
+        pickerScreenshot.lifetime = .keepAlways
+        add(pickerScreenshot)
+
+        topLevel.tap()
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(note.exists)
+    }
+
     @discardableResult
     private func launchApp(
         reset: Bool,
