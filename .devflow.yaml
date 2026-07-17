@@ -1,0 +1,8 @@
+schema_version: 1
+verification:
+  pr: ./scripts/verify pr
+  full: ./scripts/verify full
+  live: ./scripts/verify live
+data_policy:
+  production_ci: forbidden
+  credentials_ci: forbidden

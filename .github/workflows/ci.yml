@@ -3,12 +3,46 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: macos-latest
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Swift test
-        run: swift test
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Check delivery policy
+        shell: bash
+        run: |
+          test -f AGENTS.md
+          test -f .devflow.yaml
+          test -x scripts/verify
+          grep -qx '/.task' .gitignore
+          if git ls-files | grep -E '(^|/)(\.env($|\.)|[^/]+\.(sqlite|sqlite3|db|pem|p8|p12|key|mobileprovision)$|\.netrc$|id_rsa$|id_ed25519$)'; then
+            echo 'Tracked credential or database-like files violate the PR CI boundary.' >&2
+            exit 1
+          fi
+
+  build-and-test:
+    name: build-and-test
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+      - name: Verify
+        run: ./scripts/verify pr

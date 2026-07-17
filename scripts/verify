@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE="${1:-pr}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStaysInteractiveForDenseFormatting|cachedNoteVersionValidationDoesNotBlockKeyboardNavigation'
+
+check_diff() {
+  local base_ref=""
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    git fetch origin "$GITHUB_BASE_REF" --depth=1
+    base_ref="origin/$GITHUB_BASE_REF"
+  elif git show-ref --verify --quiet refs/remotes/origin/main; then
+    base_ref="origin/main"
+  fi
+
+  if [[ -n "$base_ref" ]]; then
+    local base
+    base="$(git merge-base HEAD "$base_ref")"
+    git diff --check "$base..HEAD"
+  fi
+  git diff --check
+  git diff --cached --check
+}
+
+check_ci_boundary() {
+  if git ls-files | grep -E '(^|/)(\.env($|\.)|[^/]+\.(sqlite|sqlite3|db|pem|p8|p12|key|mobileprovision)$|\.netrc$|id_rsa$|id_ed25519$)'; then
+    echo "ERROR: tracked credential or database-like files violate the PR CI boundary." >&2
+    return 1
+  fi
+}
+
+validate_metadata_if_present() {
+  if [[ -f scripts/validate_ios_app_store_metadata.py ]]; then
+    python3 scripts/validate_ios_app_store_metadata.py
+  fi
+}
+
+case "$MODE" in
+  pr)
+    check_diff
+    check_ci_boundary
+    validate_metadata_if_present
+    swift test --skip "$PERFORMANCE_TESTS"
+    ;;
+  full)
+    check_diff
+    check_ci_boundary
+    validate_metadata_if_present
+    swift build -c release
+    swift test
+    ;;
+  live)
+    if [[ -n "${CI:-}" ]]; then
+      echo "ERROR: live verification is local-only and must not run in CI." >&2
+      exit 2
+    fi
+    check_diff
+    check_ci_boundary
+    ./scripts/package_app.sh
+    ;;
+  *)
+    echo "Usage: ./scripts/verify {pr|full|live}" >&2
+    exit 2
+    ;;
+esac
