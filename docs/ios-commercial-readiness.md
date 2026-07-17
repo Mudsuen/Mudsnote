@@ -12,6 +12,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
 - [x] Rendered notes recognize actionable email addresses, phone numbers, and street addresses without modifying the underlying Markdown; explicit Markdown links retain priority.
 - [x] Attachments can be browsed by photo, video, audio, and document category; a long press returns to the exact containing note or Inbox memo.
+- [x] Open notes let each attachment render as Small, Large, or Plain Link and let the whole note set all attachments to Small or Large; presentation choices persist through note, folder, and attachment lifecycle changes without rewriting Markdown.
 - [x] Quick Capture and the full editor can choose or capture a short video, save it as a portable Markdown attachment, and play it inline when the note is opened.
 - [x] Scanned and imported PDFs open in native Quick Look markup, save atomically back to the portable attachment, reject stale external edits, and do not rewrite unchanged files.
 - [x] Open notes export as print-ready, paginated PDFs through the native share sheet with Preview, Markup, Print, and Save to Files while leaving Markdown source unchanged.
@@ -62,7 +63,7 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] One hundred fifty-four tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
+- [x] One hundred fifty-six tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [x] A generic-device `1.0 (1)` archive completes App Intents SSU generation for English and Simplified Chinese without the prior `appintentsnltrainingprocessor` warning.

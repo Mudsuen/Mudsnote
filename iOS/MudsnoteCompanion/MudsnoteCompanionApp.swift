@@ -78,6 +78,9 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortDirection")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.groupNotesByDate")
+            UserDefaults.standard.removeObject(
+                forKey: AttachmentPresentationPreferences.defaultsKey
+            )
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: CaptureDraftRecoveryStore.defaultDirectory)
         }

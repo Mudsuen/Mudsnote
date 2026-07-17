@@ -50,6 +50,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var activeTagMutation: String?
     @Published private(set) var captureAttachmentIssue: String?
     @Published private(set) var captureSubmissionIssue: String?
+    @Published private(set) var attachmentPresentationRevision = 0
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -66,6 +67,7 @@ final class AppModel: ObservableObject {
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
+    private let attachmentPresentationPreferences: AttachmentPresentationPreferences
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -93,11 +95,13 @@ final class AppModel: ObservableObject {
         folderAccess: FolderAccessService = FolderAccessService(),
         fileStore: MarkdownFileStore = MarkdownFileStore(),
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
-        restoreDraftImmediately: Bool? = nil
+        restoreDraftImmediately: Bool? = nil,
+        defaults: UserDefaults = .standard
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
             Task { await restoreCaptureDraftIfNeeded() }
@@ -194,6 +198,62 @@ final class AppModel: ObservableObject {
         }
         defaults.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
         openSystemCapture(route)
+    }
+
+    func attachmentPresentationMode(
+        notePath: String,
+        attachmentPath: String
+    ) -> AttachmentPresentationMode {
+        _ = attachmentPresentationRevision
+        return attachmentPresentationPreferences.mode(
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+    }
+
+    func setAttachmentPresentationMode(
+        _ mode: AttachmentPresentationMode,
+        notePath: String,
+        attachmentPath: String
+    ) {
+        attachmentPresentationPreferences.set(
+            mode,
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+        attachmentPresentationRevision += 1
+    }
+
+    func setAllAttachmentPresentationModes(
+        _ mode: AttachmentPresentationMode,
+        notePath: String
+    ) {
+        attachmentPresentationPreferences.setAll(mode, notePath: notePath)
+        attachmentPresentationRevision += 1
+    }
+
+    func moveAttachmentPresentationPreference(
+        notePath: String,
+        from oldPath: String,
+        to newPath: String
+    ) {
+        attachmentPresentationPreferences.moveAttachment(
+            notePath: notePath,
+            from: oldPath,
+            to: newPath
+        )
+        attachmentPresentationRevision += 1
+    }
+
+    func removeAttachmentPresentationPreference(
+        notePath: String,
+        attachmentPath: String
+    ) {
+        attachmentPresentationPreferences.removeAttachment(
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+        attachmentPresentationRevision += 1
     }
 
     func persistCaptureDraftNow() {
@@ -799,6 +859,11 @@ final class AppModel: ObservableObject {
             let document = try await fileStore.loadMarkdownDocument(
                 relativePath: renamed.relativePath
             )
+            attachmentPresentationPreferences.moveNote(
+                from: relativePath,
+                to: renamed.relativePath
+            )
+            attachmentPresentationRevision += 1
             if selectedDocument?.relativePath == relativePath {
                 selectedDocument = document
             }
@@ -916,7 +981,15 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            _ = try await fileStore.renameFolder(relativePath: folder.relativePath, to: name)
+            let renamedPath = try await fileStore.renameFolder(
+                relativePath: folder.relativePath,
+                to: name
+            )
+            attachmentPresentationPreferences.moveFolder(
+                from: folder.relativePath,
+                to: renamedPath
+            )
+            attachmentPresentationRevision += 1
             statusToast = .saved(String(localized: "Folder Renamed"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
@@ -938,6 +1011,11 @@ final class AppModel: ObservableObject {
                 relativePath: folder.relativePath,
                 toParent: parent?.relativePath
             )
+            attachmentPresentationPreferences.moveFolder(
+                from: folder.relativePath,
+                to: movedPath
+            )
+            attachmentPresentationRevision += 1
             if let selectedDocument,
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 let updatedPath = movedPath
@@ -1008,6 +1086,11 @@ final class AppModel: ObservableObject {
             let document = try await fileStore.loadMarkdownDocument(
                 relativePath: moved.relativePath
             )
+            attachmentPresentationPreferences.moveNote(
+                from: relativePath,
+                to: moved.relativePath
+            )
+            attachmentPresentationRevision += 1
             if selectedDocument?.relativePath == relativePath {
                 selectedDocument = document
             }
@@ -1041,10 +1124,18 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            _ = try await fileStore.moveMarkdownDocuments(
-                relativePaths: files.map(\.relativePath),
+            let originalPaths = Array(Set(files.map(\.relativePath))).sorted()
+            let moved = try await fileStore.moveMarkdownDocuments(
+                relativePaths: originalPaths,
                 toFolder: targetFolder
             )
+            for (oldPath, movedFile) in zip(originalPaths, moved) {
+                attachmentPresentationPreferences.moveNote(
+                    from: oldPath,
+                    to: movedFile.relativePath
+                )
+            }
+            attachmentPresentationRevision += 1
             if let selectedDocument,
                files.contains(where: {
                    $0.relativePath == selectedDocument.relativePath
@@ -1097,6 +1188,8 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await fileStore.permanentlyDeleteTrashedMarkdownDocument(id: item.id)
+                attachmentPresentationPreferences.removeNote(item.originalRelativePath)
+                attachmentPresentationRevision += 1
                 statusToast = .saved(String(localized: "Deleted Permanently"))
                 await refreshInbox()
             } catch {
@@ -1112,6 +1205,10 @@ final class AppModel: ObservableObject {
             try await fileStore.permanentlyDeleteTrashedMarkdownDocuments(
                 ids: items.map(\.id)
             )
+            items.forEach {
+                attachmentPresentationPreferences.removeNote($0.originalRelativePath)
+            }
+            attachmentPresentationRevision += 1
             statusToast = .saved(String(localized: "Selected Notes Deleted Permanently"))
             await refreshInbox()
             return true

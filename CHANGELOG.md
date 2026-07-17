@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 167. Notes-style attachment presentation on iPhone
+- Problem: Opened iPhone notes always rendered attachments at their largest presentation, consuming most of a half-sheet and offering no Apple Notes-style per-attachment or per-note density control.
+- Fix: Added persistent Small, Large, and Plain Link choices to every attachment context menu plus Set All to Small/Large in Note Options. Preferences follow note, folder, and attachment renames/moves, clear on permanent deletion, preserve existing attachment actions, and never rewrite portable Markdown.
+- Lesson: Attachment density is view state rather than document content; keeping it in a lifecycle-aware preference store preserves Markdown portability while making half-sheet reading and editing materially faster.
+
 ### 166. Main-window Markdown routing and quieter quick capture
 - Problem: Finder-opened Markdown files still appeared in the compact quick-entry editor, and quick capture ended with two wide dialog-style text buttons whose accent treatment overwhelmed the lightweight panel.
 - Fix: External `.md` and `.markdown` files now open as selected rows in the three-pane library, remain visible across background snapshot refreshes, preserve pending edits in the previously selected note, and save back to their original paths. Quick capture keeps its destination shelf but replaces the wide Cancel/Save pills with compact native `xmark` and `checkmark` actions using transparent idle states and hover feedback.

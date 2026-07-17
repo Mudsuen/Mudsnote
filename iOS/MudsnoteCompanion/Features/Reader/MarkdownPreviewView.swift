@@ -231,6 +231,23 @@ struct MarkdownPreviewView: View {
                                     Label("Find in Note", systemImage: "magnifyingglass")
                                 }
                                 .disabled(draftMarkdown.isEmpty)
+                                if hasRenderedAttachments {
+                                    Menu {
+                                        Button {
+                                            setAllAttachmentPresentationModes(.small)
+                                        } label: {
+                                            Label("Set All to Small", systemImage: "rectangle.compress.vertical")
+                                        }
+                                        Button {
+                                            setAllAttachmentPresentationModes(.large)
+                                        } label: {
+                                            Label("Set All to Large", systemImage: "rectangle.expand.vertical")
+                                        }
+                                    } label: {
+                                        Label("Attachment View", systemImage: "rectangle.grid.1x2")
+                                    }
+                                    .accessibilityIdentifier("attachment-view-menu")
+                                }
                                 if let file = currentFile, canManage(document) {
                                     Divider()
                                     Button {
@@ -640,6 +657,53 @@ struct MarkdownPreviewView: View {
 
     private var renderBlocks: [MarkdownRenderBlock] {
         MarkdownRenderBlock.parse(draftMarkdown)
+    }
+
+    private var presentationPreferenceNotePath: String {
+        switch source {
+        case .memo(let memo):
+            "Inbox.md#\(memo.id)"
+        case .document(let document):
+            document.relativePath
+        }
+    }
+
+    private var hasRenderedAttachments: Bool {
+        renderBlocks.contains { block in
+            guard case .line(let line) = block else { return false }
+            return MarkdownAttachmentLine(line) != nil
+        }
+    }
+
+    private func attachmentPresentationMode(
+        for attachment: MarkdownAttachmentLine
+    ) -> AttachmentPresentationMode {
+        appModel.attachmentPresentationMode(
+            notePath: presentationPreferenceNotePath,
+            attachmentPath: attachment.path
+        )
+    }
+
+    private func setAttachmentPresentationMode(
+        _ mode: AttachmentPresentationMode,
+        for attachment: MarkdownAttachmentLine
+    ) {
+        withAnimation(.snappy(duration: 0.22)) {
+            appModel.setAttachmentPresentationMode(
+                mode,
+                notePath: presentationPreferenceNotePath,
+                attachmentPath: attachment.path
+            )
+        }
+    }
+
+    private func setAllAttachmentPresentationModes(_ mode: AttachmentPresentationMode) {
+        withAnimation(.snappy(duration: 0.22)) {
+            appModel.setAllAttachmentPresentationModes(
+                mode,
+                notePath: presentationPreferenceNotePath
+            )
+        }
     }
 
     private var textFindMatches: [NoteFindMatch] {
@@ -1254,55 +1318,15 @@ struct MarkdownPreviewView: View {
         _ attachment: MarkdownAttachmentLine,
         blockIndex: Int
     ) -> some View {
+        let presentationMode = attachmentPresentationMode(for: attachment)
         let findMatch = activeAttachmentFindMatch.flatMap { match in
             match.relativePath == attachment.path && match.location.blockIndex == blockIndex
                 ? match
                 : nil
         }
         return VStack(alignment: .leading, spacing: 8) {
-            Group {
-                switch attachment.kind {
-                case .image:
-                    if let image = localImage(for: attachment.path) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                openAttachmentPreview(attachment.path)
-                            }
-                            .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                    } else {
-                        attachmentLabel(attachment)
-                    }
-                case .video:
-                    if let url = localFileURL(for: attachment.path) {
-                        VideoAttachmentPlayer(url: url, title: attachment.path)
-                            .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                    } else {
-                        attachmentLabel(attachment)
-                    }
-                case .audio, .file:
-                    if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
-                        AudioAttachmentPlayer(url: url, title: attachment.path)
-                    } else if localFileURL(for: attachment.path) != nil {
-                        Button {
-                            openAttachmentPreview(attachment.path)
-                        } label: {
-                            attachmentLabel(attachment)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                    } else {
-                        attachmentLabel(attachment)
-                    }
-                }
-            }
+            renderedAttachment(attachment, mode: presentationMode)
+                .accessibilityValue(presentationMode.rawValue)
 
             if let findMatch {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1325,7 +1349,17 @@ struct MarkdownPreviewView: View {
             }
         }
         .contextMenu {
+            Menu {
+                attachmentPresentationButton(.small, attachment: attachment)
+                attachmentPresentationButton(.large, attachment: attachment)
+                attachmentPresentationButton(.plainLink, attachment: attachment)
+            } label: {
+                Label("View As", systemImage: "rectangle.expand.vertical")
+            }
+            .accessibilityIdentifier("attachment-view-as-menu")
+
             if case .document = source {
+                Divider()
                 if let url = localFileURL(for: attachment.path) {
                     ShareLink(item: url) {
                         Label("Share Attachment", systemImage: "square.and.arrow.up")
@@ -1344,6 +1378,170 @@ struct MarkdownPreviewView: View {
                     Label("Remove from Note", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func renderedAttachment(
+        _ attachment: MarkdownAttachmentLine,
+        mode: AttachmentPresentationMode
+    ) -> some View {
+        switch mode {
+        case .small:
+            smallAttachment(attachment)
+        case .large:
+            largeAttachment(attachment)
+        case .plainLink:
+            plainAttachmentLink(attachment)
+        }
+    }
+
+    @ViewBuilder
+    private func largeAttachment(_ attachment: MarkdownAttachmentLine) -> some View {
+        switch attachment.kind {
+        case .image:
+            if let image = localImage(for: attachment.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(MudsnoteColors.line, lineWidth: 1)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        openAttachmentPreview(attachment.path)
+                    }
+                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        case .video:
+            if let url = localFileURL(for: attachment.path) {
+                VideoAttachmentPlayer(url: url, title: attachment.path)
+                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        case .audio, .file:
+            if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
+                AudioAttachmentPlayer(url: url, title: attachment.path)
+            } else if localFileURL(for: attachment.path) != nil {
+                Button {
+                    openAttachmentPreview(attachment.path)
+                } label: {
+                    attachmentLabel(attachment)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        }
+    }
+
+    private func smallAttachment(_ attachment: MarkdownAttachmentLine) -> some View {
+        Button {
+            openAttachmentPreview(attachment.path)
+        } label: {
+            HStack(spacing: 12) {
+                Group {
+                    if attachment.kind == .image,
+                       let image = localImage(for: attachment.path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: attachment.systemImage)
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(MudsnoteColors.primary)
+                    }
+                }
+                .frame(width: 72, height: 54)
+                .background(MudsnoteColors.canvas)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text((attachment.path as NSString).lastPathComponent)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .lineLimit(1)
+                    Text(attachmentKindLabel(attachment.kind))
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+    }
+
+    private func plainAttachmentLink(_ attachment: MarkdownAttachmentLine) -> some View {
+        Button {
+            openAttachmentPreview(attachment.path)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: attachment.systemImage)
+                Text((attachment.path as NSString).lastPathComponent)
+                    .lineLimit(1)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2.weight(.bold))
+            }
+            .font(.callout)
+            .foregroundStyle(MudsnoteColors.primary)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+    }
+
+    private func attachmentPresentationButton(
+        _ mode: AttachmentPresentationMode,
+        attachment: MarkdownAttachmentLine
+    ) -> some View {
+        Button {
+            setAttachmentPresentationMode(mode, for: attachment)
+        } label: {
+            Label(
+                attachmentPresentationLabel(mode),
+                systemImage: attachmentPresentationMode(for: attachment) == mode
+                    ? "checkmark"
+                    : attachmentPresentationSymbol(mode)
+            )
+        }
+        .accessibilityIdentifier("attachment-view-as-\(mode.rawValue)")
+    }
+
+    private func attachmentPresentationLabel(_ mode: AttachmentPresentationMode) -> String {
+        switch mode {
+        case .small: String(localized: "Small")
+        case .large: String(localized: "Large")
+        case .plainLink: String(localized: "Plain Link")
+        }
+    }
+
+    private func attachmentPresentationSymbol(_ mode: AttachmentPresentationMode) -> String {
+        switch mode {
+        case .small: "rectangle.compress.vertical"
+        case .large: "rectangle.expand.vertical"
+        case .plainLink: "link"
+        }
+    }
+
+    private func attachmentKindLabel(_ kind: MarkdownAttachmentLine.Kind) -> String {
+        switch kind {
+        case .image: String(localized: "Photo")
+        case .video: String(localized: "Video")
+        case .audio: String(localized: "Audio")
+        case .file: String(localized: "Document")
         }
     }
 
@@ -1714,6 +1912,10 @@ struct MarkdownPreviewView: View {
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
+            appModel.removeAttachmentPresentationPreference(
+                notePath: document.relativePath,
+                attachmentPath: attachment.path
+            )
         } else {
             saveState = .failed
             isSaveFailurePresented = true
@@ -1730,11 +1932,29 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
+            let previousPaths = attachmentPaths(in: draftMarkdown)
+            let renamedPath = attachmentPaths(in: updated.markdown)
+                .subtracting(previousPaths)
+                .first
+            if let renamedPath {
+                appModel.moveAttachmentPresentationPreference(
+                    notePath: document.relativePath,
+                    from: attachment.path,
+                    to: renamedPath
+                )
+            }
             source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
         }
+    }
+
+    private func attachmentPaths(in markdown: String) -> Set<String> {
+        Set(MarkdownRenderBlock.parse(markdown).compactMap { block in
+            guard case .line(let line) = block else { return nil }
+            return MarkdownAttachmentLine(line)?.path
+        })
     }
 }
 

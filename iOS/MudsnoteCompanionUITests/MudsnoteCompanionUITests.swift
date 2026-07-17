@@ -1061,6 +1061,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Export as PDF"].exists)
         XCTAssertTrue(app.buttons["Find in Note"].exists)
+        XCTAssertTrue(app.buttons["Attachment View"].exists)
         XCTAssertTrue(app.buttons["Pin"].exists)
         XCTAssertTrue(app.buttons["Move Note"].exists)
         XCTAssertTrue(app.buttons["Duplicate Note"].exists)
@@ -1071,6 +1072,73 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.name = "Note export actions"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    func testAttachmentPresentationChangesPerItemAndPersistsForTheNote() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true
+        )
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+
+        let note = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let attachmentPath = "Attachments/ui-test.png"
+        let attachment = app.descendants(matching: .any)[
+            "preview-attachment-\(attachmentPath)"
+        ]
+        XCTAssertTrue(attachment.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: attachment, containing: "large"))
+        let largeHeight = attachment.frame.height
+        attachment.press(forDuration: 1)
+
+        let viewAs = app.buttons["View As"]
+        XCTAssertTrue(viewAs.waitForExistence(timeout: 3))
+        viewAs.tap()
+        XCTAssertTrue(app.buttons["Small"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Large"].exists)
+        XCTAssertTrue(app.buttons["Plain Link"].exists)
+
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "Notes-style attachment view choices"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+
+        app.buttons["Small"].tap()
+        XCTAssertTrue(waitForValue(of: attachment, containing: "small"))
+        XCTAssertLessThan(attachment.frame.height, largeHeight)
+
+        let compactScreenshot = XCTAttachment(screenshot: app.screenshot())
+        compactScreenshot.name = "Compact attachment preview"
+        compactScreenshot.lifetime = .keepAlways
+        add(compactScreenshot)
+
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+        XCTAssertTrue(attachment.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: attachment, containing: "small"))
+
+        attachment.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["View As"].waitForExistence(timeout: 3))
+        app.buttons["View As"].tap()
+        app.buttons["Plain Link"].tap()
+        XCTAssertTrue(waitForValue(of: attachment, containing: "plainLink"))
+
+        let options = app.buttons["note-options-menu"]
+        options.tap()
+        let attachmentView = app.buttons["Attachment View"]
+        XCTAssertTrue(attachmentView.waitForExistence(timeout: 3))
+        attachmentView.tap()
+        XCTAssertTrue(app.buttons["Set All to Small"].exists)
+        let setLarge = app.buttons["Set All to Large"]
+        XCTAssertTrue(setLarge.exists)
+        setLarge.tap()
+        XCTAssertTrue(waitForValue(of: attachment, containing: "large"))
     }
 
     func testRenderedNoteExportsPDFToSystemShareSheet() {

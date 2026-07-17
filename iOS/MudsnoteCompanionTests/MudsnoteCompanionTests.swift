@@ -4,6 +4,94 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {
+        let suiteName = "MudsnoteAttachmentPresentationPreferences-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttachmentPresentationPreferences(defaults: defaults)
+
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .large
+        )
+
+        preferences.set(
+            .plainLink,
+            notePath: "Projects/Plan.md",
+            attachmentPath: "Attachments/hero.png"
+        )
+        XCTAssertEqual(
+            AttachmentPresentationPreferences(defaults: defaults).mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .plainLink
+        )
+
+        preferences.setAll(.small, notePath: "Projects/Plan.md")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .small
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/brief.pdf"
+            ),
+            .small
+        )
+
+        preferences.moveNote(from: "Projects/Plan.md", to: "Archive/Plan.md")
+        preferences.set(
+            .plainLink,
+            notePath: "Archive/Plan.md",
+            attachmentPath: "Attachments/brief.pdf"
+        )
+        preferences.moveAttachment(
+            notePath: "Archive/Plan.md",
+            from: "Attachments/brief.pdf",
+            to: "Attachments/launch-brief.pdf"
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .plainLink
+        )
+        preferences.moveFolder(from: "Archive", to: "Reference/Archive")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Reference/Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .plainLink
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .large
+        )
+
+        preferences.removeNote("Reference/Archive/Plan.md")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Reference/Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .large
+        )
+        XCTAssertNil(defaults.object(forKey: AttachmentPresentationPreferences.defaultsKey))
+    }
+
     @MainActor
     func testNotePDFExporterCreatesAPaginatedPortableDocumentWithoutChangingMarkdown() throws {
         let root = try temporaryRoot()

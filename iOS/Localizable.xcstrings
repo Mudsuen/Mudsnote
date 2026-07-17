@@ -61,6 +61,33 @@
     "Add Attachment": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加附件" } } }
     },
+    "Attachment View": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件视图" } } }
+    },
+    "View As": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示为" } } }
+    },
+    "Set All to Small": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部设为小尺寸" } } }
+    },
+    "Set All to Large": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部设为大尺寸" } } }
+    },
+    "Small": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "小" } } }
+    },
+    "Large": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "大" } } }
+    },
+    "Plain Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "纯链接" } } }
+    },
+    "Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "照片" } } }
+    },
+    "Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文稿" } } }
+    },
     "Add File": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加文件" } } }
     },
