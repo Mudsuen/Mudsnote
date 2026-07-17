@@ -1,5 +1,6 @@
 import SwiftUI
 import ImageIO
+import UIKit
 
 private struct NotesListSearchTaskID: Hashable {
     var query: String
@@ -14,7 +15,7 @@ struct LibraryHomeView: View {
     }
 
     @EnvironmentObject private var appModel: AppModel
-    @FocusState private var isSearchFocused: Bool
+    @State private var isSearchFocused = false
     @State private var searchQuery = ""
     @State private var searchScope = MarkdownSearchScope.all
     @State private var searchSuggestion: NotesSearchSuggestion?
@@ -156,7 +157,7 @@ struct LibraryHomeView: View {
             } message: {
                 Text("Notes stay in their original folders.")
             }
-            .safeAreaInset(edge: .bottom) {
+            .toolbar {
                 NotesBottomCommandBar(
                     searchText: $searchQuery,
                     searchFocused: $isSearchFocused
@@ -164,9 +165,6 @@ struct LibraryHomeView: View {
                     isSearchFocused = false
                     appModel.showCapture(.audio)
                 } newNote: {
-                    isSearchFocused = false
-                    appModel.createStandaloneNote()
-                } quickNote: {
                     isSearchFocused = false
                     appModel.showCapture(.text)
                 }
@@ -926,7 +924,7 @@ private struct NotesListCountLabel: View {
 
 struct FolderNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
-    @FocusState private var isSearchFocused: Bool
+    @State private var isSearchFocused = false
     @AppStorage("mudsnote.ios.noteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.noteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.noteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
@@ -1077,21 +1075,10 @@ struct FolderNotesListView: View {
                     destinations: appModel.allFolders,
                     finish: finishSelecting
                 )
-            } else {
-                NotesBottomCommandBar(
-                    searchText: $searchQuery,
-                    searchFocused: $isSearchFocused
-                ) {
-                    isSearchFocused = false
-                    appModel.showCapture(.audio)
-                } newNote: {
-                    isSearchFocused = false
-                    appModel.createStandaloneNote(inFolder: scope.newNoteFolder)
-                } quickNote: {
-                    isSearchFocused = false
-                    appModel.showCapture(.text)
-                }
             }
+        }
+        .toolbar {
+            listBottomToolbar
         }
         .task(id: NotesListSearchTaskID(
             query: normalizedSearchQuery,
@@ -1111,6 +1098,22 @@ struct FolderNotesListView: View {
         }
         .onChange(of: files.map(\.relativePath)) { _, paths in
             selectedPaths.formIntersection(paths)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var listBottomToolbar: some ToolbarContent {
+        if !isSelecting {
+            NotesBottomCommandBar(
+                searchText: $searchQuery,
+                searchFocused: $isSearchFocused
+            ) {
+                isSearchFocused = false
+                appModel.showCapture(.audio)
+            } newNote: {
+                isSearchFocused = false
+                appModel.showCapture(.text)
+            }
         }
     }
 
@@ -1210,7 +1213,7 @@ enum LibraryFileScope {
 struct LibraryFolderView: View {
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var isSearchFocused: Bool
+    @State private var isSearchFocused = false
     var folder: LibraryFolderNode
     @State private var isCreatingFolder = false
     @State private var isRenamingFolder = false
@@ -1363,91 +1366,7 @@ struct LibraryFolderView: View {
                 : currentFolder.name
         )
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if isSelecting {
-                    Button(selectedPaths.count == directFiles.count ? "Deselect All" : "Select All") {
-                        if selectedPaths.count == directFiles.count {
-                            selectedPaths.removeAll()
-                        } else {
-                            selectedPaths = Set(directFiles.map(\.relativePath))
-                        }
-                    }
-                    .accessibilityIdentifier("toggle-select-all-notes")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSelecting {
-                    Button("Done") { finishSelecting() }
-                        .accessibilityIdentifier("finish-note-selection")
-                } else {
-                    Menu {
-                    Button {
-                        isSelecting = true
-                    } label: {
-                        Label("Select Notes", systemImage: "checkmark.circle")
-                    }
-                    Divider()
-                    Button {
-                        folderName = ""
-                        isCreatingFolder = true
-                    } label: {
-                        Label("New Folder", systemImage: "folder.badge.plus")
-                    }
-                    Button {
-                        folderName = currentFolder.name
-                        isRenamingFolder = true
-                    } label: {
-                        Label("Rename Folder", systemImage: "pencil")
-                    }
-                    Menu {
-                        if currentFolder.relativePath.contains("/") {
-                            Button {
-                                let target = currentFolder
-                                Task {
-                                    if await appModel.moveFolder(target, to: nil) { dismiss() }
-                                }
-                            } label: {
-                                Label("Top Level", systemImage: "tray")
-                            }
-                        }
-                        ForEach(moveDestinations) { destination in
-                            Button {
-                                let target = currentFolder
-                                Task {
-                                    if await appModel.moveFolder(target, to: destination) { dismiss() }
-                                }
-                            } label: {
-                                Label(destination.relativePath, systemImage: "folder")
-                            }
-                        }
-                    } label: {
-                        Label("Move Folder", systemImage: "folder.badge.arrow.forward")
-                    }
-                    Button {
-                        appModel.createStandaloneNote(inFolder: currentFolder.relativePath)
-                    } label: {
-                        Label("New Note", systemImage: "square.and.pencil")
-                    }
-                    Button(role: .destructive) {
-                        isConfirmingDelete = true
-                    } label: {
-                        Label("Delete Folder", systemImage: "trash")
-                    }
-                    Divider()
-                    NoteViewStyleMenuContent(viewStyleRawValue: $viewStyleRawValue)
-                    Divider()
-                    NoteListSortMenuContent(
-                        sortOrderRawValue: $sortOrderRawValue,
-                        sortDirectionRawValue: $sortDirectionRawValue,
-                        groupByDate: $groupByDate
-                    )
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .accessibilityLabel("Folder Actions")
-                .accessibilityIdentifier("folder-actions")
-                }
-            }
+            folderNavigationToolbar
         }
         .safeAreaInset(edge: .bottom) {
             if isSelecting {
@@ -1456,21 +1375,10 @@ struct LibraryFolderView: View {
                     destinations: moveDestinations,
                     finish: finishSelecting
                 )
-            } else {
-                NotesBottomCommandBar(
-                    searchText: $searchQuery,
-                    searchFocused: $isSearchFocused
-                ) {
-                    isSearchFocused = false
-                    appModel.showCapture(.audio)
-                } newNote: {
-                    isSearchFocused = false
-                    appModel.createStandaloneNote(inFolder: currentFolder.relativePath)
-                } quickNote: {
-                    isSearchFocused = false
-                    appModel.showCapture(.text)
-                }
             }
+        }
+        .toolbar {
+            folderBottomToolbar
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder Name", text: $folderName)
@@ -1531,6 +1439,125 @@ struct LibraryFolderView: View {
         .onDisappear {
             isSearchFocused = false
             appModel.clearSearch()
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var folderNavigationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if isSelecting {
+                Button(selectedPaths.count == directFiles.count ? "Deselect All" : "Select All") {
+                    toggleAllFolderNotesSelection()
+                }
+                .accessibilityIdentifier("toggle-select-all-notes")
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if isSelecting {
+                Button("Done") { finishSelecting() }
+                    .accessibilityIdentifier("finish-note-selection")
+            } else {
+                folderActionsMenu
+            }
+        }
+    }
+
+    private var folderActionsMenu: some View {
+        Menu {
+            Button {
+                isSelecting = true
+            } label: {
+                Label("Select Notes", systemImage: "checkmark.circle")
+            }
+            Divider()
+            Button {
+                folderName = ""
+                isCreatingFolder = true
+            } label: {
+                Label("New Folder", systemImage: "folder.badge.plus")
+            }
+            Button {
+                folderName = currentFolder.name
+                isRenamingFolder = true
+            } label: {
+                Label("Rename Folder", systemImage: "pencil")
+            }
+            folderMoveMenu
+            Button {
+                appModel.showCapture(.text)
+            } label: {
+                Label("New Note", systemImage: "square.and.pencil")
+            }
+            Button(role: .destructive) {
+                isConfirmingDelete = true
+            } label: {
+                Label("Delete Folder", systemImage: "trash")
+            }
+            Divider()
+            NoteViewStyleMenuContent(viewStyleRawValue: $viewStyleRawValue)
+            Divider()
+            NoteListSortMenuContent(
+                sortOrderRawValue: $sortOrderRawValue,
+                sortDirectionRawValue: $sortDirectionRawValue,
+                groupByDate: $groupByDate
+            )
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityLabel("Folder Actions")
+        .accessibilityIdentifier("folder-actions")
+    }
+
+    private var folderMoveMenu: some View {
+        Menu {
+            if currentFolder.relativePath.contains("/") {
+                Button {
+                    moveCurrentFolder(to: nil)
+                } label: {
+                    Label("Top Level", systemImage: "tray")
+                }
+            }
+            ForEach(moveDestinations) { destination in
+                Button {
+                    moveCurrentFolder(to: destination)
+                } label: {
+                    Label(destination.relativePath, systemImage: "folder")
+                }
+            }
+        } label: {
+            Label("Move Folder", systemImage: "folder.badge.arrow.forward")
+        }
+    }
+
+    private func toggleAllFolderNotesSelection() {
+        if selectedPaths.count == directFiles.count {
+            selectedPaths.removeAll()
+        } else {
+            selectedPaths = Set(directFiles.map(\.relativePath))
+        }
+    }
+
+    private func moveCurrentFolder(to destination: LibraryFolderNode?) {
+        let target = currentFolder
+        Task {
+            let moved = await appModel.moveFolder(target, to: destination)
+            if moved { dismiss() }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var folderBottomToolbar: some ToolbarContent {
+        if !isSelecting {
+            NotesBottomCommandBar(
+                searchText: $searchQuery,
+                searchFocused: $isSearchFocused
+            ) {
+                isSearchFocused = false
+                appModel.showCapture(.audio)
+            } newNote: {
+                isSearchFocused = false
+                appModel.showCapture(.text)
+            }
         }
     }
 
@@ -2880,92 +2907,130 @@ private struct TagFilterChip: View {
     }
 }
 
-struct NotesBottomCommandBar: View {
+struct NotesBottomCommandBar: ToolbarContent {
     @Binding var searchText: String
-    var searchFocused: FocusState<Bool>.Binding
+    @Binding var searchFocused: Bool
     var record: () -> Void
     var newNote: () -> Void
-    var quickNote: () -> Void
 
-    var body: some View {
-        HStack(spacing: 14) {
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 19, weight: .medium))
-                TextField("Search", text: $searchText)
-                    .font(.body)
-                    .focused(searchFocused)
-                    .textInputAutocapitalization(.never)
-                    .submitLabel(.search)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
+                NativeToolbarSearchField(
+                    text: $searchText,
+                    isFocused: $searchFocused
+                )
                     .accessibilityIdentifier("library-search-field")
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
-                        searchFocused.wrappedValue = false
+                        searchFocused = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 44, height: 44)
+                            .font(.system(size: 16, weight: .semibold))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
                     .accessibilityIdentifier("clear-library-search")
                 }
-                Button(action: record) {
-                    Image(systemName: "mic")
-                        .font(.system(size: 21, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-                .fixedSize()
-                .accessibilityLabel("Voice input")
-
-                Button(action: quickNote) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-                .fixedSize()
-                .accessibilityLabel("Quick Note")
-                .accessibilityIdentifier("quick-note-button")
             }
             .foregroundStyle(MudsnoteColors.text)
-            .padding(.horizontal, 16)
-            .frame(height: 54)
-            .background(MudsnoteColors.panel, in: Capsule())
-            .overlay {
-                Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+            .padding(.horizontal, 12)
+            .frame(minWidth: 190, idealWidth: 226)
+            .frame(height: 38)
+            .background(.regularMaterial, in: Capsule())
+            .accessibilityElement(children: .contain)
+        }
+
+        ToolbarItemGroup(placement: .bottomBar) {
+            Button(action: record) {
+                Image(systemName: "mic")
             }
+            .accessibilityLabel("Voice input")
 
             Button(action: newNote) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 23, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(Color.black)
-                    .frame(width: 54, height: 54)
+                    .frame(width: 36, height: 36)
                     .background(NotesCloneColors.folderYellow, in: Circle())
-                    .overlay {
-                        Circle().stroke(MudsnoteColors.line.opacity(0.25), lineWidth: 1)
-                    }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("New note")
             .accessibilityIdentifier("new-note-button")
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background(
-            LinearGradient(
-                colors: [MudsnoteColors.canvas.opacity(0), MudsnoteColors.canvas],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+    }
+}
+
+private struct NativeToolbarSearchField: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.delegate = context.coordinator
+        field.placeholder = String(localized: "Search")
+        field.font = .preferredFont(forTextStyle: .body)
+        field.textColor = .label
+        field.tintColor = UIColor(MudsnoteColors.primary)
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        field.returnKeyType = .search
+        field.accessibilityIdentifier = "library-search-field"
+        field.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.textDidChange(_:)),
+            for: .editingChanged
         )
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.parent = self
+        if field.text != text {
+            field.text = text
+        }
+        let focusRequestChanged = context.coordinator.lastRequestedFocus != isFocused
+        context.coordinator.lastRequestedFocus = isFocused
+        if isFocused, !field.isFirstResponder {
+            DispatchQueue.main.async { field.becomeFirstResponder() }
+        } else if focusRequestChanged, !isFocused, field.isFirstResponder {
+            field.resignFirstResponder()
+        }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: NativeToolbarSearchField
+        var lastRequestedFocus: Bool?
+
+        init(parent: NativeToolbarSearchField) {
+            self.parent = parent
+        }
+
+        @objc func textDidChange(_ field: UITextField) {
+            parent.text = field.text ?? ""
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.isFocused = true
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.isFocused = false
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            return true
+        }
     }
 }
 

@@ -47,7 +47,6 @@ struct MarkdownPreviewView: View {
 
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
-    @Binding private var detent: PresentationDetent
     @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
@@ -93,15 +92,13 @@ struct MarkdownPreviewView: View {
     @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
 
-    init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
-        _detent = detent
+    init(memo: MemoBlock) {
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
     }
 
-    init(document: MarkdownDocument, detent: Binding<PresentationDetent>) {
-        _detent = detent
+    init(document: MarkdownDocument) {
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
@@ -203,18 +200,9 @@ struct MarkdownPreviewView: View {
                     if !isEditing {
                         switch source {
                         case .memo:
-                            ShareLink(item: draftMarkdown) {
-                                Image(systemName: "square.and.arrow.up")
-                            }
-                            .accessibilityLabel("Share Note")
-                            .accessibilityIdentifier("share-note-button")
+                            EmptyView()
                         case .document(let document):
                             Menu {
-                                if let url = localFileURL(for: document.relativePath) {
-                                    ShareLink(item: url) {
-                                        Label("Share Note", systemImage: "square.and.arrow.up")
-                                    }
-                                }
                                 Button {
                                     Task { await exportCurrentDocumentAsPDF(document) }
                                 } label: {
@@ -306,12 +294,6 @@ struct MarkdownPreviewView: View {
                         }
                     }
 
-                    Button(action: toggleDetent) {
-                        Image(systemName: detent == .large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    }
-                    .accessibilityLabel(detent == .large ? "Collapse editor" : "Expand editor")
-                    .accessibilityIdentifier(detent == .large ? "collapse-markdown-editor" : "expand-markdown-editor")
-
                     if isEditing {
                         Button {
                             Task { await persistDraft(finishEditing: true, announce: true) }
@@ -344,7 +326,6 @@ struct MarkdownPreviewView: View {
         .onAppear {
             beginLibraryAccess()
             if isEditing {
-                detent = .large
                 focusEditorAfterPresentation()
             }
         }
@@ -835,7 +816,6 @@ struct MarkdownPreviewView: View {
     private func beginFindingInNote() {
         isFindingInNote = true
         activeFindIndex = 0
-        withAnimation(.snappy(duration: 0.28)) { detent = .large }
         Task { @MainActor in
             await Task.yield()
             isFindFocused = true
@@ -1021,7 +1001,6 @@ struct MarkdownPreviewView: View {
                 .accessibilityIdentifier("markdown-format-menu")
 
                 formatButton("checklist", .checklist)
-                formatButton("tablecells", .table)
                 formatButton("arrow.uturn.backward", .undo)
                 formatButton("arrow.uturn.forward", .redo)
             }
@@ -1069,7 +1048,6 @@ struct MarkdownPreviewView: View {
 
     private func beginEditing() {
         isEditing = true
-        withAnimation(.snappy(duration: 0.28)) { detent = .large }
         focusEditorAfterPresentation()
     }
 
@@ -1122,12 +1100,6 @@ struct MarkdownPreviewView: View {
         Task { @MainActor in
             await Task.yield()
             editorFocused = true
-        }
-    }
-
-    private func toggleDetent() {
-        withAnimation(.snappy(duration: 0.28)) {
-            detent = detent == .large ? .medium : .large
         }
     }
 
@@ -3393,13 +3365,17 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
+        view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
         let checklistTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleChecklistTap(_:))
         )
         checklistTap.cancelsTouchesInView = false
+        checklistTap.delegate = context.coordinator
         view.addGestureRecognizer(checklistTap)
         MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+        context.coordinator.lastPresentedText = text
+        context.coordinator.lastDisplaysSource = displaysSource
         return view
     }
 
@@ -3413,7 +3389,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 length: 0
             )
         }
-        MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+        if context.coordinator.lastPresentedText != text
+            || context.coordinator.lastDisplaysSource != displaysSource {
+            MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+            context.coordinator.lastPresentedText = text
+            context.coordinator.lastDisplaysSource = displaysSource
+        }
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
         } else if !isFocused, view.isFirstResponder {
@@ -3426,9 +3407,11 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextEditor
         var lastCommandID: UUID?
+        var lastPresentedText: String?
+        var lastDisplaysSource: Bool?
 
         init(parent: MarkdownTextEditor) {
             self.parent = parent
@@ -3440,6 +3423,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 to: textView,
                 displaysSource: parent.displaysSource
             )
+            lastPresentedText = textView.text
+            lastDisplaysSource = parent.displaysSource
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -3448,6 +3433,19 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.isFocused = false
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let recognizer = gestureRecognizer as? UITapGestureRecognizer,
+                  let view = recognizer.view as? MarkdownRichTextView else { return true }
+            return view.checklistMarker(at: recognizer.location(in: view)) != nil
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
 
         func textView(
@@ -3488,6 +3486,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             view.selectedRange = selection
             parent.text = updated
             MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+            lastPresentedText = updated
+            lastDisplaysSource = false
         }
 
         func apply(_ kind: MarkdownEditingCommand.Kind, to textView: UITextView) {
@@ -3559,6 +3559,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 to: textView,
                 displaysSource: parent.displaysSource
             )
+            lastPresentedText = textView.text
+            lastDisplaysSource = parent.displaysSource
         }
 
         private func toggleInlineStyle(

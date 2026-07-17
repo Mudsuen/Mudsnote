@@ -59,13 +59,13 @@ struct RootView: View {
                 .presentationBackground(MudsnoteColors.panel.opacity(0.96))
         }
         .sheet(item: $appModel.selectedMemo) { memo in
-            MarkdownPreviewView(memo: memo, detent: $readerDetent)
+            MarkdownPreviewView(memo: memo)
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
         .sheet(item: $appModel.selectedDocument) { document in
-            MarkdownPreviewView(document: document, detent: $readerDetent)
+            MarkdownPreviewView(document: document)
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)

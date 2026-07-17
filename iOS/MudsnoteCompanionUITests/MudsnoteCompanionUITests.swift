@@ -54,11 +54,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fixtureFolder: true,
             damagedQueue: true
         )
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["all-notes-link"].exists)
 
-        quickNoteButton.tap()
+        newNoteButton.tap()
         let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -84,9 +84,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fixtureFolder: true,
             attachmentError: true
         )
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
-        quickNoteButton.tap()
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
 
         let alert = app.alerts["Couldn’t Add Attachment"]
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
@@ -111,9 +111,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fixtureFolder: true,
             interruptedWrite: true
         )
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
-        quickNoteButton.tap()
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
         let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -355,9 +355,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
-        quickNoteButton.tap()
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
 
         let editor = app.textViews["capture-body-editor"]
         let saveButton = app.buttons["save-memo-button"]
@@ -371,21 +371,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(saveButton.isEnabled)
         saveButton.tap()
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
         XCTAssertFalse(editor.exists)
     }
 
     func testHomeCommandsStayInOneNotesStyleBottomRow() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let search = app.textFields["library-search-field"]
-        let quickNote = app.buttons["quick-note-button"]
         let newNote = app.buttons["new-note-button"]
         XCTAssertTrue(search.waitForExistence(timeout: 8))
-        XCTAssertTrue(quickNote.exists)
         XCTAssertTrue(newNote.exists)
-        XCTAssertEqual(quickNote.frame.midY, search.frame.midY, accuracy: 3)
         XCTAssertEqual(newNote.frame.midY, search.frame.midY, accuracy: 3)
-        XCTAssertLessThan(quickNote.frame.maxX, newNote.frame.minX)
+        XCTAssertFalse(app.buttons["quick-note-button"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Notes-style home command row"
@@ -603,43 +600,32 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
-    func testNewNoteCreatesStandaloneMarkdownAndOpensFullEditor() {
+    func testNewNoteUsesUnifiedCaptureComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
         XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
         newNoteButton.tap()
 
-        let editor = app.textViews["markdown-editor"]
+        let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["collapse-markdown-editor"].exists)
+        XCTAssertFalse(app.buttons["quick-note-button"].exists)
         editor.tap()
-        editor.typeText("Standalone UI Note\n\nIndependent Markdown note")
-        app.buttons["save-markdown-button"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
-
-        app.swipeDown(velocity: .fast)
-        app.swipeDown(velocity: .fast)
-        XCTAssertTrue(waitForHittable(newNoteButton))
-        let allNotes = app.buttons["all-notes-link"]
-        XCTAssertTrue(waitForHittable(allNotes))
-        allNotes.tap()
-        let row = app.buttons["markdown-file-row-Standalone UI Note.md"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
-        XCTAssertTrue(row.label.contains("Standalone UI Note"))
+        editor.typeText("Unified capture note")
+        app.buttons["save-memo-button"].tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(editor.exists)
     }
 
-    func testEmptyStandaloneNoteIsDiscardedWhenSheetCloses() {
+    func testEmptyUnifiedCaptureClosesWithoutCreatingNote() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]
         XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
         newNoteButton.tap()
-        let editor = app.textViews["markdown-editor"]
+        let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        app.buttons["save-markdown-button"].tap()
+        app.swipeDown(velocity: .fast)
         XCTAssertTrue(waitForNonexistence(editor))
-
-        app.swipeDown(velocity: .fast)
-        app.swipeDown(velocity: .fast)
         XCTAssertTrue(waitForHittable(newNoteButton))
         let allNotes = app.buttons["all-notes-link"]
         XCTAssertTrue(waitForHittable(allNotes))
@@ -651,16 +637,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ),
             .completed
         )
-        allNotes.tap()
-        let emptyRow = app.buttons["markdown-file-row-Untitled Note.md"]
-        XCTAssertTrue(waitForNonexistence(emptyRow))
     }
 
     func testQuickCaptureDraftRestoresAfterProcessTermination() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
-        quickNoteButton.tap()
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
         let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -678,8 +661,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Unsaved quick note restored"].waitForExistence(timeout: 8))
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 5))
-        quickNoteButton.tap()
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        newNoteButton.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertTrue((editor.value as? String)?.contains("Recovered after termination") == true)
     }
@@ -705,13 +688,29 @@ final class MudsnoteCompanionUITests: XCTestCase {
         rendered.tap()
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["collapse-markdown-editor"].waitForExistence(timeout: 5))
+        editor.typeText(" 012345678901234567890123456789 END")
+        XCTAssertTrue((editor.value as? String)?.hasSuffix(" END") == true)
+
+        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.03)).tap()
+        editor.typeText("MOVED ")
+        if let editedValue = editor.value as? String,
+           let movedRange = editedValue.range(of: "MOVED "),
+           let endRange = editedValue.range(of: " END") {
+            XCTAssertLessThan(movedRange.lowerBound, endRange.lowerBound)
+        } else {
+            XCTFail("Expected the caret to move before the end of the note")
+        }
+        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.95)).tap()
+
+        XCTAssertFalse(app.buttons["expand-markdown-editor"].exists)
+        XCTAssertFalse(app.buttons["collapse-markdown-editor"].exists)
+        XCTAssertFalse(app.buttons["share-note-button"].exists)
         let attachmentMenu = app.buttons["markdown-attachment-menu"]
         XCTAssertTrue(attachmentMenu.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["markdown-record-audio"].exists)
         XCTAssertTrue(app.buttons["markdown-format-menu"].exists)
         XCTAssertTrue(app.buttons["markdown-format-checklist"].exists)
-        XCTAssertTrue(app.buttons["markdown-format-table"].exists)
+        XCTAssertFalse(app.buttons["markdown-format-table"].exists)
         XCTAssertTrue(app.buttons["markdown-format-undo"].exists)
         XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
         attachmentMenu.tap()
@@ -1104,7 +1103,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
     }
 
-    func testRenderedNoteExposesLocalSystemShare() {
+    func testRenderedNoteKeepsExportWithoutNoteShareAction() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
         app.buttons["all-notes-link"].tap()
@@ -1115,7 +1114,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let options = app.buttons["note-options-menu"]
         XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
-        XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Share Note"].exists)
         XCTAssertTrue(app.buttons["Export as PDF"].exists)
         XCTAssertTrue(app.buttons["Find in Note"].exists)
         XCTAssertTrue(app.buttons["Attachment View"].exists)
@@ -1601,7 +1600,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let search = app.textFields["library-search-field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["quick-note-button"].exists)
+        XCTAssertFalse(app.buttons["quick-note-button"].exists)
         XCTAssertTrue(app.buttons["new-note-button"].exists)
 
         search.tap()
@@ -1683,11 +1682,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testCaptureCommandsStayInSingleRow() {
         let app = launchApp(reset: true, fixtureFolder: true, scanText: true)
-        let quickNoteButton = app.buttons["quick-note-button"]
-        XCTAssertTrue(quickNoteButton.waitForExistence(timeout: 8))
-        quickNoteButton.tap()
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        newNoteButton.tap()
 
-        let labels = ["capture-attachment-menu", "Record audio", "Formatting", "capture-target-menu", "save-memo-button"]
+        let labels = ["capture-attachment-menu", "Record audio", "capture-insert-tag", "capture-insert-bold", "capture-insert-checklist", "capture-more-formatting", "capture-target-menu", "save-memo-button"]
         let controls = labels.map { app.buttons[$0] }
         for control in controls {
             XCTAssertTrue(control.waitForExistence(timeout: 5))

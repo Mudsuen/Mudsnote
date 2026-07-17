@@ -152,7 +152,7 @@ struct CaptureConsoleView: View {
     }
 
     private var commandBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 3) {
             Menu {
                 Button {
                     selectedRoute = .image
@@ -201,7 +201,7 @@ struct CaptureConsoleView: View {
             } label: {
                 Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
             }
-            .buttonStyle(IconCircleButtonStyle(isActive: selectedRoute == .image))
+            .buttonStyle(CompactCaptureButtonStyle(isActive: selectedRoute == .image))
             .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
             .accessibilityLabel("Add Attachment")
             .accessibilityIdentifier("capture-attachment-menu")
@@ -212,7 +212,7 @@ struct CaptureConsoleView: View {
             } label: {
                 Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
             }
-            .buttonStyle(IconCircleButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
+            .buttonStyle(CompactCaptureButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
             .disabled(
                 appModel.isSendingDraft
                     || appModel.isPreparingAttachment
@@ -223,25 +223,48 @@ struct CaptureConsoleView: View {
                 Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
             )
 
+            Button("#") { appendToken(" #tag") }
+                .buttonStyle(CompactCaptureButtonStyle())
+                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+                .accessibilityLabel("Tag")
+                .accessibilityIdentifier("capture-insert-tag")
+
+            Button {
+                appendToken("**bold**")
+            } label: {
+                Image(systemName: "bold")
+            }
+            .buttonStyle(CompactCaptureButtonStyle())
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+            .accessibilityLabel("Bold")
+            .accessibilityIdentifier("capture-insert-bold")
+
+            Button {
+                appendToken("\n- [ ] ")
+            } label: {
+                Image(systemName: "checklist")
+            }
+            .buttonStyle(CompactCaptureButtonStyle())
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+            .accessibilityLabel("Checklist")
+            .accessibilityIdentifier("capture-insert-checklist")
+
             Menu {
-                Button("Tag") { appendToken(" #tag") }
-                Button("Bold") { appendToken("**bold**") }
                 Button("List") { appendToken("\n- ") }
-                Divider()
                 Button("Quote") { appendToken("\n> ") }
-                Button("Checklist") { appendToken("\n- [ ] ") }
                 Button("Code") { appendToken(" `code`") }
             } label: {
-                Image(systemName: "textformat")
+                Image(systemName: "ellipsis")
             }
-            .buttonStyle(IconCircleButtonStyle())
+            .buttonStyle(CompactCaptureButtonStyle())
             .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("Formatting")
+            .accessibilityLabel("More Formatting")
+            .accessibilityIdentifier("capture-more-formatting")
 
             TargetMenuView()
                 .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button {
                 isBodyFocused = false
@@ -251,7 +274,7 @@ struct CaptureConsoleView: View {
             } label: {
                 Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
             }
-            .buttonStyle(IconCircleButtonStyle(isActive: appModel.draft.canSend))
+            .buttonStyle(CompactCaptureButtonStyle(isActive: appModel.draft.canSend))
             .disabled(
                 !appModel.draft.canSend
                     || appModel.isSendingDraft
@@ -263,7 +286,7 @@ struct CaptureConsoleView: View {
             .accessibilityLabel("Save memo")
             .accessibilityIdentifier("save-memo-button")
         }
-        .frame(minHeight: 52)
+        .frame(minHeight: 44)
     }
 
     private func submissionRecovery(_ issue: String) -> some View {

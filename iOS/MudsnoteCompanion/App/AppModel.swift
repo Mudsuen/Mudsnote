@@ -694,21 +694,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func createStandaloneNote(inFolder relativeFolderPath: String? = nil) {
-        guard case .ready = folderStatus else { return }
-        Task {
-            do {
-                let document = try await fileStore.createMarkdownDocument(
-                    inFolder: relativeFolderPath
-                )
-                await refreshInbox()
-                selectedDocument = document
-            } catch {
-                statusToast = .error(String(localized: "Could not create note"))
-            }
-        }
-    }
-
     func discardEmptyNewDocumentIfNeeded(_ document: MarkdownDocument, markdown: String) {
         guard document.isNew, markdown.isEmpty else { return }
         Task {
