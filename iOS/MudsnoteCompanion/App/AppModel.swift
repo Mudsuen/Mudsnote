@@ -12,6 +12,7 @@ enum CaptureRoute: String {
 
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
+    static let pendingSearchKey = "MudsnotePendingSystemSearch"
 }
 
 @MainActor
@@ -51,6 +52,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var captureAttachmentIssue: String?
     @Published private(set) var captureSubmissionIssue: String?
     @Published private(set) var attachmentPresentationRevision = 0
+    @Published private(set) var isLibrarySearchRequested = false
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -187,11 +189,24 @@ final class AppModel: ObservableObject {
         guard url.scheme == "mudsnote" else { return }
         if url.host == "capture" {
             openSystemCapture(Self.captureRoute(from: url))
+        } else if url.host == "search" {
+            isLibrarySearchRequested = true
         }
+    }
+
+    @discardableResult
+    func consumeLibrarySearchRequest() -> Bool {
+        guard isLibrarySearchRequested else { return false }
+        isLibrarySearchRequested = false
+        return true
     }
 
     func consumeSystemEntryRequest() {
         let defaults = UserDefaults.standard
+        if defaults.bool(forKey: SystemEntryRequest.pendingSearchKey) {
+            defaults.removeObject(forKey: SystemEntryRequest.pendingSearchKey)
+            isLibrarySearchRequested = true
+        }
         guard let value = defaults.string(forKey: SystemEntryRequest.pendingRouteKey),
               let route = CaptureRoute(rawValue: value) else {
             return

@@ -583,6 +583,18 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchDeepLinkRequestsLibrarySearchExactlyOnce() {
+        let model = AppModel(bootstrapImmediately: false)
+
+        model.handle(url: URL(string: "mudsnote://search")!)
+
+        XCTAssertTrue(model.isLibrarySearchRequested)
+        XCTAssertTrue(model.consumeLibrarySearchRequest())
+        XCTAssertFalse(model.isLibrarySearchRequested)
+        XCTAssertFalse(model.consumeLibrarySearchRequest())
+    }
+
+    @MainActor
     func testLatestFolderSelectionWinsAndOnlyPublishesReadySnapshot() async throws {
         let firstRoot = try temporaryRoot()
         let secondRoot = try temporaryRoot()

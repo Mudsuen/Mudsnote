@@ -390,6 +390,21 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testWidgetSearchEntryFocusesNativeLibrarySearch() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            searchRoute: true
+        )
+        let search = app.textFields["library-search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 8))
+        search.typeText("Restore")
+        XCTAssertTrue(
+            app.buttons["search-result-file:Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 8)
+        )
+    }
+
     func testFolderEditModeExposesManagementActionsAndRenamesFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let editButton = app.buttons["edit-folders-button"]
@@ -1969,7 +1984,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
         interruptedWrite: Bool = false,
-        scanText: Bool = false
+        scanText: Bool = false,
+        searchRoute: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -1987,7 +2003,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
-            scanText ? "-ui-testing-scan-text" : nil
+            scanText ? "-ui-testing-scan-text" : nil,
+            searchRoute ? "-ui-testing-search-route" : nil
         ].compactMap { $0 }
         app.launch()
         return app

@@ -69,6 +69,12 @@ struct LibraryHomeView: View {
             .onDisappear {
                 isSearchFocused = false
             }
+            .onAppear {
+                presentRequestedSearchIfNeeded()
+            }
+            .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
+                if requested { presentRequestedSearchIfNeeded() }
+            }
             .task(id: SearchTaskID(
                 query: searchQuery,
                 scope: searchScope,
@@ -208,6 +214,16 @@ struct LibraryHomeView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func presentRequestedSearchIfNeeded() {
+        guard appModel.consumeLibrarySearchRequest() else { return }
+        searchQuery = ""
+        searchSuggestion = nil
+        Task { @MainActor in
+            await Task.yield()
+            isSearchFocused = true
         }
     }
 

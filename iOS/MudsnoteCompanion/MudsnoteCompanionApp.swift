@@ -48,6 +48,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
     private static let interruptedWriteArgument = "-ui-testing-interrupted-write"
+    private static let searchRouteArgument = "-ui-testing-search-route"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -65,6 +66,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(audioTranscriptArgument)
                 || arguments.contains(attachmentErrorArgument)
                 || arguments.contains(interruptedWriteArgument)
+                || arguments.contains(searchRouteArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -74,6 +76,7 @@ private enum MudsnoteUITestLaunchConfiguration {
         if arguments.contains(resetArgument) {
             access.forgetPersistedFolder()
             UserDefaults.standard.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
+            UserDefaults.standard.removeObject(forKey: SystemEntryRequest.pendingSearchKey)
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteViewStyle")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortDirection")
@@ -83,6 +86,10 @@ private enum MudsnoteUITestLaunchConfiguration {
             )
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: CaptureDraftRecoveryStore.defaultDirectory)
+        }
+
+        if arguments.contains(searchRouteArgument) {
+            UserDefaults.standard.set(true, forKey: SystemEntryRequest.pendingSearchKey)
         }
 
         if arguments.contains(fixtureFolderArgument) {

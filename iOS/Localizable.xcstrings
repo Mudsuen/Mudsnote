@@ -1982,6 +1982,46 @@
         }
       }
     },
+    "Mudsnote Actions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mudsnote 快捷操作"
+          }
+        }
+      }
+    },
+    "Search notes, capture speech, or start a quick note.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索笔记、语音输入或开始快速笔记。"
+          }
+        }
+      }
+    },
+    "Find anything in Mudsnote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mudsnote 中查找内容"
+          }
+        }
+      }
+    },
+    "Capture an idea": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随手记下想法"
+          }
+        }
+      }
+    },
     "Open Mudsnote for text, audio, or image capture.": {
       "localizations": {
         "zh-Hans": {
