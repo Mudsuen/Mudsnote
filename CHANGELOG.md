@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 170. Unified native iPhone note entry and gesture-driven editing
+- Problem: New Note and Quick Note exposed competing entry points, the capture commands consumed two visual rows, the library search bar was custom-built, and a checklist gesture prevented normal taps from moving the editor caret. Open notes also duplicated the sheet drag gesture with explicit share and full-screen controls.
+- Fix: New Note now opens the durable capture composer and dismisses after submission; the lightning entry is gone. Eight compact capture actions fit one borderless row, library search uses the native bottom toolbar, and the black New Note symbol remains visually primary. Open notes use the native sheet grabber to move between half and full height, omit note-level share/full-screen buttons, default the caret to the end, and reserve the checklist recognizer exclusively for checklist markers so ordinary taps move the caret normally.
+- Lesson: A Notes-style iPhone flow is clearest when system containers own search and sheet movement, while custom gestures are narrowly gated so they never compete with native text selection.
+
 ### 169. Notes-style folder nesting by drag on iPhone
 - Problem: Folder management could create, rename, move, and delete folders, but nesting still required opening a menu; Apple Notes lets users directly drag one folder onto another.
 - Fix: Edit mode now exposes a dedicated drag handle beside each real folder. Dragging a handle onto another folder shows a yellow drop highlight, rejects self/descendant cycles, and routes the accepted move through the existing atomic folder lifecycle before refreshing counts and showing confirmation. Normal browsing retains its original navigation, swipe-delete, and long-press menu behavior.

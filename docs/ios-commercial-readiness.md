@@ -23,6 +23,10 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] Gallery cards preview a note's first image and checklist state from cached Markdown list metadata without view-layer file scans.
 - [x] A left swipe on a movable note exposes Move beside Delete and opens a native half-sheet destination picker; moving to the top level or another folder updates the list through the existing atomic lifecycle operation.
 - [x] Folder Edit mode exposes a native drag handle; dragging one real folder onto another creates a nested folder through the existing atomic move operation, with cycle rejection, target feedback, refreshed counts, and preserved normal-mode navigation/context menus.
+- [x] New Note is the single in-app creation entry and opens the durable capture composer; the separate lightning action is removed, eight compact capture controls fit one row, and successful submission dismisses the sheet back to the library.
+- [x] The library search field, microphone, and black-symbol New Note action share the native iOS bottom toolbar on folder home and note lists.
+- [x] Open notes render Markdown first, enter a complete editor on content tap, move between half and full height through the native sheet drag gesture, and omit duplicate share/full-screen controls.
+- [x] The editor initially places the caret at the end, while ordinary text taps move it normally without competing with checklist-marker gestures.
 - [x] Removed the reference-only Share Extension placeholder from the release target; v1 explicitly ships App, Widget, and App Intents without claiming system Share Extension support.
 - [x] Corrupt, stale, moved, unavailable, or non-folder selections enter an explicit reselect flow; users can clear the old authorization and start over.
 - [x] App and Widget ship one reviewed English/Simplified Chinese String Catalog; dynamic status, recovery, attachment, transcription, and accessibility copy use localized runtime strings.

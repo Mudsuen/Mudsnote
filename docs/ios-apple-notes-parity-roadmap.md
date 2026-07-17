@@ -18,10 +18,13 @@ Notes database.
   preview modes.
 - The main New Note button opens Mudsnote capture instead of an empty Apple Notes
   editor. Submission dismisses the capture surface and returns to the library.
+- New Note is the sole in-app creation control; there is no separate lightning Quick
+  Note button, and its compact capture actions remain on one row.
 - Widget, App Intent, deep-link, and in-app capture entry points use the same draft,
   target, attachment, queue, and commit pipeline.
 - Markdown rendering is the default reading surface. Tapping the content enters a
-  complete editor, initially in a half sheet and expandable to full screen.
+  complete editor whose native sheet moves between half and full height by dragging
+  the grabber; no duplicate full-screen button is shown.
 - The iPhone is the only supported layout target. Simulator verification uses one
   iPhone destination with parallel testing disabled.
 
