@@ -478,6 +478,63 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["folder-row-Launch"].waitForExistence(timeout: 5))
     }
 
+    func testFolderDragCreatesNestedFolder() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let newFolder = app.buttons["new-folder-button"]
+        XCTAssertTrue(newFolder.waitForExistence(timeout: 8))
+        newFolder.tap()
+
+        let alert = app.alerts["New Folder"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.textFields["Folder Name"].typeText("Archive")
+        alert.buttons["Create"].tap()
+
+        let projects = app.buttons["folder-row-Projects"]
+        let archive = app.buttons["folder-row-Archive"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        XCTAssertTrue(archive.waitForExistence(timeout: 5))
+
+        let edit = app.buttons["edit-folders-button"]
+        edit.tap()
+        XCTAssertEqual(edit.label, "Done")
+
+        let projectHandle = app.descendants(matching: .any)["folder-drag-handle-Projects"]
+        let archiveHandle = app.descendants(matching: .any)["folder-drag-handle-Archive"]
+        XCTAssertTrue(projectHandle.waitForExistence(timeout: 5))
+        XCTAssertTrue(archiveHandle.waitForExistence(timeout: 5))
+
+        let beforeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        beforeScreenshot.name = "Folder drag starting state"
+        beforeScreenshot.lifetime = .keepAlways
+        add(beforeScreenshot)
+
+        projectHandle.press(
+            forDuration: 0.8,
+            thenDragTo: archiveHandle,
+            withVelocity: .slow,
+            thenHoldForDuration: 1
+        )
+
+        let droppedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        droppedScreenshot.name = "Folder drag released on destination"
+        droppedScreenshot.lifetime = .keepAlways
+        add(droppedScreenshot)
+
+        XCTAssertTrue(waitForNonexistence(projectHandle))
+
+        edit.tap()
+        XCTAssertEqual(edit.label, "Edit")
+        archive.tap()
+
+        let nestedProjects = app.buttons["folder-row-Archive/Projects"]
+        XCTAssertTrue(nestedProjects.waitForExistence(timeout: 5))
+
+        let nestedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        nestedScreenshot.name = "Folder nested by drag"
+        nestedScreenshot.lifetime = .keepAlways
+        add(nestedScreenshot)
+    }
+
     func testSmartFolderCreatesEditsAndDeletesWithoutMovingNotes() {
         let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
         let newFolder = app.buttons["new-folder-button"]

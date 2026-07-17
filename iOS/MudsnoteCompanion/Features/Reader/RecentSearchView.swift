@@ -186,7 +186,7 @@ struct LibraryHomeView: View {
                             systemImage: "folder.fill",
                             count: folder.totalNoteCount,
                             showsChevron: false,
-                            trailingAccessoryWidth: 44
+                            trailingAccessoryWidth: 88
                         )
                         .accessibilityIdentifier("folder-row-\(folder.relativePath)")
                         .modifier(
@@ -1634,6 +1634,7 @@ private struct FolderLifecycleActions: ViewModifier {
     @State private var isCreatingSubfolder = false
     @State private var isRenaming = false
     @State private var isConfirmingDelete = false
+    @State private var isDropTargeted = false
 
     private var moveDestinations: [LibraryFolderNode] {
         appModel.allFolders.filter {
@@ -1643,7 +1644,7 @@ private struct FolderLifecycleActions: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content
+        dragAndDrop(content)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) {
                     isConfirmingDelete = true
@@ -1656,16 +1657,31 @@ private struct FolderLifecycleActions: ViewModifier {
             }
             .overlay(alignment: .trailing) {
                 if isManagementMode {
-                    Menu {
-                        lifecycleMenuItems
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(NotesCloneColors.folderYellow)
+                    HStack(spacing: 0) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .draggable(folder.relativePath)
+                            .dropDestination(for: String.self) { sourcePaths, _ in
+                                acceptDrop(sourcePaths)
+                            } isTargeted: { targeted in
+                                updateDropTarget(targeted)
+                            }
+                            .accessibilityIdentifier("folder-drag-handle-\(folder.relativePath)")
+
+                        Menu {
+                            lifecycleMenuItems
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundStyle(NotesCloneColors.folderYellow)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Folder Actions")
+                        .accessibilityIdentifier("folder-management-\(folder.relativePath)")
                     }
-                    .accessibilityLabel("Folder Actions")
-                    .accessibilityIdentifier("folder-management-\(folder.relativePath)")
                     .padding(.trailing, 10)
                 }
             }
@@ -1702,6 +1718,48 @@ private struct FolderLifecycleActions: ViewModifier {
             } message: {
                 Text("Notes in this folder will move to Recently Deleted. Other files will be preserved.")
             }
+    }
+
+    @ViewBuilder
+    private func dragAndDrop(_ content: Content) -> some View {
+        if isManagementMode {
+            content
+                .dropDestination(for: String.self) { sourcePaths, _ in
+                    acceptDrop(sourcePaths)
+                } isTargeted: { targeted in
+                    updateDropTarget(targeted)
+                }
+                .background(
+                    NotesCloneColors.folderYellow.opacity(isDropTargeted ? 0.13 : 0),
+                    in: RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+                )
+                .overlay {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+                            .stroke(NotesCloneColors.folderYellow, lineWidth: 2)
+                    }
+                }
+        } else {
+            content
+        }
+    }
+
+    private func acceptDrop(_ sourcePaths: [String]) -> Bool {
+        guard let sourcePath = sourcePaths.first,
+              sourcePath != folder.relativePath,
+              !folder.relativePath.hasPrefix(sourcePath + "/"),
+              let source = appModel.allFolders.first(where: {
+                  $0.relativePath == sourcePath
+              }) else { return false }
+        let destination = folder
+        Task { _ = await appModel.moveFolder(source, to: destination) }
+        return true
+    }
+
+    private func updateDropTarget(_ targeted: Bool) {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isDropTargeted = targeted
+        }
     }
 
     @ViewBuilder

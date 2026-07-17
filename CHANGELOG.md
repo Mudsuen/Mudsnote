@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 169. Notes-style folder nesting by drag on iPhone
+- Problem: Folder management could create, rename, move, and delete folders, but nesting still required opening a menu; Apple Notes lets users directly drag one folder onto another.
+- Fix: Edit mode now exposes a dedicated drag handle beside each real folder. Dragging a handle onto another folder shows a yellow drop highlight, rejects self/descendant cycles, and routes the accepted move through the existing atomic folder lifecycle before refreshing counts and showing confirmation. Normal browsing retains its original navigation, swipe-delete, and long-press menu behavior.
+- Lesson: Native drag-and-drop should be scoped to a mode with explicit affordances when the same row already owns navigation and a context menu; this preserves familiar gestures while making hierarchy editing discoverable.
+
 ### 168. Notes-style swipe-to-move on iPhone
 - Problem: Note rows exposed Delete after a left swipe, but Move remained hidden in the long-press menu, making a common Apple Notes organization flow slower and harder to discover.
 - Fix: Added Move beside Delete in the trailing swipe actions and a native half-sheet destination picker that moves the note atomically to the top level or another folder, refreshes the list in place, and preserves the existing pin, rename, batch, and opened-note lifecycle actions.
