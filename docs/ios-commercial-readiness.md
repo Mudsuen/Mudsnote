@@ -9,6 +9,7 @@ This checklist tracks the iOS companion only. A checked item requires current so
 - [x] User-authorized Markdown folder remains the source of truth.
 - [x] Inbox, Daily, recent-file targets, text, photo/video, generic file, scanned document, and audio capture exist.
 - [x] Quick Capture widget and App Intents build into the app bundle.
+- [x] The small widget exposes one reliable Quick Note action, while the medium actions widget provides separate Search Notes, Voice input, and Quick Note targets; its search deep link focuses the native library field after app bootstrap.
 - [x] Repeated capture keeps the selected destination and prevents duplicate sends.
 - [x] Rendered notes recognize actionable email addresses, phone numbers, and street addresses without modifying the underlying Markdown; explicit Markdown links retain priority.
 - [x] Attachments can be browsed by photo, video, audio, and document category; a long press returns to the exact containing note or Inbox memo.
@@ -69,7 +70,7 @@ Dedicated accessibility and iPad validation are outside the current iPhone-only 
 - [x] iOS 17 minimum deployment target.
 - [x] App, Widget, App Intents metadata, and privacy manifest build and embed on Simulator.
 - [x] iPad declares all four supported orientations while iPhone remains portrait-first; generic-device validation no longer emits the orientation warning.
-- [x] One hundred fifty-eight tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
+- [x] One hundred sixty tests pass on one iPhone 17 Pro / iOS 26.5 Simulator with parallel testing disabled; PDF markup persistence additionally passes five consecutive stress iterations.
 - [x] Development-signed App and Widget install and launch on a physical iPhone Air running iOS 27.0 Beta; both processes were observed alive on-device.
 - [ ] Produce a distribution-signed archive and validate it through Organizer/TestFlight.
 - [x] A generic-device `1.0 (1)` archive completes App Intents SSU generation for English and Simplified Chinese without the prior `appintentsnltrainingprocessor` warning.

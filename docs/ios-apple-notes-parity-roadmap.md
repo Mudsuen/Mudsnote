@@ -22,6 +22,9 @@ Notes database.
   Note button, and its compact capture actions remain on one row.
 - Widget, App Intent, deep-link, and in-app capture entry points use the same draft,
   target, attachment, queue, and commit pipeline.
+- The focused small widget opens Quick Note; the medium actions widget places Search
+  above equal Voice input and Quick Note actions, with search focusing the native
+  library field after cold or warm launch.
 - Markdown rendering is the default reading surface. Tapping the content enters a
   complete editor whose native sheet moves between half and full height by dragging
   the grabber; no duplicate full-screen button is shown.
