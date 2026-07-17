@@ -4,6 +4,31 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    @MainActor
+    func testNotePDFExporterCreatesAPaginatedPortableDocumentWithoutChangingMarkdown() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let markdown = (["# Project Brief", "A **rendered** Markdown note."]
+            + (1...220).map { "- Milestone \($0): ship a polished iPhone experience." })
+            .joined(separator: "\n")
+        let original = markdown
+
+        let export = try NotePDFExporter.export(
+            title: "Launch / Plan",
+            markdown: markdown,
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            directory: root
+        )
+        let data = try Data(contentsOf: export.url)
+        let provider = CGDataProvider(data: data as CFData)
+        let document = provider.flatMap(CGPDFDocument.init)
+
+        XCTAssertEqual(markdown, original)
+        XCTAssertEqual(export.url.lastPathComponent, "Launch - Plan.pdf")
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(document?.numberOfPages ?? 0, 1)
+    }
+
     func testCameraPhotoProducesAValidatedJPEGAttachment() throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 18)).image { context in
             UIColor.systemYellow.setFill()

@@ -17,6 +17,7 @@
 		2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */; };
 		58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */; };
 		A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* AttachmentTextIndex.swift */; };
+		E10000000000000000000001 /* NotePDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* NotePDFExporter.swift */; };
 		A60000000000000000000001 /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000002 /* DocumentScanner.swift */; };
 		D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* AttachmentQuickLookPreview.swift */; };
 		A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000002 /* MarkdownNoteLink.swift */; };
@@ -100,6 +101,7 @@
 		D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/PendingWriteQueue.swift; sourceTree = "<group>"; };
 		B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownFileStore.swift; sourceTree = "<group>"; };
 		A50000000000000000000002 /* AttachmentTextIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentTextIndex.swift; sourceTree = "<group>"; };
+		E10000000000000000000002 /* NotePDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/NotePDFExporter.swift; sourceTree = "<group>"; };
 		A60000000000000000000002 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/DocumentScanner.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* AttachmentQuickLookPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/AttachmentQuickLookPreview.swift; sourceTree = "<group>"; };
 		A70000000000000000000002 /* MarkdownNoteLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownNoteLink.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */,
 				B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */,
 				A50000000000000000000002 /* AttachmentTextIndex.swift */,
+				E10000000000000000000002 /* NotePDFExporter.swift */,
 				A60000000000000000000002 /* DocumentScanner.swift */,
 				D10000000000000000000002 /* AttachmentQuickLookPreview.swift */,
 				A70000000000000000000002 /* MarkdownNoteLink.swift */,
@@ -411,6 +414,7 @@
 				2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */,
 				58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */,
 				A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */,
+				E10000000000000000000001 /* NotePDFExporter.swift in Sources */,
 				A60000000000000000000001 /* DocumentScanner.swift in Sources */,
 				D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */,
 				A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */,

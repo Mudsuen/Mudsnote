@@ -1059,12 +1059,48 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
         XCTAssertTrue(app.buttons["Share Note"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Export as PDF"].exists)
         XCTAssertTrue(app.buttons["Find in Note"].exists)
         XCTAssertTrue(app.buttons["Pin"].exists)
         XCTAssertTrue(app.buttons["Move Note"].exists)
         XCTAssertTrue(app.buttons["Duplicate Note"].exists)
         XCTAssertTrue(app.buttons["Rename Note"].exists)
         XCTAssertTrue(app.buttons["Move to Recently Deleted"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Note export actions"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testRenderedNoteExportsPDFToSystemShareSheet() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let options = app.buttons["note-options-menu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        options.tap()
+        let export = app.buttons["Export as PDF"]
+        XCTAssertTrue(export.waitForExistence(timeout: 3))
+        export.tap()
+
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.otherElements["UI Lifecycle"].exists)
+        XCTAssertTrue(
+            app.otherElements.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "PDF Document")
+            ).firstMatch.exists
+        )
+        XCTAssertTrue(app.cells["Print"].exists)
+        XCTAssertTrue(app.cells["Save to Files"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "System PDF export sheet"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testRenderedNoteFindHighlightsAndNavigatesMatches() {

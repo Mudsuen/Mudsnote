@@ -88,6 +88,9 @@ struct MarkdownPreviewView: View {
     @State private var isLoadingFindAttachments = false
     @State private var collapsedHeadingIndices: Set<Int> = []
     @State private var linkedSourceHistory: [Source] = []
+    @State private var exportedPDF: ExportedNotePDF?
+    @State private var isExportingPDF = false
+    @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
 
     init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
@@ -212,6 +215,16 @@ struct MarkdownPreviewView: View {
                                         Label("Share Note", systemImage: "square.and.arrow.up")
                                     }
                                 }
+                                Button {
+                                    Task { await exportCurrentDocumentAsPDF(document) }
+                                } label: {
+                                    if isExportingPDF {
+                                        Label("Exporting PDF…", systemImage: "doc.richtext")
+                                    } else {
+                                        Label("Export as PDF", systemImage: "doc.richtext")
+                                    }
+                                }
+                                .disabled(isExportingPDF)
                                 Button {
                                     beginFindingInNote()
                                 } label: {
@@ -418,6 +431,19 @@ struct MarkdownPreviewView: View {
             )
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $exportedPDF) { export in
+            NoteActivityView(activityItems: [export.url])
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .alert("Couldn’t Export PDF", isPresented: Binding(
+            get: { pdfExportErrorMessage != nil },
+            set: { if !$0 { pdfExportErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { pdfExportErrorMessage = nil }
+        } message: {
+            Text(pdfExportErrorMessage ?? "Try exporting the note again.")
         }
         .fullScreenCover(item: $attachmentPreview) { preview in
             AttachmentQuickLookPreview(
@@ -1038,6 +1064,23 @@ struct MarkdownPreviewView: View {
     private func toggleDetent() {
         withAnimation(.snappy(duration: 0.28)) {
             detent = detent == .large ? .medium : .large
+        }
+    }
+
+    @MainActor
+    private func exportCurrentDocumentAsPDF(_ document: MarkdownDocument) async {
+        guard !isExportingPDF else { return }
+        isExportingPDF = true
+        defer { isExportingPDF = false }
+
+        do {
+            exportedPDF = try NotePDFExporter.export(
+                title: document.title,
+                markdown: draftMarkdown,
+                modifiedAt: document.modifiedAt
+            )
+        } catch {
+            pdfExportErrorMessage = error.localizedDescription
         }
     }
 

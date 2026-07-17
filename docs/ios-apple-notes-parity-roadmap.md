@@ -36,6 +36,8 @@ Notes database.
   those attachments.
 - Images, files, audio notes with local recording transcription, attachment browsing,
   and portable relative Markdown references.
+- Print-ready, paginated PDF export through the native share sheet without rewriting
+  the Markdown source.
 - Offline-first writes, pending replay, external-edit conflict protection, and clear
   recovery states.
 - Tags, recent notes, daily notes, Inbox capture stream, widgets, shortcuts, and

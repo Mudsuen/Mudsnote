@@ -2377,6 +2377,24 @@
     "Share Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "分享笔记" } } }
     },
+    "Export as PDF": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "导出为 PDF" } } }
+    },
+    "Exporting PDF…": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在导出 PDF…" } } }
+    },
+    "Couldn’t Export PDF": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法导出 PDF" } } }
+    },
+    "Try exporting the note again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试导出笔记。" } } }
+    },
+    "The PDF couldn’t be created.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法创建 PDF。" } } }
+    },
+    "Untitled Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未命名笔记" } } }
+    },
     "Attachment Renamed": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已重命名" } } }
     },
