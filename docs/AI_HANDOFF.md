@@ -382,6 +382,12 @@
 - Do not depend on a separate `mouseUp` override for outline selection; it is not called after `super.mouseDown` consumes the release event.
 - Pointer deferral must be cleared after every tracked primary click, while keyboard selection remains immediate.
 
+## Latest iteration (221)
+
+- Source row background, title, symbol, and count colors share one visual-selection predicate.
+- While a primary click is held, all selected styling remains on the previous source; after release it moves atomically to the committed source.
+- Do not restore `NSTableRowView.isSelected` as an independent source-background state during pointer deferral.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

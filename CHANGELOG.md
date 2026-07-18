@@ -1352,6 +1352,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The source outline now finishes and commits deferred selection immediately after `super.mouseDown` returns, which is AppKit's actual click-release boundary. The regression also asserts that the deferral state is cleared after commit.
 - Lesson: AppKit controls may track press, drag, and release synchronously inside `mouseDown`; interaction tests must exercise the framework's real event boundary instead of assuming a separate `mouseUp` override will run.
 
+### 221. Atomic source highlight and text color
+
+- Problem: AppKit moved the native row selection background on mouse-down while the custom yellow title correctly waited for release, briefly splitting one selected state across two rows.
+- Fix: Source rows now draw their selection background from the same visual-selection predicate as title, symbol, and count colors. During a held click the old row retains all selected styling; on release the background and foreground styling move together to the committed row.
+- Lesson: A custom list selection must have one presentation source of truth. Mixing AppKit's pending row background with model-backed foreground colors creates contradictory feedback even when navigation timing is correct.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
