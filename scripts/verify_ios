@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE="${1:-}"
+if [[ -z "$MODE" ]]; then
+  echo "Usage: ./scripts/verify_ios {unit|targeted|full} [test identifiers...]" >&2
+  exit 2
+fi
+shift
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+case "$MODE" in
+  unit|full)
+    if [[ "$#" -ne 0 ]]; then
+      echo "ERROR: $MODE does not accept test identifiers." >&2
+      exit 2
+    fi
+    ;;
+  targeted)
+    if [[ "$#" -eq 0 ]]; then
+      echo "ERROR: targeted requires at least one Xcode test identifier." >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "Usage: ./scripts/verify_ios {unit|targeted|full} [test identifiers...]" >&2
+    exit 2
+    ;;
+esac
+
+SIMULATOR_ID="${MUDSNOTE_IOS_SIMULATOR_ID:-}"
+if [[ -z "$SIMULATOR_ID" ]]; then
+  SIMULATOR_ID="$(xcrun simctl list devices booted -j | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+devices = [
+    device
+    for runtime in data.get("devices", {}).values()
+    for device in runtime
+    if device.get("state") == "Booted" and device.get("isAvailable", True)
+]
+if len(devices) != 1:
+    print(f"ERROR: expected exactly one booted iOS simulator, found {len(devices)}", file=sys.stderr)
+    raise SystemExit(2)
+print(devices[0]["udid"])
+')"
+fi
+
+BRANCH="$(git branch --show-current 2>/dev/null || true)"
+BRANCH="${BRANCH//\//-}"
+BRANCH="${BRANCH:-detached}"
+
+if [[ -n "${MUDSNOTE_IOS_DERIVED_DATA_PATH:-}" ]]; then
+  DERIVED_DATA_PATH="$MUDSNOTE_IOS_DERIVED_DATA_PATH"
+elif [[ -d .task/data ]]; then
+  DERIVED_DATA_PATH=".task/data/build-cache/MudsnoteIOS"
+else
+  DERIVED_DATA_PATH="/tmp/MudsnoteIOSBuildCache/$BRANCH"
+fi
+
+if [[ -d .task/logs ]]; then
+  LOG_ROOT=".task/logs"
+else
+  LOG_ROOT="/tmp/MudsnoteIOSLogs/$BRANCH"
+fi
+mkdir -p "$DERIVED_DATA_PATH" "$LOG_ROOT"
+
+TIMESTAMP="$(date '+%Y%m%dT%H%M%S')"
+LOG_PATH="$LOG_ROOT/verify-ios-$MODE-$TIMESTAMP.log"
+
+COMMAND=(
+  xcodebuild test
+  -project iOS/MudsnoteCompanion.xcodeproj
+  -scheme MudsnoteCompanion
+  -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+  -derivedDataPath "$DERIVED_DATA_PATH"
+  -parallel-testing-enabled NO
+)
+
+if [[ "$MODE" == "unit" ]]; then
+  COMMAND+=("-only-testing:MudsnoteCompanionTests")
+elif [[ "$MODE" == "targeted" ]]; then
+  for test_identifier in "$@"; do
+    COMMAND+=("-only-testing:$test_identifier")
+  done
+fi
+
+echo "iOS verification: $MODE"
+echo "Simulator: $SIMULATOR_ID"
+echo "Reusable DerivedData: $DERIVED_DATA_PATH"
+echo "Full log: $LOG_PATH"
+
+if [[ -n "${MUDSNOTE_IOS_TEST_DRY_RUN:-}" ]]; then
+  printf 'DRY-RUN:'
+  printf ' %q' "${COMMAND[@]}"
+  printf '\n'
+  exit 0
+fi
+
+set +e
+"${COMMAND[@]}" >"$LOG_PATH" 2>&1
+STATUS=$?
+set -e
+
+if [[ "$STATUS" -ne 0 ]]; then
+  echo "ERROR: iOS verification failed: $MODE (exit $STATUS)" >&2
+  echo "Failure evidence:" >&2
+  if ! rg -n -C 3 'error:|Test Case .* failed|Test Suite .* failed|\*\* TEST FAILED \*\*' "$LOG_PATH" | tail -80 >&2; then
+    tail -80 "$LOG_PATH" >&2
+  fi
+  exit "$STATUS"
+fi
+
+PASSED_CASES="$(rg -c 'Test Case .* passed' "$LOG_PATH" || true)"
+echo "iOS verification passed: $MODE (${PASSED_CASES:-0} XCTest cases)"
+rg 'Test Suite .* passed|Executed [0-9]+ tests|Test run with .* passed' "$LOG_PATH" | tail -3 || true

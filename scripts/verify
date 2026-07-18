@@ -38,17 +38,23 @@ validate_metadata_if_present() {
   fi
 }
 
+validate_ios_helper() {
+  bash -n scripts/verify_ios
+}
+
 case "$MODE" in
   pr)
     check_diff
     check_ci_boundary
     validate_metadata_if_present
+    validate_ios_helper
     swift test --skip "$PERFORMANCE_TESTS"
     ;;
   full)
     check_diff
     check_ci_boundary
     validate_metadata_if_present
+    validate_ios_helper
     swift build -c release
     swift test
     ;;
