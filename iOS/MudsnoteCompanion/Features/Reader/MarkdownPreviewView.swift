@@ -47,6 +47,7 @@ struct MarkdownPreviewView: View {
 
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Binding private var presentationDetent: PresentationDetent
     @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
@@ -92,17 +93,28 @@ struct MarkdownPreviewView: View {
     @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
 
-    init(memo: MemoBlock) {
+    init(
+        memo: MemoBlock,
+        presentationDetent: Binding<PresentationDetent> = .constant(.large),
+        startsEditing: Bool = false
+    ) {
+        _presentationDetent = presentationDetent
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
+        _isEditing = State(initialValue: startsEditing)
     }
 
-    init(document: MarkdownDocument) {
+    init(
+        document: MarkdownDocument,
+        presentationDetent: Binding<PresentationDetent> = .constant(.large),
+        startsEditing: Bool = false
+    ) {
+        _presentationDetent = presentationDetent
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
-        _isEditing = State(initialValue: document.isNew)
+        _isEditing = State(initialValue: document.isNew || startsEditing)
     }
 
     var body: some View {
@@ -134,7 +146,9 @@ struct MarkdownPreviewView: View {
                                     .accessibilityIdentifier("rendered-markdown")
                                     .contentShape(Rectangle())
                                     .onTapGesture {
-                                        if !isFindingInNote { beginEditing() }
+                                        if appModel.isReaderExpanded, !isFindingInNote {
+                                            beginEditing()
+                                        }
                                     }
                             }
                             .padding(MudsnoteSpacing.safeHorizontal)
@@ -170,6 +184,25 @@ struct MarkdownPreviewView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .overlay(alignment: .top) {
+            if !isEditing, presentationDetent != .large {
+                Color.clear
+                    .frame(height: 52)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        expandReader()
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 12)
+                            .onEnded { value in
+                                guard value.translation.height < -40 else { return }
+                                expandReader()
+                            }
+                    )
+                    .accessibilityElement()
+                    .accessibilityIdentifier("note-reader-expand-handle")
+            }
         }
         .interactiveDismissDisabled(
             (isEditing && draftMarkdown != originalMarkdown)
@@ -216,7 +249,7 @@ struct MarkdownPreviewView: View {
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
             Button("Keep Editing", role: .cancel) {
-                editorFocused = true
+                Task { await keepDraftAndRebase() }
             }
             Button("Reopen Saved Version", role: .destructive) {
                 Task { await reloadSavedVersion() }
@@ -1062,6 +1095,13 @@ struct MarkdownPreviewView: View {
         focusEditorAfterPresentation()
     }
 
+    private func expandReader() {
+        withAnimation(.smooth) {
+            presentationDetent = .large
+            appModel.isReaderExpanded = true
+        }
+    }
+
     private func beginEditing(with command: MarkdownEditingCommand.Kind) {
         beginEditing()
         Task { @MainActor in
@@ -1668,6 +1708,24 @@ struct MarkdownPreviewView: View {
         } else {
             saveState = .failed
         }
+    }
+
+    @MainActor
+    private func keepDraftAndRebase() async {
+        switch source {
+        case .memo(let memo):
+            if let reloaded = await appModel.reloadMemo(memo) {
+                source = .memo(reloaded)
+                originalMarkdown = reloaded.body
+            }
+        case .document(let document):
+            if let reloaded = await appModel.reloadDocument(document) {
+                source = .document(reloaded)
+                originalMarkdown = reloaded.markdown
+            }
+        }
+        saveState = .idle
+        editorFocused = true
     }
 
     private func attachPhoto(_ item: PhotosPickerItem?) async {

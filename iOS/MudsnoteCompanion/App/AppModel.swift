@@ -10,6 +10,11 @@ enum CaptureRoute: String {
     case audio
 }
 
+enum NoteOpenMode {
+    case read
+    case edit
+}
+
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
     static let pendingSearchKey = "MudsnotePendingSystemSearch"
@@ -27,6 +32,8 @@ final class AppModel: ObservableObject {
     @Published var smartFolders: [SmartFolderDefinition] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
+    @Published var noteOpenMode: NoteOpenMode = .read
+    @Published var isReaderExpanded = false
     @Published var librarySummary = LibrarySummary()
     @Published var tagSummaries: [TagSummary] = []
     @Published var draft = CaptureDraft() {
@@ -708,7 +715,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openFile(_ file: RecentMarkdownFile) {
+    func openFile(_ file: RecentMarkdownFile, mode: NoteOpenMode = .read) {
+        noteOpenMode = mode
         Task {
             do {
                 selectedDocument = try await fileStore.loadMarkdownDocument(

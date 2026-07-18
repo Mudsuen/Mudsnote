@@ -2328,6 +2328,13 @@ private struct NoteLifecycleActions: ViewModifier {
                 }
             }
             .contextMenu {
+                Button {
+                    appModel.openFile(file, mode: .edit)
+                } label: {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .accessibilityIdentifier("edit-note-\(file.id)")
+
                 if appModel.canMoveToRecentlyDeleted(file) {
                     Button {
                         appModel.togglePinned(file)

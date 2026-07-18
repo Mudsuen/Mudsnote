@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 179. Half-sheet reading, direct editing, and recoverable saves
+- Problem: Opening a note jumped straight into a full-screen reader that could be edited immediately, list rows had no direct edit action, and choosing to keep a draft after an external-version conflict retained the stale save baseline so later save attempts could never succeed.
+- Fix: A normal row tap now presents a medium read-only sheet with a visible drag handle; expanding it to the large detent unlocks tap-to-edit. Long press exposes Edit and opens directly in the large editor. Conflict recovery now preserves the current draft while rebasing its expected version on the latest saved note, allowing the next autosave or confirmation to complete safely.
+- Lesson: Read and edit are distinct presentation intents, and conflict recovery must update both the visible draft and the version precondition used by the next write.
+
 ### 178. Animated folder editing and unified Notes-style rows
 - Problem: Entering folder management replaced Edit with a static Done label, merged Inbox content still exposed two visibly different row designs, and folder note lists used plain list sections while redundantly repeating the current folder beneath every note.
 - Fix: Edit now transitions in place to a checkmark with a native blur-replace animation. Markdown files and Inbox quick notes share the same title, timestamp, preview, attachment, and grouped-card row language. Folder and Inbox lists use date-grouped inset cards with Notes-style headers and separators, while folder-scoped rows omit their already-known folder location.

@@ -1123,6 +1123,45 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 
+    func testNoteOpensHalfScreenReadOnlyThenEditsAfterExpanding() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.tap()
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+
+        let expandHandle = app.otherElements["note-reader-expand-handle"]
+        XCTAssertTrue(expandHandle.waitForExistence(timeout: 3))
+        expandHandle.tap()
+        XCTAssertTrue(waitForNonexistence(expandHandle))
+        let expandedBody = app.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(expandedBody.waitForExistence(timeout: 3))
+        expandedBody.tap()
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+    }
+
+    func testLongPressNoteCanOpenDirectlyInEditMode() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.press(forDuration: 1)
+
+        let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+    }
+
     func testGenericAttachmentOpensSystemQuickLook() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
@@ -2056,12 +2095,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         interruptedWrite: Bool = false,
         scanText: Bool = false,
         searchRoute: Bool = false,
-        inboxFolder: Bool = false
+        inboxFolder: Bool = false,
+        halfScreenReader: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
+            halfScreenReader ? nil : "-ui-testing-full-reader",
             reset ? "-ui-testing-reset" : nil,
             fixtureFolder ? "-ui-testing-fixture-folder" : nil,
             invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,

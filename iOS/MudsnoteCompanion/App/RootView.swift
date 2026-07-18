@@ -3,7 +3,11 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var isFolderImporterPresented = false
-    @State private var readerDetent: PresentationDetent = .large
+    @State private var readerDetent: PresentationDetent = .medium
+
+    private var usesFullReaderForUITests: Bool {
+        ProcessInfo.processInfo.arguments.contains("-ui-testing-full-reader")
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -59,22 +63,53 @@ struct RootView: View {
                 .presentationBackground(MudsnoteColors.panel.opacity(0.96))
         }
         .sheet(item: $appModel.selectedMemo) { memo in
-            MarkdownPreviewView(memo: memo)
-                .presentationDetents([.large], selection: $readerDetent)
-                .presentationDragIndicator(.hidden)
+            MarkdownPreviewView(
+                memo: memo,
+                presentationDetent: $readerDetent,
+                startsEditing: appModel.noteOpenMode == .edit
+            )
+                .presentationDetents([.medium, .large], selection: $readerDetent)
+                .presentationContentInteraction(.resizes)
+                .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
         .sheet(item: $appModel.selectedDocument) { document in
-            MarkdownPreviewView(document: document)
-                .presentationDetents([.large], selection: $readerDetent)
-                .presentationDragIndicator(.hidden)
+            MarkdownPreviewView(
+                document: document,
+                presentationDetent: $readerDetent,
+                startsEditing: appModel.noteOpenMode == .edit
+            )
+                .presentationDetents([.medium, .large], selection: $readerDetent)
+                .presentationContentInteraction(.resizes)
+                .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
         .onChange(of: appModel.selectedMemo?.id) { _, id in
-            if id != nil { readerDetent = .large }
+            if id != nil {
+                readerDetent = usesFullReaderForUITests || appModel.noteOpenMode == .edit
+                    ? .large
+                    : .medium
+                appModel.isReaderExpanded = readerDetent == .large
+            } else {
+                appModel.noteOpenMode = .read
+                appModel.isReaderExpanded = false
+            }
         }
         .onChange(of: appModel.selectedDocument?.id) { _, id in
-            if id != nil { readerDetent = .large }
+            if let document = appModel.selectedDocument, id != nil {
+                readerDetent = usesFullReaderForUITests
+                    || document.isNew
+                    || appModel.noteOpenMode == .edit
+                    ? .large
+                    : .medium
+                appModel.isReaderExpanded = readerDetent == .large
+            } else {
+                appModel.noteOpenMode = .read
+                appModel.isReaderExpanded = false
+            }
+        }
+        .onChange(of: readerDetent) { _, detent in
+            appModel.isReaderExpanded = detent == .large
         }
     }
 
