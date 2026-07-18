@@ -3614,6 +3614,36 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(view.bulletMarkers.isEmpty)
     }
 
+    @MainActor
+    func testMarkdownEditorPresentationDefersWhileInputMethodHasMarkedText() throws {
+        final class MarkedTextView: UITextView {
+            var simulatedMarkedTextRange: UITextRange?
+
+            override var markedTextRange: UITextRange? {
+                simulatedMarkedTextRange
+            }
+        }
+
+        let view = MarkedTextView()
+        view.text = "draft"
+        let start = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: 0))
+        let end = try XCTUnwrap(view.position(from: start, offset: 5))
+        view.simulatedMarkedTextRange = try XCTUnwrap(view.textRange(from: start, to: end))
+        let sentinelFont = UIFont.systemFont(ofSize: 11, weight: .black)
+        view.textStorage.setAttributes(
+            [.font: sentinelFont, .foregroundColor: UIColor.systemPink],
+            range: NSRange(location: 0, length: 5)
+        )
+
+        MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+
+        XCTAssertEqual(view.textStorage.attribute(.font, at: 0, effectiveRange: nil) as? UIFont, sentinelFont)
+        XCTAssertEqual(
+            view.textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor,
+            UIColor.systemPink
+        )
+    }
+
     func testMarkdownListsContinueWithNativeReturnSemantics() {
         XCTAssertEqual(
             MarkdownListEditing.returnEdit(

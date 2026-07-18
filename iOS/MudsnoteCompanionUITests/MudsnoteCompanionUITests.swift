@@ -1015,7 +1015,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
-        editor.typeText("\nAutosaved UI edit")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        editor.typeText("\nAutosaved UI edit A")
 
         let saved = app.staticTexts["markdown-save-status"]
         XCTAssertTrue(saved.waitForExistence(timeout: 3))
@@ -1027,6 +1028,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ),
             .completed
         )
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "Autosave must not dismiss the editor keyboard")
+        editor.typeText("B")
+        XCTAssertTrue((editor.value as? String)?.contains("Autosaved UI edit AB") == true)
 
         app.buttons["save-markdown-button"].tap()
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
@@ -1034,7 +1038,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.swipeDown(velocity: .fast)
         XCTAssertTrue(waitForHittable(note))
         note.tap()
-        XCTAssertTrue(app.staticTexts["Autosaved UI edit"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 
     func testGenericAttachmentOpensSystemQuickLook() {

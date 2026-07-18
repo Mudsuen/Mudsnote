@@ -3155,6 +3155,11 @@ enum MarkdownEditorPresentation {
     }
 
     static func apply(to textView: UITextView, displaysSource: Bool) {
+        // Rewriting text storage while an input method owns marked text cancels
+        // the composition session (and can dismiss the software keyboard).
+        // Wait for UIKit to commit the marked text before rendering Markdown.
+        guard textView.markedTextRange == nil else { return }
+
         let storage = textView.textStorage
         let fullRange = NSRange(location: 0, length: storage.length)
         let selection = textView.selectedRange
@@ -3381,7 +3386,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
-        if view.text != text {
+        let isComposingText = view.markedTextRange != nil
+        if !isComposingText, view.text != text {
             let selection = view.selectedRange
             view.text = text
             view.selectedRange = NSRange(
@@ -3389,7 +3395,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 length: 0
             )
         }
-        if context.coordinator.lastPresentedText != text
+        if !isComposingText,
+           context.coordinator.lastPresentedText != text
             || context.coordinator.lastDisplaysSource != displaysSource {
             MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
             context.coordinator.lastPresentedText = text
@@ -3418,6 +3425,11 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            // Marked text is provisional input owned by the active IME. Publishing
+            // or restyling it makes SwiftUI update the representable mid-composition,
+            // which interrupts Chinese/Japanese/Korean keyboards. UIKit calls this
+            // delegate again after the composition is committed.
+            guard textView.markedTextRange == nil else { return }
             parent.text = textView.text
             MarkdownEditorPresentation.apply(
                 to: textView,

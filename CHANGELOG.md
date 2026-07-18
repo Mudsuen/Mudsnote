@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 172. Stable iPhone input-method composition
+- Problem: The rich Markdown editor reapplied attributes and published SwiftUI state for every provisional marked-text change, interrupting Chinese and other composition keyboards while typing.
+- Fix: The UIKit editor now leaves marked text under input-method ownership, defers SwiftUI synchronization and Markdown styling until the composition commits, and verifies that autosave keeps the keyboard active for continued editing.
+- Lesson: A rich-text bridge must treat marked text as provisional UIKit state; rewriting text storage during composition can terminate the input session even when the visible string looks valid.
+
 ### 171. Search-first iPhone widget actions
 - Problem: The existing iPhone widget compressed text, audio, and image capture into a small surface even though a small WidgetKit family cannot reliably expose multiple independent tap targets, and it offered no direct path into note search.
 - Fix: The small widget is now a focused Quick Note launcher with clearer hierarchy. A separate medium Mudsnote Actions widget adds a full-width Search Notes row above equal Voice input and Quick Note actions. Search uses a new `mudsnote://search` route that survives cold launch and authorized-folder loading, then focuses the native library search field exactly once; capture actions retain the existing durable text/audio routes.
