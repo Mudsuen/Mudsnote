@@ -391,16 +391,34 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testIOS26NotesNavigationReferenceStates() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        let allNotes = app.buttons["all-notes-link"]
-        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+        let app = launchApp(reset: true, fixtureFolder: true, inboxFolder: true)
+        let inbox = app.buttons["inbox-link"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["all-notes-link"].exists)
+        XCTAssertFalse(app.buttons["folder-row-Inbox"].exists)
+        XCTAssertFalse(app.staticTexts["Daily"].exists)
 
         let foldersScreenshot = XCTAttachment(screenshot: app.screenshot())
         foldersScreenshot.name = "iOS 26 reference - folders"
         foldersScreenshot.lifetime = .keepAlways
         add(foldersScreenshot)
 
-        allNotes.tap()
+        inbox.tap()
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Inbox/Filed Inbox Note.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["Original inbox memo"].exists)
+
+        let mergedInboxScreenshot = XCTAttachment(screenshot: app.screenshot())
+        mergedInboxScreenshot.name = "iOS 26 reference - merged inbox"
+        mergedInboxScreenshot.lifetime = .keepAlways
+        add(mergedInboxScreenshot)
+
+        app.navigationBars["000-inbox"].buttons.firstMatch.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        projects.tap()
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
 
@@ -2027,7 +2045,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         attachmentError: Bool = false,
         interruptedWrite: Bool = false,
         scanText: Bool = false,
-        searchRoute: Bool = false
+        searchRoute: Bool = false,
+        inboxFolder: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -2046,7 +2065,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             attachmentError ? "-ui-testing-attachment-error" : nil,
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
-            searchRoute ? "-ui-testing-search-route" : nil
+            searchRoute ? "-ui-testing-search-route" : nil,
+            inboxFolder ? "-ui-testing-inbox-folder" : nil
         ].compactMap { $0 }
         app.launch()
         return app

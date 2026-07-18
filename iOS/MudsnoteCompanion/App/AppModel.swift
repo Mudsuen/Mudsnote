@@ -92,6 +92,26 @@ final class AppModel: ObservableObject {
         folders.flatMap(\.flattened)
     }
 
+    var visibleLibraryFolders: [LibraryFolderNode] {
+        folders.filter { !$0.isMergedInboxFolder }
+    }
+
+    var mergedInboxFiles: [RecentMarkdownFile] {
+        let roots = folders
+            .filter(\.isMergedInboxFolder)
+            .map(\.relativePath)
+        guard !roots.isEmpty else { return [] }
+        return libraryFiles.filter { file in
+            roots.contains { root in
+                file.relativePath.hasPrefix(root + "/")
+            }
+        }
+    }
+
+    var mergedInboxCount: Int {
+        inboxItems.count + mergedInboxFiles.count
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),

@@ -3,49 +3,65 @@ import SwiftUI
 struct InboxStreamView: View {
     @EnvironmentObject private var appModel: AppModel
 
+    private var folderFiles: [RecentMarkdownFile] {
+        appModel.mergedInboxFiles.sorted { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+            return lhs.modifiedAt > rhs.modifiedAt
+        }
+    }
+
+    private var isEmpty: Bool {
+        folderFiles.isEmpty && appModel.inboxItems.isEmpty
+    }
+
     var body: some View {
         List {
-                if appModel.inboxItems.isEmpty {
-                    EmptyReaderStateView(
-                        title: String(localized: "No Memos Yet"),
-                        message: String(localized: "Tap the add button to write your first memo to Inbox.md.")
-                    )
-                    .frame(maxWidth: .infinity)
-                    .listRowBackground(MudsnoteColors.canvas)
-                    .listRowSeparator(.hidden)
-                } else {
-                    ForEach(appModel.inboxItems) { memo in
-                        MemoCardView(memo: memo)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                appModel.selectedMemo = memo
-                            }
-                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                Button {
-                                    appModel.addDefaultTag(to: memo)
-                                } label: {
-                                    Label("Tag", systemImage: "number")
-                                }
-                                .tint(.blue)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    appModel.deleteMemo(memo)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                Button {
-                                    appModel.pinMemo(memo)
-                                } label: {
-                                    Label("Pin", systemImage: "pin")
-                                }
-                                .tint(.yellow)
-                            }
-                            .listRowInsets(.init(top: 6, leading: MudsnoteSpacing.safeHorizontal, bottom: 6, trailing: MudsnoteSpacing.safeHorizontal))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(MudsnoteColors.canvas)
-                    }
+            if isEmpty {
+                EmptyReaderStateView(
+                    title: String(localized: "No Notes Yet"),
+                    message: String(localized: "Quick notes and notes saved in the Inbox folder appear here.")
+                )
+                .frame(maxWidth: .infinity)
+                .listRowBackground(MudsnoteColors.canvas)
+                .listRowSeparator(.hidden)
+            } else {
+                ForEach(folderFiles) { file in
+                    NoteFileButton(file: file)
+                        .listRowBackground(MudsnoteColors.canvas)
                 }
+
+                ForEach(appModel.inboxItems) { memo in
+                    MemoCardView(memo: memo)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            appModel.selectedMemo = memo
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                            Button {
+                                appModel.addDefaultTag(to: memo)
+                            } label: {
+                                Label("Tag", systemImage: "number")
+                            }
+                            .tint(.blue)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                appModel.deleteMemo(memo)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                appModel.pinMemo(memo)
+                            } label: {
+                                Label("Pin", systemImage: "pin")
+                            }
+                            .tint(.yellow)
+                        }
+                        .listRowInsets(.init(top: 6, leading: MudsnoteSpacing.safeHorizontal, bottom: 6, trailing: MudsnoteSpacing.safeHorizontal))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(MudsnoteColors.canvas)
+                }
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -53,7 +69,7 @@ struct InboxStreamView: View {
             await appModel.refreshInbox()
         }
         .background(MudsnoteColors.canvas)
-        .navigationTitle("Inbox")
+        .navigationTitle("000-inbox")
     }
 }
 

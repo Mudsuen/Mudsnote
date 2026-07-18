@@ -1381,6 +1381,32 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(folders.first?.totalNoteCount, 1)
     }
 
+    func testInboxFolderRecognitionSupportsExistingAndNumberedNames() {
+        let inboxNames = ["Inbox", "000-inbox", "000 Inbox", "收件箱"]
+        for name in inboxNames {
+            XCTAssertTrue(
+                LibraryFolderNode(
+                    relativePath: name,
+                    name: name,
+                    directNoteCount: 0,
+                    totalNoteCount: 0,
+                    children: []
+                ).isMergedInboxFolder,
+                name
+            )
+        }
+
+        XCTAssertFalse(
+            LibraryFolderNode(
+                relativePath: "Inbox Archive",
+                name: "Inbox Archive",
+                directNoteCount: 0,
+                totalNoteCount: 0,
+                children: []
+            ).isMergedInboxFolder
+        )
+    }
+
     func testMarkdownTrashRestoreAvoidsCollisionAndRefreshesInventory() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

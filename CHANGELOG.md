@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 177. One merged Inbox and monochrome folder hierarchy
+- Problem: The library still exposed Daily and All Notes as synthetic destinations, while Inbox.md quick notes and Markdown files inside an existing Inbox folder appeared as two separate roots. Filled yellow folder symbols also made the hierarchy feel inconsistent with the quieter Inbox treatment.
+- Fix: The home now contains only the merged 000-inbox and real non-Inbox top-level folders. Opening 000-inbox shows both quick notes from Inbox.md and Markdown notes stored anywhere under the top-level Inbox folder without moving either source. Daily and All Notes are removed from the home hierarchy, and folder symbols use monochrome outline variants with neutral black-and-white styling.
+- Lesson: A folder-first library should consolidate equivalent sources at the presentation boundary while preserving the files on disk, and hierarchy icons should share one restrained visual language.
+
 ### 176. Unified library hierarchy and native glass editing bar
 - Problem: The iPhone home split the authorized library's fixed note entries and real top-level folders into separate `mudsbuild` and `Folders` cards, open-note reading still carried a bottom action group, note rows could require tapping directly on their text, and the editor accessory was only a material strip rather than native Liquid Glass.
 - Fix: The home now presents `000-inbox`, Daily, All Notes, and every real first-level folder in one library card, with attachments, Recently Deleted, and Settings in a separate utility card. Common folder names receive semantic SF Symbols. Reading mode is fully chrome-free while long press preserves its document actions, list and search rows expose their entire width as a hit target, and iOS 26 renders the keyboard editing controls over a system glass capsule with a material fallback on older systems.

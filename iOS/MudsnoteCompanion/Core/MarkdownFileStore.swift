@@ -2991,6 +2991,20 @@ struct LibraryFolderNode: Identifiable, Equatable {
 
     var id: String { relativePath }
 
+    var isMergedInboxFolder: Bool {
+        let normalized = name
+            .folding(
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                locale: .current
+            )
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let unprefixed = normalized.drop {
+            $0.isNumber || $0 == "-" || $0 == "_" || $0 == " "
+        }
+        return unprefixed == "inbox" || unprefixed == "收件箱" || unprefixed == "收件"
+    }
+
     static func makeTree(
         directoryPaths: some Sequence<String>,
         files: [RecentMarkdownFile]

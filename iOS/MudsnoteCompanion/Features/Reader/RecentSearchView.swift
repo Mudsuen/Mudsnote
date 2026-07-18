@@ -187,29 +187,13 @@ struct LibraryHomeView: View {
                 } label: {
                     NotesFolderRow(
                         title: "000-inbox",
-                        systemImage: "tray.full",
-                        count: appModel.librarySummary.inboxCount
+                        systemImage: "tray",
+                        count: appModel.mergedInboxCount
                     )
                 }
                 .accessibilityIdentifier("inbox-link")
 
-                NavigationLink {
-                    FolderNotesListView(
-                        title: String(localized: "Daily"),
-                        scope: .pathPrefix("Daily/")
-                    )
-                } label: {
-                    NotesFolderRow(title: String(localized: "Daily"), systemImage: "calendar", count: appModel.librarySummary.dailyCount)
-                }
-
-                NavigationLink {
-                    FolderNotesListView(title: String(localized: "All Notes"), scope: .all)
-                } label: {
-                    NotesFolderRow(title: String(localized: "All Notes"), systemImage: "doc.text", count: appModel.librarySummary.allNotesCount)
-                }
-                .accessibilityIdentifier("all-notes-link")
-
-                ForEach(appModel.folders) { folder in
+                ForEach(appModel.visibleLibraryFolders) { folder in
                     if isManagingFolders {
                         NotesFolderRow(
                             title: folder.name,
@@ -276,18 +260,18 @@ struct LibraryHomeView: View {
             locale: .current
         )
 
-        if name.contains("inbox") || name.contains("收件") { return "tray.full" }
-        if name.contains("project") || name.contains("项目") { return "hammer.fill" }
-        if name.contains("work") || name.contains("工作") { return "briefcase.fill" }
-        if name.contains("personal") || name.contains("个人") { return "person.crop.circle.fill" }
+        if name.contains("inbox") || name.contains("收件") { return "tray" }
+        if name.contains("project") || name.contains("项目") { return "hammer" }
+        if name.contains("work") || name.contains("工作") { return "briefcase" }
+        if name.contains("personal") || name.contains("个人") { return "person.crop.circle" }
         if name.contains("resource") || name.contains("reference") || name.contains("资料") {
-            return "books.vertical.fill"
+            return "books.vertical"
         }
-        if name.contains("archive") || name.contains("归档") { return "archivebox.fill" }
-        if name.contains("idea") || name.contains("灵感") { return "lightbulb.fill" }
-        if name.contains("study") || name.contains("学习") { return "graduationcap.fill" }
+        if name.contains("archive") || name.contains("归档") { return "archivebox" }
+        if name.contains("idea") || name.contains("灵感") { return "lightbulb" }
+        if name.contains("study") || name.contains("学习") { return "graduationcap" }
         if name.contains("travel") || name.contains("旅行") { return "airplane" }
-        return "folder.fill"
+        return "folder"
     }
 
     @ViewBuilder
@@ -2225,7 +2209,7 @@ private struct NoteGalleryCard: View {
     }
 }
 
-private struct NoteFileButton: View {
+struct NoteFileButton: View {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis = .modified
@@ -2769,7 +2753,7 @@ struct NotesSectionHeader: View {
 struct NotesFolderRow: View {
     var title: String
     var systemImage: String
-    var iconTint: Color = NotesCloneColors.folderYellow
+    var iconTint: Color = MudsnoteColors.text
     var count: Int?
     var showsChevron = true
     var trailingAccessoryWidth: CGFloat = 0
@@ -2778,9 +2762,10 @@ struct NotesFolderRow: View {
         HStack(spacing: 16) {
             Image(systemName: systemImage)
                 .font(.system(size: 20, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
                 .foregroundStyle(iconTint)
                 .frame(width: 36, height: 36)
-                .background(iconTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .background(iconTint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
 
             Text(title)
                 .font(.system(.body, design: .rounded, weight: .medium))

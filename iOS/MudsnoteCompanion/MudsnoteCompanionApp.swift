@@ -49,6 +49,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
     private static let interruptedWriteArgument = "-ui-testing-interrupted-write"
     private static let searchRouteArgument = "-ui-testing-search-route"
+    private static let inboxFolderArgument = "-ui-testing-inbox-folder"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -67,6 +68,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(attachmentErrorArgument)
                 || arguments.contains(interruptedWriteArgument)
                 || arguments.contains(searchRouteArgument)
+                || arguments.contains(inboxFolderArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -158,6 +160,25 @@ private enum MudsnoteUITestLaunchConfiguration {
                     atomically: true,
                     encoding: .utf8
                 )
+                if arguments.contains(inboxFolderArgument) {
+                    let inboxFolder = root.appendingPathComponent("Inbox", isDirectory: true)
+                    try FileManager.default.createDirectory(
+                        at: inboxFolder,
+                        withIntermediateDirectories: true
+                    )
+                    try "# Filed Inbox Note\n\nStored as a Markdown file.\n".write(
+                        to: inboxFolder.appendingPathComponent("Filed Inbox Note.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    let inbox = root.appendingPathComponent("Inbox.md")
+                    let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
+                    try (existingInbox + "\n## 2026-07-18 19:00\n\nOriginal inbox memo\n").write(
+                        to: inbox,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
                 if arguments.contains(fileTagArgument) {
                     try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project #work\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle.md"),
