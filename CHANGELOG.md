@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 183. Detailed card-style iOS note rows
+- Problem: iOS note rows compressed the body preview beside the timestamp into a single line, making it difficult to recognize a note without opening it.
+- Fix: List cards now allow two-line titles and show up to three lines of body text. Checklist notes instead expose their first two tasks, while open-task and attachment indicators remain visible in the metadata row. Folder-scoped lists continue to omit their redundant folder name.
+- Lesson: A notes list should carry enough document shape to support recognition; time and status are metadata, while the content preview deserves its own vertical space.
+
 ### 182. Tap outside a half-sheet note to close it
 - Problem: A note opened at the medium reading detent left the upper background visible, but tapping that empty region did nothing.
 - Fix: While the reader is at the medium detent, its presentation background is interactive and a dedicated backdrop tap dismisses the note. The backdrop action is disabled once the reader expands or enters editing.

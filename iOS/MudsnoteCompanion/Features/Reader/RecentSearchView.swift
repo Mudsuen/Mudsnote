@@ -4150,7 +4150,9 @@ struct RecentFileRow: View {
             dateText: dateText,
             preview: file.preview,
             folderName: showsFolder ? folderName : nil,
+            checklistItems: file.galleryChecklistItems,
             hasAttachments: file.hasAttachments,
+            hasUncheckedChecklist: file.hasUncheckedChecklist,
             isPinned: file.isPinned,
             pinIdentifier: "pin-indicator-\(file.id)"
         )
@@ -4164,40 +4166,34 @@ struct NotesListRowContent: View {
     var dateText: String
     var preview: String
     var folderName: String?
+    var checklistItems: [MarkdownGalleryChecklistItem] = []
     var hasAttachments = false
+    var hasUncheckedChecklist = false
     var isPinned = false
     var pinIdentifier: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(title)
                     .font(.system(.body, design: .rounded, weight: .semibold))
                     .foregroundStyle(MudsnoteColors.text)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(dateText)
-                    if !preview.isEmpty {
-                        Text(preview)
-                            .lineLimit(1)
-                    }
-                    if folderName == nil, hasAttachments {
-                        Image(systemName: "paperclip")
-                            .accessibilityLabel("Has Attachments")
-                    }
+                        .lineLimit(1)
+                    detailBadges
                 }
                 .font(.subheadline)
                 .foregroundStyle(MudsnoteColors.muted)
+
+                noteDetails
 
                 if let folderName {
                     HStack(spacing: 5) {
                         Image(systemName: "folder")
                         Text(folderName)
-                        if hasAttachments {
-                            Image(systemName: "paperclip")
-                                .padding(.leading, 4)
-                        }
                     }
                     .font(.caption)
                     .foregroundStyle(MudsnoteColors.muted)
@@ -4215,9 +4211,50 @@ struct NotesListRowContent: View {
                     .accessibilityIdentifier(pinIdentifier ?? "pin-indicator")
             }
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowBackground(MudsnoteColors.card)
+    }
+
+    @ViewBuilder
+    private var noteDetails: some View {
+        if !checklistItems.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(checklistItems.prefix(2).enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(
+                                item.isChecked ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                            )
+                        Text(item.text)
+                            .font(.subheadline)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        } else if !preview.isEmpty {
+            Text(preview)
+                .font(.subheadline)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var detailBadges: some View {
+        if hasUncheckedChecklist {
+            Label("Open Tasks", systemImage: "checklist")
+                .labelStyle(.iconOnly)
+                .accessibilityLabel("Has Open Tasks")
+        }
+        if hasAttachments {
+            Label("Has Attachments", systemImage: "paperclip")
+                .labelStyle(.iconOnly)
+                .accessibilityLabel("Has Attachments")
+        }
     }
 }
 

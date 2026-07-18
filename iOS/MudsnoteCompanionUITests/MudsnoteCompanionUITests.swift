@@ -1729,18 +1729,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let allNotes = app.buttons["all-notes-link"]
-        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
-        allNotes.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
 
         let lifecycleNote = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(lifecycleNote.waitForExistence(timeout: 5))
         XCTAssertTrue(lifecycleNote.label.contains("UI Lifecycle"))
         XCTAssertTrue(lifecycleNote.label.contains("Restore this note end to end."))
-        XCTAssertTrue(lifecycleNote.label.contains("Projects"))
+        XCTAssertTrue(lifecycleNote.label.contains("Contact support@example.com"))
+        XCTAssertFalse(lifecycleNote.label.contains("Projects"))
+        XCTAssertGreaterThan(lifecycleNote.frame.height, 88)
         XCTAssertTrue(app.staticTexts["Today"].exists)
 
-        let sortButton = app.buttons["Sort Notes"]
+        let sortButton = app.buttons["folder-actions"]
         XCTAssertTrue(sortButton.exists)
         sortButton.tap()
         XCTAssertTrue(app.buttons["Date Edited"].waitForExistence(timeout: 3))
@@ -1752,7 +1754,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         app.tap()
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Notes-style metadata list"
+        screenshot.name = "Detailed card-style note list"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
