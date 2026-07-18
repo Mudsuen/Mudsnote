@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 187. Leaner swipe directory with named utility section
+- Problem: The directory duplicated its swipe gesture with a top-left sidebar button, exposed the backing folder name as a heading, mixed utility destinations with normal folders, and rebuilt the complete chronological projection throughout an interactive drag.
+- Fix: Removed the sidebar button and backing-folder label, added a fixed Folders heading with a compact Settings button, and moved Attachments plus Recently Deleted into a separate Library section. The drawer keeps its backdrop mounted, uses an opaque composited surface with a tighter spring, scopes close gestures to the drawer, lazily builds its vertical content, and caches both the time-sorted home projection and smart-folder counts by library revision instead of rescanning notes on animation frames.
+- Lesson: Smooth navigation depends as much on stable view identity and bounded recomputation as on the spring curve; navigation hierarchy and maintenance destinations should also remain visually distinct.
+
 ### 186. Scroll-only reader content with selectable read-only text
 - Problem: Vertical gestures inside a half-height note could resize the sheet, tapping an expanded note silently entered editing, and the note-wide custom context menu prevented the native text copy menu from appearing.
 - Fix: Reader sheets now prioritize content scrolling at both detents, leaving detent changes to the native top drag indicator. Half and full readers remain read-only unless opened through an explicit Edit action. Rendered Markdown enables native text selection and copying, while note-level actions move to the date label's context menu.

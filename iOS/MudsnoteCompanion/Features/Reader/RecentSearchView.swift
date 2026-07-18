@@ -42,6 +42,12 @@ private struct HomeTimelineSection: Identifiable {
     var entries: [HomeTimelineEntry]
 }
 
+private struct HomeTimelineProjection {
+    var sections: [HomeTimelineSection] = []
+    var entryCount = 0
+    var smartFolderCounts: [UUID: Int] = [:]
+}
+
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
@@ -62,6 +68,7 @@ struct LibraryHomeView: View {
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
     @State private var expandedDirectoryPaths = Set<String>()
+    @State private var homeTimelineProjection = HomeTimelineProjection()
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -85,21 +92,20 @@ struct LibraryHomeView: View {
                             .accessibilityIdentifier("directory-swipe-edge")
                     }
 
-                    if reveal > 0 {
-                        Color.black.opacity(0.42 * reveal / directoryWidth)
-                            .ignoresSafeArea()
-                            .contentShape(Rectangle())
-                            .onTapGesture { closeDirectory() }
-                            .accessibilityElement()
-                            .accessibilityLabel("Close Folders")
-                            .accessibilityIdentifier("directory-backdrop")
-                    }
+                    Color.black
+                        .opacity(0.42 * reveal / directoryWidth)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .allowsHitTesting(reveal > 0)
+                        .onTapGesture { closeDirectory() }
+                        .accessibilityElement()
+                        .accessibilityLabel("Close Folders")
+                        .accessibilityIdentifier("directory-backdrop")
 
                     directoryPanel(width: directoryWidth)
                         .offset(x: -directoryWidth + reveal)
+                        .gesture(directoryDragGesture(width: directoryWidth))
                 }
-                .contentShape(Rectangle())
-                .simultaneousGesture(directoryDragGesture(width: directoryWidth))
             }
             .background(NotesCloneColors.background)
             .refreshable {
@@ -117,6 +123,7 @@ struct LibraryHomeView: View {
                 directoryDragOffset = 0
             }
             .onAppear {
+                refreshHomeTimelineProjection()
                 presentRequestedSearchIfNeeded()
                 if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
                     isDirectoryPresented = true
@@ -124,6 +131,9 @@ struct LibraryHomeView: View {
             }
             .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
                 if requested { presentRequestedSearchIfNeeded() }
+            }
+            .onChange(of: appModel.libraryRevision) { _, _ in
+                refreshHomeTimelineProjection()
             }
             .task(id: SearchTaskID(
                 query: searchQuery,
@@ -140,19 +150,6 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
-                            isDirectoryPresented.toggle()
-                            directoryDragOffset = 0
-                        }
-                    } label: {
-                        Image(systemName: isDirectoryPresented ? "sidebar.left" : "sidebar.leading")
-                    }
-                    .accessibilityLabel(isDirectoryPresented ? "Close Folders" : "Show Folders")
-                    .accessibilityIdentifier("directory-button")
-                }
-
                 if isDirectoryPresented {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -266,9 +263,9 @@ struct LibraryHomeView: View {
     private var homeCardStream: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
-                NotesListCountLabel(count: homeEntryCount)
+                NotesListCountLabel(count: homeTimelineProjection.entryCount)
 
-                if homeTimelineSections.isEmpty {
+                if homeTimelineProjection.sections.isEmpty {
                     ContentUnavailableView(
                         "No Notes",
                         systemImage: "note.text",
@@ -277,7 +274,7 @@ struct LibraryHomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60)
                 } else {
-                    ForEach(homeTimelineSections) { section in
+                    ForEach(homeTimelineProjection.sections) { section in
                         HomeTimelineCardSection(section: section)
                     }
                 }
@@ -289,7 +286,7 @@ struct LibraryHomeView: View {
         .accessibilityIdentifier("home-note-gallery")
     }
 
-    private var homeTimelineSections: [HomeTimelineSection] {
+    private func makeHomeTimelineProjection() -> HomeTimelineProjection {
         let entries = (
             appModel.libraryFiles
                 .filter { $0.relativePath != "Inbox.md" }
@@ -319,17 +316,28 @@ struct LibraryHomeView: View {
                 )
             }
         }
-        return sections
+        let smartFolderCounts = Dictionary(uniqueKeysWithValues: appModel.smartFolders.map { definition in
+            let count = appModel.libraryFiles.lazy.filter {
+                $0.relativePath != "Inbox.md" && definition.matches(file: $0)
+            }.count + appModel.inboxItems.lazy.filter {
+                definition.matches(memo: $0)
+            }.count
+            return (definition.id, count)
+        })
+        return HomeTimelineProjection(
+            sections: sections,
+            entryCount: entries.count,
+            smartFolderCounts: smartFolderCounts
+        )
     }
 
-    private var homeEntryCount: Int {
-        appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
-            + appModel.inboxItems.count
+    private func refreshHomeTimelineProjection() {
+        homeTimelineProjection = makeHomeTimelineProjection()
     }
 
     private func directoryPanel(width: CGFloat) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 accountSection
                 if !appModel.smartFolders.isEmpty {
                     smartFoldersSection
@@ -344,13 +352,13 @@ struct LibraryHomeView: View {
         }
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(.ultraThinMaterial)
+        .background(MudsnoteColors.canvas)
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(MudsnoteColors.line)
                 .frame(width: 1)
         }
-        .shadow(color: .black.opacity(0.28), radius: 22, x: 8)
+        .shadow(color: .black.opacity(0.22), radius: 12, x: 5)
         .accessibilityIdentifier("directory-drawer")
     }
 
@@ -380,7 +388,7 @@ struct LibraryHomeView: View {
                 } else {
                     shouldOpen = horizontal > width * 0.18 || predicted > width * 0.45
                 }
-                withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
                     isDirectoryPresented = shouldOpen
                     directoryDragOffset = 0
                 }
@@ -388,7 +396,7 @@ struct LibraryHomeView: View {
     }
 
     private func closeDirectory() {
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
+        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
             isDirectoryPresented = false
             directoryDragOffset = 0
             isManagingFolders = false
@@ -407,57 +415,79 @@ struct LibraryHomeView: View {
 
     @ViewBuilder
     private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: rootSectionTitle)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Text("Folders")
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundStyle(MudsnoteColors.text)
 
-            notesCard {
-                NavigationLink {
-                    InboxStreamView()
-                } label: {
-                    NotesFolderRow(
-                        title: "000-inbox",
-                        systemImage: "tray",
-                        count: appModel.mergedInboxCount
-                    )
+                    Spacer(minLength: 0)
+
+                    NavigationLink {
+                        SettingsRulesView(chooseFolder: chooseFolder)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .frame(width: 34, height: 34)
+                            .background(MudsnoteColors.card, in: Circle())
+                            .overlay {
+                                Circle().stroke(MudsnoteColors.line, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings")
+                    .accessibilityIdentifier("settings-link")
                 }
-                .accessibilityIdentifier("inbox-link")
+                .padding(.horizontal, 2)
 
-                ForEach(appModel.visibleLibraryFolders) { folder in
-                    DirectoryFolderTree(
-                        folder: folder,
-                        depth: 0,
-                        isManaging: isManagingFolders,
-                        expandedPaths: $expandedDirectoryPaths,
-                        systemImage: folderSystemImage
-                    )
+                notesCard {
+                    NavigationLink {
+                        InboxStreamView()
+                    } label: {
+                        NotesFolderRow(
+                            title: "000-inbox",
+                            systemImage: "tray",
+                            count: appModel.mergedInboxCount
+                        )
+                    }
+                    .accessibilityIdentifier("inbox-link")
+
+                    ForEach(appModel.visibleLibraryFolders) { folder in
+                        DirectoryFolderTree(
+                            folder: folder,
+                            depth: 0,
+                            isManaging: isManagingFolders,
+                            expandedPaths: $expandedDirectoryPaths,
+                            systemImage: folderSystemImage
+                        )
+                    }
                 }
             }
 
-            notesCard {
-                NavigationLink {
-                    AttachmentLibraryView()
-                } label: {
-                    NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
-                }
-                .accessibilityIdentifier("attachments-link")
+            VStack(alignment: .leading, spacing: 10) {
+                NotesSectionHeader(title: String(localized: "Library"))
 
-                NavigationLink {
-                    RecentlyDeletedView()
-                } label: {
-                    NotesFolderRow(
-                        title: String(localized: "Recently Deleted"),
-                        systemImage: "trash",
-                        count: appModel.librarySummary.recentlyDeletedCount
-                    )
-                }
-                .accessibilityIdentifier("recently-deleted-link")
+                notesCard {
+                    NavigationLink {
+                        AttachmentLibraryView()
+                    } label: {
+                        NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
+                    }
+                    .accessibilityIdentifier("attachments-link")
 
-                NavigationLink {
-                    SettingsRulesView(chooseFolder: chooseFolder)
-                } label: {
-                    NotesFolderRow(title: String(localized: "Settings"), systemImage: "gearshape", count: nil)
+                    NavigationLink {
+                        RecentlyDeletedView()
+                    } label: {
+                        NotesFolderRow(
+                            title: String(localized: "Recently Deleted"),
+                            systemImage: "trash",
+                            count: appModel.librarySummary.recentlyDeletedCount
+                        )
+                    }
+                    .accessibilityIdentifier("recently-deleted-link")
                 }
-                .accessibilityIdentifier("settings-link")
             }
         }
     }
@@ -747,16 +777,7 @@ struct LibraryHomeView: View {
     }
 
     private func smartFolderCount(_ definition: SmartFolderDefinition) -> Int {
-        appModel.libraryFiles.lazy.filter {
-            $0.relativePath != "Inbox.md" && definition.matches(file: $0)
-        }.count + appModel.inboxItems.lazy.filter { definition.matches(memo: $0) }.count
-    }
-
-    private var rootSectionTitle: String {
-        if case .ready(let url) = appModel.folderStatus {
-            return url.lastPathComponent
-        }
-        return "Mudsnote"
+        homeTimelineProjection.smartFolderCounts[definition.id] ?? 0
     }
 
     private func notesCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {

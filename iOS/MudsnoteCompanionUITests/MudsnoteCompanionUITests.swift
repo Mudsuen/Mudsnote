@@ -1804,6 +1804,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
+        XCTAssertFalse(app.buttons["directory-button"].exists)
 
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
@@ -1819,6 +1820,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
         XCTAssertTrue(app.navigationBars["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Library"].exists)
+        XCTAssertTrue(app.buttons["settings-link"].isHittable)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Home cards with left directory drawer"
