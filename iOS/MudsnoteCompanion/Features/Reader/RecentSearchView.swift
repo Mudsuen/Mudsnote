@@ -108,9 +108,8 @@ struct LibraryHomeView: View {
                 }
             }
             .background(NotesCloneColors.background)
-            .refreshable {
-                await appModel.refreshInbox()
-            }
+            .toolbarBackground(MudsnoteColors.canvas, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .navigationTitle(isDirectoryPresented ? "Folders" : "Notes")
             .onChange(of: searchQuery) { _, value in
                 if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -808,7 +807,7 @@ private struct DirectoryFolderTree: View {
     }
 
     private var trailingAccessoryWidth: CGFloat {
-        (isManaging ? 88 : 0) + (hasChildren ? 44 : 0)
+        (isManaging ? 88 : 0) + 28
     }
 
     var body: some View {
@@ -2429,12 +2428,19 @@ private struct HomeTimelineCardSection: View {
                 }
             }
         } header: {
-            Text(section.title)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(MudsnoteColors.text)
+            HStack(spacing: 0) {
+                Text(section.title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(MudsnoteColors.text)
+
+                Spacer(minLength: 0)
+            }
+                .padding(.horizontal, 16)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(MudsnoteColors.canvas)
+                .padding(.horizontal, -16)
+                .accessibilityIdentifier("home-section-header-\(section.id)")
         }
     }
 }
@@ -3276,18 +3282,20 @@ struct NotesFolderRow: View {
             if let count {
                 Text("\(count)")
                     .font(.system(.subheadline, design: .rounded))
+                    .monospacedDigit()
                     .foregroundStyle(MudsnoteColors.muted)
+                    .frame(minWidth: 28, alignment: .trailing)
+                    .accessibilityIdentifier("folder-count-\(title)")
             }
 
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+            ZStack(alignment: .trailing) {
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+                }
             }
-
-            if trailingAccessoryWidth > 0 {
-                Color.clear.frame(width: trailingAccessoryWidth)
-            }
+            .frame(width: max(28, trailingAccessoryWidth), height: 44, alignment: .trailing)
         }
         .padding(.leading, 18 + indentation)
         .padding(.trailing, 18)

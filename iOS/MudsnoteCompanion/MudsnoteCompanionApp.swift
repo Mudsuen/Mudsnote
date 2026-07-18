@@ -44,6 +44,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let conflictCopyArgument = "-ui-testing-conflict-copy"
     private static let fileTagArgument = "-ui-testing-file-tag"
     private static let batchNotesArgument = "-ui-testing-batch-notes"
+    private static let homeScrollNotesArgument = "-ui-testing-home-scroll-notes"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
@@ -63,6 +64,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(conflictCopyArgument)
                 || arguments.contains(fileTagArgument)
                 || arguments.contains(batchNotesArgument)
+                || arguments.contains(homeScrollNotesArgument)
                 || arguments.contains(ocrAttachmentArgument)
                 || arguments.contains(audioTranscriptArgument)
                 || arguments.contains(attachmentErrorArgument)
@@ -214,6 +216,19 @@ private enum MudsnoteUITestLaunchConfiguration {
                         atomically: true,
                         encoding: .utf8
                     )
+                }
+                if arguments.contains(homeScrollNotesArgument) {
+                    for index in 1...8 {
+                        try """
+                        # Scroll Fixture \(index)
+
+                        This card verifies that notes remain hidden behind the opaque pinned date header.
+                        """.write(
+                            to: projects.appendingPathComponent("Scroll Fixture \(index).md"),
+                            atomically: true,
+                            encoding: .utf8
+                        )
+                    }
                 }
                 if arguments.contains(ocrAttachmentArgument) {
                     let image = UIGraphicsImageRenderer(

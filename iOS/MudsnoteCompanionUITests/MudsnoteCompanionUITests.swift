@@ -1172,8 +1172,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let background = app.otherElements["note-reader-background-dismiss"]
         XCTAssertTrue(background.waitForExistence(timeout: 3))
+        let metadata = app.staticTexts["note-modified-date"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 3))
+        let initialMetadataY = metadata.frame.midY
         rendered.swipeUp()
         XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
+        XCTAssertEqual(
+            metadata.frame.midY,
+            initialMetadataY,
+            accuracy: 2,
+            "The reader timestamp must remain fixed while note content scrolls"
+        )
 
         rendered.swipeDown()
         XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
@@ -1199,7 +1208,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(fullScreenCopy.waitForExistence(timeout: 3))
         fullScreenCopy.tap()
 
-        let metadata = app.staticTexts["note-modified-date"]
         metadata.press(forDuration: 1)
         XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
     }
@@ -1799,6 +1807,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             reset: true,
             fixtureFolder: true,
             batchNotes: true,
+            homeScrollNotes: true,
             openDirectory: false
         )
 
@@ -1813,6 +1822,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
+        let gallery = app.scrollViews["home-note-gallery"]
+        gallery.swipeUp()
+        XCTAssertTrue(app.staticTexts["Today"].exists)
+        let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
+        scrolledScreenshot.name = "Home cards under opaque pinned date header"
+        scrolledScreenshot.lifetime = .keepAlways
+        add(scrolledScreenshot)
+        gallery.swipeDown()
+
         let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
         let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
@@ -1823,6 +1841,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
         XCTAssertTrue(app.buttons["settings-link"].isHittable)
+
+        let inboxCount = app.staticTexts["folder-count-000-inbox"]
+        let projectsCount = app.staticTexts["folder-count-Projects"]
+        XCTAssertTrue(inboxCount.exists)
+        XCTAssertTrue(projectsCount.exists)
+        XCTAssertEqual(
+            inboxCount.frame.maxX,
+            projectsCount.frame.maxX,
+            accuracy: 2,
+            "Folder counts must share one trailing alignment column"
+        )
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Home cards with left directory drawer"
@@ -2206,6 +2235,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         conflictCopy: Bool = false,
         fileTag: Bool = false,
         batchNotes: Bool = false,
+        homeScrollNotes: Bool = false,
         ocrAttachment: Bool = false,
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
@@ -2229,6 +2259,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             conflictCopy ? "-ui-testing-conflict-copy" : nil,
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
+            homeScrollNotes ? "-ui-testing-home-scroll-notes" : nil,
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,

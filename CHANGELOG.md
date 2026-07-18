@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 188. Fixed reader metadata and opaque card-stream headers
+- Problem: The swipe directory exposed an inert pull-to-refresh gesture, folder counts shifted horizontally depending on whether a row had a disclosure control, the reader timestamp scrolled away with the note, and home cards remained visible through the margins above pinned date headers.
+- Fix: Removed refresh from the directory/home container, standardized a monospaced count column plus fixed trailing accessory column, moved read-only metadata outside the content scroll view, and extended each pinned time header across the full viewport while making the navigation-bar background opaque.
+- Lesson: Persistent metadata and pinned grouping chrome must live outside scrolling/translucent content, and hierarchical rows need stable trailing layout slots regardless of disclosure state.
+
 ### 187. Leaner swipe directory with named utility section
 - Problem: The directory duplicated its swipe gesture with a top-left sidebar button, exposed the backing folder name as a heading, mixed utility destinations with normal folders, and rebuilt the complete chronological projection throughout an interactive drag.
 - Fix: Removed the sidebar button and backing-folder label, added a fixed Folders heading with a compact Settings button, and moved Attachments plus Recently Deleted into a separate Library section. The drawer keeps its backdrop mounted, uses an opaque composited surface with a tighter spring, scopes close gestures to the drawer, lazily builds its vertical content, and caches both the time-sorted home projection and smart-folder counts by library revision instead of rescanning notes on animation frames.

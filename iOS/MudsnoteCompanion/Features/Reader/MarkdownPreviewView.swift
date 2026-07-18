@@ -129,10 +129,14 @@ struct MarkdownPreviewView: View {
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 18) {
-                                metadataLabel
+                    VStack(alignment: .leading, spacing: 0) {
+                        metadataLabel
+                            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                            .padding(.top, MudsnoteSpacing.safeHorizontal)
+                            .padding(.bottom, 18)
+
+                        ScrollViewReader { proxy in
+                            ScrollView {
                                 markdownBody
                                     .environment(\.openURL, OpenURLAction { url in
                                         handleMarkdownURL(url)
@@ -140,22 +144,23 @@ struct MarkdownPreviewView: View {
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("rendered-markdown")
                                     .textSelection(.enabled)
+                                    .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                                    .padding(.bottom, MudsnoteSpacing.safeHorizontal)
                             }
-                            .padding(MudsnoteSpacing.safeHorizontal)
-                        }
-                        .onChange(of: findQuery) { _, _ in
-                            activeFindIndex = 0
-                            scrollToActiveFindMatch(using: proxy)
-                        }
-                        .onChange(of: activeFindIndex) { _, _ in
-                            scrollToActiveFindMatch(using: proxy)
-                        }
-                        .onChange(of: findResults.map(\.id)) { _, _ in
-                            activeFindIndex = min(
-                                activeFindIndex,
-                                max(0, findResults.count - 1)
-                            )
-                            scrollToActiveFindMatch(using: proxy)
+                            .onChange(of: findQuery) { _, _ in
+                                activeFindIndex = 0
+                                scrollToActiveFindMatch(using: proxy)
+                            }
+                            .onChange(of: activeFindIndex) { _, _ in
+                                scrollToActiveFindMatch(using: proxy)
+                            }
+                            .onChange(of: findResults.map(\.id)) { _, _ in
+                                activeFindIndex = min(
+                                    activeFindIndex,
+                                    max(0, findResults.count - 1)
+                                )
+                                scrollToActiveFindMatch(using: proxy)
+                            }
                         }
                     }
                 }
