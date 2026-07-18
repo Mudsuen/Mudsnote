@@ -1,5 +1,11 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (215)
+
+- macOS and iPhone app icons share an original Notes-like black-header note motif with warm white paper and gray rules.
+- macOS keeps transparent icon padding and platform rounding; iPhone uses a full-bleed square source for the system mask.
+- Regenerate with `./scripts/generate_icon_assets.sh` and `./scripts/generate_ios_companion_icon.sh`; the iPhone generator emits only sizes declared by its asset catalog.
+
 ## Latest iteration (156)
 
 - Save progress no longer replaces the editor status/time text; the library date updates from the file modification date only after a successful save.
