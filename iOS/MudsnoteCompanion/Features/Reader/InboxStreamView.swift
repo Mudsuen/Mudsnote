@@ -1,75 +1,180 @@
 import SwiftUI
 
+private enum InboxTimelineEntry: Identifiable {
+    case file(RecentMarkdownFile)
+    case memo(MemoBlock)
+
+    private static let memoDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
+    var id: String {
+        switch self {
+        case .file(let file): "file:\(file.id)"
+        case .memo(let memo): "memo:\(memo.id)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .file(let file): file.modifiedAt
+        case .memo(let memo):
+            Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
+        }
+    }
+}
+
+private struct InboxTimelineSection: Identifiable {
+    var id: String
+    var title: String
+    var entries: [InboxTimelineEntry]
+}
+
 struct InboxStreamView: View {
     @EnvironmentObject private var appModel: AppModel
 
-    private var folderFiles: [RecentMarkdownFile] {
-        appModel.mergedInboxFiles.sorted { lhs, rhs in
-            if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
-            return lhs.modifiedAt > rhs.modifiedAt
+    private var timelineSections: [InboxTimelineSection] {
+        let entries = (
+            appModel.mergedInboxFiles.map(InboxTimelineEntry.file)
+                + appModel.inboxItems.map(InboxTimelineEntry.memo)
+        ).sorted { $0.date > $1.date }
+        var sections: [InboxTimelineSection] = []
+        for entry in entries {
+            let bucket = NoteListPresentation.dateBucket(
+                for: entry.date,
+                now: Date(),
+                calendar: .autoupdatingCurrent
+            )
+            if sections.last?.id == bucket.id {
+                sections[sections.count - 1].entries.append(entry)
+            } else {
+                sections.append(
+                    InboxTimelineSection(
+                        id: bucket.id,
+                        title: bucket.title,
+                        entries: [entry]
+                    )
+                )
+            }
         }
+        return sections
     }
 
     private var isEmpty: Bool {
-        folderFiles.isEmpty && appModel.inboxItems.isEmpty
+        timelineSections.isEmpty
     }
 
     var body: some View {
-        List {
-            if isEmpty {
-                EmptyReaderStateView(
-                    title: String(localized: "No Notes Yet"),
-                    message: String(localized: "Quick notes and notes saved in the Inbox folder appear here.")
-                )
-                .frame(maxWidth: .infinity)
-                .listRowBackground(MudsnoteColors.canvas)
-                .listRowSeparator(.hidden)
-            } else {
-                ForEach(folderFiles) { file in
-                    NoteFileButton(file: file)
-                        .listRowBackground(MudsnoteColors.canvas)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            NotesListCountLabel(count: appModel.mergedInboxCount)
 
-                ForEach(appModel.inboxItems) { memo in
-                    MemoCardView(memo: memo)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            appModel.selectedMemo = memo
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                            Button {
-                                appModel.addDefaultTag(to: memo)
-                            } label: {
-                                Label("Tag", systemImage: "number")
+            List {
+                if isEmpty {
+                    EmptyReaderStateView(
+                        title: String(localized: "No Notes Yet"),
+                        message: String(localized: "Quick notes and notes saved in the Inbox folder appear here.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(timelineSections) { section in
+                        Section {
+                            ForEach(section.entries) { entry in
+                                switch entry {
+                                case .file(let file):
+                                    NoteFileButton(file: file, showsFolder: false)
+                                case .memo(let memo):
+                                    InboxMemoRow(memo: memo)
+                                }
                             }
-                            .tint(.blue)
+                        } header: {
+                            NotesListSectionHeader(title: section.title)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                appModel.deleteMemo(memo)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                            Button {
-                                appModel.pinMemo(memo)
-                            } label: {
-                                Label("Pin", systemImage: "pin")
-                            }
-                            .tint(.yellow)
-                        }
-                        .listRowInsets(.init(top: 6, leading: MudsnoteSpacing.safeHorizontal, bottom: 6, trailing: MudsnoteSpacing.safeHorizontal))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(MudsnoteColors.canvas)
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(22)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .refreshable {
             await appModel.refreshInbox()
         }
         .background(MudsnoteColors.canvas)
         .navigationTitle("000-inbox")
+    }
+}
+
+private struct InboxMemoRow: View {
+    @EnvironmentObject private var appModel: AppModel
+    var memo: MemoBlock
+
+    private var contentLines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var title: String {
+        guard let first = contentLines.first else {
+            return String(localized: "Untitled memo")
+        }
+        return first.trimmingCharacters(
+            in: CharacterSet(charactersIn: "#>*+- ")
+        )
+    }
+
+    private var preview: String {
+        contentLines.dropFirst().joined(separator: " ")
+    }
+
+    private var dateText: String {
+        memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText
+    }
+
+    var body: some View {
+        Button {
+            appModel.selectedMemo = memo
+        } label: {
+            NotesListRowContent(
+                title: title,
+                dateText: dateText,
+                preview: preview,
+                folderName: nil,
+                hasAttachments: memo.hasAttachments
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("inbox-memo-row-\(memo.id)")
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button {
+                appModel.addDefaultTag(to: memo)
+            } label: {
+                Label("Tag", systemImage: "number")
+            }
+            .tint(.blue)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                appModel.deleteMemo(memo)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            Button {
+                appModel.pinMemo(memo)
+            } label: {
+                Label("Pin", systemImage: "pin")
+            }
+            .tint(.yellow)
+        }
     }
 }
 

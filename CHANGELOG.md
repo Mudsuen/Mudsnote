@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 178. Animated folder editing and unified Notes-style rows
+- Problem: Entering folder management replaced Edit with a static Done label, merged Inbox content still exposed two visibly different row designs, and folder note lists used plain list sections while redundantly repeating the current folder beneath every note.
+- Fix: Edit now transitions in place to a checkmark with a native blur-replace animation. Markdown files and Inbox quick notes share the same title, timestamp, preview, attachment, and grouped-card row language. Folder and Inbox lists use date-grouped inset cards with Notes-style headers and separators, while folder-scoped rows omit their already-known folder location.
+- Lesson: Merging data sources is incomplete until their presentation model is also unified; contextual metadata should disappear when navigation already communicates it.
+
 ### 177. One merged Inbox and monochrome folder hierarchy
 - Problem: The library still exposed Daily and All Notes as synthetic destinations, while Inbox.md quick notes and Markdown files inside an existing Inbox folder appeared as two separate roots. Filled yellow folder symbols also made the hierarchy feel inconsistent with the quieter Inbox treatment.
 - Fix: The home now contains only the merged 000-inbox and real non-Inbox top-level folders. Opening 000-inbox shows both quick notes from Inbox.md and Markdown notes stored anywhere under the top-level Inbox folder without moving either source. Daily and All Notes are removed from the home hierarchy, and folder symbols use monochrome outline variants with neutral black-and-white styling.

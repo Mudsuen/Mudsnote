@@ -166,8 +166,8 @@ private enum MudsnoteUITestLaunchConfiguration {
                         at: inboxFolder,
                         withIntermediateDirectories: true
                     )
-                    try "# Filed Inbox Note\n\nStored as a Markdown file.\n".write(
-                        to: inboxFolder.appendingPathComponent("Filed Inbox Note.md"),
+                    try "# Filed Note\n\nStored as a Markdown file.\n".write(
+                        to: inboxFolder.appendingPathComponent("Filed Note.md"),
                         atomically: true,
                         encoding: .utf8
                     )

@@ -391,7 +391,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testIOS26NotesNavigationReferenceStates() {
-        let app = launchApp(reset: true, fixtureFolder: true, inboxFolder: true)
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            inboxFolder: true
+        )
         let inbox = app.buttons["inbox-link"]
         XCTAssertTrue(inbox.waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["all-notes-link"].exists)
@@ -405,10 +410,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         inbox.tap()
         XCTAssertTrue(
-            app.buttons["markdown-file-row-Inbox/Filed Inbox Note.md"]
+            app.buttons["markdown-file-row-Inbox/Filed Note.md"]
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.staticTexts["Original inbox memo"].exists)
+        XCTAssertFalse(
+            app.buttons["markdown-file-row-Inbox/Filed Note.md"]
+                .label.contains("Inbox")
+        )
 
         let mergedInboxScreenshot = XCTAttachment(screenshot: app.screenshot())
         mergedInboxScreenshot.name = "iOS 26 reference - merged inbox"
@@ -421,6 +430,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         projects.tap()
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertFalse(note.label.contains("Projects"))
 
         let listScreenshot = XCTAttachment(screenshot: app.screenshot())
         listScreenshot.name = "iOS 26 reference - note list"

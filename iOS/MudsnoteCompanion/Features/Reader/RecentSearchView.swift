@@ -107,12 +107,23 @@ struct LibraryHomeView: View {
                         isSearchFocused = false
                         searchQuery = ""
                         searchSuggestion = nil
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.snappy(duration: 0.28, extraBounce: 0.08)) {
                             isManagingFolders.toggle()
                         }
                     } label: {
-                        Text(isManagingFolders ? "Done" : "Edit")
+                        Group {
+                            if isManagingFolders {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .accessibilityIdentifier("finish-folder-editing-icon")
+                            } else {
+                                Text("Edit")
+                            }
+                        }
+                        .frame(minWidth: 34, minHeight: 24)
+                        .transition(.blurReplace)
                     }
+                    .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
                     .accessibilityIdentifier("edit-folders-button")
                 }
             }
@@ -762,7 +773,7 @@ enum NoteListPresentation {
         return sections
     }
 
-    private static func dateBucket(
+    static func dateBucket(
         for date: Date,
         now: Date,
         calendar: Calendar
@@ -918,7 +929,7 @@ private struct NoteListSearchResultsView: View {
     }
 }
 
-private struct NotesListCountLabel: View {
+struct NotesListCountLabel: View {
     var count: Int
 
     var body: some View {
@@ -933,6 +944,22 @@ private struct NotesListCountLabel: View {
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
         .accessibilityIdentifier("note-list-count")
+    }
+}
+
+struct NotesListSectionHeader: View {
+    var title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(.title3, design: .rounded, weight: .bold))
+            .foregroundStyle(MudsnoteColors.text)
+            .textCase(nil)
+            .padding(.bottom, 4)
+            .listRowInsets(
+                EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0)
+            )
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -1014,10 +1041,12 @@ struct FolderNotesListView: View {
                                     .foregroundStyle(MudsnoteColors.muted)
                             } else {
                                 if !pinnedFiles.isEmpty {
-                                    Section("Pinned") {
+                                    Section {
                                         ForEach(pinnedFiles) { file in
                                             noteRow(file)
                                         }
+                                    } header: {
+                                        NotesListSectionHeader(title: String(localized: "Pinned"))
                                     }
                                 }
                                 ForEach(otherSections) { section in
@@ -1027,15 +1056,16 @@ struct FolderNotesListView: View {
                                         }
                                     } header: {
                                         if let title = section.title {
-                                            Text(title)
+                                            NotesListSectionHeader(title: title)
                                         } else if !pinnedFiles.isEmpty {
-                                            Text("Notes")
+                                            NotesListSectionHeader(title: String(localized: "Notes"))
                                         }
                                     }
                                 }
                             }
                         }
-                        .listStyle(.plain)
+                        .listStyle(.insetGrouped)
+                        .listSectionSpacing(22)
                         .scrollContentBackground(.hidden)
                     }
                 }
@@ -1169,6 +1199,7 @@ struct FolderNotesListView: View {
             SelectableNoteFileRow(
                 file: file,
                 dateBasis: sortOrder.dateBasis,
+                showsFolder: scope.newNoteFolder == nil,
                 isSelected: selectedPaths.contains(file.relativePath)
             ) {
                 if !selectedPaths.insert(file.relativePath).inserted {
@@ -1176,7 +1207,11 @@ struct FolderNotesListView: View {
                 }
             }
         } else {
-            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+            NoteFileButton(
+                file: file,
+                dateBasis: sortOrder.dateBasis,
+                showsFolder: scope.newNoteFolder == nil
+            )
         }
     }
 
@@ -1337,10 +1372,12 @@ struct LibraryFolderView: View {
                             }
 
                             if !pinnedFiles.isEmpty {
-                                Section("Pinned") {
+                                Section {
                                     ForEach(pinnedFiles) { file in
                                         noteRow(file)
                                     }
+                                } header: {
+                                    NotesListSectionHeader(title: String(localized: "Pinned"))
                                 }
                             }
                             ForEach(otherSections) { section in
@@ -1350,9 +1387,9 @@ struct LibraryFolderView: View {
                                     }
                                 } header: {
                                     if let title = section.title {
-                                        Text(title)
+                                        NotesListSectionHeader(title: title)
                                     } else if !pinnedFiles.isEmpty {
-                                        Text("Notes")
+                                        NotesListSectionHeader(title: String(localized: "Notes"))
                                     }
                                 }
                             }
@@ -1362,7 +1399,8 @@ struct LibraryFolderView: View {
                                     .listRowBackground(Color.clear)
                             }
                         }
-                        .listStyle(.plain)
+                        .listStyle(.insetGrouped)
+                        .listSectionSpacing(22)
                         .scrollContentBackground(.hidden)
                     }
                 }
@@ -1648,6 +1686,7 @@ struct LibraryFolderView: View {
             SelectableNoteFileRow(
                 file: file,
                 dateBasis: sortOrder.dateBasis,
+                showsFolder: false,
                 isSelected: selectedPaths.contains(file.relativePath)
             ) {
                 if !selectedPaths.insert(file.relativePath).inserted {
@@ -1655,7 +1694,7 @@ struct LibraryFolderView: View {
                 }
             }
         } else {
-            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis, showsFolder: false)
         }
     }
 
@@ -1852,6 +1891,7 @@ private struct FolderLifecycleActions: ViewModifier {
 private struct SelectableNoteFileRow: View {
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis
+    var showsFolder = true
     var isSelected: Bool
     var toggle: () -> Void
 
@@ -1861,7 +1901,11 @@ private struct SelectableNoteFileRow: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
-                RecentFileRow(file: file, dateBasis: dateBasis)
+                RecentFileRow(
+                    file: file,
+                    dateBasis: dateBasis,
+                    showsFolder: showsFolder
+                )
             }
             .contentShape(Rectangle())
         }
@@ -2213,12 +2257,17 @@ struct NoteFileButton: View {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis = .modified
+    var showsFolder = true
 
     var body: some View {
         Button {
             appModel.openFile(file)
         } label: {
-            RecentFileRow(file: file, dateBasis: dateBasis)
+            RecentFileRow(
+                file: file,
+                dateBasis: dateBasis,
+                showsFolder: showsFolder
+            )
                 .contentShape(Rectangle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4072,6 +4121,7 @@ struct LibraryFolderRow: View {
 struct RecentFileRow: View {
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis = .modified
+    var showsFolder = true
 
     private var displayedDate: Date { dateBasis.date(for: file) }
 
@@ -4088,48 +4138,79 @@ struct RecentFileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(file.title)
+        NotesListRowContent(
+            title: file.title,
+            dateText: dateText,
+            preview: file.preview,
+            folderName: showsFolder ? folderName : nil,
+            hasAttachments: file.hasAttachments,
+            isPinned: file.isPinned,
+            pinIdentifier: "pin-indicator-\(file.id)"
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Open Markdown file")
+    }
+}
+
+struct NotesListRowContent: View {
+    var title: String
+    var dateText: String
+    var preview: String
+    var folderName: String?
+    var hasAttachments = false
+    var isPinned = false
+    var pinIdentifier: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
                     .font(.system(.body, design: .rounded, weight: .semibold))
                     .foregroundStyle(MudsnoteColors.text)
                     .lineLimit(1)
+
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(dateText)
-                        .foregroundStyle(MudsnoteColors.muted)
-                    if !file.preview.isEmpty {
-                        Text(file.preview)
-                            .foregroundStyle(MudsnoteColors.muted)
+                    if !preview.isEmpty {
+                        Text(preview)
                             .lineLimit(1)
+                    }
+                    if folderName == nil, hasAttachments {
+                        Image(systemName: "paperclip")
+                            .accessibilityLabel("Has Attachments")
                     }
                 }
                 .font(.subheadline)
-                HStack(spacing: 5) {
-                    Image(systemName: "folder")
-                    Text(folderName)
-                    if file.hasAttachments {
-                        Image(systemName: "paperclip")
-                            .padding(.leading, 4)
+                .foregroundStyle(MudsnoteColors.muted)
+
+                if let folderName {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder")
+                        Text(folderName)
+                        if hasAttachments {
+                            Image(systemName: "paperclip")
+                                .padding(.leading, 4)
+                        }
                     }
-                }
                     .font(.caption)
                     .foregroundStyle(MudsnoteColors.muted)
                     .lineLimit(1)
+                }
             }
+
             Spacer(minLength: 8)
-            if file.isPinned {
+
+            if isPinned {
                 Image(systemName: "pin.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(NotesCloneColors.folderYellow)
                     .accessibilityLabel("Pinned")
-                    .accessibilityIdentifier("pin-indicator-\(file.id)")
+                    .accessibilityIdentifier(pinIdentifier ?? "pin-indicator")
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowBackground(MudsnoteColors.card)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Open Markdown file")
     }
 }
 
