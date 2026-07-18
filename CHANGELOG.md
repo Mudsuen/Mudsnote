@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 185. Independently expandable directory hierarchy
+- Problem: The swipe-out directory exposed only top-level folders, and its single row chevron made entering a folder and inspecting its descendants the same action.
+- Fix: Folder rows now keep the main row as navigation while reserving the right-side chevron for animated inline expansion and collapse. Expanded descendants render recursively with increasing indentation, counts, lifecycle actions, and the same independent behavior at every depth.
+- Lesson: Hierarchical navigation needs two explicit targets: the label enters the selected scope, while the disclosure control changes only the visible tree structure.
+
 ### 184. Chronological card home with swipe-out directory
 - Problem: Launching into a folder index made note discovery one navigation step slower and treated the directory as the primary surface rather than the notes themselves.
 - Fix: iOS now opens directly into a two-column card stream that mixes Markdown files and individual Inbox captures in descending timestamp order without duplicating the aggregate `Inbox.md`. A rightward drag reveals the complete folder directory from the left; the reverse drag or backdrop tap closes it, while the sidebar button provides an explicit equivalent action.

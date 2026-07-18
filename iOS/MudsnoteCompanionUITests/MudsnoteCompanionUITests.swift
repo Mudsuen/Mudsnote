@@ -542,8 +542,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
         alert.buttons["Create"].tap()
 
         XCTAssertTrue(waitForHittable(projects))
+        let disclosure = app.buttons["folder-disclosure-Projects"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        disclosure.tap()
+
+        let nested = app.buttons["folder-row-Projects/Launch"]
+        XCTAssertTrue(nested.waitForExistence(timeout: 5))
+        XCTAssertTrue(nested.isHittable)
+        XCTAssertTrue(app.navigationBars["Folders"].exists)
+
         projects.tap()
-        XCTAssertTrue(app.buttons["folder-row-Projects/Launch"].waitForExistence(timeout: 5))
+        XCTAssertTrue(nested.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Projects"].exists)
     }
 
     func testFolderContextMenuMovesNestedFolderToTopLevel() {

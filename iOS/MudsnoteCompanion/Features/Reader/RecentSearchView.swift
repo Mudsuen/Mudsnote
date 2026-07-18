@@ -61,6 +61,7 @@ struct LibraryHomeView: View {
     @State private var smartFolderToDelete: SmartFolderDefinition?
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
+    @State private var expandedDirectoryPaths = Set<String>()
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -422,34 +423,13 @@ struct LibraryHomeView: View {
                 .accessibilityIdentifier("inbox-link")
 
                 ForEach(appModel.visibleLibraryFolders) { folder in
-                    if isManagingFolders {
-                        NotesFolderRow(
-                            title: folder.name,
-                            systemImage: folderSystemImage(for: folder),
-                            count: folder.totalNoteCount,
-                            showsChevron: false,
-                            trailingAccessoryWidth: 88
-                        )
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(
-                            FolderLifecycleActions(
-                                folder: folder,
-                                isManagementMode: true
-                            )
-                        )
-                    } else {
-                        NavigationLink {
-                            LibraryFolderView(folder: folder)
-                        } label: {
-                            NotesFolderRow(
-                                title: folder.name,
-                                systemImage: folderSystemImage(for: folder),
-                                count: folder.totalNoteCount
-                            )
-                        }
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(FolderLifecycleActions(folder: folder))
-                    }
+                    DirectoryFolderTree(
+                        folder: folder,
+                        depth: 0,
+                        isManaging: isManagingFolders,
+                        expandedPaths: $expandedDirectoryPaths,
+                        systemImage: folderSystemImage
+                    )
                 }
             }
 
@@ -787,6 +767,103 @@ struct LibraryHomeView: View {
         .overlay {
             RoundedRectangle(cornerRadius: MudsnoteRadius.card)
                 .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+    }
+}
+
+private struct DirectoryFolderTree: View {
+    var folder: LibraryFolderNode
+    var depth: Int
+    var isManaging: Bool
+    @Binding var expandedPaths: Set<String>
+    var systemImage: (LibraryFolderNode) -> String
+
+    private var isExpanded: Bool {
+        expandedPaths.contains(folder.relativePath)
+    }
+
+    private var hasChildren: Bool {
+        !folder.children.isEmpty
+    }
+
+    private var trailingAccessoryWidth: CGFloat {
+        (isManaging ? 88 : 0) + (hasChildren ? 44 : 0)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .trailing) {
+                folderEntry
+
+                if hasChildren {
+                    Button {
+                        withAnimation(.snappy(duration: 0.26, extraBounce: 0.04)) {
+                            if !expandedPaths.insert(folder.relativePath).inserted {
+                                expandedPaths.remove(folder.relativePath)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .frame(width: 44, height: 58)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, isManaging ? 88 : 0)
+                    .accessibilityLabel(isExpanded ? "Collapse \(folder.name)" : "Expand \(folder.name)")
+                    .accessibilityIdentifier("folder-disclosure-\(folder.relativePath)")
+                }
+            }
+
+            if isExpanded {
+                ForEach(folder.children) { child in
+                    DirectoryFolderTree(
+                        folder: child,
+                        depth: depth + 1,
+                        isManaging: isManaging,
+                        expandedPaths: $expandedPaths,
+                        systemImage: systemImage
+                    )
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var folderEntry: some View {
+        if isManaging {
+            NotesFolderRow(
+                title: folder.name,
+                systemImage: systemImage(folder),
+                count: folder.totalNoteCount,
+                showsChevron: false,
+                trailingAccessoryWidth: trailingAccessoryWidth,
+                indentation: CGFloat(depth) * 18
+            )
+            .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+            .modifier(
+                FolderLifecycleActions(
+                    folder: folder,
+                    isManagementMode: true
+                )
+            )
+        } else {
+            NavigationLink {
+                LibraryFolderView(folder: folder)
+            } label: {
+                NotesFolderRow(
+                    title: folder.name,
+                    systemImage: systemImage(folder),
+                    count: folder.totalNoteCount,
+                    showsChevron: false,
+                    trailingAccessoryWidth: trailingAccessoryWidth,
+                    indentation: CGFloat(depth) * 18
+                )
+            }
+            .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+            .modifier(FolderLifecycleActions(folder: folder))
         }
     }
 }
@@ -3158,6 +3235,7 @@ struct NotesFolderRow: View {
     var count: Int?
     var showsChevron = true
     var trailingAccessoryWidth: CGFloat = 0
+    var indentation: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 16) {
@@ -3190,13 +3268,14 @@ struct NotesFolderRow: View {
                 Color.clear.frame(width: trailingAccessoryWidth)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 18 + indentation)
+        .padding(.trailing, 18)
         .frame(minHeight: 58)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(NotesCloneColors.separator)
                 .frame(height: 1)
-                .padding(.leading, 72)
+                .padding(.leading, 72 + indentation)
         }
     }
 }
