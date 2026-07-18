@@ -1346,6 +1346,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Primary mouse selection is now visually and logically deferred between mouse-down and mouse-up. The previous source stays yellow while pressed; releasing commits the new row, updates yellow styling, saves if necessary, and navigates. Keyboard source navigation remains immediate.
 - Lesson: Fast feedback still needs the correct gesture boundary. List selection by pointer should commit on release, while keyboard selection should not inherit mouse-specific deferral.
 
+### 220. AppKit-owned mouse-up commit
+
+- Problem: The first mouse-up implementation waited for an overridden `mouseUp`, but `NSOutlineView.mouseDown` owns the complete tracking loop and consumes the release event before returning. The deferral flag therefore stayed active and real pointer clicks stopped navigating even though the isolated state test passed.
+- Fix: The source outline now finishes and commits deferred selection immediately after `super.mouseDown` returns, which is AppKit's actual click-release boundary. The regression also asserts that the deferral state is cleared after commit.
+- Lesson: AppKit controls may track press, drag, and release synchronously inside `mouseDown`; interaction tests must exercise the framework's real event boundary instead of assuming a separate `mouseUp` override will run.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -376,6 +376,12 @@
 - Mouse-up commits the outline selection, applies yellow styling, and enters the existing save-backed navigation path; keyboard/programmatic navigation remains immediate.
 - Regression coverage verifies mouse-down changes only AppKit's pending row, performs no save, and leaves the pressed title unaccented until the mouse-up commit.
 
+## Latest iteration (220)
+
+- Pointer source navigation commits after `NSOutlineView.mouseDown` returns because AppKit owns the complete click tracking loop through release.
+- Do not depend on a separate `mouseUp` override for outline selection; it is not called after `super.mouseDown` consumes the release event.
+- Pointer deferral must be cleared after every tracked primary click, while keyboard selection remains immediate.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

@@ -449,10 +449,6 @@ final class LibrarySourceOutlineView: NSOutlineView {
         }
         beginPrimaryMouseSelectionDeferral()
         super.mouseDown(with: event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        super.mouseUp(with: event)
         finishPrimaryMouseSelectionDeferral()
     }
 
