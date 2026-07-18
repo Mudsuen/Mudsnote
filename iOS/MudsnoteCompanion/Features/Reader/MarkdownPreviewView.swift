@@ -175,6 +175,14 @@ struct MarkdownPreviewView: View {
                         .accessibilityLabel("Previous Note")
                         .accessibilityIdentifier("previous-linked-note")
                     }
+                } else if !isEditing {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: dismiss.callAsFunction) {
+                            Image(systemName: "chevron.left")
+                        }
+                        .accessibilityLabel("Back to Notes")
+                        .accessibilityIdentifier("close-note-reader")
+                    }
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -191,13 +199,15 @@ struct MarkdownPreviewView: View {
                                 Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            Image(systemName: "ellipsis")
                         }
                         .accessibilityLabel("Editor Options")
                         .accessibilityIdentifier("markdown-display-mode")
                     }
 
                     if !isEditing {
+                        shareControl
+
                         switch source {
                         case .memo:
                             EmptyView()
@@ -287,7 +297,7 @@ struct MarkdownPreviewView: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: "ellipsis.circle")
+                                Image(systemName: "ellipsis")
                             }
                             .accessibilityLabel("Note Options")
                             .accessibilityIdentifier("note-options-menu")
@@ -313,6 +323,48 @@ struct MarkdownPreviewView: View {
                         )
                         .accessibilityLabel("Save note")
                         .accessibilityIdentifier("save-markdown-button")
+                    }
+                }
+
+                if !isEditing, !isFindingInNote {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button {
+                            beginEditing(with: .checklist)
+                        } label: {
+                            Image(systemName: "checklist")
+                        }
+                        .accessibilityLabel("Start Checklist")
+                        .accessibilityIdentifier("reader-checklist")
+
+                        if case .document = source {
+                            Menu {
+                                attachmentMenuContent
+                            } label: {
+                                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
+                            }
+                            .disabled(isSaving || appModel.isPreparingAttachment)
+                            .accessibilityLabel("Add Attachment")
+                            .accessibilityIdentifier("reader-attachment-menu")
+                        }
+
+                        Button(action: beginEditing) {
+                            Text("Aa")
+                                .fontWeight(.medium)
+                        }
+                        .accessibilityLabel("Formatting")
+                        .accessibilityIdentifier("reader-formatting")
+                    }
+
+                    if #available(iOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .bottomBar)
+                    }
+
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(action: startNewNoteFromReader) {
+                            Image(systemName: "square.and.pencil")
+                        }
+                        .accessibilityLabel("New note")
+                        .accessibilityIdentifier("reader-new-note")
                     }
                 }
             }
@@ -889,61 +941,84 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    @ViewBuilder
+    private var shareControl: some View {
+        if case .document(let document) = source,
+           let url = localFileURL(for: document.relativePath) {
+            ShareLink(item: url) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share Note")
+            .accessibilityIdentifier("share-note-button")
+        } else {
+            ShareLink(item: draftMarkdown) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share Note")
+            .accessibilityIdentifier("share-note-button")
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentMenuContent: some View {
+        Button {
+            isPhotoPickerPresented = true
+        } label: {
+            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
+        }
+        .accessibilityIdentifier("markdown-add-image")
+
+        Button {
+            editorFocused = false
+            isCameraPresented = true
+        } label: {
+            Label("Take Photo or Video", systemImage: "camera")
+        }
+        .disabled(!CameraPhotoCapture.isAvailable)
+        .accessibilityIdentifier("markdown-take-photo")
+
+        Button {
+            editorFocused = false
+            isDrawingPresented = true
+        } label: {
+            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
+        }
+        .accessibilityIdentifier("markdown-add-drawing")
+
+        Button {
+            isFileImporterPresented = true
+        } label: {
+            Label("Add File", systemImage: "doc")
+        }
+        .accessibilityIdentifier("markdown-add-file")
+
+        Button {
+            isScannerPresented = true
+        } label: {
+            Label("Scan Document", systemImage: "doc.viewfinder")
+        }
+        .disabled(!VNDocumentCameraViewController.isSupported)
+        .accessibilityIdentifier("markdown-scan-document")
+
+        Button {
+            editorFocused = true
+            DispatchQueue.main.async {
+                _ = CameraTextCapture.start()
+            }
+        } label: {
+            Label("Scan Text", systemImage: "text.viewfinder")
+        }
+        .disabled(!CameraTextCapture.isAvailable)
+        .accessibilityIdentifier("markdown-scan-text")
+    }
+
     private var markdownToolbar: some View {
         let attachmentIsPreparing = appModel.isPreparingAttachment
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 if case .document = source {
                     Menu {
-                        Button {
-                            isPhotoPickerPresented = true
-                        } label: {
-                            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
-                        }
-                        .accessibilityIdentifier("markdown-add-image")
-
-                        Button {
-                            editorFocused = false
-                            isCameraPresented = true
-                        } label: {
-                            Label("Take Photo or Video", systemImage: "camera")
-                        }
-                        .disabled(!CameraPhotoCapture.isAvailable)
-                        .accessibilityIdentifier("markdown-take-photo")
-
-                        Button {
-                            editorFocused = false
-                            isDrawingPresented = true
-                        } label: {
-                            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
-                        }
-                        .accessibilityIdentifier("markdown-add-drawing")
-
-                        Button {
-                            isFileImporterPresented = true
-                        } label: {
-                            Label("Add File", systemImage: "doc")
-                        }
-                        .accessibilityIdentifier("markdown-add-file")
-
-                        Button {
-                            isScannerPresented = true
-                        } label: {
-                            Label("Scan Document", systemImage: "doc.viewfinder")
-                        }
-                        .disabled(!VNDocumentCameraViewController.isSupported)
-                        .accessibilityIdentifier("markdown-scan-document")
-
-                        Button {
-                            editorFocused = true
-                            DispatchQueue.main.async {
-                                _ = CameraTextCapture.start()
-                            }
-                        } label: {
-                            Label("Scan Text", systemImage: "text.viewfinder")
-                        }
-                        .disabled(!CameraTextCapture.isAvailable)
-                        .accessibilityIdentifier("markdown-scan-text")
+                        attachmentMenuContent
                     } label: {
                         editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
                     }
@@ -1049,6 +1124,22 @@ struct MarkdownPreviewView: View {
     private func beginEditing() {
         isEditing = true
         focusEditorAfterPresentation()
+    }
+
+    private func beginEditing(with command: MarkdownEditingCommand.Kind) {
+        beginEditing()
+        Task { @MainActor in
+            await Task.yield()
+            editingCommand = MarkdownEditingCommand(kind: command)
+        }
+    }
+
+    private func startNewNoteFromReader() {
+        dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            appModel.showCapture(.text)
+        }
     }
 
     private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {

@@ -390,6 +390,51 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testIOS26NotesNavigationReferenceStates() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let allNotes = app.buttons["all-notes-link"]
+        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
+
+        let foldersScreenshot = XCTAttachment(screenshot: app.screenshot())
+        foldersScreenshot.name = "iOS 26 reference - folders"
+        foldersScreenshot.lifetime = .keepAlways
+        add(foldersScreenshot)
+
+        allNotes.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+
+        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
+        listScreenshot.name = "iOS 26 reference - note list"
+        listScreenshot.lifetime = .keepAlways
+        add(listScreenshot)
+
+        note.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["rendered-markdown"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["close-note-reader"].exists)
+        XCTAssertTrue(app.buttons["share-note-button"].exists)
+        XCTAssertTrue(app.buttons["note-options-menu"].exists)
+        XCTAssertTrue(app.buttons["reader-checklist"].exists)
+        XCTAssertTrue(app.buttons["reader-attachment-menu"].exists)
+        XCTAssertTrue(app.buttons["reader-formatting"].exists)
+        XCTAssertTrue(app.buttons["reader-new-note"].exists)
+
+        let readerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        readerScreenshot.name = "iOS 26 reference - note reader"
+        readerScreenshot.lifetime = .keepAlways
+        add(readerScreenshot)
+
+        app.buttons["close-note-reader"].tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+        XCTAssertTrue(app.buttons["reader-new-note"].waitForExistence(timeout: 5))
+        app.buttons["reader-new-note"].tap()
+        XCTAssertTrue(app.textViews["capture-body-editor"].waitForExistence(timeout: 5))
+    }
+
     func testWidgetSearchEntryFocusesNativeLibrarySearch() {
         let app = launchApp(
             reset: true,

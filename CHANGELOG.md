@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 173. Native iOS 26 note navigation and reader controls
+- Problem: Folder actions drew their own card shapes inside the system toolbar, note readers opened as half-height sheets without an explicit return action, and reading mode had no bottom command bar.
+- Fix: Folder, list, and reader actions now let the iOS toolbar provide native Liquid Glass grouping and press feedback. Readers open at full height with Back, Share, and More controls, plus a working bottom group for checklist, attachments, formatting, and composing a new note.
+- Lesson: On iOS 26, toolbar placement should describe control relationships while the system owns their glass shape and interaction response; drawing circles and capsules inside toolbar labels produces nested chrome and weaker navigation cues.
+
 ### 172. Stable iPhone input-method composition
 - Problem: The rich Markdown editor reapplied attributes and published SwiftUI state for every provisional marked-text change, interrupting Chinese and other composition keyboards while typing.
 - Fix: The UIKit editor now leaves marked text under input-method ownership, defers SwiftUI synchronization and Markdown styling until the composition commits, and verifies that autosave keeps the keyboard active for continued editing.

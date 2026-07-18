@@ -90,24 +90,22 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         newFolderName = ""
                         isCreatingFolder = true
                     } label: {
                         Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: Circle())
-                            .overlay {
-                                Circle().stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
                     }
-                    .buttonStyle(.plain)
                     .accessibilityLabel("New Folder")
                     .accessibilityIdentifier("new-folder-button")
+                }
 
+                if #available(iOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isSearchFocused = false
                         searchQuery = ""
@@ -117,16 +115,7 @@ struct LibraryHomeView: View {
                         }
                     } label: {
                         Text(isManagingFolders ? "Done" : "Edit")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .padding(.horizontal, 18)
-                            .frame(minWidth: 68, minHeight: 40)
-                            .background(MudsnoteColors.card, in: Capsule())
-                            .overlay {
-                                Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
                     }
-                    .buttonStyle(.plain)
                     .accessibilityIdentifier("edit-folders-button")
                 }
             }
@@ -813,7 +802,7 @@ private struct NoteListOptionsMenu: View {
                 groupByDate: $groupByDate
             )
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel("Sort Notes")
         .accessibilityIdentifier("note-list-options")
@@ -1518,7 +1507,7 @@ struct LibraryFolderView: View {
                 groupByDate: $groupByDate
             )
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel("Folder Actions")
         .accessibilityIdentifier("folder-actions")
@@ -2567,7 +2556,7 @@ struct RecentlyDeletedView: View {
                             Label("Select Notes", systemImage: "checkmark.circle")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
                     .accessibilityLabel("Recently Deleted Options")
                     .accessibilityIdentifier("recently-deleted-options")
