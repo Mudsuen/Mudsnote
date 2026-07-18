@@ -1358,6 +1358,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Source rows now draw their selection background from the same visual-selection predicate as title, symbol, and count colors. During a held click the old row retains all selected styling; on release the background and foreground styling move together to the committed row.
 - Lesson: A custom list selection must have one presentation source of truth. Mixing AppKit's pending row background with model-backed foreground colors creates contradictory feedback even when navigation timing is correct.
 
+### 222. Immediate pointer visuals with release navigation
+
+- Problem: Iteration 221 incorrectly delayed the existing AppKit row highlight until release. The intended behavior was to preserve the original mouse-down highlight and make only the custom foreground colors catch up to it immediately.
+- Fix: Restored native row-selection drawing and made title, symbol, and count colors follow the outline's selected row even while logical navigation is deferred. Mouse-down now moves the complete visual selection; mouse-up still performs save-backed source navigation.
+- Lesson: Visual selection timing and navigation timing are separate contracts. AppKit can acknowledge a pressed row immediately while expensive or transactional content changes wait for the completed click.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

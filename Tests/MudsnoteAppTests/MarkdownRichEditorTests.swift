@@ -2815,7 +2815,6 @@ struct MarkdownRichEditorTests {
             (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
                 as? LibrarySourceOutlineCellView)?.textField?.stringValue == "Projects"
         })
-        let notesRow = outline.selectedRow
         outline.beginPrimaryMouseSelectionDeferral()
         outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
         #expect(controller.selectedSourceTitleForLibrary == "Notes")
@@ -2825,23 +2824,12 @@ struct MarkdownRichEditorTests {
             row: projectsRow,
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
-        let pressedProjectsRow = try #require(outline.rowView(
-            atRow: projectsRow,
-            makeIfNecessary: true
-        ) as? LibrarySourceOutlineRowView)
-        let previousNotesRow = try #require(outline.rowView(
-            atRow: notesRow,
-            makeIfNecessary: true
-        ) as? LibrarySourceOutlineRowView)
-        #expect(pressedProjectsCell.textField?.textColor != LibrarySourceSelectionPalette.foregroundColor)
-        #expect(!pressedProjectsRow.isVisuallySelected)
-        #expect(previousNotesRow.isVisuallySelected)
+        #expect(outline.selectedRow == projectsRow)
+        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
         outline.finishPrimaryMouseSelectionDeferral()
         #expect(!outline.isDeferringPrimaryMouseSelectionCommit)
         #expect(controller.selectedSourceTitleForLibrary == "Projects")
         #expect(selectedTextColorAtSave == LibrarySourceSelectionPalette.foregroundColor)
-        #expect(pressedProjectsRow.isVisuallySelected)
-        #expect(!previousNotesRow.isVisuallySelected)
         #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
         outline.keyDown(with: try keyEvent(keyCode: 124, modifiers: [], characters: "\u{F703}"))
         #expect(controller.sourceTitlesForLibrary().contains("Client"))

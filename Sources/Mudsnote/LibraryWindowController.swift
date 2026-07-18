@@ -549,12 +549,6 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     static let verticalInset: CGFloat = LibraryNotesLayout.sourceRowHighlightVerticalInset
     private var trackingAreaForHover: NSTrackingArea?
     private(set) var isPointerHovered = false
-    var isVisuallySelected = false {
-        didSet {
-            guard isVisuallySelected != oldValue else { return }
-            needsDisplay = true
-        }
-    }
 
     override func updateTrackingAreas() {
         if let trackingAreaForHover {
@@ -587,16 +581,7 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
 
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
-        if isVisuallySelected {
-            LibrarySourceSelectionPalette.backgroundColor.setFill()
-            NSBezierPath(
-                roundedRect: highlightBounds,
-                xRadius: LibraryNotesLayout.sourceRowCornerRadius,
-                yRadius: LibraryNotesLayout.sourceRowCornerRadius
-            ).fill()
-            return
-        }
-        guard isPointerHovered else { return }
+        guard isPointerHovered, !isSelected else { return }
         Self.hoverColor.setFill()
         NSBezierPath(
             roundedRect: highlightBounds,
@@ -606,8 +591,13 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        // The row background follows the same committed visual state as its
-        // foreground colors instead of AppKit's pending mouse-down selection.
+        guard selectionHighlightStyle != .none else { return }
+        LibrarySourceSelectionPalette.backgroundColor.setFill()
+        NSBezierPath(
+            roundedRect: highlightBounds,
+            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+            yRadius: LibraryNotesLayout.sourceRowCornerRadius
+        ).fill()
     }
 
     private var highlightBounds: NSRect {
@@ -3540,9 +3530,6 @@ final class LibraryWindowController: NSWindowController,
                 continue
             }
             configureSourceOutlineCell(cell, for: item)
-            (sourceOutlineView.rowView(atRow: row, makeIfNecessary: false)
-                as? LibrarySourceOutlineRowView)?.isVisuallySelected =
-                isSourceOutlineItemVisuallySelected(item)
         }
     }
 
@@ -4279,7 +4266,10 @@ final class LibraryWindowController: NSWindowController,
     ) {
         guard let scope = item.scope else { return }
         let title = sourceTitle(for: scope)
-        let isSelected = isSourceOutlineItemVisuallySelected(item)
+        let row = sourceOutlineView.row(forItem: item)
+        let isSelected = row >= 0
+            ? sourceOutlineView.selectedRowIndexes.contains(row)
+            : selectedScope == scope
         let legacyTag = sourceLegacyTag(for: scope)
         cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
         cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
@@ -4311,15 +4301,6 @@ final class LibraryWindowController: NSWindowController,
         }
         cell.setAccessibilityLabel(title)
         cell.setAccessibilityValue("\(item.count) 条笔记")
-    }
-
-    private func isSourceOutlineItemVisuallySelected(_ item: LibrarySourceOutlineItem) -> Bool {
-        guard let scope = item.scope else { return false }
-        let row = sourceOutlineView.row(forItem: item)
-        if row >= 0 && !sourceOutlineView.isDeferringPrimaryMouseSelectionCommit {
-            return sourceOutlineView.selectedRowIndexes.contains(row)
-        }
-        return selectedScope == scope
     }
 
     private func sourceLegacyTag(for scope: LibraryScope) -> Int {
@@ -4438,9 +4419,7 @@ final class LibraryWindowController: NSWindowController,
         guard let item = item as? LibrarySourceOutlineItem else { return nil }
         switch item.kind {
         case .scope:
-            let row = LibrarySourceOutlineRowView()
-            row.isVisuallySelected = isSourceOutlineItemVisuallySelected(item)
-            return row
+            return LibrarySourceOutlineRowView()
         case .group, .status, .inlineFolderEdit:
             let row = NSTableRowView()
             row.selectionHighlightStyle = .none

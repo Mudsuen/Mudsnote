@@ -388,6 +388,12 @@
 - While a primary click is held, all selected styling remains on the previous source; after release it moves atomically to the committed source.
 - Do not restore `NSTableRowView.isSelected` as an independent source-background state during pointer deferral.
 
+## Latest iteration (222)
+
+- Source background highlight keeps native AppKit mouse-down timing.
+- Title, symbol, and count colors follow that selected row immediately on mouse-down.
+- Logical scope, save, and note-list navigation remain deferred until `super.mouseDown` returns on release.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
