@@ -1322,6 +1322,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Added `File > 将文件夹添加到资料库…` and the same action on the library group context menu. Registered top-level folders now expose `在 Finder 中显示` and `从资料库移除`; removal clears only Mudsnote registration and library UI metadata while preserving every file. Nested managed folders retain rename and destructive delete actions. Registration rejects duplicate and parent/child-overlapping roots and refreshes the source tree, note snapshot, tags, search session, and filesystem monitor. The launch shell, full All Notes snapshot, tags, and library search now use configured roots instead of expanding every recent external file's parent directory.
 - Lesson: A registered source and a managed child folder have different ownership semantics. Removing a source must never be implemented by reusing filesystem deletion, and recent external documents must not leak across launches into the library's automatic selection.
 
+### 216. Quiet native inline folder naming
+
+- Problem: The temporary `新建文件夹` row drew a bright blue rounded rectangle around the entire text field. Inside the compact dark source list this looked like a separate form control, crowded the selected text, and broke the native sidebar rhythm.
+- Fix: Kept the shared AppKit field editor and full-name selection behavior, but removed the custom background and accent border, retained a borderless no-focus-ring field, and reduced its layout height from `24pt` to the native single-line `20pt` alignment.
+- Lesson: Field-editor behavior and custom field chrome are independent. Preserve AppKit input and IME semantics while letting the source row provide the visual container.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

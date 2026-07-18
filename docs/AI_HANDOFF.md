@@ -353,6 +353,11 @@
 - Every folder source exposes `在 Finder 中显示`. Adding or removing a root refreshes the source tree, full note snapshot, and filesystem monitor.
 - The deferred launch shell, full library snapshot, source tags, and library search use configured roots. Opening an external file such as `~/.hermes/SOUL.md` no longer makes Hermes the next ordinary launch selection or imports its parent directory's Markdown corpus into `All iCloud`.
 
+## Latest iteration (216)
+
+- The inline create/rename field remains a native single-line `NSTextField` with field-editor-backed IME, Return, Escape, and focus-loss behavior.
+- Its source-list presentation is transparent, borderless, and has no custom accent outline; a `20pt` field height aligns the selected name with the existing folder icon and compact `32pt` row.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

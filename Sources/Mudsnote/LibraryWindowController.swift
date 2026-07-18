@@ -4311,17 +4311,13 @@ final class LibraryWindowController: NSWindowController,
             weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
         )
         field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
-        field.backgroundColor = NSColor.controlBackgroundColor
-        field.drawsBackground = true
+        field.backgroundColor = .clear
+        field.drawsBackground = false
         field.isBezeled = false
         field.isBordered = false
         field.focusRingType = .none
         field.lineBreakMode = .byTruncatingTail
         field.cell?.usesSingleLineMode = true
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 4
-        field.layer?.borderWidth = 1
-        field.layer?.borderColor = panelAccentColor().withAlphaComponent(0.8).cgColor
         field.translatesAutoresizingMaskIntoConstraints = false
 
         cell.addSubview(icon)
@@ -4340,7 +4336,7 @@ final class LibraryWindowController: NSWindowController,
             ),
             field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
             field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            field.heightAnchor.constraint(equalToConstant: 24)
+            field.heightAnchor.constraint(equalToConstant: 20)
         ])
         inlineFolderEditField = field
         return cell

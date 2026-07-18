@@ -5149,6 +5149,11 @@ struct MarkdownRichEditorTests {
         } == true)
         #expect(field.isEditable)
         #expect(field.isSelectable)
+        #expect(!field.drawsBackground)
+        #expect(!field.isBezeled)
+        #expect(!field.isBordered)
+        #expect(field.focusRingType == .none)
+        #expect(field.constraints.first { $0.firstAttribute == .height }?.constant == 20)
 
         controller.beginInlineFolderCreationForLibrary()
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.filter {
