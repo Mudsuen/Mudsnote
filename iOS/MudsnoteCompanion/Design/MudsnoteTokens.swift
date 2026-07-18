@@ -66,3 +66,20 @@ struct IconCircleButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
+
+struct CompactCaptureButtonStyle: ButtonStyle {
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(isActive ? Color.black : MudsnoteColors.text)
+            .frame(width: 36, height: 40)
+            .background(
+                isActive ? MudsnoteColors.primary : Color.clear,
+                in: Capsule()
+            )
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.62 : 1)
+    }
+}

@@ -99,6 +99,14 @@ extension NoteStore {
         return desiredURL
     }
 
+    public func updateNoteInPlace(at url: URL, title: String, body: String, tags: [String] = []) throws -> URL {
+        let standardizedURL = url.standardizedFileURL
+        try writeNote(to: standardizedURL, title: title, body: body, tags: tags)
+        try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: standardizedURL.path)
+        rememberRecentFile(standardizedURL)
+        return standardizedURL
+    }
+
     public func createFolder(named name: String, in parentDirectory: URL? = nil) throws -> URL {
         let parent = (parentDirectory ?? notesDirectory).standardizedFileURL
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)

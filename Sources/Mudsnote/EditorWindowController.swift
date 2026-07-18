@@ -180,8 +180,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var toolbarButtons: [HoverToolbarButton] = []
     var toolbarButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
     var quickCaptureButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
-    weak var saveButton: FocusAwareAccentButton?
-    weak var cancelButton: FocusAwareSecondaryButton?
+    weak var saveButton: NSButton?
+    weak var cancelButton: NSButton?
     weak var quickCaptureDirectoryButton: NSButton?
     weak var quickCaptureTitleHost: NSView?
     weak var quickCaptureTitleTextView: FocusableTitleTextView?

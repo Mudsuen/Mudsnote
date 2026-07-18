@@ -17,6 +17,51 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 171. Search-first iPhone widget actions
+- Problem: The existing iPhone widget compressed text, audio, and image capture into a small surface even though a small WidgetKit family cannot reliably expose multiple independent tap targets, and it offered no direct path into note search.
+- Fix: The small widget is now a focused Quick Note launcher with clearer hierarchy. A separate medium Mudsnote Actions widget adds a full-width Search Notes row above equal Voice input and Quick Note actions. Search uses a new `mudsnote://search` route that survives cold launch and authorized-folder loading, then focuses the native library search field exactly once; capture actions retain the existing durable text/audio routes.
+- Lesson: Widget families should match their real interaction capacity: one decisive action in a small widget, multiple explicit links in a medium widget, and deep links that carry intent through app bootstrap instead of stopping at a generic home screen.
+
+### 170. Unified native iPhone note entry and gesture-driven editing
+- Problem: New Note and Quick Note exposed competing entry points, the capture commands consumed two visual rows, the library search bar was custom-built, and a checklist gesture prevented normal taps from moving the editor caret. Open notes also duplicated the sheet drag gesture with explicit share and full-screen controls.
+- Fix: New Note now opens the durable capture composer and dismisses after submission; the lightning entry is gone. Eight compact capture actions fit one borderless row, library search uses the native bottom toolbar, and the black New Note symbol remains visually primary. Open notes use the native sheet grabber to move between half and full height, omit note-level share/full-screen buttons, default the caret to the end, and reserve the checklist recognizer exclusively for checklist markers so ordinary taps move the caret normally.
+- Lesson: A Notes-style iPhone flow is clearest when system containers own search and sheet movement, while custom gestures are narrowly gated so they never compete with native text selection.
+
+### 169. Notes-style folder nesting by drag on iPhone
+- Problem: Folder management could create, rename, move, and delete folders, but nesting still required opening a menu; Apple Notes lets users directly drag one folder onto another.
+- Fix: Edit mode now exposes a dedicated drag handle beside each real folder. Dragging a handle onto another folder shows a yellow drop highlight, rejects self/descendant cycles, and routes the accepted move through the existing atomic folder lifecycle before refreshing counts and showing confirmation. Normal browsing retains its original navigation, swipe-delete, and long-press menu behavior.
+- Lesson: Native drag-and-drop should be scoped to a mode with explicit affordances when the same row already owns navigation and a context menu; this preserves familiar gestures while making hierarchy editing discoverable.
+
+### 168. Notes-style swipe-to-move on iPhone
+- Problem: Note rows exposed Delete after a left swipe, but Move remained hidden in the long-press menu, making a common Apple Notes organization flow slower and harder to discover.
+- Fix: Added Move beside Delete in the trailing swipe actions and a native half-sheet destination picker that moves the note atomically to the top level or another folder, refreshes the list in place, and preserves the existing pin, rename, batch, and opened-note lifecycle actions.
+- Lesson: High-frequency lifecycle actions should be reachable from the list gesture users already know; reusing the existing atomic move operation keeps the new surface consistent without duplicating data logic.
+
+### 167. Notes-style attachment presentation on iPhone
+- Problem: Opened iPhone notes always rendered attachments at their largest presentation, consuming most of a half-sheet and offering no Apple Notes-style per-attachment or per-note density control.
+- Fix: Added persistent Small, Large, and Plain Link choices to every attachment context menu plus Set All to Small/Large in Note Options. Preferences follow note, folder, and attachment renames/moves, clear on permanent deletion, preserve existing attachment actions, and never rewrite portable Markdown.
+- Lesson: Attachment density is view state rather than document content; keeping it in a lifecycle-aware preference store preserves Markdown portability while making half-sheet reading and editing materially faster.
+
+### 166. Main-window Markdown routing and quieter quick capture
+- Problem: Finder-opened Markdown files still appeared in the compact quick-entry editor, and quick capture ended with two wide dialog-style text buttons whose accent treatment overwhelmed the lightweight panel.
+- Fix: External `.md` and `.markdown` files now open as selected rows in the three-pane library, remain visible across background snapshot refreshes, preserve pending edits in the previously selected note, and save back to their original paths. Quick capture keeps its destination shelf but replaces the wide Cancel/Save pills with compact native `xmark` and `checkmark` actions using transparent idle states and hover feedback.
+- Lesson: File opening belongs to the app's primary workspace; fast capture should reserve visual weight for content and reveal completion controls through familiar symbols and interaction state.
+
+### 165. Native Markdown document opening
+- Problem: The packaged app did not declare Markdown document support or handle Launch Services open-file events, so Finder could not deliver `.md` files to Mudsnote.
+- Fix: Registered `.md` and `.markdown` as editable document types, added cold- and warm-launch AppKit file-event handling, and added native File > Open and Command-S actions. External documents now save in place without title-based renaming or a save-location prompt.
+- Lesson: Library-note updates and external-document saves need separate path semantics; title-based filenames are appropriate inside the managed library but unsafe for files opened from Finder.
+
+### 164. Native list and gallery modes
+- Problem: The macOS library could only browse notes in the three-pane list, while Apple Notes also provides a wide visual gallery for scanning note previews.
+- Fix: Added a persistent native `NSCollectionView` gallery behind View > Show as Gallery (`Command-2`) and Show as List (`Command-1`). Gallery mode collapses the note-list split item, reuses the loaded 240-note projection and thumbnail cache, preserves multi-selection and context actions, opens cards back into the same editor, and returns to list mode for New Note. Hidden gallery state keeps only its lightweight projection and never instantiates preview cells or triggers thumbnail work. The installed app was checked against Apple's official gallery reference and the first compressed-card layout found by real-app QA was corrected.
+- Lesson: A native collection view still needs explicit internal width constraints; item-size configuration alone does not prevent stack views from compressing preview content to its intrinsic minimum.
+
+### 163. Guard expanded source-action icon scale
+- Problem: A runtime screenshot showed Add Folder and Sidebar Toggle at the generic toolbar-symbol scale even though the source-action constant was already calibrated separately.
+- Fix: Added a regression against the images installed on the actual expanded toolbar controls: Add Folder must retain a `20x15pt` configured canvas and Sidebar Toggle an `18x14pt` canvas. Repackaged the current source into `/Applications/Mudsnote.app` so the installed artifact uses the dedicated `13pt` native SF Symbol configuration instead of a stale generic build.
+- Lesson: A layout constant does not prove the image that AppKit ultimately installs on a toolbar button; test the configured runtime control and keep the packaged app synchronized with the verified source.
+
 ### 162. Correct full-library custom sorting
 - Problem: Title and creation-date sorting only reordered the 240 most recently edited notes, so a globally first title, newest creation date, or older pinned note could remain outside the visible result window.
 - Fix: Added a bounded-memory, chunked top-K projection over the complete selected scope. Sorting and grouping changes now reproject from the loaded snapshot, preserve date-group and pinned ordering, and retain the fast early-stop path for default edit-date navigation. Native source cells now expose `AXPress`, and the installed-app smoke uses that current semantic while waiting within a fixed window for autosave instead of racing its `800ms` debounce.

@@ -16,6 +16,24 @@ struct MemoBlock: Identifiable, Equatable {
         return compact.isEmpty ? "Attachment memo" : compact
     }
 
+    var hasAttachments: Bool {
+        body.contains("![") || body.contains("](Attachments/")
+    }
+
+    var hasChecklist: Bool {
+        body.range(
+            of: #"(?m)^\s*[-*+]\s+\[[ xX]\]\s+"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    var hasUncheckedChecklist: Bool {
+        body.range(
+            of: #"(?m)^\s*[-*+]\s+\[ \]\s+"#,
+            options: .regularExpression
+        ) != nil
+    }
+
     private static func isAttachmentLine(_ line: String) -> Bool {
         line.hasPrefix("![[")
             || line.range(of: #"^!\[[^\]]*\]\([^)]+\)$"#, options: .regularExpression) != nil
@@ -34,10 +52,7 @@ enum InboxParser {
         func flush() {
             guard let currentDate else { return }
             let body = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            let tags = body
-                .split(whereSeparator: \.isWhitespace)
-                .map(String.init)
-                .filter { $0.hasPrefix("#") }
+            let tags = MarkdownTagSyntax.tags(in: body)
             let id = "\(currentDate)-\(blocks.count)"
             blocks.append(MemoBlock(
                 id: id,

@@ -67,6 +67,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryGroupsNotesByDate) }
     }
 
+    public var libraryNoteViewModeRawValue: Int {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryNoteViewMode) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryNoteViewMode) }
+    }
+
     public var libraryCollapsedFolderPaths: Set<String> {
         get { storedStandardizedPathSet(forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }
         set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }

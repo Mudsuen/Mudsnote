@@ -121,6 +121,10 @@ enum FolderInitializer {
             root.appendingPathComponent(".mudsnote/pins.json"),
             contents: "[]"
         )
+        try ensureFile(
+            root.appendingPathComponent(".mudsnote/smart-folders.json"),
+            contents: "{\"version\":1,\"folders\":[]}\n"
+        )
         let day = dayFormatter.string(from: now)
         try ensureFile(
             root.appendingPathComponent("Daily/\(day).md"),

@@ -1,7 +1,8 @@
 import SwiftUI
 import AVFoundation
+import AVKit
+import PencilKit
 import PhotosUI
-import QuickLook
 import UIKit
 import UniformTypeIdentifiers
 import VisionKit
@@ -29,8 +30,23 @@ struct MarkdownPreviewView: View {
         var isEditing: Bool
     }
 
+    private struct FindAttachmentLoadID: Hashable {
+        var relativePath: String
+        var markdown: String
+        var isFinding: Bool
+        var includesAttachments: Bool
+    }
+
+    private struct RenderedBlockItem: Identifiable {
+        var index: Int
+        var block: MarkdownRenderBlock
+        var hasCollapsibleContent: Bool
+
+        var id: Int { index }
+    }
+
     @EnvironmentObject private var appModel: AppModel
-    @Binding private var detent: PresentationDetent
+    @Environment(\.dismiss) private var dismiss
     @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
@@ -40,11 +56,16 @@ struct MarkdownPreviewView: View {
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
+    @State private var linkDraft: MarkdownLinkDraft?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isPhotoPickerPresented = false
+    @State private var isCameraPresented = false
     @State private var isFileImporterPresented = false
     @State private var isScannerPresented = false
+    @State private var isDrawingPresented = false
+    @State private var cameraErrorMessage: String?
     @State private var scanErrorMessage: String?
-    @State private var previewURL: URL?
+    @State private var attachmentPreview: PreparedAttachmentPreview?
     @State private var attachmentBeingRenamed: MarkdownAttachmentLine?
     @State private var attachmentName = ""
     @State private var editorDisplayMode: EditorDisplayMode = .rich
@@ -52,18 +73,32 @@ struct MarkdownPreviewView: View {
     @State private var accessRevision = 0
     @StateObject private var noteAudioRecorder = AudioCaptureService()
     @State private var isAudioTransitioning = false
+    @State private var isTranscribingDocumentAudio = false
     @State private var pendingAudioRecording: RecordedAudio?
     @State private var isAudioAttachmentFailurePresented = false
+    @State private var noteName = ""
+    @State private var isRenamingNote = false
+    @State private var isConfirmingNoteDeletion = false
+    @State private var isFindingInNote = false
+    @State private var findQuery = ""
+    @State private var activeFindIndex = 0
+    @State private var includesAttachmentsInFind = false
+    @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
+    @State private var isLoadingFindAttachments = false
+    @State private var collapsedHeadingIndices: Set<Int> = []
+    @State private var linkedSourceHistory: [Source] = []
+    @State private var exportedPDF: ExportedNotePDF?
+    @State private var isExportingPDF = false
+    @State private var pdfExportErrorMessage: String?
+    @FocusState private var isFindFocused: Bool
 
-    init(memo: MemoBlock, detent: Binding<PresentationDetent>) {
-        _detent = detent
+    init(memo: MemoBlock) {
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
     }
 
-    init(document: MarkdownDocument, detent: Binding<PresentationDetent>) {
-        _detent = detent
+    init(document: MarkdownDocument) {
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
@@ -80,22 +115,44 @@ struct MarkdownPreviewView: View {
                             text: $draftMarkdown,
                             isFocused: $editorFocused,
                             command: $editingCommand,
+                            linkDraft: $linkDraft,
                             displaysSource: editorDisplayMode == .source
                         )
                         .accessibilityIdentifier("markdown-editor")
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
-                            metadataLabel
-                            markdownBody
-                                .accessibilityElement(children: .contain)
-                                .accessibilityIdentifier("rendered-markdown")
-                                .contentShape(Rectangle())
-                                .onTapGesture(perform: beginEditing)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 18) {
+                                metadataLabel
+                                markdownBody
+                                    .environment(\.openURL, OpenURLAction { url in
+                                        handleMarkdownURL(url)
+                                    })
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("rendered-markdown")
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if !isFindingInNote { beginEditing() }
+                                    }
+                            }
+                            .padding(MudsnoteSpacing.safeHorizontal)
                         }
-                        .padding(MudsnoteSpacing.safeHorizontal)
+                        .onChange(of: findQuery) { _, _ in
+                            activeFindIndex = 0
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: activeFindIndex) { _, _ in
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: findResults.map(\.id)) { _, _ in
+                            activeFindIndex = min(
+                                activeFindIndex,
+                                max(0, findResults.count - 1)
+                            )
+                            scrollToActiveFindMatch(using: proxy)
+                        }
                     }
                 }
             }
@@ -103,9 +160,23 @@ struct MarkdownPreviewView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if isEditing { markdownToolbar }
+                if isEditing {
+                    markdownToolbar
+                } else if isFindingInNote {
+                    noteFindBar
+                }
             }
             .toolbar {
+                if !linkedSourceHistory.isEmpty, !isEditing {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: returnToPreviousLinkedNote) {
+                            Image(systemName: "chevron.left")
+                        }
+                        .accessibilityLabel("Previous Note")
+                        .accessibilityIdentifier("previous-linked-note")
+                    }
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isEditing {
                         Menu {
@@ -120,36 +191,108 @@ struct MarkdownPreviewView: View {
                                 Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
                             }
                         } label: {
-                            Image(systemName: editorDisplayMode == .rich ? "textformat" : "chevron.left.forwardslash.chevron.right")
+                            Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel("Editor Display")
+                        .accessibilityLabel("Editor Options")
                         .accessibilityIdentifier("markdown-display-mode")
                     }
 
                     if !isEditing {
                         switch source {
                         case .memo:
-                            ShareLink(item: draftMarkdown) {
-                                Image(systemName: "square.and.arrow.up")
-                            }
-                            .accessibilityLabel("Share Note")
-                            .accessibilityIdentifier("share-note-button")
+                            EmptyView()
                         case .document(let document):
-                            if let url = localFileURL(for: document.relativePath) {
-                                ShareLink(item: url) {
-                                    Image(systemName: "square.and.arrow.up")
+                            Menu {
+                                Button {
+                                    Task { await exportCurrentDocumentAsPDF(document) }
+                                } label: {
+                                    if isExportingPDF {
+                                        Label("Exporting PDF…", systemImage: "doc.richtext")
+                                    } else {
+                                        Label("Export as PDF", systemImage: "doc.richtext")
+                                    }
                                 }
-                                .accessibilityLabel("Share Note")
-                                .accessibilityIdentifier("share-note-button")
+                                .disabled(isExportingPDF)
+                                Button {
+                                    beginFindingInNote()
+                                } label: {
+                                    Label("Find in Note", systemImage: "magnifyingglass")
+                                }
+                                .disabled(draftMarkdown.isEmpty)
+                                if hasRenderedAttachments {
+                                    Menu {
+                                        Button {
+                                            setAllAttachmentPresentationModes(.small)
+                                        } label: {
+                                            Label("Set All to Small", systemImage: "rectangle.compress.vertical")
+                                        }
+                                        Button {
+                                            setAllAttachmentPresentationModes(.large)
+                                        } label: {
+                                            Label("Set All to Large", systemImage: "rectangle.expand.vertical")
+                                        }
+                                    } label: {
+                                        Label("Attachment View", systemImage: "rectangle.grid.1x2")
+                                    }
+                                    .accessibilityIdentifier("attachment-view-menu")
+                                }
+                                if let file = currentFile, canManage(document) {
+                                    Divider()
+                                    Button {
+                                        appModel.togglePinned(file)
+                                    } label: {
+                                        Label(
+                                            file.isPinned ? "Unpin" : "Pin",
+                                            systemImage: file.isPinned ? "pin.slash" : "pin"
+                                        )
+                                    }
+                                    if canMoveToTopLevel || !moveDestinations.isEmpty {
+                                        Menu {
+                                            if canMoveToTopLevel {
+                                                Button {
+                                                    Task { await moveCurrentDocument(toFolder: nil) }
+                                                } label: {
+                                                    Label("Top Level", systemImage: "tray")
+                                                }
+                                            }
+                                            ForEach(moveDestinations) { folder in
+                                                Button(folder.relativePath) {
+                                                    Task {
+                                                        await moveCurrentDocument(
+                                                            toFolder: folder.relativePath
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        } label: {
+                                            Label("Move Note", systemImage: "folder")
+                                        }
+                                    }
+                                    Button {
+                                        appModel.duplicate(file)
+                                    } label: {
+                                        Label("Duplicate Note", systemImage: "plus.square.on.square")
+                                    }
+                                    Button {
+                                        noteName = document.title
+                                        isRenamingNote = true
+                                    } label: {
+                                        Label("Rename Note", systemImage: "pencil")
+                                    }
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        isConfirmingNoteDeletion = true
+                                    } label: {
+                                        Label("Move to Recently Deleted", systemImage: "trash")
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
                             }
+                            .accessibilityLabel("Note Options")
+                            .accessibilityIdentifier("note-options-menu")
                         }
                     }
-
-                    Button(action: toggleDetent) {
-                        Image(systemName: detent == .large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    }
-                    .accessibilityLabel(detent == .large ? "Collapse editor" : "Expand editor")
-                    .accessibilityIdentifier(detent == .large ? "collapse-markdown-editor" : "expand-markdown-editor")
 
                     if isEditing {
                         Button {
@@ -183,7 +326,6 @@ struct MarkdownPreviewView: View {
         .onAppear {
             beginLibraryAccess()
             if isEditing {
-                detent = .large
                 focusEditorAfterPresentation()
             }
         }
@@ -199,11 +341,24 @@ struct MarkdownPreviewView: View {
             guard item != nil else { return }
             Task { await attachPhoto(item) }
         }
+        .photosPicker(
+            isPresented: $isPhotoPickerPresented,
+            selection: $selectedPhotoItem,
+            matching: .any(of: [.images, .videos])
+        )
         .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
             guard isEditing, draftMarkdown != originalMarkdown else { return }
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             await persistDraft(finishEditing: false, announce: false)
+        }
+        .task(id: FindAttachmentLoadID(
+            relativePath: currentSourceRelativePath,
+            markdown: draftMarkdown,
+            isFinding: isFindingInNote,
+            includesAttachments: includesAttachmentsInFind
+        )) {
+            await loadFindAttachmentDocumentsIfNeeded()
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
             Button("Keep Editing", role: .cancel) {
@@ -220,13 +375,33 @@ struct MarkdownPreviewView: View {
                 editorFocused = true
             }
             Button("Retry") {
-                Task { await attachPendingAudioRecording() }
+                Task { await retryPendingAudioRecording() }
             }
             Button("Discard Recording", role: .destructive) {
                 discardPendingAudioRecording()
             }
         } message: {
             Text("The recording is still available. Retry after resolving the note conflict, or discard it.")
+        }
+        .alert("Rename Note", isPresented: $isRenamingNote) {
+            TextField("Note Name", text: $noteName)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                Task { await renameCurrentDocument(to: noteName) }
+            }
+            .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .confirmationDialog(
+            "Move Note to Recently Deleted?",
+            isPresented: $isConfirmingNoteDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Recently Deleted", role: .destructive) {
+                Task { await trashCurrentDocument() }
+            }
+        } message: {
+            Text("You can restore this note from Recently Deleted.")
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -236,7 +411,71 @@ struct MarkdownPreviewView: View {
             guard case .success(let urls) = result, let url = urls.first else { return }
             Task { await attachFile(url) }
         }
-        .quickLookPreview($previewURL)
+        .sheet(item: $linkDraft) { draft in
+            MarkdownLinkEditorSheet(
+                draft: draft,
+                notes: linkableNotes,
+                sourceRelativePath: currentSourceRelativePath,
+                onApply: { label, destination in
+                    linkDraft = nil
+                    applyLinkCommand(
+                        .applyLink(draft: draft, label: label, destination: destination)
+                    )
+                },
+                onRemove: draft.isExisting ? {
+                    linkDraft = nil
+                    applyLinkCommand(.removeLink(draft: draft))
+                } : nil
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $exportedPDF) { export in
+            NoteActivityView(activityItems: [export.url])
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .alert("Couldn’t Export PDF", isPresented: Binding(
+            get: { pdfExportErrorMessage != nil },
+            set: { if !$0 { pdfExportErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { pdfExportErrorMessage = nil }
+        } message: {
+            Text(pdfExportErrorMessage ?? "Try exporting the note again.")
+        }
+        .fullScreenCover(item: $attachmentPreview) { preview in
+            AttachmentQuickLookPreview(
+                preview: preview,
+                onDismiss: { attachmentPreview = nil },
+                onSave: { editedURL in
+                    Task {
+                        await appModel.commitEditedAttachmentPreview(
+                            preview,
+                            editedURL: editedURL
+                        )
+                    }
+                }
+            )
+            .ignoresSafeArea()
+        }
+        .fullScreenCover(isPresented: $isCameraPresented) {
+            CameraPhotoCaptureView(
+                onComplete: { result in
+                    isCameraPresented = false
+                    switch result {
+                    case .success(let media):
+                        Task { await attachCameraPhoto(media) }
+                    case .failure(let error):
+                        cameraErrorMessage = error.localizedDescription
+                    }
+                },
+                onCancel: {
+                    isCameraPresented = false
+                    editorFocused = true
+                }
+            )
+            .ignoresSafeArea()
+        }
         .fullScreenCover(isPresented: $isScannerPresented) {
             DocumentScannerView(
                 onComplete: { result in
@@ -252,6 +491,15 @@ struct MarkdownPreviewView: View {
             )
             .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $isDrawingPresented) {
+            MarkdownDrawingEditor(
+                onCancel: { isDrawingPresented = false },
+                onSave: { data in
+                    isDrawingPresented = false
+                    Task { await attachDrawing(data) }
+                }
+            )
+        }
         .alert("Couldn’t Scan Document", isPresented: Binding(
             get: { scanErrorMessage != nil },
             set: { if !$0 { scanErrorMessage = nil } }
@@ -259,6 +507,17 @@ struct MarkdownPreviewView: View {
             Button("OK", role: .cancel) { scanErrorMessage = nil }
         } message: {
             Text(scanErrorMessage ?? "Try scanning the document again.")
+        }
+        .alert("Couldn’t Capture Photo or Video", isPresented: Binding(
+            get: { cameraErrorMessage != nil },
+            set: { if !$0 { cameraErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                cameraErrorMessage = nil
+                editorFocused = true
+            }
+        } message: {
+            Text(cameraErrorMessage ?? "Try capturing the photo or video again.")
         }
         .alert("Rename Attachment", isPresented: Binding(
             get: { attachmentBeingRenamed != nil },
@@ -277,26 +536,347 @@ struct MarkdownPreviewView: View {
     }
 
     private var metadataLabel: some View {
-        HStack(spacing: 8) {
+        ZStack(alignment: .trailing) {
             Text(metadata)
-                .font(.system(.headline, design: .rounded, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.text)
-            Spacer(minLength: 8)
-            if isEditing {
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityIdentifier("note-modified-date")
+
+            if noteAudioRecorder.isRecording {
+                Text("Recording")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.red)
+            } else if isTranscribingDocumentAudio {
+                Text("Transcribing...")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            } else if pendingAudioRecording != nil {
+                Text("Audio Not Attached")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            } else if isEditing {
                 Text(saveStatusText)
                     .font(.caption)
                     .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
                     .accessibilityIdentifier("markdown-save-status")
             }
-            if noteAudioRecorder.isRecording {
-                Text("Recording")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.red)
-            } else if pendingAudioRecording != nil {
-                Text("Audio Not Attached")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
+        }
+        .frame(minHeight: 18)
+    }
+
+    private func applyLinkCommand(_ kind: MarkdownEditingCommand.Kind) {
+        Task { @MainActor in
+            await Task.yield()
+            editingCommand = MarkdownEditingCommand(kind: kind)
+            editorFocused = true
+        }
+    }
+
+    private func canManage(_ document: MarkdownDocument) -> Bool {
+        document.relativePath != "Inbox.md"
+            && !document.relativePath.hasPrefix("Daily/")
+    }
+
+    private var currentFile: RecentMarkdownFile? {
+        guard case .document(let document) = source else { return nil }
+        return appModel.libraryFiles.first { $0.relativePath == document.relativePath }
+    }
+
+    private var currentSourceRelativePath: String {
+        switch source {
+        case .memo:
+            "Inbox.md"
+        case .document(let document):
+            document.relativePath
+        }
+    }
+
+    private var linkableNotes: [RecentMarkdownFile] {
+        appModel.libraryFiles
+            .filter { $0.relativePath != currentSourceRelativePath }
+            .sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+    }
+
+    private var moveDestinations: [LibraryFolderNode] {
+        guard case .document(let document) = source else { return [] }
+        let currentFolder = (document.relativePath as NSString).deletingLastPathComponent
+        return appModel.allFolders.filter { $0.relativePath != currentFolder }
+    }
+
+    private var canMoveToTopLevel: Bool {
+        guard case .document(let document) = source else { return false }
+        return !(document.relativePath as NSString).deletingLastPathComponent.isEmpty
+    }
+
+    private func renameCurrentDocument(to name: String) async {
+        guard case .document(let document) = source,
+              let renamed = await appModel.renameNote(
+                relativePath: document.relativePath,
+                to: name
+              ) else { return }
+        source = .document(renamed)
+    }
+
+    private func moveCurrentDocument(toFolder folder: String?) async {
+        guard case .document(let document) = source,
+              let moved = await appModel.moveNote(
+                relativePath: document.relativePath,
+                toFolder: folder
+              ) else { return }
+        source = .document(moved)
+    }
+
+    private func trashCurrentDocument() async {
+        guard let file = currentFile else { return }
+        if await appModel.trashNote(file) {
+            dismiss()
+        }
+    }
+
+    private var renderBlocks: [MarkdownRenderBlock] {
+        MarkdownRenderBlock.parse(draftMarkdown)
+    }
+
+    private var presentationPreferenceNotePath: String {
+        switch source {
+        case .memo(let memo):
+            "Inbox.md#\(memo.id)"
+        case .document(let document):
+            document.relativePath
+        }
+    }
+
+    private var hasRenderedAttachments: Bool {
+        renderBlocks.contains { block in
+            guard case .line(let line) = block else { return false }
+            return MarkdownAttachmentLine(line) != nil
+        }
+    }
+
+    private func attachmentPresentationMode(
+        for attachment: MarkdownAttachmentLine
+    ) -> AttachmentPresentationMode {
+        appModel.attachmentPresentationMode(
+            notePath: presentationPreferenceNotePath,
+            attachmentPath: attachment.path
+        )
+    }
+
+    private func setAttachmentPresentationMode(
+        _ mode: AttachmentPresentationMode,
+        for attachment: MarkdownAttachmentLine
+    ) {
+        withAnimation(.snappy(duration: 0.22)) {
+            appModel.setAttachmentPresentationMode(
+                mode,
+                notePath: presentationPreferenceNotePath,
+                attachmentPath: attachment.path
+            )
+        }
+    }
+
+    private func setAllAttachmentPresentationModes(_ mode: AttachmentPresentationMode) {
+        withAnimation(.snappy(duration: 0.22)) {
+            appModel.setAllAttachmentPresentationModes(
+                mode,
+                notePath: presentationPreferenceNotePath
+            )
+        }
+    }
+
+    private var textFindMatches: [NoteFindMatch] {
+        NoteFindIndex.matches(in: renderBlocks, query: findQuery)
+    }
+
+    private var attachmentFindMatches: [NoteAttachmentFindMatch] {
+        guard includesAttachmentsInFind else { return [] }
+        return NoteFindIndex.attachmentMatches(
+            in: renderBlocks,
+            documents: findAttachmentDocuments,
+            query: findQuery
+        )
+    }
+
+    private var findResults: [NoteFindResult] {
+        (textFindMatches.map(NoteFindResult.text)
+            + attachmentFindMatches.map(NoteFindResult.attachment))
+            .sorted { lhs, rhs in
+                if lhs.location.blockIndex == rhs.location.blockIndex {
+                    return lhs.sortOrder < rhs.sortOrder
+                }
+                return lhs.location.blockIndex < rhs.location.blockIndex
+            }
+    }
+
+    private var activeFindMatch: NoteFindMatch? {
+        guard !findResults.isEmpty,
+              case .text(let match) = findResults[min(activeFindIndex, findResults.count - 1)]
+        else { return nil }
+        return match
+    }
+
+    private var activeAttachmentFindMatch: NoteAttachmentFindMatch? {
+        guard !findResults.isEmpty,
+              case .attachment(let match) = findResults[min(activeFindIndex, findResults.count - 1)]
+        else { return nil }
+        return match
+    }
+
+    private var findCountLabel: String {
+        let total = findResults.count
+        let current = total == 0 ? 0 : min(activeFindIndex, total - 1) + 1
+        return String(
+            format: String(localized: "note.find_count.format"),
+            locale: .current,
+            current,
+            total
+        )
+    }
+
+    private var noteFindBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(MudsnoteColors.muted)
+                TextField("Find in Note", text: $findQuery)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .focused($isFindFocused)
+                    .submitLabel(.search)
+                    .accessibilityIdentifier("find-in-note-field")
+                if !findQuery.isEmpty {
+                    Button {
+                        findQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear Find")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+
+            Menu {
+                Toggle("Include Attachments", isOn: $includesAttachmentsInFind)
+            } label: {
+                Group {
+                    if isLoadingFindAttachments {
+                        ProgressView()
+                    } else {
+                        Image(systemName: includesAttachmentsInFind
+                            ? "doc.text.magnifyingglass"
+                            : "line.3.horizontal.decrease.circle")
+                    }
+                }
+                .frame(width: 30, height: 34)
+            }
+            .accessibilityLabel("Find Options")
+            .accessibilityIdentifier("find-in-note-options")
+
+            Text(findCountLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(minWidth: 42)
+                .accessibilityIdentifier("find-in-note-count")
+
+            Button { stepFindMatch(by: -1) } label: {
+                Image(systemName: "chevron.up")
+                    .frame(width: 30, height: 34)
+            }
+            .disabled(findResults.isEmpty)
+            .accessibilityLabel("Previous Match")
+            .accessibilityIdentifier("find-in-note-previous")
+
+            Button { stepFindMatch(by: 1) } label: {
+                Image(systemName: "chevron.down")
+                    .frame(width: 30, height: 34)
+            }
+            .disabled(findResults.isEmpty)
+            .accessibilityLabel("Next Match")
+            .accessibilityIdentifier("find-in-note-next")
+
+            Button("Done", action: closeFindInNote)
+                .font(.subheadline.weight(.semibold))
+                .accessibilityIdentifier("finish-find-in-note")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1)
+        }
+    }
+
+    private func beginFindingInNote() {
+        isFindingInNote = true
+        activeFindIndex = 0
+        Task { @MainActor in
+            await Task.yield()
+            isFindFocused = true
+        }
+    }
+
+    private func closeFindInNote() {
+        isFindFocused = false
+        findQuery = ""
+        activeFindIndex = 0
+        includesAttachmentsInFind = false
+        findAttachmentDocuments = []
+        isLoadingFindAttachments = false
+        isFindingInNote = false
+    }
+
+    private func stepFindMatch(by offset: Int) {
+        guard !findResults.isEmpty else { return }
+        activeFindIndex = (activeFindIndex + offset + findResults.count) % findResults.count
+    }
+
+    private func scrollToActiveFindMatch(using proxy: ScrollViewProxy) {
+        guard !findResults.isEmpty else { return }
+        let result = findResults[min(activeFindIndex, findResults.count - 1)]
+        let hiddenSections = MarkdownSectionProjection.collapsedHeadings(
+            containing: result.location.blockIndex,
+            in: renderBlocks,
+            collapsed: collapsedHeadingIndices
+        )
+        if !hiddenSections.isEmpty {
+            withAnimation(.snappy(duration: 0.22)) {
+                collapsedHeadingIndices.subtract(hiddenSections)
+            }
+        }
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation(.snappy(duration: 0.2)) {
+                proxy.scrollTo(result.location.blockIndex, anchor: .center)
+            }
+        }
+    }
+
+    @MainActor
+    private func loadFindAttachmentDocumentsIfNeeded() async {
+        guard isFindingInNote, includesAttachmentsInFind else {
+            findAttachmentDocuments = []
+            isLoadingFindAttachments = false
+            return
+        }
+        isLoadingFindAttachments = true
+        do {
+            let documents = try await appModel.attachmentSearchDocuments(in: draftMarkdown)
+            try Task.checkCancellation()
+            findAttachmentDocuments = documents
+            isLoadingFindAttachments = false
+            activeFindIndex = 0
+        } catch is CancellationError {
+            return
+        } catch {
+            findAttachmentDocuments = []
+            isLoadingFindAttachments = false
         }
     }
 
@@ -314,61 +894,71 @@ struct MarkdownPreviewView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 if case .document = source {
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "photo")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add image")
-                    .accessibilityIdentifier("markdown-add-image")
+                    Menu {
+                        Button {
+                            isPhotoPickerPresented = true
+                        } label: {
+                            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
+                        }
+                        .accessibilityIdentifier("markdown-add-image")
 
-                    Button {
-                        isFileImporterPresented = true
-                    } label: {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add file")
-                    .accessibilityIdentifier("markdown-add-file")
+                        Button {
+                            editorFocused = false
+                            isCameraPresented = true
+                        } label: {
+                            Label("Take Photo or Video", systemImage: "camera")
+                        }
+                        .disabled(!CameraPhotoCapture.isAvailable)
+                        .accessibilityIdentifier("markdown-take-photo")
 
-                    Button {
-                        isScannerPresented = true
+                        Button {
+                            editorFocused = false
+                            isDrawingPresented = true
+                        } label: {
+                            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
+                        }
+                        .accessibilityIdentifier("markdown-add-drawing")
+
+                        Button {
+                            isFileImporterPresented = true
+                        } label: {
+                            Label("Add File", systemImage: "doc")
+                        }
+                        .accessibilityIdentifier("markdown-add-file")
+
+                        Button {
+                            isScannerPresented = true
+                        } label: {
+                            Label("Scan Document", systemImage: "doc.viewfinder")
+                        }
+                        .disabled(!VNDocumentCameraViewController.isSupported)
+                        .accessibilityIdentifier("markdown-scan-document")
+
+                        Button {
+                            editorFocused = true
+                            DispatchQueue.main.async {
+                                _ = CameraTextCapture.start()
+                            }
+                        } label: {
+                            Label("Scan Text", systemImage: "text.viewfinder")
+                        }
+                        .disabled(!CameraTextCapture.isAvailable)
+                        .accessibilityIdentifier("markdown-scan-text")
                     } label: {
-                        Image(systemName: attachmentIsPreparing ? "hourglass" : "doc.viewfinder")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                        editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(
-                        isSaving
-                            || appModel.isPreparingAttachment
-                            || !VNDocumentCameraViewController.isSupported
-                    )
-                    .accessibilityLabel("Scan document")
-                    .accessibilityIdentifier("markdown-scan-document")
+                    .disabled(isSaving || appModel.isPreparingAttachment)
+                    .accessibilityLabel("Add Attachment")
+                    .accessibilityIdentifier("markdown-attachment-menu")
 
                     Button {
                         Task { await toggleDocumentAudioRecording() }
                     } label: {
-                        Image(systemName: audioButtonSystemImage)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(noteAudioRecorder.isRecording ? Color.white : MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(
-                                noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.card,
-                                in: RoundedRectangle(cornerRadius: 10)
-                            )
+                        editorToolIcon(
+                            audioButtonSystemImage,
+                            foreground: noteAudioRecorder.isRecording ? .white : MudsnoteColors.text,
+                            background: noteAudioRecorder.isRecording ? .red : MudsnoteColors.card
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(
@@ -379,18 +969,38 @@ struct MarkdownPreviewView: View {
                     .accessibilityLabel(audioButtonAccessibilityLabel)
                     .accessibilityIdentifier("markdown-record-audio")
                 }
-                formatButton("textformat.size", .heading)
-                formatButton("bold", .bold)
-                formatButton("italic", .italic)
-                formatButton("list.bullet", .bullet)
-                formatButton("list.number", .ordered)
+
+                Menu {
+                    formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
+                    formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
+                    formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
+                    formatMenuButton("Body", systemImage: "textformat", command: .body)
+                    Divider()
+                    formatMenuButton("Bold", systemImage: "bold", command: .bold)
+                    formatMenuButton("Italic", systemImage: "italic", command: .italic)
+                    formatMenuButton("Underline", systemImage: "underline", command: .underline)
+                    formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
+                    formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
+                    Divider()
+                    formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
+                    formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
+                    formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
+                    formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
+                    Divider()
+                    formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
+                    formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
+                    formatMenuButton("Insert Link", systemImage: "link", command: .link)
+                } label: {
+                    Text("Aa")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .frame(width: 40, height: 40)
+                        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .accessibilityLabel("Formatting")
+                .accessibilityIdentifier("markdown-format-menu")
+
                 formatButton("checklist", .checklist)
-                formatButton("decrease.indent", .outdent)
-                formatButton("increase.indent", .indent)
-                formatButton("text.quote", .quote)
-                formatButton("chevron.left.forwardslash.chevron.right", .code)
-                formatButton("link", .link)
-                formatButton("tablecells", .table)
                 formatButton("arrow.uturn.backward", .undo)
                 formatButton("arrow.uturn.forward", .redo)
             }
@@ -405,20 +1015,85 @@ struct MarkdownPreviewView: View {
         Button {
             editingCommand = MarkdownEditingCommand(kind: kind)
         } label: {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(MudsnoteColors.text)
-                .frame(width: 40, height: 40)
-                .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+            editorToolIcon(systemImage)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
     }
 
+    private func formatMenuButton(
+        _ title: LocalizedStringKey,
+        systemImage: String,
+        command: MarkdownEditingCommand.Kind
+    ) -> some View {
+        Button {
+            editingCommand = MarkdownEditingCommand(kind: command)
+        } label: {
+            Label(title, systemImage: systemImage)
+        }
+        .accessibilityIdentifier("markdown-format-\(command.identifier)")
+    }
+
+    private func editorToolIcon(
+        _ systemImage: String,
+        foreground: Color = MudsnoteColors.text,
+        background: Color = MudsnoteColors.card
+    ) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(foreground)
+            .frame(width: 40, height: 40)
+            .background(background, in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private func beginEditing() {
         isEditing = true
-        withAnimation(.snappy(duration: 0.28)) { detent = .large }
         focusEditorAfterPresentation()
+    }
+
+    private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {
+        guard let relativePath = MarkdownNoteLink.resolvedRelativePath(
+            for: url.relativeString,
+            from: currentSourceRelativePath
+        ) else { return .systemAction }
+        guard let target = appModel.libraryFiles.first(where: {
+            $0.relativePath == relativePath
+        }) else {
+            appModel.statusToast = .error(String(localized: "Linked note not found"))
+            return .handled
+        }
+        Task { await openLinkedNote(target) }
+        return .handled
+    }
+
+    private func openLinkedNote(_ file: RecentMarkdownFile) async {
+        guard !isEditing,
+              file.relativePath != currentSourceRelativePath,
+              let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
+        linkedSourceHistory.append(source)
+        showLinkedSource(.document(target))
+    }
+
+    private func returnToPreviousLinkedNote() {
+        guard let previous = linkedSourceHistory.popLast() else { return }
+        showLinkedSource(previous)
+    }
+
+    private func showLinkedSource(_ linkedSource: Source) {
+        closeFindInNote()
+        collapsedHeadingIndices.removeAll()
+        source = linkedSource
+        switch linkedSource {
+        case .memo(let memo):
+            draftMarkdown = memo.body
+            originalMarkdown = memo.body
+            noteName = ""
+        case .document(let document):
+            draftMarkdown = document.markdown
+            originalMarkdown = document.markdown
+            noteName = document.title
+        }
+        saveState = .idle
     }
 
     private func focusEditorAfterPresentation() {
@@ -428,38 +1103,116 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    private func toggleDetent() {
-        withAnimation(.snappy(duration: 0.28)) {
-            detent = detent == .large ? .medium : .large
+    @MainActor
+    private func exportCurrentDocumentAsPDF(_ document: MarkdownDocument) async {
+        guard !isExportingPDF else { return }
+        isExportingPDF = true
+        defer { isExportingPDF = false }
+
+        do {
+            exportedPDF = try NotePDFExporter.export(
+                title: document.title,
+                markdown: draftMarkdown,
+                modifiedAt: document.modifiedAt
+            )
+        } catch {
+            pdfExportErrorMessage = error.localizedDescription
         }
     }
 
     private var markdownBody: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(MarkdownRenderBlock.parse(draftMarkdown).enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .line(let line):
-                    markdownLine(line)
-                case .table(let headers, let rows):
-                    markdownTable(headers: headers, rows: rows)
+            ForEach(visibleRenderBlockItems) { item in
+                Group {
+                    switch item.block {
+                    case .line(let line):
+                        markdownLine(
+                            line,
+                            blockIndex: item.index,
+                            hasCollapsibleContent: item.hasCollapsibleContent
+                        )
+                    case .table(let headers, let rows):
+                        markdownTable(
+                            headers: headers,
+                            rows: rows,
+                            blockIndex: item.index
+                        )
+                    }
                 }
+                .id(item.index)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+        .animation(.snappy(duration: 0.22), value: collapsedHeadingIndices)
+    }
+
+    private var visibleRenderBlockItems: [RenderedBlockItem] {
+        let blocks = renderBlocks
+        return MarkdownSectionProjection.visibleIndices(
+            in: blocks,
+            collapsed: collapsedHeadingIndices
+        ).map { index in
+            RenderedBlockItem(
+                index: index,
+                block: blocks[index],
+                hasCollapsibleContent: MarkdownSectionProjection.hasCollapsibleContent(
+                    after: index,
+                    in: blocks
+                )
+            )
         }
     }
 
     private var metadata: String {
         switch source {
         case .memo(let memo): memo.dateText
-        case .document(let document): document.relativePath
+        case .document(let document):
+            (document.modifiedAt ?? Date()).formatted(date: .abbreviated, time: .shortened)
         }
     }
 
     @ViewBuilder
-    private func markdownLine(_ line: String) -> some View {
+    private func markdownLine(
+        _ line: String,
+        blockIndex: Int,
+        hasCollapsibleContent: Bool
+    ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
-            attachmentView(attachment)
+            attachmentView(attachment, blockIndex: blockIndex)
+        } else if MarkdownHeading(line) != nil {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if hasCollapsibleContent {
+                    Button {
+                        withAnimation(.snappy(duration: 0.22)) {
+                            if collapsedHeadingIndices.contains(blockIndex) {
+                                collapsedHeadingIndices.remove(blockIndex)
+                            } else {
+                                collapsedHeadingIndices.insert(blockIndex)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .rotationEffect(
+                                .degrees(collapsedHeadingIndices.contains(blockIndex) ? 0 : 90)
+                            )
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("markdown-section-toggle-\(blockIndex)")
+                }
+
+                markdownText(
+                    line,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                )
+            }
         } else if line.hasPrefix(">") {
-            Text(line.trimmingCharacters(in: CharacterSet(charactersIn: "> ")))
+            markdownText(
+                line,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
                 .font(.body.italic())
                 .foregroundStyle(MudsnoteColors.muted)
                 .padding(.leading, 12)
@@ -467,17 +1220,34 @@ struct MarkdownPreviewView: View {
                     Rectangle().fill(MudsnoteColors.line).frame(width: 3)
                 }
         } else {
-            markdownText(line)
+            markdownText(
+                line,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
         }
     }
 
-    private func markdownTable(headers: [String], rows: [[String]]) -> some View {
+    private func markdownTable(
+        headers: [String],
+        rows: [[String]],
+        blockIndex: Int
+    ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                markdownTableRow(headers, isHeader: true)
+                markdownTableRow(
+                    headers,
+                    isHeader: true,
+                    blockIndex: blockIndex,
+                    cellOffset: 0
+                )
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    markdownTableRow(row, isHeader: false)
+                    markdownTableRow(
+                        row,
+                        isHeader: false,
+                        blockIndex: blockIndex,
+                        cellOffset: (index + 1) * headers.count
+                    )
                         .background(index.isMultiple(of: 2) ? Color.clear : MudsnoteColors.card.opacity(0.45))
                     if index < rows.count - 1 { Divider() }
                 }
@@ -492,10 +1262,21 @@ struct MarkdownPreviewView: View {
         .accessibilityIdentifier("rendered-markdown-table")
     }
 
-    private func markdownTableRow(_ cells: [String], isHeader: Bool) -> some View {
+    private func markdownTableRow(
+        _ cells: [String],
+        isHeader: Bool,
+        blockIndex: Int,
+        cellOffset: Int
+    ) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
-                markdownText(cell)
+                markdownText(
+                    cell,
+                    location: NoteFindLocation(
+                        blockIndex: blockIndex,
+                        cellIndex: cellOffset + index
+                    )
+                )
                     .font(isHeader ? .headline : .body)
                     .frame(width: 132, alignment: .leading)
                     .padding(.horizontal, 10)
@@ -505,46 +1286,52 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    @ViewBuilder
-    private func attachmentView(_ attachment: MarkdownAttachmentLine) -> some View {
-        Group {
-            switch attachment.kind {
-            case .image:
-                if let image = localImage(for: attachment.path) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(MudsnoteColors.line, lineWidth: 1)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            previewURL = localFileURL(for: attachment.path)
-                        }
-                        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                } else {
-                    attachmentLabel(attachment)
+    private func attachmentView(
+        _ attachment: MarkdownAttachmentLine,
+        blockIndex: Int
+    ) -> some View {
+        let presentationMode = attachmentPresentationMode(for: attachment)
+        let findMatch = activeAttachmentFindMatch.flatMap { match in
+            match.relativePath == attachment.path && match.location.blockIndex == blockIndex
+                ? match
+                : nil
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            renderedAttachment(attachment, mode: presentationMode)
+                .accessibilityValue(presentationMode.rawValue)
+
+            if let findMatch {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Match in Attachment", systemImage: "doc.text.magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.yellow)
+                    Text(findMatch.context)
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(2)
                 }
-            case .audio, .file:
-                if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
-                    AudioAttachmentPlayer(url: url, title: attachment.path)
-                } else if let url = localFileURL(for: attachment.path) {
-                    Button {
-                        previewURL = url
-                    } label: {
-                        attachmentLabel(attachment)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
-                } else {
-                    attachmentLabel(attachment)
-                }
+                .accessibilityIdentifier("find-attachment-match-\(attachment.path)")
+            }
+        }
+        .padding(findMatch == nil ? 0 : 6)
+        .overlay {
+            if findMatch != nil {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.yellow, lineWidth: 2)
             }
         }
         .contextMenu {
+            Menu {
+                attachmentPresentationButton(.small, attachment: attachment)
+                attachmentPresentationButton(.large, attachment: attachment)
+                attachmentPresentationButton(.plainLink, attachment: attachment)
+            } label: {
+                Label("View As", systemImage: "rectangle.expand.vertical")
+            }
+            .accessibilityIdentifier("attachment-view-as-menu")
+
             if case .document = source {
+                Divider()
                 if let url = localFileURL(for: attachment.path) {
                     ShareLink(item: url) {
                         Label("Share Attachment", systemImage: "square.and.arrow.up")
@@ -566,6 +1353,170 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    @ViewBuilder
+    private func renderedAttachment(
+        _ attachment: MarkdownAttachmentLine,
+        mode: AttachmentPresentationMode
+    ) -> some View {
+        switch mode {
+        case .small:
+            smallAttachment(attachment)
+        case .large:
+            largeAttachment(attachment)
+        case .plainLink:
+            plainAttachmentLink(attachment)
+        }
+    }
+
+    @ViewBuilder
+    private func largeAttachment(_ attachment: MarkdownAttachmentLine) -> some View {
+        switch attachment.kind {
+        case .image:
+            if let image = localImage(for: attachment.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(MudsnoteColors.line, lineWidth: 1)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        openAttachmentPreview(attachment.path)
+                    }
+                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        case .video:
+            if let url = localFileURL(for: attachment.path) {
+                VideoAttachmentPlayer(url: url, title: attachment.path)
+                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        case .audio, .file:
+            if attachment.kind == .audio, let url = localFileURL(for: attachment.path) {
+                AudioAttachmentPlayer(url: url, title: attachment.path)
+            } else if localFileURL(for: attachment.path) != nil {
+                Button {
+                    openAttachmentPreview(attachment.path)
+                } label: {
+                    attachmentLabel(attachment)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            } else {
+                attachmentLabel(attachment)
+            }
+        }
+    }
+
+    private func smallAttachment(_ attachment: MarkdownAttachmentLine) -> some View {
+        Button {
+            openAttachmentPreview(attachment.path)
+        } label: {
+            HStack(spacing: 12) {
+                Group {
+                    if attachment.kind == .image,
+                       let image = localImage(for: attachment.path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: attachment.systemImage)
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(MudsnoteColors.primary)
+                    }
+                }
+                .frame(width: 72, height: 54)
+                .background(MudsnoteColors.canvas)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text((attachment.path as NSString).lastPathComponent)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .lineLimit(1)
+                    Text(attachmentKindLabel(attachment.kind))
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+    }
+
+    private func plainAttachmentLink(_ attachment: MarkdownAttachmentLine) -> some View {
+        Button {
+            openAttachmentPreview(attachment.path)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: attachment.systemImage)
+                Text((attachment.path as NSString).lastPathComponent)
+                    .lineLimit(1)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2.weight(.bold))
+            }
+            .font(.callout)
+            .foregroundStyle(MudsnoteColors.primary)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+    }
+
+    private func attachmentPresentationButton(
+        _ mode: AttachmentPresentationMode,
+        attachment: MarkdownAttachmentLine
+    ) -> some View {
+        Button {
+            setAttachmentPresentationMode(mode, for: attachment)
+        } label: {
+            Label(
+                attachmentPresentationLabel(mode),
+                systemImage: attachmentPresentationMode(for: attachment) == mode
+                    ? "checkmark"
+                    : attachmentPresentationSymbol(mode)
+            )
+        }
+        .accessibilityIdentifier("attachment-view-as-\(mode.rawValue)")
+    }
+
+    private func attachmentPresentationLabel(_ mode: AttachmentPresentationMode) -> String {
+        switch mode {
+        case .small: String(localized: "Small")
+        case .large: String(localized: "Large")
+        case .plainLink: String(localized: "Plain Link")
+        }
+    }
+
+    private func attachmentPresentationSymbol(_ mode: AttachmentPresentationMode) -> String {
+        switch mode {
+        case .small: "rectangle.compress.vertical"
+        case .large: "rectangle.expand.vertical"
+        case .plainLink: "link"
+        }
+    }
+
+    private func attachmentKindLabel(_ kind: MarkdownAttachmentLine.Kind) -> String {
+        switch kind {
+        case .image: String(localized: "Photo")
+        case .video: String(localized: "Video")
+        case .audio: String(localized: "Audio")
+        case .file: String(localized: "Document")
+        }
+    }
+
     private func attachmentLabel(_ attachment: MarkdownAttachmentLine) -> some View {
         Label(attachment.path, systemImage: attachment.systemImage)
             .font(.callout)
@@ -573,6 +1524,14 @@ struct MarkdownPreviewView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func openAttachmentPreview(_ relativePath: String) {
+        Task {
+            attachmentPreview = await appModel.prepareAttachmentPreview(
+                relativePath: relativePath
+            )
+        }
     }
 
     private func localImage(for relativePath: String) -> UIImage? {
@@ -600,12 +1559,17 @@ struct MarkdownPreviewView: View {
         accessedRoot = nil
     }
 
-    private func markdownText(_ line: String) -> Text {
-        if let attributed = try? AttributedString(markdown: line) {
-            return Text(attributed)
-                .foregroundStyle(MudsnoteColors.text)
-        }
-        return Text(line).foregroundStyle(MudsnoteColors.text)
+    private func markdownText(
+        _ line: String,
+        location: NoteFindLocation
+    ) -> Text {
+        Text(NoteFindIndex.highlightedText(
+            for: line,
+            query: findQuery,
+            location: location,
+            activeMatch: activeFindMatch
+        ))
+        .foregroundStyle(MudsnoteColors.text)
     }
 
     @MainActor
@@ -636,6 +1600,7 @@ struct MarkdownPreviewView: View {
 
         isSaving = false
         if finishEditing, succeeded, draftMarkdown == originalMarkdown {
+            collapsedHeadingIndices.removeAll()
             isEditing = false
         } else if !succeeded {
             editorFocused = true
@@ -710,6 +1675,52 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private func attachCameraPhoto(_ media: CapturedCameraMedia) async {
+        guard case .document = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
+        saveState = .saving
+        if let updated = await appModel.attachCameraPhoto(
+            media,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
+    private func attachDrawing(_ data: Data) async {
+        guard case .document = source else { return }
+        await persistDraft(finishEditing: false, announce: false)
+        guard draftMarkdown == originalMarkdown,
+              case .document(let document) = source else { return }
+        saveState = .saving
+        if let updated = await appModel.attachDrawing(
+            data,
+            to: document,
+            markdown: draftMarkdown,
+            expectedMarkdown: originalMarkdown
+        ) {
+            source = .document(updated)
+            draftMarkdown = updated.markdown
+            originalMarkdown = updated.markdown
+            saveState = .saved
+            editorFocused = true
+        } else {
+            saveState = .failed
+            isSaveFailurePresented = true
+        }
+    }
+
     private func attachFile(_ url: URL) async {
         guard case .document = source else { return }
         await persistDraft(finishEditing: false, announce: false)
@@ -742,7 +1753,9 @@ struct MarkdownPreviewView: View {
                 at: temporaryDirectory,
                 withIntermediateDirectories: true
             )
-            let temporaryURL = temporaryDirectory.appendingPathComponent("Scanned Document.pdf")
+            let temporaryURL = temporaryDirectory.appendingPathComponent(
+                ScannedDocumentPDF.suggestedFileName
+            )
             try data.write(to: temporaryURL, options: .atomic)
             defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
             await attachFile(temporaryURL)
@@ -758,6 +1771,7 @@ struct MarkdownPreviewView: View {
     }
 
     private var audioButtonAccessibilityLabel: String {
+        if isTranscribingDocumentAudio { return String(localized: "Transcribing...") }
         if pendingAudioRecording != nil { return String(localized: "Retry audio attachment") }
         return String(localized: noteAudioRecorder.isRecording ? "Stop recording" : "Record audio")
     }
@@ -799,17 +1813,57 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
-            try? FileManager.default.removeItem(at: recording.temporaryURL)
-            pendingAudioRecording = nil
             source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
-            editorFocused = true
+            isTranscribingDocumentAudio = true
+            appModel.statusToast = .pending(String(localized: "Transcribing..."))
+            defer {
+                try? FileManager.default.removeItem(at: recording.temporaryURL)
+                pendingAudioRecording = nil
+                isTranscribingDocumentAudio = false
+                editorFocused = true
+            }
+            do {
+                let transcript = try await noteAudioRecorder.transcribe(
+                    url: recording.temporaryURL
+                )
+                let updatedMarkdown = MarkdownAudioTranscript.appending(
+                    transcript,
+                    to: updated.markdown
+                )
+                guard updatedMarkdown != updated.markdown else {
+                    appModel.statusToast = .pending(
+                        String(localized: "No speech detected. Audio kept.")
+                    )
+                    return
+                }
+                draftMarkdown = updatedMarkdown
+                await persistDraft(finishEditing: false, announce: false)
+                if draftMarkdown == originalMarkdown {
+                    appModel.statusToast = .saved(String(localized: "Audio attached and transcribed"))
+                }
+            } catch is CancellationError {
+                appModel.statusToast = .pending(String(localized: "Audio attached"))
+            } catch {
+                appModel.statusToast = .error(String(
+                    format: String(localized: "note.audio_transcription_failed.format"),
+                    locale: .current,
+                    error.localizedDescription
+                ))
+            }
         } else {
             saveState = .failed
             isAudioAttachmentFailurePresented = true
         }
+    }
+
+    private func retryPendingAudioRecording() async {
+        guard !isAudioTransitioning else { return }
+        isAudioTransitioning = true
+        defer { isAudioTransitioning = false }
+        await attachPendingAudioRecording()
     }
 
     private func discardPendingAudioRecording() {
@@ -830,6 +1884,10 @@ struct MarkdownPreviewView: View {
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
+            appModel.removeAttachmentPresentationPreference(
+                notePath: document.relativePath,
+                attachmentPath: attachment.path
+            )
         } else {
             saveState = .failed
             isSaveFailurePresented = true
@@ -846,102 +1904,211 @@ struct MarkdownPreviewView: View {
             markdown: draftMarkdown,
             expectedMarkdown: originalMarkdown
         ) {
+            let previousPaths = attachmentPaths(in: draftMarkdown)
+            let renamedPath = attachmentPaths(in: updated.markdown)
+                .subtracting(previousPaths)
+                .first
+            if let renamedPath {
+                appModel.moveAttachmentPresentationPreference(
+                    notePath: document.relativePath,
+                    from: attachment.path,
+                    to: renamedPath
+                )
+            }
             source = .document(updated)
             draftMarkdown = updated.markdown
             originalMarkdown = updated.markdown
             saveState = .saved
         }
     }
+
+    private func attachmentPaths(in markdown: String) -> Set<String> {
+        Set(MarkdownRenderBlock.parse(markdown).compactMap { block in
+            guard case .line(let line) = block else { return nil }
+            return MarkdownAttachmentLine(line)?.path
+        })
+    }
 }
 
-enum ScannedDocumentPDF {
-    enum Error: LocalizedError {
-        case noPages
+private struct MarkdownLinkEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let draft: MarkdownLinkDraft
+    let notes: [RecentMarkdownFile]
+    let sourceRelativePath: String
+    let onApply: (String, String) -> Void
+    let onRemove: (() -> Void)?
+    @State private var name: String
+    @State private var destination: String
+    @FocusState private var focusedField: Field?
 
-        var errorDescription: String? {
-            "No scanned pages were available."
-        }
+    private enum Field {
+        case name
+        case destination
     }
 
-    static func data(for pages: [UIImage]) throws -> Data {
-        guard !pages.isEmpty else { throw Error.noPages }
-        let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let contentBounds = pageBounds.insetBy(dx: 24, dy: 24)
-        return UIGraphicsPDFRenderer(bounds: pageBounds).pdfData { context in
-            for image in pages {
-                context.beginPage()
-                let size = image.size
-                guard size.width > 0, size.height > 0 else { continue }
-                let scale = min(
-                    contentBounds.width / size.width,
-                    contentBounds.height / size.height
-                )
-                let renderedSize = CGSize(width: size.width * scale, height: size.height * scale)
-                let rect = CGRect(
-                    x: contentBounds.midX - renderedSize.width / 2,
-                    y: contentBounds.midY - renderedSize.height / 2,
-                    width: renderedSize.width,
-                    height: renderedSize.height
-                )
-                image.draw(in: rect)
+    init(
+        draft: MarkdownLinkDraft,
+        notes: [RecentMarkdownFile],
+        sourceRelativePath: String,
+        onApply: @escaping (String, String) -> Void,
+        onRemove: (() -> Void)?
+    ) {
+        self.draft = draft
+        self.notes = notes
+        self.sourceRelativePath = sourceRelativePath
+        self.onApply = onApply
+        self.onRemove = onRemove
+        _name = State(initialValue: draft.label)
+        _destination = State(initialValue: draft.destination)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $name)
+                        .focused($focusedField, equals: .name)
+                        .accessibilityIdentifier("markdown-link-name")
+                    TextField("Link", text: $destination)
+                        .focused($focusedField, equals: .destination)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("markdown-link-destination")
+                }
+
+                if !notes.isEmpty {
+                    Section {
+                        NavigationLink {
+                            MarkdownNoteLinkPicker(
+                                notes: notes,
+                                selectedDestination: destination,
+                                sourceRelativePath: sourceRelativePath
+                            ) { note in
+                                guard let relativeDestination = MarkdownNoteLink.relativeDestination(
+                                    from: sourceRelativePath,
+                                    to: note.relativePath
+                                ) else { return }
+                                destination = relativeDestination
+                                if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    name = note.title
+                                }
+                            }
+                        } label: {
+                            Label("Link to Note", systemImage: "note.text.badge.plus")
+                        }
+                        .accessibilityIdentifier("choose-note-link")
+                    }
+                }
+
+                if let onRemove {
+                    Section {
+                        Button("Remove Link", role: .destructive) {
+                            onRemove()
+                        }
+                        .accessibilityIdentifier("remove-markdown-link")
+                    }
+                }
+            }
+            .navigationTitle(draft.isExisting ? "Edit Link" : "Add Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(draft.isExisting ? "Done" : "Add") {
+                        onApply(name, destination)
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(
+                        name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .accessibilityIdentifier("apply-markdown-link")
+                }
             }
         }
+        .onAppear {
+            focusedField = name.isEmpty ? .name : .destination
+        }
     }
 }
 
-struct DocumentScannerView: UIViewControllerRepresentable {
-    let onComplete: (Result<[UIImage], Swift.Error>) -> Void
-    let onCancel: () -> Void
+private struct MarkdownNoteLinkPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let notes: [RecentMarkdownFile]
+    let selectedDestination: String
+    let sourceRelativePath: String
+    let onSelect: (RecentMarkdownFile) -> Void
+    @State private var query = ""
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onComplete: onComplete, onCancel: onCancel)
+    private var filteredNotes: [RecentMarkdownFile] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return notes }
+        return notes.filter {
+            $0.title.localizedCaseInsensitiveContains(term)
+                || $0.relativePath.localizedCaseInsensitiveContains(term)
+        }
     }
 
-    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
-        let controller = VNDocumentCameraViewController()
-        controller.delegate = context.coordinator
-        return controller
+    var body: some View {
+        List(filteredNotes) { note in
+            Button {
+                onSelect(note)
+                dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "note.text")
+                        .foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(note.title)
+                            .foregroundStyle(MudsnoteColors.text)
+                        Text(note.relativePath)
+                            .font(.caption)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if isSelected(note) {
+                        Image(systemName: "checkmark")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("note-link-candidate-\(note.relativePath)")
+        }
+        .overlay {
+            if filteredNotes.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .navigationTitle("Link to Note")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Search Notes")
     }
 
-    func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
-
-    final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
-        let onComplete: (Result<[UIImage], Swift.Error>) -> Void
-        let onCancel: () -> Void
-
-        init(
-            onComplete: @escaping (Result<[UIImage], Swift.Error>) -> Void,
-            onCancel: @escaping () -> Void
-        ) {
-            self.onComplete = onComplete
-            self.onCancel = onCancel
-        }
-
-        func documentCameraViewController(
-            _ controller: VNDocumentCameraViewController,
-            didFinishWith scan: VNDocumentCameraScan
-        ) {
-            onComplete(.success((0..<scan.pageCount).map { scan.imageOfPage(at: $0) }))
-        }
-
-        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            onCancel()
-        }
-
-        func documentCameraViewController(
-            _ controller: VNDocumentCameraViewController,
-            didFailWithError error: Swift.Error
-        ) {
-            onComplete(.failure(error))
-        }
+    private func isSelected(_ note: RecentMarkdownFile) -> Bool {
+        MarkdownNoteLink.resolvedRelativePath(
+            for: selectedDestination,
+            from: sourceRelativePath
+        ) == note.relativePath
     }
 }
 
 struct MarkdownEditingCommand: Identifiable, Equatable {
     enum Kind: Equatable {
+        case title
         case heading
+        case subheading
+        case body
         case bold
         case italic
+        case underline
+        case highlight
+        case strikethrough
         case bullet
         case ordered
         case checklist
@@ -950,15 +2117,23 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case quote
         case code
         case link
+        case applyLink(draft: MarkdownLinkDraft, label: String, destination: String)
+        case removeLink(draft: MarkdownLinkDraft)
         case table
         case undo
         case redo
 
         var identifier: String {
             switch self {
+            case .title: "title"
             case .heading: "heading"
+            case .subheading: "subheading"
+            case .body: "body"
             case .bold: "bold"
             case .italic: "italic"
+            case .underline: "underline"
+            case .highlight: "highlight"
+            case .strikethrough: "strikethrough"
             case .bullet: "bullet"
             case .ordered: "ordered"
             case .checklist: "checklist"
@@ -967,6 +2142,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .quote: "quote"
             case .code: "code"
             case .link: "link"
+            case .applyLink: "apply-link"
+            case .removeLink: "remove-link"
             case .table: "table"
             case .undo: "undo"
             case .redo: "redo"
@@ -976,6 +2153,177 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
 
     let id = UUID()
     var kind: Kind
+}
+
+struct MarkdownLinkDraft: Identifiable, Equatable {
+    let id = UUID()
+    var range: NSRange
+    var label: String
+    var destination: String
+    var isExisting: Bool
+}
+
+enum MarkdownLinkEditing {
+    static func draft(in markdown: String, selection: NSRange) -> MarkdownLinkDraft? {
+        let source = markdown as NSString
+        guard selection.location >= 0, NSMaxRange(selection) <= source.length else { return nil }
+
+        let expression = try? NSRegularExpression(pattern: #"\[([^\]\n]+)\]\(([^)\n]+)\)"#)
+        let matches = expression?.matches(
+            in: markdown,
+            range: NSRange(location: 0, length: source.length)
+        ) ?? []
+        if let match = matches.first(where: { contains(selection, in: $0.range) }) {
+            return MarkdownLinkDraft(
+                range: match.range,
+                label: source.substring(with: match.range(at: 1)),
+                destination: source.substring(with: match.range(at: 2)),
+                isExisting: true
+            )
+        }
+
+        return MarkdownLinkDraft(
+            range: selection,
+            label: source.substring(with: selection),
+            destination: "",
+            isExisting: false
+        )
+    }
+
+    static func insertionEdit(
+        for draft: MarkdownLinkDraft,
+        label: String,
+        destination: String
+    ) -> MarkdownListEdit? {
+        let cleanedLabel = label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "[", with: "(")
+            .replacingOccurrences(of: "]", with: ")")
+        guard !cleanedLabel.isEmpty,
+              let normalizedDestination = normalizedDestination(destination) else { return nil }
+        return MarkdownListEdit(
+            range: draft.range,
+            replacement: "[\(cleanedLabel)](\(normalizedDestination))",
+            selection: NSRange(
+                location: draft.range.location + 1,
+                length: (cleanedLabel as NSString).length
+            )
+        )
+    }
+
+    static func removalEdit(for draft: MarkdownLinkDraft) -> MarkdownListEdit? {
+        guard draft.isExisting else { return nil }
+        return MarkdownListEdit(
+            range: draft.range,
+            replacement: draft.label,
+            selection: NSRange(
+                location: draft.range.location,
+                length: (draft.label as NSString).length
+            )
+        )
+    }
+
+    static func normalizedDestination(_ value: String) -> String? {
+        var destination = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !destination.isEmpty else { return nil }
+        destination = destination
+            .replacingOccurrences(of: " ", with: "%20")
+            .replacingOccurrences(of: "(", with: "%28")
+            .replacingOccurrences(of: ")", with: "%29")
+        let hasScheme = destination.range(
+            of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#,
+            options: .regularExpression
+        ) != nil
+        if !hasScheme,
+           !destination.hasPrefix("#"),
+           !destination.hasPrefix("/"),
+           !destination.hasPrefix("./"),
+           !destination.hasPrefix("../") {
+            destination = destination.contains("@")
+                ? "mailto:\(destination)"
+                : "https://\(destination)"
+        }
+        return destination
+    }
+
+    private static func contains(_ selection: NSRange, in range: NSRange) -> Bool {
+        if selection.length == 0 {
+            return selection.location >= range.location && selection.location <= NSMaxRange(range)
+        }
+        return selection.location >= range.location && NSMaxRange(selection) <= NSMaxRange(range)
+    }
+}
+
+enum MarkdownInlineEditing {
+    static func toggleEdit(
+        in markdown: String,
+        selection: NSRange,
+        prefix: String,
+        suffix: String,
+        placeholder: String
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length,
+              !prefix.isEmpty,
+              !suffix.isEmpty else { return nil }
+
+        let prefixLength = (prefix as NSString).length
+        let suffixLength = (suffix as NSString).length
+        let selected = source.substring(with: selection)
+
+        if selection.length >= prefixLength + suffixLength,
+           selected.hasPrefix(prefix),
+           selected.hasSuffix(suffix) {
+            let contentRange = NSRange(
+                location: prefixLength,
+                length: selection.length - prefixLength - suffixLength
+            )
+            let content = (selected as NSString).substring(with: contentRange)
+            return MarkdownListEdit(
+                range: selection,
+                replacement: content,
+                selection: NSRange(location: selection.location, length: contentRange.length)
+            )
+        }
+
+        if selection.location >= prefixLength,
+           NSMaxRange(selection) + suffixLength <= source.length {
+            let before = source.substring(with: NSRange(
+                location: selection.location - prefixLength,
+                length: prefixLength
+            ))
+            let after = source.substring(with: NSRange(
+                location: NSMaxRange(selection),
+                length: suffixLength
+            ))
+            if before == prefix, after == suffix {
+                return MarkdownListEdit(
+                    range: NSRange(
+                        location: selection.location - prefixLength,
+                        length: prefixLength + selection.length + suffixLength
+                    ),
+                    replacement: selected,
+                    selection: NSRange(
+                        location: selection.location - prefixLength,
+                        length: selection.length
+                    )
+                )
+            }
+        }
+
+        let content = selected.isEmpty ? placeholder : selected
+        let replacement = prefix + content + suffix
+        return MarkdownListEdit(
+            range: selection,
+            replacement: replacement,
+            selection: NSRange(
+                location: selection.location + prefixLength,
+                length: (content as NSString).length
+            )
+        )
+    }
 }
 
 enum MarkdownRenderBlock: Equatable {
@@ -1031,6 +2379,309 @@ enum MarkdownRenderBlock: Equatable {
     }
 }
 
+struct MarkdownHeading: Equatable {
+    var level: Int
+    var title: String
+
+    init(level: Int, title: String) {
+        self.level = level
+        self.title = title
+    }
+
+    init?(_ line: String) {
+        let markerCount = line.prefix { $0 == "#" }.count
+        guard (1...6).contains(markerCount),
+              line.count > markerCount,
+              line[line.index(line.startIndex, offsetBy: markerCount)] == " " else {
+            return nil
+        }
+        let title = String(line.dropFirst(markerCount + 1))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        self.level = markerCount
+        self.title = title
+    }
+}
+
+enum MarkdownSectionProjection {
+    static func visibleIndices(
+        in blocks: [MarkdownRenderBlock],
+        collapsed: Set<Int>
+    ) -> [Int] {
+        var result: [Int] = []
+        var hiddenUntilHeadingLevel: Int?
+
+        for (index, block) in blocks.enumerated() {
+            let heading = parsedHeading(in: block)
+            if let hiddenLevel = hiddenUntilHeadingLevel {
+                guard let heading, heading.level <= hiddenLevel else { continue }
+                hiddenUntilHeadingLevel = nil
+            }
+
+            result.append(index)
+            if let heading, collapsed.contains(index) {
+                hiddenUntilHeadingLevel = heading.level
+            }
+        }
+        return result
+    }
+
+    static func hasCollapsibleContent(
+        after headingIndex: Int,
+        in blocks: [MarkdownRenderBlock]
+    ) -> Bool {
+        guard blocks.indices.contains(headingIndex),
+              let currentHeading = parsedHeading(in: blocks[headingIndex]),
+              blocks.indices.contains(headingIndex + 1) else { return false }
+        if let nextHeading = parsedHeading(in: blocks[headingIndex + 1]) {
+            return nextHeading.level > currentHeading.level
+        }
+        return true
+    }
+
+    static func collapsedHeadings(
+        containing blockIndex: Int,
+        in blocks: [MarkdownRenderBlock],
+        collapsed: Set<Int>
+    ) -> Set<Int> {
+        guard blocks.indices.contains(blockIndex) else { return [] }
+        return Set(collapsed.filter { headingIndex in
+            guard headingIndex < blockIndex,
+                  blocks.indices.contains(headingIndex),
+                  let currentHeading = parsedHeading(in: blocks[headingIndex]) else { return false }
+            let end = blocks.indices.dropFirst(headingIndex + 1).first { candidate in
+                guard let candidateHeading = parsedHeading(in: blocks[candidate]) else { return false }
+                return candidateHeading.level <= currentHeading.level
+            } ?? blocks.endIndex
+            return blockIndex < end
+        })
+    }
+
+    private static func parsedHeading(in block: MarkdownRenderBlock) -> MarkdownHeading? {
+        guard case .line(let line) = block else { return nil }
+        return MarkdownHeading(line)
+    }
+}
+
+struct NoteFindLocation: Hashable {
+    var blockIndex: Int
+    var cellIndex: Int?
+}
+
+enum MarkdownAudioTranscript {
+    static func appending(_ transcript: String, to markdown: String) -> String {
+        let body = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return markdown }
+        var result = markdown
+        if !result.isEmpty, !result.hasSuffix("\n") { result += "\n" }
+        if !result.isEmpty { result += "\n" }
+        result += "### \(String(localized: "Audio transcription"))\n\n"
+        result += body
+        result += "\n"
+        return result
+    }
+}
+
+struct NoteFindMatch: Identifiable, Equatable {
+    var location: NoteFindLocation
+    var occurrence: Int
+
+    var id: String {
+        "\(location.blockIndex):\(location.cellIndex ?? -1):\(occurrence)"
+    }
+}
+
+struct NoteAttachmentFindMatch: Identifiable, Equatable {
+    var location: NoteFindLocation
+    var relativePath: String
+    var fileName: String
+    var context: String
+    var occurrence: Int
+
+    var id: String {
+        "attachment:\(location.blockIndex):\(relativePath):\(occurrence)"
+    }
+}
+
+enum NoteFindResult: Identifiable, Equatable {
+    case text(NoteFindMatch)
+    case attachment(NoteAttachmentFindMatch)
+
+    var id: String {
+        switch self {
+        case .text(let match): match.id
+        case .attachment(let match): match.id
+        }
+    }
+
+    var location: NoteFindLocation {
+        switch self {
+        case .text(let match): match.location
+        case .attachment(let match): match.location
+        }
+    }
+
+    var sortOrder: Int {
+        switch self {
+        case .text: 0
+        case .attachment: 1
+        }
+    }
+}
+
+enum NoteFindIndex {
+    static func matches(
+        in blocks: [MarkdownRenderBlock],
+        query: String
+    ) -> [NoteFindMatch] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        var results: [NoteFindMatch] = []
+        for (blockIndex, block) in blocks.enumerated() {
+            switch block {
+            case .line(let line):
+                guard MarkdownAttachmentLine(line) == nil else { continue }
+                let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                results.append(contentsOf: matches(
+                    in: visibleText(for: line),
+                    term: term,
+                    location: location
+                ))
+            case .table(let headers, let rows):
+                let cells = headers + rows.flatMap { $0 }
+                for (cellIndex, cell) in cells.enumerated() {
+                    let location = NoteFindLocation(
+                        blockIndex: blockIndex,
+                        cellIndex: cellIndex
+                    )
+                    results.append(contentsOf: matches(
+                        in: visibleText(for: cell),
+                        term: term,
+                        location: location
+                    ))
+                }
+            }
+        }
+        return results
+    }
+
+    static func attachmentMatches(
+        in blocks: [MarkdownRenderBlock],
+        documents: [AttachmentSearchDocument],
+        query: String
+    ) -> [NoteAttachmentFindMatch] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        let documentsByPath = Dictionary(
+            documents.map { ($0.relativePath, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var results: [NoteAttachmentFindMatch] = []
+        for (blockIndex, block) in blocks.enumerated() {
+            guard case .line(let line) = block,
+                  let attachment = MarkdownAttachmentLine(line),
+                  let document = documentsByPath[attachment.path] else { continue }
+            let searchableText = document.fileName + "\n" + document.text
+            let matchedRanges = ranges(in: searchableText, term: term)
+            let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            for (occurrence, range) in matchedRanges.enumerated() {
+                results.append(NoteAttachmentFindMatch(
+                    location: location,
+                    relativePath: document.relativePath,
+                    fileName: document.fileName,
+                    context: excerpt(in: searchableText, around: range),
+                    occurrence: occurrence
+                ))
+            }
+        }
+        return results
+    }
+
+    static func visibleText(for markdown: String) -> String {
+        let source: String
+        if markdown.hasPrefix(">") {
+            source = markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
+        } else {
+            source = markdown
+        }
+        return String(MarkdownInlineRendering.attributedText(for: source).characters)
+    }
+
+    static func highlightedText(
+        for markdown: String,
+        query: String,
+        location: NoteFindLocation,
+        activeMatch: NoteFindMatch?
+    ) -> AttributedString {
+        let source = markdown.hasPrefix(">")
+            ? markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
+            : markdown
+        let rendered = MarkdownInlineRendering.attributedText(for: source)
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return rendered }
+
+        let attributed = NSMutableAttributedString(
+            attributedString: NSAttributedString(rendered)
+        )
+        for (occurrence, range) in ranges(in: attributed.string, term: term).enumerated() {
+            let isActive = activeMatch?.location == location
+                && activeMatch?.occurrence == occurrence
+            attributed.addAttribute(
+                .backgroundColor,
+                value: isActive
+                    ? UIColor.systemOrange
+                    : UIColor.systemYellow.withAlphaComponent(0.55),
+                range: range
+            )
+            if isActive {
+                attributed.addAttribute(.foregroundColor, value: UIColor.black, range: range)
+            }
+        }
+        return AttributedString(attributed)
+    }
+
+    private static func matches(
+        in text: String,
+        term: String,
+        location: NoteFindLocation
+    ) -> [NoteFindMatch] {
+        ranges(in: text, term: term).indices.map {
+            NoteFindMatch(location: location, occurrence: $0)
+        }
+    }
+
+    private static func ranges(in text: String, term: String) -> [NSRange] {
+        let source = text as NSString
+        guard source.length > 0 else { return [] }
+        var results: [NSRange] = []
+        var searchRange = NSRange(location: 0, length: source.length)
+        while searchRange.length > 0 {
+            let match = source.range(
+                of: term,
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                range: searchRange
+            )
+            guard match.location != NSNotFound else { break }
+            results.append(match)
+            let nextLocation = NSMaxRange(match)
+            guard nextLocation < source.length else { break }
+            searchRange = NSRange(location: nextLocation, length: source.length - nextLocation)
+        }
+        return results
+    }
+
+    private static func excerpt(in text: String, around range: NSRange) -> String {
+        let source = text as NSString
+        let radius = 64
+        let start = max(0, range.location - radius)
+        let end = min(source.length, NSMaxRange(range) + radius)
+        let excerpt = source.substring(with: NSRange(location: start, length: end - start))
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (start > 0 ? "…" : "") + excerpt + (end < source.length ? "…" : "")
+    }
+}
+
 enum MarkdownTableEditing {
     static func insertionEdit(in markdown: String, selection: NSRange) -> MarkdownListEdit? {
         let source = markdown as NSString
@@ -1058,6 +2709,223 @@ struct MarkdownListEdit: Equatable {
     var range: NSRange
     var replacement: String
     var selection: NSRange
+}
+
+enum MarkdownParagraphEditing {
+    enum Style {
+        case title
+        case heading
+        case subheading
+        case body
+
+        var prefix: String? {
+            switch self {
+            case .title: "# "
+            case .heading: "## "
+            case .subheading: "### "
+            case .body: nil
+            }
+        }
+    }
+
+    static func styleEdit(
+        in markdown: String,
+        selection: NSRange,
+        style: Style
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+
+        let lineRange = source.lineRange(for: selection)
+        let block = source.substring(with: lineRange)
+        let endsWithNewline = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+
+        let headingExpression = try? NSRegularExpression(
+            pattern: #"^([ \t]*)#{1,6}[ \t]+"#
+        )
+        let indentationExpression = try? NSRegularExpression(pattern: #"^[ \t]*"#)
+        lines = lines.map { line in
+            guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return line
+            }
+
+            let fullRange = NSRange(location: 0, length: (line as NSString).length)
+            let body = headingExpression?.stringByReplacingMatches(
+                in: line,
+                range: fullRange,
+                withTemplate: "$1"
+            ) ?? line
+            guard let prefix = style.prefix else { return body }
+
+            let bodyRange = NSRange(location: 0, length: (body as NSString).length)
+            let indentationRange = indentationExpression?.firstMatch(
+                in: body,
+                range: bodyRange
+            )?.range ?? NSRange(location: 0, length: 0)
+            let bodySource = body as NSString
+            let indentation = bodySource.substring(with: indentationRange)
+            let content = bodySource.substring(from: NSMaxRange(indentationRange))
+            return indentation + prefix + content
+        }
+
+        var replacement = lines.joined(separator: "\n")
+        if endsWithNewline { replacement += "\n" }
+        return MarkdownListEdit(
+            range: lineRange,
+            replacement: replacement,
+            selection: NSRange(
+                location: lineRange.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
+}
+
+enum MarkdownInlineRendering {
+    private static let underlineStart = "\u{E000}"
+    private static let underlineEnd = "\u{E001}"
+    private static let highlightStart = "\u{E002}"
+    private static let highlightEnd = "\u{E003}"
+
+    static func attributedText(for markdown: String) -> AttributedString {
+        let prepared = markdown
+            .replacingOccurrences(of: "<u>", with: underlineStart)
+            .replacingOccurrences(of: "</u>", with: underlineEnd)
+            .replacingOccurrences(of: "<mark>", with: highlightStart)
+            .replacingOccurrences(of: "</mark>", with: highlightEnd)
+        let parsed = (try? AttributedString(markdown: prepared))
+            ?? AttributedString(prepared)
+        let attributed = NSMutableAttributedString(
+            attributedString: NSAttributedString(parsed)
+        )
+        applyDelimitedStyle(
+            in: attributed,
+            start: underlineStart,
+            end: underlineEnd,
+            attributes: [.underlineStyle: NSUnderlineStyle.single.rawValue]
+        )
+        applyDelimitedStyle(
+            in: attributed,
+            start: highlightStart,
+            end: highlightEnd,
+            attributes: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)]
+        )
+        MarkdownDataDetection.apply(to: attributed)
+        attributed.enumerateAttribute(
+            .link,
+            in: NSRange(location: 0, length: attributed.length)
+        ) { value, range, _ in
+            guard value != nil else { return }
+            attributed.addAttribute(
+                .foregroundColor,
+                value: UIColor.systemYellow,
+                range: range
+            )
+        }
+        return AttributedString(attributed)
+    }
+
+    private static func applyDelimitedStyle(
+        in attributed: NSMutableAttributedString,
+        start: String,
+        end: String,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        while true {
+            let source = attributed.string as NSString
+            let opening = source.range(of: start)
+            guard opening.location != NSNotFound else { break }
+            let trailingRange = NSRange(
+                location: NSMaxRange(opening),
+                length: source.length - NSMaxRange(opening)
+            )
+            let closing = source.range(of: end, range: trailingRange)
+            guard closing.location != NSNotFound else {
+                attributed.deleteCharacters(in: opening)
+                continue
+            }
+            let contentLength = closing.location - NSMaxRange(opening)
+            attributed.deleteCharacters(in: closing)
+            attributed.deleteCharacters(in: opening)
+            if contentLength > 0 {
+                attributed.addAttributes(
+                    attributes,
+                    range: NSRange(location: opening.location, length: contentLength)
+                )
+            }
+        }
+        attributed.mutableString.replaceOccurrences(
+            of: end,
+            with: "",
+            range: NSRange(location: 0, length: attributed.length)
+        )
+    }
+}
+
+enum MarkdownDataDetection {
+    private static let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue
+            | NSTextCheckingResult.CheckingType.phoneNumber.rawValue
+            | NSTextCheckingResult.CheckingType.address.rawValue
+    )
+
+    static func apply(to attributed: NSMutableAttributedString) {
+        guard attributed.length > 0, let detector else { return }
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        for match in detector.matches(in: attributed.string, range: fullRange) {
+            if !containsExistingLink(in: match.range, attributed: attributed) {
+                guard let destination = destination(for: match, in: attributed.string) else {
+                    continue
+                }
+                attributed.addAttribute(.link, value: destination, range: match.range)
+            }
+            attributed.addAttribute(
+                .underlineStyle,
+                value: NSUnderlineStyle.single.rawValue,
+                range: match.range
+            )
+        }
+    }
+
+    private static func destination(
+        for match: NSTextCheckingResult,
+        in source: String
+    ) -> URL? {
+        switch match.resultType {
+        case .link:
+            return match.url
+        case .phoneNumber:
+            guard let phoneNumber = match.phoneNumber else { return nil }
+            let dialable = phoneNumber.filter { character in
+                character.isNumber || "+*#".contains(character)
+            }
+            guard !dialable.isEmpty else { return nil }
+            return URL(string: "tel:\(dialable)")
+        case .address:
+            let address = (source as NSString).substring(with: match.range)
+            var components = URLComponents(string: "https://maps.apple.com/")
+            components?.queryItems = [URLQueryItem(name: "q", value: address)]
+            return components?.url
+        default:
+            return nil
+        }
+    }
+
+    private static func containsExistingLink(
+        in range: NSRange,
+        attributed: NSAttributedString
+    ) -> Bool {
+        var containsLink = false
+        attributed.enumerateAttribute(.link, in: range) { value, _, stop in
+            guard value != nil else { return }
+            containsLink = true
+            stop.pointee = true
+        }
+        return containsLink
+    }
 }
 
 enum MarkdownListEditing {
@@ -1334,6 +3202,8 @@ enum MarkdownEditorPresentation {
         (textView as? MarkdownRichTextView)?.bulletMarkers = bulletMarkers
         applyHeadings(in: source, storage: storage)
         applyDelimited(#"\*\*([^\n]+?)\*\*"#, markerLength: 2, trait: .traitBold, in: source, storage: storage)
+        applyDelimited(#"<u>([^\n]+?)</u>"#, markerLength: 3, suffixMarkerLength: 4, trait: nil, in: source, storage: storage, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue])
+        applyDelimited(#"<mark>([^\n]+?)</mark>"#, markerLength: 6, suffixMarkerLength: 7, trait: nil, in: source, storage: storage, extra: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)])
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
         applyDelimited(#"(?<!\*)\*([^*\n]+?)\*(?!\*)"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
         applyDelimited(#"_([^_\n]+?)_"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
@@ -1366,6 +3236,7 @@ enum MarkdownEditorPresentation {
     private static func applyDelimited(
         _ pattern: String,
         markerLength: Int,
+        suffixMarkerLength: Int? = nil,
         trait: UIFontDescriptor.SymbolicTraits?,
         in source: NSString,
         storage: NSTextStorage,
@@ -1383,8 +3254,15 @@ enum MarkdownEditorPresentation {
                 }
             }
             if !extra.isEmpty { storage.addAttributes(extra, range: content) }
+            let trailingMarkerLength = suffixMarkerLength ?? markerLength
             conceal(NSRange(location: match.range.location, length: markerLength), in: storage)
-            conceal(NSRange(location: NSMaxRange(match.range) - markerLength, length: markerLength), in: storage)
+            conceal(
+                NSRange(
+                    location: NSMaxRange(match.range) - trailingMarkerLength,
+                    length: trailingMarkerLength
+                ),
+                in: storage
+            )
         }
     }
 
@@ -1465,6 +3343,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     @Binding var command: MarkdownEditingCommand?
+    @Binding var linkDraft: MarkdownLinkDraft?
     var displaysSource: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -1486,13 +3365,17 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
+        view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
         let checklistTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleChecklistTap(_:))
         )
         checklistTap.cancelsTouchesInView = false
+        checklistTap.delegate = context.coordinator
         view.addGestureRecognizer(checklistTap)
         MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+        context.coordinator.lastPresentedText = text
+        context.coordinator.lastDisplaysSource = displaysSource
         return view
     }
 
@@ -1506,7 +3389,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 length: 0
             )
         }
-        MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+        if context.coordinator.lastPresentedText != text
+            || context.coordinator.lastDisplaysSource != displaysSource {
+            MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
+            context.coordinator.lastPresentedText = text
+            context.coordinator.lastDisplaysSource = displaysSource
+        }
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
         } else if !isFocused, view.isFirstResponder {
@@ -1519,9 +3407,11 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: MarkdownTextEditor
         var lastCommandID: UUID?
+        var lastPresentedText: String?
+        var lastDisplaysSource: Bool?
 
         init(parent: MarkdownTextEditor) {
             self.parent = parent
@@ -1533,6 +3423,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 to: textView,
                 displaysSource: parent.displaysSource
             )
+            lastPresentedText = textView.text
+            lastDisplaysSource = parent.displaysSource
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -1541,6 +3433,19 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.isFocused = false
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let recognizer = gestureRecognizer as? UITapGestureRecognizer,
+                  let view = recognizer.view as? MarkdownRichTextView else { return true }
+            return view.checklistMarker(at: recognizer.location(in: view)) != nil
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
         }
 
         func textView(
@@ -1581,16 +3486,30 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             view.selectedRange = selection
             parent.text = updated
             MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+            lastPresentedText = updated
+            lastDisplaysSource = false
         }
 
         func apply(_ kind: MarkdownEditingCommand.Kind, to textView: UITextView) {
             switch kind {
+            case .title:
+                applyParagraphStyle(.title, in: textView)
             case .heading:
-                toggleLinePrefix("## ", in: textView)
+                applyParagraphStyle(.heading, in: textView)
+            case .subheading:
+                applyParagraphStyle(.subheading, in: textView)
+            case .body:
+                applyParagraphStyle(.body, in: textView)
             case .bold:
-                wrapSelection(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
+                toggleInlineStyle(prefix: "**", suffix: "**", placeholder: "bold", in: textView)
             case .italic:
-                wrapSelection(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+                toggleInlineStyle(prefix: "_", suffix: "_", placeholder: "italic", in: textView)
+            case .underline:
+                toggleInlineStyle(prefix: "<u>", suffix: "</u>", placeholder: "underline", in: textView)
+            case .highlight:
+                toggleInlineStyle(prefix: "<mark>", suffix: "</mark>", placeholder: "highlight", in: textView)
+            case .strikethrough:
+                toggleInlineStyle(prefix: "~~", suffix: "~~", placeholder: "strikethrough", in: textView)
             case .bullet:
                 toggleLinePrefix("- ", in: textView)
             case .ordered:
@@ -1604,12 +3523,25 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             case .quote:
                 toggleLinePrefix("> ", in: textView)
             case .code:
-                wrapSelection(prefix: "`", suffix: "`", placeholder: "code", in: textView)
+                toggleInlineStyle(prefix: "`", suffix: "`", placeholder: "code", in: textView)
             case .link:
-                let range = textView.selectedRange
-                let selected = (textView.text as NSString).substring(with: range)
-                let label = selected.isEmpty ? "text" : selected
-                replace(range, with: "[\(label)](https://)", selecting: NSRange(location: range.location + 1, length: (label as NSString).length), in: textView)
+                let draft = MarkdownLinkEditing.draft(
+                    in: textView.text,
+                    selection: textView.selectedRange
+                )
+                DispatchQueue.main.async { self.parent.linkDraft = draft }
+            case .applyLink(let draft, let label, let destination):
+                if let edit = MarkdownLinkEditing.insertionEdit(
+                    for: draft,
+                    label: label,
+                    destination: destination
+                ) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
+            case .removeLink(let draft):
+                if let edit = MarkdownLinkEditing.removalEdit(for: draft) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
             case .table:
                 if let edit = MarkdownTableEditing.insertionEdit(
                     in: textView.text,
@@ -1627,21 +3559,44 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 to: textView,
                 displaysSource: parent.displaysSource
             )
+            lastPresentedText = textView.text
+            lastDisplaysSource = parent.displaysSource
         }
 
-        private func wrapSelection(
+        private func toggleInlineStyle(
             prefix: String,
             suffix: String,
             placeholder: String,
             in textView: UITextView
         ) {
-            let range = textView.selectedRange
-            let selected = (textView.text as NSString).substring(with: range)
-            let content = selected.isEmpty ? placeholder : selected
+            guard let edit = MarkdownInlineEditing.toggleEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                prefix: prefix,
+                suffix: suffix,
+                placeholder: placeholder
+            ) else { return }
             replace(
-                range,
-                with: prefix + content + suffix,
-                selecting: NSRange(location: range.location + (prefix as NSString).length, length: (content as NSString).length),
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
+                in: textView
+            )
+        }
+
+        private func applyParagraphStyle(
+            _ style: MarkdownParagraphEditing.Style,
+            in textView: UITextView
+        ) {
+            guard let edit = MarkdownParagraphEditing.styleEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                style: style
+            ) else { return }
+            replace(
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
                 in: textView
             )
         }
@@ -1752,6 +3707,35 @@ private extension UITextView {
     }
 }
 
+private struct VideoAttachmentPlayer: View {
+    var url: URL
+    var title: String
+    @State private var player: AVPlayer
+
+    init(url: URL, title: String) {
+        self.url = url
+        self.title = title
+        _player = State(initialValue: AVPlayer(url: url))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VideoPlayer(player: player)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+            Text((title as NSString).lastPathComponent)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(1)
+        }
+        .onDisappear { player.pause() }
+    }
+}
+
 private struct AudioAttachmentPlayer: View {
     var url: URL
     var title: String
@@ -1840,6 +3824,7 @@ private final class AudioPlaybackController: NSObject, ObservableObject, AVAudio
 struct MarkdownAttachmentLine {
     enum Kind: Equatable {
         case image
+        case video
         case audio
         case file
     }
@@ -1852,15 +3837,18 @@ struct MarkdownAttachmentLine {
     init?(_ line: String) {
         rawLine = line
         if line.hasPrefix("![[") {
-            path = line
+            let candidate = line
                 .replacingOccurrences(of: "![[", with: "")
                 .replacingOccurrences(of: "]]", with: "")
+            guard Self.isAttachmentPath(candidate) else { return nil }
+            path = candidate
             systemImage = "paperclip"
             kind = .file
             return
         }
 
         if let match = Self.match(line, pattern: #"^!\[[^\]]*\]\(([^)]+)\)$"#) {
+            guard Self.isAttachmentPath(match) else { return nil }
             path = match
             systemImage = "photo"
             kind = .image
@@ -1868,8 +3856,15 @@ struct MarkdownAttachmentLine {
         }
 
         if let match = Self.match(line, pattern: #"^\[[^\]]+\]\(([^)]+)\)$"#) {
+            guard Self.isAttachmentPath(match) else { return nil }
             path = match
-            if LibraryAttachment.Kind(fileExtension: (match as NSString).pathExtension) == .audio {
+            let libraryKind = LibraryAttachment.Kind(
+                fileExtension: (match as NSString).pathExtension
+            )
+            if libraryKind == .video {
+                systemImage = "video"
+                kind = .video
+            } else if libraryKind == .audio {
                 systemImage = "waveform"
                 kind = .audio
             } else {
@@ -1891,5 +3886,201 @@ struct MarkdownAttachmentLine {
             return nil
         }
         return String(matched[matched.index(after: open)..<close])
+    }
+
+    private static func isAttachmentPath(_ value: String) -> Bool {
+        let decoded = value.removingPercentEncoding ?? value
+        return decoded.hasPrefix("Attachments/")
+    }
+}
+
+@MainActor
+enum MarkdownDrawingExport {
+    static let padding: CGFloat = 24
+    static let maximumPixelDimension: CGFloat = 4_096
+
+    static func pngData(for drawing: PKDrawing, screenScale: CGFloat = 3) throws -> Data {
+        guard drawing.strokes.isEmpty == false else { throw CaptureAttachmentError.empty }
+        let bounds = drawing.bounds
+            .insetBy(dx: -padding, dy: -padding)
+            .integral
+        guard bounds.width > 0, bounds.height > 0 else { throw CaptureAttachmentError.empty }
+
+        let largestDimension = max(bounds.width, bounds.height)
+        let scale = max(0.1, min(screenScale, maximumPixelDimension / largestDimension))
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = true
+        format.scale = scale
+        var renderedDrawing: UIImage?
+        UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+            renderedDrawing = drawing.image(from: bounds, scale: scale)
+        }
+        guard let renderedDrawing else { throw CaptureAttachmentError.empty }
+        let image = UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: bounds.size))
+            renderedDrawing.draw(in: CGRect(origin: .zero, size: bounds.size))
+        }
+        guard let data = image.pngData() else { throw CaptureAttachmentError.empty }
+        return data
+    }
+}
+
+@MainActor
+private final class MarkdownDrawingController: NSObject, ObservableObject, PKCanvasViewDelegate {
+    let canvasView = PKCanvasView()
+    private let toolPicker = PKToolPicker()
+    @Published private(set) var drawing = PKDrawing()
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
+    private var isConfigured = false
+
+    func configureIfNeeded() {
+        guard !isConfigured else { return }
+        isConfigured = true
+        canvasView.delegate = self
+        canvasView.drawingPolicy = .anyInput
+        canvasView.tool = PKInkingTool(.pen, color: .black, width: 5)
+        canvasView.backgroundColor = .white
+        canvasView.isOpaque = true
+        canvasView.overrideUserInterfaceStyle = .light
+        canvasView.alwaysBounceVertical = false
+        canvasView.alwaysBounceHorizontal = false
+        canvasView.accessibilityIdentifier = "markdown-drawing-canvas"
+        toolPicker.addObserver(canvasView)
+        toolPicker.setVisible(true, forFirstResponder: canvasView)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            canvasView.becomeFirstResponder()
+            canvasView.tool = PKInkingTool(.pen, color: .black, width: 5)
+        }
+    }
+
+    func undo() {
+        canvasView.undoManager?.undo()
+        publishDrawingState()
+    }
+
+    func redo() {
+        canvasView.undoManager?.redo()
+        publishDrawingState()
+    }
+
+    func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        publishDrawingState()
+    }
+
+    private func publishDrawingState() {
+        drawing = canvasView.drawing
+        canUndo = canvasView.undoManager?.canUndo == true
+        canRedo = canvasView.undoManager?.canRedo == true
+    }
+}
+
+private struct MarkdownDrawingCanvas: UIViewRepresentable {
+    @ObservedObject var controller: MarkdownDrawingController
+
+    func makeUIView(context: Context) -> PKCanvasView {
+        controller.configureIfNeeded()
+        return controller.canvasView
+    }
+
+    func updateUIView(_ uiView: PKCanvasView, context: Context) {
+        controller.configureIfNeeded()
+    }
+}
+
+private struct MarkdownDrawingEditor: View {
+    @StateObject private var controller = MarkdownDrawingController()
+    @State private var isConfirmingDiscard = false
+    @State private var exportErrorMessage: String?
+    var onCancel: () -> Void
+    var onSave: (Data) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+                MarkdownDrawingCanvas(controller: controller)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                if controller.drawing.strokes.isEmpty {
+                    Text("Draw with your finger")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .allowsHitTesting(false)
+                }
+            }
+            .navigationTitle("Drawing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        if controller.drawing.strokes.isEmpty {
+                            onCancel()
+                        } else {
+                            isConfirmingDiscard = true
+                        }
+                    }
+                    .accessibilityIdentifier("cancel-markdown-drawing")
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        controller.undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                    }
+                    .disabled(!controller.canUndo)
+                    .accessibilityLabel("Undo Drawing")
+                    .accessibilityIdentifier("undo-markdown-drawing")
+
+                    Button {
+                        controller.redo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    .disabled(!controller.canRedo)
+                    .accessibilityLabel("Redo Drawing")
+                    .accessibilityIdentifier("redo-markdown-drawing")
+
+                    Button("Add") {
+                        saveDrawing()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(controller.drawing.strokes.isEmpty)
+                    .accessibilityIdentifier("save-markdown-drawing")
+                }
+            }
+            .confirmationDialog(
+                "Discard Drawing?",
+                isPresented: $isConfirmingDiscard,
+                titleVisibility: .visible
+            ) {
+                Button("Discard Drawing", role: .destructive, action: onCancel)
+                Button("Keep Drawing", role: .cancel) {}
+            }
+            .alert("Couldn’t Add Drawing", isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "Try saving the drawing again.")
+            }
+        }
+    }
+
+    private func saveDrawing() {
+        do {
+            onSave(try MarkdownDrawingExport.pngData(for: controller.drawing))
+        } catch {
+            exportErrorMessage = error.localizedDescription
+        }
     }
 }

@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Only PDF attachments can be marked up here.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这里只能标注 PDF 附件。" } } }
+    },
+    "PDF markup saved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "PDF 标注已保存" } } }
+    },
+    "This attachment changed in another app. Reopen it before marking it up.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此附件已在其他应用中更改。请重新打开后再标注。" } } }
+    },
+    "Documents": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文稿" } } }
+    },
+    "No Audio": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有音频" } } }
+    },
+    "No Documents": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有文稿" } } }
+    },
+    "No Photos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有照片" } } }
+    },
+    "Photos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "照片" } } }
+    },
+    "Photos, audio, and documents added to notes appear here.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加到笔记的照片、音频和文稿会显示在这里。" } } }
+    },
+    "Show in Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "在笔记中显示" } } }
+    },
     "Could not create note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法新建笔记" } } }
     },
@@ -9,6 +39,201 @@
     },
     "New Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建笔记" } } }
+    },
+    "Note Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记选项" } } }
+    },
+    "Rename Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名笔记" } } }
+    },
+    "Note Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记名称" } } }
+    },
+    "Note Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已重命名" } } }
+    },
+    "Enter a valid note name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的笔记名称。" } } }
+    },
+    "Finish pending captures before renaming notes.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待保存的快速记录，再重命名笔记。" } } }
+    },
+    "Add Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加附件" } } }
+    },
+    "Attachment View": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件视图" } } }
+    },
+    "View As": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示为" } } }
+    },
+    "Set All to Small": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部设为小尺寸" } } }
+    },
+    "Set All to Large": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "全部设为大尺寸" } } }
+    },
+    "Small": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "小" } } }
+    },
+    "Large": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "大" } } }
+    },
+    "Plain Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "纯链接" } } }
+    },
+    "Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "照片" } } }
+    },
+    "Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "文稿" } } }
+    },
+    "Add File": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加文件" } } }
+    },
+    "Bulleted List": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "项目符号列表" } } }
+    },
+    "Decrease Indent": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "减少缩进" } } }
+    },
+    "Editor Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑器选项" } } }
+    },
+    "Heading": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "大标题" } } }
+    },
+    "Subheading": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "副标题" } } }
+    },
+    "Body": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正文" } } }
+    },
+    "Increase Indent": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "增加缩进" } } }
+    },
+    "Insert Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "插入链接" } } }
+    },
+    "Italic": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "斜体" } } }
+    },
+    "Add": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加" } } }
+    },
+    "Add Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加链接" } } }
+    },
+    "Edit Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑链接" } } }
+    },
+    "Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "名称" } } }
+    },
+    "Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接" } } }
+    },
+    "Link to Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接到笔记" } } }
+    },
+    "Search Notes": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索笔记" } } }
+    },
+    "Previous Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "上一则笔记" } } }
+    },
+    "Linked note not found": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "找不到链接的笔记" } } }
+    },
+    "Remove Link": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除链接" } } }
+    },
+    "Strikethrough": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除线" } } }
+    },
+    "Highlight": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "高亮" } } }
+    },
+    "Underline": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "下划线" } } }
+    },
+    "Numbered List": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编号列表" } } }
+    },
+    "Scan Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文稿" } } }
+    },
+    "Scan Text": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "扫描文本" } } }
+    },
+    "Take Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍照" } } }
+    },
+    "Choose Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择照片或视频" } } }
+    },
+    "Take Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "拍摄照片或视频" } } }
+    },
+    "Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "视频" } } }
+    },
+    "Videos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "视频" } } }
+    },
+    "No Videos": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂无视频" } } }
+    },
+    "Video attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加视频" } } }
+    },
+    "Choose a supported video file.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请选择支持的视频文件。" } } }
+    },
+    "The video could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理该视频。" } } }
+    },
+    "Couldn’t Capture Photo or Video": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法拍摄照片或视频" } } }
+    },
+    "Try capturing the photo or video again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请重新拍摄照片或视频。" } } }
+    },
+    "Photos, videos, audio, and documents added to notes appear here.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加到笔记中的照片、视频、音频和文稿会显示在这里。" } } }
+    },
+    "File attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加文件" } } }
+    },
+    "Couldn’t Attach File": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法附加文件" } } }
+    },
+    "Try choosing the file again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请重新选择文件。" } } }
+    },
+    "Couldn’t Take Photo": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法拍照" } } }
+    },
+    "Try taking the photo again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试拍照。" } } }
+    },
+    "The photo could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理这张照片。" } } }
+    },
+    "Scanned document attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加扫描文稿" } } }
+    },
+    "Couldn’t Scan Document": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法扫描文稿" } } }
+    },
+    "Try scanning the document again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试扫描文稿。" } } }
+    },
+    "No scanned pages were available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有可用的扫描页面。" } } }
+    },
+    "A scanned page could not be prepared.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法处理某个扫描页面。" } } }
     },
     "New Subfolder": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建子文件夹" } } }
@@ -175,6 +400,118 @@
         }
       }
     },
+    "A note changed elsewhere before the tag update completed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签更新完成前，有笔记已在其他位置发生更改。" } } }
+    },
+    "Delete Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除标签" } } }
+    },
+    "Enter a valid tag name.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入有效的标签名称。" } } }
+    },
+    "Finish pending captures before changing tags.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待处理的速记，再更改标签。" } } }
+    },
+    "Rename Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重命名标签" } } }
+    },
+    "Remove %@?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除 %@？" } } }
+    },
+    "Remove Tag": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移除标签" } } }
+    },
+    "Some tag changes could not be restored after the update failed.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "更新失败后，部分标签更改无法恢复。" } } }
+    },
+    "Tag Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签已删除" } } }
+    },
+    "Tag Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签名称" } } }
+    },
+    "Tag Renamed": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "标签已重命名" } } }
+    },
+    "The tag will be removed from every active note and quick note. This cannot be undone.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签将从所有有效笔记和快速笔记中移除，且无法撤销。" } } }
+    },
+    "The tag will be renamed in every active note and quick note.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "该标签将在所有有效笔记和快速笔记中重命名。" } } }
+    },
+    "This tag is no longer used by any active note.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前没有有效笔记使用此标签。" } } }
+    },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部符合"
+          }
+        }
+      }
+    },
+    "Any": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任一符合"
+          }
+        }
+      }
+    },
+    "Clear Filters": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除筛选"
+          }
+        }
+      }
+    },
+    "Clear Filter": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除筛选"
+          }
+        }
+      }
+    },
+    "Match Tags": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签匹配"
+          }
+        }
+      }
+    },
+    "No notes match these tags.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有符合这些标签的笔记。"
+          }
+        }
+      }
+    },
+    "Tap once to include a tag. Tap again to exclude it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻点一次包含标签，再次轻点将其排除。"
+          }
+        }
+      }
+    },
     "Attachments": {
       "localizations": {
         "zh-Hans": {
@@ -201,6 +538,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已附加音频"
+          }
+        }
+      }
+    },
+    "Audio attached and transcribed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频已附加并完成转写"
           }
         }
       }
@@ -1145,6 +1492,26 @@
         }
       }
     },
+    "Suggestions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
+    "Choose a suggestion or start typing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一项建议，或开始输入。"
+          }
+        }
+      }
+    },
     "Search recent Markdown": {
       "localizations": {
         "zh-Hans": {
@@ -1615,6 +1982,46 @@
         }
       }
     },
+    "Mudsnote Actions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mudsnote 快捷操作"
+          }
+        }
+      }
+    },
+    "Search notes, capture speech, or start a quick note.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索笔记、语音输入或开始快速笔记。"
+          }
+        }
+      }
+    },
+    "Find anything in Mudsnote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mudsnote 中查找内容"
+          }
+        }
+      }
+    },
+    "Capture an idea": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随手记下想法"
+          }
+        }
+      }
+    },
     "Open Mudsnote for text, audio, or image capture.": {
       "localizations": {
         "zh-Hans": {
@@ -1701,6 +2108,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "损坏的待保存队列已保留为 %@，已有笔记未被更改。"
+          }
+        }
+      }
+    },
+    "Couldn’t Add Attachment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法添加附件"
+          }
+        }
+      }
+    },
+    "Couldn’t Save Quick Note": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存快速笔记"
+          }
+        }
+      }
+    },
+    "Try Again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
+      }
+    },
+    "Try adding the attachment again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新添加附件。"
           }
         }
       }
@@ -1796,6 +2243,12 @@
     "Move to Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移到最近删除" } } }
     },
+    "Move Note to Recently Deleted?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "将笔记移到最近删除？" } } }
+    },
+    "You can restore this note from Recently Deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "你可以从最近删除中恢复此笔记。" } } }
+    },
     "Moved to Recently Deleted": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已移到最近删除" } } }
     },
@@ -1861,6 +2314,9 @@
     },
     "Notes in this folder will move to Recently Deleted. Other files will be preserved.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此文件夹中的笔记将移到最近删除，其他文件会保留。" } } }
+    },
+    "Move": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动" } } }
     },
     "Move Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动笔记" } } }
@@ -1949,6 +2405,9 @@
     "Done": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "完成" } } }
     },
+    "Edit": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑" } } }
+    },
     "Edited": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已编辑" } } }
     },
@@ -1987,6 +2446,24 @@
     },
     "Share Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "分享笔记" } } }
+    },
+    "Export as PDF": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "导出为 PDF" } } }
+    },
+    "Exporting PDF…": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在导出 PDF…" } } }
+    },
+    "Couldn’t Export PDF": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法导出 PDF" } } }
+    },
+    "Try exporting the note again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试导出笔记。" } } }
+    },
+    "The PDF couldn’t be created.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法创建 PDF。" } } }
+    },
+    "Untitled Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未命名笔记" } } }
     },
     "Attachment Renamed": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件已重命名" } } }
@@ -2060,6 +2537,12 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "已选择 %lld 项" } }
       }
     },
+    "notes.count.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld Notes" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 条笔记" } }
+      }
+    },
     "Move Selected Notes": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "移动所选笔记" } } }
     },
@@ -2113,6 +2596,213 @@
     },
     "Delete Selected Notes Permanently?": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "永久删除所选笔记？" } } }
+    },
+    "Find in Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "在笔记中查找" } } }
+    },
+    "Clear Find": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "清除查找" } } }
+    },
+    "Previous Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "上一个匹配项" } } }
+    },
+    "Next Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "下一个匹配项" } } }
+    },
+    "Add Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加绘图" } } }
+    },
+    "Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "绘图" } } }
+    },
+    "Drawing attached": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已附加绘图" } } }
+    },
+    "Draw with your finger": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "用手指绘图" } } }
+    },
+    "Discard Drawing?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃绘图？" } } }
+    },
+    "Discard Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "丢弃绘图" } } }
+    },
+    "Keep Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续绘图" } } }
+    },
+    "Couldn’t Add Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法添加绘图" } } }
+    },
+    "Try saving the drawing again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请再次尝试保存绘图。" } } }
+    },
+    "Undo Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "撤销绘图" } } }
+    },
+    "Redo Drawing": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重做绘图" } } }
+    },
+    "Smart Folders": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹" } } }
+    },
+    "Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹" } } }
+    },
+    "Smart Folder Name": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹名称" } } }
+    },
+    "New Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "新建智能文件夹" } } }
+    },
+    "Edit Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑智能文件夹" } } }
+    },
+    "Make Into Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "设为智能文件夹" } } }
+    },
+    "Match": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "匹配" } } }
+    },
+    "Choose whether notes must match all filters or any filter.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择笔记需要匹配全部筛选条件，还是任一条件。" } } }
+    },
+    "No tags are currently used in your notes.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前笔记中还没有标签。" } } }
+    },
+    "Tap once to include a tag. Tap again to exclude it.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "轻点一次包含标签，再点一次排除标签。" } } }
+    },
+    "Filters": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "筛选条件" } } }
+    },
+    "Date": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "日期" } } }
+    },
+    "Any Date": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "任意日期" } } }
+    },
+    "Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "核对清单" } } }
+    },
+    "Edited Today": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "今天编辑" } } }
+    },
+    "Edited in Last 7 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 7 天编辑" } } }
+    },
+    "Edited in Last 30 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 30 天编辑" } } }
+    },
+    "Created Today": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "今天创建" } } }
+    },
+    "Created in Last 7 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 7 天创建" } } }
+    },
+    "Created in Last 30 Days": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "过去 30 天创建" } } }
+    },
+    "With Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含附件" } } }
+    },
+    "Without Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "不含附件" } } }
+    },
+    "With Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含核对清单" } } }
+    },
+    "With Unchecked Items": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "含未勾选项目" } } }
+    },
+    "Without Checklists": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "不含核对清单" } } }
+    },
+    "Pinned Only": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅置顶" } } }
+    },
+    "Not Pinned": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未置顶" } } }
+    },
+    "Could Not Save Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法保存智能文件夹" } } }
+    },
+    "Delete Smart Folder?": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除智能文件夹？" } } }
+    },
+    "Delete Smart Folder": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除智能文件夹" } } }
+    },
+    "Notes stay in their original folders.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记会保留在原文件夹中。" } } }
+    },
+    "No notes currently match this Smart Folder.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前没有符合此智能文件夹条件的笔记。" } } }
+    },
+    "Choose a name and at least one Smart Folder filter.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请输入名称并至少选择一个智能文件夹筛选条件。" } } }
+    },
+    "A Smart Folder with this name already exists.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "已存在同名智能文件夹。" } } }
+    },
+    "This Smart Folder is no longer available.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此智能文件夹已不可用。" } } }
+    },
+    "Smart Folder settings could not be read.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法读取智能文件夹设置。" } } }
+    },
+    "Smart Folder Created": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已创建" } } }
+    },
+    "Smart Folder Updated": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已更新" } } }
+    },
+    "Smart Folder Deleted": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "智能文件夹已删除" } } }
+    },
+    "Ascending": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "升序" } } }
+    },
+    "Descending": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "降序" } } }
+    },
+    "Newest First": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最新优先" } } }
+    },
+    "Oldest First": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "最早优先" } } }
+    },
+    "Order": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "顺序" } } }
+    },
+    "View as Gallery": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "以画廊方式显示" } } }
+    },
+    "View as List": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "以列表方式显示" } } }
+    },
+    "No additional text": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无其他文本" } } }
+    },
+    "Include Attachments": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "包括附件" } } }
+    },
+    "Find Options": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "查找选项" } } }
+    },
+    "Match in Attachment": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "附件中的匹配项" } } }
+    },
+    "note.find_count.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%1$lld/%2$lld" } }
+      }
+    },
+    "note.audio_transcription_failed.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Audio attached, but transcription failed: %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "音频已附加，但转写失败：%@" } }
+      }
     }
   },
   "version": "1.0"

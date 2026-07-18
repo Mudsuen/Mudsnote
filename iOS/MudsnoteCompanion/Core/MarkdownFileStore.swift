@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 actor MarkdownFileStore {
@@ -13,11 +14,34 @@ actor MarkdownFileStore {
         var metadata: MarkdownListMetadata
     }
 
+    private struct MarkdownLinkRewriteBackup {
+        var url: URL
+        var relativePath: String
+        var data: Data
+    }
+
+    private struct MarkdownTagRewriteBackup {
+        var url: URL
+        var relativePath: String
+        var original: Data
+        var updated: Data
+    }
+
+    private struct SmartFolderConfiguration: Codable {
+        var version: Int
+        var folders: [SmartFolderDefinition]
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
     private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
     private let fileManager = FileManager.default
+    private let attachmentTextIndex: AttachmentTextIndex
+
+    init(attachmentTextIndex: AttachmentTextIndex = AttachmentTextIndex()) {
+        self.attachmentTextIndex = attachmentTextIndex
+    }
 
     func configure(root: URL) {
         self.root = root
@@ -47,6 +71,7 @@ actor MarkdownFileStore {
         var markdownFiles: [RecentMarkdownFile] = []
         var folderPaths = Set<String>()
         var attachments: [LibraryAttachment] = []
+        var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
         var dailyCount = 0
         var attachmentCount = 0
         var conflictWarnings: [String] = []
@@ -97,6 +122,16 @@ actor MarkdownFileStore {
                     modifiedAt: modifiedAt,
                     byteCount: byteCount
                 )
+                if relativePath != "Inbox.md" {
+                    let owner = LibraryAttachment.Owner(
+                        id: "file:\(relativePath)",
+                        title: listMetadata.title,
+                        destination: .file(relativePath)
+                    )
+                    for attachmentPath in listMetadata.attachmentPaths {
+                        attachmentOwners[attachmentPath, default: []].append(owner)
+                    }
+                }
                 markdownFiles.append(RecentMarkdownFile(
                     id: relativePath,
                     relativePath: relativePath,
@@ -104,10 +139,18 @@ actor MarkdownFileStore {
                     modifiedAt: modifiedAt,
                     createdAt: values.creationDate ?? modifiedAt,
                     preview: listMetadata.preview,
+                    galleryImagePath: listMetadata.galleryImagePath,
+                    galleryChecklistItems: listMetadata.galleryChecklistItems,
                     hasAttachments: listMetadata.hasAttachments,
+                    hasChecklist: listMetadata.hasChecklist,
+                    hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
                     tags: listMetadata.tags
                 ))
             }
+        }
+
+        for index in attachments.indices {
+            attachments[index].owners = attachmentOwners[attachments[index].relativePath] ?? []
         }
 
         let storedPinnedPaths = try loadPinnedPaths(root: root)
@@ -126,6 +169,10 @@ actor MarkdownFileStore {
             .map { $0 }
         let allFiles = markdownFiles.sorted(by: Self.notesOrder)
         let trashedFiles = try loadTrashedFiles(root: root)
+        // Smart Folders are optional metadata. A damaged configuration must not
+        // make the Markdown library unavailable; mutations still use the strict
+        // loader below and preserve the unreadable file until the user repairs it.
+        let smartFolders = (try? loadSmartFolders(root: root)) ?? []
         let snapshot = MarkdownLibrarySnapshot(
             inboxItems: inboxItems,
             allFiles: allFiles,
@@ -136,6 +183,7 @@ actor MarkdownFileStore {
             ),
             trashedFiles: trashedFiles,
             attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
+            smartFolders: smartFolders,
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
@@ -177,11 +225,24 @@ actor MarkdownFileStore {
             modifiedAt: modifiedAt,
             createdAt: inboxValues.creationDate ?? modifiedAt,
             preview: metadata.preview,
+            galleryImagePath: metadata.galleryImagePath,
+            galleryChecklistItems: metadata.galleryChecklistItems,
             hasAttachments: metadata.hasAttachments,
+            hasChecklist: metadata.hasChecklist,
+            hasUncheckedChecklist: metadata.hasUncheckedChecklist,
             tags: metadata.tags
         )
 
         snapshot.inboxItems = inboxItems
+        let inboxOwners = Self.inboxAttachmentOwners(in: inboxItems)
+        for index in snapshot.attachments.indices {
+            let fileOwners = snapshot.attachments[index].owners.filter {
+                if case .file = $0.destination { return true }
+                return false
+            }
+            snapshot.attachments[index].owners = fileOwners
+                + (inboxOwners[snapshot.attachments[index].relativePath] ?? [])
+        }
         snapshot.summary.inboxCount = inboxItems.count
         snapshot.allFiles = (snapshot.allFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
             .sorted(by: Self.notesOrder)
@@ -210,6 +271,59 @@ actor MarkdownFileStore {
         }
         try savePinnedPaths(pins, root: root)
         cachedLibrarySnapshot = nil
+    }
+
+    func createSmartFolder(_ definition: SmartFolderDefinition) throws -> SmartFolderDefinition {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let normalized = definition.normalized else {
+            throw SmartFolderStoreError.invalidDefinition
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        guard !folders.contains(where: { Self.sameSmartFolderName($0.name, normalized.name) }) else {
+            throw SmartFolderStoreError.duplicateName
+        }
+        folders.append(normalized)
+        folders.sort(by: Self.smartFolderOrder)
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
+        return normalized
+    }
+
+    func updateSmartFolder(_ definition: SmartFolderDefinition) throws -> SmartFolderDefinition {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let normalized = definition.normalized else {
+            throw SmartFolderStoreError.invalidDefinition
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        guard let index = folders.firstIndex(where: { $0.id == normalized.id }) else {
+            throw SmartFolderStoreError.notFound
+        }
+        guard !folders.contains(where: {
+            $0.id != normalized.id && Self.sameSmartFolderName($0.name, normalized.name)
+        }) else { throw SmartFolderStoreError.duplicateName }
+        folders[index] = normalized
+        folders.sort(by: Self.smartFolderOrder)
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
+        return normalized
+    }
+
+    func deleteSmartFolder(id: UUID) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var folders = try loadSmartFolders(root: root)
+        let originalCount = folders.count
+        folders.removeAll(where: { $0.id == id })
+        guard folders.count != originalCount else {
+            throw SmartFolderStoreError.notFound
+        }
+        try saveSmartFolders(folders, root: root)
+        cachedLibrarySnapshot?.smartFolders = folders
     }
 
     func setPinned(_ isPinned: Bool, relativePaths: [String]) throws {
@@ -256,6 +370,7 @@ actor MarkdownFileStore {
             title: destination.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
             markdown: "",
+            modifiedAt: modificationDate(for: destination),
             isNew: true
         )
     }
@@ -292,7 +407,8 @@ actor MarkdownFileStore {
                 id: renamedPath,
                 title: preferredStem,
                 relativePath: renamedPath,
-                markdown: markdown
+                markdown: markdown,
+                modifiedAt: modificationDate(for: destination) ?? saved.modifiedAt
             )
         } catch {
             return saved
@@ -326,7 +442,8 @@ actor MarkdownFileStore {
             id: relativePath,
             title: fileURL.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
-            markdown: try String(contentsOf: fileURL, encoding: .utf8)
+            markdown: try String(contentsOf: fileURL, encoding: .utf8),
+            modifiedAt: modificationDate(for: fileURL)
         )
     }
 
@@ -334,7 +451,7 @@ actor MarkdownFileStore {
         query: String,
         scope: MarkdownSearchScope = .all,
         limit: Int = 80
-    ) throws -> [MarkdownSearchResult] {
+    ) async throws -> [MarkdownSearchResult] {
         guard let root else { throw FolderAccessError.missingFolder }
         let terms = MarkdownSearch.normalizedTerms(query)
         guard !terms.isEmpty else { return [] }
@@ -383,10 +500,39 @@ actor MarkdownFileStore {
                 for memo in InboxParser.parse(markdown) {
                     if let result = MarkdownSearch.match(memo: memo, terms: terms) {
                         matches.append(result)
+                        continue
+                    }
+                    let attachments = try await searchableAttachmentDocuments(
+                        in: memo.body,
+                        root: root
+                    )
+                    if let result = MarkdownSearch.match(
+                        memo: memo,
+                        terms: terms,
+                        attachmentDocuments: attachments
+                    ) {
+                        matches.append(result)
                     }
                 }
-            } else if let result = MarkdownSearch.match(file: file, markdown: markdown, terms: terms) {
+            } else if let result = MarkdownSearch.match(
+                file: file,
+                markdown: markdown,
+                terms: terms
+            ) {
                 matches.append(result)
+            } else {
+                let attachments = try await searchableAttachmentDocuments(
+                    in: markdown,
+                    root: root
+                )
+                if let result = MarkdownSearch.match(
+                    file: file,
+                    markdown: markdown,
+                    terms: terms,
+                    attachmentDocuments: attachments
+                ) {
+                    matches.append(result)
+                }
             }
         }
         searchCache = searchCache.filter { activePaths.contains($0.key) }
@@ -400,7 +546,41 @@ actor MarkdownFileStore {
             .map { $0 }
     }
 
-    func prepareAttachmentPreview(relativePath: String) throws -> URL {
+    private func searchableAttachmentDocuments(
+        in markdown: String,
+        root: URL
+    ) async throws -> [AttachmentSearchDocument] {
+        var documents: [AttachmentSearchDocument] = []
+        for relativePath in MarkdownAttachmentSearch.relativePaths(in: markdown) {
+            try Task.checkCancellation()
+            do {
+                if let text = try await attachmentTextIndex.text(
+                    relativePath: relativePath,
+                    root: root
+                ) {
+                    documents.append(AttachmentSearchDocument(
+                        relativePath: relativePath,
+                        text: text
+                    ))
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // A damaged or unsupported attachment must not make note search fail.
+                continue
+            }
+        }
+        return documents
+    }
+
+    func attachmentSearchDocuments(in markdown: String) async throws -> [AttachmentSearchDocument] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        return try await searchableAttachmentDocuments(in: markdown, root: root)
+    }
+
+    func prepareAttachmentPreview(relativePath: String) throws -> PreparedAttachmentPreview {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let fileURL = AuthorizedLibraryPath.resolve(
             relativePath,
@@ -413,18 +593,104 @@ actor MarkdownFileStore {
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
-        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
-        guard values.isRegularFile == true else {
+        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true,
+              let byteCount = values.fileSize,
+              byteCount > 0,
+              byteCount <= CaptureAttachmentPolicy.maximumFileBytes else {
             throw AttachmentPreviewError.invalidPath
         }
+
+        let originalData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
 
         let previewDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("MudsnoteAttachmentPreview", isDirectory: true)
         try? fileManager.removeItem(at: previewDirectory)
         try fileManager.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
         let previewURL = previewDirectory.appendingPathComponent(fileURL.lastPathComponent)
-        try fileManager.copyItem(at: fileURL, to: previewURL)
-        return previewURL
+        try originalData.write(to: previewURL, options: .atomic)
+        return PreparedAttachmentPreview(
+            url: previewURL,
+            relativePath: relativePath,
+            originalDigest: Data(SHA256.hash(data: originalData))
+        )
+    }
+
+    func commitEditedAttachmentPreview(
+        _ preview: PreparedAttachmentPreview,
+        editedURL: URL
+    ) throws -> Bool {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard preview.isPDF,
+              editedURL.pathExtension.lowercased() == "pdf",
+              let targetURL = AuthorizedLibraryPath.resolve(
+                preview.relativePath,
+                within: root,
+                constrainedTo: "Attachments"
+              ),
+              targetURL.pathExtension.lowercased() == "pdf" else {
+            throw AttachmentPreviewError.unsupportedEditing
+        }
+
+        let editedValues = try editedURL.resourceValues(
+            forKeys: [.isRegularFileKey, .fileSizeKey]
+        )
+        guard editedValues.isRegularFile == true,
+              let editedByteCount = editedValues.fileSize,
+              editedByteCount > 0,
+              editedByteCount <= CaptureAttachmentPolicy.maximumFileBytes else {
+            throw AttachmentPreviewError.invalidPath
+        }
+        let editedData = try Data(contentsOf: editedURL, options: .mappedIfSafe)
+        guard Data(SHA256.hash(data: editedData)) != preview.originalDigest else {
+            return false
+        }
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var updateError: Error?
+        coordinator.coordinate(
+            writingItemAt: targetURL,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            do {
+                let currentData = try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+                guard Data(SHA256.hash(data: currentData)) == preview.originalDigest else {
+                    throw AttachmentPreviewError.changedExternally
+                }
+                try editedData.write(to: coordinatedURL, options: .atomic)
+            } catch {
+                updateError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let updateError { throw updateError }
+
+        cachedLibrarySnapshot = nil
+        searchCache.removeAll(keepingCapacity: true)
+        return true
+    }
+
+    func loadAttachmentThumbnailData(relativePath: String) throws -> Data {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let fileURL = AuthorizedLibraryPath.resolve(
+            relativePath,
+            within: root,
+            constrainedTo: "Attachments"
+        ) else {
+            throw AttachmentPreviewError.invalidPath
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true,
+              (values.fileSize ?? 0) <= CaptureAttachmentPolicy.maximumImageBytes else {
+            throw AttachmentPreviewError.invalidPath
+        }
+        return try Data(contentsOf: fileURL, options: .mappedIfSafe)
     }
 
     func applyInboxMutation(_ mutation: InboxMutation) throws {
@@ -473,6 +739,111 @@ actor MarkdownFileStore {
 
         if let coordinationError { throw coordinationError }
         if let mutationError { throw mutationError }
+    }
+
+    func mutateTag(
+        _ sourceTagInput: String,
+        mutation: MarkdownTagMutation
+    ) throws -> MarkdownTagMutationResult {
+        guard let sourceTag = MarkdownTagSyntax.normalizedTag(sourceTagInput) else {
+            throw MarkdownTagMutationError.invalidTag
+        }
+        let replacementTag: String?
+        switch mutation {
+        case .rename(let input):
+            guard let normalized = MarkdownTagSyntax.normalizedTag(input) else {
+                throw MarkdownTagMutationError.invalidTag
+            }
+            replacementTag = normalized
+        case .delete:
+            replacementTag = nil
+        }
+        guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { throw MarkdownTagMutationError.notFound }
+
+        var occurrenceCount = 0
+        var updates: [MarkdownTagRewriteBackup] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isDirectory != true,
+                  values.isRegularFile == true,
+                  url.pathExtension.lowercased() == "md" else { continue }
+            let original = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard let markdown = String(data: original, encoding: .utf8),
+                  let rewrite = MarkdownTagSyntax.rewriting(
+                    markdown,
+                    tag: sourceTag,
+                    mutation: mutation
+                  ) else { continue }
+            occurrenceCount += rewrite.occurrenceCount
+            guard rewrite.markdown != markdown,
+                  let updated = rewrite.markdown.data(using: .utf8) else { continue }
+            updates.append(MarkdownTagRewriteBackup(
+                url: url,
+                relativePath: Self.relativePath(for: url, root: root),
+                original: original,
+                updated: updated
+            ))
+        }
+        guard occurrenceCount > 0 else { throw MarkdownTagMutationError.notFound }
+
+        var written: [MarkdownTagRewriteBackup] = []
+        do {
+            for update in updates {
+                try coordinatedReplaceTagData(
+                    at: update.url,
+                    relativePath: update.relativePath,
+                    expected: update.original,
+                    replacement: update.updated
+                )
+                written.append(update)
+            }
+        } catch {
+            var rollbackFailed = false
+            for update in written.reversed() {
+                do {
+                    try coordinatedReplaceTagData(
+                        at: update.url,
+                        relativePath: update.relativePath,
+                        expected: update.updated,
+                        replacement: update.original
+                    )
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if rollbackFailed { throw MarkdownTagMutationError.rollbackFailed }
+            throw error
+        }
+
+        let changedPaths = updates.map(\.relativePath)
+        cachedLibrarySnapshot = nil
+        for path in changedPaths {
+            searchCache.removeValue(forKey: path)
+            listMetadataCache.removeValue(forKey: path)
+        }
+        return MarkdownTagMutationResult(
+            sourceTag: sourceTag,
+            replacementTag: replacementTag,
+            changedPaths: changedPaths,
+            occurrenceCount: occurrenceCount
+        )
     }
 
     func preparePendingWrite(for draft: CaptureDraft, root: URL, now: Date = Date()) async throws -> PendingWrite {
@@ -538,7 +909,8 @@ actor MarkdownFileStore {
             id: relativePath,
             title: fileURL.deletingPathExtension().lastPathComponent,
             relativePath: relativePath,
-            markdown: markdown
+            markdown: markdown,
+            modifiedAt: modificationDate(for: fileURL) ?? Date()
         )
     }
 
@@ -637,11 +1009,13 @@ actor MarkdownFileStore {
             .appendingPathComponent(baseName)
             .appendingPathExtension(source.pathExtension)
         if requested.standardizedFileURL == source.standardizedFileURL {
+            let documentURL = AuthorizedLibraryPath.resolve(relativePath, within: root)
             return MarkdownDocument(
                 id: relativePath,
                 title: ((relativePath as NSString).lastPathComponent as NSString).deletingPathExtension,
                 relativePath: relativePath,
-                markdown: markdown
+                markdown: markdown,
+                modifiedAt: documentURL.flatMap(modificationDate(for:))
             )
         }
 
@@ -713,6 +1087,51 @@ actor MarkdownFileStore {
             return duplicated
         } catch {
             try? fileManager.removeItem(at: destination)
+            throw error
+        }
+    }
+
+    func renameMarkdownDocument(
+        relativePath: String,
+        to name: String
+    ) throws -> RecentMarkdownFile {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard Self.isMutableNotePath(relativePath),
+              let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownLifecycleError.protectedNote
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw MarkdownLifecycleError.noteNotFound
+        }
+
+        let stem = try Self.validatedNoteName(name)
+        if source.deletingPathExtension().lastPathComponent == stem {
+            return try recentFile(at: source, root: root)
+        }
+        let requested = source.deletingLastPathComponent()
+            .appendingPathComponent("\(stem).md")
+        let destination = uniqueMarkdownURL(for: requested)
+        let destinationPath = Self.relativePath(for: destination, root: root)
+        try coordinatedMove(from: source, to: destination)
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
+        do {
+            linkBackups = try rewriteNoteLinksAfterMove(
+                from: relativePath,
+                to: destinationPath,
+                root: root
+            )
+            try replacePinnedPath(relativePath, with: destinationPath, root: root)
+            let renamed = try recentFile(at: destination, root: root)
+            invalidateAfterMutation(
+                relativePaths: [relativePath, destinationPath] + linkBackups.map(\.relativePath)
+            )
+            return renamed
+        } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
+            try? coordinatedMove(from: destination, to: source)
             throw error
         }
     }
@@ -862,12 +1281,18 @@ actor MarkdownFileStore {
         let source = try userFolderURL(relativePath: relativePath, root: root)
         let folderName = try Self.validatedFolderName(name)
         if source.lastPathComponent == folderName { return relativePath }
+        let notePaths = try markdownNotePaths(at: source, root: root)
         let requested = source.deletingLastPathComponent()
             .appendingPathComponent(folderName, isDirectory: true)
         let destination = uniqueFolderURL(for: requested)
         try coordinatedMove(from: source, to: destination)
         let newRelativePath = Self.relativePath(for: destination, root: root)
+        let movedPaths = Dictionary(uniqueKeysWithValues: notePaths.map { path in
+            (path, newRelativePath + path.dropFirst(relativePath.count))
+        })
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            linkBackups = try rewriteNoteLinksAfterMoves(movedPaths, root: root)
             try rewriteTrashedOriginalPathPrefix(
                 from: relativePath,
                 to: newRelativePath,
@@ -875,6 +1300,7 @@ actor MarkdownFileStore {
             )
             try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? rewriteTrashedOriginalPathPrefix(
                 from: newRelativePath,
                 to: relativePath,
@@ -884,6 +1310,7 @@ actor MarkdownFileStore {
             throw error
         }
         invalidatePathPrefix(relativePath)
+        invalidateAfterMutation(relativePaths: linkBackups.map(\.relativePath))
         return newRelativePath
     }
 
@@ -904,6 +1331,7 @@ actor MarkdownFileStore {
         if source.deletingLastPathComponent().standardizedFileURL == targetDirectory.standardizedFileURL {
             return relativePath
         }
+        let notePaths = try markdownNotePaths(at: source, root: root)
         let requested = targetDirectory.appendingPathComponent(
             source.lastPathComponent,
             isDirectory: true
@@ -911,7 +1339,12 @@ actor MarkdownFileStore {
         let destination = uniqueFolderURL(for: requested)
         try coordinatedMove(from: source, to: destination)
         let newRelativePath = Self.relativePath(for: destination, root: root)
+        let movedPaths = Dictionary(uniqueKeysWithValues: notePaths.map { path in
+            (path, newRelativePath + path.dropFirst(relativePath.count))
+        })
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            linkBackups = try rewriteNoteLinksAfterMoves(movedPaths, root: root)
             try rewriteTrashedOriginalPathPrefix(
                 from: relativePath,
                 to: newRelativePath,
@@ -919,6 +1352,7 @@ actor MarkdownFileStore {
             )
             try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? rewriteTrashedOriginalPathPrefix(
                 from: newRelativePath,
                 to: relativePath,
@@ -930,6 +1364,7 @@ actor MarkdownFileStore {
         }
         invalidatePathPrefix(relativePath)
         invalidatePathPrefix(newRelativePath)
+        invalidateAfterMutation(relativePaths: linkBackups.map(\.relativePath))
         return newRelativePath
     }
 
@@ -960,15 +1395,24 @@ actor MarkdownFileStore {
             for: targetDirectory.appendingPathComponent(source.lastPathComponent)
         )
         try coordinatedMove(from: source, to: destination)
-        let moved = try recentFile(at: destination, root: root)
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
         do {
+            let moved = try recentFile(at: destination, root: root)
+            linkBackups = try rewriteNoteLinksAfterMove(
+                from: relativePath,
+                to: moved.relativePath,
+                root: root
+            )
             try replacePinnedPath(relativePath, with: moved.relativePath, root: root)
+            invalidateAfterMutation(
+                relativePaths: [relativePath, moved.relativePath] + linkBackups.map(\.relativePath)
+            )
+            return moved
         } catch {
+            restoreMarkdownLinkRewrites(linkBackups)
             try? coordinatedMove(from: destination, to: source)
             throw error
         }
-        invalidateAfterMutation(relativePaths: [relativePath, moved.relativePath])
-        return moved
     }
 
     func moveMarkdownDocuments(
@@ -999,6 +1443,7 @@ actor MarkdownFileStore {
         let originalPins = try loadPinnedPaths(root: root)
         var moves: [(source: URL, destination: URL, oldPath: String, newPath: String)] = []
         var destinations: [URL] = []
+        var linkBackups: [MarkdownLinkRewriteBackup] = []
 
         do {
             for item in sources {
@@ -1015,6 +1460,10 @@ actor MarkdownFileStore {
                 moves.append((item.url, destination, item.path, newPath))
                 destinations.append(destination)
             }
+            linkBackups = try rewriteNoteLinksAfterMoves(
+                Dictionary(uniqueKeysWithValues: moves.map { ($0.oldPath, $0.newPath) }),
+                root: root
+            )
             var updatedPins = originalPins
             for move in moves where updatedPins.remove(move.oldPath) != nil {
                 updatedPins.insert(move.newPath)
@@ -1025,10 +1474,12 @@ actor MarkdownFileStore {
             let moved = try destinations.map { try recentFile(at: $0, root: root) }
             invalidateAfterMutation(
                 relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+                    + linkBackups.map(\.relativePath)
             )
             return moved
         } catch {
             var rollbackFailed = false
+            restoreMarkdownLinkRewrites(linkBackups)
             for move in moves.reversed() {
                 do {
                     try coordinatedMove(from: move.destination, to: move.source)
@@ -1043,6 +1494,7 @@ actor MarkdownFileStore {
             }
             invalidateAfterMutation(
                 relativePaths: moves.flatMap { [$0.oldPath, $0.newPath] }
+                    + linkBackups.map(\.relativePath)
             )
             if rollbackFailed { throw MarkdownLifecycleError.batchRollbackFailed }
             throw error
@@ -1358,6 +1810,34 @@ actor MarkdownFileStore {
         if let moveError { throw moveError }
     }
 
+    private func coordinatedReplaceTagData(
+        at url: URL,
+        relativePath: String,
+        expected: Data,
+        replacement: Data
+    ) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var writeError: Error?
+        coordinator.coordinate(
+            writingItemAt: url,
+            options: .forMerging,
+            error: &coordinationError
+        ) { coordinatedURL in
+            do {
+                let current = try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+                guard current == expected else {
+                    throw MarkdownTagMutationError.changedExternally(relativePath)
+                }
+                try replacement.write(to: coordinatedURL, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
+    }
+
     private func coordinatedCopy(from source: URL, to destination: URL) throws {
         let coordinator = NSFileCoordinator()
         var coordinationError: NSError?
@@ -1433,6 +1913,24 @@ actor MarkdownFileStore {
         return value
     }
 
+    private static func validatedNoteName(_ name: String) throws -> String {
+        var value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.lowercased().hasSuffix(".md") {
+            value = String(value.dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !value.isEmpty,
+              value != ".",
+              value != "..",
+              !value.hasPrefix("."),
+              !value.contains("/"),
+              !value.contains(":"),
+              !value.contains("\n"),
+              !value.contains("\r") else {
+            throw MarkdownLifecycleError.invalidNoteName
+        }
+        return value
+    }
+
     private static func isUserFolderPath(_ relativePath: String) -> Bool {
         let components = relativePath.split(separator: "/")
         guard let first = components.first,
@@ -1453,6 +1951,10 @@ actor MarkdownFileStore {
             title: url.deletingPathExtension().lastPathComponent,
             modifiedAt: modifiedAt
         )
+    }
+
+    private func modificationDate(for url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     private func folderDeletionInventory(
@@ -1485,6 +1987,31 @@ actor MarkdownFileStore {
         return (notes.sorted(), directories)
     }
 
+    private func markdownNotePaths(at folder: URL, root: URL) throws -> [String] {
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: folder,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var paths: [String] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            if values.isRegularFile == true, url.pathExtension.lowercased() == "md" {
+                paths.append(Self.relativePath(for: url, root: root))
+            }
+        }
+        return paths.sorted()
+    }
+
     private func rewriteTrashedOriginalPathPrefix(
         from oldPrefix: String,
         to newPrefix: String,
@@ -1515,6 +2042,83 @@ actor MarkdownFileStore {
         }
     }
 
+    private func rewriteNoteLinksAfterMove(
+        from oldPath: String,
+        to newPath: String,
+        root: URL
+    ) throws -> [MarkdownLinkRewriteBackup] {
+        try rewriteNoteLinksAfterMoves([oldPath: newPath], root: root)
+    }
+
+    private func rewriteNoteLinksAfterMoves(
+        _ movedPaths: [String: String],
+        root: URL
+    ) throws -> [MarkdownLinkRewriteBackup] {
+        guard !movedPaths.isEmpty else { return [] }
+        let originalPathByCurrentPath = Dictionary(
+            uniqueKeysWithValues: movedPaths.map { ($0.value, $0.key) }
+        )
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var updates: [(backup: MarkdownLinkRewriteBackup, updated: Data)] = []
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isDirectory != true,
+                  values.isRegularFile == true,
+                  url.pathExtension.lowercased() == "md" else { continue }
+            let currentPath = Self.relativePath(for: url, root: root)
+            let sourceBefore = originalPathByCurrentPath[currentPath] ?? currentPath
+            let originalData = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard let markdown = String(data: originalData, encoding: .utf8) else { continue }
+            let rewritten = MarkdownNoteLink.rewritingLinks(
+                in: markdown,
+                sourceBefore: sourceBefore,
+                sourceAfter: currentPath,
+                movedPaths: movedPaths
+            )
+            guard rewritten != markdown,
+                  let updatedData = rewritten.data(using: .utf8) else { continue }
+            updates.append((
+                MarkdownLinkRewriteBackup(
+                    url: url,
+                    relativePath: currentPath,
+                    data: originalData
+                ),
+                updatedData
+            ))
+        }
+
+        var written: [MarkdownLinkRewriteBackup] = []
+        do {
+            for update in updates {
+                try update.updated.write(to: update.backup.url, options: .atomic)
+                written.append(update.backup)
+            }
+            return written
+        } catch {
+            restoreMarkdownLinkRewrites(written)
+            throw error
+        }
+    }
+
+    private func restoreMarkdownLinkRewrites(_ backups: [MarkdownLinkRewriteBackup]) {
+        for backup in backups.reversed() {
+            try? backup.data.write(to: backup.url, options: .atomic)
+        }
+    }
+
     private func invalidatePathPrefix(_ prefix: String) {
         cachedLibrarySnapshot = nil
         searchCache = searchCache.filter { !$0.key.hasPrefix(prefix + "/") && $0.key != prefix }
@@ -1531,6 +2135,57 @@ actor MarkdownFileStore {
               let paths = try? JSONDecoder().decode([String].self, from: Data(contentsOf: url))
         else { return [] }
         return Set(paths.filter(Self.isPinnableNotePath))
+    }
+
+    private func loadSmartFolders(root: URL) throws -> [SmartFolderDefinition] {
+        let url = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 1_048_576 else {
+            throw SmartFolderStoreError.damagedConfiguration
+        }
+        do {
+            let configuration = try JSONDecoder.mudsnote.decode(
+                SmartFolderConfiguration.self,
+                from: Data(contentsOf: url)
+            )
+            guard configuration.version == 1 else {
+                throw SmartFolderStoreError.damagedConfiguration
+            }
+            let normalized = configuration.folders.compactMap(\.normalized)
+            let ids = Set(normalized.map(\.id))
+            let names = Set(normalized.map { SmartFolderDefinition.tagKey($0.name) })
+            guard normalized.count == configuration.folders.count,
+                  ids.count == normalized.count,
+                  names.count == normalized.count else {
+                throw SmartFolderStoreError.damagedConfiguration
+            }
+            return normalized.sorted(by: Self.smartFolderOrder)
+        } catch let error as SmartFolderStoreError {
+            throw error
+        } catch {
+            throw SmartFolderStoreError.damagedConfiguration
+        }
+    }
+
+    private func saveSmartFolders(
+        _ folders: [SmartFolderDefinition],
+        root: URL
+    ) throws {
+        let url = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        let configuration = SmartFolderConfiguration(version: 1, folders: folders)
+        try JSONEncoder.mudsnote.encode(configuration).write(to: url, options: .atomic)
+    }
+
+    private static func sameSmartFolderName(_ lhs: String, _ rhs: String) -> Bool {
+        SmartFolderDefinition.tagKey(lhs) == SmartFolderDefinition.tagKey(rhs)
+    }
+
+    private static func smartFolderOrder(
+        _ lhs: SmartFolderDefinition,
+        _ rhs: SmartFolderDefinition
+    ) -> Bool {
+        lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
     }
 
     private func savePinnedPaths(_ paths: Set<String>, root: URL) throws {
@@ -1573,6 +2228,23 @@ actor MarkdownFileStore {
         if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
         if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
         return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
+    }
+
+    private static func inboxAttachmentOwners(
+        in items: [MemoBlock]
+    ) -> [String: [LibraryAttachment.Owner]] {
+        var owners: [String: [LibraryAttachment.Owner]] = [:]
+        for memo in items {
+            let owner = LibraryAttachment.Owner(
+                id: "memo:\(memo.id)",
+                title: String(memo.preview.prefix(80)),
+                destination: .memo(memo.id)
+            )
+            for path in MarkdownAttachmentSearch.relativePaths(in: memo.body) {
+                owners[path, default: []].append(owner)
+            }
+        }
+        return owners
     }
 
     private func invalidateAfterMutation(relativePaths: [String]) {
@@ -1990,16 +2662,30 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var modifiedAt: Date
     var createdAt: Date = .distantPast
     var preview = ""
+    var galleryImagePath: String?
+    var galleryChecklistItems: [MarkdownGalleryChecklistItem] = []
     var hasAttachments = false
+    var hasChecklist = false
+    var hasUncheckedChecklist = false
     var isPinned = false
     var tags: [String] = []
+}
+
+struct MarkdownGalleryChecklistItem: Equatable {
+    var text: String
+    var isChecked: Bool
 }
 
 struct MarkdownListMetadata: Equatable {
     var title: String
     var preview: String
+    var galleryImagePath: String?
+    var galleryChecklistItems: [MarkdownGalleryChecklistItem]
     var hasAttachments: Bool
+    var hasChecklist: Bool
+    var hasUncheckedChecklist: Bool
     var tags: [String] = []
+    var attachmentPaths: [String] = []
 
     static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
         let lines = visibleMarkdownLines(from: markdown)
@@ -2019,6 +2705,11 @@ struct MarkdownListMetadata: Equatable {
                   !value.hasPrefix("---") else { return nil }
             value = value.replacingOccurrences(
                 of: #"^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|>\s*|\d+[.)]\s+)"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
+                of: #"</?(?:u|mark)>"#,
                 with: "",
                 options: .regularExpression
             )
@@ -2048,6 +2739,11 @@ struct MarkdownListMetadata: Equatable {
                 options: .regularExpression
             )
             value = value.replacingOccurrences(
+                of: #"</?(?:u|mark)>"#,
+                with: "",
+                options: .regularExpression
+            )
+            value = value.replacingOccurrences(
                 of: #"[*_`~]"#,
                 with: "",
                 options: .regularExpression
@@ -2058,48 +2754,49 @@ struct MarkdownListMetadata: Equatable {
         }
         let joinedPreview = previewParts.joined(separator: " ")
         let preview = String(joinedPreview.prefix(180))
+        let galleryImagePath = MarkdownAttachmentSearch.relativePaths(in: markdown).first {
+            LibraryAttachment.Kind(fileExtension: ($0 as NSString).pathExtension) == .image
+        }
+        let galleryChecklistItems = lines.compactMap(Self.galleryChecklistItem(from:)).prefix(4)
         return MarkdownListMetadata(
             title: title,
             preview: preview,
+            galleryImagePath: galleryImagePath,
+            galleryChecklistItems: Array(galleryChecklistItems),
             hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
-            tags: extractTags(from: markdown)
+            hasChecklist: lines.contains { line in
+                line.range(
+                    of: #"^\s*[-*+]\s+\[[ xX]\]\s+"#,
+                    options: .regularExpression
+                ) != nil
+            },
+            hasUncheckedChecklist: lines.contains { line in
+                line.range(
+                    of: #"^\s*[-*+]\s+\[ \]\s+"#,
+                    options: .regularExpression
+                ) != nil
+            },
+            tags: MarkdownTagSyntax.tags(in: markdown),
+            attachmentPaths: MarkdownAttachmentSearch.relativePaths(in: markdown)
         )
     }
 
-    private static func extractTags(from markdown: String) -> [String] {
-        var searchableLines: [String] = []
-        for line in visibleMarkdownLines(from: markdown) {
-            searchableLines.append(
-                line.replacingOccurrences(
-                    of: #"`[^`]*`"#,
-                    with: " ",
-                    options: .regularExpression
-                )
-            )
-        }
-
-        let searchable = searchableLines.joined(separator: "\n")
-        guard let expression = try? NSRegularExpression(
-            pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)"#
-        ) else { return [] }
-        let nsRange = NSRange(searchable.startIndex..<searchable.endIndex, in: searchable)
-        var seen = Set<String>()
-        var tags: [String] = []
-        expression.enumerateMatches(in: searchable, range: nsRange) { match, _, _ in
-            guard let match,
-                  let range = Range(match.range(at: 0), in: searchable) else { return }
-            let tag = String(searchable[range])
-            let key = tag.folding(
-                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                locale: .current
-            )
-            if seen.insert(key).inserted {
-                tags.append(tag)
-            }
-        }
-        return tags.sorted {
-            $0.localizedStandardCompare($1) == .orderedAscending
-        }
+    private static func galleryChecklistItem(from line: String) -> MarkdownGalleryChecklistItem? {
+        let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markers: [(String, Bool)] = [
+            ("- [ ] ", false), ("* [ ] ", false), ("+ [ ] ", false),
+            ("- [x] ", true), ("* [x] ", true), ("+ [x] ", true),
+            ("- [X] ", true), ("* [X] ", true), ("+ [X] ", true),
+        ]
+        guard let marker = markers.first(where: { value.hasPrefix($0.0) }) else { return nil }
+        var text = value.dropFirst(marker.0.count).trimmingCharacters(in: .whitespaces)
+        text = text.replacingOccurrences(
+            of: #"</?(?:u|mark)>|[*_`~]"#,
+            with: "",
+            options: .regularExpression
+        )
+        guard !text.isEmpty else { return nil }
+        return MarkdownGalleryChecklistItem(text: text, isChecked: marker.1)
     }
 
     private static func visibleMarkdownLines(from markdown: String) -> [String] {
@@ -2168,12 +2865,19 @@ enum MarkdownSearch {
     static func match(
         file: RecentMarkdownFile,
         markdown: String,
-        terms: [String]
+        terms: [String],
+        attachmentDocuments: [AttachmentSearchDocument] = []
     ) -> MarkdownSearchResult? {
         let title = normalize(file.title)
         let path = normalize(file.relativePath)
         let body = normalize(markdown)
-        guard terms.allSatisfy({ title.contains($0) || path.contains($0) || body.contains($0) }) else {
+        let attachmentTexts = attachmentDocuments.map { ($0, normalize($0.text)) }
+        guard terms.allSatisfy({ term in
+            title.contains(term)
+                || path.contains(term)
+                || body.contains(term)
+                || attachmentTexts.contains(where: { $0.1.contains(term) })
+        }) else {
             return nil
         }
         let score = terms.reduce(into: 0) { total, term in
@@ -2182,31 +2886,51 @@ enum MarkdownSearch {
             else if title.contains(term) { total += 500 }
             if path.contains(term) { total += 180 }
             if body.contains(term) { total += 80 }
+            if attachmentTexts.contains(where: { $0.1.contains(term) }) { total += 70 }
         }
+        let matchedAttachment = attachmentTexts.first { document, normalizedText in
+            terms.contains(where: normalizedText.contains)
+        }?.0
         return MarkdownSearchResult(
             id: "file:\(file.relativePath)",
             title: file.title,
-            context: context(in: markdown, matching: terms),
-            location: file.relativePath,
+            context: matchedAttachment.map { context(in: $0.text, matching: terms) }
+                ?? context(in: markdown, matching: terms),
+            location: matchedAttachment.map { "\(file.relativePath) · \($0.fileName)" }
+                ?? file.relativePath,
             score: score,
             modifiedAt: file.modifiedAt,
             destination: .file(file)
         )
     }
 
-    static func match(memo: MemoBlock, terms: [String]) -> MarkdownSearchResult? {
+    static func match(
+        memo: MemoBlock,
+        terms: [String],
+        attachmentDocuments: [AttachmentSearchDocument] = []
+    ) -> MarkdownSearchResult? {
         let searchable = normalize([memo.body, memo.tags.joined(separator: " "), memo.dateText].joined(separator: " "))
-        guard terms.allSatisfy(searchable.contains) else { return nil }
+        let attachmentTexts = attachmentDocuments.map { ($0, normalize($0.text)) }
+        guard terms.allSatisfy({ term in
+            searchable.contains(term)
+                || attachmentTexts.contains(where: { $0.1.contains(term) })
+        }) else { return nil }
         let tagText = normalize(memo.tags.joined(separator: " "))
         let score = terms.reduce(into: 300) { total, term in
             if tagText.contains(term) { total += 250 }
             if searchable.contains(term) { total += 100 }
+            if attachmentTexts.contains(where: { $0.1.contains(term) }) { total += 70 }
         }
+        let matchedAttachment = attachmentTexts.first { document, normalizedText in
+            terms.contains(where: normalizedText.contains)
+        }?.0
         return MarkdownSearchResult(
             id: "memo:\(memo.id)",
             title: memo.body.split(separator: "\n").first.map(String.init) ?? String(localized: "Untitled memo"),
-            context: context(in: memo.body, matching: terms),
-            location: String(localized: "Inbox"),
+            context: matchedAttachment.map { context(in: $0.text, matching: terms) }
+                ?? context(in: memo.body, matching: terms),
+            location: matchedAttachment.map { "\(String(localized: "Inbox")) · \($0.fileName)" }
+                ?? String(localized: "Inbox"),
             score: score,
             modifiedAt: .distantPast,
             destination: .memo(memo)
@@ -2238,6 +2962,7 @@ struct MarkdownLibrarySnapshot: Equatable {
     var folders: [LibraryFolderNode]
     var trashedFiles: [TrashedMarkdownFile]
     var attachments: [LibraryAttachment]
+    var smartFolders: [SmartFolderDefinition]
     var summary: LibrarySummary
     var conflictWarnings: [String]
 }
@@ -2338,9 +3063,22 @@ struct LibraryAttachment: Identifiable, Equatable {
     var modifiedAt: Date
     var byteCount: Int64
     var kind: Kind
+    var owners: [Owner] = []
+
+    struct Owner: Identifiable, Equatable {
+        var id: String
+        var title: String
+        var destination: Destination
+    }
+
+    enum Destination: Equatable {
+        case file(String)
+        case memo(String)
+    }
 
     enum Kind: Equatable {
         case image
+        case video
         case audio
         case other
 
@@ -2348,6 +3086,8 @@ struct LibraryAttachment: Identifiable, Equatable {
             switch fileExtension.lowercased() {
             case "png", "jpg", "jpeg", "heic", "gif", "webp", "tif", "tiff":
                 self = .image
+            case "mov", "mp4", "m4v":
+                self = .video
             case "m4a", "wav", "mp3", "aac", "caf", "aif", "aiff":
                 self = .audio
             default:
@@ -2358,6 +3098,7 @@ struct LibraryAttachment: Identifiable, Equatable {
         var systemImage: String {
             switch self {
             case .image: "photo"
+            case .video: "video"
             case .audio: "waveform"
             case .other: "doc"
             }
@@ -2370,6 +3111,7 @@ struct MarkdownDocument: Identifiable, Equatable {
     var title: String
     var relativePath: String
     var markdown: String
+    var modifiedAt: Date? = nil
     var isNew = false
 }
 
@@ -2415,11 +3157,29 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
     }
 }
 
+struct PreparedAttachmentPreview: Identifiable, Equatable, Sendable {
+    var url: URL
+    var relativePath: String
+    var originalDigest: Data
+
+    var id: String { "\(relativePath)|\(url.path)" }
+    var isPDF: Bool { url.pathExtension.lowercased() == "pdf" }
+}
+
 enum AttachmentPreviewError: LocalizedError, Equatable {
     case invalidPath
+    case unsupportedEditing
+    case changedExternally
 
     var errorDescription: String? {
-        String(localized: "This attachment is outside the authorized library.")
+        switch self {
+        case .invalidPath:
+            String(localized: "This attachment is outside the authorized library.")
+        case .unsupportedEditing:
+            String(localized: "Only PDF attachments can be marked up here.")
+        case .changedExternally:
+            String(localized: "This attachment changed in another app. Reopen it before marking it up.")
+        }
     }
 }
 
@@ -2431,12 +3191,40 @@ struct LibrarySummary: Equatable {
     var recentlyDeletedCount = 0
 }
 
+struct MarkdownTagMutationResult: Equatable {
+    var sourceTag: String
+    var replacementTag: String?
+    var changedPaths: [String]
+    var occurrenceCount: Int
+}
+
+enum MarkdownTagMutationError: LocalizedError, Equatable {
+    case invalidTag
+    case notFound
+    case changedExternally(String)
+    case rollbackFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidTag:
+            String(localized: "Enter a valid tag name.")
+        case .notFound:
+            String(localized: "This tag is no longer used by any active note.")
+        case .changedExternally:
+            String(localized: "A note changed elsewhere before the tag update completed.")
+        case .rollbackFailed:
+            String(localized: "Some tag changes could not be restored after the update failed.")
+        }
+    }
+}
+
 enum MarkdownLifecycleError: LocalizedError, Equatable {
     case protectedNote
     case noteNotFound
     case invalidTrashMetadata
     case invalidFolder
     case invalidFolderName
+    case invalidNoteName
     case folderContainsUnsupportedItems
     case invalidConflictCopy
     case batchRollbackFailed
@@ -2453,6 +3241,8 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
             String(localized: "This folder is no longer available.")
         case .invalidFolderName:
             String(localized: "Enter a valid folder name.")
+        case .invalidNoteName:
+            String(localized: "Enter a valid note name.")
         case .folderContainsUnsupportedItems:
             String(localized: "This folder contains files Mudsnote will not delete.")
         case .invalidConflictCopy:
@@ -2507,6 +3297,8 @@ extension MarkdownAttachmentReference {
         switch kind {
         case .image:
             return "![Image](\(relativePath))"
+        case .video:
+            return "[Video](\(relativePath))"
         case .audio:
             return "[Audio](\(relativePath))"
         case .file:

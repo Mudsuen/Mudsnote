@@ -17,6 +17,11 @@ enum LibraryNoteSortOrder: Int {
     case dateCreated = 2
 }
 
+enum LibraryNoteViewMode: Int {
+    case list = 0
+    case gallery = 1
+}
+
 enum LibraryNoteListProjection {
     static func prefix<Notes: Sequence>(
         _ notes: Notes,

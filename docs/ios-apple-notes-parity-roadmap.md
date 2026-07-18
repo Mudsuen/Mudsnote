@@ -18,10 +18,16 @@ Notes database.
   preview modes.
 - The main New Note button opens Mudsnote capture instead of an empty Apple Notes
   editor. Submission dismisses the capture surface and returns to the library.
+- New Note is the sole in-app creation control; there is no separate lightning Quick
+  Note button, and its compact capture actions remain on one row.
 - Widget, App Intent, deep-link, and in-app capture entry points use the same draft,
   target, attachment, queue, and commit pipeline.
+- The focused small widget opens Quick Note; the medium actions widget places Search
+  above equal Voice input and Quick Note actions, with search focusing the native
+  library field after cold or warm launch.
 - Markdown rendering is the default reading surface. Tapping the content enters a
-  complete editor, initially in a half sheet and expandable to full screen.
+  complete editor whose native sheet moves between half and full height by dragging
+  the grabber; no duplicate full-screen button is shown.
 - The iPhone is the only supported layout target. Simulator verification uses one
   iPhone destination with parallel testing disabled.
 
@@ -31,9 +37,13 @@ Notes database.
 - Create, rename, reorder/sort, pin, move, trash, restore, and permanently delete.
 - Direct Markdown editing with headings, emphasis, lists, checklists, quotes, code,
   links, undo, and redo.
-- Full-text search across title, path, tags, and body with useful result context.
-- Images, files, audio notes, attachment browsing, and portable relative Markdown
-  references.
+- Full-text search across title, path, tags, body, referenced images, and scanned PDFs
+  with useful result context and structured suggestions; Find in Note can include
+  those attachments.
+- Images, files, audio notes with local recording transcription, attachment browsing,
+  and portable relative Markdown references.
+- Print-ready, paginated PDF export through the native share sheet without rewriting
+  the Markdown source.
 - Offline-first writes, pending replay, external-edit conflict protection, and clear
   recovery states.
 - Tags, recent notes, daily notes, Inbox capture stream, widgets, shortcuts, and
@@ -46,6 +56,8 @@ Notes database.
 - Apple account/database integration or proprietary Notes import that depends on
   private storage formats.
 - iPad-specific layout and test work.
+- Further iPhone table-authoring expansion is deferred for now; preserve the existing
+  portable Markdown table support without prioritizing additional table UI.
 - Features that require a server account when the same value can be delivered with
   local Markdown and iCloud Drive.
 

@@ -5,5 +5,6 @@ import SwiftUI
 struct MudsnoteCompanionWidgetBundle: WidgetBundle {
     var body: some Widget {
         QuickCaptureWidget()
+        MudsnoteActionsWidget()
     }
 }

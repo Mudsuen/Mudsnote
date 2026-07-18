@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import MudsnoteCore
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
@@ -26,6 +27,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var searchWindowController: SearchWindowController?
     private var preferencesWindowController: PreferencesWindowController?
     private var fileMoveNoteMenu: NSMenu?
+    private var pendingExternalMarkdownURLs: [URL] = []
+    private var hasFinishedLaunching = false
 
     override init() {
         let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
@@ -38,7 +41,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) ? .regular : .accessory)
+        let opensExternalMarkdown = !pendingExternalMarkdownURLs.isEmpty
+        let opensLibrary = Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) && !opensExternalMarkdown
+        NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
 
         do {
             try noteStore.ensureNotesDirectory()
@@ -49,6 +54,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         setupMainMenu()
         setupStatusItem()
         registerHotKeysIfNeeded()
+        hasFinishedLaunching = true
+
+        if opensExternalMarkdown {
+            let urls = pendingExternalMarkdownURLs
+            pendingExternalMarkdownURLs.removeAll()
+            DispatchQueue.main.async { [weak self] in
+                self?.openExternalMarkdownFiles(urls)
+            }
+        }
 
         if launchArguments.contains("--quick-capture") {
             DispatchQueue.main.async { [weak self] in
@@ -62,7 +76,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             }
         }
 
-        if Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) {
+        if opensLibrary {
             DispatchQueue.main.async { [weak self] in
                 self?.showLibraryWindow()
             }
@@ -90,8 +104,42 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         return true
     }
 
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let urls = Self.markdownFileURLs(from: filenames)
+        guard !urls.isEmpty else {
+            sender.reply(toOpenOrPrint: .failure)
+            return
+        }
+
+        if hasFinishedLaunching {
+            openExternalMarkdownFiles(urls)
+        } else {
+            pendingExternalMarkdownURLs.append(contentsOf: urls)
+            pendingExternalMarkdownURLs = Self.deduplicatedFileURLs(pendingExternalMarkdownURLs)
+        }
+        sender.reply(toOpenOrPrint: urls.count == filenames.count ? .success : .failure)
+    }
+
     static func shouldOpenLibraryOnLaunch(arguments: Set<String>) -> Bool {
         arguments.contains("--library") || arguments.isDisjoint(with: explicitLaunchWindowArguments)
+    }
+
+    static func markdownFileURLs(from filenames: [String]) -> [URL] {
+        deduplicatedFileURLs(filenames.compactMap { filename in
+            let url = URL(fileURLWithPath: filename).standardizedFileURL
+            guard ["md", "markdown"].contains(url.pathExtension.lowercased()) else { return nil }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  !isDirectory.boolValue else {
+                return nil
+            }
+            return url
+        })
+    }
+
+    private static func deduplicatedFileURLs(_ urls: [URL]) -> [URL] {
+        var paths = Set<String>()
+        return urls.filter { paths.insert($0.standardizedFileURL.path).inserted }
     }
 
     static func makeNoteStore(
@@ -225,6 +273,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         fileMenu.addItem(newFolderItem)
         fileMenu.addItem(.separator())
 
+        let openItem = NSMenuItem(title: "打开...", action: #selector(openDocumentFromMainMenu), keyEquivalent: "o")
+        openItem.target = self
+        openItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(openItem)
+
+        let saveItem = NSMenuItem(title: "保存", action: #selector(saveDocumentFromMainMenu), keyEquivalent: "s")
+        saveItem.target = self
+        saveItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(saveItem)
+        fileMenu.addItem(.separator())
+
         let moveNoteItem = NSMenuItem(
             title: "移到文件夹",
             action: #selector(moveSelectedNotesFromMainMenu),
@@ -275,6 +334,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let viewMenu = NSMenu(title: "显示")
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
+
+        for (title, mode, keyEquivalent) in [
+            ("显示为列表", LibraryNoteViewMode.list, "1"),
+            ("显示为画廊", .gallery, "2")
+        ] {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(setLibraryNoteViewModeFromMainMenu(_:)),
+                keyEquivalent: keyEquivalent
+            )
+            item.target = self
+            item.tag = mode.rawValue
+            item.keyEquivalentModifierMask = [.command]
+            viewMenu.addItem(item)
+        }
+        viewMenu.addItem(.separator())
 
         let findItem = NSMenuItem(title: "搜索笔记", action: #selector(focusLibrarySearchFromMainMenu), keyEquivalent: "f")
         findItem.target = self
@@ -478,6 +553,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         controller.showWindowAndFocus()
     }
 
+    private func openExternalMarkdownFiles(_ urls: [URL]) {
+        showLibraryWindow()
+        for url in Self.deduplicatedFileURLs(urls) {
+            do {
+                try libraryWindowController?.openMarkdownDocumentForLibrary(at: url)
+            } catch {
+                presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+            }
+        }
+    }
+
     @objc
     private func showSearchWindow() {
         cleanupClosedWindows()
@@ -549,6 +635,26 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func openDocumentFromMainMenu() {
+        let panel = NSOpenPanel()
+        panel.title = "打开 Markdown 文件"
+        panel.prompt = "打开"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = ["md", "markdown"].compactMap {
+            UTType(filenameExtension: $0, conformingTo: .text)
+        }
+        guard panel.runModal() == .OK else { return }
+        openExternalMarkdownFiles(panel.urls)
+    }
+
+    @objc
+    func saveDocumentFromMainMenu() {
+        (NSApp.keyWindow?.windowController as? EditorWindowController)?.savePressed()
+    }
+
+    @objc
     func deleteSelectedNotesFromMainMenu() {
         do {
             try libraryWindowController?.deleteSelectedNotesForLibrary()
@@ -598,6 +704,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func setLibraryNoteViewModeFromMainMenu(_ sender: NSMenuItem) {
+        guard let mode = LibraryNoteViewMode(rawValue: sender.tag) else { return }
+        showLibraryWindow()
+        libraryWindowController?.setNoteListViewModeForLibrary(mode)
+    }
+
+    @objc
     func sortLibraryNotesFromMainMenu(_ sender: NSMenuItem) {
         guard let order = LibraryNoteSortOrder(rawValue: sender.tag) else { return }
         showLibraryWindow()
@@ -613,6 +726,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(saveDocumentFromMainMenu):
+            return NSApp.keyWindow?.windowController is EditorWindowController
         case #selector(moveSelectedNotesFromMainMenu):
             return libraryWindowController?.canMoveSelectedNotesFromMenuForLibrary ?? false
         case #selector(deleteSelectedNotesFromMainMenu):
@@ -629,6 +744,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             let groupsByDate = libraryWindowController?.groupsNoteListByDate
                 ?? noteStore.libraryGroupsNotesByDate
             menuItem.state = groupsByDate ? .on : .off
+            return true
+        case #selector(setLibraryNoteViewModeFromMainMenu(_:)):
+            let currentMode = libraryWindowController?.noteListViewMode
+                ?? LibraryNoteViewMode(rawValue: noteStore.libraryNoteViewModeRawValue)
+                ?? .list
+            menuItem.state = menuItem.tag == currentMode.rawValue ? .on : .off
             return true
         default:
             return true

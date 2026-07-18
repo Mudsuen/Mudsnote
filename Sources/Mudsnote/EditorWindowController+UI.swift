@@ -425,25 +425,24 @@ extension EditorWindowController {
         footerShelf.addSubview(directoryButton)
         quickCaptureDirectoryButton = directoryButton
 
-        let cancelButton = FocusAwareSecondaryButton(frame: .zero)
-        cancelButton.translatesAutoresizingMaskIntoConstraints = false
-        cancelButton.title = "取消"
-        cancelButton.target = self
-        cancelButton.action = #selector(cancelPressed)
-        cancelButton.font = .systemFont(ofSize: 13, weight: .semibold)
-        cancelButton.controlSize = .regular
-        cancelButton.widthAnchor.constraint(equalToConstant: 70).isActive = true
-        cancelButton.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        let cancelButton = makeQuickCaptureFooterButton(
+            symbolName: "xmark",
+            toolTip: "取消",
+            action: #selector(cancelPressed),
+            symbolWeight: .medium
+        )
         footerShelf.addSubview(cancelButton)
+        toolbarButtons.append(cancelButton)
         self.cancelButton = cancelButton
 
-        let saveButton = makePrimarySaveButton()
-        saveButton.image = nil
-        saveButton.imagePosition = .noImage
-        saveButton.font = .systemFont(ofSize: 13, weight: .semibold)
-        saveButton.widthAnchor.constraint(equalToConstant: 70).isActive = true
-        saveButton.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        let saveButton = makeQuickCaptureFooterButton(
+            symbolName: "checkmark",
+            toolTip: "保存",
+            action: #selector(savePressed),
+            symbolWeight: .semibold
+        )
         footerShelf.addSubview(saveButton)
+        toolbarButtons.append(saveButton)
         self.saveButton = saveButton
 
         bodyContainer.addSubview(scrollView, positioned: .below, relativeTo: nil)
@@ -503,21 +502,21 @@ extension EditorWindowController {
             footerShelf.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
             footerShelf.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
             footerShelf.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
-            footerShelf.heightAnchor.constraint(equalToConstant: 42),
+            footerShelf.heightAnchor.constraint(equalToConstant: 36),
 
             footerDivider.leadingAnchor.constraint(equalTo: footerShelf.leadingAnchor),
             footerDivider.trailingAnchor.constraint(equalTo: footerShelf.trailingAnchor),
             footerDivider.topAnchor.constraint(equalTo: footerShelf.topAnchor),
 
-            directoryButton.leadingAnchor.constraint(equalTo: footerShelf.leadingAnchor, constant: 12),
+            directoryButton.leadingAnchor.constraint(equalTo: footerShelf.leadingAnchor, constant: 10),
             directoryButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
             directoryButton.heightAnchor.constraint(equalToConstant: 22),
             directoryButton.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -10),
 
-            saveButton.trailingAnchor.constraint(equalTo: footerShelf.trailingAnchor, constant: -12),
+            saveButton.trailingAnchor.constraint(equalTo: footerShelf.trailingAnchor, constant: -10),
             saveButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
 
-            cancelButton.trailingAnchor.constraint(equalTo: saveButton.leadingAnchor, constant: -6),
+            cancelButton.trailingAnchor.constraint(equalTo: saveButton.leadingAnchor, constant: -2),
             cancelButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
 
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 176)
@@ -542,6 +541,27 @@ extension EditorWindowController {
         saveButton.translatesAutoresizingMaskIntoConstraints = false
         saveButton.setContentHuggingPriority(.required, for: .horizontal)
         return saveButton
+    }
+
+    func makeQuickCaptureFooterButton(
+        symbolName: String,
+        toolTip: String,
+        action: Selector,
+        symbolWeight: NSFont.Weight
+    ) -> HoverToolbarButton {
+        let button = HoverToolbarButton(frame: .zero)
+        button.title = ""
+        button.target = self
+        button.action = action
+        button.toolTip = toolTip
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: toolTip)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: symbolWeight))
+        button.imagePosition = .imageOnly
+        button.preferredSize = NSSize(width: 26, height: 26)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 26).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        return button
     }
 
     func makeToolbarButton(for action: ToolbarAction) -> HoverToolbarButton {
@@ -768,8 +788,8 @@ extension EditorWindowController {
 
     func updateWindowFocusAppearance(isFocused: Bool) {
         toolbarButtons.forEach { $0.isWindowFocused = isFocused }
-        saveButton?.isWindowFocused = isFocused
-        cancelButton?.isWindowFocused = isFocused
+        (saveButton as? ModernPillButton)?.isWindowFocused = isFocused
+        (cancelButton as? ModernPillButton)?.isWindowFocused = isFocused
         (quickCaptureDirectoryButton as? FocusAwareGhostButton)?.isWindowFocused = isFocused
         statusLabel.textColor = isFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
     }

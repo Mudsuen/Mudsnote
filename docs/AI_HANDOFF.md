@@ -325,6 +325,27 @@
 - Installed smoke file verification uses a bounded retry window so it proves live autosave without racing the debounce or accepting close-time persistence.
 - Native source cells expose `AXPress` through the same scope-activation path as outline selection; accessibility and smoke navigation no longer depend on the pre-outline `AXButton` implementation.
 
+## Latest iteration (212)
+
+- Expanded Add Folder and Sidebar Toggle retain the dedicated `13pt` source-action symbol configuration; the collapsed glass toggle remains independently sized.
+- The macOS layout regression now inspects the images on the final AppKit buttons and requires `20x15pt` and `18x14pt` canvases, preventing a generic `19pt` toolbar image from silently returning.
+- `/Applications/Mudsnote.app` was rebuilt from the verified source after the user supplied a screenshot consistent with a stale generic-symbol build.
+
+## Latest iteration (213)
+
+- View > Show as List (`Command-1`) and Show as Gallery (`Command-2`) now switch a persisted macOS library presentation mode.
+- Gallery mode uses a native reusable `NSCollectionView`, collapses the content-list split item with the existing `0.22s` AppKit animation, and dedicates the remaining workspace to grouped note previews while keeping the source sidebar, New Note, and Search.
+- The gallery projects directly from the existing bounded `listRows`, mirrors selection through the canonical table model, reuses thumbnail cache/loading tasks, and introduces no filesystem scan or second note index. Hidden gallery state does not instantiate collection items or request thumbnails. A 10,000-row projection regression completes below `100ms` in debug tests.
+- Double-click/Return opens the selected card in the same list/editor workspace; New Note also returns to list mode. Empty/search/trash states and persisted-launch toolbar visibility are covered.
+- Installed-app evidence: `/tmp/mudsnote-gallery-vs-notes.jpg`; `Command-1`, `Command-2`, and double-click were also exercised against `/Applications/Mudsnote.app` through accessibility.
+
+## Latest iteration (214)
+
+- Finder and File > Open Markdown events now route into the existing three-pane library window instead of creating a compact editor panel.
+- Explicitly opened external files are projected into All Notes without adding their parent directory as a configured source; background snapshot refreshes merge that bounded projection so selection remains stable.
+- Main-window saves use exact-path updates for those external documents, while managed library notes retain title-based filenames. Pending edits in the current note are flushed before switching to an external file.
+- Quick capture retains its dedicated destination shelf but uses compact `xmark` and `checkmark` icon actions in transparent `26pt` controls instead of wide Cancel/Save pills.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

@@ -411,6 +411,73 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func libraryGalleryProjectionPreservesListSectionsAndUngroupedNotes() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Gallery Projection", isDirectory: true)
+        let alpha = NoteSearchResult(
+            url: root.appendingPathComponent("Alpha.md"),
+            title: "Alpha",
+            snippet: "A",
+            modifiedAt: Date(timeIntervalSince1970: 300)
+        )
+        let beta = NoteSearchResult(
+            url: root.appendingPathComponent("Beta.md"),
+            title: "Beta",
+            snippet: "B",
+            modifiedAt: Date(timeIntervalSince1970: 200)
+        )
+        let gamma = NoteSearchResult(
+            url: root.appendingPathComponent("Gamma.md"),
+            title: "Gamma",
+            snippet: "C",
+            modifiedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        let grouped = LibraryGalleryProjection.sections(from: [
+            .group(title: "Today"),
+            .note(alpha),
+            .note(beta),
+            .group(title: "Previous 7 Days"),
+            .note(gamma)
+        ])
+        #expect(grouped.map(\.title) == ["Today", "Previous 7 Days"])
+        #expect(grouped.map { $0.notes.map(\.title) } == [["Alpha", "Beta"], ["Gamma"]])
+
+        let ungrouped = LibraryGalleryProjection.sections(from: [.note(alpha), .note(beta)])
+        #expect(ungrouped.count == 1)
+        #expect(ungrouped[0].title == nil)
+        #expect(ungrouped[0].notes.map(\.title) == ["Alpha", "Beta"])
+    }
+
+    @Test
+    func libraryGalleryProjectionStaysInteractiveAtSnapshotLimit() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Gallery Projection Performance", isDirectory: true)
+        let now = Date()
+        var rows: [LibraryNoteListRow] = []
+        rows.reserveCapacity(10_200)
+        for index in 0..<10_000 {
+            if index.isMultiple(of: 50) {
+                rows.append(.group(title: "Section \(index / 50)"))
+            }
+            rows.append(.note(NoteSearchResult(
+                url: root.appendingPathComponent("Note-\(index).md"),
+                title: "Note \(index)",
+                snippet: "Body \(index)",
+                modifiedAt: now.addingTimeInterval(TimeInterval(-index))
+            )))
+        }
+
+        let clock = ContinuousClock()
+        var sections: [LibraryGallerySection] = []
+        let elapsed = clock.measure {
+            sections = LibraryGalleryProjection.sections(from: rows)
+        }
+
+        #expect(elapsed < .milliseconds(100))
+        #expect(sections.count == 200)
+        #expect(sections.reduce(0) { $0 + $1.notes.count } == 10_000)
+    }
+
+    @Test
     func richCodecRoundTripsHeadingAndLists() {
         let markdown = """
         # Smoke Title
@@ -1399,6 +1466,8 @@ struct MarkdownRichEditorTests {
         }.first)
         #expect(expandedToggleButton.image != nil)
         #expect(addFolderButton.image != nil)
+        #expect(addFolderButton.image?.size == NSSize(width: 20, height: 15))
+        #expect(expandedToggleButton.image?.size == NSSize(width: 18, height: 14))
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         expandedToggleButton.performClick(nil)
@@ -1794,6 +1863,96 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryGalleryModeCollapsesListAndPreservesSelection() throws {
+        let suiteName = "mudsnote-library-gallery-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-gallery-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Gallery Seed", body: "Gallery body", tags: [])
+        _ = try store.saveNewNote(title: "Second Seed", body: "Second body", tags: [])
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        let window = try #require(controller.window)
+        let splitController = try #require(window.contentViewController as? NSSplitViewController)
+        let editorStack = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorStack"
+        })
+        let galleryScroll = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryGalleryScroll"
+        })
+
+        #expect(controller.noteListViewMode == .list)
+        #expect(!splitController.splitViewItems[1].isCollapsed)
+        #expect(!editorStack.isHidden)
+        #expect(galleryScroll.isHidden)
+        let initialSelectedURL = try #require(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL)
+
+        controller.setNoteListViewModeForLibrary(.gallery)
+        splitController.view.layoutSubtreeIfNeeded()
+
+        #expect(controller.noteListViewMode == .gallery)
+        #expect(store.libraryNoteViewModeRawValue == LibraryNoteViewMode.gallery.rawValue)
+        #expect(splitController.splitViewItems[1].isCollapsed)
+        #expect(editorStack.isHidden)
+        #expect(!galleryScroll.isHidden)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == initialSelectedURL)
+        let galleryHiddenIDs = Set((window.toolbar?.items ?? []).filter(\.isHidden).map { $0.itemIdentifier.rawValue })
+        #expect(galleryHiddenIDs.contains("mudsnote.library.toolbar.note-list-title"))
+        #expect(galleryHiddenIDs.contains("mudsnote.library.toolbar.note-separator"))
+        #expect(galleryHiddenIDs.contains("mudsnote.library.toolbar.editor-tools"))
+
+        controller.setNoteListViewModeForLibrary(.list)
+        splitController.view.layoutSubtreeIfNeeded()
+
+        #expect(controller.noteListViewMode == .list)
+        #expect(store.libraryNoteViewModeRawValue == LibraryNoteViewMode.list.rawValue)
+        #expect(!splitController.splitViewItems[1].isCollapsed)
+        #expect(!editorStack.isHidden)
+        #expect(galleryScroll.isHidden)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == initialSelectedURL)
+
+        controller.setNoteListViewModeForLibrary(.gallery)
+        let reopenedController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { reopenedController.close() }
+        let reopenedWindow = try #require(reopenedController.window)
+        let initiallyHiddenIDs = Set((reopenedWindow.toolbar?.items ?? []).filter(\.isHidden).map {
+            $0.itemIdentifier.rawValue
+        })
+        #expect(reopenedController.noteListViewMode == .gallery)
+        #expect(initiallyHiddenIDs.contains("mudsnote.library.toolbar.note-list-title"))
+        #expect(initiallyHiddenIDs.contains("mudsnote.library.toolbar.note-separator"))
+        #expect(initiallyHiddenIDs.contains("mudsnote.library.toolbar.editor-tools"))
+        reopenedController.createNewNoteForLibrary()
+        #expect(reopenedController.noteListViewMode == .list)
+        #expect(store.libraryNoteViewModeRawValue == LibraryNoteViewMode.list.rawValue)
     }
 
     @MainActor
@@ -5466,6 +5625,98 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func appControllerAcceptsExistingMarkdownFilesAndRejectsOtherItems() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-open-file-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let markdownURL = root.appendingPathComponent("Direct Open.MD")
+        let longMarkdownURL = root.appendingPathComponent("Second.markdown")
+        let textURL = root.appendingPathComponent("Ignored.txt")
+        let directoryURL = root.appendingPathComponent("Folder.md", isDirectory: true)
+        try "# Direct Open".write(to: markdownURL, atomically: true, encoding: .utf8)
+        try "Second".write(to: longMarkdownURL, atomically: true, encoding: .utf8)
+        try "Ignored".write(to: textURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let urls = AppController.markdownFileURLs(from: [
+            markdownURL.path,
+            markdownURL.path,
+            longMarkdownURL.path,
+            textURL.path,
+            directoryURL.path,
+            root.appendingPathComponent("Missing.md").path
+        ])
+
+        #expect(urls.map(\.path) == [markdownURL.standardizedFileURL.path, longMarkdownURL.standardizedFileURL.path])
+    }
+
+    @MainActor
+    @Test
+    func externalMarkdownOpensAndSavesInPlaceInLibraryWindow() throws {
+        let suiteName = "mudsnote.external-library-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-external-library-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try store.ensureNotesDirectory()
+        let managedURL = try store.saveNewNote(title: "Managed Draft", body: "Managed body")
+        let externalURL = root.appendingPathComponent("Original Name.markdown")
+        try "# Original Heading\n\nOriginal body\n".write(to: externalURL, atomically: true, encoding: .utf8)
+        var savedURL: URL?
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: false,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { savedURL = $0 },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.titleField.stringValue = "Managed Updated"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
+        try controller.openMarkdownDocumentForLibrary(at: externalURL)
+
+        let managedSavedURL = try #require(savedURL)
+        #expect(!FileManager.default.fileExists(atPath: managedURL.path))
+        #expect(FileManager.default.fileExists(atPath: managedSavedURL.path))
+        #expect(managedSavedURL.lastPathComponent.localizedCaseInsensitiveContains("managed-updated"))
+        #expect(!(controller.window is NSPanel))
+        #expect(controller.selectedMarkdownFileURLForLibrary() == externalURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Original Heading")
+        #expect(controller.editorTextView.string == "Original body")
+        #expect(controller.noteListSearchResultsForLibrary().contains {
+            $0.url.standardizedFileURL == externalURL.standardizedFileURL
+        })
+
+        let updated = MarkdownRichTextCodec.render(markdown: "Updated body", theme: controller.theme)
+        controller.titleField.stringValue = "Changed Heading"
+        controller.editorTextView.textStorage?.setAttributedString(updated)
+        _ = try controller.saveCurrentNoteForLibrary()
+
+        #expect(savedURL == externalURL.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: externalURL.path))
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Changed Heading.md").path))
+        let loaded = try store.loadNote(at: externalURL)
+        #expect(loaded.title == "Changed Heading")
+        #expect(loaded.body == "Updated body")
+    }
+
+    @MainActor
+    @Test
     func applicationMainMenuProvidesNotesLikeCoreCommands() throws {
         let controller = AppController()
         let mainMenu = controller.makeMainMenuForApplication()
@@ -5483,6 +5734,17 @@ struct MarkdownRichEditorTests {
         #expect(newFolderItem.action == #selector(AppController.newFolderFromMainMenu))
         #expect(newFolderItem.keyEquivalent == "n")
         #expect(newFolderItem.keyEquivalentModifierMask == [.command, .shift])
+        let openItem = try #require(fileMenu.items.first { $0.title == "打开..." })
+        #expect(openItem.target === controller)
+        #expect(openItem.action == #selector(AppController.openDocumentFromMainMenu))
+        #expect(openItem.keyEquivalent == "o")
+        #expect(openItem.keyEquivalentModifierMask == [.command])
+        let saveItem = try #require(fileMenu.items.first { $0.title == "保存" })
+        #expect(saveItem.target === controller)
+        #expect(saveItem.action == #selector(AppController.saveDocumentFromMainMenu))
+        #expect(saveItem.keyEquivalent == "s")
+        #expect(saveItem.keyEquivalentModifierMask == [.command])
+        #expect(!controller.validateMenuItem(saveItem))
         let deleteNoteItem = try #require(fileMenu.items.first { $0.title == "移到最近删除" })
         #expect(deleteNoteItem.target === controller)
         #expect(deleteNoteItem.action == #selector(AppController.deleteSelectedNotesFromMainMenu))
@@ -5507,6 +5769,20 @@ struct MarkdownRichEditorTests {
         #expect(editMenu.items.contains { $0.title == "全选" && $0.keyEquivalent == "a" })
 
         let viewMenu = try #require(mainMenu.items.first { $0.title == "显示" }?.submenu)
+        let listViewItem = try #require(viewMenu.items.first { $0.title == "显示为列表" })
+        #expect(listViewItem.target === controller)
+        #expect(listViewItem.action == #selector(AppController.setLibraryNoteViewModeFromMainMenu(_:)))
+        #expect(listViewItem.keyEquivalent == "1")
+        #expect(listViewItem.keyEquivalentModifierMask == [.command])
+        #expect(controller.validateMenuItem(listViewItem))
+        #expect(listViewItem.state == .on)
+        let galleryViewItem = try #require(viewMenu.items.first { $0.title == "显示为画廊" })
+        #expect(galleryViewItem.target === controller)
+        #expect(galleryViewItem.action == #selector(AppController.setLibraryNoteViewModeFromMainMenu(_:)))
+        #expect(galleryViewItem.keyEquivalent == "2")
+        #expect(galleryViewItem.keyEquivalentModifierMask == [.command])
+        #expect(controller.validateMenuItem(galleryViewItem))
+        #expect(galleryViewItem.state == .off)
         let searchItem = try #require(viewMenu.items.first { $0.title == "搜索笔记" })
         #expect(searchItem.target === controller)
         #expect(searchItem.action == #selector(AppController.focusLibrarySearchFromMainMenu))
@@ -6036,6 +6312,25 @@ struct MarkdownRichEditorTests {
         #expect(button.layer?.borderWidth == 0)
         #expect(button.layer?.backgroundColor != NSColor.clear.cgColor)
         #expect(button.contentTintColor == panelPrimaryTextColor())
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureUsesQuietIconOnlyFooterActions() throws {
+        let harness = try makeEditorControllerHarness(draftID: "quick-capture", showsSaveButton: true)
+        defer { harness.tearDown() }
+
+        let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
+        let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
+
+        #expect(saveButton.title.isEmpty)
+        #expect(saveButton.toolTip == "保存")
+        #expect(saveButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(cancelButton.title.isEmpty)
+        #expect(cancelButton.toolTip == "取消")
+        #expect(cancelButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(saveButton.layer?.backgroundColor == NSColor.clear.cgColor)
+        #expect(cancelButton.layer?.backgroundColor == NSColor.clear.cgColor)
     }
 
     @MainActor

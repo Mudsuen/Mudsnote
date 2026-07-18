@@ -670,6 +670,13 @@ enum LibraryNotesLayout {
     static let noteSnippetFontWeight: NSFont.Weight = .regular
     static let noteMetaFontSize: CGFloat = 11
     static let noteMetaFontWeight: NSFont.Weight = .medium
+    static let galleryItemWidth: CGFloat = 154
+    static let galleryItemHeight: CGFloat = 178
+    static let galleryInteritemSpacing: CGFloat = 12
+    static let galleryLineSpacing: CGFloat = 16
+    static let galleryHorizontalInset: CGFloat = 18
+    static let galleryVerticalInset: CGFloat = 14
+    static let gallerySectionHeaderHeight: CGFloat = 32
     static let noteListHeaderTitleFontSize: CGFloat = 13
     static let noteListHeaderCountFontSize: CGFloat = 12
     static let noteListLeadingInset: CGFloat = 14
@@ -1105,7 +1112,7 @@ final class LibraryNoteRowView: NSTableRowView {
     }
 }
 
-fileprivate enum LibraryNoteKeyCommand {
+enum LibraryNoteKeyCommand {
     case open
     case delete
     case moveDown
@@ -1216,6 +1223,8 @@ final class LibraryWindowController: NSWindowController,
     NSToolbarItemValidation,
     NSTableViewDataSource,
     NSTableViewDelegate,
+    NSCollectionViewDataSource,
+    NSCollectionViewDelegateFlowLayout,
     NSOutlineViewDataSource,
     NSOutlineViewDelegate,
     NSSearchFieldDelegate,
@@ -1227,6 +1236,7 @@ final class LibraryWindowController: NSWindowController,
     let noteStore: NoteStore
     let sourceOutlineView = LibrarySourceOutlineView()
     let tableView = LibraryNoteTableView()
+    let galleryCollectionView = LibraryGalleryCollectionView()
     let searchField = NSSearchField(string: "")
     let searchScopeControl = NSSegmentedControl(
         labels: ["当前", "所有"],
@@ -1237,6 +1247,7 @@ final class LibraryWindowController: NSWindowController,
     let noteListTitleLabel = NSTextField(labelWithString: "")
     let noteListCountLabel = NSTextField(labelWithString: "")
     let noteListEmptyLabel = NSTextField(labelWithString: "")
+    let galleryEmptyLabel = NSTextField(labelWithString: "")
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
@@ -1274,11 +1285,14 @@ final class LibraryWindowController: NSWindowController,
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
     private var listRows: [LibraryNoteListRow] = []
+    private var gallerySections: [LibraryGallerySection] = []
     private var visualQASelectedURL: URL?
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
+    private(set) var noteListViewMode: LibraryNoteViewMode = .list
     private var sourceCountSnapshot: [NoteSearchResult] = []
     private var trashedNotesSnapshot: [NoteSearchResult] = []
+    private var externallyOpenedDocumentsByPath: [String: NoteSearchResult] = [:]
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
@@ -1300,6 +1314,7 @@ final class LibraryWindowController: NSWindowController,
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
     private var suppressSelectionChanges = false
+    private var suppressGallerySelectionChanges = false
     private var isCreatingNewNote = false
     private var hasCenteredWindow = false
     private var hasRequestedWindowPresentation = false
@@ -1346,7 +1361,10 @@ final class LibraryWindowController: NSWindowController,
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
     private weak var sourceSplitViewItem: NSSplitViewItem?
+    private weak var noteListSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
+    private weak var editorStackView: NSStackView?
+    private weak var galleryScrollView: NSScrollView?
     private static let sourceCountSnapshotLimit = 10_000
 
     let theme = MarkdownEditorTheme(
@@ -1394,6 +1412,7 @@ final class LibraryWindowController: NSWindowController,
         self.onClose = onClose
         self.noteListSortOrder = LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue) ?? .dateEdited
         self.groupsNoteListByDate = noteStore.libraryGroupsNotesByDate
+        self.noteListViewMode = LibraryNoteViewMode(rawValue: noteStore.libraryNoteViewModeRawValue) ?? .list
         self.collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
         self.expandedFolderPaths = noteStore.libraryExpandedFolderPaths
         self.sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
@@ -1474,10 +1493,16 @@ final class LibraryWindowController: NSWindowController,
         }
         window.contentView?.layoutSubtreeIfNeeded()
         applyStoredLibrarySplitLayoutForLibrary()
+        if noteListViewMode == .gallery {
+            reloadGalleryData()
+            synchronizeGallerySelectionFromTable()
+        }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
-        if selectedURL == nil {
+        if noteListViewMode == .gallery {
+            window.makeFirstResponder(galleryCollectionView)
+        } else if selectedURL == nil {
             window.makeFirstResponder(tableView)
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
@@ -1577,9 +1602,10 @@ final class LibraryWindowController: NSWindowController,
         listRows = buildGroupedRows(for: notes)
 
         suppressSelectionChanges = true
-        tableView.reloadData()
+        reloadNoteBrowserData()
         tableView.deselectAll(nil)
         suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
         clearCurrentDocumentAfterRemoval()
         statusLabel.stringValue = ""
         updateNoteListHeader(query: "")
@@ -1594,6 +1620,7 @@ final class LibraryWindowController: NSWindowController,
         suppressSelectionChanges = true
         tableView.selectRowIndexes(IndexSet(integer: nextNoteRow), byExtendingSelection: false)
         suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
         showInitialNoteLoadingShell(for: nextNote)
         loadInitialNoteAfterLaunch(nextNote)
     }
@@ -1615,13 +1642,14 @@ final class LibraryWindowController: NSWindowController,
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
                 self.trashedNotesSnapshot = trashedNotes
+                let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
                 let currentQuery = self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !currentQuery.isEmpty {
-                    self.sourceCountSnapshot = allNotes
-                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
+                    self.sourceCountSnapshot = mergedAllNotes
+                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
                     self.updateNoteListHeader(query: currentQuery)
                     return
                 }
@@ -1629,7 +1657,7 @@ final class LibraryWindowController: NSWindowController,
                 self.reloadNotes(
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
-                    allNotesSnapshot: allNotes,
+                    allNotesSnapshot: mergedAllNotes,
                     sourceCountIndex: reusableCountIndex
                 )
             }
@@ -1816,6 +1844,8 @@ final class LibraryWindowController: NSWindowController,
         noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
         noteListItem.maximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
         noteListItem.automaticMaximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
+        noteListItem.canCollapse = true
+        noteListItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
 
         let editorItem = NSSplitViewItem(viewController: editorController)
         editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
@@ -1831,6 +1861,7 @@ final class LibraryWindowController: NSWindowController,
 
         librarySplitViewController = splitController
         sourceSplitViewItem = sourceItem
+        noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         window?.contentViewController = splitController
         NotificationCenter.default.addObserver(
@@ -1842,6 +1873,7 @@ final class LibraryWindowController: NSWindowController,
 
         splitController.view.layoutSubtreeIfNeeded()
         applyStoredLibrarySplitLayoutForLibrary()
+        applyNoteListViewModeChrome(animated: false)
     }
 
     private func buildSourceList() -> NSView {
@@ -2034,6 +2066,49 @@ final class LibraryWindowController: NSWindowController,
         return sidebar
     }
 
+    private func configureGalleryCollectionView() {
+        let layout = NSCollectionViewFlowLayout()
+        layout.itemSize = NSSize(
+            width: LibraryNotesLayout.galleryItemWidth,
+            height: LibraryNotesLayout.galleryItemHeight
+        )
+        layout.minimumInteritemSpacing = LibraryNotesLayout.galleryInteritemSpacing
+        layout.minimumLineSpacing = LibraryNotesLayout.galleryLineSpacing
+        layout.sectionInset = NSEdgeInsets(
+            top: LibraryNotesLayout.galleryVerticalInset,
+            left: LibraryNotesLayout.galleryHorizontalInset,
+            bottom: LibraryNotesLayout.galleryVerticalInset,
+            right: LibraryNotesLayout.galleryHorizontalInset
+        )
+
+        galleryCollectionView.identifier = NSUserInterfaceItemIdentifier("LibraryGalleryCollection")
+        galleryCollectionView.setAccessibilityLabel("笔记画廊")
+        galleryCollectionView.collectionViewLayout = layout
+        galleryCollectionView.backgroundColors = [.clear]
+        galleryCollectionView.isSelectable = true
+        galleryCollectionView.allowsMultipleSelection = true
+        galleryCollectionView.dataSource = self
+        galleryCollectionView.delegate = self
+        galleryCollectionView.register(
+            LibraryGalleryItem.self,
+            forItemWithIdentifier: LibraryGalleryItem.identifier
+        )
+        galleryCollectionView.register(
+            LibraryGallerySectionHeaderView.self,
+            forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
+            withIdentifier: LibraryGallerySectionHeaderView.identifier
+        )
+        galleryCollectionView.onKeyCommand = { [weak self] command in
+            self?.handleGalleryKeyCommand(command) ?? false
+        }
+        galleryCollectionView.onContextMenu = { [weak self] indexPath in
+            self?.galleryContextMenuForLibrary(at: indexPath)
+        }
+        let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(galleryDoubleClicked(_:)))
+        doubleClick.numberOfClicksRequired = 2
+        galleryCollectionView.addGestureRecognizer(doubleClick)
+    }
+
     private func buildEditor() -> NSView {
         let editor = NSView()
         editor.translatesAutoresizingMaskIntoConstraints = false
@@ -2111,15 +2186,47 @@ final class LibraryWindowController: NSWindowController,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
         )
+
+        configureGalleryCollectionView()
+        let galleryScrollView = NSScrollView()
+        galleryScrollView.identifier = NSUserInterfaceItemIdentifier("LibraryGalleryScroll")
+        galleryScrollView.drawsBackground = false
+        galleryScrollView.borderType = .noBorder
+        galleryScrollView.hasVerticalScroller = true
+        galleryScrollView.hasHorizontalScroller = false
+        galleryScrollView.autohidesScrollers = true
+        galleryScrollView.contentView.drawsBackground = false
+        galleryScrollView.documentView = galleryCollectionView
+
+        galleryEmptyLabel.identifier = NSUserInterfaceItemIdentifier("LibraryGalleryEmptyLabel")
+        galleryEmptyLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        galleryEmptyLabel.textColor = panelTertiaryTextColor()
+        galleryEmptyLabel.alignment = .center
+        galleryEmptyLabel.lineBreakMode = .byWordWrapping
+        galleryEmptyLabel.maximumNumberOfLines = 2
+        galleryEmptyLabel.isHidden = true
+
         editor.addSubview(stack)
+        editor.addSubview(galleryScrollView)
+        editor.addSubview(galleryEmptyLabel)
         let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryEditorTitlebarSeparator")
         editor.addSubview(titlebarSeparator)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        galleryScrollView.translatesAutoresizingMaskIntoConstraints = false
+        galleryEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
             stack.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
             stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
+            galleryScrollView.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
+            galleryScrollView.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
+            galleryScrollView.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            galleryScrollView.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
+            galleryEmptyLabel.centerXAnchor.constraint(equalTo: editor.centerXAnchor),
+            galleryEmptyLabel.centerYAnchor.constraint(equalTo: editor.centerYAnchor, constant: -20),
+            galleryEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: editor.leadingAnchor, constant: 24),
+            galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24),
             titlebarSeparator.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             titlebarSeparator.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
             titlebarSeparator.bottomAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
@@ -2132,6 +2239,11 @@ final class LibraryWindowController: NSWindowController,
             bodyContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+
+        editorStackView = stack
+        self.galleryScrollView = galleryScrollView
+        stack.isHidden = noteListViewMode == .gallery
+        galleryScrollView.isHidden = noteListViewMode != .gallery
 
         return editor
     }
@@ -2169,6 +2281,7 @@ final class LibraryWindowController: NSWindowController,
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         window?.toolbar = toolbar
+        applyNoteListViewModeToolbarChrome()
     }
 
     private func configureSearchScopeControl() {
@@ -3560,7 +3673,7 @@ final class LibraryWindowController: NSWindowController,
         updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
-        tableView.reloadData()
+        reloadNoteBrowserData()
         updateNoteListEmptyState(query: query)
 
         let preferredPath = preferredURL?.standardizedFileURL.path
@@ -3578,6 +3691,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
         stabilizeVisualQASelectionIfNeeded()
 
         if loadFirstIfNeeded, let noteToLoad {
@@ -3634,26 +3748,27 @@ final class LibraryWindowController: NSWindowController,
                 }
 
                 self.sourceSnapshotValidationTask = nil
+                let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
                 let trashChanged = trashedNotes != self.trashedNotesSnapshot
                 self.trashedNotesSnapshot = trashedNotes
-                guard allNotes != self.sourceCountSnapshot || trashChanged else {
-                    self.refreshSourceCounts(using: allNotes, countIndex: reusableCountIndex)
+                guard mergedAllNotes != self.sourceCountSnapshot || trashChanged else {
+                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
                     return
                 }
 
                 let selectedURL = self.selectedURL
                 let selectedPath = selectedURL?.standardizedFileURL.path
-                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: allNotes)
+                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: mergedAllNotes)
                 let selectionStillExists = selectedPath.map { path in
                     nextNotes.contains { $0.url.standardizedFileURL.path == path }
                 } ?? false
                 self.reloadNotes(
                     selecting: selectionStillExists ? selectedURL : nil,
                     loadFirstIfNeeded: loadFirstIfNeeded && !selectionStillExists,
-                    allNotesSnapshot: allNotes,
+                    allNotesSnapshot: mergedAllNotes,
                     sourceCountIndex: reusableCountIndex
                 )
             }
@@ -3683,17 +3798,21 @@ final class LibraryWindowController: NSWindowController,
     private func updateNoteListEmptyState(query: String) {
         let isEmpty = listRows.isEmpty
         noteListEmptyLabel.isHidden = !isEmpty
+        galleryEmptyLabel.isHidden = !isEmpty || noteListViewMode != .gallery
         guard isEmpty else { return }
 
+        let message: String
         if !query.isEmpty, hasPendingSearchReload || isSearchResultReloading {
-            noteListEmptyLabel.stringValue = "Searching..."
+            message = "Searching..."
         } else if !query.isEmpty {
-            noteListEmptyLabel.stringValue = "No Results"
+            message = "No Results"
         } else if selectedScope == .trash {
-            noteListEmptyLabel.stringValue = "Recently Deleted is empty"
+            message = "Recently Deleted is empty"
         } else {
-            noteListEmptyLabel.stringValue = "No Notes"
+            message = "No Notes"
         }
+        noteListEmptyLabel.stringValue = message
+        galleryEmptyLabel.stringValue = message
     }
 
     private func notesForSelectedScope(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
@@ -3887,6 +4006,19 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func includingExternallyOpenedDocuments(in notes: [NoteSearchResult]) -> [NoteSearchResult] {
+        var merged = notes
+        for note in externallyOpenedDocumentsByPath.values {
+            LibraryNoteListProjection.upsertByModifiedDate(
+                note,
+                into: &merged,
+                replacingPaths: Set([note.url.standardizedFileURL.path]),
+                limit: Self.sourceCountSnapshotLimit
+            )
+        }
+        return merged
+    }
+
     private func buildGroupedRows(
         for notes: [NoteSearchResult],
         now: Date = Date(),
@@ -3922,13 +4054,14 @@ final class LibraryWindowController: NSWindowController,
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
 
         suppressSelectionChanges = true
-        tableView.reloadData()
+        reloadNoteBrowserData()
         let selectedRows = IndexSet(listRows.indices.filter { row in
             guard let note = listRows[row].note else { return false }
             return selectedPaths.contains(note.url.standardizedFileURL.path)
         })
         tableView.selectRowIndexes(selectedRows, byExtendingSelection: false)
         suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
         updateNoteListEmptyState(query: query)
         updateToolbarActionState()
     }
@@ -4463,11 +4596,24 @@ final class LibraryWindowController: NSWindowController,
                 let matchingRows = IndexSet(self.listRows.indices.filter { row in
                     self.listRows[row].note?.thumbnailURL?.standardizedFileURL.path == key
                 })
-                guard !matchingRows.isEmpty else { return }
-                self.tableView.reloadData(
-                    forRowIndexes: matchingRows,
-                    columnIndexes: IndexSet(integer: 0)
-                )
+                if !matchingRows.isEmpty {
+                    self.tableView.reloadData(
+                        forRowIndexes: matchingRows,
+                        columnIndexes: IndexSet(integer: 0)
+                    )
+                }
+                let matchingItems = Set(self.gallerySections.indices.flatMap { section in
+                    self.gallerySections[section].notes.indices.compactMap { item -> IndexPath? in
+                        self.gallerySections[section].notes[item].thumbnailURL?.standardizedFileURL.path == key
+                            ? IndexPath(item: item, section: section)
+                            : nil
+                    }
+                })
+                if self.noteListViewMode == .gallery,
+                   self.hasRequestedWindowPresentation,
+                   !matchingItems.isEmpty {
+                    self.galleryCollectionView.reloadItems(at: matchingItems)
+                }
             }
         }
         thumbnailImageLoadTasks[key] = task
@@ -4594,6 +4740,11 @@ final class LibraryWindowController: NSWindowController,
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard notification.object as? NSTableView === tableView,
               !suppressSelectionChanges else { return }
+        synchronizeGallerySelectionFromTable()
+        handleNoteBrowserSelectionChange()
+    }
+
+    private func handleNoteBrowserSelectionChange() {
         do {
             try saveCurrentNoteIfNeeded()
             if preservesCurrentLoadedNoteForMultiSelection() {
@@ -4604,6 +4755,182 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
+    }
+
+    func numberOfSections(in collectionView: NSCollectionView) -> Int {
+        guard collectionView === galleryCollectionView else { return 0 }
+        return gallerySections.count
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
+        guard collectionView === galleryCollectionView,
+              gallerySections.indices.contains(section) else { return 0 }
+        return gallerySections[section].notes.count
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        itemForRepresentedObjectAt indexPath: IndexPath
+    ) -> NSCollectionViewItem {
+        let item = collectionView.makeItem(
+            withIdentifier: LibraryGalleryItem.identifier,
+            for: indexPath
+        )
+        guard let galleryItem = item as? LibraryGalleryItem,
+              let note = galleryNote(at: indexPath) else {
+            return item
+        }
+        let rawPreview = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        galleryItem.configure(
+            title: noteListDisplayTitle(for: note),
+            preview: rawPreview.isEmpty ? "No additional text" : rawPreview,
+            date: noteListDateText(for: noteListDisplayDateForLibrary(note)),
+            metadata: noteListFolderText(for: note),
+            thumbnail: thumbnailImage(for: note)
+        )
+        return galleryItem
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        viewForSupplementaryElementOfKind kind: NSCollectionView.SupplementaryElementKind,
+        at indexPath: IndexPath
+    ) -> NSView {
+        guard kind == NSCollectionView.elementKindSectionHeader,
+              gallerySections.indices.contains(indexPath.section) else {
+            return NSView()
+        }
+        let view = collectionView.makeSupplementaryView(
+            ofKind: kind,
+            withIdentifier: LibraryGallerySectionHeaderView.identifier,
+            for: indexPath
+        )
+        if let header = view as? LibraryGallerySectionHeaderView {
+            header.titleLabel.stringValue = gallerySections[indexPath.section].title ?? ""
+        }
+        return view
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        layout collectionViewLayout: NSCollectionViewLayout,
+        referenceSizeForHeaderInSection section: Int
+    ) -> NSSize {
+        guard gallerySections.indices.contains(section), gallerySections[section].title != nil else {
+            return .zero
+        }
+        return NSSize(width: 1, height: LibraryNotesLayout.gallerySectionHeaderHeight)
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+        handleGallerySelectionChange()
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) {
+        handleGallerySelectionChange()
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        pasteboardWriterForItemAt indexPath: IndexPath
+    ) -> NSPasteboardWriting? {
+        galleryNote(at: indexPath)?.url as NSURL?
+    }
+
+    private func galleryNote(at indexPath: IndexPath) -> NoteSearchResult? {
+        guard gallerySections.indices.contains(indexPath.section),
+              gallerySections[indexPath.section].notes.indices.contains(indexPath.item) else {
+            return nil
+        }
+        return gallerySections[indexPath.section].notes[indexPath.item]
+    }
+
+    private func galleryIndexPath(for standardizedPath: String) -> IndexPath? {
+        for section in gallerySections.indices {
+            if let item = gallerySections[section].notes.firstIndex(where: {
+                $0.url.standardizedFileURL.path == standardizedPath
+            }) {
+                return IndexPath(item: item, section: section)
+            }
+        }
+        return nil
+    }
+
+    private func reloadGalleryData() {
+        gallerySections = LibraryGalleryProjection.sections(from: listRows)
+        guard noteListViewMode == .gallery, hasRequestedWindowPresentation else { return }
+        galleryCollectionView.reloadData()
+    }
+
+    private func reloadNoteBrowserData() {
+        tableView.reloadData()
+        reloadGalleryData()
+    }
+
+    private func synchronizeGallerySelectionFromTable() {
+        guard noteListViewMode == .gallery, hasRequestedWindowPresentation else { return }
+        let selectedPaths = Set(tableView.selectedRowIndexes.compactMap { row in
+            note(at: row)?.url.standardizedFileURL.path
+        })
+        let indexPaths = Set(selectedPaths.compactMap(galleryIndexPath(for:)))
+        suppressGallerySelectionChanges = true
+        galleryCollectionView.selectionIndexPaths = indexPaths
+        suppressGallerySelectionChanges = false
+    }
+
+    private func synchronizeTableSelectionFromGallery() {
+        let selectedPaths = Set(galleryCollectionView.selectionIndexPaths.compactMap { indexPath in
+            galleryNote(at: indexPath)?.url.standardizedFileURL.path
+        })
+        let rows = IndexSet(listRows.indices.filter { row in
+            guard let note = listRows[row].note else { return false }
+            return selectedPaths.contains(note.url.standardizedFileURL.path)
+        })
+        suppressSelectionChanges = true
+        tableView.selectRowIndexes(rows, byExtendingSelection: false)
+        suppressSelectionChanges = false
+    }
+
+    private func handleGallerySelectionChange() {
+        guard !suppressGallerySelectionChanges else { return }
+        synchronizeTableSelectionFromGallery()
+        handleNoteBrowserSelectionChange()
+    }
+
+    private func galleryContextMenuForLibrary(at indexPath: IndexPath) -> NSMenu? {
+        synchronizeTableSelectionFromGallery()
+        guard let row = rowIndex(for: galleryNote(at: indexPath)?.url.standardizedFileURL.path ?? "") else {
+            return nil
+        }
+        return noteContextMenuForLibrary(row: row)
+    }
+
+    @objc
+    private func galleryDoubleClicked(_ sender: NSClickGestureRecognizer) {
+        let location = sender.location(in: galleryCollectionView)
+        guard let indexPath = galleryCollectionView.indexPathForItem(at: location) else { return }
+        galleryCollectionView.selectionIndexPaths = [indexPath]
+        synchronizeTableSelectionFromGallery()
+        openSelectedGalleryNoteInList()
+    }
+
+    private func handleGalleryKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
+        switch command {
+        case .open:
+            guard !galleryCollectionView.selectionIndexPaths.isEmpty else { return false }
+            openSelectedGalleryNoteInList()
+            return true
+        case .delete:
+            return handleNoteListKeyCommand(.delete)
+        case .moveDown, .moveUp:
+            return false
+        }
+    }
+
+    private func openSelectedGalleryNoteInList() {
+        setNoteListViewModeForLibrary(.list)
+        loadSelectedRow()
+        editorTextView.window?.makeFirstResponder(editorTextView)
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -4756,6 +5083,11 @@ final class LibraryWindowController: NSWindowController,
     private func newNotePressed() {
         do {
             try saveCurrentNoteIfNeeded()
+            if noteListViewMode == .gallery {
+                noteListViewMode = .list
+                noteStore.libraryNoteViewModeRawValue = LibraryNoteViewMode.list.rawValue
+                applyNoteListViewModeChrome(animated: window?.isVisible == true)
+            }
             if selectedScope == .trash {
                 selectedScope = .all
             }
@@ -4958,7 +5290,7 @@ final class LibraryWindowController: NSWindowController,
         updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
-        tableView.reloadData()
+        reloadNoteBrowserData()
         updateNoteListEmptyState(query: query)
 
         if let preferredPath = preferredURL?.standardizedFileURL.path,
@@ -4968,6 +5300,7 @@ final class LibraryWindowController: NSWindowController,
             tableView.deselectAll(nil)
         }
         suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
 
         refreshSourceSelection()
         updateToolbarActionState()
@@ -5615,7 +5948,16 @@ final class LibraryWindowController: NSWindowController,
         let savedURL: URL
         if let previousURL {
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
-            savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
+            if externallyOpenedDocumentsByPath[previousURL.standardizedFileURL.path] != nil {
+                savedURL = try noteStore.updateNoteInPlace(
+                    at: previousURL,
+                    title: title,
+                    body: body,
+                    tags: selectedTags
+                )
+            } else {
+                savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
+            }
         } else {
             savedURL = try noteStore.saveNewNote(
                 title: title,
@@ -5666,6 +6008,10 @@ final class LibraryWindowController: NSWindowController,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
         )
+        if let previousPath,
+           externallyOpenedDocumentsByPath.removeValue(forKey: previousPath) != nil {
+            externallyOpenedDocumentsByPath[savedPath] = updatedNote
+        }
         LibraryNoteListProjection.upsertByModifiedDate(
             updatedNote,
             into: &sourceCountSnapshot,
@@ -5838,6 +6184,38 @@ final class LibraryWindowController: NSWindowController,
 
     func selectedMarkdownFileURLForLibrary() -> URL? {
         selectedMarkdownFileURLsForLibrary().first
+    }
+
+    func openMarkdownDocumentForLibrary(at url: URL) throws {
+        try saveCurrentNoteIfNeeded()
+        let standardizedURL = url.standardizedFileURL
+        let loaded = try noteLoader(standardizedURL)
+        let modifiedAt = fileModificationDateLoader(standardizedURL) ?? Date()
+        let note = NoteSearchResult(
+            url: standardizedURL,
+            title: loaded.title,
+            snippet: libraryFirstMeaningfulLine(from: loaded.body) ?? "",
+            modifiedAt: modifiedAt,
+            tags: loaded.tags,
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: standardizedURL)
+        )
+
+        externallyOpenedDocumentsByPath[standardizedURL.path] = note
+        sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
+        selectedScope = .all
+        searchField.stringValue = ""
+        activeSearchSession = nil
+        _ = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
+        reloadNotes(
+            selecting: standardizedURL,
+            loadFirstIfNeeded: true,
+            allNotesSnapshot: sourceCountSnapshot
+        )
+        if let row = rowIndex(for: standardizedURL.path) {
+            tableView.scrollRowToVisible(row)
+        }
+        window?.makeFirstResponder(editorTextView)
     }
 
     func selectNoteForVisualQA(at url: URL) {
@@ -6129,15 +6507,18 @@ final class LibraryWindowController: NSWindowController,
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = splitView.arrangedSubviews[1]
         sourceSplitViewItem?.isCollapsed = !noteStore.librarySourceListVisible
+        noteListSplitViewItem?.isCollapsed = noteListViewMode == .gallery
         splitView.adjustSubviews()
 
         if !sourceList.isHidden {
             splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
             splitView.layoutSubtreeIfNeeded()
         }
-        let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
-        splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
-        splitView.layoutSubtreeIfNeeded()
+        if noteListViewMode == .list {
+            let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
+            splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
+            splitView.layoutSubtreeIfNeeded()
+        }
     }
 
     func persistLibrarySplitLayoutForLibrary() {
@@ -6154,7 +6535,7 @@ final class LibraryWindowController: NSWindowController,
                 LibraryNotesLayout.clampedSourceColumnWidth(sourceList.frame.width)
             )
         }
-        if noteList.frame.width > 0 {
+        if noteListViewMode == .list, noteList.frame.width > 0 {
             noteStore.libraryNoteColumnWidth = Double(
                 LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width)
             )
@@ -6302,9 +6683,100 @@ final class LibraryWindowController: NSWindowController,
             splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
             splitView.layoutSubtreeIfNeeded()
         }
-        let noteList = splitView.arrangedSubviews[1]
-        splitView.setPosition(noteList.frame.minX + storedNoteColumnWidthForLibrary, ofDividerAt: 1)
-        splitView.layoutSubtreeIfNeeded()
+        if noteListViewMode == .list {
+            let noteList = splitView.arrangedSubviews[1]
+            splitView.setPosition(noteList.frame.minX + storedNoteColumnWidthForLibrary, ofDividerAt: 1)
+            splitView.layoutSubtreeIfNeeded()
+        }
+    }
+
+    func setNoteListViewModeForLibrary(_ mode: LibraryNoteViewMode) {
+        guard noteListViewMode != mode else {
+            if mode == .gallery {
+                window?.makeFirstResponder(galleryCollectionView)
+            }
+            return
+        }
+
+        do {
+            try saveCurrentNoteIfNeeded()
+        } catch {
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+            return
+        }
+
+        noteListViewMode = mode
+        noteStore.libraryNoteViewModeRawValue = mode.rawValue
+        applyNoteListViewModeChrome(animated: window?.isVisible == true)
+    }
+
+    private func applyNoteListViewModeChrome(animated: Bool) {
+        guard let noteListSplitViewItem, let editorStackView, let galleryScrollView else { return }
+        let showsGallery = noteListViewMode == .gallery
+
+        if showsGallery {
+            reloadGalleryData()
+            synchronizeGallerySelectionFromTable()
+            galleryScrollView.isHidden = false
+            galleryScrollView.alphaValue = 1
+            editorStackView.isHidden = true
+        } else {
+            editorStackView.isHidden = false
+            editorStackView.alphaValue = 1
+            galleryScrollView.isHidden = true
+        }
+        updateNoteListEmptyState(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        if animated {
+            isApplyingStoredSplitLayout = true
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.allowsImplicitAnimation = true
+                noteListSplitViewItem.animator().isCollapsed = showsGallery
+            } completionHandler: { [weak self] in
+                Task { @MainActor in
+                    self?.isApplyingStoredSplitLayout = false
+                    self?.completeNoteListViewModeTransition(showingGallery: showsGallery)
+                }
+            }
+        } else {
+            isApplyingStoredSplitLayout = true
+            noteListSplitViewItem.isCollapsed = showsGallery
+            librarySplitView?.adjustSubviews()
+            isApplyingStoredSplitLayout = false
+            completeNoteListViewModeTransition(showingGallery: showsGallery)
+        }
+        applyNoteListViewModeToolbarChrome()
+    }
+
+    private func completeNoteListViewModeTransition(showingGallery: Bool) {
+        if !showingGallery {
+            applyStoredLibrarySplitLayoutForLibrary()
+        }
+        applyNoteListViewModeToolbarChrome()
+        if showingGallery {
+            window?.makeFirstResponder(galleryCollectionView)
+        } else if selectedURL == nil {
+            window?.makeFirstResponder(tableView)
+        } else {
+            window?.makeFirstResponder(editorTextView)
+        }
+    }
+
+    private func applyNoteListViewModeToolbarChrome() {
+        let showsGallery = noteListViewMode == .gallery
+        for item in window?.toolbar?.items ?? [] {
+            switch item.itemIdentifier {
+            case Self.noteListTitleToolbarItemIdentifier,
+                 Self.noteTrackingSeparatorToolbarItemIdentifier,
+                 Self.editorToolsToolbarItemIdentifier:
+                item.isHidden = showsGallery
+            default:
+                break
+            }
+        }
+        window?.toolbar?.validateVisibleItems()
     }
 
     private static func externalScreen() -> NSScreen? {
@@ -6791,6 +7263,7 @@ final class LibraryWindowController: NSWindowController,
         let isTrashScope = selectedScope == .trash
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
         applySourceVisibilityChrome(isSourceListVisibleForLibrary)
+        applyNoteListViewModeToolbarChrome()
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
             case Self.deleteToolbarItemIdentifier:

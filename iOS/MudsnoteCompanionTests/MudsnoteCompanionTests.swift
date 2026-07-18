@@ -1,8 +1,564 @@
 import XCTest
+import PencilKit
 import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {
+        let suiteName = "MudsnoteAttachmentPresentationPreferences-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = AttachmentPresentationPreferences(defaults: defaults)
+
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .large
+        )
+
+        preferences.set(
+            .plainLink,
+            notePath: "Projects/Plan.md",
+            attachmentPath: "Attachments/hero.png"
+        )
+        XCTAssertEqual(
+            AttachmentPresentationPreferences(defaults: defaults).mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .plainLink
+        )
+
+        preferences.setAll(.small, notePath: "Projects/Plan.md")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .small
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/brief.pdf"
+            ),
+            .small
+        )
+
+        preferences.moveNote(from: "Projects/Plan.md", to: "Archive/Plan.md")
+        preferences.set(
+            .plainLink,
+            notePath: "Archive/Plan.md",
+            attachmentPath: "Attachments/brief.pdf"
+        )
+        preferences.moveAttachment(
+            notePath: "Archive/Plan.md",
+            from: "Attachments/brief.pdf",
+            to: "Attachments/launch-brief.pdf"
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .plainLink
+        )
+        preferences.moveFolder(from: "Archive", to: "Reference/Archive")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Reference/Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .plainLink
+        )
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Projects/Plan.md",
+                attachmentPath: "Attachments/hero.png"
+            ),
+            .large
+        )
+
+        preferences.removeNote("Reference/Archive/Plan.md")
+        XCTAssertEqual(
+            preferences.mode(
+                notePath: "Reference/Archive/Plan.md",
+                attachmentPath: "Attachments/launch-brief.pdf"
+            ),
+            .large
+        )
+        XCTAssertNil(defaults.object(forKey: AttachmentPresentationPreferences.defaultsKey))
+    }
+
+    @MainActor
+    func testNotePDFExporterCreatesAPaginatedPortableDocumentWithoutChangingMarkdown() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let markdown = (["# Project Brief", "A **rendered** Markdown note."]
+            + (1...220).map { "- Milestone \($0): ship a polished iPhone experience." })
+            .joined(separator: "\n")
+        let original = markdown
+
+        let export = try NotePDFExporter.export(
+            title: "Launch / Plan",
+            markdown: markdown,
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            directory: root
+        )
+        let data = try Data(contentsOf: export.url)
+        let provider = CGDataProvider(data: data as CFData)
+        let document = provider.flatMap(CGPDFDocument.init)
+
+        XCTAssertEqual(markdown, original)
+        XCTAssertEqual(export.url.lastPathComponent, "Launch - Plan.pdf")
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        XCTAssertGreaterThan(document?.numberOfPages ?? 0, 1)
+    }
+
+    func testCameraPhotoProducesAValidatedJPEGAttachment() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 18)).image { context in
+            UIColor.systemYellow.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 24, height: 18))
+        }
+
+        let data = try CameraPhotoCapture.jpegData(for: image)
+        let attachment = try CaptureAttachment.validatedImage(data: data)
+
+        XCTAssertFalse(data.isEmpty)
+        XCTAssertEqual(attachment.preferredExtension, "jpg")
+    }
+
+    func testCameraPhotoRejectsAnEmptyImage() {
+        XCTAssertThrowsError(try CameraPhotoCapture.jpegData(for: UIImage())) { error in
+            XCTAssertEqual(error as? CameraPhotoCapture.Error, .invalidImage)
+        }
+    }
+
+    func testCameraVideoProducesAPortableVideoAttachment() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("Camera Clip.mov")
+        try Data([0x00, 0x01, 0x02]).write(to: url)
+
+        let attachment = try CameraPhotoCapture.videoAttachment(at: url)
+
+        XCTAssertEqual(attachment.referenceKind, .video)
+        XCTAssertEqual(attachment.preferredExtension, "mov")
+        XCTAssertEqual(attachment.filePrefix, "Camera Clip")
+    }
+
+    func testMarkdownTagSyntaxRewritesOnlyVisibleExactTags() throws {
+        let markdown = """
+        # Heading
+
+        Visible #Project and #project.
+        `#project` and ``#project`` stay code.
+        https://example.com/#project and (#project) stay destinations.
+
+        ~~~text
+        #project
+        ~~~
+        """
+
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag(" client-work "), "#client-work")
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#项目_2"), "#项目_2")
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("two words"))
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad/tag"))
+        XCTAssertEqual(MarkdownTagSyntax.tags(in: markdown), ["#Project"])
+
+        let renamed = try XCTUnwrap(MarkdownTagSyntax.rewriting(
+            markdown,
+            tag: "#PROJECT",
+            mutation: .rename(to: "#client")
+        ))
+        XCTAssertEqual(renamed.occurrenceCount, 2)
+        XCTAssertTrue(renamed.markdown.contains("Visible #client and #client."))
+        XCTAssertTrue(renamed.markdown.contains("`#project` and ``#project``"))
+        XCTAssertTrue(renamed.markdown.contains("https://example.com/#project and (#project)"))
+        XCTAssertTrue(renamed.markdown.contains("~~~text\n#project\n~~~"))
+
+        let deleted = try XCTUnwrap(MarkdownTagSyntax.rewriting(
+            "before #project after\n#project #keep\nend #PROJECT",
+            tag: "project",
+            mutation: .delete
+        ))
+        XCTAssertEqual(deleted.occurrenceCount, 3)
+        XCTAssertEqual(deleted.markdown, "before after\n#keep\nend")
+    }
+
+    func testTagMutationRenamesAndDeletesAcrossNotesAndInbox() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try "# Alpha\n\n#project #work\n`#project`\n".write(
+            to: projects.appendingPathComponent("Alpha.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Beta\n\nReview #PROJECT.\n".write(
+            to: projects.appendingPathComponent("Beta.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let inbox = try String(contentsOf: inboxURL, encoding: .utf8)
+        try (inbox + "\n## 2026-07-15 07:10\n\nQuick #project\n").write(
+            to: inboxURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let trashNote = root.appendingPathComponent(".mudsnote/Trash/hidden.md")
+        try "#project\n".write(to: trashNote, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+        let renamed = try await store.mutateTag("#Project", mutation: .rename(to: "#client"))
+
+        XCTAssertEqual(renamed.occurrenceCount, 3)
+        XCTAssertEqual(Set(renamed.changedPaths), [
+            "Inbox.md",
+            "Projects/Alpha.md",
+            "Projects/Beta.md",
+        ])
+        XCTAssertTrue(
+            try String(contentsOf: projects.appendingPathComponent("Alpha.md"), encoding: .utf8)
+                .contains("#client #work\n`#project`")
+        )
+        XCTAssertTrue(
+            try String(contentsOf: projects.appendingPathComponent("Beta.md"), encoding: .utf8)
+                .contains("Review #client.")
+        )
+        XCTAssertTrue(try String(contentsOf: inboxURL, encoding: .utf8).contains("Quick #client"))
+        XCTAssertEqual(try String(contentsOf: trashNote, encoding: .utf8), "#project\n")
+
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.contains { $0.tags.contains("#client") })
+        XCTAssertTrue(snapshot.inboxItems.contains { $0.tags == ["#client"] })
+
+        let deleted = try await store.mutateTag("client", mutation: .delete)
+        XCTAssertEqual(deleted.occurrenceCount, 3)
+        XCTAssertFalse(try String(contentsOf: inboxURL, encoding: .utf8).contains("#client"))
+        do {
+            _ = try await store.mutateTag("#missing", mutation: .delete)
+            XCTFail("Missing tags should not report a successful mutation")
+        } catch {
+            XCTAssertEqual(error as? MarkdownTagMutationError, .notFound)
+        }
+    }
+
+    func testTagSelectionFilterSupportsAnyAllAndExclusions() {
+        var filter = TagSelectionFilter()
+
+        XCTAssertTrue(filter.matches(tags: ["#project"]))
+        XCTAssertFalse(filter.matches(tags: []))
+
+        filter.cycle("#project")
+        XCTAssertEqual(filter.state(for: "#PROJECT"), .included)
+        XCTAssertTrue(filter.matches(tags: ["#Project", "#work"]))
+        XCTAssertFalse(filter.matches(tags: ["#quick"]))
+
+        filter.cycle("#quick")
+        XCTAssertTrue(filter.matches(tags: ["#quick"]))
+        filter.matchMode = .all
+        XCTAssertTrue(filter.matches(tags: ["#project", "#quick"]))
+        XCTAssertFalse(filter.matches(tags: ["#project", "#work"]))
+
+        filter.cycle("#quick")
+        XCTAssertEqual(filter.state(for: "#quick"), .excluded)
+        XCTAssertFalse(filter.matches(tags: ["#project", "#quick"]))
+        XCTAssertTrue(filter.matches(tags: ["#project", "#work"]))
+
+        filter.cycle("#quick")
+        filter.clear()
+        XCTAssertTrue(filter.isEmpty)
+        XCTAssertTrue(filter.matches(tags: ["#work"]))
+    }
+
+    func testSmartFolderDefinitionNormalizesAndMatchesAllSupportedFilters() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-15T12:00:00Z"))
+        let recent = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: now))
+        let old = try XCTUnwrap(calendar.date(byAdding: .day, value: -45, to: now))
+
+        let normalized = try XCTUnwrap(SmartFolderDefinition(
+            name: "  Active Projects  ",
+            includedTags: ["project", "#PROJECT", "#work"],
+            excludedTags: ["#archive", "#Project"],
+            dateFilter: .editedPast7Days,
+            attachmentFilter: .withAttachments,
+            checklistFilter: .withUncheckedItems,
+            pinned: true
+        ).normalized)
+        XCTAssertEqual(normalized.name, "Active Projects")
+        XCTAssertEqual(normalized.includedTags, ["#project", "#work"])
+        XCTAssertEqual(normalized.excludedTags, ["#archive"])
+        XCTAssertEqual(normalized.filterCount, 7)
+
+        let matchingFile = RecentMarkdownFile(
+            id: "Plan.md",
+            relativePath: "Plan.md",
+            title: "Plan",
+            modifiedAt: recent,
+            createdAt: old,
+            preview: "",
+            hasAttachments: true,
+            hasChecklist: true,
+            hasUncheckedChecklist: true,
+            isPinned: true,
+            tags: ["#Project", "#work"]
+        )
+        XCTAssertTrue(normalized.matches(file: matchingFile, now: now, calendar: calendar))
+
+        var rejected = matchingFile
+        rejected.tags.append("#archive")
+        XCTAssertFalse(normalized.matches(file: rejected, now: now, calendar: calendar))
+        rejected = matchingFile
+        rejected.hasUncheckedChecklist = false
+        XCTAssertFalse(normalized.matches(file: rejected, now: now, calendar: calendar))
+
+        let any = try XCTUnwrap(SmartFolderDefinition(
+            name: "Any Project Signal",
+            matchMode: .any,
+            includedTags: ["#quick"],
+            attachmentFilter: .withAttachments
+        ).normalized)
+        XCTAssertTrue(any.matches(file: matchingFile, now: now, calendar: calendar))
+
+        let memo = MemoBlock(
+            id: "memo",
+            dateText: "2026-07-15 08:30",
+            body: "- [ ] Follow up\n![Photo](Attachments/photo.png)",
+            tags: ["#quick"]
+        )
+        XCTAssertTrue(any.matches(memo: memo, now: now, calendar: calendar))
+        XCTAssertNil(SmartFolderDefinition(name: "No Filters").normalized)
+        XCTAssertNil(SmartFolderDefinition(name: "Bad/Name", includedTags: ["#project"]).normalized)
+    }
+
+    func testSearchSuggestionsProduceStructuredScopedResultsWithoutFakeQueries() throws {
+        let now = Date()
+        let memoDateFormatter = DateFormatter()
+        memoDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        memoDateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let attached = RecentMarkdownFile(
+            id: "Attached.md",
+            relativePath: "Projects/Attached.md",
+            title: "Attached",
+            modifiedAt: now,
+            preview: "Reference file",
+            hasAttachments: true
+        )
+        let pinned = RecentMarkdownFile(
+            id: "Pinned.md",
+            relativePath: "Pinned.md",
+            title: "Pinned",
+            modifiedAt: now.addingTimeInterval(-3 * 24 * 60 * 60),
+            isPinned: true
+        )
+        let checklist = RecentMarkdownFile(
+            id: "Checklist.md",
+            relativePath: "Checklist.md",
+            title: "Checklist",
+            modifiedAt: now.addingTimeInterval(-120),
+            hasChecklist: true,
+            hasUncheckedChecklist: true
+        )
+        let memo = MemoBlock(
+            id: "attachment-memo",
+            dateText: memoDateFormatter.string(from: now),
+            body: "Quick reference\n![Photo](Attachments/photo.png)",
+            tags: []
+        )
+        let files = [attached, pinned, checklist]
+
+        let allAttachments = NotesSearchSuggestion.attachments.results(
+            files: files,
+            memos: [memo],
+            scope: .all,
+            now: now
+        )
+        XCTAssertEqual(Set(allAttachments.map(\.id)), ["file:Projects/Attached.md", "memo:attachment-memo"])
+        XCTAssertEqual(
+            NotesSearchSuggestion.attachments.results(
+                files: files,
+                memos: [memo],
+                scope: .notes,
+                now: now
+            ).map(\.id),
+            ["file:Projects/Attached.md"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.attachments.results(
+                files: files,
+                memos: [memo],
+                scope: .inbox,
+                now: now
+            ).map(\.id),
+            ["memo:attachment-memo"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.pinned.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id),
+            ["file:Pinned.md"]
+        )
+        XCTAssertEqual(
+            NotesSearchSuggestion.checklists.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id),
+            ["file:Checklist.md"]
+        )
+        XCTAssertEqual(
+            Set(NotesSearchSuggestion.editedToday.results(
+                files: files,
+                memos: [memo],
+                scope: .all,
+                now: now
+            ).map(\.id)),
+            ["file:Projects/Attached.md", "file:Checklist.md", "memo:attachment-memo"]
+        )
+    }
+
+    func testSmartFolderStorePersistsLifecycleWithoutMovingNotes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let noteURL = root.appendingPathComponent("Project.md")
+        let markdown = "# Project\n\nShip it. #project\n"
+        try markdown.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let created = try await store.createSmartFolder(SmartFolderDefinition(
+            name: "Projects",
+            includedTags: ["#project"]
+        ))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.smartFolders, [created])
+        XCTAssertTrue(snapshot.smartFolders[0].matches(file: try XCTUnwrap(
+            snapshot.allFiles.first { $0.relativePath == "Project.md" }
+        )))
+        XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), markdown)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.createSmartFolder(SmartFolderDefinition(
+                name: "projects",
+                includedTags: ["#work"]
+            ))
+        ) { error in
+            XCTAssertEqual(error as? SmartFolderStoreError, .duplicateName)
+        }
+
+        var updated = created
+        updated.name = "Active Projects"
+        updated.matchMode = .any
+        updated.includedTags.append("#work")
+        _ = try await store.updateSmartFolder(updated)
+
+        let reopenedStore = MarkdownFileStore()
+        await reopenedStore.configure(root: root)
+        snapshot = try await reopenedStore.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.smartFolders, [try XCTUnwrap(updated.normalized)])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: noteURL.path))
+
+        try await reopenedStore.deleteSmartFolder(id: created.id)
+        snapshot = try await reopenedStore.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.smartFolders.isEmpty)
+        XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), markdown)
+    }
+
+    func testDamagedSmartFolderMetadataDoesNotBlockLibraryOrGetOverwritten() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let configurationURL = root.appendingPathComponent(".mudsnote/smart-folders.json")
+        let damagedData = Data("not-json".utf8)
+        try damagedData.write(to: configurationURL)
+        try "# Still Available\n".write(
+            to: root.appendingPathComponent("Available.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.smartFolders.isEmpty)
+        XCTAssertTrue(snapshot.allFiles.contains { $0.relativePath == "Available.md" })
+        XCTAssertEqual(try Data(contentsOf: configurationURL), damagedData)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.createSmartFolder(SmartFolderDefinition(
+                name: "Projects",
+                includedTags: ["#project"]
+            ))
+        ) { error in
+            XCTAssertEqual(error as? SmartFolderStoreError, .damagedConfiguration)
+        }
+        XCTAssertEqual(try Data(contentsOf: configurationURL), damagedData)
+    }
+
+    @MainActor
+    func testDrawingExportProducesBoundedPortablePNG() throws {
+        let points = [
+            PKStrokePoint(
+                location: CGPoint(x: 20, y: 30),
+                timeOffset: 0,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            ),
+            PKStrokePoint(
+                location: CGPoint(x: 120, y: 80),
+                timeOffset: 0.1,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            ),
+            PKStrokePoint(
+                location: CGPoint(x: 220, y: 130),
+                timeOffset: 0.2,
+                size: CGSize(width: 5, height: 5),
+                opacity: 1,
+                force: 1,
+                azimuth: 0,
+                altitude: .pi / 2
+            )
+        ]
+        let stroke = PKStroke(
+            ink: PKInk(.pen, color: .black),
+            path: PKStrokePath(controlPoints: points, creationDate: Date())
+        )
+        let drawing = PKDrawing(strokes: [stroke])
+        let data = try MarkdownDrawingExport.pngData(
+            for: drawing,
+            screenScale: 3
+        )
+        let image = try XCTUnwrap(UIImage(data: data))
+        let pixelData = try XCTUnwrap(image.cgImage?.dataProvider?.data as Data?)
+
+        XCTAssertEqual(data.prefix(8), Data([137, 80, 78, 71, 13, 10, 26, 10]))
+        XCTAssertTrue(pixelData.contains { $0 < 200 }, "The exported PNG should contain visible ink")
+        XCTAssertLessThanOrEqual(max(image.size.width * image.scale, image.size.height * image.scale), 4_096)
+        XCTAssertThrowsError(try MarkdownDrawingExport.pngData(for: PKDrawing()))
+    }
+
     func testAudioCaptureErrorsExplainRecovery() {
         XCTAssertNotNil(AudioCaptureError.microphonePermissionDenied.errorDescription)
         XCTAssertNotNil(AudioCaptureError.couldNotStart.errorDescription)
@@ -24,6 +580,18 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertTrue(model.isCapturePresented)
         XCTAssertEqual(model.captureRoute, .audio)
+    }
+
+    @MainActor
+    func testSearchDeepLinkRequestsLibrarySearchExactlyOnce() {
+        let model = AppModel(bootstrapImmediately: false)
+
+        model.handle(url: URL(string: "mudsnote://search")!)
+
+        XCTAssertTrue(model.isLibrarySearchRequested)
+        XCTAssertTrue(model.consumeLibrarySearchRequest())
+        XCTAssertFalse(model.isLibrarySearchRequested)
+        XCTAssertFalse(model.consumeLibrarySearchRequest())
     }
 
     @MainActor
@@ -122,6 +690,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             tags: "#闪念",
             attachmentReferences: [
                 MarkdownAttachmentReference(relativePath: "Attachments/2026/06/IMG-test.jpg", kind: .image),
+                MarkdownAttachmentReference(relativePath: "Attachments/2026/06/launch-test.mp4", kind: .video),
                 MarkdownAttachmentReference(relativePath: "Attachments/2026/06/audio-test.m4a", kind: .audio)
             ],
             attachmentTags: ["#图片"],
@@ -130,6 +699,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertTrue(block.contains("## 2024-06-07"))
         XCTAssertTrue(block.contains("![Image](Attachments/2026/06/IMG-test.jpg)"))
+        XCTAssertTrue(block.contains("[Video](Attachments/2026/06/launch-test.mp4)"))
         XCTAssertTrue(block.contains("[Audio](Attachments/2026/06/audio-test.m4a)"))
         XCTAssertTrue(block.contains("#闪念 #图片"))
     }
@@ -246,6 +816,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         let image = try CaptureAttachment.validatedImage(
             data: try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
         )
+        let video = try CaptureAttachment.validatedVideo(
+            data: Data([0x04, 0x05, 0x06]),
+            suggestedName: "Launch Clip.mp4"
+        )
         let audio = try CaptureAttachment.validatedAudio(data: Data([0x01, 0x02, 0x03]))
         let file = try CaptureAttachment.validatedFile(
             data: Data("launch brief".utf8),
@@ -256,7 +830,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             body: "Recovered thought",
             tags: "#launch",
             target: .daily(date),
-            attachments: [image, audio, file],
+            attachments: [image, video, audio, file],
             createdAt: date
         )
         let store = CaptureDraftRecoveryStore(directory: directory)
@@ -376,6 +950,17 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testVideoAttachmentRejectsNonVideoSuffix() {
+        XCTAssertThrowsError(
+            try CaptureAttachment.validatedVideo(
+                data: Data([0x01]),
+                suggestedName: "Not a Movie.pdf"
+            )
+        ) { error in
+            XCTAssertEqual(error as? CaptureAttachmentError, .unsupportedVideo)
+        }
+    }
+
     func testAttachmentPolicyBoundsCountAndCombinedDraftSize() throws {
         let tinyAudio = try CaptureAttachment.validatedAudio(data: Data([0x01]))
         let existing = Array(
@@ -394,8 +979,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         let largeAudio = try CaptureAttachment.validatedAudio(
             data: Data(count: CaptureAttachmentPolicy.maximumAudioBytes)
         )
+        let largeVideo = try CaptureAttachment.validatedVideo(
+            data: Data(
+                count: CaptureAttachmentPolicy.maximumDraftBytes
+                    - CaptureAttachmentPolicy.maximumAudioBytes + 1
+            ),
+            suggestedName: "Large.mov"
+        )
         XCTAssertThrowsError(
-            try CaptureAttachmentPolicy.validateAppending(largeAudio, to: [largeAudio])
+            try CaptureAttachmentPolicy.validateAppending(largeVideo, to: [largeAudio])
         ) { error in
             XCTAssertEqual(
                 error as? CaptureAttachmentError,
@@ -668,6 +1260,59 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.allFiles.count, 33)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
+    }
+
+    func testAttachmentInventoryLinksFilesBackToNotesAndRefreshesInboxOwners() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachments = root.appendingPathComponent("Attachments", isDirectory: true)
+        try Data([0x01, 0x02]).write(to: attachments.appendingPathComponent("photo.png"))
+        try Data([0x03, 0x04]).write(to: attachments.appendingPathComponent("voice.m4a"))
+        try Data("document".utf8).write(to: attachments.appendingPathComponent("brief.txt"))
+        try "# Project Brief\n\n![Photo](Attachments/photo.png)\n\n[Brief](Attachments/brief.txt)\n".write(
+            to: root.appendingPathComponent("Project Brief.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Inbox\n\n## 2026-07-15 09:00\n\nVoice memo\n\n[Audio](Attachments/voice.m4a)\n".write(
+            to: root.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        var snapshot = try await store.loadLibrarySnapshot()
+
+        let photo = try XCTUnwrap(snapshot.attachments.first {
+            $0.relativePath == "Attachments/photo.png"
+        })
+        XCTAssertEqual(photo.kind, .image)
+        XCTAssertEqual(photo.owners.map(\.title), ["Project Brief"])
+        XCTAssertEqual(photo.owners.map(\.destination), [.file("Project Brief.md")])
+        let thumbnailData = try await store.loadAttachmentThumbnailData(
+            relativePath: photo.relativePath
+        )
+        XCTAssertEqual(thumbnailData, Data([0x01, 0x02]))
+
+        let voice = try XCTUnwrap(snapshot.attachments.first {
+            $0.relativePath == "Attachments/voice.m4a"
+        })
+        XCTAssertEqual(voice.kind, .audio)
+        XCTAssertEqual(voice.owners.map(\.destination), [.memo("2026-07-15 09:00-0")])
+
+        try "# Inbox\n\n## 2026-07-15 09:00\n\nVoice memo without attachment\n".write(
+            to: root.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        snapshot = try await store.loadInboxDeltaSnapshot()
+        XCTAssertTrue(
+            snapshot.attachments.first {
+                $0.relativePath == "Attachments/voice.m4a"
+            }?.owners.isEmpty == true
+        )
     }
 
     func testLibrarySnapshotBuildsNestedFolderTreeAndKeepsEmptyFolders() async throws {
@@ -1116,6 +1761,78 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testRenameNoteAvoidsCollisionsPreservesContentAndPinState() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let markdown = "# Plan\n\nPortable body\n"
+        try markdown.write(
+            to: root.appendingPathComponent("Projects/Plan.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Existing\n".write(
+            to: root.appendingPathComponent("Projects/Roadmap.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        try await store.setPinned(true, relativePath: "Projects/Plan.md")
+        let renamed = try await store.renameMarkdownDocument(
+            relativePath: "Projects/Plan.md",
+            to: "Roadmap"
+        )
+
+        XCTAssertEqual(renamed.relativePath, "Projects/Roadmap 2.md")
+        XCTAssertEqual(
+            try String(
+                contentsOf: root.appendingPathComponent(renamed.relativePath),
+                encoding: .utf8
+            ),
+            markdown
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Projects/Plan.md").path
+        ))
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first {
+            $0.relativePath == renamed.relativePath
+        }?.isPinned == true)
+
+        let final = try await store.renameMarkdownDocument(
+            relativePath: renamed.relativePath,
+            to: "Final.md"
+        )
+        XCTAssertEqual(final.relativePath, "Projects/Final.md")
+        snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertTrue(snapshot.allFiles.first {
+            $0.relativePath == final.relativePath
+        }?.isPinned == true)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameMarkdownDocument(
+                relativePath: final.relativePath,
+                to: "../Escape"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidNoteName)
+        }
+        await XCTAssertThrowsErrorAsync(
+            try await store.renameMarkdownDocument(
+                relativePath: "Inbox.md",
+                to: "Renamed"
+            )
+        ) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
+        }
+    }
+
     func testDuplicateNotePreservesMarkdownWithoutCopyingPinState() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1368,6 +2085,163 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(memoQueryInInbox.map(\.location), [String(localized: "Inbox")])
     }
 
+    func testAttachmentReferenceSearchParserIgnoresCodeAndTraversal() {
+        let markdown = """
+        ![Receipt](Attachments/receipt%202026.png)
+        [Scan](Attachments/report.pdf)
+        ![[Attachments/handwriting.jpg]]
+        ![Duplicate](Attachments/receipt%202026.png)
+        [Outside](../Secrets/private.pdf)
+        ```markdown
+        ![Example](Attachments/not-real.png)
+        ```
+        """
+
+        XCTAssertEqual(
+            MarkdownAttachmentSearch.relativePaths(in: markdown),
+            [
+                "Attachments/receipt 2026.png",
+                "Attachments/report.pdf",
+                "Attachments/handwriting.jpg",
+            ]
+        )
+    }
+
+    func testFindInNoteAttachmentMatchesOnlyReferencedDocumentsInBlockOrder() {
+        let blocks = MarkdownRenderBlock.parse("""
+        # Trip
+
+        ![Receipt](Attachments/receipt.png)
+
+        [Scan](Attachments/report.pdf)
+        """)
+        let matches = NoteFindIndex.attachmentMatches(
+            in: blocks,
+            documents: [
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/report.pdf",
+                    text: "The ORBITAL total is 428. ORBITAL is approved."
+                ),
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/receipt.png",
+                    text: "ORBITAL receipt"
+                ),
+                AttachmentSearchDocument(
+                    relativePath: "Attachments/unreferenced.png",
+                    text: "ORBITAL must not appear"
+                ),
+            ],
+            query: "orbital"
+        )
+
+        XCTAssertEqual(matches.map(\.relativePath), [
+            "Attachments/receipt.png",
+            "Attachments/report.pdf",
+            "Attachments/report.pdf",
+        ])
+        XCTAssertEqual(matches.map(\.occurrence), [0, 0, 1])
+        XCTAssertTrue(matches.allSatisfy { $0.context.localizedCaseInsensitiveContains("orbital") })
+    }
+
+    func testAttachmentOCRSearchCombinesNoteMetadataAndCachedRecognizedText() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachment = root.appendingPathComponent("Attachments/receipt.png")
+        try Data([0x01]).write(to: attachment, options: .atomic)
+        try "# Quarterly Review\n\n![Receipt](Attachments/receipt.png)\n".write(
+            to: root.appendingPathComponent("Quarterly Review.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let recognizer = StubAttachmentTextRecognizer(text: "Project Orbital invoice total 428")
+        let cacheURL = root.appendingPathComponent(".test-cache/attachment-text.json")
+        let index = AttachmentTextIndex(recognizer: recognizer, cacheURL: cacheURL)
+        let store = MarkdownFileStore(attachmentTextIndex: index)
+        await store.configure(root: root)
+        _ = try await store.loadLibrarySnapshot()
+
+        let combined = try await store.search(query: "quarterly orbital")
+        XCTAssertEqual(combined.count, 1)
+        XCTAssertEqual(
+            combined.first?.location,
+            "Quarterly Review.md · receipt.png"
+        )
+        XCTAssertEqual(combined.first?.context, "Project Orbital invoice total 428")
+        _ = try await store.search(query: "orbital")
+        let cachedCallCount = await recognizer.callCount()
+        XCTAssertEqual(cachedCallCount, 1)
+
+        let restoredRecognizer = StubAttachmentTextRecognizer(
+            text: "Project Orbital invoice total 428"
+        )
+        let restoredIndex = AttachmentTextIndex(
+            recognizer: restoredRecognizer,
+            cacheURL: cacheURL
+        )
+        let restoredStore = MarkdownFileStore(attachmentTextIndex: restoredIndex)
+        await restoredStore.configure(root: root)
+        _ = try await restoredStore.loadLibrarySnapshot()
+        let restoredResults = try await restoredStore.search(query: "orbital")
+        XCTAssertEqual(restoredResults.count, 1)
+        let restoredCacheCallCount = await restoredRecognizer.callCount()
+        XCTAssertEqual(restoredCacheCallCount, 0)
+
+        try Data([0x01, 0x02]).write(to: attachment, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(5)],
+            ofItemAtPath: attachment.path
+        )
+        _ = try await restoredStore.search(query: "orbital")
+        let invalidatedCallCount = await restoredRecognizer.callCount()
+        XCTAssertEqual(invalidatedCallCount, 1)
+    }
+
+    func testVisionRecognizerReadsLargePrintedAttachmentText() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("ocr.png")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1_400, height: 420)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_400, height: 420))
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 112, weight: .bold),
+                .foregroundColor: UIColor.black,
+            ]
+            NSString(string: "ORBITAL 428").draw(
+                at: CGPoint(x: 80, y: 120),
+                withAttributes: attributes
+            )
+        }
+        try XCTUnwrap(image.pngData()).write(to: url, options: .atomic)
+
+        let text = try await VisionAttachmentTextRecognizer().recognizeText(at: url)
+
+        XCTAssertTrue(text.localizedCaseInsensitiveContains("ORBITAL"))
+        XCTAssertTrue(text.contains("428"))
+
+        let pdfURL = root.appendingPathComponent("scan.pdf")
+        let pdfBounds = CGRect(x: 0, y: 0, width: 1_200, height: 500)
+        let pdfData = UIGraphicsPDFRenderer(bounds: pdfBounds).pdfData { renderer in
+            renderer.beginPage()
+            UIColor.white.setFill()
+            renderer.cgContext.fill(pdfBounds)
+            NSString(string: "NEBULA 731").draw(
+                at: CGPoint(x: 80, y: 150),
+                withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 104, weight: .bold),
+                    .foregroundColor: UIColor.black,
+                ]
+            )
+        }
+        try pdfData.write(to: pdfURL, options: .atomic)
+
+        let pdfText = try await VisionAttachmentTextRecognizer().recognizeText(at: pdfURL)
+
+        XCTAssertTrue(pdfText.localizedCaseInsensitiveContains("NEBULA"))
+        XCTAssertTrue(pdfText.contains("731"))
+    }
+
     func testSearchHighlightingMatchesMultipleTermsWithoutCaseOrDiacriticSensitivity() {
         let text = "Résumé restore RESTORE"
         let matches = SearchHighlighting.ranges(
@@ -1419,8 +2293,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         let preview = try await store.prepareAttachmentPreview(
             relativePath: "Attachments/preview.png"
         )
-        XCTAssertEqual(try Data(contentsOf: preview), bytes)
-        XCTAssertTrue(preview.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        XCTAssertEqual(try Data(contentsOf: preview.url), bytes)
+        XCTAssertEqual(preview.relativePath, "Attachments/preview.png")
+        XCTAssertTrue(preview.url.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        XCTAssertFalse(preview.isPDF)
 
         do {
             _ = try await store.prepareAttachmentPreview(relativePath: "../outside.png")
@@ -1428,6 +2304,55 @@ final class MudsnoteCompanionTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? AttachmentPreviewError, .invalidPath)
         }
+    }
+
+    func testPDFPreviewMarkupCommitsAtomicallyAndRejectsExternalChanges() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let attachment = root.appendingPathComponent("Attachments/scan.pdf")
+        let original = Data("%PDF-1.7 original".utf8)
+        try original.write(to: attachment, options: .atomic)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let preview = try await store.prepareAttachmentPreview(
+            relativePath: "Attachments/scan.pdf"
+        )
+        XCTAssertTrue(preview.isPDF)
+        let unchanged = try await store.commitEditedAttachmentPreview(
+            preview,
+            editedURL: preview.url
+        )
+        XCTAssertFalse(unchanged)
+        let edited = Data("%PDF-1.7 annotated".utf8)
+        try edited.write(to: preview.url, options: .atomic)
+        let committed = try await store.commitEditedAttachmentPreview(
+            preview,
+            editedURL: preview.url
+        )
+        XCTAssertTrue(committed)
+        XCTAssertEqual(try Data(contentsOf: attachment), edited)
+
+        let stalePreview = try await store.prepareAttachmentPreview(
+            relativePath: "Attachments/scan.pdf"
+        )
+        let external = Data("%PDF-1.7 external".utf8)
+        try external.write(to: attachment, options: .atomic)
+        try Data("%PDF-1.7 stale markup".utf8).write(
+            to: stalePreview.url,
+            options: .atomic
+        )
+        do {
+            _ = try await store.commitEditedAttachmentPreview(
+                stalePreview,
+                editedURL: stalePreview.url
+            )
+            XCTFail("External attachment edits must not be overwritten")
+        } catch {
+            XCTAssertEqual(error as? AttachmentPreviewError, .changedExternally)
+        }
+        XCTAssertEqual(try Data(contentsOf: attachment), external)
     }
 
     func testMarkdownDocumentLoadsInsideAuthorizedLibraryAndRejectsTraversal() async throws {
@@ -1444,6 +2369,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        let expectedModifiedAt = Date(timeIntervalSince1970: 1_717_777_777)
+        var resourceValues = URLResourceValues()
+        resourceValues.contentModificationDate = expectedModifiedAt
+        var mutableDocumentURL = documentURL
+        try mutableDocumentURL.setResourceValues(resourceValues)
         let store = MarkdownFileStore()
         await store.configure(root: root)
 
@@ -1451,6 +2381,9 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(document.title, "Launch")
         XCTAssertEqual(document.relativePath, "Projects/Launch.md")
         XCTAssertTrue(document.markdown.contains("Commercial-ready reader"))
+        XCTAssertEqual(try XCTUnwrap(document.modifiedAt).timeIntervalSince1970,
+                       expectedModifiedAt.timeIntervalSince1970,
+                       accuracy: 1)
 
         do {
             _ = try await store.loadMarkdownDocument(relativePath: "../outside.md")
@@ -1477,6 +2410,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(saved.markdown, "# Updated\n")
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Updated\n")
+        let actualModifiedAt = try documentURL.resourceValues(
+            forKeys: [.contentModificationDateKey]
+        ).contentModificationDate
+        XCTAssertEqual(saved.modifiedAt, actualModifiedAt)
 
         try "# External change\n".write(to: documentURL, atomically: true, encoding: .utf8)
         await XCTAssertThrowsErrorAsync(
@@ -1593,6 +2530,42 @@ final class MudsnoteCompanionTests: XCTestCase {
         let snapshot = try await store.loadLibrarySnapshot()
         XCTAssertEqual(snapshot.attachments.first { $0.relativePath == relativePath }?.kind, .audio)
         XCTAssertTrue(snapshot.allFiles.first { $0.relativePath == original.relativePath }?.hasAttachments == true)
+    }
+
+    func testRecordedAudioTranscriptPersistsAsEditableSearchableMarkdown() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let documentURL = root.appendingPathComponent("Meeting.md")
+        try "# Meeting\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Meeting.md")
+        let attached = try await store.attachToMarkdownDocument(
+            relativePath: original.relativePath,
+            markdown: original.markdown,
+            expectedMarkdown: original.markdown,
+            attachment: try CaptureAttachment.validatedAudio(data: Data([0x01, 0x02]))
+        )
+        let transcript = MarkdownAudioTranscript.appending(
+            "Project ORBITAL is approved.",
+            to: attached.markdown
+        )
+        let saved = try await store.saveMarkdownDocument(
+            relativePath: attached.relativePath,
+            markdown: transcript,
+            expectedMarkdown: attached.markdown
+        )
+
+        XCTAssertTrue(saved.markdown.contains("[Audio](Attachments/"))
+        XCTAssertTrue(saved.markdown.contains("### Audio transcription"))
+        XCTAssertTrue(saved.markdown.contains("Project ORBITAL is approved."))
+        XCTAssertEqual(
+            MarkdownAudioTranscript.appending("  \n", to: saved.markdown),
+            saved.markdown
+        )
+        let results = try await store.search(query: "orbital")
+        XCTAssertEqual(results.map(\.location), ["Meeting.md"])
     }
 
     func testMarkdownDocumentStoresPortableGenericFileAttachment() async throws {
@@ -1918,6 +2891,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
             ![Cover](Attachments/cover.png)
             - [x] **Ship** the iPhone build
+            - [ ] Publish the release notes
             Follow up with the release notes.
             #release #发布 #Release
             `#inline-code`
@@ -1929,9 +2903,25 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
 
         XCTAssertEqual(metadata.title, "Launch Plan")
-        XCTAssertEqual(metadata.preview, "Ship the iPhone build Follow up with the release notes.")
+        XCTAssertEqual(metadata.preview, "Ship the iPhone build Publish the release notes Follow up with the release notes.")
         XCTAssertTrue(metadata.hasAttachments)
+        XCTAssertEqual(metadata.galleryImagePath, "Attachments/cover.png")
+        XCTAssertEqual(
+            metadata.galleryChecklistItems,
+            [
+                MarkdownGalleryChecklistItem(text: "Ship the iPhone build", isChecked: true),
+                MarkdownGalleryChecklistItem(text: "Publish the release notes", isChecked: false),
+            ]
+        )
+        XCTAssertTrue(metadata.hasChecklist)
+        XCTAssertTrue(metadata.hasUncheckedChecklist)
         XCTAssertEqual(Set(metadata.tags), Set(["#release", "#发布"]))
+        let unchecked = MarkdownListMetadata.extract(
+            from: "- [ ] Follow up",
+            fallbackTitle: "Task"
+        )
+        XCTAssertTrue(unchecked.hasChecklist)
+        XCTAssertTrue(unchecked.hasUncheckedChecklist)
         XCTAssertEqual(
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
             "Plain body"
@@ -1988,6 +2978,488 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testMarkdownHeadingSectionsCollapseByLevelAndRevealFindTargets() {
+        let blocks: [MarkdownRenderBlock] = [
+            .line("# Plan"),
+            .line("Overview"),
+            .line("## Tasks"),
+            .line("Ship the app"),
+            .line("# Notes"),
+            .line("Done")
+        ]
+
+        XCTAssertEqual(MarkdownHeading("# Plan"), MarkdownHeading(level: 1, title: "Plan"))
+        XCTAssertNil(MarkdownHeading("#tag"))
+        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 0, in: blocks))
+        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 2, in: blocks))
+        XCTAssertEqual(
+            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [0]),
+            [0, 4, 5]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [2]),
+            [0, 1, 2, 4, 5]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.collapsedHeadings(
+                containing: 3,
+                in: blocks,
+                collapsed: [0, 2]
+            ),
+            [0, 2]
+        )
+        XCTAssertEqual(
+            MarkdownSectionProjection.collapsedHeadings(
+                containing: 5,
+                in: blocks,
+                collapsed: [0, 2]
+            ),
+            []
+        )
+    }
+
+    func testInlineMarkdownFormattingTogglesInsteadOfNestingMarkers() throws {
+        let wrapped = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Ship it",
+            selection: NSRange(location: 0, length: 4),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(wrapped.range, NSRange(location: 0, length: 4))
+        XCTAssertEqual(wrapped.replacement, "~~Ship~~")
+        XCTAssertEqual(wrapped.selection, NSRange(location: 2, length: 4))
+
+        let unwrappedContent = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "~~Ship~~ it",
+            selection: NSRange(location: 2, length: 4),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(unwrappedContent.range, NSRange(location: 0, length: 8))
+        XCTAssertEqual(unwrappedContent.replacement, "Ship")
+        XCTAssertEqual(unwrappedContent.selection, NSRange(location: 0, length: 4))
+
+        let unwrappedMarkers = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "~~Ship~~ it",
+            selection: NSRange(location: 0, length: 8),
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "strikethrough"
+        ))
+        XCTAssertEqual(unwrappedMarkers.replacement, "Ship")
+        XCTAssertEqual(unwrappedMarkers.selection, NSRange(location: 0, length: 4))
+
+        let placeholder = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "",
+            selection: NSRange(location: 0, length: 0),
+            prefix: "**",
+            suffix: "**",
+            placeholder: "bold"
+        ))
+        XCTAssertEqual(placeholder.replacement, "**bold**")
+        XCTAssertEqual(placeholder.selection, NSRange(location: 2, length: 4))
+
+        let underline = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Important",
+            selection: NSRange(location: 0, length: 9),
+            prefix: "<u>",
+            suffix: "</u>",
+            placeholder: "underline"
+        ))
+        XCTAssertEqual(underline.replacement, "<u>Important</u>")
+        XCTAssertEqual(underline.selection, NSRange(location: 3, length: 9))
+
+        let highlight = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "Notice",
+            selection: NSRange(location: 0, length: 6),
+            prefix: "<mark>",
+            suffix: "</mark>",
+            placeholder: "highlight"
+        ))
+        XCTAssertEqual(highlight.replacement, "<mark>Notice</mark>")
+        XCTAssertEqual(highlight.selection, NSRange(location: 6, length: 6))
+
+        let unhighlight = try XCTUnwrap(MarkdownInlineEditing.toggleEdit(
+            in: "<mark>Notice</mark>",
+            selection: NSRange(location: 6, length: 6),
+            prefix: "<mark>",
+            suffix: "</mark>",
+            placeholder: "highlight"
+        ))
+        XCTAssertEqual(unhighlight.replacement, "Notice")
+        XCTAssertEqual(unhighlight.selection, NSRange(location: 0, length: 6))
+    }
+
+    func testInlineHTMLFormattingRendersAndIndexesWithoutLeakingMarkers() {
+        let rendered = NSAttributedString(
+            MarkdownInlineRendering.attributedText(
+                for: "**Bold** and <u>underlined</u> plus <mark>highlighted</mark> with [Link](https://example.com)"
+            )
+        )
+        XCTAssertEqual(rendered.string, "Bold and underlined plus highlighted with Link")
+        let underlinedRange = (rendered.string as NSString).range(of: "underlined")
+        XCTAssertEqual(
+            rendered.attribute(
+                .underlineStyle,
+                at: underlinedRange.location,
+                effectiveRange: nil
+            ) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        let highlightedRange = (rendered.string as NSString).range(of: "highlighted")
+        XCTAssertNotNil(
+            rendered.attribute(
+                .backgroundColor,
+                at: highlightedRange.location,
+                effectiveRange: nil
+            ) as? UIColor
+        )
+        XCTAssertEqual(
+            NoteFindIndex.visibleText(for: "Find <u>important</u> and <mark>urgent</mark> text"),
+            "Find important and urgent text"
+        )
+
+        let metadata = MarkdownListMetadata.extract(
+            from: "<mark>Important title</mark>\n\nKeep <u>this preview</u> <mark>clean</mark>",
+            fallbackTitle: "Fallback"
+        )
+        XCTAssertEqual(metadata.title, "Important title")
+        XCTAssertEqual(metadata.preview, "Keep this preview clean")
+    }
+
+    func testRenderedMarkdownDetectsActionableContentWithoutOverridingExplicitLinks() throws {
+        let rendered = NSAttributedString(
+            MarkdownInlineRendering.attributedText(
+                for: "Email support@example.com, call +1 (415) 555-0123, visit 1 Apple Park Way, Cupertino, CA 95014, or use [Help](https://muds.top/help)."
+            )
+        )
+        let source = rendered.string as NSString
+        let emailRange = source.range(of: "support@example.com")
+        let phoneRange = source.range(of: "+1 (415) 555-0123")
+        let addressRange = source.range(of: "1 Apple Park Way, Cupertino, CA 95014")
+        let helpRange = source.range(of: "Help")
+
+        let emailURL = try XCTUnwrap(
+            rendered.attribute(.link, at: emailRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(emailURL.absoluteString, "mailto:support@example.com")
+        XCTAssertEqual(
+            rendered.attribute(.underlineStyle, at: emailRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+
+        let phoneURL = try XCTUnwrap(
+            rendered.attribute(.link, at: phoneRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(phoneURL.absoluteString, "tel:+14155550123")
+        XCTAssertEqual(
+            rendered.attribute(.underlineStyle, at: phoneRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+
+        let addressURL = try XCTUnwrap(
+            rendered.attribute(.link, at: addressRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(addressURL.host, "maps.apple.com")
+        XCTAssertEqual(
+            URLComponents(url: addressURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "q" })?.value,
+            "1 Apple Park Way, Cupertino, CA 95014"
+        )
+
+        let explicitURL = try XCTUnwrap(
+            rendered.attribute(.link, at: helpRange.location, effectiveRange: nil) as? URL
+        )
+        XCTAssertEqual(explicitURL.absoluteString, "https://muds.top/help")
+    }
+
+    func testMarkdownLinkEditingAddsUpdatesAndRemovesPortableLinks() throws {
+        let selectedDraft = try XCTUnwrap(MarkdownLinkEditing.draft(
+            in: "Read Mudsnote today",
+            selection: NSRange(location: 5, length: 8)
+        ))
+        XCTAssertEqual(selectedDraft.label, "Mudsnote")
+        XCTAssertFalse(selectedDraft.isExisting)
+
+        let inserted = try XCTUnwrap(MarkdownLinkEditing.insertionEdit(
+            for: selectedDraft,
+            label: selectedDraft.label,
+            destination: "muds.top/docs (ios)"
+        ))
+        XCTAssertEqual(
+            inserted.replacement,
+            "[Mudsnote](https://muds.top/docs%20%28ios%29)"
+        )
+        XCTAssertEqual(inserted.selection, NSRange(location: 6, length: 8))
+
+        let existingMarkdown = "Read [Mudsnote](https://muds.top) today"
+        let existingDraft = try XCTUnwrap(MarkdownLinkEditing.draft(
+            in: existingMarkdown,
+            selection: NSRange(location: 9, length: 0)
+        ))
+        XCTAssertTrue(existingDraft.isExisting)
+        XCTAssertEqual(existingDraft.label, "Mudsnote")
+        XCTAssertEqual(existingDraft.destination, "https://muds.top")
+
+        let updated = try XCTUnwrap(MarkdownLinkEditing.insertionEdit(
+            for: existingDraft,
+            label: "Mudsnote Docs",
+            destination: "https://muds.top/docs"
+        ))
+        XCTAssertEqual(updated.range, existingDraft.range)
+        XCTAssertEqual(updated.replacement, "[Mudsnote Docs](https://muds.top/docs)")
+
+        let removed = try XCTUnwrap(MarkdownLinkEditing.removalEdit(for: existingDraft))
+        XCTAssertEqual(removed.range, existingDraft.range)
+        XCTAssertEqual(removed.replacement, "Mudsnote")
+        XCTAssertEqual(removed.selection, NSRange(location: 5, length: 8))
+
+        XCTAssertEqual(
+            MarkdownLinkEditing.normalizedDestination("hello@example.com"),
+            "mailto:hello@example.com"
+        )
+        XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
+    }
+
+    func testMarkdownNoteLinksArePortableRelativeAndTraversalSafe() throws {
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Inbox.md",
+                to: "Projects/UI Lifecycle.md"
+            ),
+            "./Projects/UI%20Lifecycle.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Projects/Current.md",
+                to: "Projects/Next.md"
+            ),
+            "./Next.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.relativeDestination(
+                from: "Projects/Current.md",
+                to: "Reference/设计规范.md"
+            ),
+            "../Reference/%E8%AE%BE%E8%AE%A1%E8%A7%84%E8%8C%83.md"
+        )
+        XCTAssertEqual(
+            MarkdownNoteLink.resolvedRelativePath(
+                for: "../Reference/%E8%AE%BE%E8%AE%A1%E8%A7%84%E8%8C%83.md#section",
+                from: "Projects/Current.md"
+            ),
+            "Reference/设计规范.md"
+        )
+        XCTAssertNil(MarkdownNoteLink.relativeDestination(
+            from: "Projects/Current.md",
+            to: "Projects/Current.md"
+        ))
+        XCTAssertNil(MarkdownNoteLink.resolvedRelativePath(
+            for: "../Outside.md",
+            from: "Inbox.md"
+        ))
+        XCTAssertNil(MarkdownNoteLink.resolvedRelativePath(
+            for: "https://example.com/Note.md",
+            from: "Inbox.md"
+        ))
+
+        let rendered = MarkdownInlineRendering.attributedText(
+            for: "See [UI Lifecycle](Projects/UI%20Lifecycle.md)"
+        )
+        XCTAssertEqual(
+            rendered.runs.compactMap(\.link).first?.relativeString,
+            "Projects/UI%20Lifecycle.md"
+        )
+        XCTAssertNil(MarkdownAttachmentLine(
+            "[UI Lifecycle](./Projects/UI%20Lifecycle.md)"
+        ))
+        XCTAssertNil(MarkdownAttachmentLine(
+            "[Website](https://example.com)"
+        ))
+        XCTAssertEqual(
+            MarkdownAttachmentLine("[Scan](Attachments/Scanned%20Document.pdf)")?.kind,
+            .file
+        )
+        XCTAssertEqual(
+            MarkdownAttachmentLine("[Video](Attachments/Launch%20Clip.mp4)")?.kind,
+            .video
+        )
+        XCTAssertEqual(LibraryAttachment.Kind(fileExtension: "m4v"), .video)
+    }
+
+    func testNoteLinksSurviveRenameSingleMoveFolderRenameAndBatchMove() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        let reference = root.appendingPathComponent("Reference", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: reference, withIntermediateDirectories: true)
+        try "# Source\n\n[Target](./Target.md)\n\n[Web](https://example.com)\n".write(
+            to: projects.appendingPathComponent("Source.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Target\n\n[Other](../Reference/Other.md)\n".write(
+            to: projects.appendingPathComponent("Target.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Other\n\n[Target](../Projects/Target.md)\n".write(
+            to: reference.appendingPathComponent("Other.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        let renamed = try await store.renameMarkdownDocument(
+            relativePath: "Projects/Target.md",
+            to: "Renamed"
+        )
+        XCTAssertEqual(renamed.relativePath, "Projects/Renamed.md")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: reference.appendingPathComponent("Other.md"),
+            encoding: .utf8
+        ).contains("[Target](../Projects/Renamed.md)"))
+
+        let moved = try await store.moveMarkdownDocument(
+            relativePath: renamed.relativePath,
+            toFolder: "Reference"
+        )
+        XCTAssertEqual(moved.relativePath, "Reference/Renamed.md")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](../Reference/Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: reference.appendingPathComponent("Renamed.md"),
+            encoding: .utf8
+        ).contains("[Other](./Other.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Web](https://example.com)"))
+
+        let renamedFolder = try await store.renameFolder(
+            relativePath: "Reference",
+            to: "Knowledge"
+        )
+        XCTAssertEqual(renamedFolder, "Knowledge")
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](../Knowledge/Renamed.md)"))
+
+        let batchMoved = try await store.moveMarkdownDocuments(
+            relativePaths: ["Knowledge/Renamed.md", "Knowledge/Other.md"],
+            toFolder: "Projects"
+        )
+        XCTAssertEqual(Set(batchMoved.map(\.relativePath)), Set([
+            "Projects/Renamed.md",
+            "Projects/Other.md",
+        ]))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Source.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Renamed.md"),
+            encoding: .utf8
+        ).contains("[Other](./Other.md)"))
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Other.md"),
+            encoding: .utf8
+        ).contains("[Target](./Renamed.md)"))
+    }
+
+    func testFindInNoteIndexesRenderedMarkdownQuotesAndTableCells() throws {
+        let blocks = MarkdownRenderBlock.parse(
+            "# Plan\n\n**Restore** this note, then restore it.\n\n> RESTORE quote\n\n| Item | Status |\n| --- | --- |\n| Restore | Ready |\n\n[Backup](Attachments/restore.txt)"
+        )
+        let matches = NoteFindIndex.matches(in: blocks, query: "restore")
+
+        XCTAssertEqual(matches.count, 4)
+        XCTAssertEqual(
+            matches.map(\.location),
+            [
+                NoteFindLocation(blockIndex: 1, cellIndex: nil),
+                NoteFindLocation(blockIndex: 1, cellIndex: nil),
+                NoteFindLocation(blockIndex: 2, cellIndex: nil),
+                NoteFindLocation(blockIndex: 3, cellIndex: 2)
+            ]
+        )
+        XCTAssertEqual(matches.map(\.occurrence), [0, 1, 0, 0])
+        XCTAssertEqual(NoteFindIndex.visibleText(for: "**Restore** this"), "Restore this")
+        XCTAssertTrue(NoteFindIndex.matches(in: blocks, query: "   ").isEmpty)
+
+        let highlighted = NoteFindIndex.highlightedText(
+            for: "Restore and restore",
+            query: "restore",
+            location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+            activeMatch: NoteFindMatch(
+                location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+                occurrence: 1
+            )
+        )
+        let rendered = NSAttributedString(highlighted)
+        XCTAssertNotNil(rendered.attribute(.backgroundColor, at: 0, effectiveRange: nil))
+        XCTAssertEqual(
+            rendered.attribute(.backgroundColor, at: 12, effectiveRange: nil) as? UIColor,
+            UIColor.systemOrange
+        )
+    }
+
+    func testMarkdownParagraphStylesAreNativeAndIdempotent() throws {
+        let source = "Intro\n## Existing\n#tag stays\n"
+        let existingRange = (source as NSString).range(of: "## Existing")
+        let titleEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: source,
+            selection: existingRange,
+            style: .title
+        ))
+        let titled = (source as NSString).replacingCharacters(
+            in: titleEdit.range,
+            with: titleEdit.replacement
+        )
+        XCTAssertEqual(titled, "Intro\n# Existing\n#tag stays\n")
+
+        let repeatedTitleEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: titled,
+            selection: (titled as NSString).range(of: "# Existing"),
+            style: .title
+        ))
+        XCTAssertEqual(repeatedTitleEdit.replacement, "# Existing\n")
+
+        let bodyEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: titled,
+            selection: (titled as NSString).range(of: "# Existing"),
+            style: .body
+        ))
+        XCTAssertEqual(bodyEdit.replacement, "Existing\n")
+
+        let multiple = "First\n### Second\n\n"
+        let headingEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: multiple,
+            selection: NSRange(location: 0, length: (multiple as NSString).length),
+            style: .heading
+        ))
+        XCTAssertEqual(headingEdit.replacement, "## First\n## Second\n\n")
+
+        let tagEdit = try XCTUnwrap(MarkdownParagraphEditing.styleEdit(
+            in: "#tag stays",
+            selection: NSRange(location: 0, length: 10),
+            style: .body
+        ))
+        XCTAssertEqual(tagEdit.replacement, "#tag stays")
+    }
+
     func testScannedDocumentCreatesPortableMultiPagePDF() throws {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 500))
         let first = renderer.image { context in
@@ -2001,6 +3473,106 @@ final class MudsnoteCompanionTests: XCTestCase {
         let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
         XCTAssertEqual(try XCTUnwrap(CGPDFDocument(provider)).numberOfPages, 2)
         XCTAssertThrowsError(try ScannedDocumentPDF.data(for: []))
+        XCTAssertThrowsError(try ScannedDocumentPDF.data(for: [UIImage()])) { error in
+            XCTAssertEqual(error as? ScannedDocumentPDF.Error, .invalidPage)
+        }
+    }
+
+    @MainActor
+    func testQuickCaptureAcceptsScannedDocumentAsPortableFile() async throws {
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+        let page = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 500)).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 500))
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 30, y: 40, width: 240, height: 20))
+        }
+
+        let errorMessage = await model.attachScannedDocument([page, page])
+
+        XCTAssertNil(errorMessage)
+        XCTAssertTrue(model.draft.canSend)
+        XCTAssertEqual(model.draft.attachments.count, 1)
+        guard case .file(let data, let fileExtension, let baseName) = model.draft.attachments[0] else {
+            return XCTFail("The scan should use the portable file attachment pipeline")
+        }
+        XCTAssertEqual(fileExtension, "pdf")
+        XCTAssertEqual(baseName, "Scanned Document")
+        XCTAssertTrue(data.starts(with: Data("%PDF".utf8)))
+        let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
+        XCTAssertEqual(try XCTUnwrap(CGPDFDocument(provider)).numberOfPages, 2)
+
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let pending = try await MarkdownFileStore().preparePendingWrite(
+            for: model.draft,
+            root: root,
+            now: Date(timeIntervalSince1970: 1_752_384_000)
+        )
+        XCTAssertEqual(pending.targetRelativePath, "Inbox.md")
+        XCTAssertEqual(pending.attachments.count, 1)
+        XCTAssertTrue(pending.attachments[0].relativePath.contains("/Scanned Document-"))
+        XCTAssertTrue(pending.attachments[0].relativePath.hasSuffix(".pdf"))
+        XCTAssertTrue(pending.markdownBlock.contains("[Scanned Document-"))
+        XCTAssertTrue(pending.markdownBlock.contains("](Attachments/"))
+        XCTAssertTrue(pending.markdownBlock.contains("#附件"))
+    }
+
+    @MainActor
+    func testQuickCaptureAcceptsGenericFileAndPreservesPortableName() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = root.appendingPathComponent("Launch Brief.v2.pdf")
+        let sourceData = Data("portable quick-capture file".utf8)
+        try sourceData.write(to: sourceURL, options: .atomic)
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+
+        let errorMessage = await model.attachFile(sourceURL)
+
+        XCTAssertNil(errorMessage)
+        XCTAssertTrue(model.draft.canSend)
+        XCTAssertEqual(model.draft.attachments.count, 1)
+        guard case .file(let data, let fileExtension, let baseName) = model.draft.attachments[0] else {
+            return XCTFail("The selected document should use the portable file attachment pipeline")
+        }
+        XCTAssertEqual(data, sourceData)
+        XCTAssertEqual(fileExtension, "pdf")
+        XCTAssertEqual(baseName, "Launch Brief.v2")
+    }
+
+    @MainActor
+    func testQuickCaptureRejectsOversizedGenericFileWithoutChangingDraft() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sourceURL = root.appendingPathComponent("Too Large.zip")
+        try Data().write(to: sourceURL, options: .atomic)
+        let file = try FileHandle(forWritingTo: sourceURL)
+        try file.truncate(
+            atOffset: UInt64(CaptureAttachmentPolicy.maximumFileBytes + 1)
+        )
+        try file.close()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            restoreDraftImmediately: false
+        )
+
+        let errorMessage = await model.attachFile(sourceURL)
+
+        XCTAssertEqual(
+            errorMessage,
+            CaptureAttachmentError.tooLarge(
+                maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
+            ).localizedDescription
+        )
+        XCTAssertTrue(model.draft.attachments.isEmpty)
+        XCTAssertFalse(model.draft.canSend)
     }
 
     @MainActor
@@ -2188,6 +3760,14 @@ final class MudsnoteCompanionTests: XCTestCase {
         ]
 
         XCTAssertEqual(NoteListPresentation.sorted(files, by: .title).map(\.title), ["Alpha", "Beta", "Charlie"])
+        XCTAssertEqual(
+            NoteListPresentation.sorted(files, by: .title, direction: .reversed).map(\.title),
+            ["Charlie", "Beta", "Alpha"]
+        )
+        XCTAssertEqual(
+            NoteListPresentation.sorted(files, by: .modified, direction: .reversed).map(\.title),
+            ["Charlie", "Beta", "Alpha"]
+        )
         let sections = NoteListPresentation.sections(
             for: files,
             sortedBy: .modified,
@@ -2197,10 +3777,71 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(sections.map(\.id), ["today", "yesterday", "previous-7"])
         XCTAssertEqual(sections.flatMap(\.files).map(\.title), ["Alpha", "Beta", "Charlie"])
+        let reversedSections = NoteListPresentation.sections(
+            for: files,
+            sortedBy: .modified,
+            direction: .reversed,
+            groupByDate: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(reversedSections.map(\.id), ["previous-7", "yesterday", "today"])
+        XCTAssertEqual(reversedSections.flatMap(\.files).map(\.title), ["Charlie", "Beta", "Alpha"])
         XCTAssertEqual(
             NoteListPresentation.sections(for: files, sortedBy: .title, groupByDate: true).count,
             1
         )
+    }
+
+    func testLibraryFileScopeFiltersSearchResultsAndDerivesNewNoteFolder() {
+        let project = RecentMarkdownFile(
+            id: "Projects/Plan.md",
+            relativePath: "Projects/Plan.md",
+            title: "Plan",
+            modifiedAt: .now
+        )
+        let daily = RecentMarkdownFile(
+            id: "Daily/2026-07-17.md",
+            relativePath: "Daily/2026-07-17.md",
+            title: "2026-07-17",
+            modifiedAt: .now
+        )
+        let projectResult = MarkdownSearchResult(
+            id: "file:\(project.relativePath)",
+            title: project.title,
+            context: "Launch plan",
+            location: project.relativePath,
+            score: 1,
+            modifiedAt: project.modifiedAt,
+            destination: .file(project)
+        )
+        let dailyResult = MarkdownSearchResult(
+            id: "file:\(daily.relativePath)",
+            title: daily.title,
+            context: "Daily plan",
+            location: daily.relativePath,
+            score: 1,
+            modifiedAt: daily.modifiedAt,
+            destination: .file(daily)
+        )
+        let memo = MemoBlock(id: "memo", dateText: "10:00", body: "Inbox plan", tags: [])
+        let memoResult = MarkdownSearchResult(
+            id: "memo:memo",
+            title: "Inbox plan",
+            context: "Inbox plan",
+            location: "Inbox",
+            score: 1,
+            modifiedAt: .now,
+            destination: .memo(memo)
+        )
+
+        XCTAssertTrue(LibraryFileScope.all.contains(projectResult))
+        XCTAssertTrue(LibraryFileScope.all.contains(memoResult))
+        XCTAssertTrue(LibraryFileScope.pathPrefix("Daily/").contains(dailyResult))
+        XCTAssertFalse(LibraryFileScope.pathPrefix("Daily/").contains(projectResult))
+        XCTAssertFalse(LibraryFileScope.pathPrefix("Daily/").contains(memoResult))
+        XCTAssertNil(LibraryFileScope.all.newNoteFolder)
+        XCTAssertEqual(LibraryFileScope.pathPrefix("/Daily/").newNoteFolder, "Daily")
     }
 
     func testPerformanceMaximumAttachmentDraftPreparation() async throws {
@@ -2272,4 +3913,20 @@ final class MudsnoteCompanionTests: XCTestCase {
 
     private static let onePixelPNG =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+}
+
+private actor StubAttachmentTextRecognizer: AttachmentTextRecognizing {
+    private let text: String
+    private var calls = 0
+
+    init(text: String) {
+        self.text = text
+    }
+
+    func recognizeText(at url: URL) async throws -> String {
+        calls += 1
+        return text
+    }
+
+    func callCount() -> Int { calls }
 }

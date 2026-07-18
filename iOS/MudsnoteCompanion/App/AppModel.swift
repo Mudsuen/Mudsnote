@@ -1,6 +1,8 @@
 import Foundation
 import PhotosUI
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 enum CaptureRoute: String {
     case text
@@ -10,6 +12,7 @@ enum CaptureRoute: String {
 
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
+    static let pendingSearchKey = "MudsnotePendingSystemSearch"
 }
 
 @MainActor
@@ -21,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var folders: [LibraryFolderNode] = []
     @Published var trashedFiles: [TrashedMarkdownFile] = []
     @Published var attachments: [LibraryAttachment] = []
+    @Published var smartFolders: [SmartFolderDefinition] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
     @Published var librarySummary = LibrarySummary()
@@ -44,6 +48,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var completedSearchScope = MarkdownSearchScope.all
     @Published private(set) var libraryRevision = 0
     @Published private(set) var draftRecoveryIssue: String?
+    @Published private(set) var activeTagMutation: String?
+    @Published private(set) var captureAttachmentIssue: String?
+    @Published private(set) var captureSubmissionIssue: String?
+    @Published private(set) var attachmentPresentationRevision = 0
+    @Published private(set) var isLibrarySearchRequested = false
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -60,6 +69,12 @@ final class AppModel: ObservableObject {
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
+    private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    #if DEBUG
+    private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
+        "-ui-testing-attachment-error"
+    )
+    #endif
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
 
@@ -82,11 +97,13 @@ final class AppModel: ObservableObject {
         folderAccess: FolderAccessService = FolderAccessService(),
         fileStore: MarkdownFileStore = MarkdownFileStore(),
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
-        restoreDraftImmediately: Bool? = nil
+        restoreDraftImmediately: Bool? = nil,
+        defaults: UserDefaults = .standard
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
             Task { await restoreCaptureDraftIfNeeded() }
@@ -143,6 +160,7 @@ final class AppModel: ObservableObject {
         folders = []
         trashedFiles = []
         attachments = []
+        smartFolders = []
         librarySummary = LibrarySummary()
         tagSummaries = []
         conflictWarnings = []
@@ -159,23 +177,98 @@ final class AppModel: ObservableObject {
     func showCapture(_ route: CaptureRoute = .text) {
         captureRoute = route
         isCapturePresented = true
+        #if DEBUG
+        if shouldPresentAttachmentFailureFixture {
+            shouldPresentAttachmentFailureFixture = false
+            attachCameraPhoto(.photo(Data()))
+        }
+        #endif
     }
 
     func handle(url: URL) {
         guard url.scheme == "mudsnote" else { return }
         if url.host == "capture" {
             openSystemCapture(Self.captureRoute(from: url))
+        } else if url.host == "search" {
+            isLibrarySearchRequested = true
         }
+    }
+
+    @discardableResult
+    func consumeLibrarySearchRequest() -> Bool {
+        guard isLibrarySearchRequested else { return false }
+        isLibrarySearchRequested = false
+        return true
     }
 
     func consumeSystemEntryRequest() {
         let defaults = UserDefaults.standard
+        if defaults.bool(forKey: SystemEntryRequest.pendingSearchKey) {
+            defaults.removeObject(forKey: SystemEntryRequest.pendingSearchKey)
+            isLibrarySearchRequested = true
+        }
         guard let value = defaults.string(forKey: SystemEntryRequest.pendingRouteKey),
               let route = CaptureRoute(rawValue: value) else {
             return
         }
         defaults.removeObject(forKey: SystemEntryRequest.pendingRouteKey)
         openSystemCapture(route)
+    }
+
+    func attachmentPresentationMode(
+        notePath: String,
+        attachmentPath: String
+    ) -> AttachmentPresentationMode {
+        _ = attachmentPresentationRevision
+        return attachmentPresentationPreferences.mode(
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+    }
+
+    func setAttachmentPresentationMode(
+        _ mode: AttachmentPresentationMode,
+        notePath: String,
+        attachmentPath: String
+    ) {
+        attachmentPresentationPreferences.set(
+            mode,
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+        attachmentPresentationRevision += 1
+    }
+
+    func setAllAttachmentPresentationModes(
+        _ mode: AttachmentPresentationMode,
+        notePath: String
+    ) {
+        attachmentPresentationPreferences.setAll(mode, notePath: notePath)
+        attachmentPresentationRevision += 1
+    }
+
+    func moveAttachmentPresentationPreference(
+        notePath: String,
+        from oldPath: String,
+        to newPath: String
+    ) {
+        attachmentPresentationPreferences.moveAttachment(
+            notePath: notePath,
+            from: oldPath,
+            to: newPath
+        )
+        attachmentPresentationRevision += 1
+    }
+
+    func removeAttachmentPresentationPreference(
+        notePath: String,
+        attachmentPath: String
+    ) {
+        attachmentPresentationPreferences.removeAttachment(
+            notePath: notePath,
+            attachmentPath: attachmentPath
+        )
+        attachmentPresentationRevision += 1
     }
 
     func persistCaptureDraftNow() {
@@ -210,6 +303,7 @@ final class AppModel: ObservableObject {
               !isAudioTransitioning,
               !isTranscribingAudio,
               !audioRecorder.isRecording else { return }
+        captureSubmissionIssue = nil
         let submittedDraft = draft
         let canUseInboxDelta = submittedDraft.target == .inbox && submittedDraft.attachments.isEmpty
         isSendingDraft = true
@@ -217,6 +311,7 @@ final class AppModel: ObservableObject {
             defer { isSendingDraft = false }
             do {
                 try await appendDraft(submittedDraft)
+                captureSubmissionIssue = nil
                 let finished = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
                 statusToast = .saved(
                     finished
@@ -235,12 +330,16 @@ final class AppModel: ObservableObject {
                     return
                 }
                 if let draftSaveError = error as? DraftSaveError {
-                    statusToast = .error(draftSaveError.localizedDescription)
+                    captureSubmissionIssue = draftSaveError.localizedDescription
                     return
                 }
-                statusToast = .error(String(localized: "Could not save. Draft kept open"))
+                captureSubmissionIssue = String(localized: "Could not save. Draft kept open")
             }
         }
+    }
+
+    func retryCaptureSubmission() {
+        sendDraft(continueCapturing: false)
     }
 
     func attachPhoto(_ item: PhotosPickerItem?) {
@@ -249,17 +348,101 @@ final class AppModel: ObservableObject {
         Task {
             defer { attachmentPreparationCount -= 1 }
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    statusToast = .error(String(localized: "Image data unavailable"))
-                    return
-                }
-                let attachment = try CaptureAttachment.validatedImage(data: data)
+                let attachment = try await photoLibraryAttachment(from: item)
                 try appendAttachment(attachment)
-                statusToast = .saved(String(localized: "Image attached"))
+                statusToast = .saved(attachmentAttachedMessage(attachment))
             } catch {
-                statusToast = .error(error.localizedDescription)
+                reportCaptureAttachmentFailure(error.localizedDescription)
             }
         }
+    }
+
+    func attachCameraPhoto(_ media: CapturedCameraMedia) {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment: CaptureAttachment
+            switch media {
+            case .photo(let data):
+                attachment = try CaptureAttachment.validatedImage(data: data)
+            case .video(let video):
+                attachment = video
+            }
+            try appendAttachment(attachment)
+            statusToast = .saved(attachmentAttachedMessage(attachment))
+        } catch {
+            reportCaptureAttachmentFailure(error.localizedDescription)
+        }
+    }
+
+    private func photoLibraryAttachment(from item: PhotosPickerItem) async throws -> CaptureAttachment {
+        if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+            guard let movie = try await item.loadTransferable(type: PhotoLibraryMovie.self) else {
+                throw CaptureAttachmentError.empty
+            }
+            return try CaptureAttachment.validatedVideo(
+                data: movie.data,
+                suggestedName: movie.suggestedName
+            )
+        }
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw CaptureAttachmentError.empty
+        }
+        return try CaptureAttachment.validatedImage(data: data)
+    }
+
+    private func attachmentAttachedMessage(_ attachment: CaptureAttachment) -> String {
+        switch attachment {
+        case .image: String(localized: "Image attached")
+        case .video: String(localized: "Video attached")
+        case .audio: String(localized: "Audio attached")
+        case .file: String(localized: "File attached")
+        }
+    }
+
+    func attachFile(_ url: URL) async -> String? {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment = try importedFileAttachment(from: url)
+            try appendAttachment(attachment)
+            captureAttachmentIssue = nil
+            statusToast = .saved(String(localized: "File attached"))
+            return nil
+        } catch {
+            reportCaptureAttachmentFailure(error.localizedDescription)
+            return error.localizedDescription
+        }
+    }
+
+    func attachScannedDocument(_ pages: [UIImage]) async -> String? {
+        guard !isSendingDraft, attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let data = try ScannedDocumentPDF.data(for: pages)
+            let attachment = try CaptureAttachment.validatedFile(
+                data: data,
+                suggestedName: ScannedDocumentPDF.suggestedFileName
+            )
+            try appendAttachment(attachment)
+            captureAttachmentIssue = nil
+            statusToast = .saved(String(localized: "Scanned document attached"))
+            return nil
+        } catch {
+            reportCaptureAttachmentFailure(error.localizedDescription)
+            return error.localizedDescription
+        }
+    }
+
+    func reportCaptureAttachmentFailure(_ message: String) {
+        captureAttachmentIssue = message
+    }
+
+    func dismissCaptureAttachmentIssue() {
+        captureAttachmentIssue = nil
     }
 
     func toggleAudioRecording() {
@@ -289,7 +472,7 @@ final class AppModel: ObservableObject {
                     statusToast = .pending(String(localized: "Recording"))
                 }
             } catch {
-                statusToast = .error(error.localizedDescription)
+                reportCaptureAttachmentFailure(error.localizedDescription)
             }
         }
     }
@@ -302,6 +485,7 @@ final class AppModel: ObservableObject {
     private func appendAttachment(_ attachment: CaptureAttachment) throws {
         try CaptureAttachmentPolicy.validateAppending(attachment, to: draft.attachments)
         draft.attachments.append(attachment)
+        captureAttachmentIssue = nil
     }
 
     private func scheduleDraftPersistenceIfNeeded() {
@@ -457,6 +641,53 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func renameTag(_ tag: String, to name: String) async -> Bool {
+        await mutateTag(tag, mutation: .rename(to: name))
+    }
+
+    @discardableResult
+    func deleteTag(_ tag: String) async -> Bool {
+        await mutateTag(tag, mutation: .delete)
+    }
+
+    private func mutateTag(
+        _ tag: String,
+        mutation: MarkdownTagMutation
+    ) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing tags."))
+            return false
+        }
+        guard activeTagMutation == nil else { return false }
+        activeTagMutation = tag
+        defer { activeTagMutation = nil }
+        do {
+            let result = try await fileStore.mutateTag(tag, mutation: mutation)
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            if let selectedDocument,
+               result.changedPaths.contains(selectedDocument.relativePath) {
+                self.selectedDocument = try await fileStore.loadMarkdownDocument(
+                    relativePath: selectedDocument.relativePath
+                )
+            }
+            if let selectedMemo {
+                self.selectedMemo = inboxItems.first { $0.id == selectedMemo.id }
+            }
+            switch mutation {
+            case .rename:
+                statusToast = .saved(String(localized: "Tag Renamed"))
+            case .delete:
+                statusToast = .saved(String(localized: "Tag Deleted"))
+            }
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
     func openFile(_ file: RecentMarkdownFile) {
         Task {
             do {
@@ -469,18 +700,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func createStandaloneNote(inFolder relativeFolderPath: String? = nil) {
-        guard case .ready = folderStatus else { return }
-        Task {
-            do {
-                let document = try await fileStore.createMarkdownDocument(
-                    inFolder: relativeFolderPath
-                )
-                await refreshInbox()
-                selectedDocument = document
-            } catch {
-                statusToast = .error(String(localized: "Could not create note"))
-            }
+    func loadDocument(relativePath: String) async -> MarkdownDocument? {
+        do {
+            return try await fileStore.loadMarkdownDocument(relativePath: relativePath)
+        } catch {
+            statusToast = .error(String(localized: "Could not open Markdown file"))
+            return nil
         }
     }
 
@@ -504,22 +729,33 @@ final class AppModel: ObservableObject {
     }
 
     func moveToRecentlyDeleted(_ file: RecentMarkdownFile) {
+        Task {
+            _ = await trashNote(file)
+        }
+    }
+
+    @discardableResult
+    func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
-            return
+            return false
         }
-        Task {
-            do {
-                try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
-                if selectedDocument?.relativePath == file.relativePath {
-                    selectedDocument = nil
-                }
-                statusToast = .saved(String(localized: "Moved to Recently Deleted"))
-                await refreshInbox()
-                await refreshActiveSearchIfNeeded()
-            } catch {
-                statusToast = .error(error.localizedDescription)
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
+            if selectedDocument?.relativePath == file.relativePath {
+                selectedDocument = nil
             }
+            statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
         }
     }
 
@@ -609,6 +845,38 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func renameNote(relativePath: String, to name: String) async -> MarkdownDocument? {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before renaming notes."))
+            return nil
+        }
+        do {
+            let renamed = try await fileStore.renameMarkdownDocument(
+                relativePath: relativePath,
+                to: name
+            )
+            let document = try await fileStore.loadMarkdownDocument(
+                relativePath: renamed.relativePath
+            )
+            attachmentPresentationPreferences.moveNote(
+                from: relativePath,
+                to: renamed.relativePath
+            )
+            attachmentPresentationRevision += 1
+            if selectedDocument?.relativePath == relativePath {
+                selectedDocument = document
+            }
+            statusToast = .saved(String(localized: "Note Renamed"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return document
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
     func keepConflictCopy(_ file: RecentMarkdownFile) {
         Task {
             do {
@@ -647,13 +915,81 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
+    func createSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            let created = try await fileStore.createSmartFolder(definition)
+            smartFolders.append(created)
+            smartFolders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Created"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func updateSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            let updated = try await fileStore.updateSmartFolder(definition)
+            guard let index = smartFolders.firstIndex(where: { $0.id == updated.id }) else {
+                await refreshInbox()
+                return true
+            }
+            smartFolders[index] = updated
+            smartFolders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Updated"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteSmartFolder(_ definition: SmartFolderDefinition) async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        do {
+            try await fileStore.deleteSmartFolder(id: definition.id)
+            smartFolders.removeAll { $0.id == definition.id }
+            libraryRevision += 1
+            statusToast = .saved(String(localized: "Smart Folder Deleted"))
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
     func renameFolder(_ folder: LibraryFolderNode, to name: String) async -> Bool {
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
             return false
         }
         do {
-            _ = try await fileStore.renameFolder(relativePath: folder.relativePath, to: name)
+            let renamedPath = try await fileStore.renameFolder(
+                relativePath: folder.relativePath,
+                to: name
+            )
+            attachmentPresentationPreferences.moveFolder(
+                from: folder.relativePath,
+                to: renamedPath
+            )
+            attachmentPresentationRevision += 1
             statusToast = .saved(String(localized: "Folder Renamed"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
@@ -675,6 +1011,11 @@ final class AppModel: ObservableObject {
                 relativePath: folder.relativePath,
                 toParent: parent?.relativePath
             )
+            attachmentPresentationPreferences.moveFolder(
+                from: folder.relativePath,
+                to: movedPath
+            )
+            attachmentPresentationRevision += 1
             if let selectedDocument,
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 let updatedPath = movedPath
@@ -716,32 +1057,63 @@ final class AppModel: ObservableObject {
     }
 
     func move(_ file: RecentMarkdownFile, to folder: LibraryFolderNode) {
+        Task {
+            _ = await moveNote(
+                relativePath: file.relativePath,
+                toFolder: folder.relativePath
+            )
+        }
+    }
+
+    @discardableResult
+    func moveNote(
+        relativePath: String,
+        toFolder targetFolder: String?
+    ) async -> MarkdownDocument? {
+        guard relativePath != "Inbox.md", !relativePath.hasPrefix("Daily/") else {
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
+            return nil
+        }
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
-            return
+            return nil
         }
-        Task {
-            do {
-                let moved = try await fileStore.moveMarkdownDocument(
-                    relativePath: file.relativePath,
-                    toFolder: folder.relativePath
-                )
-                if selectedDocument?.relativePath == file.relativePath {
-                    selectedDocument = try await fileStore.loadMarkdownDocument(
-                        relativePath: moved.relativePath
-                    )
-                }
-                statusToast = .saved(String(localized: "Note Moved"))
-                await refreshInbox()
-                await refreshActiveSearchIfNeeded()
-            } catch {
-                statusToast = .error(error.localizedDescription)
+        do {
+            let moved = try await fileStore.moveMarkdownDocument(
+                relativePath: relativePath,
+                toFolder: targetFolder
+            )
+            let document = try await fileStore.loadMarkdownDocument(
+                relativePath: moved.relativePath
+            )
+            attachmentPresentationPreferences.moveNote(
+                from: relativePath,
+                to: moved.relativePath
+            )
+            attachmentPresentationRevision += 1
+            if selectedDocument?.relativePath == relativePath {
+                selectedDocument = document
             }
+            statusToast = .saved(String(localized: "Note Moved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return document
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
         }
     }
 
     @discardableResult
     func move(_ files: [RecentMarkdownFile], to folder: LibraryFolderNode) async -> Bool {
+        await moveNotes(files, toFolder: folder.relativePath)
+    }
+
+    @discardableResult
+    func moveNotes(
+        _ files: [RecentMarkdownFile],
+        toFolder targetFolder: String?
+    ) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
@@ -752,10 +1124,18 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            _ = try await fileStore.moveMarkdownDocuments(
-                relativePaths: files.map(\.relativePath),
-                toFolder: folder.relativePath
+            let originalPaths = Array(Set(files.map(\.relativePath))).sorted()
+            let moved = try await fileStore.moveMarkdownDocuments(
+                relativePaths: originalPaths,
+                toFolder: targetFolder
             )
+            for (oldPath, movedFile) in zip(originalPaths, moved) {
+                attachmentPresentationPreferences.moveNote(
+                    from: oldPath,
+                    to: movedFile.relativePath
+                )
+            }
+            attachmentPresentationRevision += 1
             if let selectedDocument,
                files.contains(where: {
                    $0.relativePath == selectedDocument.relativePath
@@ -808,6 +1188,8 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await fileStore.permanentlyDeleteTrashedMarkdownDocument(id: item.id)
+                attachmentPresentationPreferences.removeNote(item.originalRelativePath)
+                attachmentPresentationRevision += 1
                 statusToast = .saved(String(localized: "Deleted Permanently"))
                 await refreshInbox()
             } catch {
@@ -823,6 +1205,10 @@ final class AppModel: ObservableObject {
             try await fileStore.permanentlyDeleteTrashedMarkdownDocuments(
                 ids: items.map(\.id)
             )
+            items.forEach {
+                attachmentPresentationPreferences.removeNote($0.originalRelativePath)
+            }
+            attachmentPresentationRevision += 1
             statusToast = .saved(String(localized: "Selected Notes Deleted Permanently"))
             await refreshInbox()
             return true
@@ -889,6 +1275,10 @@ final class AppModel: ObservableObject {
         case .memo(let memo):
             selectedMemo = memo
         }
+    }
+
+    func attachmentSearchDocuments(in markdown: String) async throws -> [AttachmentSearchDocument] {
+        try await fileStore.attachmentSearchDocuments(in: markdown)
     }
 
     func saveDocument(
@@ -973,10 +1363,55 @@ final class AppModel: ObservableObject {
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self) else {
-                throw CaptureAttachmentError.empty
+            let attachment = try await photoLibraryAttachment(from: item)
+            return await attachMediaAttachment(
+                attachment,
+                to: document,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown
+            )
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func attachCameraPhoto(
+        _ media: CapturedCameraMedia,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        let attachment: CaptureAttachment
+        do {
+            switch media {
+            case .photo(let data):
+                attachment = try CaptureAttachment.validatedImage(data: data)
+            case .video(let video):
+                attachment = video
             }
-            let attachment = try CaptureAttachment.validatedImage(data: data)
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+        return await attachMediaAttachment(
+            attachment,
+            to: document,
+            markdown: markdown,
+            expectedMarkdown: expectedMarkdown
+        )
+    }
+
+    private func attachMediaAttachment(
+        _ attachment: CaptureAttachment,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        do {
             let updated = try await fileStore.attachToMarkdownDocument(
                 relativePath: document.relativePath,
                 markdown: markdown,
@@ -984,7 +1419,38 @@ final class AppModel: ObservableObject {
                 attachment: attachment
             )
             selectedDocument = updated
-            statusToast = .saved(String(localized: "Image attached"))
+            statusToast = .saved(attachmentAttachedMessage(attachment))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return updated
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func attachDrawing(
+        _ data: Data,
+        to document: MarkdownDocument,
+        markdown: String,
+        expectedMarkdown: String
+    ) async -> MarkdownDocument? {
+        guard attachmentPreparationCount == 0 else { return nil }
+        attachmentPreparationCount += 1
+        defer { attachmentPreparationCount -= 1 }
+        do {
+            let attachment = try CaptureAttachment.validatedImage(
+                data: data,
+                suggestedExtension: "png"
+            )
+            let updated = try await fileStore.attachToMarkdownDocument(
+                relativePath: document.relativePath,
+                markdown: markdown,
+                expectedMarkdown: expectedMarkdown,
+                attachment: attachment
+            )
+            selectedDocument = updated
+            statusToast = .saved(String(localized: "Drawing attached"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return updated
@@ -1003,21 +1469,8 @@ final class AppModel: ObservableObject {
         guard attachmentPreparationCount == 0 else { return nil }
         attachmentPreparationCount += 1
         defer { attachmentPreparationCount -= 1 }
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
-            let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-            guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
-            if let byteCount = values.fileSize,
-               byteCount > CaptureAttachmentPolicy.maximumFileBytes {
-                throw CaptureAttachmentError.tooLarge(
-                    maximumBytes: CaptureAttachmentPolicy.maximumFileBytes
-                )
-            }
-            let attachment = try CaptureAttachment.validatedFile(
-                data: Data(contentsOf: url, options: .mappedIfSafe),
-                suggestedName: url.lastPathComponent
-            )
+            let attachment = try importedFileAttachment(from: url)
             let updated = try await fileStore.attachToMarkdownDocument(
                 relativePath: document.relativePath,
                 markdown: markdown,
@@ -1033,6 +1486,29 @@ final class AppModel: ObservableObject {
             statusToast = .error(error.localizedDescription)
             return nil
         }
+    }
+
+    private func importedFileAttachment(from url: URL) throws -> CaptureAttachment {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else { throw CaptureAttachmentError.empty }
+        let isVideo = UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+        let maximumBytes = isVideo
+            ? CaptureAttachmentPolicy.maximumVideoBytes
+            : CaptureAttachmentPolicy.maximumFileBytes
+        if let byteCount = values.fileSize,
+           byteCount > maximumBytes {
+            throw CaptureAttachmentError.tooLarge(maximumBytes: maximumBytes)
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        if isVideo {
+            return try CaptureAttachment.validatedVideo(
+                data: data,
+                suggestedName: url.lastPathComponent
+            )
+        }
+        return try CaptureAttachment.validatedFile(data: data, suggestedName: url.lastPathComponent)
     }
 
     func attachAudio(
@@ -1120,14 +1596,62 @@ final class AppModel: ObservableObject {
         await searchLibrary(query: activeSearchQuery, scope: activeSearchScope)
     }
 
-    func previewURL(for attachment: LibraryAttachment) async -> URL? {
+    func prepareAttachmentPreview(relativePath: String) async -> PreparedAttachmentPreview? {
         do {
             return try await fileStore.prepareAttachmentPreview(
-                relativePath: attachment.relativePath
+                relativePath: relativePath
             )
         } catch {
             statusToast = .error(String(localized: "Could not open attachment"))
             return nil
+        }
+    }
+
+    func prepareAttachmentPreview(for attachment: LibraryAttachment) async -> PreparedAttachmentPreview? {
+        await prepareAttachmentPreview(relativePath: attachment.relativePath)
+    }
+
+    func commitEditedAttachmentPreview(
+        _ preview: PreparedAttachmentPreview,
+        editedURL: URL
+    ) async {
+        do {
+            let changed = try await fileStore.commitEditedAttachmentPreview(
+                preview,
+                editedURL: editedURL
+            )
+            guard changed else { return }
+            statusToast = .saved(String(localized: "PDF markup saved"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+        } catch {
+            statusToast = .error(error.localizedDescription)
+        }
+    }
+
+    func attachmentThumbnailData(for attachment: LibraryAttachment) async -> Data? {
+        guard attachment.kind == .image else { return nil }
+        return try? await fileStore.loadAttachmentThumbnailData(
+            relativePath: attachment.relativePath
+        )
+    }
+
+    func openAttachmentOwner(_ owner: LibraryAttachment.Owner) {
+        switch owner.destination {
+        case .file(let relativePath):
+            guard let file = libraryFiles.first(where: {
+                $0.relativePath == relativePath
+            }) else {
+                statusToast = .error(String(localized: "Linked note not found"))
+                return
+            }
+            openFile(file)
+        case .memo(let id):
+            guard let memo = inboxItems.first(where: { $0.id == id }) else {
+                statusToast = .error(String(localized: "Linked note not found"))
+                return
+            }
+            selectedMemo = memo
         }
     }
 
@@ -1171,6 +1695,7 @@ final class AppModel: ObservableObject {
         folders = snapshot.folders
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
+        smartFolders = snapshot.smartFolders
         librarySummary = snapshot.summary
         tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
         conflictWarnings = snapshot.conflictWarnings
