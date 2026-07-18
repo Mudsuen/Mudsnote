@@ -2827,6 +2827,7 @@ struct MarkdownRichEditorTests {
         #expect(outline.selectedRow == projectsRow)
         #expect(!outline.needsDisplay)
         #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.textField?.needsDisplay == false)
         outline.finishPrimaryMouseSelectionDeferral()
         #expect(!outline.isDeferringPrimaryMouseSelectionCommit)
         #expect(controller.selectedSourceTitleForLibrary == "Projects")

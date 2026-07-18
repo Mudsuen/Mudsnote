@@ -402,7 +402,7 @@
 
 ## Latest iteration (223)
 
-- Pointer-deferral selection changes explicitly call `displayIfNeeded()` after configuring the pressed row's foreground styling.
+- Pointer-deferral selection changes explicitly call the containing window's `displayIfNeeded()` after configuring the pressed row's foreground styling.
 - This display pass is required because `NSOutlineView.mouseDown` synchronously tracks through release and can otherwise postpone visible text-color updates.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.

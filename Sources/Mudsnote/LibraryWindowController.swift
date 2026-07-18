@@ -4432,7 +4432,7 @@ final class LibraryWindowController: NSWindowController,
               !isSynchronizingSourceOutlineSelection else { return }
         if sourceOutlineView.isDeferringPrimaryMouseSelectionCommit {
             refreshVisibleSourceOutlinePresentation()
-            sourceOutlineView.displayIfNeeded()
+            sourceOutlineView.window?.displayIfNeeded()
             return
         }
         commitCurrentSourceOutlineSelection()

@@ -1372,7 +1372,7 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 ### 223. Synchronous pressed-row foreground repaint
 
 - Problem: The pressed row's foreground values changed during mouse-down, but AppKit's synchronous outline tracking prevented the normal deferred display pass until release, so the yellow text still appeared late on screen.
-- Fix: Pointer-deferral selection changes now force the source outline to display its freshly configured title, symbol, and count colors before returning to AppKit's tracking loop. Navigation remains release-bound.
+- Fix: Pointer-deferral selection changes now force the containing window to display its freshly configured title, symbol, and count colors before returning to AppKit's tracking loop. Navigation remains release-bound.
 - Lesson: Mutating view properties inside a synchronous event-tracking loop is not proof that pixels changed; immediate press feedback may require an explicit display pass before the loop resumes.
 
 ## Maintenance Rule

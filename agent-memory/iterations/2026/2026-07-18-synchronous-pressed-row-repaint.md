@@ -6,7 +6,7 @@ The selected cell's title color changed during mouse-down, but AppKit's tracking
 
 ## Fix
 
-After refreshing source cells during pointer deferral, call `sourceOutlineView.displayIfNeeded()` before returning to the tracking loop.
+After refreshing source cells during pointer deferral, call `sourceOutlineView.window?.displayIfNeeded()` before returning to the tracking loop so dirty text subviews are included.
 
 ## Contract
 
