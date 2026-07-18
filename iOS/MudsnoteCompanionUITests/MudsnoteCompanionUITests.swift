@@ -409,31 +409,33 @@ final class MudsnoteCompanionUITests: XCTestCase {
         listScreenshot.lifetime = .keepAlways
         add(listScreenshot)
 
-        note.tap()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["rendered-markdown"]
-                .waitForExistence(timeout: 5)
-        )
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["close-note-reader"].exists)
         XCTAssertFalse(app.buttons["share-note-button"].exists)
         XCTAssertFalse(app.buttons["save-markdown-button"].exists)
-        XCTAssertTrue(app.buttons["note-options-menu"].exists)
-        XCTAssertTrue(app.buttons["reader-checklist"].exists)
-        XCTAssertTrue(app.buttons["reader-attachment-menu"].exists)
-        XCTAssertTrue(app.buttons["reader-formatting"].exists)
-        XCTAssertTrue(app.buttons["reader-new-note"].exists)
+        XCTAssertFalse(app.buttons["note-options-menu"].exists)
+        XCTAssertFalse(app.buttons["reader-checklist"].exists)
+        XCTAssertFalse(app.buttons["reader-attachment-menu"].exists)
+        XCTAssertFalse(app.buttons["reader-formatting"].exists)
+        XCTAssertFalse(app.buttons["reader-new-note"].exists)
 
         let readerScreenshot = XCTAttachment(screenshot: app.screenshot())
         readerScreenshot.name = "iOS 26 reference - note reader"
         readerScreenshot.lifetime = .keepAlways
         add(readerScreenshot)
 
-        app.buttons["reader-formatting"].tap()
+        app.staticTexts["Restore this note end to end."].tap()
         XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["close-note-reader"].exists)
         XCTAssertFalse(app.buttons["share-note-button"].exists)
         XCTAssertTrue(app.buttons["markdown-format-menu"].exists)
         XCTAssertTrue(app.buttons["save-markdown-button"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["markdown-glass-toolbar"]
+                .waitForExistence(timeout: 3)
+        )
 
         let editorScreenshot = XCTAttachment(screenshot: app.screenshot())
         editorScreenshot.name = "iOS 26 reference - note editor toolbar"
@@ -442,12 +444,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         app.buttons["save-markdown-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
-        app.swipeDown(velocity: .fast)
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
-        XCTAssertTrue(app.buttons["reader-new-note"].waitForExistence(timeout: 5))
-        app.buttons["reader-new-note"].tap()
-        XCTAssertTrue(app.textViews["capture-body-editor"].waitForExistence(timeout: 5))
     }
 
     func testWidgetSearchEntryFocusesNativeLibrarySearch() {
@@ -1188,9 +1184,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         XCTAssertFalse(app.buttons["Share Note"].exists)
         XCTAssertTrue(app.buttons["Export as PDF"].exists)
         XCTAssertTrue(app.buttons["Find in Note"].exists)
@@ -1262,8 +1256,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["Plain Link"].tap()
         XCTAssertTrue(waitForValue(of: attachment, containing: "plainLink"))
 
-        let options = app.buttons["note-options-menu"]
-        options.tap()
+        openRenderedNoteActions(in: app)
         let attachmentView = app.buttons["Attachment View"]
         XCTAssertTrue(attachmentView.waitForExistence(timeout: 3))
         attachmentView.tap()
@@ -1282,9 +1275,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let export = app.buttons["Export as PDF"]
         XCTAssertTrue(export.waitForExistence(timeout: 3))
         export.tap()
@@ -1312,9 +1303,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1365,9 +1354,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         toggle.tap()
         XCTAssertTrue(waitForNonexistence(body))
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.exists)
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1386,9 +1373,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let rename = app.buttons["Rename Note"]
         XCTAssertTrue(rename.waitForExistence(timeout: 3))
 
@@ -1406,7 +1391,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         name.typeText("-Renamed")
         alert.buttons["Rename"].tap()
 
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
@@ -1424,17 +1408,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         app.buttons["Move Note"].tap()
         let topLevel = app.buttons["Top Level"]
         XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
         topLevel.tap()
 
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
-        options.tap()
+        openRenderedNoteActions(in: app)
 
         let optionsScreenshot = XCTAttachment(screenshot: app.screenshot())
         optionsScreenshot.name = "Complete opened note actions"
@@ -1446,7 +1427,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
         confirmation.buttons["Move to Recently Deleted"].tap()
 
-        XCTAssertTrue(waitForNonexistence(options))
+        XCTAssertTrue(
+            waitForNonexistence(app.descendants(matching: .any)["rendered-markdown"])
+        )
         XCTAssertTrue(waitForNonexistence(app.buttons["markdown-file-row-UI Lifecycle.md"]))
         app.navigationBars["All Notes"].buttons.firstMatch.tap()
         app.buttons["recently-deleted-link"].tap()
@@ -1583,9 +1566,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1626,8 +1607,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Audio transcription"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Project ORBITAL is approved for launch."].exists)
-        let options = app.buttons["note-options-menu"]
-        options.tap()
+        openRenderedNoteActions(in: app)
         app.buttons["Find in Note"].tap()
         let field = app.textFields["find-in-note-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -2076,6 +2056,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let nativeSearch = app.searchFields.firstMatch
         if nativeSearch.exists { return nativeSearch }
         return app.textFields["library-search-field"]
+    }
+
+    private func openRenderedNoteActions(in app: XCUIApplication) {
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        rendered.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.05))
+            .press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
     }
 
     private func waitForEmptyValue(of element: XCUIElement) -> Bool {

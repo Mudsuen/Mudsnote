@@ -35,9 +35,6 @@ struct LibraryHomeView: View {
                         if !appModel.smartFolders.isEmpty {
                             smartFoldersSection
                         }
-                        if !appModel.folders.isEmpty {
-                            foldersSection
-                        }
                         if !appModel.tagSummaries.isEmpty {
                             tagsSection
                         }
@@ -169,45 +166,6 @@ struct LibraryHomeView: View {
         )
     }
 
-    @ViewBuilder
-    private var foldersSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: String(localized: "Folders"))
-            notesCard {
-                ForEach(appModel.folders) { folder in
-                    if isManagingFolders {
-                        NotesFolderRow(
-                            title: folder.name,
-                            systemImage: "folder.fill",
-                            count: folder.totalNoteCount,
-                            showsChevron: false,
-                            trailingAccessoryWidth: 88
-                        )
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(
-                            FolderLifecycleActions(
-                                folder: folder,
-                                isManagementMode: true
-                            )
-                        )
-                    } else {
-                        NavigationLink {
-                            LibraryFolderView(folder: folder)
-                        } label: {
-                            NotesFolderRow(
-                                title: folder.name,
-                                systemImage: "folder.fill",
-                                count: folder.totalNoteCount
-                            )
-                        }
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(FolderLifecycleActions(folder: folder))
-                    }
-                }
-            }
-        }
-    }
-
     private func presentRequestedSearchIfNeeded() {
         guard appModel.consumeLibrarySearchRequest() else { return }
         searchQuery = ""
@@ -227,8 +185,13 @@ struct LibraryHomeView: View {
                 NavigationLink {
                     InboxStreamView()
                 } label: {
-                    NotesFolderRow(title: String(localized: "Inbox"), systemImage: "tray.full", count: appModel.librarySummary.inboxCount)
+                    NotesFolderRow(
+                        title: "000-inbox",
+                        systemImage: "tray.full",
+                        count: appModel.librarySummary.inboxCount
+                    )
                 }
+                .accessibilityIdentifier("inbox-link")
 
                 NavigationLink {
                     FolderNotesListView(
@@ -246,6 +209,39 @@ struct LibraryHomeView: View {
                 }
                 .accessibilityIdentifier("all-notes-link")
 
+                ForEach(appModel.folders) { folder in
+                    if isManagingFolders {
+                        NotesFolderRow(
+                            title: folder.name,
+                            systemImage: folderSystemImage(for: folder),
+                            count: folder.totalNoteCount,
+                            showsChevron: false,
+                            trailingAccessoryWidth: 88
+                        )
+                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+                        .modifier(
+                            FolderLifecycleActions(
+                                folder: folder,
+                                isManagementMode: true
+                            )
+                        )
+                    } else {
+                        NavigationLink {
+                            LibraryFolderView(folder: folder)
+                        } label: {
+                            NotesFolderRow(
+                                title: folder.name,
+                                systemImage: folderSystemImage(for: folder),
+                                count: folder.totalNoteCount
+                            )
+                        }
+                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+                        .modifier(FolderLifecycleActions(folder: folder))
+                    }
+                }
+            }
+
+            notesCard {
                 NavigationLink {
                     AttachmentLibraryView()
                 } label: {
@@ -272,6 +268,26 @@ struct LibraryHomeView: View {
                 .accessibilityIdentifier("settings-link")
             }
         }
+    }
+
+    private func folderSystemImage(for folder: LibraryFolderNode) -> String {
+        let name = folder.name.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+
+        if name.contains("inbox") || name.contains("收件") { return "tray.full" }
+        if name.contains("project") || name.contains("项目") { return "hammer.fill" }
+        if name.contains("work") || name.contains("工作") { return "briefcase.fill" }
+        if name.contains("personal") || name.contains("个人") { return "person.crop.circle.fill" }
+        if name.contains("resource") || name.contains("reference") || name.contains("资料") {
+            return "books.vertical.fill"
+        }
+        if name.contains("archive") || name.contains("归档") { return "archivebox.fill" }
+        if name.contains("idea") || name.contains("灵感") { return "lightbulb.fill" }
+        if name.contains("study") || name.contains("学习") { return "graduationcap.fill" }
+        if name.contains("travel") || name.contains("旅行") { return "airplane" }
+        return "folder.fill"
     }
 
     @ViewBuilder
@@ -499,7 +515,11 @@ struct LibraryHomeView: View {
             appModel.openSearchResult(result)
         } label: {
             SearchResultRow(result: result, query: query)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("search-result-\(result.id)")
     }
@@ -882,7 +902,10 @@ private struct NoteListSearchResultsView: View {
                         } label: {
                             SearchResultRow(result: result, query: query)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("list-search-result-\(result.id)")
 
@@ -2052,7 +2075,9 @@ private struct NoteGalleryFileButton: View {
             appModel.openFile(file)
         } label: {
             NoteGalleryCard(file: file, dateBasis: dateBasis)
+                .contentShape(Rectangle())
         }
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
         .modifier(NoteLifecycleActions(file: file))
@@ -2210,7 +2235,10 @@ private struct NoteFileButton: View {
             appModel.openFile(file)
         } label: {
             RecentFileRow(file: file, dateBasis: dateBasis)
+                .contentShape(Rectangle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
         .modifier(NoteLifecycleActions(file: file))

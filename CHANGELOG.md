@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 176. Unified library hierarchy and native glass editing bar
+- Problem: The iPhone home split the authorized library's fixed note entries and real top-level folders into separate `mudsbuild` and `Folders` cards, open-note reading still carried a bottom action group, note rows could require tapping directly on their text, and the editor accessory was only a material strip rather than native Liquid Glass.
+- Fix: The home now presents `000-inbox`, Daily, All Notes, and every real first-level folder in one library card, with attachments, Recently Deleted, and Settings in a separate utility card. Common folder names receive semantic SF Symbols. Reading mode is fully chrome-free while long press preserves its document actions, list and search rows expose their entire width as a hit target, and iOS 26 renders the keyboard editing controls over a system glass capsule with a material fallback on older systems.
+- Lesson: A local-first library should mirror its real root hierarchy in one visual group; utility destinations and transient editing tools need their own clearly separated system surfaces.
+
 ### 175. Quiet note chrome and Notes-style editing tools
 - Problem: Reader and editor actions crowded the top of an open note, while the editing controls used individually boxed custom buttons that did not match Apple Notes and disappeared when moved into a system bottom bar behind the keyboard.
 - Fix: Open notes now keep their top edge free of buttons in both reading and editing states. Reader actions stay in the native glass bottom group, and the editor uses a compact borderless input-accessory row above the keyboard for attachments, audio, formatting, checklists, undo, redo, and save.

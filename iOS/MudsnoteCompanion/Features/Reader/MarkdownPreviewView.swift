@@ -138,6 +138,9 @@ struct MarkdownPreviewView: View {
                                     }
                             }
                             .padding(MudsnoteSpacing.safeHorizontal)
+                            .contextMenu {
+                                readerContextMenuContent
+                            }
                         }
                         .onChange(of: findQuery) { _, _ in
                             activeFindIndex = 0
@@ -167,11 +170,6 @@ struct MarkdownPreviewView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .toolbar {
-                if !isEditing, !isFindingInNote {
-                    readerBottomToolbar
-                }
-            }
         }
         .interactiveDismissDisabled(
             (isEditing && draftMarkdown != originalMarkdown)
@@ -816,127 +814,117 @@ struct MarkdownPreviewView: View {
         .accessibilityIdentifier("markdown-scan-text")
     }
 
-    @ToolbarContentBuilder
-    private var readerBottomToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .bottomBar) {
-            Button {
-                beginEditing(with: .checklist)
-            } label: {
-                Image(systemName: "checklist")
-            }
-            .accessibilityLabel("Start Checklist")
-            .accessibilityIdentifier("reader-checklist")
-
-            if case .document = source {
-                Menu {
-                    attachmentMenuContent
-                } label: {
-                    Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
-                }
-                .disabled(isSaving || appModel.isPreparingAttachment)
-                .accessibilityLabel("Add Attachment")
-                .accessibilityIdentifier("reader-attachment-menu")
-            }
-
-            Button(action: beginEditing) {
-                Text("Aa")
-                    .fontWeight(.medium)
-            }
-            .accessibilityLabel("Formatting")
-            .accessibilityIdentifier("reader-formatting")
-
-            if case .document(let document) = source {
-                noteOptionsMenu(document)
-            }
-        }
-
-        if #available(iOS 26.0, *) {
-            ToolbarSpacer(.fixed, placement: .bottomBar)
-        }
-
-        ToolbarItem(placement: .bottomBar) {
-            Button(action: startNewNoteFromReader) {
-                Image(systemName: "square.and.pencil")
-            }
-            .accessibilityLabel("New note")
-            .accessibilityIdentifier("reader-new-note")
-        }
-    }
-
-    private func noteOptionsMenu(_ document: MarkdownDocument) -> some View {
-        Menu {
+    @ViewBuilder
+    private var readerContextMenuContent: some View {
+        if case .document(let document) = source {
             Button {
                 Task { await exportCurrentDocumentAsPDF(document) }
             } label: {
-                Label(isExportingPDF ? "Exporting PDF…" : "Export as PDF", systemImage: "doc.richtext")
+                Label(
+                    isExportingPDF ? "Exporting PDF…" : "Export as PDF",
+                    systemImage: "doc.richtext"
+                )
             }
             .disabled(isExportingPDF)
-            Button {
-                beginFindingInNote()
-            } label: {
-                Label("Find in Note", systemImage: "magnifyingglass")
-            }
-            .disabled(draftMarkdown.isEmpty)
-            if hasRenderedAttachments {
-                Menu {
-                    Button("Set All to Small") { setAllAttachmentPresentationModes(.small) }
-                    Button("Set All to Large") { setAllAttachmentPresentationModes(.large) }
-                } label: {
-                    Label("Attachment View", systemImage: "rectangle.grid.1x2")
-                }
-                .accessibilityIdentifier("attachment-view-menu")
-            }
-            if let file = currentFile, canManage(document) {
-                Divider()
-                Button {
-                    appModel.togglePinned(file)
-                } label: {
-                    Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
-                }
-                if canMoveToTopLevel || !moveDestinations.isEmpty {
-                    Menu {
-                        if canMoveToTopLevel {
-                            Button {
-                                Task { await moveCurrentDocument(toFolder: nil) }
-                            } label: {
-                                Label("Top Level", systemImage: "tray")
-                            }
-                        }
-                        ForEach(moveDestinations) { folder in
-                            Button(folder.relativePath) {
-                                Task { await moveCurrentDocument(toFolder: folder.relativePath) }
-                            }
-                        }
-                    } label: {
-                        Label("Move Note", systemImage: "folder")
-                    }
-                }
-                Button {
-                    appModel.duplicate(file)
-                } label: {
-                    Label("Duplicate Note", systemImage: "plus.square.on.square")
-                }
-                Button {
-                    noteName = document.title
-                    isRenamingNote = true
-                } label: {
-                    Label("Rename Note", systemImage: "pencil")
-                }
-                Divider()
-                Button(role: .destructive) {
-                    isConfirmingNoteDeletion = true
-                } label: {
-                    Label("Move to Recently Deleted", systemImage: "trash")
-                }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
         }
-        .accessibilityLabel("Note Options")
-        .accessibilityIdentifier("note-options-menu")
+
+        Button {
+            beginFindingInNote()
+        } label: {
+            Label("Find in Note", systemImage: "magnifyingglass")
+        }
+        .disabled(draftMarkdown.isEmpty)
+
+        if hasRenderedAttachments {
+            Menu {
+                Button("Set All to Small") { setAllAttachmentPresentationModes(.small) }
+                Button("Set All to Large") { setAllAttachmentPresentationModes(.large) }
+            } label: {
+                Label("Attachment View", systemImage: "rectangle.grid.1x2")
+            }
+            .accessibilityIdentifier("attachment-view-menu")
+        }
+
+        if case .document(let document) = source,
+           let file = currentFile,
+           canManage(document) {
+            Divider()
+            Button {
+                appModel.togglePinned(file)
+            } label: {
+                Label(
+                    file.isPinned ? "Unpin" : "Pin",
+                    systemImage: file.isPinned ? "pin.slash" : "pin"
+                )
+            }
+            if canMoveToTopLevel || !moveDestinations.isEmpty {
+                Menu {
+                    if canMoveToTopLevel {
+                        Button {
+                            Task { await moveCurrentDocument(toFolder: nil) }
+                        } label: {
+                            Label("Top Level", systemImage: "tray")
+                        }
+                    }
+                    ForEach(moveDestinations) { folder in
+                        Button(folder.relativePath) {
+                            Task { await moveCurrentDocument(toFolder: folder.relativePath) }
+                        }
+                    }
+                } label: {
+                    Label("Move Note", systemImage: "folder")
+                }
+            }
+            Button {
+                appModel.duplicate(file)
+            } label: {
+                Label("Duplicate Note", systemImage: "plus.square.on.square")
+            }
+            Button {
+                noteName = document.title
+                isRenamingNote = true
+            } label: {
+                Label("Rename Note", systemImage: "pencil")
+            }
+            Divider()
+            Button(role: .destructive) {
+                isConfirmingNoteDeletion = true
+            } label: {
+                Label("Move to Recently Deleted", systemImage: "trash")
+            }
+        }
     }
 
+    @ViewBuilder
     private var markdownToolbar: some View {
+        if #available(iOS 26.0, *) {
+            ZStack {
+                Color.clear
+                    .glassEffect(.regular, in: Capsule())
+                    .allowsHitTesting(false)
+
+                markdownToolbarContent
+                    .padding(.horizontal, 8)
+            }
+                .frame(height: 50)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("markdown-glass-toolbar")
+        } else {
+            markdownToolbarContent
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(.regularMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(MudsnoteColors.line)
+                        .frame(height: 0.5)
+                }
+        }
+    }
+
+    private var markdownToolbarContent: some View {
         let attachmentIsPreparing = appModel.isPreparingAttachment
         return HStack(spacing: 2) {
             if case .document = source {
@@ -994,14 +982,6 @@ struct MarkdownPreviewView: View {
         }
         .font(.system(size: 17, weight: .medium))
         .foregroundStyle(MudsnoteColors.text)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
-        .background(.regularMaterial)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(MudsnoteColors.line)
-                .frame(height: 0.5)
-        }
     }
 
     private var editorFormatMenu: some View {
@@ -1087,14 +1067,6 @@ struct MarkdownPreviewView: View {
         Task { @MainActor in
             await Task.yield()
             editingCommand = MarkdownEditingCommand(kind: command)
-        }
-    }
-
-    private func startNewNoteFromReader() {
-        dismiss()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            appModel.showCapture(.text)
         }
     }
 
