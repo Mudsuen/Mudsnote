@@ -411,6 +411,12 @@
 - The preview deliberately precedes AppKit's blocking tracking loop; native background highlight behavior remains untouched.
 - Mouse release clears the preview and commits logical navigation; disclosure-button clicks do not preview row selection.
 
+## Latest iteration (225)
+
+- `/Applications/Mudsnote.app` is a shared global artifact across every Git worktree.
+- iOS-only tasks must use `./scripts/verify pr|full` plus Xcode/UI-test/device installation and must not run `package_app.sh` or `verify live`.
+- `package_app.sh` refuses an iOS-only branch by default; `MUDSNOTE_ALLOW_IOS_ONLY_MAC_INSTALL=1` is reserved for an intentional macOS baseline install.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

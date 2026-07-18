@@ -1381,6 +1381,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Before entering `super.mouseDown`, the outline now resolves the selectable row under the pointer, publishes it as the temporary visual selection, refreshes the title/symbol/count colors, and completes a display pass. AppKit then applies its original highlight behavior; release clears the preview and commits navigation. Disclosure-button presses do not create a row-color preview.
 - Lesson: When a framework owns a blocking interaction loop, truly immediate custom feedback must be prepared before entering that loop rather than reacting to notifications emitted from within it.
 
+### 225. Platform-scoped installed-artifact ownership
+
+- Problem: An iOS-only worktree ran the macOS packaging script after its shared tests, replacing `/Applications/Mudsnote.app` with that branch's older macOS sources and making completed mac work appear to regress.
+- Fix: Project instructions now prohibit macOS packaging from iOS-only tasks. `package_app.sh` also detects branches whose changes are confined to iOS and documentation, refusing to overwrite the shared installed app unless an explicit exception is supplied.
+- Lesson: Git worktrees isolate source and build directories, not global deployment destinations. Parallel platform work needs ownership checks around `/Applications`, devices, servers, and every other shared live artifact.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
