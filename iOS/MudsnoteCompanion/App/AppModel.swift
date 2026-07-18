@@ -728,6 +728,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func createNote(inFolder relativeFolderPath: String? = nil) {
+        noteOpenMode = .edit
+        Task {
+            do {
+                let document = try await fileStore.createMarkdownDocument(
+                    inFolder: relativeFolderPath
+                )
+                selectedDocument = document
+                await refreshInbox()
+            } catch {
+                noteOpenMode = .read
+                statusToast = .error(String(localized: "Could not create note"))
+            }
+        }
+    }
+
     func loadDocument(relativePath: String) async -> MarkdownDocument? {
         do {
             return try await fileStore.loadMarkdownDocument(relativePath: relativePath)

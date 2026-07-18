@@ -166,7 +166,7 @@ struct LibraryHomeView: View {
                     searchFocused: $isSearchFocused,
                     newNote: {
                         isSearchFocused = false
-                        appModel.showCapture(.text)
+                        appModel.createNote()
                     }
                 )
             }
@@ -1157,7 +1157,7 @@ struct FolderNotesListView: View {
                 searchFocused: $isSearchFocused,
                 newNote: {
                     isSearchFocused = false
-                    appModel.showCapture(.text)
+                    appModel.createNote(inFolder: scope.newNoteFolder)
                 }
             )
         }
@@ -1542,7 +1542,7 @@ struct LibraryFolderView: View {
             }
             folderMoveMenu
             Button {
-                appModel.showCapture(.text)
+                appModel.createNote(inFolder: currentFolder.relativePath)
             } label: {
                 Label("New Note", systemImage: "square.and.pencil")
             }
@@ -1611,7 +1611,7 @@ struct LibraryFolderView: View {
                 searchFocused: $isSearchFocused,
                 newNote: {
                     isSearchFocused = false
-                    appModel.showCapture(.text)
+                    appModel.createNote(inFolder: currentFolder.relativePath)
                 }
             )
         }

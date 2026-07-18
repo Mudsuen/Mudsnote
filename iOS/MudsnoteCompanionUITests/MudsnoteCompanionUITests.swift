@@ -699,21 +699,28 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
-    func testNewNoteUsesUnifiedCaptureComposer() {
+    func testNewNoteCreatesDocumentInCurrentFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
         let newNoteButton = app.buttons["new-note-button"]
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
         newNoteButton.tap()
 
-        let editor = app.textViews["capture-body-editor"]
+        let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["quick-note-button"].exists)
+        XCTAssertFalse(app.buttons["capture-target-menu"].exists)
         editor.tap()
-        editor.typeText("Unified capture note")
-        app.buttons["save-memo-button"].tap()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
-        XCTAssertFalse(editor.exists)
+        editor.typeText("Folder note location")
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/Folder note location.md"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     func testEmptyUnifiedCaptureClosesWithoutCreatingNote() {

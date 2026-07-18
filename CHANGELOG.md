@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 180. New notes save to folders, not existing documents
+- Problem: The New Note command opened the quick-capture composer, whose target menu appends content to an existing document. Presenting that menu as the note location made individual Markdown files appear selectable where only a save folder was expected.
+- Fix: New Note now creates a standalone Markdown document directly in the current folder and immediately opens its editor. From the library root it creates at the library root; from a folder or folder-scoped note list it uses that folder. The existing quick-capture target behavior remains isolated from document creation.
+- Lesson: An append destination and a new-document save location are different concepts and must not share the same entry point or picker.
+
 ### 179. Half-sheet reading, direct editing, and recoverable saves
 - Problem: Opening a note jumped straight into a full-screen reader that could be edited immediately, list rows had no direct edit action, and choosing to keep a draft after an external-version conflict retained the stale save baseline so later save attempts could never succeed.
 - Fix: A normal row tap now presents a medium read-only sheet with a visible drag handle; expanding it to the large detent unlocks tap-to-edit. Long press exposes Edit and opens directly in the large editor. Conflict recovery now preserves the current draft while rebasing its expected version on the latest saved note, allowing the next autosave or confirmation to complete safely.
