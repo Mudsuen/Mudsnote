@@ -1782,7 +1782,7 @@ struct LibraryFolderView: View {
             titleVisibility: .visible
         ) {
             Button("Cancel", role: .cancel) {}
-            Button("Move Notes to Recently Deleted", role: .destructive) {
+            Button("Delete Notes", role: .destructive) {
                 let target = currentFolder
                 Task {
                     if await appModel.deleteFolder(target) {
@@ -2109,7 +2109,7 @@ private struct FolderLifecycleActions: ViewModifier {
                 titleVisibility: .visible
             ) {
                 Button("Cancel", role: .cancel) {}
-                Button("Move Notes to Recently Deleted", role: .destructive) {
+                Button("Delete Notes", role: .destructive) {
                     let target = folder
                     Task { _ = await appModel.deleteFolder(target) }
                 }
@@ -2345,11 +2345,11 @@ private struct SelectedNotesActionBar: View {
             Rectangle().fill(MudsnoteColors.line).frame(height: 1)
         }
         .confirmationDialog(
-            "Move Selected Notes to Recently Deleted?",
+            "Delete Selected Notes?",
             isPresented: $isConfirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("Move to Recently Deleted", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 let selected = files
                 Task {
                     if await appModel.moveToRecentlyDeleted(selected) {
@@ -2831,7 +2831,7 @@ private struct NoteLifecycleActions: ViewModifier {
                     Button(role: .destructive) {
                         appModel.moveToRecentlyDeleted(file)
                     } label: {
-                        Label("Move to Recently Deleted", systemImage: "trash")
+                        Label("Delete", systemImage: "trash")
                     }
                 }
             }

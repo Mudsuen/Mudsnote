@@ -781,7 +781,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -793,7 +793,7 @@ final class AppModel: ObservableObject {
             if selectedDocument?.relativePath == file.relativePath {
                 selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -807,7 +807,7 @@ final class AppModel: ObservableObject {
     func moveToRecentlyDeleted(_ files: [RecentMarkdownFile]) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -822,7 +822,7 @@ final class AppModel: ObservableObject {
                files.contains(where: { $0.relativePath == selectedDocument.relativePath }) {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Selected Notes Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Selected Notes Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -1090,7 +1090,7 @@ final class AppModel: ObservableObject {
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Folder Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Folder Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true

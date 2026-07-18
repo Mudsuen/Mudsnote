@@ -253,12 +253,12 @@ struct MarkdownPreviewView: View {
             .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .confirmationDialog(
-            "Move Note to Recently Deleted?",
+            "Delete Note?",
             isPresented: $isConfirmingNoteDeletion,
             titleVisibility: .visible
         ) {
             Button("Cancel", role: .cancel) {}
-            Button("Move to Recently Deleted", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 Task { await trashCurrentDocument() }
             }
         } message: {
@@ -902,7 +902,7 @@ struct MarkdownPreviewView: View {
             Button(role: .destructive) {
                 isConfirmingNoteDeletion = true
             } label: {
-                Label("Move to Recently Deleted", systemImage: "trash")
+                Label("Delete", systemImage: "trash")
             }
         }
     }

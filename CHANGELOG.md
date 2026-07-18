@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 190. Concise iOS delete wording
+- Problem: Destructive menus and confirmations described ordinary deletion as "Move to Recently Deleted," exposing storage mechanics instead of the user action.
+- Fix: Note, multi-note, folder-note, and conflict-copy actions now use Delete wording throughout menus, confirmations, errors, and success feedback while retaining the recoverable Recently Deleted behavior.
+- Lesson: A recoverable delete should be labeled by the user's intent; restoration details belong in the confirmation explanation and Recently Deleted destination.
+
 ### 189. Quiet iOS autosave feedback
 - Problem: Every background autosave reused the explicit completion state, replacing the editor checkmark with a spinner and cycling the status label through Saving and Saved even though editing continued.
 - Fix: Background autosave now keeps the stable checkmark and Saved label while preserving write serialization and failure reporting. Visible progress remains reserved for explicit completion saves, and a recovered failure may still return the status to Saved.

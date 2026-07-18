@@ -3246,7 +3246,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .protectedNote:
-            String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted.")
+            String(localized: "Inbox and Daily notes cannot be deleted.")
         case .noteNotFound:
             String(localized: "This note is no longer available.")
         case .invalidTrashMetadata:

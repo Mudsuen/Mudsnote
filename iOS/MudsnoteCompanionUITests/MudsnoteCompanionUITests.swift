@@ -1345,12 +1345,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testRenderedNoteKeepsExportWithoutNoteShareAction() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: note.frame.midX / app.frame.width,
+            dy: note.frame.midY / app.frame.height
+        )).tap()
 
         openRenderedNoteActions(in: app)
         XCTAssertFalse(app.buttons["Share Note"].exists)
@@ -1361,7 +1366,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Move Note"].exists)
         XCTAssertTrue(app.buttons["Duplicate Note"].exists)
         XCTAssertTrue(app.buttons["Rename Note"].exists)
-        XCTAssertTrue(app.buttons["Move to Recently Deleted"].exists)
+        XCTAssertTrue(app.buttons["Delete"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Note export actions"
@@ -1590,10 +1595,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         optionsScreenshot.lifetime = .keepAlways
         add(optionsScreenshot)
 
-        app.buttons["Move to Recently Deleted"].tap()
-        let confirmation = app.sheets["Move Note to Recently Deleted?"]
+        app.buttons["Delete"].tap()
+        let confirmation = app.sheets["Delete Note?"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
-        confirmation.buttons["Move to Recently Deleted"].tap()
+        confirmation.buttons["Delete"].tap()
 
         XCTAssertTrue(
             waitForNonexistence(app.descendants(matching: .any)["rendered-markdown"])
@@ -2105,7 +2110,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["selectable-note-row-Projects/UI Lifecycle.md"].tap()
         app.buttons["selectable-note-row-Projects/Second UI Note.md"].tap()
         app.buttons["delete-selected-notes"].tap()
-        let moveToDeleted = app.buttons["Move to Recently Deleted"]
+        let moveToDeleted = app.buttons["Delete"]
         XCTAssertTrue(moveToDeleted.waitForExistence(timeout: 3))
         moveToDeleted.tap()
         XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
