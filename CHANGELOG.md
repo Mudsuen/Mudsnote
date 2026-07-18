@@ -1334,6 +1334,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Source roots now keep their real filesystem names. When exactly one top-level library is configured, that root becomes the selected library scope and the redundant aggregate row is omitted; `All iCloud` returns only when multiple top-level roots need a combined view or an explicitly opened external document is being projected.
 - Lesson: Aggregate navigation is useful only when there is something to aggregate. A single-folder library should expose one truthful source identity instead of a synthetic total plus a renamed duplicate.
 
+### 218. Immediate source-selection color
+
+- Problem: Clicking another source row updated AppKit's selection immediately, but the custom yellow title color still followed the previous logical scope until a synchronous dirty-note save completed. The visible selection therefore appeared to lag behind the click.
+- Fix: Source-cell presentation now derives its selected state from the outline view's current selected row and refreshes before save/navigation work begins. The logical scope still changes only after the current note saves successfully, and a failed save restores the previous selection.
+- Lesson: Interaction feedback should follow the control's immediate selection state, while model navigation can retain its transactional save boundary. Visual acknowledgement must not wait behind synchronous persistence.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -4235,7 +4235,10 @@ final class LibraryWindowController: NSWindowController,
     ) {
         guard let scope = item.scope else { return }
         let title = sourceTitle(for: scope)
-        let isSelected = selectedScope == scope
+        let row = sourceOutlineView.row(forItem: item)
+        let isSelected = row >= 0
+            ? sourceOutlineView.selectedRowIndexes.contains(row)
+            : selectedScope == scope
         let legacyTag = sourceLegacyTag(for: scope)
         cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
         cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
@@ -4400,6 +4403,7 @@ final class LibraryWindowController: NSWindowController,
               let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow)
                 as? LibrarySourceOutlineItem,
               let scope = item.scope else { return }
+        refreshVisibleSourceOutlinePresentation()
         if !activateSourceScope(scope) {
             refreshSourceSelection()
         }

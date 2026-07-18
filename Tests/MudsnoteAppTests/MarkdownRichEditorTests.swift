@@ -2773,12 +2773,23 @@ struct MarkdownRichEditorTests {
         try FileManager.default.createDirectory(at: clientFolder, withIntermediateDirectories: true)
         _ = try store.saveNewNote(title: "Client Keyboard Seed", body: "Nested keyboard body", in: clientFolder)
 
+        weak var controllerReference: LibraryWindowController?
+        var selectedTextColorAtSave: NSColor?
         let controller = LibraryWindowController(
             noteStore: store,
             onOpenInSeparateWindow: { _ in },
-            onSave: { _ in },
+            onSave: { _ in
+                guard let controller = controllerReference else { return }
+                let selectedRow = controller.sourceOutlineView.selectedRow
+                selectedTextColorAtSave = (controller.sourceOutlineView.view(
+                    atColumn: 0,
+                    row: selectedRow,
+                    makeIfNecessary: true
+                ) as? LibrarySourceOutlineCellView)?.textField?.textColor
+            },
             onClose: {}
         )
+        controllerReference = controller
         defer { controller.close() }
         let window = try #require(controller.window)
         window.makeKeyAndOrderFront(nil)
@@ -2795,7 +2806,13 @@ struct MarkdownRichEditorTests {
         outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
 
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "Nested keyboard body updated",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         #expect(controller.selectSourceForLibrary(titled: "Projects"))
+        #expect(selectedTextColorAtSave == LibrarySourceSelectionPalette.foregroundColor)
         #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
         outline.keyDown(with: try keyEvent(keyCode: 124, modifiers: [], characters: "\u{F703}"))
         #expect(controller.sourceTitlesForLibrary().contains("Client"))

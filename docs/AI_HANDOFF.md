@@ -364,6 +364,12 @@
 - A single configured root is selected directly and does not render the redundant `All iCloud` aggregate. The aggregate remains available for multiple registered roots and explicit external-document projection.
 - The user's active macOS configuration promotes the existing iCloud Drive `Mudsbuild` folder to the sole default root without deleting or moving the former local `~/Documents/Mudsnote` files.
 
+## Latest iteration (218)
+
+- Source-row yellow text follows `NSOutlineView`'s current selected row and is refreshed before any dirty-note save begins.
+- Scope navigation remains transactional: the model scope changes after a successful save, while a failure reselects and repaints the prior source.
+- Regression coverage observes the selected source color from inside the synchronous save callback, proving click feedback is already visible before persistence completes.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
