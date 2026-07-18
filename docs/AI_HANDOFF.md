@@ -370,6 +370,12 @@
 - Scope navigation remains transactional: the model scope changes after a successful save, while a failure reselects and repaints the prior source.
 - Regression coverage observes the selected source color from inside the synchronous save callback, proving click feedback is already visible before persistence completes.
 
+## Latest iteration (219)
+
+- Primary source-list clicks retain the previous logical scope and yellow title between mouse-down and mouse-up.
+- Mouse-up commits the outline selection, applies yellow styling, and enters the existing save-backed navigation path; keyboard/programmatic navigation remains immediate.
+- Regression coverage verifies mouse-down changes only AppKit's pending row, performs no save, and leaves the pressed title unaccented until the mouse-up commit.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

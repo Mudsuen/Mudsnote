@@ -2811,7 +2811,22 @@ struct MarkdownRichEditorTests {
             attributes: controller.theme.baseAttributes(for: .paragraph)
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
-        #expect(controller.selectSourceForLibrary(titled: "Projects"))
+        let projectsRow = try #require((0..<outline.numberOfRows).first { row in
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
+                as? LibrarySourceOutlineCellView)?.textField?.stringValue == "Projects"
+        })
+        outline.beginPrimaryMouseSelectionDeferral()
+        outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
+        #expect(controller.selectedSourceTitleForLibrary == "Notes")
+        #expect(selectedTextColorAtSave == nil)
+        let pressedProjectsCell = try #require(outline.view(
+            atColumn: 0,
+            row: projectsRow,
+            makeIfNecessary: true
+        ) as? LibrarySourceOutlineCellView)
+        #expect(pressedProjectsCell.textField?.textColor != LibrarySourceSelectionPalette.foregroundColor)
+        outline.finishPrimaryMouseSelectionDeferral()
+        #expect(controller.selectedSourceTitleForLibrary == "Projects")
         #expect(selectedTextColorAtSave == LibrarySourceSelectionPalette.foregroundColor)
         #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
         outline.keyDown(with: try keyEvent(keyCode: 124, modifiers: [], characters: "\u{F703}"))

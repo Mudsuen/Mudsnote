@@ -438,6 +438,38 @@ private final class LibrarySourceOutlineItem: NSObject {
 @MainActor
 final class LibrarySourceOutlineView: NSOutlineView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
+    var onPrimaryMouseSelectionCommitted: (() -> Void)?
+    private(set) var isDeferringPrimaryMouseSelectionCommit = false
+    private var selectionBeforePrimaryMouseDown = IndexSet()
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0 else {
+            super.mouseDown(with: event)
+            return
+        }
+        beginPrimaryMouseSelectionDeferral()
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        finishPrimaryMouseSelectionDeferral()
+    }
+
+    func beginPrimaryMouseSelectionDeferral() {
+        selectionBeforePrimaryMouseDown = selectedRowIndexes
+        isDeferringPrimaryMouseSelectionCommit = true
+    }
+
+    func finishPrimaryMouseSelectionDeferral() {
+        let shouldCommit = isDeferringPrimaryMouseSelectionCommit
+            && selectedRowIndexes != selectionBeforePrimaryMouseDown
+        isDeferringPrimaryMouseSelectionCommit = false
+        selectionBeforePrimaryMouseDown = []
+        if shouldCommit {
+            onPrimaryMouseSelectionCommitted?()
+        }
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let location = convert(event.locationInWindow, from: nil)
@@ -1955,6 +1987,9 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.setDraggingSourceOperationMask([], forLocal: false)
         sourceOutlineView.contextMenuProvider = { [weak self] row in
             self?.sourceContextMenuForLibrary(row: row)
+        }
+        sourceOutlineView.onPrimaryMouseSelectionCommitted = { [weak self] in
+            self?.commitCurrentSourceOutlineSelection()
         }
 
         let scrollView = NSScrollView()
@@ -4236,7 +4271,7 @@ final class LibraryWindowController: NSWindowController,
         guard let scope = item.scope else { return }
         let title = sourceTitle(for: scope)
         let row = sourceOutlineView.row(forItem: item)
-        let isSelected = row >= 0
+        let isSelected = row >= 0 && !sourceOutlineView.isDeferringPrimaryMouseSelectionCommit
             ? sourceOutlineView.selectedRowIndexes.contains(row)
             : selectedScope == scope
         let legacyTag = sourceLegacyTag(for: scope)
@@ -4398,8 +4433,16 @@ final class LibraryWindowController: NSWindowController,
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard notification.object as? NSOutlineView === sourceOutlineView,
-              !isSynchronizingSourceOutlineSelection,
-              sourceOutlineView.selectedRow >= 0,
+              !isSynchronizingSourceOutlineSelection else { return }
+        if sourceOutlineView.isDeferringPrimaryMouseSelectionCommit {
+            refreshVisibleSourceOutlinePresentation()
+            return
+        }
+        commitCurrentSourceOutlineSelection()
+    }
+
+    private func commitCurrentSourceOutlineSelection() {
+        guard sourceOutlineView.selectedRow >= 0,
               let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow)
                 as? LibrarySourceOutlineItem,
               let scope = item.scope else { return }

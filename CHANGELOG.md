@@ -1340,6 +1340,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Source-cell presentation now derives its selected state from the outline view's current selected row and refreshes before save/navigation work begins. The logical scope still changes only after the current note saves successfully, and a failed save restores the previous selection.
 - Lesson: Interaction feedback should follow the control's immediate selection state, while model navigation can retain its transactional save boundary. Visual acknowledgement must not wait behind synchronous persistence.
 
+### 219. Mouse-up source navigation
+
+- Problem: Removing the save delay made the next source turn yellow on mouse-down, before the user released the click. The response was fast but felt like the row had already moved underneath a still-held pointer.
+- Fix: Primary mouse selection is now visually and logically deferred between mouse-down and mouse-up. The previous source stays yellow while pressed; releasing commits the new row, updates yellow styling, saves if necessary, and navigates. Keyboard source navigation remains immediate.
+- Lesson: Fast feedback still needs the correct gesture boundary. List selection by pointer should commit on release, while keyboard selection should not inherit mouse-specific deferral.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
