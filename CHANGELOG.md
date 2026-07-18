@@ -1364,6 +1364,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Restored native row-selection drawing and made title, symbol, and count colors follow the outline's selected row even while logical navigation is deferred. Mouse-down now moves the complete visual selection; mouse-up still performs save-backed source navigation.
 - Lesson: Visual selection timing and navigation timing are separate contracts. AppKit can acknowledge a pressed row immediately while expensive or transactional content changes wait for the completed click.
 
+### 223. Synchronous pressed-row foreground repaint
+
+- Problem: The pressed row's foreground values changed during mouse-down, but AppKit's synchronous outline tracking prevented the normal deferred display pass until release, so the yellow text still appeared late on screen.
+- Fix: Pointer-deferral selection changes now force the source outline to display its freshly configured title, symbol, and count colors before returning to AppKit's tracking loop. Navigation remains release-bound.
+- Lesson: Mutating view properties inside a synchronous event-tracking loop is not proof that pixels changed; immediate press feedback may require an explicit display pass before the loop resumes.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
