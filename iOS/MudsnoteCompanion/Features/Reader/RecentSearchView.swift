@@ -7,6 +7,41 @@ private struct NotesListSearchTaskID: Hashable {
     var libraryRevision: Int
 }
 
+private enum HomeTimelineEntry: Identifiable {
+    case file(RecentMarkdownFile)
+    case memo(MemoBlock)
+
+    private static let memoDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
+    var id: String {
+        switch self {
+        case .file(let file): "file:\(file.id)"
+        case .memo(let memo): "memo:\(memo.id)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .file(let file): file.modifiedAt
+        case .memo(let memo):
+            Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
+        }
+    }
+}
+
+private struct HomeTimelineSection: Identifiable {
+    var id: String
+    var title: String
+    var entries: [HomeTimelineEntry]
+}
+
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
@@ -24,40 +59,52 @@ struct LibraryHomeView: View {
     @State private var isManagingFolders = false
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
+    @State private var isDirectoryPresented = false
+    @State private var directoryDragOffset: CGFloat = 0
     var chooseFolder: () -> Void
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                if !showsSearchExperience {
-                    VStack(alignment: .leading, spacing: 22) {
-                        accountSection
-                        if !appModel.smartFolders.isEmpty {
-                            smartFoldersSection
-                        }
-                        if !appModel.tagSummaries.isEmpty {
-                            tagsSection
-                        }
+            GeometryReader { proxy in
+                let directoryWidth = min(proxy.size.width * 0.86, 360)
+                let reveal = directoryReveal(width: directoryWidth)
+
+                ZStack(alignment: .leading) {
+                    homeContent
+                        .allowsHitTesting(reveal == 0)
+
+                    if !isDirectoryPresented {
+                        Color.clear
+                            .frame(width: 32)
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .highPriorityGesture(directoryDragGesture(width: directoryWidth))
+                            .accessibilityElement()
+                            .accessibilityLabel("Swipe right for folders")
+                            .accessibilityIdentifier("directory-swipe-edge")
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 110)
-                } else {
-                    searchSection
-                        .padding(.horizontal, 18)
-                        .padding(.top, 12)
-                        .padding(.bottom, 110)
+
+                    if reveal > 0 {
+                        Color.black.opacity(0.42 * reveal / directoryWidth)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture { closeDirectory() }
+                            .accessibilityElement()
+                            .accessibilityLabel("Close Folders")
+                            .accessibilityIdentifier("directory-backdrop")
+                    }
+
+                    directoryPanel(width: directoryWidth)
+                        .offset(x: -directoryWidth + reveal)
                 }
+                .contentShape(Rectangle())
+                .simultaneousGesture(directoryDragGesture(width: directoryWidth))
             }
-            .scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(TapGesture().onEnded {
-                if isSearchFocused { isSearchFocused = false }
-            })
             .background(NotesCloneColors.background)
             .refreshable {
                 await appModel.refreshInbox()
             }
-            .navigationTitle("Folders")
+            .navigationTitle(isDirectoryPresented ? "Folders" : "Notes")
             .onChange(of: searchQuery) { _, value in
                 if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchSuggestion = nil
@@ -65,9 +112,14 @@ struct LibraryHomeView: View {
             }
             .onDisappear {
                 isSearchFocused = false
+                isDirectoryPresented = false
+                directoryDragOffset = 0
             }
             .onAppear {
                 presentRequestedSearchIfNeeded()
+                if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
+                    isDirectoryPresented = true
+                }
             }
             .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
                 if requested { presentRequestedSearchIfNeeded() }
@@ -87,44 +139,59 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        newFolderName = ""
-                        isCreatingFolder = true
-                    } label: {
-                        Image(systemName: "folder.badge.plus")
-                    }
-                    .accessibilityLabel("New Folder")
-                    .accessibilityIdentifier("new-folder-button")
-                }
-
-                if #available(iOS 26.0, *) {
-                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isSearchFocused = false
-                        searchQuery = ""
-                        searchSuggestion = nil
-                        withAnimation(.snappy(duration: 0.28, extraBounce: 0.08)) {
-                            isManagingFolders.toggle()
+                        withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
+                            isDirectoryPresented.toggle()
+                            directoryDragOffset = 0
                         }
                     } label: {
-                        Group {
-                            if isManagingFolders {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .accessibilityIdentifier("finish-folder-editing-icon")
-                            } else {
-                                Text("Edit")
+                        Image(systemName: isDirectoryPresented ? "sidebar.left" : "sidebar.leading")
+                    }
+                    .accessibilityLabel(isDirectoryPresented ? "Close Folders" : "Show Folders")
+                    .accessibilityIdentifier("directory-button")
+                }
+
+                if isDirectoryPresented {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            newFolderName = ""
+                            isCreatingFolder = true
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
+                        }
+                        .accessibilityLabel("New Folder")
+                        .accessibilityIdentifier("new-folder-button")
+                    }
+
+                    if #available(iOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                    }
+
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isSearchFocused = false
+                            searchQuery = ""
+                            searchSuggestion = nil
+                            withAnimation(.snappy(duration: 0.28, extraBounce: 0.08)) {
+                                isManagingFolders.toggle()
                             }
+                        } label: {
+                            Group {
+                                if isManagingFolders {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .accessibilityIdentifier("finish-folder-editing-icon")
+                                } else {
+                                    Text("Edit")
+                                }
+                            }
+                            .frame(minWidth: 34, minHeight: 24)
+                            .transition(.blurReplace)
                         }
-                        .frame(minWidth: 34, minHeight: 24)
-                        .transition(.blurReplace)
+                        .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
+                        .accessibilityIdentifier("edit-folders-button")
                     }
-                    .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
-                    .accessibilityIdentifier("edit-folders-button")
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -175,6 +242,156 @@ struct LibraryHomeView: View {
             text: $searchQuery,
             isPresented: $isSearchFocused
         )
+    }
+
+    @ViewBuilder
+    private var homeContent: some View {
+        if showsSearchExperience {
+            ScrollView {
+                searchSection
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+                    .padding(.bottom, 110)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded {
+                if isSearchFocused { isSearchFocused = false }
+            })
+        } else {
+            homeCardStream
+        }
+    }
+
+    private var homeCardStream: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+                NotesListCountLabel(count: homeEntryCount)
+
+                if homeTimelineSections.isEmpty {
+                    ContentUnavailableView(
+                        "No Notes",
+                        systemImage: "note.text",
+                        description: Text("Create a note or swipe right to open your folders.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 60)
+                } else {
+                    ForEach(homeTimelineSections) { section in
+                        HomeTimelineCardSection(section: section)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 110)
+        }
+        .accessibilityIdentifier("home-note-gallery")
+    }
+
+    private var homeTimelineSections: [HomeTimelineSection] {
+        let entries = (
+            appModel.libraryFiles
+                .filter { $0.relativePath != "Inbox.md" }
+                .map(HomeTimelineEntry.file)
+                + appModel.inboxItems.map(HomeTimelineEntry.memo)
+        ).sorted { lhs, rhs in
+            if lhs.date != rhs.date { return lhs.date > rhs.date }
+            return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+        }
+
+        var sections: [HomeTimelineSection] = []
+        for entry in entries {
+            let bucket = NoteListPresentation.dateBucket(
+                for: entry.date,
+                now: Date(),
+                calendar: .autoupdatingCurrent
+            )
+            if sections.last?.id == bucket.id {
+                sections[sections.count - 1].entries.append(entry)
+            } else {
+                sections.append(
+                    HomeTimelineSection(
+                        id: bucket.id,
+                        title: bucket.title,
+                        entries: [entry]
+                    )
+                )
+            }
+        }
+        return sections
+    }
+
+    private var homeEntryCount: Int {
+        appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
+            + appModel.inboxItems.count
+    }
+
+    private func directoryPanel(width: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                accountSection
+                if !appModel.smartFolders.isEmpty {
+                    smartFoldersSection
+                }
+                if !appModel.tagSummaries.isEmpty {
+                    tagsSection
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 110)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(MudsnoteColors.line)
+                .frame(width: 1)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 22, x: 8)
+        .accessibilityIdentifier("directory-drawer")
+    }
+
+    private func directoryReveal(width: CGFloat) -> CGFloat {
+        if isDirectoryPresented {
+            return min(width, max(0, width + directoryDragOffset))
+        }
+        return min(width, max(0, directoryDragOffset))
+    }
+
+    private func directoryDragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if isDirectoryPresented {
+                    directoryDragOffset = min(0, value.translation.width)
+                } else {
+                    directoryDragOffset = max(0, value.translation.width)
+                }
+            }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let predicted = value.predictedEndTranslation.width
+                let shouldOpen: Bool
+                if isDirectoryPresented {
+                    shouldOpen = horizontal > -width * 0.18 && predicted > -width * 0.45
+                } else {
+                    shouldOpen = horizontal > width * 0.18 || predicted > width * 0.45
+                }
+                withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
+                    isDirectoryPresented = shouldOpen
+                    directoryDragOffset = 0
+                }
+            }
+    }
+
+    private func closeDirectory() {
+        withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
+            isDirectoryPresented = false
+            directoryDragOffset = 0
+            isManagingFolders = false
+        }
     }
 
     private func presentRequestedSearchIfNeeded() {
@@ -2088,6 +2305,134 @@ private struct NoteGallerySection: View {
                     .padding(.vertical, 5)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(MudsnoteColors.canvas)
+            }
+        }
+    }
+}
+
+private struct HomeTimelineCardSection: View {
+    var section: HomeTimelineSection
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
+
+    var body: some View {
+        Section {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                ForEach(section.entries) { entry in
+                    switch entry {
+                    case .file(let file):
+                        NoteGalleryFileButton(file: file, dateBasis: .modified)
+                    case .memo(let memo):
+                        HomeMemoCardButton(memo: memo)
+                    }
+                }
+            }
+        } header: {
+            Text(section.title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(MudsnoteColors.text)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(MudsnoteColors.canvas)
+        }
+    }
+}
+
+private struct HomeMemoCardButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var memo: MemoBlock
+
+    private var contentLines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var title: String {
+        guard let first = contentLines.first else {
+            return String(localized: "Untitled memo")
+        }
+        return first.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+    }
+
+    private var preview: String {
+        contentLines.dropFirst().joined(separator: " ")
+    }
+
+    private var dateText: String {
+        let components = memo.dateText.split(separator: " ")
+        return components.last.map(String.init) ?? memo.dateText
+    }
+
+    var body: some View {
+        Button {
+            appModel.selectedMemo = memo
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(title)
+                        .font(.system(.body, design: .rounded, weight: .bold))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .lineLimit(2)
+
+                    Text(preview.isEmpty ? String(localized: "No additional text") : preview)
+                        .font(.subheadline)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(5)
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "tray")
+                        Text("000-inbox")
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if memo.hasUncheckedChecklist {
+                            Image(systemName: "checklist")
+                        }
+                        if memo.hasAttachments {
+                            Image(systemName: "paperclip")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+                .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+
+                Text(dateText)
+                    .font(.caption)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .padding(.horizontal, 2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home-memo-card-\(memo.id)")
+        .contextMenu {
+            Button {
+                appModel.pinMemo(memo)
+            } label: {
+                Label("Pin", systemImage: "pin")
+            }
+            Button {
+                appModel.addDefaultTag(to: memo)
+            } label: {
+                Label("Tag", systemImage: "number")
+            }
+            Button(role: .destructive) {
+                appModel.deleteMemo(memo)
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }

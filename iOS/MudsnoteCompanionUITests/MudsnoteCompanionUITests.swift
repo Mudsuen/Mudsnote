@@ -1759,6 +1759,42 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            openDirectory: false
+        )
+
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
+
+        let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
+
+        let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
+        let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+
+        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
+        XCTAssertTrue(app.navigationBars["Folders"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Home cards with left directory drawer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
+    }
+
     func testNoteListKeepsCaptureBarAndScopesFullTextSearch() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
@@ -2138,7 +2174,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         scanText: Bool = false,
         searchRoute: Bool = false,
         inboxFolder: Bool = false,
-        halfScreenReader: Bool = false
+        halfScreenReader: Bool = false,
+        openDirectory: Bool = true
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -2159,7 +2196,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
             searchRoute ? "-ui-testing-search-route" : nil,
-            inboxFolder ? "-ui-testing-inbox-folder" : nil
+            inboxFolder ? "-ui-testing-inbox-folder" : nil,
+            fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil
         ].compactMap { $0 }
         app.launch()
         return app

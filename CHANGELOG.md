@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 184. Chronological card home with swipe-out directory
+- Problem: Launching into a folder index made note discovery one navigation step slower and treated the directory as the primary surface rather than the notes themselves.
+- Fix: iOS now opens directly into a two-column card stream that mixes Markdown files and individual Inbox captures in descending timestamp order without duplicating the aggregate `Inbox.md`. A rightward drag reveals the complete folder directory from the left; the reverse drag or backdrop tap closes it, while the sidebar button provides an explicit equivalent action.
+- Lesson: In a note-first mobile library, chronology is the default working surface and hierarchy is progressive navigation that should remain one gesture away.
+
 ### 183. Detailed card-style iOS note rows
 - Problem: iOS note rows compressed the body preview beside the timestamp into a single line, making it difficult to recognize a note without opening it.
 - Fix: List cards now allow two-line titles and show up to three lines of body text. Checklist notes instead expose their first two tasks, while open-task and attachment indicators remain visible in the metadata row. Folder-scoped lists continue to omit their redundant folder name.
