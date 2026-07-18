@@ -2815,8 +2815,8 @@ struct MarkdownRichEditorTests {
             (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
                 as? LibrarySourceOutlineCellView)?.textField?.stringValue == "Projects"
         })
-        outline.beginPrimaryMouseSelectionDeferral()
-        outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
+        outline.beginPrimaryMouseSelectionDeferral(visualSelectionRow: projectsRow)
+        #expect(outline.selectedRow != projectsRow)
         #expect(controller.selectedSourceTitleForLibrary == "Notes")
         #expect(selectedTextColorAtSave == nil)
         let pressedProjectsCell = try #require(outline.view(
@@ -2824,6 +2824,12 @@ struct MarkdownRichEditorTests {
             row: projectsRow,
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
+        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.textField?.needsDisplay == false)
+
+        outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
+        #expect(controller.selectedSourceTitleForLibrary == "Notes")
+        #expect(selectedTextColorAtSave == nil)
         #expect(outline.selectedRow == projectsRow)
         #expect(!outline.needsDisplay)
         #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)

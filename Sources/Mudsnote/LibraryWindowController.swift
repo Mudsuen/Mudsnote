@@ -438,8 +438,10 @@ private final class LibrarySourceOutlineItem: NSObject {
 @MainActor
 final class LibrarySourceOutlineView: NSOutlineView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
+    var onPrimaryMouseSelectionPreviewChanged: (() -> Void)?
     var onPrimaryMouseSelectionCommitted: (() -> Void)?
     private(set) var isDeferringPrimaryMouseSelectionCommit = false
+    private(set) var primaryMouseVisualSelectionRow: Int?
     private var selectionBeforePrimaryMouseDown = IndexSet()
 
     override func mouseDown(with event: NSEvent) {
@@ -447,21 +449,33 @@ final class LibrarySourceOutlineView: NSOutlineView {
             super.mouseDown(with: event)
             return
         }
-        beginPrimaryMouseSelectionDeferral()
+        let location = convert(event.locationInWindow, from: nil)
+        let pressedRow = row(at: location)
+        let hitView = hitTest(location)
+        let previewsSelectableRow = pressedRow >= 0
+            && !(hitView is NSButton)
+            && (item(atRow: pressedRow) as? LibrarySourceOutlineItem)?.scope != nil
+        beginPrimaryMouseSelectionDeferral(
+            visualSelectionRow: previewsSelectableRow ? pressedRow : selectedRow
+        )
         super.mouseDown(with: event)
         finishPrimaryMouseSelectionDeferral()
     }
 
-    func beginPrimaryMouseSelectionDeferral() {
+    func beginPrimaryMouseSelectionDeferral(visualSelectionRow: Int? = nil) {
         selectionBeforePrimaryMouseDown = selectedRowIndexes
         isDeferringPrimaryMouseSelectionCommit = true
+        primaryMouseVisualSelectionRow = visualSelectionRow
+        onPrimaryMouseSelectionPreviewChanged?()
     }
 
     func finishPrimaryMouseSelectionDeferral() {
         let shouldCommit = isDeferringPrimaryMouseSelectionCommit
             && selectedRowIndexes != selectionBeforePrimaryMouseDown
         isDeferringPrimaryMouseSelectionCommit = false
+        primaryMouseVisualSelectionRow = nil
         selectionBeforePrimaryMouseDown = []
+        onPrimaryMouseSelectionPreviewChanged?()
         if shouldCommit {
             onPrimaryMouseSelectionCommitted?()
         }
@@ -1986,6 +2000,11 @@ final class LibraryWindowController: NSWindowController,
         }
         sourceOutlineView.onPrimaryMouseSelectionCommitted = { [weak self] in
             self?.commitCurrentSourceOutlineSelection()
+        }
+        sourceOutlineView.onPrimaryMouseSelectionPreviewChanged = { [weak self] in
+            guard let self else { return }
+            self.refreshVisibleSourceOutlinePresentation()
+            self.sourceOutlineView.window?.displayIfNeeded()
         }
 
         let scrollView = NSScrollView()
@@ -4267,8 +4286,10 @@ final class LibraryWindowController: NSWindowController,
         guard let scope = item.scope else { return }
         let title = sourceTitle(for: scope)
         let row = sourceOutlineView.row(forItem: item)
+        let visualSelectionRow = sourceOutlineView.primaryMouseVisualSelectionRow
+            ?? sourceOutlineView.selectedRow
         let isSelected = row >= 0
-            ? sourceOutlineView.selectedRowIndexes.contains(row)
+            ? row == visualSelectionRow
             : selectedScope == scope
         let legacyTag = sourceLegacyTag(for: scope)
         cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")

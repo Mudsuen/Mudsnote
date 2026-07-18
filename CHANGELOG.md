@@ -1375,6 +1375,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Pointer-deferral selection changes now force the containing window to display its freshly configured title, symbol, and count colors before returning to AppKit's tracking loop. Navigation remains release-bound.
 - Lesson: Mutating view properties inside a synchronous event-tracking loop is not proof that pixels changed; immediate press feedback may require an explicit display pass before the loop resumes.
 
+### 224. Pre-tracking pressed-row color preview
+
+- Problem: Even a forced display from the outline selection notification remained too late in the real AppKit event path: the native highlight appeared inside `super.mouseDown`, while the custom foreground did not become visible until that tracking call returned on release.
+- Fix: Before entering `super.mouseDown`, the outline now resolves the selectable row under the pointer, publishes it as the temporary visual selection, refreshes the title/symbol/count colors, and completes a display pass. AppKit then applies its original highlight behavior; release clears the preview and commits navigation. Disclosure-button presses do not create a row-color preview.
+- Lesson: When a framework owns a blocking interaction loop, truly immediate custom feedback must be prepared before entering that loop rather than reacting to notifications emitted from within it.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

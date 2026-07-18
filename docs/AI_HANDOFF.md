@@ -405,6 +405,12 @@
 - Pointer-deferral selection changes explicitly call the containing window's `displayIfNeeded()` after configuring the pressed row's foreground styling.
 - This display pass is required because `NSOutlineView.mouseDown` synchronously tracks through release and can otherwise postpone visible text-color updates.
 
+## Latest iteration (224)
+
+- Primary mouse-down resolves the target scope row and previews its foreground colors before calling `super.mouseDown`.
+- The preview deliberately precedes AppKit's blocking tracking loop; native background highlight behavior remains untouched.
+- Mouse release clears the preview and commits logical navigation; disclosure-button clicks do not preview row selection.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
