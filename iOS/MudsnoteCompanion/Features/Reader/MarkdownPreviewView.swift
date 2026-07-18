@@ -166,206 +166,10 @@ struct MarkdownPreviewView: View {
                     noteFindBar
                 }
             }
+            .toolbar(.hidden, for: .navigationBar)
             .toolbar {
-                if !linkedSourceHistory.isEmpty, !isEditing {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: returnToPreviousLinkedNote) {
-                            Image(systemName: "chevron.left")
-                        }
-                        .accessibilityLabel("Previous Note")
-                        .accessibilityIdentifier("previous-linked-note")
-                    }
-                } else if !isEditing {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: dismiss.callAsFunction) {
-                            Image(systemName: "chevron.left")
-                        }
-                        .accessibilityLabel("Back to Notes")
-                        .accessibilityIdentifier("close-note-reader")
-                    }
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if isEditing {
-                        Menu {
-                            Button {
-                                editorDisplayMode = .rich
-                            } label: {
-                                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
-                            }
-                            Button {
-                                editorDisplayMode = .source
-                            } label: {
-                                Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                        }
-                        .accessibilityLabel("Editor Options")
-                        .accessibilityIdentifier("markdown-display-mode")
-                    }
-
-                    if !isEditing {
-                        shareControl
-
-                        switch source {
-                        case .memo:
-                            EmptyView()
-                        case .document(let document):
-                            Menu {
-                                Button {
-                                    Task { await exportCurrentDocumentAsPDF(document) }
-                                } label: {
-                                    if isExportingPDF {
-                                        Label("Exporting PDF…", systemImage: "doc.richtext")
-                                    } else {
-                                        Label("Export as PDF", systemImage: "doc.richtext")
-                                    }
-                                }
-                                .disabled(isExportingPDF)
-                                Button {
-                                    beginFindingInNote()
-                                } label: {
-                                    Label("Find in Note", systemImage: "magnifyingglass")
-                                }
-                                .disabled(draftMarkdown.isEmpty)
-                                if hasRenderedAttachments {
-                                    Menu {
-                                        Button {
-                                            setAllAttachmentPresentationModes(.small)
-                                        } label: {
-                                            Label("Set All to Small", systemImage: "rectangle.compress.vertical")
-                                        }
-                                        Button {
-                                            setAllAttachmentPresentationModes(.large)
-                                        } label: {
-                                            Label("Set All to Large", systemImage: "rectangle.expand.vertical")
-                                        }
-                                    } label: {
-                                        Label("Attachment View", systemImage: "rectangle.grid.1x2")
-                                    }
-                                    .accessibilityIdentifier("attachment-view-menu")
-                                }
-                                if let file = currentFile, canManage(document) {
-                                    Divider()
-                                    Button {
-                                        appModel.togglePinned(file)
-                                    } label: {
-                                        Label(
-                                            file.isPinned ? "Unpin" : "Pin",
-                                            systemImage: file.isPinned ? "pin.slash" : "pin"
-                                        )
-                                    }
-                                    if canMoveToTopLevel || !moveDestinations.isEmpty {
-                                        Menu {
-                                            if canMoveToTopLevel {
-                                                Button {
-                                                    Task { await moveCurrentDocument(toFolder: nil) }
-                                                } label: {
-                                                    Label("Top Level", systemImage: "tray")
-                                                }
-                                            }
-                                            ForEach(moveDestinations) { folder in
-                                                Button(folder.relativePath) {
-                                                    Task {
-                                                        await moveCurrentDocument(
-                                                            toFolder: folder.relativePath
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        } label: {
-                                            Label("Move Note", systemImage: "folder")
-                                        }
-                                    }
-                                    Button {
-                                        appModel.duplicate(file)
-                                    } label: {
-                                        Label("Duplicate Note", systemImage: "plus.square.on.square")
-                                    }
-                                    Button {
-                                        noteName = document.title
-                                        isRenamingNote = true
-                                    } label: {
-                                        Label("Rename Note", systemImage: "pencil")
-                                    }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        isConfirmingNoteDeletion = true
-                                    } label: {
-                                        Label("Move to Recently Deleted", systemImage: "trash")
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                            }
-                            .accessibilityLabel("Note Options")
-                            .accessibilityIdentifier("note-options-menu")
-                        }
-                    }
-
-                    if isEditing {
-                        Button {
-                            Task { await persistDraft(finishEditing: true, announce: true) }
-                        } label: {
-                            if isSaving {
-                                ProgressView()
-                            } else {
-                                Text("Done")
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .disabled(
-                            isSaving
-                                || isAudioTransitioning
-                                || noteAudioRecorder.isRecording
-                                || pendingAudioRecording != nil
-                        )
-                        .accessibilityLabel("Save note")
-                        .accessibilityIdentifier("save-markdown-button")
-                    }
-                }
-
                 if !isEditing, !isFindingInNote {
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Button {
-                            beginEditing(with: .checklist)
-                        } label: {
-                            Image(systemName: "checklist")
-                        }
-                        .accessibilityLabel("Start Checklist")
-                        .accessibilityIdentifier("reader-checklist")
-
-                        if case .document = source {
-                            Menu {
-                                attachmentMenuContent
-                            } label: {
-                                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
-                            }
-                            .disabled(isSaving || appModel.isPreparingAttachment)
-                            .accessibilityLabel("Add Attachment")
-                            .accessibilityIdentifier("reader-attachment-menu")
-                        }
-
-                        Button(action: beginEditing) {
-                            Text("Aa")
-                                .fontWeight(.medium)
-                        }
-                        .accessibilityLabel("Formatting")
-                        .accessibilityIdentifier("reader-formatting")
-                    }
-
-                    if #available(iOS 26.0, *) {
-                        ToolbarSpacer(.fixed, placement: .bottomBar)
-                    }
-
-                    ToolbarItem(placement: .bottomBar) {
-                        Button(action: startNewNoteFromReader) {
-                            Image(systemName: "square.and.pencil")
-                        }
-                        .accessibilityLabel("New note")
-                        .accessibilityIdentifier("reader-new-note")
-                    }
+                    readerBottomToolbar
                 }
             }
         }
@@ -1012,85 +816,249 @@ struct MarkdownPreviewView: View {
         .accessibilityIdentifier("markdown-scan-text")
     }
 
+    @ToolbarContentBuilder
+    private var readerBottomToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .bottomBar) {
+            Button {
+                beginEditing(with: .checklist)
+            } label: {
+                Image(systemName: "checklist")
+            }
+            .accessibilityLabel("Start Checklist")
+            .accessibilityIdentifier("reader-checklist")
+
+            if case .document = source {
+                Menu {
+                    attachmentMenuContent
+                } label: {
+                    Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
+                }
+                .disabled(isSaving || appModel.isPreparingAttachment)
+                .accessibilityLabel("Add Attachment")
+                .accessibilityIdentifier("reader-attachment-menu")
+            }
+
+            Button(action: beginEditing) {
+                Text("Aa")
+                    .fontWeight(.medium)
+            }
+            .accessibilityLabel("Formatting")
+            .accessibilityIdentifier("reader-formatting")
+
+            if case .document(let document) = source {
+                noteOptionsMenu(document)
+            }
+        }
+
+        if #available(iOS 26.0, *) {
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+        }
+
+        ToolbarItem(placement: .bottomBar) {
+            Button(action: startNewNoteFromReader) {
+                Image(systemName: "square.and.pencil")
+            }
+            .accessibilityLabel("New note")
+            .accessibilityIdentifier("reader-new-note")
+        }
+    }
+
+    private func noteOptionsMenu(_ document: MarkdownDocument) -> some View {
+        Menu {
+            Button {
+                Task { await exportCurrentDocumentAsPDF(document) }
+            } label: {
+                Label(isExportingPDF ? "Exporting PDF…" : "Export as PDF", systemImage: "doc.richtext")
+            }
+            .disabled(isExportingPDF)
+            Button {
+                beginFindingInNote()
+            } label: {
+                Label("Find in Note", systemImage: "magnifyingglass")
+            }
+            .disabled(draftMarkdown.isEmpty)
+            if hasRenderedAttachments {
+                Menu {
+                    Button("Set All to Small") { setAllAttachmentPresentationModes(.small) }
+                    Button("Set All to Large") { setAllAttachmentPresentationModes(.large) }
+                } label: {
+                    Label("Attachment View", systemImage: "rectangle.grid.1x2")
+                }
+                .accessibilityIdentifier("attachment-view-menu")
+            }
+            if let file = currentFile, canManage(document) {
+                Divider()
+                Button {
+                    appModel.togglePinned(file)
+                } label: {
+                    Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
+                }
+                if canMoveToTopLevel || !moveDestinations.isEmpty {
+                    Menu {
+                        if canMoveToTopLevel {
+                            Button {
+                                Task { await moveCurrentDocument(toFolder: nil) }
+                            } label: {
+                                Label("Top Level", systemImage: "tray")
+                            }
+                        }
+                        ForEach(moveDestinations) { folder in
+                            Button(folder.relativePath) {
+                                Task { await moveCurrentDocument(toFolder: folder.relativePath) }
+                            }
+                        }
+                    } label: {
+                        Label("Move Note", systemImage: "folder")
+                    }
+                }
+                Button {
+                    appModel.duplicate(file)
+                } label: {
+                    Label("Duplicate Note", systemImage: "plus.square.on.square")
+                }
+                Button {
+                    noteName = document.title
+                    isRenamingNote = true
+                } label: {
+                    Label("Rename Note", systemImage: "pencil")
+                }
+                Divider()
+                Button(role: .destructive) {
+                    isConfirmingNoteDeletion = true
+                } label: {
+                    Label("Move to Recently Deleted", systemImage: "trash")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel("Note Options")
+        .accessibilityIdentifier("note-options-menu")
+    }
+
     private var markdownToolbar: some View {
         let attachmentIsPreparing = appModel.isPreparingAttachment
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if case .document = source {
-                    Menu {
-                        attachmentMenuContent
-                    } label: {
-                        editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
-                    }
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add Attachment")
-                    .accessibilityIdentifier("markdown-attachment-menu")
-
-                    Button {
-                        Task { await toggleDocumentAudioRecording() }
-                    } label: {
-                        editorToolIcon(
-                            audioButtonSystemImage,
-                            foreground: noteAudioRecorder.isRecording ? .white : MudsnoteColors.text,
-                            background: noteAudioRecorder.isRecording ? .red : MudsnoteColors.card
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(
-                        isSaving
-                            || appModel.isPreparingAttachment
-                            || isAudioTransitioning
-                    )
-                    .accessibilityLabel(audioButtonAccessibilityLabel)
-                    .accessibilityIdentifier("markdown-record-audio")
-                }
-
+        return HStack(spacing: 2) {
+            if case .document = source {
                 Menu {
-                    formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
-                    formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
-                    formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
-                    formatMenuButton("Body", systemImage: "textformat", command: .body)
-                    Divider()
-                    formatMenuButton("Bold", systemImage: "bold", command: .bold)
-                    formatMenuButton("Italic", systemImage: "italic", command: .italic)
-                    formatMenuButton("Underline", systemImage: "underline", command: .underline)
-                    formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
-                    formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
-                    Divider()
-                    formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
-                    formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
-                    formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
-                    formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
-                    Divider()
-                    formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
-                    formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
-                    formatMenuButton("Insert Link", systemImage: "link", command: .link)
+                    attachmentMenuContent
                 } label: {
-                    Text("Aa")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(MudsnoteColors.text)
-                        .frame(width: 40, height: 40)
-                        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
+                    Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
+                        .frame(width: 42, height: 44)
                 }
-                .accessibilityLabel("Formatting")
-                .accessibilityIdentifier("markdown-format-menu")
+                .disabled(isSaving || appModel.isPreparingAttachment)
+                .accessibilityLabel("Add Attachment")
+                .accessibilityIdentifier("markdown-attachment-menu")
 
-                formatButton("checklist", .checklist)
-                formatButton("arrow.uturn.backward", .undo)
-                formatButton("arrow.uturn.forward", .redo)
+                Button {
+                    Task { await toggleDocumentAudioRecording() }
+                } label: {
+                    Image(systemName: audioButtonSystemImage)
+                        .foregroundStyle(noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.text)
+                        .frame(width: 42, height: 44)
+                }
+                .disabled(
+                    isSaving
+                        || appModel.isPreparingAttachment
+                        || isAudioTransitioning
+                )
+                .accessibilityLabel(audioButtonAccessibilityLabel)
+                .accessibilityIdentifier("markdown-record-audio")
             }
-            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
-            .padding(.vertical, 8)
+
+            editorFormatMenu
+            formatButton("checklist", .checklist)
+            formatButton("arrow.uturn.backward", .undo)
+            formatButton("arrow.uturn.forward", .redo)
+
+            Spacer(minLength: 4)
+            Button {
+                Task { await persistDraft(finishEditing: true, announce: true) }
+            } label: {
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Image(systemName: "checkmark")
+                        .fontWeight(.semibold)
+                        .frame(width: 42, height: 44)
+                }
+            }
+            .disabled(
+                isSaving
+                    || isAudioTransitioning
+                    || noteAudioRecorder.isRecording
+                    || pendingAudioRecording != nil
+            )
+            .accessibilityLabel("Save note")
+            .accessibilityIdentifier("save-markdown-button")
         }
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(MudsnoteColors.line).frame(height: 1) }
+        .font(.system(size: 17, weight: .medium))
+        .foregroundStyle(MudsnoteColors.text)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(MudsnoteColors.line)
+                .frame(height: 0.5)
+        }
+    }
+
+    private var editorFormatMenu: some View {
+        Menu {
+            formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
+            formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
+            formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
+            formatMenuButton("Body", systemImage: "textformat", command: .body)
+            Divider()
+            formatMenuButton("Bold", systemImage: "bold", command: .bold)
+            formatMenuButton("Italic", systemImage: "italic", command: .italic)
+            formatMenuButton("Underline", systemImage: "underline", command: .underline)
+            formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
+            formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
+            Divider()
+            formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
+            formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
+            formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
+            formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
+            Divider()
+            formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
+            formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
+            formatMenuButton("Insert Link", systemImage: "link", command: .link)
+            Divider()
+            formatMenuButton("Undo", systemImage: "arrow.uturn.backward", command: .undo)
+            formatMenuButton("Redo", systemImage: "arrow.uturn.forward", command: .redo)
+            Divider()
+            Button {
+                editorDisplayMode = .rich
+            } label: {
+                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
+            }
+            Button {
+                editorDisplayMode = .source
+            } label: {
+                Label(
+                    "Markdown Source",
+                    systemImage: editorDisplayMode == .source
+                        ? "checkmark"
+                        : "chevron.left.forwardslash.chevron.right"
+                )
+            }
+        } label: {
+            Text("Aa")
+                .fontWeight(.medium)
+                .frame(width: 42, height: 44)
+        }
+        .accessibilityLabel("Formatting")
+        .accessibilityIdentifier("markdown-format-menu")
     }
 
     private func formatButton(_ systemImage: String, _ kind: MarkdownEditingCommand.Kind) -> some View {
         Button {
             editingCommand = MarkdownEditingCommand(kind: kind)
         } label: {
-            editorToolIcon(systemImage)
+            Image(systemName: systemImage)
+                .frame(width: 42, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
@@ -1107,18 +1075,6 @@ struct MarkdownPreviewView: View {
             Label(title, systemImage: systemImage)
         }
         .accessibilityIdentifier("markdown-format-\(command.identifier)")
-    }
-
-    private func editorToolIcon(
-        _ systemImage: String,
-        foreground: Color = MudsnoteColors.text,
-        background: Color = MudsnoteColors.card
-    ) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(foreground)
-            .frame(width: 40, height: 40)
-            .background(background, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func beginEditing() {

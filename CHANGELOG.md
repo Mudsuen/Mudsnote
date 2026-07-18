@@ -17,6 +17,16 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 175. Quiet note chrome and Notes-style editing tools
+- Problem: Reader and editor actions crowded the top of an open note, while the editing controls used individually boxed custom buttons that did not match Apple Notes and disappeared when moved into a system bottom bar behind the keyboard.
+- Fix: Open notes now keep their top edge free of buttons in both reading and editing states. Reader actions stay in the native glass bottom group, and the editor uses a compact borderless input-accessory row above the keyboard for attachments, audio, formatting, checklists, undo, redo, and save.
+- Lesson: Note editing controls belong with the keyboard, while document chrome should stay quiet; system bottom bars are suitable for reading controls but cannot replace a keyboard-visible editing accessory.
+
+### 174. Restore the accepted native Notes command row
+- Problem: A later toolbar revision reintroduced a custom search field and voice action, regressing the previously accepted Apple Notes-like bottom silhouette.
+- Fix: iOS 26 again uses the system Search toolbar item with a fixed native gap before the independent New Note control, matching the earlier `Adopt native Notes toolbar grouping` implementation; older iOS keeps the existing fallback.
+- Lesson: When a visual baseline has already been approved, restore that exact system composition instead of approximating it with another custom glass arrangement.
+
 ### 173. Native iOS 26 note navigation and reader controls
 - Problem: Folder actions drew their own card shapes inside the system toolbar, note readers opened as half-height sheets without an explicit return action, and reading mode had no bottom command bar.
 - Fix: Folder, list, and reader actions now let the iOS toolbar provide native Liquid Glass grouping and press feedback. Readers open at full height with Back, Share, and More controls, plus a working bottom group for checklist, attachments, formatting, and composing a new note.
