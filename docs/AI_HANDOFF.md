@@ -346,6 +346,13 @@
 - Main-window saves use exact-path updates for those external documents, while managed library notes retain title-based filenames. Pending edits in the current note are flushed before switching to an external file.
 - Quick capture retains its dedicated destination shelf but uses compact `xmark` and `checkmark` icon actions in transparent `26pt` controls instead of wide Cancel/Save pills.
 
+## Latest iteration (215)
+
+- macOS can register an existing top-level folder from the File menu or the `iCloud` source-group context menu without moving or copying its Markdown files.
+- Registered non-default roots use `从资料库移除`, which preserves the directory and its contents; managed child folders retain rename and destructive delete semantics. Duplicate and parent/child-overlapping roots are rejected.
+- Every folder source exposes `在 Finder 中显示`. Adding or removing a root refreshes the source tree, full note snapshot, and filesystem monitor.
+- The deferred launch shell, full library snapshot, source tags, and library search use configured roots. Opening an external file such as `~/.hermes/SOUL.md` no longer makes Hermes the next ordinary launch selection or imports its parent directory's Markdown corpus into `All iCloud`.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

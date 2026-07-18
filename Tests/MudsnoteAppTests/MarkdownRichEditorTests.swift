@@ -5193,6 +5193,130 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryWindowRegistersRemovesAndRevealsTopLevelFoldersWithoutDeletingFiles() throws {
+        let suiteName = "mudsnote.library-source-registration-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-source-registration-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let externalDirectory = root.appendingPathComponent("External Library", isDirectory: true)
+        let externalNote = externalDirectory.appendingPathComponent("Keep Me.md")
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        try "# Keep Me\n\nBody".write(to: externalNote, atomically: true, encoding: .utf8)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.loadSourceFoldersForLibrary()
+
+        let groupMenu = try #require(controller.sourceContextMenuForLibrary(row: 0))
+        #expect(groupMenu.items.map(\.title) == ["将文件夹添加到资料库…"])
+
+        try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
+        #expect(store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
+        #expect(controller.sourceTitlesForLibrary().contains("External Library"))
+        #expect(controller.selectSourceForLibrary(titled: "External Library"))
+        let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
+        #expect(externalMenu.items.map(\.title) == ["在 Finder 中显示", "从资料库移除"])
+
+        #expect(throws: (any Error).self) {
+            try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
+        }
+        #expect(throws: (any Error).self) {
+            try controller.addExistingLibraryFolderForLibrary(at: externalDirectory.appendingPathComponent("Nested"))
+        }
+
+        try controller.removeRegisteredLibraryFolderForLibrary(at: externalDirectory)
+        #expect(!store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
+        #expect(FileManager.default.fileExists(atPath: externalDirectory.path))
+        #expect(FileManager.default.fileExists(atPath: externalNote.path))
+        #expect(!controller.sourceTitlesForLibrary().contains("External Library"))
+        #expect(throws: (any Error).self) {
+            try controller.removeRegisteredLibraryFolderForLibrary(at: notesDirectory)
+        }
+    }
+
+    @MainActor
+    @Test
+    func deferredLibraryLaunchIgnoresRecentExternalDocuments() async throws {
+        let suiteName = "mudsnote.library-recent-shell-boundary-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-recent-shell-boundary-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let externalDirectory = root.appendingPathComponent(".hermes", isDirectory: true)
+        let externalNote = externalDirectory.appendingPathComponent("SOUL.md")
+        try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let managedNote = try store.saveNewNote(title: "Managed", body: "Library body")
+        try "# SOUL\n\nExternal body".write(to: externalNote, atomically: true, encoding: .utf8)
+        _ = try store.updateNoteInPlace(at: externalNote, title: "SOUL", body: "External body")
+        #expect(store.listRecentFiles(limit: 2).first?.url.standardizedFileURL == externalNote.standardizedFileURL)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
+            managedNote.standardizedFileURL.path
+        ])
+        controller.showWindowAndFocus()
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, controller.editorTextView.string != "Library body" {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == managedNote.standardizedFileURL.path)
+        #expect(controller.titleField.stringValue == "Managed")
+        #expect(controller.editorTextView.string == "Library body")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
+            managedNote.standardizedFileURL.path
+        ])
+        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
+        await controller.waitForSourceSnapshotValidationForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
+            managedNote.standardizedFileURL.path
+        ])
+        controller.selectRecentScopeForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
+            managedNote.standardizedFileURL.path
+        ])
+    }
+
+    @MainActor
+    @Test
     func libraryWindowDeletesRestoresAndPermanentlyDeletesNotes() throws {
         let suiteName = "mudsnote.library-trash-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

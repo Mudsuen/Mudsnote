@@ -1316,6 +1316,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Snapshot-isolation tests prove local lifecycle changes do not synchronously absorb an unrelated external directory. A 10,000-row insertion test improved from about `126ms` total test time to stable `38–40ms` runs and passes a `<50ms` operation gate. Full tests, packaging, installed-app smoke, strict signature verification, and expanded visual QA passed.
 - Lesson: A loaded navigation hierarchy should be mutated as application state; recursive filesystem discovery belongs to cancellable background validation, not the command path.
 
+### 215. Registered macOS library folders
+
+- Problem: The macOS source pane could create and delete subfolders but did not expose the existing multi-root storage model as a safe library workflow. Extra top-level roots were treated like ordinary folders, so deleting one could affect its contents, no folder context menu revealed its Finder location, and a recently opened external `.hermes/SOUL.md` file could become the automatic launch selection even though `.hermes` was not registered.
+- Fix: Added `File > 将文件夹添加到资料库…` and the same action on the library group context menu. Registered top-level folders now expose `在 Finder 中显示` and `从资料库移除`; removal clears only Mudsnote registration and library UI metadata while preserving every file. Nested managed folders retain rename and destructive delete actions. Registration rejects duplicate and parent/child-overlapping roots and refreshes the source tree, note snapshot, tags, search session, and filesystem monitor. The launch shell, full All Notes snapshot, tags, and library search now use configured roots instead of expanding every recent external file's parent directory.
+- Lesson: A registered source and a managed child folder have different ownership semantics. Removing a source must never be implemented by reusing filesystem deletion, and recent external documents must not leak across launches into the library's automatic selection.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -50,6 +50,31 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func registeredRootSearchSessionAndTagsExcludeRecentExternalDirectories() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let externalDirectory = harness.root.appendingPathComponent(".hermes", isDirectory: true)
+        let externalURL = externalDirectory.appendingPathComponent("SOUL.md")
+        store.notesDirectory = notesDirectory
+        _ = try store.saveNewNote(title: "Managed", body: "Library body", tags: ["library"])
+        try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        _ = try store.updateNoteInPlace(
+            at: externalURL,
+            title: "SOUL",
+            body: "Hermes body",
+            tags: ["hermes"]
+        )
+
+        #expect(store.listNotes(limit: 10).contains { $0.url.standardizedFileURL == externalURL.standardizedFileURL })
+        let roots = store.preferredDirectories
+        let session = store.makeSearchSession(roots: roots)
+        #expect(session.searchNotes(query: "Hermes", limit: 10).isEmpty)
+        #expect(session.searchNotes(query: "Library", limit: 10).map(\.title) == ["Managed"])
+        #expect(store.knownTags(limit: 10, roots: roots) == ["library"])
+    }
+
+    @Test
     func recentFilesAreListedWithoutSynchronousFileMetadataReads() throws {
         let harness = try TestHarness()
         let missingPath = harness.root
