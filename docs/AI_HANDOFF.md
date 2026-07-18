@@ -417,6 +417,12 @@
 - iOS-only tasks must use `./scripts/verify pr|full` plus Xcode/UI-test/device installation and must not run `package_app.sh` or `verify live`.
 - `package_app.sh` refuses an iOS-only branch by default; `MUDSNOTE_ALLOW_IOS_ONLY_MAC_INSTALL=1` is reserved for an intentional macOS baseline install.
 
+## Latest iteration (226)
+
+- Verification is split into `./scripts/verify macos|ios|both pr|full|live`.
+- Devflow's legacy one-argument PR/full invocation detects changed paths and delegates to only the affected platform; documentation-only work performs policy checks only.
+- Live verification always requires an explicit platform. macOS live owns `/Applications/Mudsnote.app`; iOS live owns only the connected iPhone; `both` is reserved for an explicitly dual-platform request.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

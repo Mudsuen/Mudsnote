@@ -1387,6 +1387,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Project instructions now prohibit macOS packaging from iOS-only tasks. `package_app.sh` also detects branches whose changes are confined to iOS and documentation, refusing to overwrite the shared installed app unless an explicit exception is supplied.
 - Lesson: Git worktrees isolate source and build directories, not global deployment destinations. Parallel platform work needs ownership checks around `/Applications`, devices, servers, and every other shared live artifact.
 
+### 226. Independent macOS and iOS delivery lanes
+
+- Problem: A single `verify pr|full|live` entrypoint mixed macOS SwiftPM tests, iOS metadata checks, and macOS installation. Even after guarding `/Applications`, task intent and verification ownership remained ambiguous.
+- Fix: Verification now has explicit `macos`, `ios`, and `both` scopes with independent PR, full, and live implementations. Devflow's one-argument PR/full calls safely detect the changed platform; live verification never infers an installation target. iOS live installs only to the connected phone, macOS live installs only to `/Applications`, and dual live requires an explicit `both` command.
+- Lesson: Platform separation must cover validation and deployment entrypoints, not only source directories. Compatibility automation may infer read-only checks, but every live target must be named explicitly.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
