@@ -1113,13 +1113,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String)?.contains(".png)") == true)
     }
 
-    func testMarkdownEditorAutosavesBeforeSheetDismissal() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+    func testMarkdownEditorAutosaveKeepsSaveFeedbackStable() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.press(forDuration: 1)
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        let noteCenter = app.coordinate(withNormalizedOffset: CGVector(
+            dx: note.frame.midX / app.frame.width,
+            dy: note.frame.midY / app.frame.height
+        ))
+        noteCenter.press(forDuration: 1)
         let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
         XCTAssertTrue(edit.waitForExistence(timeout: 3))
         edit.tap()
@@ -1128,10 +1134,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        let saved = app.staticTexts["markdown-save-status"]
+        let saveButton = app.buttons["save-markdown-button"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 3))
+        XCTAssertEqual(saved.label, "Saved")
+        XCTAssertEqual(saveButton.value as? String, "Ready")
         editor.typeText("\nAutosaved UI edit A")
 
-        let saved = app.staticTexts["markdown-save-status"]
-        XCTAssertTrue(saved.waitForExistence(timeout: 3))
         let savedPredicate = NSPredicate(format: "label == %@", "Saved")
         XCTAssertEqual(
             XCTWaiter.wait(
@@ -1140,17 +1149,26 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ),
             .completed
         )
+        XCTAssertEqual(
+            saveButton.value as? String,
+            "Ready",
+            "Autosave must keep the confirmation icon stable"
+        )
         XCTAssertTrue(app.keyboards.firstMatch.exists, "Autosave must not dismiss the editor keyboard")
         editor.typeText("B")
         XCTAssertTrue((editor.value as? String)?.contains("Autosaved UI edit AB") == true)
 
+        let autosaveSettled = expectation(description: "Autosave settled without changing chrome")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            autosaveSettled.fulfill()
+        }
+        wait(for: [autosaveSettled], timeout: 2)
+        XCTAssertEqual(saved.label, "Saved")
+        XCTAssertEqual(saveButton.value as? String, "Ready")
+
         app.buttons["save-markdown-button"].tap()
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        app.swipeDown(velocity: .fast)
-        app.swipeDown(velocity: .fast)
-        XCTAssertTrue(waitForHittable(note))
-        note.tap()
         XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 

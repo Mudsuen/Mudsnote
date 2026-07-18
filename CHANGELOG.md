@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 189. Quiet iOS autosave feedback
+- Problem: Every background autosave reused the explicit completion state, replacing the editor checkmark with a spinner and cycling the status label through Saving and Saved even though editing continued.
+- Fix: Background autosave now keeps the stable checkmark and Saved label while preserving write serialization and failure reporting. Visible progress remains reserved for explicit completion saves, and a recovered failure may still return the status to Saved.
+- Lesson: Durable background work should not borrow transient command feedback; autosave needs stable chrome unless the user must act on a failure.
+
 ### 188. Fixed reader metadata and opaque card-stream headers
 - Problem: The swipe directory exposed an inert pull-to-refresh gesture, folder counts shifted horizontally depending on whether a row had a disclosure control, the reader timestamp scrolled away with the note, and home cards remained visible through the margins above pinned date headers.
 - Fix: Removed refresh from the directory/home container, standardized a monospaced count column plus fixed trailing accessory column, moved read-only metadata outside the content scroll view, and extended each pinned time header across the full viewport while making the navigation-bar background opaque.

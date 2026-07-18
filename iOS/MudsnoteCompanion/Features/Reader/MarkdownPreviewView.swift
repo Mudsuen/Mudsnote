@@ -52,6 +52,7 @@ struct MarkdownPreviewView: View {
     @State private var originalMarkdown: String
     @State private var isEditing = false
     @State private var isSaving = false
+    @State private var isSaveProgressVisible = false
     @State private var saveState: SaveState = .idle
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
@@ -747,7 +748,7 @@ struct MarkdownPreviewView: View {
 
     private var saveStatusText: LocalizedStringKey {
         switch saveState {
-        case .idle: draftMarkdown == originalMarkdown ? "Saved" : "Edited"
+        case .idle: "Saved"
         case .saving: "Saving…"
         case .saved: "Saved"
         case .failed: "Not Saved"
@@ -972,9 +973,9 @@ struct MarkdownPreviewView: View {
 
             Spacer(minLength: 4)
             Button {
-                Task { await persistDraft(finishEditing: true, announce: true) }
+                Task { await finishEditingAfterPendingAutosave() }
             } label: {
-                if isSaving {
+                if isSaveProgressVisible {
                     ProgressView()
                 } else {
                     Image(systemName: "checkmark")
@@ -983,12 +984,13 @@ struct MarkdownPreviewView: View {
                 }
             }
             .disabled(
-                isSaving
+                isSaveProgressVisible
                     || isAudioTransitioning
                     || noteAudioRecorder.isRecording
                     || pendingAudioRecording != nil
             )
             .accessibilityLabel("Save note")
+            .accessibilityValue(isSaveProgressVisible ? "Saving" : "Ready")
             .accessibilityIdentifier("save-markdown-button")
         }
         .font(.system(size: 17, weight: .medium))
@@ -1590,6 +1592,15 @@ struct MarkdownPreviewView: View {
     }
 
     @MainActor
+    private func finishEditingAfterPendingAutosave() async {
+        while isSaving {
+            try? await Task.sleep(for: .milliseconds(30))
+            guard !Task.isCancelled else { return }
+        }
+        await persistDraft(finishEditing: true, announce: true)
+    }
+
+    @MainActor
     private func persistDraft(finishEditing: Bool, announce: Bool) async {
         if finishEditing { editorFocused = false }
         guard !isSaving else { return }
@@ -1597,8 +1608,12 @@ struct MarkdownPreviewView: View {
             if finishEditing { isEditing = false }
             return
         }
+        let presentsSaveActivity = finishEditing || announce
         isSaving = true
-        saveState = .saving
+        if presentsSaveActivity {
+            isSaveProgressVisible = true
+            saveState = .saving
+        }
 
         var succeeded = true
         repeat {
@@ -1606,7 +1621,9 @@ struct MarkdownPreviewView: View {
             let saved = await save(snapshot, announce: announce)
             if saved {
                 originalMarkdown = snapshot
-                saveState = .saved
+                if presentsSaveActivity || saveState == .failed {
+                    saveState = .saved
+                }
             } else {
                 succeeded = false
                 saveState = .failed
@@ -1616,6 +1633,7 @@ struct MarkdownPreviewView: View {
         } while draftMarkdown != originalMarkdown
 
         isSaving = false
+        isSaveProgressVisible = false
         if finishEditing, succeeded, draftMarkdown == originalMarkdown {
             collapsedHeadingIndices.removeAll()
             isEditing = false
