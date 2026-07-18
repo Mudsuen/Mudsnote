@@ -47,7 +47,6 @@ struct MarkdownPreviewView: View {
 
     @EnvironmentObject private var appModel: AppModel
     @Environment(\.dismiss) private var dismiss
-    @Binding private var presentationDetent: PresentationDetent
     @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
@@ -95,10 +94,8 @@ struct MarkdownPreviewView: View {
 
     init(
         memo: MemoBlock,
-        presentationDetent: Binding<PresentationDetent> = .constant(.large),
         startsEditing: Bool = false
     ) {
-        _presentationDetent = presentationDetent
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
@@ -107,10 +104,8 @@ struct MarkdownPreviewView: View {
 
     init(
         document: MarkdownDocument,
-        presentationDetent: Binding<PresentationDetent> = .constant(.large),
         startsEditing: Bool = false
     ) {
-        _presentationDetent = presentationDetent
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
@@ -144,17 +139,9 @@ struct MarkdownPreviewView: View {
                                     })
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("rendered-markdown")
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if appModel.isReaderExpanded, !isFindingInNote {
-                                            beginEditing()
-                                        }
-                                    }
+                                    .textSelection(.enabled)
                             }
                             .padding(MudsnoteSpacing.safeHorizontal)
-                            .contextMenu {
-                                readerContextMenuContent
-                            }
                         }
                         .onChange(of: findQuery) { _, _ in
                             activeFindIndex = 0
@@ -184,25 +171,6 @@ struct MarkdownPreviewView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-        }
-        .overlay(alignment: .top) {
-            if !isEditing, presentationDetent != .large {
-                Color.clear
-                    .frame(height: 52)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        expandReader()
-                    }
-                    .gesture(
-                        DragGesture(minimumDistance: 12)
-                            .onEnded { value in
-                                guard value.translation.height < -40 else { return }
-                                expandReader()
-                            }
-                    )
-                    .accessibilityElement()
-                    .accessibilityIdentifier("note-reader-expand-handle")
-            }
         }
         .interactiveDismissDisabled(
             (isEditing && draftMarkdown != originalMarkdown)
@@ -450,6 +418,11 @@ struct MarkdownPreviewView: View {
             }
         }
         .frame(minHeight: 18)
+        .contextMenu {
+            if !isEditing {
+                readerContextMenuContent
+            }
+        }
     }
 
     private func applyLinkCommand(_ kind: MarkdownEditingCommand.Kind) {
@@ -1088,26 +1061,6 @@ struct MarkdownPreviewView: View {
             Label(title, systemImage: systemImage)
         }
         .accessibilityIdentifier("markdown-format-\(command.identifier)")
-    }
-
-    private func beginEditing() {
-        isEditing = true
-        focusEditorAfterPresentation()
-    }
-
-    private func expandReader() {
-        withAnimation(.smooth) {
-            presentationDetent = .large
-            appModel.isReaderExpanded = true
-        }
-    }
-
-    private func beginEditing(with command: MarkdownEditingCommand.Kind) {
-        beginEditing()
-        Task { @MainActor in
-            await Task.yield()
-            editingCommand = MarkdownEditingCommand(kind: command)
-        }
     }
 
     private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {

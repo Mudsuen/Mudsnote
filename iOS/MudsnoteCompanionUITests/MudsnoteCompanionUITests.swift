@@ -1119,13 +1119,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["all-notes-link"].tap()
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        note.press(forDuration: 1)
+        let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
 
-        let rendered = app.descendants(matching: .any)["rendered-markdown"]
-        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        let bodyText = rendered.staticTexts["Restore this note end to end."]
-        XCTAssertTrue(bodyText.waitForExistence(timeout: 5))
-        bodyText.tap()
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
@@ -1147,6 +1145,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String)?.contains("Autosaved UI edit AB") == true)
 
         app.buttons["save-markdown-button"].tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
@@ -1155,7 +1154,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 
-    func testNoteOpensHalfScreenReadOnlyThenEditsAfterExpanding() {
+    func testReaderScrollsAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
         let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
@@ -1166,17 +1165,43 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        rendered.tap()
+        let bodyText = rendered.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.tap()
         XCTAssertFalse(app.textViews["markdown-editor"].exists)
 
-        let expandHandle = app.otherElements["note-reader-expand-handle"]
-        XCTAssertTrue(expandHandle.waitForExistence(timeout: 3))
-        expandHandle.tap()
-        XCTAssertTrue(waitForNonexistence(expandHandle))
-        let expandedBody = app.staticTexts["Restore this note end to end."]
-        XCTAssertTrue(expandedBody.waitForExistence(timeout: 3))
-        expandedBody.tap()
-        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+        let background = app.otherElements["note-reader-background-dismiss"]
+        XCTAssertTrue(background.waitForExistence(timeout: 3))
+        rendered.swipeUp()
+        XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
+
+        rendered.swipeDown()
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.press(forDuration: 1)
+        let halfScreenCopy = copyMenuItem(in: app)
+        XCTAssertTrue(halfScreenCopy.waitForExistence(timeout: 3))
+        halfScreenCopy.tap()
+
+        let grabberY = max(
+            0.05,
+            min(0.9, (rendered.frame.minY - 48) / app.frame.height)
+        )
+        let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: grabberY))
+        let expandedPosition = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+        grabber.press(forDuration: 0.05, thenDragTo: expandedPosition)
+        XCTAssertTrue(waitForNonexistence(background))
+
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.tap()
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+        bodyText.press(forDuration: 1)
+        let fullScreenCopy = copyMenuItem(in: app)
+        XCTAssertTrue(fullScreenCopy.waitForExistence(timeout: 3))
+        fullScreenCopy.tap()
+
+        let metadata = app.staticTexts["note-modified-date"]
+        metadata.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
     }
 
     func testHalfScreenNoteDismissesFromUpperBackground() {
@@ -2220,11 +2245,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     private func openRenderedNoteActions(in app: XCUIApplication) {
-        let rendered = app.descendants(matching: .any)["rendered-markdown"]
-        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        rendered.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.05))
-            .press(forDuration: 1)
+        let metadata = app.staticTexts["note-modified-date"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 5))
+        metadata.press(forDuration: 1)
         XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
+    }
+
+    private func copyMenuItem(in app: XCUIApplication) -> XCUIElement {
+        let menuItem = app.menuItems["Copy"]
+        if menuItem.waitForExistence(timeout: 1) {
+            return menuItem
+        }
+        return app.buttons["Copy"]
     }
 
     private func waitForEmptyValue(of element: XCUIElement) -> Bool {

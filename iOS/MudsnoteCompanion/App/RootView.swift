@@ -78,11 +78,10 @@ struct RootView: View {
         .sheet(item: $appModel.selectedMemo) { memo in
             MarkdownPreviewView(
                 memo: memo,
-                presentationDetent: $readerDetent,
                 startsEditing: appModel.noteOpenMode == .edit
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
-                .presentationContentInteraction(.resizes)
+                .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
@@ -90,11 +89,10 @@ struct RootView: View {
         .sheet(item: $appModel.selectedDocument) { document in
             MarkdownPreviewView(
                 document: document,
-                presentationDetent: $readerDetent,
                 startsEditing: appModel.noteOpenMode == .edit
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
-                .presentationContentInteraction(.resizes)
+                .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)

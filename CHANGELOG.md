@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 186. Scroll-only reader content with selectable read-only text
+- Problem: Vertical gestures inside a half-height note could resize the sheet, tapping an expanded note silently entered editing, and the note-wide custom context menu prevented the native text copy menu from appearing.
+- Fix: Reader sheets now prioritize content scrolling at both detents, leaving detent changes to the native top drag indicator. Half and full readers remain read-only unless opened through an explicit Edit action. Rendered Markdown enables native text selection and copying, while note-level actions move to the date label's context menu.
+- Lesson: Reading, resizing, selection, and editing need separate gesture targets; overloading the content surface makes each interaction unpredictable.
+
 ### 185. Independently expandable directory hierarchy
 - Problem: The swipe-out directory exposed only top-level folders, and its single row chevron made entering a folder and inspecting its descendants the same action.
 - Fix: Folder rows now keep the main row as navigation while reserving the right-side chevron for animated inline expansion and collapse. Expanded descendants render recursively with increasing indentation, counts, lifecycle actions, and the same independent behavior at every depth.
