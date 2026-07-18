@@ -1579,7 +1579,8 @@ struct MarkdownRichEditorTests {
         #expect(sourceOutline.enclosingScrollView?.hasVerticalScroller == true)
         #expect(sourceOutline.enclosingScrollView?.autohidesScrollers == true)
         let sourceTitles = controller.sourceTitlesForLibrary()
-        #expect(sourceTitles.contains("All iCloud"))
+        #expect(!sourceTitles.contains("All iCloud"))
+        #expect(sourceTitles.contains("Notes"))
         #expect(sourceTitles.contains("Recently Deleted"))
         #expect(!sourceTitles.contains("最近"))
         #expect(!sourceTitles.contains("Inbox"))
@@ -1602,7 +1603,7 @@ struct MarkdownRichEditorTests {
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
-        #expect(noteListTitle.stringValue == "All iCloud")
+        #expect(noteListTitle.stringValue == "Notes")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
         #expect(noteListCount.stringValue == "1 note")
@@ -1812,7 +1813,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
+            $0.identifier?.rawValue == "LibrarySourceCount-10"
         })
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
@@ -1825,10 +1826,10 @@ struct MarkdownRichEditorTests {
         let allSourceCell = try #require(window.contentView?.allSubviews.compactMap {
             $0 as? LibrarySourceOutlineCellView
         }.first {
-            $0.identifier?.rawValue == "LibrarySourceRow-0"
+            $0.identifier?.rawValue == "LibrarySourceRow-10"
         })
         #expect(allSourceCell.textField?.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
-        #expect(allSourceCell.accessibilityLabel() == "All iCloud")
+        #expect(allSourceCell.accessibilityLabel() == "Notes")
         #expect(allSourceCell.accessibilityValue() as? String == "1 条笔记")
         #expect(allSourceCell.imageView?.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
         let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceCell.textField?.font))
@@ -2406,13 +2407,10 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let window = try #require(controller.window)
+        _ = try #require(controller.window)
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["External Seed"])
         #expect(controller.titleField.stringValue == "External Seed")
-        let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
-        #expect(allCount.stringValue == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         controller.selectRecentScopeForLibrary()
         #expect(controller.noteListTitleLabel.stringValue == "最近")
         #expect(controller.noteListCountLabel.stringValue == "0 notes")
@@ -2734,19 +2732,19 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         _ = try #require(controller.window)
-        #expect(!controller.sourceTitlesForLibrary().contains("Mudsnote"))
-        #expect(controller.selectSourceForLibrary(titled: "Notes"))
+        #expect(controller.sourceTitlesForLibrary().contains("Mudsnote"))
+        #expect(!controller.sourceTitlesForLibrary().contains("Notes"))
+        #expect(controller.selectSourceForLibrary(titled: "Mudsnote"))
 
-        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(controller.noteListTitleLabel.stringValue == "Mudsnote")
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Default Root"])
         let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
-        #expect(noteCell.metaLabel.stringValue.contains("Notes"))
-        #expect(!noteCell.metaLabel.stringValue.contains("Mudsnote"))
+        #expect(noteCell.metaLabel.stringValue.contains("Mudsnote"))
         let moveMenu = try #require(controller.makeMoreActionsMenuForLibrary().items.first {
             $0.title == "移到文件夹"
         }?.submenu)
         #expect(moveMenu.items.contains {
-            $0.title == "Notes" && ($0.representedObject as? URL) == store.notesDirectory.standardizedFileURL
+            $0.title == "Mudsnote" && ($0.representedObject as? URL) == store.notesDirectory.standardizedFileURL
         })
     }
 
@@ -2788,23 +2786,14 @@ struct MarkdownRichEditorTests {
 
         let outline = controller.sourceOutlineView
         #expect(outline.acceptsFirstResponder)
-        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
+        #expect(controller.selectSourceForLibrary(titled: "Notes"))
         #expect(window.firstResponder === outline)
 
         outline.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
-        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(controller.noteListTitleLabel.stringValue == "Projects")
         #expect(window.firstResponder === outline)
         outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-
-        outline.keyDown(with: try keyEvent(keyCode: 125, modifiers: [], characters: "\u{F701}"))
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
-
-        outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-
-        outline.keyDown(with: try keyEvent(keyCode: 126, modifiers: [], characters: "\u{F700}"))
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
 
         #expect(controller.selectSourceForLibrary(titled: "Projects"))
         #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
@@ -4068,10 +4057,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
         await controller.waitForSourceCountRefreshForLibrary()
-        let allCount = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
-        #expect(allCount.stringValue == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
     }
 
     @MainActor
@@ -4399,7 +4385,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)
         #expect(controller.searchScopeControl.isHidden)
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
+        #expect(controller.noteListTitleLabel.stringValue == "Notes")
     }
 
     @MainActor
@@ -4641,8 +4627,8 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.sourceTitlesForLibrary().contains("library"))
         #expect(controller.sourceCountTextForLibrary(titled: "library") == "1")
-        #expect(controller.sourceCountTextForLibrary(titled: "All iCloud") == "246")
-        #expect(controller.sourceOutlineLevelForLibrary(titled: "All iCloud") == 1)
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "246")
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "library") == 1)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
@@ -4723,14 +4709,11 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
         } == false)
-        let allCountAfterFolderLoad = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
-        #expect(allCountAfterFolderLoad.stringValue == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
         #expect(!controller.visibleSourceTitlesForLibrary().contains("Client"))
         #expect(!controller.sourceTitlesForLibrary().contains(NoteStore.attachmentDirectoryName))
-        #expect(controller.sourceOutlineLevelForLibrary(titled: "All iCloud") == 1)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Projects") == 2)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Client") == 3)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Recently Deleted") == 1)
@@ -4739,13 +4722,13 @@ struct MarkdownRichEditorTests {
         controller.toggleSourceFoldersSectionForLibrary()
         #expect(store.libraryFoldersSectionCollapsed)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == false)
-        #expect(!controller.visibleSourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.visibleSourceTitlesForLibrary().contains("Notes"))
         #expect(!controller.visibleSourceTitlesForLibrary().contains("Projects"))
 
         controller.toggleSourceFoldersSectionForLibrary()
         #expect(!store.libraryFoldersSectionCollapsed)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
-        #expect(controller.visibleSourceTitlesForLibrary().contains("All iCloud"))
+        #expect(controller.visibleSourceTitlesForLibrary().contains("Notes"))
         #expect(controller.visibleSourceTitlesForLibrary().contains("Projects"))
 
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
@@ -5235,6 +5218,7 @@ struct MarkdownRichEditorTests {
 
         try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
         #expect(store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
+        #expect(controller.sourceTitlesForLibrary().contains("All iCloud"))
         #expect(controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(controller.selectSourceForLibrary(titled: "External Library"))
         let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
@@ -5251,6 +5235,7 @@ struct MarkdownRichEditorTests {
         #expect(!store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
         #expect(FileManager.default.fileExists(atPath: externalDirectory.path))
         #expect(FileManager.default.fileExists(atPath: externalNote.path))
+        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
         #expect(!controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(throws: (any Error).self) {
             try controller.removeRegisteredLibraryFolderForLibrary(at: notesDirectory)
@@ -5309,7 +5294,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
             managedNote.standardizedFileURL.path
         ])
-        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
+        #expect(controller.selectSourceForLibrary(titled: "Notes"))
         await controller.waitForSourceSnapshotValidationForLibrary()
         #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
             managedNote.standardizedFileURL.path
@@ -6115,10 +6100,7 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue == "1 note")
-        let allCount = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
-        #expect(allCount.stringValue == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(6)
@@ -6261,7 +6243,7 @@ struct MarkdownRichEditorTests {
             atomically: true,
             encoding: .utf8
         )
-        #expect(controller.selectSourceForLibrary(titled: "All iCloud"))
+        #expect(controller.selectSourceForLibrary(titled: "Notes"))
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
 
         let deadline = Date().addingTimeInterval(6)

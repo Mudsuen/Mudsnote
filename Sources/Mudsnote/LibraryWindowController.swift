@@ -3023,11 +3023,21 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
+        let libraryRoots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
+        if libraryRoots.count == 1,
+           selectedScope == .all,
+           externallyOpenedDocumentsByPath.isEmpty,
+           let onlyRoot = libraryRoots.first {
+            selectedScope = .folder(onlyRoot)
+        }
+
         let iCloudGroup = makeSourceOutlineItem(
             identifier: "group:icloud",
             kind: .group(title: "iCloud", section: .folders)
         )
-        iCloudGroup.append(makeSourceOutlineScopeItem(.all))
+        if libraryRoots.count > 1 || !externallyOpenedDocumentsByPath.isEmpty {
+            iCloudGroup.append(makeSourceOutlineScopeItem(.all))
+        }
 
         for folderRoot in makeSourceFolderOutlineRoots() {
             iCloudGroup.append(folderRoot)
@@ -3460,10 +3470,6 @@ final class LibraryWindowController: NSWindowController,
 
     private func folderTitle(for url: URL) -> String {
         let standardizedURL = url.standardizedFileURL
-        let notesDirectory = noteStore.notesDirectory.standardizedFileURL
-        if standardizedURL.path == notesDirectory.path {
-            return "Notes"
-        }
         return standardizedURL.lastPathComponent.isEmpty ? "Notes" : standardizedURL.lastPathComponent
     }
 

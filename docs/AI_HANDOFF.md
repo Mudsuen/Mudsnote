@@ -358,6 +358,12 @@
 - The inline create/rename field remains a native single-line `NSTextField` with field-editor-backed IME, Return, Escape, and focus-loss behavior.
 - Its source-list presentation is transparent, borderless, and has no custom accent outline; a `20pt` field height aligns the selected name with the existing folder icon and compact `32pt` row.
 
+## Latest iteration (217)
+
+- Folder roots display their real filesystem names; the default root is no longer forcibly presented as `Notes`.
+- A single configured root is selected directly and does not render the redundant `All iCloud` aggregate. The aggregate remains available for multiple registered roots and explicit external-document projection.
+- The user's active macOS configuration promotes the existing iCloud Drive `Mudsbuild` folder to the sole default root without deleting or moving the former local `~/Documents/Mudsnote` files.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

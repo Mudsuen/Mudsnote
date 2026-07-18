@@ -1328,6 +1328,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Kept the shared AppKit field editor and full-name selection behavior, but removed the custom background and accent border, retained a borderless no-focus-ring field, and reduced its layout height from `24pt` to the native single-line `20pt` alignment.
 - Lesson: Field-editor behavior and custom field chrome are independent. Preserve AppKit input and IME semantics while letting the source row provide the visual container.
 
+### 217. Real-folder single-library sidebar
+
+- Problem: A single configured library still appeared twice as the synthetic `All iCloud` aggregate and a default root forcibly titled `Notes`. After registering `Mudsbuild`, the sidebar therefore implied that both rows were required folders and obscured which physical directory quick capture actually used.
+- Fix: Source roots now keep their real filesystem names. When exactly one top-level library is configured, that root becomes the selected library scope and the redundant aggregate row is omitted; `All iCloud` returns only when multiple top-level roots need a combined view or an explicitly opened external document is being projected.
+- Lesson: Aggregate navigation is useful only when there is something to aggregate. A single-folder library should expose one truthful source identity instead of a synthetic total plus a renamed duplicate.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
