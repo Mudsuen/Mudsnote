@@ -17,6 +17,16 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 182. Tap outside a half-sheet note to close it
+- Problem: A note opened at the medium reading detent left the upper background visible, but tapping that empty region did nothing.
+- Fix: While the reader is at the medium detent, its presentation background is interactive and a dedicated backdrop tap dismisses the note. The backdrop action is disabled once the reader expands or enters editing.
+- Lesson: A partially presented reader should treat the exposed backdrop as an explicit, predictable dismissal surface.
+
+### 181. Stable first autosave for new notes
+- Problem: Typing the first paragraph of a new note triggered autosave, which immediately renamed `Untitled Note.md` from its content. Because the file path also identified the presented sheet, the rename recreated the editor; subsequent edits then saved from a stale document version and produced a conflict error.
+- Fix: Background autosave now writes new-note content in place while preserving both the temporary path and `isNew` state. Filename finalization waits for the explicit editing confirmation, and a path-changing final save no longer replaces the identity of the currently presented sheet.
+- Lesson: A document's persistent filename may change, but transient presentation identity must remain stable for the entire editing session.
+
 ### 180. New notes save to folders, not existing documents
 - Problem: The New Note command opened the quick-capture composer, whose target menu appends content to an existing document. Presenting that menu as the note location made individual Markdown files appear selectable where only a save folder was expected.
 - Fix: New Note now creates a standalone Markdown document directly in the current folder and immediately opens its editor. From the library root it creates at the library root; from a folder or folder-scoped note list it uses that folder. The existing quick-capture target behavior remains isolated from document creation.

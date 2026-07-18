@@ -34,6 +34,19 @@ struct RootView: View {
                 }
             }
 
+            if isHalfReaderPresented {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        appModel.selectedMemo = nil
+                        appModel.selectedDocument = nil
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("Close note")
+                    .accessibilityIdentifier("note-reader-background-dismiss")
+            }
+
             if let toast = appModel.statusToast {
                 StatusToastView(toast: toast)
                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
@@ -70,6 +83,7 @@ struct RootView: View {
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationContentInteraction(.resizes)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
@@ -81,6 +95,7 @@ struct RootView: View {
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationContentInteraction(.resizes)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(MudsnoteColors.panel)
         }
@@ -117,5 +132,10 @@ struct RootView: View {
         LibraryHomeView {
             isFolderImporterPresented = true
         }
+    }
+
+    private var isHalfReaderPresented: Bool {
+        !appModel.isReaderExpanded
+            && (appModel.selectedMemo != nil || appModel.selectedDocument != nil)
     }
 }

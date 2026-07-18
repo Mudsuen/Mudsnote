@@ -712,8 +712,23 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["capture-target-menu"].exists)
         editor.tap()
-        editor.typeText("Folder note location")
+        editor.typeText("Folder note")
+        let saveStatus = app.staticTexts["markdown-save-status"]
+        XCTAssertTrue(saveStatus.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "label == %@", "Saved"),
+                    object: saveStatus
+                )],
+                timeout: 5
+            ),
+            .completed
+        )
+        XCTAssertTrue(editor.exists, "The first autosave must not recreate the note sheet")
+        editor.typeText(" location")
         app.buttons["save-markdown-button"].tap()
+        XCTAssertFalse(app.alerts["Couldn’t Save Note"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
@@ -1152,6 +1167,24 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(expandedBody.waitForExistence(timeout: 3))
         expandedBody.tap()
         XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+    }
+
+    func testHalfScreenNoteDismissesFromUpperBackground() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        let background = app.otherElements["note-reader-background-dismiss"]
+        XCTAssertTrue(background.waitForExistence(timeout: 3))
+        background.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        XCTAssertTrue(waitForNonexistence(rendered))
+        XCTAssertTrue(waitForHittable(note))
     }
 
     func testLongPressNoteCanOpenDirectlyInEditMode() {

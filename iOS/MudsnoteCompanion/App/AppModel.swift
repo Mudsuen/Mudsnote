@@ -1334,11 +1334,27 @@ final class AppModel: ObservableObject {
         do {
             let updated: MarkdownDocument
             if document.isNew {
-                updated = try await fileStore.finalizeNewMarkdownDocument(
-                    relativePath: document.relativePath,
-                    markdown: markdown,
-                    expectedMarkdown: expectedMarkdown
-                )
+                if announce {
+                    updated = try await fileStore.finalizeNewMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                } else {
+                    let autosaved = try await fileStore.saveMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                    updated = MarkdownDocument(
+                        id: autosaved.id,
+                        title: autosaved.title,
+                        relativePath: autosaved.relativePath,
+                        markdown: autosaved.markdown,
+                        modifiedAt: autosaved.modifiedAt,
+                        isNew: true
+                    )
+                }
             } else {
                 updated = try await fileStore.saveMarkdownDocument(
                     relativePath: document.relativePath,
@@ -1346,7 +1362,10 @@ final class AppModel: ObservableObject {
                     expectedMarkdown: expectedMarkdown
                 )
             }
-            selectedDocument = updated
+            if selectedDocument?.relativePath == document.relativePath,
+               updated.relativePath == document.relativePath {
+                selectedDocument = updated
+            }
             if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
