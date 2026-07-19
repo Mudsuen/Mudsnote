@@ -1,6 +1,10 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (231)
+## Latest iteration (232)
+
+- The automatic macOS selection-format menu yields immediately to keyboard editing: typing, Backspace/Delete, navigation, or editor shortcuts cancel menu tracking and replay the original key event to `MarkdownTextView`; Escape only dismisses the menu.
+
+## Previous iteration (231)
 
 - macOS library formatting commands, including selection-menu highlight and keyboard bold/italic/list commands, register attributed-content snapshots with the editor undo manager so Command-Z and redo restore both formatting and selection.
 - The editor right-click menu adds an icon-backed Insert submenu for tables, links, and attachments. The former top attachment button now toggles between rendered rich text and editable Markdown source without changing the stored note merely by switching views.

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 175. Selection menu yields to normal editing
+- Problem: The automatic formatting menu could keep AppKit menu tracking active after selecting text, forcing users to dismiss it before Backspace, typing, navigation, or keyboard editing shortcuts worked.
+- Fix: Keyboard events now cancel selection-menu tracking and are replayed directly to the editor after it regains first-responder status; Escape dismisses without editing.
+- Lesson: A selection affordance must remain transient and subordinate to the text editor, including preserving the first editing keystroke that dismisses it.
+
 ### 174. Undoable formatting and Markdown source toggle
 - Problem: Command-Z did not reverse formatting applied by the selection menu or editor shortcuts, selection/search repaint made the page and caret flash more often, and attachment insertion occupied a primary toolbar slot while Markdown source was inaccessible.
 - Fix: Library formatting now records undo/redo snapshots with selection restoration. Selection menus open only for newly changed selections, and search-highlight repaint is debounced and coalesced. The right-click menu gains an icon-backed Insert submenu for tables, links, and attachments, while the former attachment toolbar button toggles between rendered content and editable Markdown source.

@@ -226,6 +226,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
     var selectionMenuProvider: (() -> NSMenu?)?
+    private var pendingSelectionMenuKeyEvent: NSEvent?
+    private weak var trackedSelectionMenu: NSMenu?
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -374,10 +376,25 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        guard menu !== trackedSelectionMenu else { return }
         for item in menu.items.reversed()
         where item.identifier != Self.allowedContextMenuItemIdentifier {
             menu.removeItem(item)
         }
+    }
+
+    func menuHasKeyEquivalent(
+        _ menu: NSMenu,
+        for event: NSEvent,
+        target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
+        action: UnsafeMutablePointer<Selector?>
+    ) -> Bool {
+        guard menu === trackedSelectionMenu else { return false }
+        if event.keyCode != 53 {
+            pendingSelectionMenuKeyEvent = event
+        }
+        menu.cancelTracking()
+        return true
     }
 
     func markCurrentContextMenuItemsAsAllowed(in menu: NSMenu) {
@@ -495,7 +512,30 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         selectionRect.origin.x += textContainerInset.width
         selectionRect.origin.y += textContainerInset.height
         let anchor = NSPoint(x: selectionRect.midX, y: selectionRect.maxY + 4)
+        pendingSelectionMenuKeyEvent = nil
+        trackedSelectionMenu = menu
+        menu.delegate = self
+        let eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak menu] event in
+            guard let self else { return event }
+            if event.keyCode != 53 {
+                self.pendingSelectionMenuKeyEvent = event
+            }
+            menu?.cancelTracking()
+            return nil
+        }
         menu.popUp(positioning: nil, at: anchor, in: self)
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        trackedSelectionMenu = nil
+        menu.delegate = nil
+        guard let keyEvent = pendingSelectionMenuKeyEvent else { return }
+        pendingSelectionMenuKeyEvent = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+            self.keyDown(with: keyEvent)
+        }
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
