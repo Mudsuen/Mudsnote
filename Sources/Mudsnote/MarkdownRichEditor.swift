@@ -438,6 +438,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let selectionBeforeMouseDown = selectedRange()
         guard let layoutManager = layoutManager,
               let textContainer = textContainer else {
             super.mouseDown(with: event)
@@ -470,7 +471,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
 
         super.mouseDown(with: event)
-        showSelectionMenuIfNeeded()
+        let selectionAfterMouseDown = selectedRange()
+        if selectionAfterMouseDown.length > 0,
+           selectionAfterMouseDown != selectionBeforeMouseDown {
+            showSelectionMenuIfNeeded()
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {

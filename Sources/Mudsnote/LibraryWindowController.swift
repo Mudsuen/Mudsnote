@@ -913,6 +913,29 @@ private enum LibraryFormatCommand: Int {
         case .bold, .italic, .underline, .strikethrough, .highlight, .removeHighlight: return nil
         }
     }
+
+    var undoActionName: String {
+        switch self {
+        case .heading1: return "标题"
+        case .heading2: return "副标题"
+        case .heading3: return "小标题"
+        case .paragraph: return "正文"
+        case .bold: return "加粗"
+        case .italic: return "斜体"
+        case .underline: return "下划线"
+        case .strikethrough: return "删除线"
+        case .checklist: return "待办列表"
+        case .bullet: return "项目符号列表"
+        case .ordered: return "编号列表"
+        case .highlight: return "高亮"
+        case .removeHighlight: return "移除高亮"
+        }
+    }
+}
+
+private struct LibraryFormattingUndoSnapshot {
+    let content: NSAttributedString
+    let selection: NSRange
 }
 
 @MainActor
@@ -1380,7 +1403,7 @@ final class LibraryWindowController: NSWindowController,
     private static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
     private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
-    private static let attachmentToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.attachment")
+    private static let sourceModeToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-mode")
     private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
@@ -1412,6 +1435,7 @@ final class LibraryWindowController: NSWindowController,
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
+    private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
@@ -1423,6 +1447,7 @@ final class LibraryWindowController: NSWindowController,
     private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
+    private var isEditorShowingMarkdownSource = false
     private var suppressSelectionChanges = false
     private var suppressGallerySelectionChanges = false
     private var isCreatingNewNote = false
@@ -1812,6 +1837,8 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
+        editorSearchHighlightRefreshTask?.cancel()
+        editorSearchHighlightRefreshTask = nil
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
@@ -2476,7 +2503,7 @@ final class LibraryWindowController: NSWindowController,
             Self.checklistToolbarItemIdentifier,
             Self.tableToolbarItemIdentifier,
             Self.linkToolbarItemIdentifier,
-            Self.attachmentToolbarItemIdentifier
+            Self.sourceModeToolbarItemIdentifier
         ]
     }
 
@@ -2553,12 +2580,12 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "link",
                 action: #selector(linkPressed)
             )
-        case Self.attachmentToolbarItemIdentifier:
+        case Self.sourceModeToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
-                label: "添加附件",
-                symbolName: "paperclip",
-                action: #selector(attachmentPressed)
+                label: "显示 Markdown 源码",
+                symbolName: "chevron.left.forwardslash.chevron.right",
+                action: #selector(toggleEditorSourceModePressed)
             )
         case Self.moveToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -2690,7 +2717,7 @@ final class LibraryWindowController: NSWindowController,
              Self.checklistToolbarItemIdentifier,
              Self.tableToolbarItemIdentifier,
              Self.linkToolbarItemIdentifier,
-             Self.attachmentToolbarItemIdentifier:
+             Self.sourceModeToolbarItemIdentifier:
             return canEditCurrentDocument
         case Self.moveToolbarItemIdentifier:
             return canMoveSelectedNote
@@ -2831,10 +2858,10 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(linkPressed)
             ),
             toolbarEditorToolButton(
-                identifier: Self.attachmentToolbarItemIdentifier,
-                label: "添加附件",
-                symbolName: "paperclip",
-                action: #selector(attachmentPressed)
+                identifier: Self.sourceModeToolbarItemIdentifier,
+                label: "显示 Markdown 源码",
+                symbolName: "chevron.left.forwardslash.chevron.right",
+                action: #selector(toggleEditorSourceModePressed)
             )
         ]
         buttons.forEach { stack.addArrangedSubview($0) }
@@ -3080,7 +3107,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
-        editorTextView.configureContextMenu = nil
+        editorTextView.configureContextMenu = { [weak self] menu, _ in
+            self?.configureEditorInsertContextMenu(menu)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }
@@ -5621,7 +5650,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func formatPressed(_ sender: Any?) {
-        guard canEditCurrentDocument else { return }
+        guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
         let menu = makeFormatMenuForLibrary()
         guard !menu.items.isEmpty else { return }
         popToolbarMenu(menu, from: sender)
@@ -5635,20 +5664,22 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func checklistPressed() {
-        guard canEditCurrentDocument else { return }
+        guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
         focusEditorForLibraryAction()
+        let undoSnapshot = libraryFormattingUndoSnapshot()
         toggleParagraphKind(.checklist(checked: false))
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: "待办列表")
     }
 
     @objc
     private func tablePressed() {
-        guard canEditCurrentDocument else { return }
+        guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
         insertTableForLibrary()
     }
 
     @objc
     private func linkPressed() {
-        guard canEditCurrentDocument else { return }
+        guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
         let defaultLabel = selectedTextForLinkDefault()
         presentLinkEditorForLibrary(
             title: "添加链接",
@@ -5664,7 +5695,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func attachmentPressed() {
-        guard canEditCurrentDocument else { return }
+        guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
         let panel = NSOpenPanel()
         panel.title = "添加附件"
         panel.prompt = "添加"
@@ -5681,6 +5712,40 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "添加附件失败", details: error.localizedDescription)
         }
+    }
+
+    @objc
+    private func toggleEditorSourceModePressed() {
+        guard canEditCurrentDocument, let storage = editorTextView.textStorage else { return }
+        let selection = editorTextView.selectedRange()
+        suppressEditorChanges = true
+        if isEditorShowingMarkdownSource {
+            let markdown = storage.string
+            editorTextView.isRichText = true
+            editorTextView.markdownPasteTheme = theme
+            storage.setAttributedString(
+                MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: selectedURL)
+            )
+            editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+            isEditorShowingMarkdownSource = false
+        } else {
+            let markdown = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
+            removeEditorSearchHighlights()
+            editorTextView.isRichText = false
+            editorTextView.markdownPasteTheme = nil
+            let sourceAttributes: [NSAttributedString.Key: Any] = [
+                .font: theme.codeFont,
+                .foregroundColor: theme.textColor,
+                .paragraphStyle: theme.paragraphStyle(for: .paragraph)
+            ]
+            storage.setAttributedString(NSAttributedString(string: markdown, attributes: sourceAttributes))
+            editorTextView.typingAttributes = sourceAttributes
+            isEditorShowingMarkdownSource = true
+        }
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: min(selection.location, storage.length), length: 0))
+        editorTextView.window?.makeFirstResponder(editorTextView)
+        updateToolbarActionState()
     }
 
     @objc
@@ -5930,7 +5995,12 @@ final class LibraryWindowController: NSWindowController,
         tags: [String],
         renderedBody: NSAttributedString? = nil
     ) {
+        editorSearchHighlightRefreshTask?.cancel()
+        editorSearchHighlightRefreshTask = nil
         suppressEditorChanges = true
+        isEditorShowingMarkdownSource = false
+        editorTextView.isRichText = true
+        editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
         selectedTags = tags
         editorTextView.textStorage?.setAttributedString(
@@ -6173,6 +6243,13 @@ final class LibraryWindowController: NSWindowController,
         _ = try saveCurrentNote(force: false)
     }
 
+    private func currentEditorMarkdownBody() -> String {
+        if isEditorShowingMarkdownSource {
+            return editorTextView.string
+        }
+        return MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
+    }
+
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
         guard force || isDirty else { return selectedURL }
@@ -6182,7 +6259,7 @@ final class LibraryWindowController: NSWindowController,
         cancelSourceSnapshotValidation()
 
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
+        let body = currentEditorMarkdownBody()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let title = rawTitle.isEmpty ? "无标题" : rawTitle
         guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return nil }
@@ -7580,6 +7657,7 @@ final class LibraryWindowController: NSWindowController,
                 updateToolbarItemPresentation(item, label: label, symbolName: "arrow.uturn.backward")
             case Self.editorToolsToolbarItemIdentifier:
                 setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+                updateSourceModeToolbarButton(in: item)
             default:
                 continue
             }
@@ -7691,6 +7769,33 @@ final class LibraryWindowController: NSWindowController,
             ? LibraryNotesLayout.toolbarEditorToolsEnabledAlpha
             : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
         setEditorToolControls(in: view, enabled: isEnabled)
+        if isEnabled, isEditorShowingMarkdownSource {
+            for button in editorToolButtons(in: view) {
+                let isSourceToggle = button.identifier?.rawValue == Self.sourceModeToolbarItemIdentifier.rawValue
+                button.isEnabled = isSourceToggle
+                button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isSourceToggle)
+            }
+        }
+    }
+
+    private func updateSourceModeToolbarButton(in item: NSToolbarItem) {
+        guard let view = item.view,
+              let button = editorToolButtons(in: view).first(where: {
+                  $0.identifier?.rawValue == Self.sourceModeToolbarItemIdentifier.rawValue
+              }) else { return }
+        let label = isEditorShowingMarkdownSource ? "显示渲染模式" : "显示 Markdown 源码"
+        let symbol = isEditorShowingMarkdownSource ? "doc.richtext" : "chevron.left.forwardslash.chevron.right"
+        button.image = toolbarEditorToolSymbolImage(symbolName: symbol, label: label)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+    }
+
+    private func editorToolButtons(in view: NSView) -> [NSButton] {
+        var buttons = view.subviews.compactMap { $0 as? NSButton }
+        for subview in view.subviews {
+            buttons.append(contentsOf: editorToolButtons(in: subview))
+        }
+        return buttons
     }
 
     private func setEditorToolControls(in view: NSView, enabled isEnabled: Bool) {
@@ -8053,7 +8158,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func makeSelectionFormattingMenuForLibrary() -> NSMenu? {
-        guard canEditCurrentDocument, editorTextView.selectedRange().length > 0 else { return nil }
+        guard canEditCurrentDocument,
+              !isEditorShowingMarkdownSource,
+              editorTextView.selectedRange().length > 0 else { return nil }
 
         let menu = NSMenu(title: "快捷格式")
         let inlineCommands: [(String, String, LibraryFormatCommand)] = [
@@ -8111,6 +8218,28 @@ final class LibraryWindowController: NSWindowController,
         conversionItem.submenu = conversionMenu
         menu.addItem(conversionItem)
         return menu
+    }
+
+    private func configureEditorInsertContextMenu(_ menu: NSMenu) {
+        menu.addItem(.separator())
+        let insertItem = NSMenuItem(title: "插入", action: nil, keyEquivalent: "")
+        insertItem.image = selectionMenuImage(symbolName: "plus", title: "插入")
+        insertItem.isEnabled = canEditCurrentDocument && !isEditorShowingMarkdownSource
+        let insertMenu = NSMenu(title: "插入")
+        let commands: [(String, String, Selector)] = [
+            ("表格", "tablecells", #selector(tablePressed)),
+            ("链接…", "link", #selector(linkPressed)),
+            ("附件…", "paperclip", #selector(attachmentPressed))
+        ]
+        for (title, symbolName, action) in commands {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.image = selectionMenuImage(symbolName: symbolName, title: title)
+            item.isEnabled = insertItem.isEnabled
+            insertMenu.addItem(item)
+        }
+        insertItem.submenu = insertMenu
+        menu.addItem(insertItem)
     }
 
     private func selectionMenuImage(symbolName: String, title: String) -> NSImage? {
@@ -8405,6 +8534,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func libraryUserDidEdit() {
         guard !suppressEditorChanges else { return }
+        if isEditorShowingMarkdownSource {
+            editorSearchHighlightRefreshTask?.cancel()
+            markDirty()
+            return
+        }
         let activeSearchQuery = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldRefreshSearchHighlights = !activeSearchQuery.isEmpty
         if !shouldRefreshSearchHighlights {
@@ -8416,7 +8550,17 @@ final class LibraryWindowController: NSWindowController,
         updateTypingAttributesFromInsertionPoint()
         markDirty()
         if shouldRefreshSearchHighlights {
-            refreshEditorSearchHighlightsAtomically(query: activeSearchQuery)
+            scheduleEditorSearchHighlightRefresh(query: activeSearchQuery)
+        }
+    }
+
+    private func scheduleEditorSearchHighlightRefresh(query: String) {
+        editorSearchHighlightRefreshTask?.cancel()
+        editorSearchHighlightRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, let self, !self.isEditorShowingMarkdownSource else { return }
+            self.refreshEditorSearchHighlightsAtomically(query: query)
+            self.editorSearchHighlightRefreshTask = nil
         }
     }
 
@@ -8717,9 +8861,12 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyFormatCommand(_ command: LibraryFormatCommand) {
+        guard !isEditorShowingMarkdownSource else { return }
         focusEditorForLibraryAction()
+        let undoSnapshot = libraryFormattingUndoSnapshot()
         if let paragraphKind = command.paragraphKind {
             setParagraphKind(paragraphKind)
+            registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: command.undoActionName)
             return
         }
         switch command {
@@ -8738,6 +8885,49 @@ final class LibraryWindowController: NSWindowController,
         case .heading1, .heading2, .heading3, .paragraph, .checklist, .bullet, .ordered:
             break
         }
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: command.undoActionName)
+    }
+
+    private func libraryFormattingUndoSnapshot() -> LibraryFormattingUndoSnapshot? {
+        guard let storage = editorTextView.textStorage else { return nil }
+        return LibraryFormattingUndoSnapshot(
+            content: NSAttributedString(attributedString: storage),
+            selection: editorTextView.selectedRange()
+        )
+    }
+
+    private func registerLibraryFormattingUndoIfNeeded(
+        before: LibraryFormattingUndoSnapshot?,
+        actionName: String
+    ) {
+        guard let before,
+              let after = libraryFormattingUndoSnapshot(),
+              !before.content.isEqual(to: after.content),
+              let undoManager = editorTextView.undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { target in
+            target.restoreLibraryFormattingSnapshot(before, inverse: after, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func restoreLibraryFormattingSnapshot(
+        _ snapshot: LibraryFormattingUndoSnapshot,
+        inverse: LibraryFormattingUndoSnapshot,
+        actionName: String
+    ) {
+        editorTextView.undoManager?.registerUndo(withTarget: self) { target in
+            target.restoreLibraryFormattingSnapshot(inverse, inverse: snapshot, actionName: actionName)
+        }
+        editorTextView.undoManager?.setActionName(actionName)
+        guard let storage = editorTextView.textStorage else { return }
+        suppressEditorChanges = true
+        storage.setAttributedString(snapshot.content)
+        suppressEditorChanges = false
+        let location = min(snapshot.selection.location, storage.length)
+        let length = min(snapshot.selection.length, max(storage.length - location, 0))
+        editorTextView.setSelectedRange(NSRange(location: location, length: length))
+        updateTypingAttributesFromInsertionPoint()
+        markDirty()
     }
 
     private func setHighlightForLibrary(enabled: Bool) {
@@ -9813,12 +10003,12 @@ final class LibraryWindowController: NSWindowController,
         return deleteCurrentMarkdownTableRowForLibrary()
     }
 
-    func markdownTextViewToggleBold(_ textView: MarkdownTextView) { toggleInlineFontTrait(.boldFontMask) }
-    func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { toggleInlineFontTrait(.italicFontMask) }
-    func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { toggleParagraphKind(.heading(level: 1)) }
-    func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) { toggleParagraphKind(.bullet) }
-    func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) { toggleParagraphKind(.ordered(index: 1)) }
-    func markdownTextViewToggleChecklist(_ textView: MarkdownTextView) { toggleParagraphKind(.checklist(checked: false)) }
+    func markdownTextViewToggleBold(_ textView: MarkdownTextView) { applyFormatCommand(.bold) }
+    func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { applyFormatCommand(.italic) }
+    func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { applyFormatCommand(.heading1) }
+    func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) { applyFormatCommand(.bullet) }
+    func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) { applyFormatCommand(.ordered) }
+    func markdownTextViewToggleChecklist(_ textView: MarkdownTextView) { applyFormatCommand(.checklist) }
 
     func markdownTextView(_ textView: MarkdownTextView, didClickCharacterAt index: Int) -> Bool {
         toggleChecklistIfNeeded(atCharacterIndex: index)

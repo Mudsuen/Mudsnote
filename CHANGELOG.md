@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 174. Undoable formatting and Markdown source toggle
+- Problem: Command-Z did not reverse formatting applied by the selection menu or editor shortcuts, selection/search repaint made the page and caret flash more often, and attachment insertion occupied a primary toolbar slot while Markdown source was inaccessible.
+- Fix: Library formatting now records undo/redo snapshots with selection restoration. Selection menus open only for newly changed selections, and search-highlight repaint is debounced and coalesced. The right-click menu gains an icon-backed Insert submenu for tables, links, and attachments, while the former attachment toolbar button toggles between rendered content and editable Markdown source.
+- Lesson: Rich-text mutations need to participate explicitly in the editor undo chain, and transient presentation work should be scheduled away from each keystroke; primary toolbar space is better used for switching editing representations than duplicating contextual insertion commands.
+
 ### 173. Focused macOS editor context menus and stable editing paint
 - Problem: Right-clicking blank space after text on a non-final line could highlight the whole line, the native text menu was crowded with unrelated system commands, selected text lacked direct everyday formatting and paragraph conversion actions, and active-search editing could visibly flash while highlights were removed and reapplied.
 - Fix: Added trailing-line whitespace hit testing that preserves the current selection and reduced the right-click menu to Translate, Cut, Copy, and Paste. Mouse selection now opens a separate icon-backed shortcut menu for bold, italic, underline, strikethrough, portable yellow highlight, and conversion to body/headings/lists/checklists. Search-highlight updates run as one text-storage transaction and preserve document highlights.

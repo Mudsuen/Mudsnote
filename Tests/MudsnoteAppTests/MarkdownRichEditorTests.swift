@@ -1461,9 +1461,9 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.checklist",
             "mudsnote.library.toolbar.table",
             "mudsnote.library.toolbar.link",
-            "mudsnote.library.toolbar.attachment"
+            "mudsnote.library.toolbar.source-mode"
         ])
-        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
+        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "显示 Markdown 源码"]))
         #expect(editorToolButtons.allSatisfy { $0.bezelStyle == .toolbar })
         #expect(editorToolButtons.allSatisfy { $0.isBordered })
         #expect(editorToolButtons.allSatisfy { $0.showsBorderOnlyWhileMouseInside })
@@ -3330,6 +3330,32 @@ struct MarkdownRichEditorTests {
         }?.view)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
         #expect(editorToolButtons.count == 5)
+        let sourceModeButton = try #require(editorToolButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.source-mode"
+        })
+        #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
+        #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
+        #expect(controller.editorTextView.string == "plain")
+        #expect(sourceModeButton.toolTip == "显示渲染模式")
+        #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
+        #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
+
+        let contextMenu = NSMenu()
+        let contextEvent = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        controller.editorTextView.configureContextMenu?(contextMenu, contextEvent)
+        let insertMenu = try #require(contextMenu.items.last { $0.title == "插入" }?.submenu)
+        #expect(insertMenu.items.map(\.title) == ["表格", "链接…", "附件…"])
+        #expect(insertMenu.items.allSatisfy { $0.image != nil })
 
         let initialFormatMenu = controller.makeFormatMenuForLibrary()
         #expect(initialFormatMenu.items.filter { !$0.isSeparatorItem }.map(\.title) == [
@@ -3374,7 +3400,13 @@ struct MarkdownRichEditorTests {
         ])
         #expect(selectionMenu.items.last?.submenu?.items.allSatisfy { $0.image != nil } == true)
         let highlightItem = try #require(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.first { $0.title == "黄色高亮" })
+        controller.editorTextView.undoManager?.removeAllActions()
         #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        #expect(controller.editorTextView.undoManager?.canUndo == true)
+        controller.editorTextView.undoManager?.undo()
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
         let highlightedSelectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
         let highlightedColorMenu = try #require(highlightedSelectionMenu.items.first { $0.title == "颜色" }?.submenu)
@@ -3384,7 +3416,12 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(removeHighlightItem.action), to: removeHighlightItem.target, from: removeHighlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
+        controller.editorTextView.undoManager?.removeAllActions()
         controller.markdownTextViewToggleBold(controller.editorTextView)
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
+        controller.editorTextView.undoManager?.undo()
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
 
         controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))

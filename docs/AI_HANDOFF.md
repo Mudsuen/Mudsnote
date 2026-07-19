@@ -1,6 +1,12 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (230)
+## Latest iteration (231)
+
+- macOS library formatting commands, including selection-menu highlight and keyboard bold/italic/list commands, register attributed-content snapshots with the editor undo manager so Command-Z and redo restore both formatting and selection.
+- The editor right-click menu adds an icon-backed Insert submenu for tables, links, and attachments. The former top attachment button now toggles between rendered rich text and editable Markdown source without changing the stored note merely by switching views.
+- Automatic selection menus only open for a newly changed non-empty selection, and active-search highlight repaint is delayed and coalesced after typing to avoid repeated page/caret repaint.
+
+## Previous iteration (230)
 
 - macOS editor right-click menus contain only native Translate plus Cut, Copy, and Paste; formatting, link, attachment, table, AI, and other actions are not appended there.
 - Right-clicking the trailing blank area of a non-final text line preserves the existing insertion/selection range instead of letting `NSTextView` select the nearest line text.
