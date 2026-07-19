@@ -173,7 +173,7 @@ extension NoteStore {
         defaults.set(Array(Set(updatedPaths)).sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
     }
 
-    func removeLibraryPinnedNotePaths(in directory: URL) {
+    public func removeLibraryPinnedNotePaths(in directory: URL) {
         let directoryPath = directory.standardizedFileURL.path
         let remainingPaths = libraryPinnedNotePaths.filter {
             $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
@@ -196,7 +196,7 @@ extension NoteStore {
         )
     }
 
-    func removeLibraryFolderDisclosurePaths(in directory: URL) {
+    public func removeLibraryFolderDisclosurePaths(in directory: URL) {
         let directoryPath = directory.standardizedFileURL.path
         libraryCollapsedFolderPaths = libraryCollapsedFolderPaths.filter {
             $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")

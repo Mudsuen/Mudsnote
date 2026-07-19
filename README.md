@@ -35,19 +35,24 @@ for the command you invoke. See `PRIVACY.md` for the data-flow boundary.
 
 ## Build
 
-Build the command-line target:
+Run the platform-specific verification flow:
 
 ```bash
-swift build
+./scripts/verify macos pr
+./scripts/verify ios pr
+# Only for an explicitly dual-platform change:
+./scripts/verify both pr
 ```
 
-Package and install the macOS app bundle:
+Live verification is also platform-scoped:
 
 ```bash
-./scripts/package_app.sh
+./scripts/verify macos live  # installs /Applications/Mudsnote.app
+./scripts/verify ios live    # installs to the connected iPhone
+./scripts/verify both live   # explicit dual-platform install
 ```
 
-The packaged app is installed to `/Applications/Mudsnote.app`.
+The one-argument `./scripts/verify pr|full` form remains available for Devflow and safely detects the changed platform. The one-argument `live` form is rejected because installation targets must be explicit.
 
 Run the isolated installed-app library smoke:
 

@@ -86,10 +86,22 @@ extension NoteStore {
         NoteSearchSession(noteStore: self, entries: indexedEntries())
     }
 
+    public func makeSearchSession(roots: [URL]) -> NoteSearchSession {
+        NoteSearchSession(noteStore: self, entries: indexedEntries(roots: roots))
+    }
+
     public func knownTags(limit: Int = 200) -> [String] {
+        knownTags(limit: limit, roots: nil)
+    }
+
+    public func knownTags(limit: Int = 200, roots: [URL]) -> [String] {
+        knownTags(limit: limit, roots: Optional(roots))
+    }
+
+    private func knownTags(limit: Int, roots: [URL]?) -> [String] {
         var counts: [String: Int] = [:]
 
-        for entry in indexedEntries() {
+        for entry in indexedEntries(roots: roots) {
             for tag in entry.tags {
                 counts[tag, default: 0] += 1
             }

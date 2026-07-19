@@ -10,6 +10,7 @@
 
 ## Risk and data policy
 
+- Platform scope: `macos / ios / both`
 - Risk: `low / medium / high`
 - Production read: `false`
 - Production write: `forbidden`
@@ -21,9 +22,10 @@
 
 ## Verification evidence
 
-- [ ] `./scripts/verify pr`
-- [ ] `./scripts/verify full`, or reason not required
-- [ ] `./scripts/verify live`, or reason not required
+- [ ] `./scripts/verify <platform> pr`
+- [ ] `./scripts/verify <platform> full`, or reason not required
+- [ ] `./scripts/verify <platform> live`, or reason not required
+- [ ] `both` was used only because this task explicitly changes both platforms
 - [ ] No PR check accessed iCloud, Keychain, real note folders, personal settings, or credentials
 
 ## Rollback

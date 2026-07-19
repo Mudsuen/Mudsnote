@@ -9,6 +9,8 @@ CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
+"${ROOT_DIR}/scripts/check_macos_install_scope.sh" "${ROOT_DIR}"
+
 "${ROOT_DIR}/scripts/generate_icon_assets.sh"
 
 mkdir -p /tmp/codex-swift-module-cache /tmp/codex-xdg-cache /tmp/codex-home

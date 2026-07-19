@@ -1,11 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODE="${1:-pr}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStaysInteractiveForDenseFormatting|cachedNoteVersionValidationDoesNotBlockKeyboardNavigation'
+usage() {
+  echo "Usage: ./scripts/verify [macos|ios|both] {pr|full|live}" >&2
+}
+
+case "${1:-}" in
+  macos|ios|both)
+    PLATFORM_SCOPE="$1"
+    MODE="${2:-}"
+    EXPLICIT_SCOPE=1
+    ;;
+  pr|full|live)
+    MODE="$1"
+    if [[ -n "${MUDSNOTE_PLATFORM_SCOPE:-}" ]]; then
+      PLATFORM_SCOPE="$MUDSNOTE_PLATFORM_SCOPE"
+      EXPLICIT_SCOPE=1
+    else
+      PLATFORM_SCOPE="$(./scripts/detect_platform_scope.sh)"
+      EXPLICIT_SCOPE=0
+    fi
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+
+if [[ "$MODE" != "pr" && "$MODE" != "full" && "$MODE" != "live" ]]; then
+  usage
+  exit 2
+fi
+
+if [[ "$PLATFORM_SCOPE" != "macos" && "$PLATFORM_SCOPE" != "ios" && "$PLATFORM_SCOPE" != "both" && "$PLATFORM_SCOPE" != "none" ]]; then
+  echo "ERROR: invalid Mudsnote platform scope: $PLATFORM_SCOPE" >&2
+  usage
+  exit 2
+fi
+
+if [[ "$MODE" == "live" && "$EXPLICIT_SCOPE" != "1" ]]; then
+  echo "ERROR: live verification requires an explicit platform." >&2
+  echo "Use './scripts/verify macos live', './scripts/verify ios live', or './scripts/verify both live'." >&2
+  exit 2
+fi
 
 check_diff() {
   local base_ref=""
@@ -32,37 +72,26 @@ check_ci_boundary() {
   fi
 }
 
-validate_metadata_if_present() {
-  if [[ -f scripts/validate_ios_app_store_metadata.py ]]; then
-    python3 scripts/validate_ios_app_store_metadata.py
-  fi
-}
+check_diff
+check_ci_boundary
 
-case "$MODE" in
-  pr)
-    check_diff
-    check_ci_boundary
-    validate_metadata_if_present
-    swift test --skip "$PERFORMANCE_TESTS"
+echo "Mudsnote verification scope: $PLATFORM_SCOPE ($MODE)"
+case "$PLATFORM_SCOPE" in
+  macos)
+    ./scripts/verify_macos.sh "$MODE"
     ;;
-  full)
-    check_diff
-    check_ci_boundary
-    validate_metadata_if_present
-    swift build -c release
-    swift test
+  ios)
+    ./scripts/verify_ios.sh "$MODE"
     ;;
-  live)
-    if [[ -n "${CI:-}" ]]; then
-      echo "ERROR: live verification is local-only and must not run in CI." >&2
+  both)
+    ./scripts/verify_macos.sh "$MODE"
+    ./scripts/verify_ios.sh "$MODE"
+    ;;
+  none)
+    if [[ "$MODE" == "live" ]]; then
+      echo "ERROR: documentation-only changes have no live installation target." >&2
       exit 2
     fi
-    check_diff
-    check_ci_boundary
-    ./scripts/package_app.sh
-    ;;
-  *)
-    echo "Usage: ./scripts/verify {pr|full|live}" >&2
-    exit 2
+    echo "No platform source changes detected; policy checks passed."
     ;;
 esac

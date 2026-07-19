@@ -1,5 +1,11 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (225)
+
+- macOS and iPhone app icons share an original Notes-like black-header note motif with warm white paper and gray rules.
+- macOS keeps transparent icon padding and platform rounding; iPhone uses a full-bleed square source for the system mask.
+- Regenerate with `./scripts/generate_icon_assets.sh` and `./scripts/generate_ios_companion_icon.sh`; the iPhone generator emits only sizes declared by its asset catalog.
+
 ## Latest iteration (156)
 
 - Save progress no longer replaces the editor status/time text; the library date updates from the file modification date only after a successful save.
@@ -345,6 +351,89 @@
 - Explicitly opened external files are projected into All Notes without adding their parent directory as a configured source; background snapshot refreshes merge that bounded projection so selection remains stable.
 - Main-window saves use exact-path updates for those external documents, while managed library notes retain title-based filenames. Pending edits in the current note are flushed before switching to an external file.
 - Quick capture retains its dedicated destination shelf but uses compact `xmark` and `checkmark` icon actions in transparent `26pt` controls instead of wide Cancel/Save pills.
+
+## Latest iteration (215)
+
+- macOS can register an existing top-level folder from the File menu or the `iCloud` source-group context menu without moving or copying its Markdown files.
+- Registered non-default roots use `从资料库移除`, which preserves the directory and its contents; managed child folders retain rename and destructive delete semantics. Duplicate and parent/child-overlapping roots are rejected.
+- Every folder source exposes `在 Finder 中显示`. Adding or removing a root refreshes the source tree, full note snapshot, and filesystem monitor.
+- The deferred launch shell, full library snapshot, source tags, and library search use configured roots. Opening an external file such as `~/.hermes/SOUL.md` no longer makes Hermes the next ordinary launch selection or imports its parent directory's Markdown corpus into `All iCloud`.
+
+## Latest iteration (216)
+
+- The inline create/rename field remains a native single-line `NSTextField` with field-editor-backed IME, Return, Escape, and focus-loss behavior.
+- Its source-list presentation is transparent, borderless, and has no custom accent outline; a `20pt` field height aligns the selected name with the existing folder icon and compact `32pt` row.
+
+## Latest iteration (217)
+
+- Folder roots display their real filesystem names; the default root is no longer forcibly presented as `Notes`.
+- A single configured root is selected directly and does not render the redundant `All iCloud` aggregate. The aggregate remains available for multiple registered roots and explicit external-document projection.
+- The user's active macOS configuration promotes the existing iCloud Drive `Mudsbuild` folder to the sole default root without deleting or moving the former local `~/Documents/Mudsnote` files.
+
+## Latest iteration (218)
+
+- Source-row yellow text follows `NSOutlineView`'s current selected row and is refreshed before any dirty-note save begins.
+- Scope navigation remains transactional: the model scope changes after a successful save, while a failure reselects and repaints the prior source.
+- Regression coverage observes the selected source color from inside the synchronous save callback, proving click feedback is already visible before persistence completes.
+
+## Latest iteration (219)
+
+- Primary source-list clicks retain the previous logical scope and yellow title between mouse-down and mouse-up.
+- Mouse-up commits the outline selection, applies yellow styling, and enters the existing save-backed navigation path; keyboard/programmatic navigation remains immediate.
+- Regression coverage verifies mouse-down changes only AppKit's pending row, performs no save, and leaves the pressed title unaccented until the mouse-up commit.
+
+## Latest iteration (220)
+
+- Pointer source navigation commits after `NSOutlineView.mouseDown` returns because AppKit owns the complete click tracking loop through release.
+- Do not depend on a separate `mouseUp` override for outline selection; it is not called after `super.mouseDown` consumes the release event.
+- Pointer deferral must be cleared after every tracked primary click, while keyboard selection remains immediate.
+
+## Latest iteration (221)
+
+- Source row background, title, symbol, and count colors share one visual-selection predicate.
+- While a primary click is held, all selected styling remains on the previous source; after release it moves atomically to the committed source.
+- Do not restore `NSTableRowView.isSelected` as an independent source-background state during pointer deferral.
+
+## Latest iteration (222)
+
+- Source background highlight keeps native AppKit mouse-down timing.
+- Title, symbol, and count colors follow that selected row immediately on mouse-down.
+- Logical scope, save, and note-list navigation remain deferred until `super.mouseDown` returns on release.
+
+## Latest iteration (223)
+
+- Pointer-deferral selection changes explicitly call the containing window's `displayIfNeeded()` after configuring the pressed row's foreground styling.
+- This display pass is required because `NSOutlineView.mouseDown` synchronously tracks through release and can otherwise postpone visible text-color updates.
+
+## Latest iteration (224)
+
+- Primary mouse-down resolves the target scope row and previews its foreground colors before calling `super.mouseDown`.
+- The preview deliberately precedes AppKit's blocking tracking loop; native background highlight behavior remains untouched.
+- Mouse release clears the preview and commits logical navigation; disclosure-button clicks do not preview row selection.
+
+## Latest iteration (226)
+
+- `/Applications/Mudsnote.app` is a shared global artifact across every Git worktree.
+- iOS-only tasks must use `./scripts/verify pr|full` plus Xcode/UI-test/device installation and must not run `package_app.sh` or `verify live`.
+- `package_app.sh` refuses an iOS-only branch by default; `MUDSNOTE_ALLOW_IOS_ONLY_MAC_INSTALL=1` is reserved for an intentional macOS baseline install.
+
+## Latest iteration (227)
+
+- Verification is split into `./scripts/verify macos|ios|both pr|full|live`.
+- Devflow's legacy one-argument PR/full invocation detects changed paths and delegates to only the affected platform; documentation-only work performs policy checks only.
+- Live verification always requires an explicit platform. macOS live owns `/Applications/Mudsnote.app`; iOS live owns only the connected iPhone; `both` is reserved for an explicitly dual-platform request.
+
+## Latest iteration (228)
+
+- The source outline owns one weak pointer-hover row and clears the previous row before activating another.
+- Its scroll view reconciles hover from the current pointer and visible rectangle on every clip-view scroll, preventing folder/tag hover trails.
+- Keep source and note list hover container-owned; row tracking events alone are not reliable while content moves under a stationary pointer.
+
+## Latest iteration (229)
+
+- Pressing Return in the macOS library title now moves focus to the first body line instead of leaving AppKit to end editing and select the title.
+- Native IME composition remains owned by the field editor; once Return reaches the title command, the existing title and body are preserved and only focus plus the body insertion point change.
+- Focused AppKit coverage and the installed library smoke both exercise the title-to-body Return path.
 
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
