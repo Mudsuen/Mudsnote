@@ -64,7 +64,9 @@ This launches `/Applications/Mudsnote.app` against a temporary library and verif
 
 ## Development Notes
 
-- See `docs/AI_HANDOFF.md` for project architecture, current product state, verification expectations, and takeover guidance for another AI.
+- Run `./scripts/agent_context.sh --list` to choose a focused source/test route; add a narrow regex to search only that working set.
+- See `docs/ARCHITECTURE.md` for stable platform boundaries and module ownership.
+- See `docs/AI_HANDOFF.md` for the compact current product state, durable behavior constraints, and takeover guidance.
 - See `CHANGELOG.md` for iteration history, known issues, and lessons learned.
 
 ## License
