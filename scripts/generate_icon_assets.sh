@@ -54,37 +54,41 @@ NSGraphicsContext.current?.shouldAntialias = true
 NSColor.clear.setFill()
 bounds.fill()
 
-let basePath = NSBezierPath(roundedRect: NSRect(x: 74, y: 74, width: 876, height: 876), xRadius: 206, yRadius: 206)
-NSColor(calibratedRed: 0.031, green: 0.035, blue: 0.039, alpha: 1).setFill()
-basePath.fill()
-
 let shadow = NSShadow()
-shadow.shadowColor = NSColor(calibratedWhite: 0, alpha: 0.38)
-shadow.shadowOffset = NSSize(width: 0, height: -16)
-shadow.shadowBlurRadius = 30
+shadow.shadowColor = NSColor(calibratedWhite: 0, alpha: 0.24)
+shadow.shadowOffset = NSSize(width: 0, height: -20)
+shadow.shadowBlurRadius = 40
 shadow.set()
 
-let cardRect = NSRect(x: 315, y: 278, width: 394, height: 450)
-let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: 50, yRadius: 50)
-NSColor(calibratedRed: 0.965, green: 0.965, blue: 0.953, alpha: 1).setFill()
-cardPath.fill()
+let appRect = NSRect(x: 74, y: 74, width: 876, height: 876)
+let appShape = NSBezierPath(roundedRect: appRect, xRadius: 206, yRadius: 206)
+NSColor(calibratedRed: 0.980, green: 0.980, blue: 0.969, alpha: 1).setFill()
+appShape.fill()
 
 shadow.shadowColor = .clear
 shadow.set()
 
-NSColor(calibratedRed: 0.976, green: 0.976, blue: 0.965, alpha: 1).setFill()
-cardPath.fill()
+NSGraphicsContext.saveGraphicsState()
+appShape.addClip()
 
-let lineColor = NSColor(calibratedRed: 0.725, green: 0.725, blue: 0.714, alpha: 1)
+NSColor(calibratedRed: 0.067, green: 0.071, blue: 0.078, alpha: 1).setFill()
+NSRect(x: 74, y: 672, width: 876, height: 278).fill()
+
+NSColor(calibratedRed: 0.149, green: 0.153, blue: 0.165, alpha: 1).setFill()
+NSRect(x: 74, y: 672, width: 876, height: 10).fill()
+
+let lineColor = NSColor(calibratedRed: 0.784, green: 0.788, blue: 0.780, alpha: 1)
 lineColor.setStroke()
-for y in [392.0, 472.0, 552.0, 632.0] {
+for (index, y) in [558.0, 456.0, 354.0, 252.0, 150.0].enumerated() {
     let line = NSBezierPath()
-    line.move(to: NSPoint(x: 410, y: y))
-    line.line(to: NSPoint(x: 614, y: y))
-    line.lineWidth = 18
+    line.move(to: NSPoint(x: 190, y: y))
+    line.line(to: NSPoint(x: index == 4 ? 690 : 834, y: y))
+    line.lineWidth = 13
     line.lineCapStyle = .round
     line.stroke()
 }
+
+NSGraphicsContext.restoreGraphicsState()
 
 NSGraphicsContext.restoreGraphicsState()
 

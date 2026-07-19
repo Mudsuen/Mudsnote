@@ -271,6 +271,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         newFolderItem.target = self
         newFolderItem.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(newFolderItem)
+
+        let addLibraryFolderItem = NSMenuItem(
+            title: "将文件夹添加到资料库…",
+            action: #selector(addLibraryFolderFromMainMenu),
+            keyEquivalent: ""
+        )
+        addLibraryFolderItem.target = self
+        fileMenu.addItem(addLibraryFolderItem)
         fileMenu.addItem(.separator())
 
         let openItem = NSMenuItem(title: "打开...", action: #selector(openDocumentFromMainMenu), keyEquivalent: "o")
@@ -631,6 +639,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         showLibraryWindow()
         DispatchQueue.main.async { [weak self] in
             self?.libraryWindowController?.createNewFolderForLibrary()
+        }
+    }
+
+    @objc
+    func addLibraryFolderFromMainMenu() {
+        showLibraryWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.libraryWindowController?.presentAddExistingLibraryFolderPanelForLibrary()
         }
     }
 

@@ -438,6 +438,82 @@ private final class LibrarySourceOutlineItem: NSObject {
 @MainActor
 final class LibrarySourceOutlineView: NSOutlineView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
+    var onPrimaryMouseSelectionPreviewChanged: (() -> Void)?
+    var onPrimaryMouseSelectionCommitted: (() -> Void)?
+    private(set) weak var pointerHoveredRow: LibrarySourceOutlineRowView?
+    private(set) var isDeferringPrimaryMouseSelectionCommit = false
+    private(set) var primaryMouseVisualSelectionRow: Int?
+    private var selectionBeforePrimaryMouseDown = IndexSet()
+
+    func setPointerHoveredRow(_ rowView: LibrarySourceOutlineRowView?) {
+        guard pointerHoveredRow !== rowView else {
+            rowView?.setPointerHovered(true)
+            return
+        }
+        pointerHoveredRow?.setPointerHovered(false)
+        pointerHoveredRow = rowView
+        rowView?.setPointerHovered(true)
+    }
+
+    func reconcilePointerHover(at location: NSPoint?) {
+        guard let location, visibleRect.contains(location) else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        let row = row(at: location)
+        guard row >= 0,
+              let rowView = rowView(atRow: row, makeIfNecessary: false)
+                as? LibrarySourceOutlineRowView else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        setPointerHoveredRow(rowView)
+    }
+
+    func reconcilePointerHover() {
+        guard let window, window.isKeyWindow else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        reconcilePointerHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 0 else {
+            super.mouseDown(with: event)
+            return
+        }
+        let location = convert(event.locationInWindow, from: nil)
+        let pressedRow = row(at: location)
+        let hitView = hitTest(location)
+        let previewsSelectableRow = pressedRow >= 0
+            && !(hitView is NSButton)
+            && (item(atRow: pressedRow) as? LibrarySourceOutlineItem)?.scope != nil
+        beginPrimaryMouseSelectionDeferral(
+            visualSelectionRow: previewsSelectableRow ? pressedRow : selectedRow
+        )
+        super.mouseDown(with: event)
+        finishPrimaryMouseSelectionDeferral()
+    }
+
+    func beginPrimaryMouseSelectionDeferral(visualSelectionRow: Int? = nil) {
+        selectionBeforePrimaryMouseDown = selectedRowIndexes
+        isDeferringPrimaryMouseSelectionCommit = true
+        primaryMouseVisualSelectionRow = visualSelectionRow
+        onPrimaryMouseSelectionPreviewChanged?()
+    }
+
+    func finishPrimaryMouseSelectionDeferral() {
+        let shouldCommit = isDeferringPrimaryMouseSelectionCommit
+            && selectedRowIndexes != selectionBeforePrimaryMouseDown
+        isDeferringPrimaryMouseSelectionCommit = false
+        primaryMouseVisualSelectionRow = nil
+        selectionBeforePrimaryMouseDown = []
+        onPrimaryMouseSelectionPreviewChanged?()
+        if shouldCommit {
+            onPrimaryMouseSelectionCommitted?()
+        }
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let location = convert(event.locationInWindow, from: nil)
@@ -538,11 +614,15 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        setPointerHovered(true)
+        sourceOutlineView?.setPointerHoveredRow(self)
     }
 
     override func mouseExited(with event: NSEvent) {
-        setPointerHovered(false)
+        guard sourceOutlineView?.pointerHoveredRow === self else {
+            setPointerHovered(false)
+            return
+        }
+        sourceOutlineView?.setPointerHoveredRow(nil)
     }
 
     func setPointerHovered(_ hovered: Bool) {
@@ -579,6 +659,25 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
             width: max(0, bounds.width - Self.leadingInset - Self.trailingInset),
             height: max(0, bounds.height - (Self.verticalInset * 2))
         )
+    }
+
+    private var sourceOutlineView: LibrarySourceOutlineView? {
+        var candidate = superview
+        while let view = candidate {
+            if let outlineView = view as? LibrarySourceOutlineView {
+                return outlineView
+            }
+            candidate = view.superview
+        }
+        return nil
+    }
+}
+
+@MainActor
+final class LibrarySourceScrollView: NSScrollView {
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        (documentView as? LibrarySourceOutlineView)?.reconcilePointerHover()
     }
 }
 
@@ -767,6 +866,9 @@ private func libraryBareTag(_ tag: String) -> String {
 private enum LibraryActionError: LocalizedError {
     case noFolderSelected
     case noNoteSelected
+    case libraryFolderAlreadyRegistered
+    case libraryFolderOverlapsRegisteredFolder
+    case cannotRemoveDefaultLibraryFolder
 
     var errorDescription: String? {
         switch self {
@@ -774,6 +876,12 @@ private enum LibraryActionError: LocalizedError {
             return "没有选中文件夹"
         case .noNoteSelected:
             return "没有选中笔记"
+        case .libraryFolderAlreadyRegistered:
+            return "该文件夹已经在资料库中"
+        case .libraryFolderOverlapsRegisteredFolder:
+            return "不能添加已注册文件夹的上级或下级文件夹"
+        case .cannotRemoveDefaultLibraryFolder:
+            return "默认笔记文件夹不能从资料库移除"
         }
     }
 }
@@ -1344,8 +1452,10 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFolderLoadGeneration = 0
     private var sourceTagsLoaded = false
     private var sourceTagsLoading = false
+    private var sourceTagLoadGeneration = 0
     private var fullLibrarySnapshotReloadScheduled = false
     private var isFullLibrarySnapshotLoading = false
+    private var fullLibrarySnapshotReloadGeneration = 0
     private var fileSystemMonitor: LibraryFileSystemMonitor?
     private var internallyMutatedPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
@@ -1628,17 +1738,22 @@ final class LibraryWindowController: NSWindowController,
     private func scheduleFullLibrarySnapshotReload() {
         guard !fullLibrarySnapshotReloadScheduled else { return }
         fullLibrarySnapshotReloadScheduled = true
+        fullLibrarySnapshotReloadGeneration += 1
+        let generation = fullLibrarySnapshotReloadGeneration
         isFullLibrarySnapshotLoading = true
         updateNoteListHeader(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let noteStore = noteStore
         let snapshotLimit = Self.sourceCountSnapshotLimit
+        let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            let allNotes = noteStore.listNotes(limit: snapshotLimit, roots: preferredDirectories)
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self,
+                      generation == self.fullLibrarySnapshotReloadGeneration else { return }
+                self.fullLibrarySnapshotReloadScheduled = false
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
                 self.trashedNotesSnapshot = trashedNotes
@@ -1662,6 +1777,12 @@ final class LibraryWindowController: NSWindowController,
                 )
             }
         }
+    }
+
+    private func forceFullLibrarySnapshotReload() {
+        fullLibrarySnapshotReloadGeneration += 1
+        fullLibrarySnapshotReloadScheduled = false
+        scheduleFullLibrarySnapshotReload()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -1753,6 +1874,15 @@ final class LibraryWindowController: NSWindowController,
         }
         guard monitor.start() else { return }
         fileSystemMonitor = monitor
+    }
+
+    private func restartLibraryFileSystemMonitorForCurrentRoots() {
+        let shouldRestart = fileSystemMonitor != nil || window?.isVisible == true
+        fileSystemMonitor?.stop()
+        fileSystemMonitor = nil
+        if shouldRestart {
+            startLibraryFileSystemMonitorIfNeeded()
+        }
     }
 
     private func handleLibraryFileSystemChanges(
@@ -1923,13 +2053,18 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.registerForDraggedTypes([.fileURL])
         sourceOutlineView.setDraggingSourceOperationMask([], forLocal: false)
         sourceOutlineView.contextMenuProvider = { [weak self] row in
-            guard let self,
-                  let item = self.sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem,
-                  case .folder(let folderURL)? = item.scope else { return nil }
-            return self.makeFolderContextMenu(for: folderURL)
+            self?.sourceContextMenuForLibrary(row: row)
+        }
+        sourceOutlineView.onPrimaryMouseSelectionCommitted = { [weak self] in
+            self?.commitCurrentSourceOutlineSelection()
+        }
+        sourceOutlineView.onPrimaryMouseSelectionPreviewChanged = { [weak self] in
+            guard let self else { return }
+            self.refreshVisibleSourceOutlinePresentation()
+            self.sourceOutlineView.window?.displayIfNeeded()
         }
 
-        let scrollView = NSScrollView()
+        let scrollView = LibrarySourceScrollView()
         scrollView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceScroll")
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
@@ -2995,11 +3130,21 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
+        let libraryRoots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
+        if libraryRoots.count == 1,
+           selectedScope == .all,
+           externallyOpenedDocumentsByPath.isEmpty,
+           let onlyRoot = libraryRoots.first {
+            selectedScope = .folder(onlyRoot)
+        }
+
         let iCloudGroup = makeSourceOutlineItem(
             identifier: "group:icloud",
             kind: .group(title: "iCloud", section: .folders)
         )
-        iCloudGroup.append(makeSourceOutlineScopeItem(.all))
+        if libraryRoots.count > 1 || !externallyOpenedDocumentsByPath.isEmpty {
+            iCloudGroup.append(makeSourceOutlineScopeItem(.all))
+        }
 
         for folderRoot in makeSourceFolderOutlineRoots() {
             iCloudGroup.append(folderRoot)
@@ -3205,12 +3350,16 @@ final class LibraryWindowController: NSWindowController,
               !sourceTagsLoaded,
               !sourceTagsLoading else { return }
         sourceTagsLoading = true
+        sourceTagLoadGeneration += 1
+        let generation = sourceTagLoadGeneration
         let noteStore = noteStore
+        let preferredDirectories = noteStore.preferredDirectories
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            noteStore.prewarmSearchIndex()
-            let tags = noteStore.knownTags(limit: 12)
+            noteStore.prewarmSearchIndex(roots: preferredDirectories)
+            let tags = noteStore.knownTags(limit: 12, roots: preferredDirectories)
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self,
+                      generation == self.sourceTagLoadGeneration else { return }
                 self.sourceTagsLoading = false
                 self.applySourceTagsForLibrary(tags)
             }
@@ -3219,7 +3368,7 @@ final class LibraryWindowController: NSWindowController,
 
     func loadSourceTagsForLibrary() {
         guard !sourceTagsLoaded, !sourceTagsLoading else { return }
-        applySourceTagsForLibrary(noteStore.knownTags(limit: 12))
+        applySourceTagsForLibrary(noteStore.knownTags(limit: 12, roots: noteStore.preferredDirectories))
     }
 
     private func applySourceTagsForLibrary(_ tags: [String]) {
@@ -3228,6 +3377,13 @@ final class LibraryWindowController: NSWindowController,
         sourceTagNames = tags
         rebuildSourceRows(includeTags: true)
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
+    }
+
+    private func invalidateSourceTagsForLibrary() {
+        sourceTagLoadGeneration += 1
+        sourceTagsLoaded = false
+        sourceTagsLoading = false
+        sourceTagNames = []
     }
 
     private func reloadSourceFolderRowsForCurrentState() {
@@ -3421,10 +3577,6 @@ final class LibraryWindowController: NSWindowController,
 
     private func folderTitle(for url: URL) -> String {
         let standardizedURL = url.standardizedFileURL
-        let notesDirectory = noteStore.notesDirectory.standardizedFileURL
-        if standardizedURL.path == notesDirectory.path {
-            return "Notes"
-        }
         return standardizedURL.lastPathComponent.isEmpty ? "Notes" : standardizedURL.lastPathComponent
     }
 
@@ -3577,7 +3729,7 @@ final class LibraryWindowController: NSWindowController,
         using allNotes: [NoteSearchResult],
         countIndex precomputedCountIndex: LibrarySourceCountIndex? = nil
     ) {
-        let recentCount = noteStore.listRecentFiles(limit: 80).count
+        let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
             notes: allNotes,
             folderPaths: currentSourceFolderPaths()
@@ -3595,7 +3747,7 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         let generation = sourceCountRefreshGeneration
         let folderPaths = currentSourceFolderPaths()
-        let recentCount = noteStore.listRecentFiles(limit: 80).count
+        let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let trashCount = trashedNotesSnapshot.count
 
         sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
@@ -3727,12 +3879,13 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let noteStore = noteStore
         let snapshotLimit = Self.sourceCountSnapshotLimit
+        let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
             await Task.yield()
             guard !Task.isCancelled else { return }
-            let allNotes = noteStore.listNotes(limit: snapshotLimit)
+            let allNotes = noteStore.listNotes(limit: snapshotLimit, roots: preferredDirectories)
             guard !Task.isCancelled else { return }
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
@@ -3959,7 +4112,8 @@ final class LibraryWindowController: NSWindowController,
         limit: Int,
         searchesAllNotes: Bool
     ) -> [NoteSearchResult] {
-        let searchSession = activeSearchSession ?? noteStore.makeSearchSession()
+        let searchSession = activeSearchSession
+            ?? noteStore.makeSearchSession(roots: noteStore.preferredDirectories)
         activeSearchSession = searchSession
         return librarySearchResults(
             noteStore: noteStore,
@@ -3972,11 +4126,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func allNoteResults(limit: Int) -> [NoteSearchResult] {
-        noteStore.listNotes(limit: limit)
+        noteStore.listNotes(limit: limit, roots: noteStore.preferredDirectories)
     }
 
     private func recentShellNoteResults(limit: Int) -> [NoteSearchResult] {
-        noteStore.listRecentFiles(limit: limit).map { note in
+        recentFilesVisibleInLibrary(limit: limit).map { note in
             NoteSearchResult(
                 url: note.url,
                 title: note.title,
@@ -3993,7 +4147,7 @@ final class LibraryWindowController: NSWindowController,
         let resultsByPath = Dictionary(uniqueKeysWithValues: allNotes.map {
             ($0.url.standardizedFileURL.path, $0)
         })
-        return noteStore.listRecentFiles(limit: limit).map { note in
+        return recentFilesVisibleInLibrary(limit: limit).map { note in
             resultsByPath[note.url.standardizedFileURL.path] ?? NoteSearchResult(
                 url: note.url,
                 title: note.title,
@@ -4004,6 +4158,14 @@ final class LibraryWindowController: NSWindowController,
                 thumbnailURL: nil
             )
         }
+    }
+
+    private func recentFilesVisibleInLibrary(limit: Int) -> [NoteFile] {
+        Array(noteStore.listRecentFiles(limit: .max).lazy.filter { note in
+            let path = note.url.standardizedFileURL.path
+            return self.isInsideConfiguredLibraryRoot(note.url)
+                || self.externallyOpenedDocumentsByPath[path] != nil
+        }.prefix(limit))
     }
 
     private func includingExternallyOpenedDocuments(in notes: [NoteSearchResult]) -> [NoteSearchResult] {
@@ -4180,7 +4342,12 @@ final class LibraryWindowController: NSWindowController,
     ) {
         guard let scope = item.scope else { return }
         let title = sourceTitle(for: scope)
-        let isSelected = selectedScope == scope
+        let row = sourceOutlineView.row(forItem: item)
+        let visualSelectionRow = sourceOutlineView.primaryMouseVisualSelectionRow
+            ?? sourceOutlineView.selectedRow
+        let isSelected = row >= 0
+            ? row == visualSelectionRow
+            : selectedScope == scope
         let legacyTag = sourceLegacyTag(for: scope)
         cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
         cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
@@ -4262,17 +4429,13 @@ final class LibraryWindowController: NSWindowController,
             weight: LibraryNotesLayout.sourceUnselectedButtonFontWeight
         )
         field.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
-        field.backgroundColor = NSColor.controlBackgroundColor
-        field.drawsBackground = true
+        field.backgroundColor = .clear
+        field.drawsBackground = false
         field.isBezeled = false
         field.isBordered = false
         field.focusRingType = .none
         field.lineBreakMode = .byTruncatingTail
         field.cell?.usesSingleLineMode = true
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 4
-        field.layer?.borderWidth = 1
-        field.layer?.borderColor = panelAccentColor().withAlphaComponent(0.8).cgColor
         field.translatesAutoresizingMaskIntoConstraints = false
 
         cell.addSubview(icon)
@@ -4291,7 +4454,7 @@ final class LibraryWindowController: NSWindowController,
             ),
             field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
             field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            field.heightAnchor.constraint(equalToConstant: 24)
+            field.heightAnchor.constraint(equalToConstant: 20)
         ])
         inlineFolderEditField = field
         return cell
@@ -4344,11 +4507,21 @@ final class LibraryWindowController: NSWindowController,
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard notification.object as? NSOutlineView === sourceOutlineView,
-              !isSynchronizingSourceOutlineSelection,
-              sourceOutlineView.selectedRow >= 0,
+              !isSynchronizingSourceOutlineSelection else { return }
+        if sourceOutlineView.isDeferringPrimaryMouseSelectionCommit {
+            refreshVisibleSourceOutlinePresentation()
+            sourceOutlineView.window?.displayIfNeeded()
+            return
+        }
+        commitCurrentSourceOutlineSelection()
+    }
+
+    private func commitCurrentSourceOutlineSelection() {
+        guard sourceOutlineView.selectedRow >= 0,
               let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow)
                 as? LibrarySourceOutlineItem,
               let scope = item.scope else { return }
+        refreshVisibleSourceOutlinePresentation()
         if !activateSourceScope(scope) {
             refreshSourceSelection()
         }
@@ -5082,6 +5255,32 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
+    private func addExistingLibraryFolderMenuItemPressed() {
+        presentAddExistingLibraryFolderPanelForLibrary()
+    }
+
+    @objc
+    private func removeLibraryFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL,
+              confirmDestructiveAction(
+                title: "从资料库移除？",
+                message: "只会从列表移除该文件夹，不会删除其中的文件。"
+              ) else { return }
+
+        do {
+            try removeRegisteredLibraryFolderForLibrary(at: directory)
+        } catch {
+            presentErrorAlert(message: "无法移除文件夹", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func revealLibraryFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([directory.standardizedFileURL])
+    }
+
+    @objc
     private func toggleSourceListPressed() {
         setSourceListVisibleForLibrary(
             !isSourceListVisibleForLibrary,
@@ -5131,6 +5330,24 @@ final class LibraryWindowController: NSWindowController,
 
     func createNewFolderForLibrary() {
         addFolderPressed()
+    }
+
+    func presentAddExistingLibraryFolderPanelForLibrary() {
+        let panel = NSOpenPanel()
+        panel.title = "将文件夹添加到资料库"
+        panel.prompt = "添加"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = noteStore.notesDirectory.deletingLastPathComponent()
+
+        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        do {
+            try addExistingLibraryFolderForLibrary(at: directory)
+        } catch {
+            presentErrorAlert(message: "无法添加文件夹", details: error.localizedDescription)
+        }
     }
 
     func focusSearchForLibrary() {
@@ -5261,14 +5478,16 @@ final class LibraryWindowController: NSWindowController,
         let searchesAllNotes = searchScopeControl.selectedSegment == 1
         let noteStore = noteStore
         let existingSearchSession = activeSearchSession
+        let preferredDirectories = noteStore.preferredDirectories
         isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
 
-        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, scope, query, searchesAllNotes, generation, preferredURL] in
+        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
-            let searchSession = existingSearchSession ?? noteStore.makeSearchSession()
+            let searchSession = existingSearchSession
+                ?? noteStore.makeSearchSession(roots: preferredDirectories)
             let results = librarySearchResults(
                 noteStore: noteStore,
                 searchSession: searchSession,
@@ -6803,6 +7022,63 @@ final class LibraryWindowController: NSWindowController,
         try createLibraryFolder(named: name, in: targetDirectoryForNewFolder())
     }
 
+    func addExistingLibraryFolderForLibrary(at directory: URL) throws {
+        let candidate = directory.standardizedFileURL
+        let roots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
+        if roots.contains(where: { $0.path == candidate.path }) {
+            throw LibraryActionError.libraryFolderAlreadyRegistered
+        }
+        if roots.contains(where: {
+            candidate.path.hasPrefix($0.path + "/") || $0.path.hasPrefix(candidate.path + "/")
+        }) {
+            throw LibraryActionError.libraryFolderOverlapsRegisteredFolder
+        }
+
+        noteStore.addPreferredDirectory(candidate)
+        activeSearchSession = nil
+        invalidateSourceTagsForLibrary()
+        reloadPersistedSourceDisclosureState()
+        restartLibraryFileSystemMonitorForCurrentRoots()
+        reloadSourceFolderRowsForCurrentState()
+        forceFullLibrarySnapshotReload()
+        selectedScope = .folder(candidate)
+        refreshSourceSelection()
+        scheduleDeferredSourceTagLoad()
+    }
+
+    func removeRegisteredLibraryFolderForLibrary(at directory: URL) throws {
+        let candidate = directory.standardizedFileURL
+        if candidate.path == noteStore.notesDirectory.standardizedFileURL.path {
+            throw LibraryActionError.cannotRemoveDefaultLibraryFolder
+        }
+        let roots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
+        guard roots.contains(where: { $0.path == candidate.path }) else {
+            throw LibraryActionError.noFolderSelected
+        }
+
+        noteStore.removePreferredDirectory(candidate)
+        noteStore.removeLibraryFolderDisclosurePaths(in: candidate)
+        noteStore.removeLibraryPinnedNotePaths(in: candidate)
+        externallyOpenedDocumentsByPath = externallyOpenedDocumentsByPath.filter {
+            !$0.key.hasPrefix(candidate.path + "/")
+        }
+        if case .folder(let selectedFolder) = selectedScope,
+           (selectedFolder.standardizedFileURL.path == candidate.path
+            || selectedFolder.standardizedFileURL.path.hasPrefix(candidate.path + "/")) {
+            selectedScope = .all
+        }
+        if let selectedURL, selectedURL.standardizedFileURL.path.hasPrefix(candidate.path + "/") {
+            clearCurrentDocumentAfterRemoval()
+        }
+        activeSearchSession = nil
+        invalidateSourceTagsForLibrary()
+        reloadPersistedSourceDisclosureState()
+        restartLibraryFileSystemMonitorForCurrentRoots()
+        reloadSourceFolderRowsForCurrentState()
+        forceFullLibrarySnapshotReload()
+        scheduleDeferredSourceTagLoad()
+    }
+
     @discardableResult
     private func createLibraryFolder(named name: String, in parentURL: URL) throws -> URL {
         let folderURL = try noteStore.createFolder(named: name, in: parentURL)
@@ -7414,8 +7690,55 @@ final class LibraryWindowController: NSWindowController,
         view.subviews.forEach { setEditorToolControls(in: $0, enabled: isEnabled) }
     }
 
+    func sourceContextMenuForLibrary(row: Int) -> NSMenu? {
+        guard let item = sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem else { return nil }
+        if case .group(title: _, section: .folders) = item.kind {
+            let menu = NSMenu()
+            let addItem = NSMenuItem(
+                title: "将文件夹添加到资料库…",
+                action: #selector(addExistingLibraryFolderMenuItemPressed),
+                keyEquivalent: ""
+            )
+            addItem.target = self
+            menu.addItem(addItem)
+            return menu
+        }
+        guard case .folder(let folderURL)? = item.scope else { return nil }
+        return makeFolderContextMenu(for: folderURL)
+    }
+
     private func makeFolderContextMenu(for folderURL: URL) -> NSMenu {
         let menu = NSMenu()
+
+        let standardizedFolder = folderURL.standardizedFileURL
+        let rootPaths = Set(Self.rootPreferredDirectories(from: noteStore.preferredDirectories).map(\.path))
+        let isRoot = rootPaths.contains(standardizedFolder.path)
+        let isDefaultRoot = standardizedFolder.path == noteStore.notesDirectory.standardizedFileURL.path
+
+        let revealItem = NSMenuItem(
+            title: "在 Finder 中显示",
+            action: #selector(revealLibraryFolderMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        revealItem.target = self
+        revealItem.representedObject = standardizedFolder
+        menu.addItem(revealItem)
+
+        if isRoot {
+            if !isDefaultRoot {
+                let removeItem = NSMenuItem(
+                    title: "从资料库移除",
+                    action: #selector(removeLibraryFolderMenuItemPressed(_:)),
+                    keyEquivalent: ""
+                )
+                removeItem.target = self
+                removeItem.representedObject = standardizedFolder
+                menu.addItem(removeItem)
+            }
+            return menu
+        }
+
+        menu.addItem(.separator())
 
         let renameItem = NSMenuItem(title: "重命名文件夹", action: #selector(renameFolderMenuItemPressed(_:)), keyEquivalent: "")
         renameItem.target = self
@@ -7425,7 +7748,6 @@ final class LibraryWindowController: NSWindowController,
         let deleteItem = NSMenuItem(title: "删除文件夹", action: #selector(deleteFolderMenuItemPressed(_:)), keyEquivalent: "")
         deleteItem.target = self
         deleteItem.representedObject = folderURL
-        deleteItem.isEnabled = folderURL.standardizedFileURL.path != noteStore.notesDirectory.standardizedFileURL.path
         menu.addItem(deleteItem)
 
         return menu

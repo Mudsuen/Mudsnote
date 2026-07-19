@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 172. Unified black Notes-style app icons
+- Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
+- Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.
+- Lesson: Cross-platform branding should share a recognizable motif while respecting each platform's icon mask and optical scale; source-backed generators keep the small sizes and packaged artifacts aligned.
+
 ### 171. Search-first iPhone widget actions
 - Problem: The existing iPhone widget compressed text, audio, and image capture into a small surface even though a small WidgetKit family cannot reliably expose multiple independent tap targets, and it offered no direct path into note search.
 - Fix: The small widget is now a focused Quick Note launcher with clearer hierarchy. A separate medium Mudsnote Actions widget adds a full-width Search Notes row above equal Voice input and Quick Note actions. Search uses a new `mudsnote://search` route that survives cold launch and authorized-folder loading, then focuses the native library search field exactly once; capture actions retain the existing durable text/audio routes.
@@ -1316,7 +1321,85 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Snapshot-isolation tests prove local lifecycle changes do not synchronously absorb an unrelated external directory. A 10,000-row insertion test improved from about `126ms` total test time to stable `38–40ms` runs and passes a `<50ms` operation gate. Full tests, packaging, installed-app smoke, strict signature verification, and expanded visual QA passed.
 - Lesson: A loaded navigation hierarchy should be mutated as application state; recursive filesystem discovery belongs to cancellable background validation, not the command path.
 
-### 205. Title Return continues into the note body
+### 215. Registered macOS library folders
+
+- Problem: The macOS source pane could create and delete subfolders but did not expose the existing multi-root storage model as a safe library workflow. Extra top-level roots were treated like ordinary folders, so deleting one could affect its contents, no folder context menu revealed its Finder location, and a recently opened external `.hermes/SOUL.md` file could become the automatic launch selection even though `.hermes` was not registered.
+- Fix: Added `File > 将文件夹添加到资料库…` and the same action on the library group context menu. Registered top-level folders now expose `在 Finder 中显示` and `从资料库移除`; removal clears only Mudsnote registration and library UI metadata while preserving every file. Nested managed folders retain rename and destructive delete actions. Registration rejects duplicate and parent/child-overlapping roots and refreshes the source tree, note snapshot, tags, search session, and filesystem monitor. The launch shell, full All Notes snapshot, tags, and library search now use configured roots instead of expanding every recent external file's parent directory.
+- Lesson: A registered source and a managed child folder have different ownership semantics. Removing a source must never be implemented by reusing filesystem deletion, and recent external documents must not leak across launches into the library's automatic selection.
+
+### 216. Quiet native inline folder naming
+
+- Problem: The temporary `新建文件夹` row drew a bright blue rounded rectangle around the entire text field. Inside the compact dark source list this looked like a separate form control, crowded the selected text, and broke the native sidebar rhythm.
+- Fix: Kept the shared AppKit field editor and full-name selection behavior, but removed the custom background and accent border, retained a borderless no-focus-ring field, and reduced its layout height from `24pt` to the native single-line `20pt` alignment.
+- Lesson: Field-editor behavior and custom field chrome are independent. Preserve AppKit input and IME semantics while letting the source row provide the visual container.
+
+### 217. Real-folder single-library sidebar
+
+- Problem: A single configured library still appeared twice as the synthetic `All iCloud` aggregate and a default root forcibly titled `Notes`. After registering `Mudsbuild`, the sidebar therefore implied that both rows were required folders and obscured which physical directory quick capture actually used.
+- Fix: Source roots now keep their real filesystem names. When exactly one top-level library is configured, that root becomes the selected library scope and the redundant aggregate row is omitted; `All iCloud` returns only when multiple top-level roots need a combined view or an explicitly opened external document is being projected.
+- Lesson: Aggregate navigation is useful only when there is something to aggregate. A single-folder library should expose one truthful source identity instead of a synthetic total plus a renamed duplicate.
+
+### 218. Immediate source-selection color
+
+- Problem: Clicking another source row updated AppKit's selection immediately, but the custom yellow title color still followed the previous logical scope until a synchronous dirty-note save completed. The visible selection therefore appeared to lag behind the click.
+- Fix: Source-cell presentation now derives its selected state from the outline view's current selected row and refreshes before save/navigation work begins. The logical scope still changes only after the current note saves successfully, and a failed save restores the previous selection.
+- Lesson: Interaction feedback should follow the control's immediate selection state, while model navigation can retain its transactional save boundary. Visual acknowledgement must not wait behind synchronous persistence.
+
+### 219. Mouse-up source navigation
+
+- Problem: Removing the save delay made the next source turn yellow on mouse-down, before the user released the click. The response was fast but felt like the row had already moved underneath a still-held pointer.
+- Fix: Primary mouse selection is now visually and logically deferred between mouse-down and mouse-up. The previous source stays yellow while pressed; releasing commits the new row, updates yellow styling, saves if necessary, and navigates. Keyboard source navigation remains immediate.
+- Lesson: Fast feedback still needs the correct gesture boundary. List selection by pointer should commit on release, while keyboard selection should not inherit mouse-specific deferral.
+
+### 220. AppKit-owned mouse-up commit
+
+- Problem: The first mouse-up implementation waited for an overridden `mouseUp`, but `NSOutlineView.mouseDown` owns the complete tracking loop and consumes the release event before returning. The deferral flag therefore stayed active and real pointer clicks stopped navigating even though the isolated state test passed.
+- Fix: The source outline now finishes and commits deferred selection immediately after `super.mouseDown` returns, which is AppKit's actual click-release boundary. The regression also asserts that the deferral state is cleared after commit.
+- Lesson: AppKit controls may track press, drag, and release synchronously inside `mouseDown`; interaction tests must exercise the framework's real event boundary instead of assuming a separate `mouseUp` override will run.
+
+### 221. Atomic source highlight and text color
+
+- Problem: AppKit moved the native row selection background on mouse-down while the custom yellow title correctly waited for release, briefly splitting one selected state across two rows.
+- Fix: Source rows now draw their selection background from the same visual-selection predicate as title, symbol, and count colors. During a held click the old row retains all selected styling; on release the background and foreground styling move together to the committed row.
+- Lesson: A custom list selection must have one presentation source of truth. Mixing AppKit's pending row background with model-backed foreground colors creates contradictory feedback even when navigation timing is correct.
+
+### 222. Immediate pointer visuals with release navigation
+
+- Problem: Iteration 221 incorrectly delayed the existing AppKit row highlight until release. The intended behavior was to preserve the original mouse-down highlight and make only the custom foreground colors catch up to it immediately.
+- Fix: Restored native row-selection drawing and made title, symbol, and count colors follow the outline's selected row even while logical navigation is deferred. Mouse-down now moves the complete visual selection; mouse-up still performs save-backed source navigation.
+- Lesson: Visual selection timing and navigation timing are separate contracts. AppKit can acknowledge a pressed row immediately while expensive or transactional content changes wait for the completed click.
+
+### 223. Synchronous pressed-row foreground repaint
+
+- Problem: The pressed row's foreground values changed during mouse-down, but AppKit's synchronous outline tracking prevented the normal deferred display pass until release, so the yellow text still appeared late on screen.
+- Fix: Pointer-deferral selection changes now force the containing window to display its freshly configured title, symbol, and count colors before returning to AppKit's tracking loop. Navigation remains release-bound.
+- Lesson: Mutating view properties inside a synchronous event-tracking loop is not proof that pixels changed; immediate press feedback may require an explicit display pass before the loop resumes.
+
+### 224. Pre-tracking pressed-row color preview
+
+- Problem: Even a forced display from the outline selection notification remained too late in the real AppKit event path: the native highlight appeared inside `super.mouseDown`, while the custom foreground did not become visible until that tracking call returned on release.
+- Fix: Before entering `super.mouseDown`, the outline now resolves the selectable row under the pointer, publishes it as the temporary visual selection, refreshes the title/symbol/count colors, and completes a display pass. AppKit then applies its original highlight behavior; release clears the preview and commits navigation. Disclosure-button presses do not create a row-color preview.
+- Lesson: When a framework owns a blocking interaction loop, truly immediate custom feedback must be prepared before entering that loop rather than reacting to notifications emitted from within it.
+
+### 225. Platform-scoped installed-artifact ownership
+
+- Problem: An iOS-only worktree ran the macOS packaging script after its shared tests, replacing `/Applications/Mudsnote.app` with that branch's older macOS sources and making completed mac work appear to regress.
+- Fix: Project instructions now prohibit macOS packaging from iOS-only tasks. `package_app.sh` also detects branches whose changes are confined to iOS and documentation, refusing to overwrite the shared installed app unless an explicit exception is supplied.
+- Lesson: Git worktrees isolate source and build directories, not global deployment destinations. Parallel platform work needs ownership checks around `/Applications`, devices, servers, and every other shared live artifact.
+
+### 226. Independent macOS and iOS delivery lanes
+
+- Problem: A single `verify pr|full|live` entrypoint mixed macOS SwiftPM tests, iOS metadata checks, and macOS installation. Even after guarding `/Applications`, task intent and verification ownership remained ambiguous.
+- Fix: Verification now has explicit `macos`, `ios`, and `both` scopes with independent PR, full, and live implementations. Devflow's one-argument PR/full calls safely detect the changed platform; live verification never infers an installation target. iOS live installs only to the connected phone, macOS live installs only to `/Applications`, and dual live requires an explicit `both` command.
+- Lesson: Platform separation must cover validation and deployment entrypoints, not only source directories. Compatibility automation may infer read-only checks, but every live target must be named explicitly.
+
+### 227. Scroll-safe source-list hover
+
+- Problem: Source folder and tag rows each retained their own hover state. Scrolling beneath a stationary pointer could skip tracking-area exit events and leave several gray hover highlights painted at once.
+- Fix: The source outline now owns one weak hovered row and reconciles it from the current pointer and visible rectangle whenever its clip view scrolls, matching the established note-list fix.
+- Lesson: Hover in a reusable scrolling list is collection state, not independent row state; the container must clear the previous owner and recompute it after scrolling.
+
+### 228. Title Return continues into the note body
 
 - Problem: Pressing Return while editing a macOS library note title fell through to `NSTextField`'s default end-editing behavior, which left the title selected instead of continuing to the body.
 - Fix: The title-field delegate now consumes Return after native IME handling, focuses the rich Markdown body, and places the insertion point at its first line without changing either field. Added direct AppKit regression coverage and an installed-app keyboard assertion to the library smoke.
