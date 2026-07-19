@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 178. Stable caret across autosave and file refresh
+- Problem: After autosave cleared the dirty flag, a delayed cache validation or file-system event could reload the selected note through the blank loading shell, repainting the page and resetting the caret to the beginning.
+- Fix: Selected-note refreshes now load without clearing the editor, preserve the current selection, and skip text-storage replacement when disk and editor Markdown are equivalent. Every local edit advances a content revision so asynchronous results started before that edit are discarded even after autosave. Tests cover external refresh selection preservation and the autosave-versus-stale-load race.
+- Lesson: Dirty state is a save-state signal, not a sufficient concurrency token; asynchronous editor loads need a monotonic local-edit generation and must avoid no-op document replacement.
+
 ### 177. Non-blocking selection formatting panel
 - Problem: The attempted menu-event replay did not intercept AppKit's tracking loop; pressing Delete while the automatic menu was open selected “Underline” through menu type-ahead instead of deleting text.
 - Fix: Replaced the automatically shown tracking menu with a nonactivating icon panel while keeping the editor as first responder. Keyboard input now closes the panel before normal editor handling, so Delete removes the selection without activating a formatting item. Color and conversion choices remain available as explicit submenus.

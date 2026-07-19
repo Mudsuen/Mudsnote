@@ -1447,6 +1447,7 @@ final class LibraryWindowController: NSWindowController,
     private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
+    private var editorContentRevision = 0
     private var isEditorShowingMarkdownSource = false
     private var suppressSelectionChanges = false
     private var suppressGallerySelectionChanges = false
@@ -1939,7 +1940,7 @@ final class LibraryWindowController: NSWindowController,
            let selectedNote = notes.first(where: {
                $0.url.standardizedFileURL.path == selectedURL.standardizedFileURL.path
            }) {
-            load(note: selectedNote)
+            reloadSelectedNoteAfterExternalChange(selectedNote)
         }
 
         if hasFolderStructureChange {
@@ -5907,6 +5908,7 @@ final class LibraryWindowController: NSWindowController,
 
         showInitialNoteLoadingShell(for: note)
         let generation = noteLoadGeneration
+        let editorRevision = editorContentRevision
         let noteLoader = noteLoader
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             let result = Result<LoadedLibraryNote, Error> {
@@ -5917,11 +5919,48 @@ final class LibraryWindowController: NSWindowController,
                 guard let self,
                       !Task.isCancelled,
                       generation == self.noteLoadGeneration,
+                      editorRevision == self.editorContentRevision,
                       self.selectedNoteStillMatchesInitialLoad(note) else {
                     return
                 }
                 self.noteLoadTask = nil
                 self.applyLoadedNoteResult(result, for: note)
+            }
+        }
+        noteLoadTask = task
+    }
+
+    private func reloadSelectedNoteAfterExternalChange(_ note: NoteSearchResult) {
+        cancelActiveNoteLoad()
+        let generation = noteLoadGeneration
+        let editorRevision = editorContentRevision
+        let noteLoader = noteLoader
+        let fileModificationDateLoader = fileModificationDateLoader
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result<LoadedLibraryNote, Error> {
+                try noteLoader(note.url)
+            }
+            let fileModifiedAt = fileModificationDateLoader(note.url)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      !Task.isCancelled,
+                      generation == self.noteLoadGeneration,
+                      editorRevision == self.editorContentRevision,
+                      !self.isDirty,
+                      self.selectedNoteStillMatchesInitialLoad(note) else { return }
+                self.noteLoadTask = nil
+                switch result {
+                case .success(let loaded):
+                    let cached = self.cacheLoadedNote(
+                        loaded,
+                        for: note,
+                        fileModifiedAt: fileModifiedAt
+                    )
+                    self.applyLoadedNote(cached, for: note, preservingEditorSelection: true)
+                case .failure(let error):
+                    self.presentErrorAlert(message: "无法刷新笔记", details: error.localizedDescription)
+                }
             }
         }
         noteLoadTask = task
@@ -5958,8 +5997,27 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyLoadedNote(_ cached: LoadedLibraryNoteCacheEntry, for note: NoteSearchResult) {
+        applyLoadedNote(cached, for: note, preservingEditorSelection: false)
+    }
+
+    private func applyLoadedNote(
+        _ cached: LoadedLibraryNoteCacheEntry,
+        for note: NoteSearchResult,
+        preservingEditorSelection: Bool
+    ) {
         selectedURL = note.url
         setEditorEditable(selectedScope != .trash)
+
+        let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
+        if preservingEditorSelection,
+           titleField.stringValue == cached.loaded.title,
+           selectedTags == cached.loaded.tags,
+           normalizedEditorMarkdownBody() == normalizedMarkdownBody(cached.loaded.body) {
+            isDirty = false
+            statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+            updateToolbarActionState()
+            return
+        }
 
         let renderedBody: NSAttributedString
         if let rendered = cached.renderedBody {
@@ -5980,7 +6038,8 @@ final class LibraryWindowController: NSWindowController,
             title: cached.loaded.title,
             body: cached.loaded.body,
             tags: cached.loaded.tags,
-            renderedBody: renderedBody
+            renderedBody: renderedBody,
+            preservedSelection: preservedSelection
         )
         isDirty = false
         statusLabel.stringValue = editorDateText(for: note.modifiedAt)
@@ -5993,7 +6052,8 @@ final class LibraryWindowController: NSWindowController,
         title: String,
         body: String,
         tags: [String],
-        renderedBody: NSAttributedString? = nil
+        renderedBody: NSAttributedString? = nil,
+        preservedSelection: NSRange? = nil
     ) {
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
@@ -6007,8 +6067,20 @@ final class LibraryWindowController: NSWindowController,
             renderedBody ?? MarkdownRichTextCodec.render(markdown: body, theme: theme, baseURL: selectedURL)
         )
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
-        editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        let requestedSelection = preservedSelection ?? NSRange(location: 0, length: 0)
+        let contentLength = editorTextView.textStorage?.length ?? 0
+        let location = min(requestedSelection.location, contentLength)
+        let length = min(requestedSelection.length, max(contentLength - location, 0))
+        editorTextView.setSelectedRange(NSRange(location: location, length: length))
         suppressEditorChanges = false
+    }
+
+    private func normalizedEditorMarkdownBody() -> String {
+        normalizedMarkdownBody(currentEditorMarkdownBody())
+    }
+
+    private func normalizedMarkdownBody(_ body: String) -> String {
+        body.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func cachedLoadedNote(for note: NoteSearchResult) -> LoadedLibraryNoteCacheEntry? {
@@ -6034,6 +6106,7 @@ final class LibraryWindowController: NSWindowController,
         for note: NoteSearchResult
     ) {
         let generation = noteLoadGeneration
+        let editorRevision = editorContentRevision
         let fileModificationDateLoader = fileModificationDateLoader
         let noteLoader = noteLoader
         let cachedModifiedAt = cached.fileModifiedAt
@@ -6063,17 +6136,24 @@ final class LibraryWindowController: NSWindowController,
                 guard let self,
                       !Task.isCancelled,
                       generation == self.noteLoadGeneration,
+                      editorRevision == self.editorContentRevision,
                       self.selectedNoteStillMatchesInitialLoad(note) else {
                     return
                 }
                 self.noteLoadTask = nil
                 self.loadedNoteCache.removeEntry(forKey: self.loadedNoteCacheKey(for: note.url))
                 guard !self.isDirty else { return }
-                self.applyLoadedNoteResult(
-                    result,
-                    for: note,
-                    fileModifiedAt: currentModifiedAt
-                )
+                switch result {
+                case .success(let loaded):
+                    let refreshed = self.cacheLoadedNote(
+                        loaded,
+                        for: note,
+                        fileModifiedAt: currentModifiedAt
+                    )
+                    self.applyLoadedNote(refreshed, for: note, preservingEditorSelection: true)
+                case .failure(let error):
+                    self.presentErrorAlert(message: "无法刷新笔记", details: error.localizedDescription)
+                }
             }
         }
         noteLoadTask = task
@@ -6210,6 +6290,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func markDirty() {
         guard !suppressEditorChanges, selectedScope != .trash else { return }
+        editorContentRevision &+= 1
         isDirty = true
         updateToolbarActionState()
         scheduleAutosave()

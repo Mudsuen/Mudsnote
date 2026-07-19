@@ -2721,6 +2721,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
         #expect(controller.editorTextView.string == "Initial body")
+        controller.editorTextView.setSelectedRange(NSRange(location: 7, length: 0))
 
         try "# Selected externally\n\nUpdated outside Mudsnote\n".write(
             to: selectedURL,
@@ -2735,10 +2736,74 @@ struct MarkdownRichEditorTests {
                 )
             )
         ])
+        #expect(controller.editorTextView.string == "Initial body")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
         await controller.waitForExternalLibraryRefreshForTesting()
 
         #expect(controller.titleField.stringValue == "Selected externally")
         #expect(controller.editorTextView.string == "Updated outside Mudsnote")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
+    }
+
+    @Test
+    func staleExternalReloadCannotResetCaretAfterAutosavedEdit() async throws {
+        let suiteName = "mudsnote.library-stale-external-reload-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-stale-external-reload-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let selectedURL = try store.saveNewNote(title: "Selected", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.25)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try "# Selected externally\n\nExternal body\n".write(
+            to: selectedURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: selectedURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Local autosaved body",
+            theme: controller.theme,
+            baseURL: selectedURL
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        try controller.flushPendingAutosaveForTesting()
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        #expect(controller.editorTextView.string == "Local autosaved body")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
     }
 
     @Test
@@ -5806,9 +5871,11 @@ struct MarkdownRichEditorTests {
         })
         controller.tableView.selectRowIndexes(IndexSet(integer: newerRow), byExtendingSelection: false)
         controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
+        controller.editorTextView.setSelectedRange(NSRange(location: 4, length: 0))
         await controller.waitForActiveNoteLoadForLibrary()
 
         #expect(controller.editorTextView.string.contains("Externally changed body"))
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 4, length: 0))
     }
 
     @MainActor

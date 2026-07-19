@@ -16,6 +16,7 @@
 - Automatic selection menus are gated on a genuinely changed selection, and search-highlight repaint is debounced after typing to reduce page and caret flicker.
 - The automatic selection-format surface uses a nonactivating floating panel rather than `NSMenu` tracking. The editor stays first responder, and `keyDown` dismisses the panel before normal editing, preventing Delete from triggering menu type-ahead such as “Underline”.
 - The concise right-click menu includes an icon-backed Undo command routed through the standard responder chain before Translate, Cut, Copy, Paste, and the library Insert submenu.
+- Selected-note file events and cache validation refresh in place without the blank loading shell, preserve the editor selection, skip equivalent Markdown repaints, and reject results whose captured editor-content revision predates a local edit.
 
 ## Verification contract
 

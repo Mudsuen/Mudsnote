@@ -1,6 +1,11 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (234)
+## Latest iteration (235)
+
+- macOS selected-note file refresh no longer routes through the blank loading shell. External or delayed cache validation loads in the background, preserves the current editor selection, and skips attributed-text replacement entirely when normalized disk Markdown already matches the editor.
+- A monotonic editor-content revision invalidates note-load results started before any local edit, even after autosave clears `isDirty`; stale asynchronous results therefore cannot repaint the page or reset the caret to location zero.
+
+## Previous iteration (234)
 
 - The automatic selection-format surface is now a nonactivating floating panel, not a tracking `NSMenu`. `MarkdownTextView` remains first responder, and any keyboard editing event closes the panel before normal `keyDown` handling, so Delete cannot become menu type-ahead or highlight “Underline”.
 - Root formatting actions remain icon buttons; Color and Convert To retain their existing submenus when explicitly clicked.
