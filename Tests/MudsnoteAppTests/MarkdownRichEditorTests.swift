@@ -1578,6 +1578,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceOutline.intercellSpacing == .zero)
         #expect(sourceOutline.enclosingScrollView?.hasVerticalScroller == true)
         #expect(sourceOutline.enclosingScrollView?.autohidesScrollers == true)
+        #expect(sourceOutline.enclosingScrollView is LibrarySourceScrollView)
         let sourceTitles = controller.sourceTitlesForLibrary()
         #expect(!sourceTitles.contains("All iCloud"))
         #expect(sourceTitles.contains("Notes"))
@@ -1847,8 +1848,21 @@ struct MarkdownRichEditorTests {
         #expect(LibrarySourceOutlineRowView.verticalInset == LibraryNotesLayout.sourceRowHighlightVerticalInset)
         #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent < 0.5)
         #expect(!allSourceRow.isPointerHovered)
-        allSourceRow.setPointerHovered(true)
+        let selectedSourceRect = sourceOutline.rect(ofRow: sourceOutline.selectedRow)
+        sourceOutline.reconcilePointerHover(at: NSPoint(
+            x: selectedSourceRect.midX,
+            y: selectedSourceRect.midY
+        ))
         #expect(allSourceRow.isPointerHovered)
+        #expect(sourceOutline.pointerHoveredRow === allSourceRow)
+        let replacementSourceHoverRow = LibrarySourceOutlineRowView()
+        sourceOutline.setPointerHoveredRow(replacementSourceHoverRow)
+        #expect(!allSourceRow.isPointerHovered)
+        #expect(replacementSourceHoverRow.isPointerHovered)
+        #expect(sourceOutline.pointerHoveredRow === replacementSourceHoverRow)
+        sourceOutline.reconcilePointerHover(at: nil)
+        #expect(!replacementSourceHoverRow.isPointerHovered)
+        #expect(sourceOutline.pointerHoveredRow == nil)
         #expect(controller.sourceOutlineView.registeredDraggedTypes.contains(.fileURL))
         let folderCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"

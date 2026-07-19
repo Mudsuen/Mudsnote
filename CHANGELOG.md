@@ -1393,6 +1393,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Verification now has explicit `macos`, `ios`, and `both` scopes with independent PR, full, and live implementations. Devflow's one-argument PR/full calls safely detect the changed platform; live verification never infers an installation target. iOS live installs only to the connected phone, macOS live installs only to `/Applications`, and dual live requires an explicit `both` command.
 - Lesson: Platform separation must cover validation and deployment entrypoints, not only source directories. Compatibility automation may infer read-only checks, but every live target must be named explicitly.
 
+### 227. Scroll-safe source-list hover
+
+- Problem: Source folder and tag rows each retained their own hover state. Scrolling beneath a stationary pointer could skip tracking-area exit events and leave several gray hover highlights painted at once.
+- Fix: The source outline now owns one weak hovered row and reconciles it from the current pointer and visible rectangle whenever its clip view scrolls, matching the established note-list fix.
+- Lesson: Hover in a reusable scrolling list is collection state, not independent row state; the container must clear the previous owner and recompute it after scrolling.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -440,9 +440,43 @@ final class LibrarySourceOutlineView: NSOutlineView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
     var onPrimaryMouseSelectionPreviewChanged: (() -> Void)?
     var onPrimaryMouseSelectionCommitted: (() -> Void)?
+    private(set) weak var pointerHoveredRow: LibrarySourceOutlineRowView?
     private(set) var isDeferringPrimaryMouseSelectionCommit = false
     private(set) var primaryMouseVisualSelectionRow: Int?
     private var selectionBeforePrimaryMouseDown = IndexSet()
+
+    func setPointerHoveredRow(_ rowView: LibrarySourceOutlineRowView?) {
+        guard pointerHoveredRow !== rowView else {
+            rowView?.setPointerHovered(true)
+            return
+        }
+        pointerHoveredRow?.setPointerHovered(false)
+        pointerHoveredRow = rowView
+        rowView?.setPointerHovered(true)
+    }
+
+    func reconcilePointerHover(at location: NSPoint?) {
+        guard let location, visibleRect.contains(location) else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        let row = row(at: location)
+        guard row >= 0,
+              let rowView = rowView(atRow: row, makeIfNecessary: false)
+                as? LibrarySourceOutlineRowView else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        setPointerHoveredRow(rowView)
+    }
+
+    func reconcilePointerHover() {
+        guard let window, window.isKeyWindow else {
+            setPointerHoveredRow(nil)
+            return
+        }
+        reconcilePointerHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard event.buttonNumber == 0 else {
@@ -580,11 +614,15 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        setPointerHovered(true)
+        sourceOutlineView?.setPointerHoveredRow(self)
     }
 
     override func mouseExited(with event: NSEvent) {
-        setPointerHovered(false)
+        guard sourceOutlineView?.pointerHoveredRow === self else {
+            setPointerHovered(false)
+            return
+        }
+        sourceOutlineView?.setPointerHoveredRow(nil)
     }
 
     func setPointerHovered(_ hovered: Bool) {
@@ -621,6 +659,25 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
             width: max(0, bounds.width - Self.leadingInset - Self.trailingInset),
             height: max(0, bounds.height - (Self.verticalInset * 2))
         )
+    }
+
+    private var sourceOutlineView: LibrarySourceOutlineView? {
+        var candidate = superview
+        while let view = candidate {
+            if let outlineView = view as? LibrarySourceOutlineView {
+                return outlineView
+            }
+            candidate = view.superview
+        }
+        return nil
+    }
+}
+
+@MainActor
+final class LibrarySourceScrollView: NSScrollView {
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        (documentView as? LibrarySourceOutlineView)?.reconcilePointerHover()
     }
 }
 
@@ -2007,7 +2064,7 @@ final class LibraryWindowController: NSWindowController,
             self.sourceOutlineView.window?.displayIfNeeded()
         }
 
-        let scrollView = NSScrollView()
+        let scrollView = LibrarySourceScrollView()
         scrollView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceScroll")
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder

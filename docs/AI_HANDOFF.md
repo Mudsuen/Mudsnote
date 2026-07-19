@@ -423,6 +423,12 @@
 - Devflow's legacy one-argument PR/full invocation detects changed paths and delegates to only the affected platform; documentation-only work performs policy checks only.
 - Live verification always requires an explicit platform. macOS live owns `/Applications/Mudsnote.app`; iOS live owns only the connected iPhone; `both` is reserved for an explicitly dual-platform request.
 
+## Latest iteration (227)
+
+- The source outline owns one weak pointer-hover row and clears the previous row before activating another.
+- Its scroll view reconciles hover from the current pointer and visible rectangle on every clip-view scroll, preventing folder/tag hover trails.
+- Keep source and note list hover container-owned; row tracking events alone are not reliable while content moves under a stationary pointer.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order
