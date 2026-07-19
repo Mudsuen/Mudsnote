@@ -346,6 +346,12 @@
 - Main-window saves use exact-path updates for those external documents, while managed library notes retain title-based filenames. Pending edits in the current note are flushed before switching to an external file.
 - Quick capture retains its dedicated destination shelf but uses compact `xmark` and `checkmark` icon actions in transparent `26pt` controls instead of wide Cancel/Save pills.
 
+## Latest iteration (215)
+
+- Pressing Return in the macOS library title now moves focus to the first body line instead of leaving AppKit to end editing and select the title.
+- Native IME composition remains owned by the field editor; once Return reaches the title command, the existing title and body are preserved and only focus plus the body insertion point change.
+- Focused AppKit coverage and the installed library smoke both exercise the title-to-body Return path.
+
 This document is the fastest safe handoff for another AI taking over `Mudsnote`.
 
 ## Read Order

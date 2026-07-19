@@ -4963,6 +4963,16 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
 
+        if control === titleField {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+                return false
+            }
+            window?.makeFirstResponder(editorTextView)
+            editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+            editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
+            return true
+        }
+
         guard control === searchField else { return false }
         flushPendingSearchReload()
 

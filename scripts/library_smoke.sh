@@ -156,7 +156,9 @@ on run arguments
       set bodyArea to item bodyIndex of elements
       set focused of titleField to true
       set value of titleField to noteTitle
-      set focused of bodyArea to true
+      key code 36
+      delay 0.2
+      if focused of bodyArea is not true then error "Return from the note title did not focus the body"
       set value of bodyArea to noteBody
       delay 2
 

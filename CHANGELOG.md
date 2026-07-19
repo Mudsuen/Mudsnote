@@ -1316,6 +1316,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Verification: Snapshot-isolation tests prove local lifecycle changes do not synchronously absorb an unrelated external directory. A 10,000-row insertion test improved from about `126ms` total test time to stable `38–40ms` runs and passes a `<50ms` operation gate. Full tests, packaging, installed-app smoke, strict signature verification, and expanded visual QA passed.
 - Lesson: A loaded navigation hierarchy should be mutated as application state; recursive filesystem discovery belongs to cancellable background validation, not the command path.
 
+### 205. Title Return continues into the note body
+
+- Problem: Pressing Return while editing a macOS library note title fell through to `NSTextField`'s default end-editing behavior, which left the title selected instead of continuing to the body.
+- Fix: The title-field delegate now consumes Return after native IME handling, focuses the rich Markdown body, and places the insertion point at its first line without changing either field. Added direct AppKit regression coverage and an installed-app keyboard assertion to the library smoke.
+- Lesson: A visually continuous title/body editor built from separate native controls needs an explicit Return transition; relying on single-line field-editor defaults breaks the expected Notes-style writing flow.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

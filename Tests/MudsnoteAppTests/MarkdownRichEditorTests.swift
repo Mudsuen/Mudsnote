@@ -1868,6 +1868,53 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryTitleReturnMovesToStartOfBodyWithoutSelectingTitle() throws {
+        let suiteName = "mudsnote-library-title-return-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-title-return-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Return Target", body: "Existing body")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        #expect(window.makeFirstResponder(controller.titleField))
+        let fieldEditor = try #require(controller.titleField.currentEditor() as? NSTextView)
+        fieldEditor.setSelectedRange(NSRange(location: 3, length: 0))
+        controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.string.utf16.count, length: 0))
+
+        #expect(controller.control(
+            controller.titleField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        #expect(window.firstResponder === controller.editorTextView)
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 0, length: 0))
+        #expect(controller.titleField.stringValue == "Return Target")
+        #expect(controller.editorTextView.string == "Existing body")
+    }
+
+    @MainActor
+    @Test
     func libraryGalleryModeCollapsesListAndPreservesSelection() throws {
         let suiteName = "mudsnote-library-gallery-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
