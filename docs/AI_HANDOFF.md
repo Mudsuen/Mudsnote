@@ -1,6 +1,11 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (233)
+## Latest iteration (234)
+
+- The automatic selection-format surface is now a nonactivating floating panel, not a tracking `NSMenu`. `MarkdownTextView` remains first responder, and any keyboard editing event closes the panel before normal `keyDown` handling, so Delete cannot become menu type-ahead or highlight “Underline”.
+- Root formatting actions remain icon buttons; Color and Convert To retain their existing submenus when explicitly clicked.
+
+## Previous iteration (233)
 
 - The macOS editor's concise right-click menu starts with an icon-backed Undo command using the standard responder-chain `undo:` action and Command-Z equivalent, followed by Translate, Cut, Copy, Paste, and the library Insert submenu.
 

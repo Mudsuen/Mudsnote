@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 177. Non-blocking selection formatting panel
+- Problem: The attempted menu-event replay did not intercept AppKit's tracking loop; pressing Delete while the automatic menu was open selected “Underline” through menu type-ahead instead of deleting text.
+- Fix: Replaced the automatically shown tracking menu with a nonactivating icon panel while keeping the editor as first responder. Keyboard input now closes the panel before normal editor handling, so Delete removes the selection without activating a formatting item. Color and conversion choices remain available as explicit submenus.
+- Lesson: An automatic editing affordance cannot use a modal menu-tracking loop when the first keystroke must remain owned by the text editor.
+
 ### 176. Undo in the concise editor context menu
 - Problem: Formatting was undoable from the keyboard, but the intentionally reduced right-click menu did not expose Undo.
 - Fix: Added an icon-backed Undo item using the standard macOS responder chain and Command-Z equivalent, ahead of Translate and the editing commands.

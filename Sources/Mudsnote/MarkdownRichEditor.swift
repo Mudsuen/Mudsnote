@@ -220,14 +220,54 @@ private final class ConciseEditorContextMenu: NSMenu {
     }
 }
 
+private final class SelectionFormattingPanelButton: NSButton {
+    let menuItem: NSMenuItem
+    var onDismiss: (() -> Void)?
+
+    init(menuItem: NSMenuItem) {
+        self.menuItem = menuItem
+        super.init(frame: .zero)
+        target = self
+        action = #selector(performMenuItem)
+        image = menuItem.image
+        imagePosition = .imageOnly
+        imageScaling = .scaleProportionallyDown
+        toolTip = menuItem.title
+        setAccessibilityLabel(menuItem.title)
+        bezelStyle = .toolbar
+        isBordered = false
+        focusRingType = .none
+        contentTintColor = menuItem.state == .on ? .controlAccentColor : .labelColor
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 32).isActive = true
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc
+    private func performMenuItem() {
+        if let submenu = menuItem.submenu {
+            submenu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: bounds.maxY + 4), in: self)
+            onDismiss?()
+            return
+        }
+        onDismiss?()
+        guard let action = menuItem.action else { return }
+        NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+    }
+}
+
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private static let allowedContextMenuItemIdentifier = NSUserInterfaceItemIdentifier("mudsnote.editor.context-menu.allowed")
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
     var selectionMenuProvider: (() -> NSMenu?)?
-    private var pendingSelectionMenuKeyEvent: NSEvent?
-    private weak var trackedSelectionMenu: NSMenu?
+    private var selectionFormattingPanel: NSPanel?
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -280,6 +320,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func keyDown(with event: NSEvent) {
+        dismissSelectionFormattingPanel()
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
@@ -376,25 +417,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        guard menu !== trackedSelectionMenu else { return }
         for item in menu.items.reversed()
         where item.identifier != Self.allowedContextMenuItemIdentifier {
             menu.removeItem(item)
         }
-    }
-
-    func menuHasKeyEquivalent(
-        _ menu: NSMenu,
-        for event: NSEvent,
-        target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
-        action: UnsafeMutablePointer<Selector?>
-    ) -> Bool {
-        guard menu === trackedSelectionMenu else { return false }
-        if event.keyCode != 53 {
-            pendingSelectionMenuKeyEvent = event
-        }
-        menu.cancelTracking()
-        return true
     }
 
     func markCurrentContextMenuItemsAsAllowed(in menu: NSMenu) {
@@ -460,6 +486,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func mouseDown(with event: NSEvent) {
+        dismissSelectionFormattingPanel()
         let selectionBeforeMouseDown = selectedRange()
         guard let layoutManager = layoutManager,
               let textContainer = textContainer else {
@@ -505,6 +532,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     func showSelectionMenuIfNeeded() {
+        dismissSelectionFormattingPanel()
         let selection = selectedRange()
         guard selection.length > 0,
               let menu = selectionMenuProvider?(),
@@ -516,31 +544,63 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
         selectionRect.origin.x += textContainerInset.width
         selectionRect.origin.y += textContainerInset.height
-        let anchor = NSPoint(x: selectionRect.midX, y: selectionRect.maxY + 4)
-        pendingSelectionMenuKeyEvent = nil
-        trackedSelectionMenu = menu
-        menu.delegate = self
-        let eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak menu] event in
-            guard let self else { return event }
-            if event.keyCode != 53 {
-                self.pendingSelectionMenuKeyEvent = event
-            }
-            menu?.cancelTracking()
-            return nil
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
+
+        for item in menu.items where !item.isSeparatorItem {
+            let button = SelectionFormattingPanelButton(menuItem: item)
+            button.onDismiss = { [weak self] in self?.dismissSelectionFormattingPanel() }
+            stack.addArrangedSubview(button)
         }
-        menu.popUp(positioning: nil, at: anchor, in: self)
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-        }
-        trackedSelectionMenu = nil
-        menu.delegate = nil
-        guard let keyEvent = pendingSelectionMenuKeyEvent else { return }
-        pendingSelectionMenuKeyEvent = nil
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let window = self.window else { return }
-            window.makeFirstResponder(self)
-            self.keyDown(with: keyEvent)
-        }
+        guard let hostWindow = window else { return }
+        let panelSize = NSSize(width: CGFloat(stack.arrangedSubviews.count * 34 + 14), height: 40)
+        let surface = NSVisualEffectView(frame: NSRect(origin: .zero, size: panelSize))
+        surface.material = .menu
+        surface.state = .active
+        surface.wantsLayer = true
+        surface.layer?.cornerRadius = 10
+        surface.layer?.masksToBounds = true
+        surface.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: surface.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor)
+        ])
+
+        let selectionWindowRect = convert(selectionRect, to: nil)
+        let selectionScreenRect = hostWindow.convertToScreen(selectionWindowRect)
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        panel.hidesOnDeactivate = true
+        panel.contentView = surface
+        panel.setFrameOrigin(NSPoint(
+            x: selectionScreenRect.midX - panelSize.width / 2,
+            y: selectionScreenRect.minY - panelSize.height - 6
+        ))
+        selectionFormattingPanel = panel
+        hostWindow.addChildWindow(panel, ordered: .above)
+        panel.orderFront(nil)
+        hostWindow.makeFirstResponder(self)
+    }
+
+    private func dismissSelectionFormattingPanel() {
+        guard let panel = selectionFormattingPanel else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        selectionFormattingPanel = nil
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
