@@ -9,7 +9,6 @@ struct MudsnoteCompanionApp: App {
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
         _appModel = StateObject(wrappedValue: AppModel())
-        AppShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
@@ -18,6 +17,12 @@ struct MudsnoteCompanionApp: App {
                 .environmentObject(appModel)
                 .task {
                     appModel.consumeSystemEntryRequest()
+                }
+                .task(priority: .utility) {
+                    // Shortcut metadata does not affect the first visible frame.
+                    // Let the library shell appear before asking the system to refresh it.
+                    await Task.yield()
+                    AppShortcuts.updateAppShortcutParameters()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
@@ -85,6 +90,10 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortDirection")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.groupNotesByDate")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteViewStyle")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortOrder")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortDirection")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeGroupNotesByDate")
             UserDefaults.standard.removeObject(
                 forKey: AttachmentPresentationPreferences.defaultsKey
             )

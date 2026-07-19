@@ -34,11 +34,25 @@ private enum HomeTimelineEntry: Identifiable {
             Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
         }
     }
+
+    var title: String {
+        switch self {
+        case .file(let file):
+            return file.title
+        case .memo(let memo):
+            let firstLine = memo.body
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            return firstLine?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+                ?? String(localized: "Untitled memo")
+        }
+    }
 }
 
 private struct HomeTimelineSection: Identifiable {
     var id: String
-    var title: String
+    var title: String?
     var entries: [HomeTimelineEntry]
 }
 
@@ -46,6 +60,26 @@ private struct HomeTimelineProjection {
     var sections: [HomeTimelineSection] = []
     var entryCount = 0
     var smartFolderCounts: [UUID: Int] = [:]
+}
+
+private extension View {
+    @ViewBuilder
+    func homeNavigationSubtitle(_ subtitle: String?) -> some View {
+        if #available(iOS 26.0, *), let subtitle {
+            navigationSubtitle(subtitle)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func homeTopScrollEdgeEffect() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            self
+        }
+    }
 }
 
 struct LibraryHomeView: View {
@@ -67,50 +101,54 @@ struct LibraryHomeView: View {
     @State private var smartFolderToDelete: SmartFolderDefinition?
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
+    @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
+    @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
+    @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.homeNoteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
+    @AppStorage("mudsnote.ios.homeGroupNotesByDate") private var groupByDate = true
+    @State private var isSelectingNotes = false
+    @State private var selectedHomeEntryIDs = Set<String>()
+    @State private var isShowingAttachments = false
+    @State private var isConfirmingSelectedDeletion = false
     var chooseFolder: () -> Void
+
+    private var viewStyle: NoteViewStyle {
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .gallery
+    }
+
+    private var sortOrder: NoteSortOrder {
+        NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
+    }
+
+    private var sortDirection: NoteSortDirection {
+        NoteSortDirection(rawValue: sortDirectionRawValue) ?? .standard
+    }
 
     var body: some View {
         NavigationStack {
-            GeometryReader { proxy in
-                let directoryWidth = min(proxy.size.width * 0.86, 360)
-                let reveal = directoryReveal(width: directoryWidth)
-
-                ZStack(alignment: .leading) {
-                    homeContent
-                        .allowsHitTesting(reveal == 0)
-
-                    if !isDirectoryPresented {
+            homeContent
+                .allowsHitTesting(directoryReveal(width: directoryPanelWidth) == 0)
+                .background {
+                    GeometryReader { proxy in
                         Color.clear
-                            .frame(width: 32)
-                            .frame(maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                            .highPriorityGesture(directoryDragGesture(width: directoryWidth))
-                            .accessibilityElement()
-                            .accessibilityLabel("Swipe right for folders")
-                            .accessibilityIdentifier("directory-swipe-edge")
+                            .onAppear { updateDirectoryWidth(proxy.size.width) }
+                            .onChange(of: proxy.size.width) { _, width in
+                                updateDirectoryWidth(width)
+                            }
                     }
-
-                    Color.black
-                        .opacity(0.42 * reveal / directoryWidth)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .allowsHitTesting(reveal > 0)
-                        .onTapGesture { closeDirectory() }
-                        .accessibilityElement()
-                        .accessibilityLabel("Close Folders")
-                        .accessibilityIdentifier("directory-backdrop")
-
-                    directoryPanel(width: directoryWidth)
-                        .offset(x: -directoryWidth + reveal)
-                        .gesture(directoryDragGesture(width: directoryWidth))
                 }
+                .overlay(alignment: .leading) {
+                    directoryOverlay(width: directoryPanelWidth)
             }
             .background(NotesCloneColors.background)
-            .toolbarBackground(MudsnoteColors.canvas, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .navigationTitle(isDirectoryPresented ? "Folders" : "Notes")
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .homeNavigationSubtitle(homeNavigationSubtitle)
+            .navigationDestination(isPresented: $isShowingAttachments) {
+                AttachmentLibraryView()
+            }
             .onChange(of: searchQuery) { _, value in
                 if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchSuggestion = nil
@@ -120,6 +158,7 @@ struct LibraryHomeView: View {
                 isSearchFocused = false
                 isDirectoryPresented = false
                 directoryDragOffset = 0
+                finishSelectingHomeNotes()
             }
             .onAppear {
                 refreshHomeTimelineProjection()
@@ -132,6 +171,18 @@ struct LibraryHomeView: View {
                 if requested { presentRequestedSearchIfNeeded() }
             }
             .onChange(of: appModel.libraryRevision) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: viewStyleRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: sortOrderRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: sortDirectionRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: groupByDate) { _, _ in
                 refreshHomeTimelineProjection()
             }
             .task(id: SearchTaskID(
@@ -189,6 +240,28 @@ struct LibraryHomeView: View {
                         .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
                         .accessibilityIdentifier("edit-folders-button")
                     }
+                } else if isSelectingNotes {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
+                            toggleAllHomeEntries()
+                        }
+                        .accessibilityIdentifier("toggle-select-all-home-notes")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { finishSelectingHomeNotes() }
+                            .accessibilityIdentifier("finish-home-note-selection")
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HomeNoteOptionsMenu(
+                            viewStyleRawValue: $viewStyleRawValue,
+                            sortOrderRawValue: $sortOrderRawValue,
+                            sortDirectionRawValue: $sortDirectionRawValue,
+                            groupByDate: $groupByDate,
+                            selectNotes: { isSelectingNotes = true },
+                            viewAttachments: { isShowingAttachments = true }
+                        )
+                    }
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -225,14 +298,32 @@ struct LibraryHomeView: View {
                 Text("Notes stay in their original folders.")
             }
             .toolbar {
-                NotesBottomCommandBar(
-                    searchText: $searchQuery,
-                    searchFocused: $isSearchFocused,
-                    newNote: {
-                        isSearchFocused = false
-                        appModel.createNote()
-                    }
-                )
+                if !isSelectingNotes {
+                    NotesBottomCommandBar(
+                        searchText: $searchQuery,
+                        searchFocused: $isSearchFocused,
+                        newNote: {
+                            isSearchFocused = false
+                            appModel.createNote()
+                        }
+                    )
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isSelectingNotes {
+                    HomeSelectedNotesActionBar(
+                        count: selectedHomeEntryIDs.count,
+                        delete: { isConfirmingSelectedDeletion = true }
+                    )
+                }
+            }
+            .confirmationDialog(
+                "Delete Selected Notes?",
+                isPresented: $isConfirmingSelectedDeletion,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { deleteSelectedHomeEntries() }
             }
         }
         .notesNativeToolbarSearch(
@@ -262,9 +353,11 @@ struct LibraryHomeView: View {
     private var homeCardStream: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
-                NotesListCountLabel(count: homeTimelineProjection.entryCount)
-
-                if homeTimelineProjection.sections.isEmpty {
+                if appModel.isInitialLibraryLoading, homeTimelineProjection.sections.isEmpty {
+                    ProgressView("Loading Notes…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                } else if homeTimelineProjection.sections.isEmpty {
                     ContentUnavailableView(
                         "No Notes",
                         systemImage: "note.text",
@@ -274,7 +367,21 @@ struct LibraryHomeView: View {
                     .padding(.top, 60)
                 } else {
                     ForEach(homeTimelineProjection.sections) { section in
-                        HomeTimelineCardSection(section: section)
+                        if viewStyle == .gallery {
+                            HomeTimelineCardSection(
+                                section: section,
+                                isSelecting: isSelectingNotes,
+                                selectedIDs: selectedHomeEntryIDs,
+                                toggleSelection: toggleHomeSelection
+                            )
+                        } else {
+                            HomeTimelineListSection(
+                                section: section,
+                                isSelecting: isSelectingNotes,
+                                selectedIDs: selectedHomeEntryIDs,
+                                toggleSelection: toggleHomeSelection
+                            )
+                        }
                     }
                 }
             }
@@ -282,37 +389,59 @@ struct LibraryHomeView: View {
             .padding(.top, 8)
             .padding(.bottom, 110)
         }
-        .accessibilityIdentifier("home-note-gallery")
+        .homeTopScrollEdgeEffect()
+        .accessibilityIdentifier(viewStyle == .gallery ? "home-note-gallery" : "home-note-list")
     }
 
     private func makeHomeTimelineProjection() -> HomeTimelineProjection {
-        let entries = (
+        let unsortedEntries = (
             appModel.libraryFiles
                 .filter { $0.relativePath != "Inbox.md" }
                 .map(HomeTimelineEntry.file)
                 + appModel.inboxItems.map(HomeTimelineEntry.memo)
-        ).sorted { lhs, rhs in
-            if lhs.date != rhs.date { return lhs.date > rhs.date }
-            return lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+        )
+        let entries = unsortedEntries.sorted { lhs, rhs in
+            let standard: Bool
+            switch sortOrder {
+            case .modified, .created:
+                if lhs.date != rhs.date {
+                    standard = lhs.date > rhs.date
+                    return sortDirection == .standard ? standard : !standard
+                }
+            case .title:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame {
+                    standard = comparison == .orderedAscending
+                    return sortDirection == .standard ? standard : !standard
+                }
+            }
+            standard = lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+            return sortDirection == .standard ? standard : !standard
         }
 
         var sections: [HomeTimelineSection] = []
-        for entry in entries {
-            let bucket = NoteListPresentation.dateBucket(
-                for: entry.date,
-                now: Date(),
-                calendar: .autoupdatingCurrent
-            )
-            if sections.last?.id == bucket.id {
-                sections[sections.count - 1].entries.append(entry)
-            } else {
-                sections.append(
-                    HomeTimelineSection(
-                        id: bucket.id,
-                        title: bucket.title,
-                        entries: [entry]
-                    )
+        if !groupByDate || sortOrder == .title {
+            if !entries.isEmpty {
+                sections = [HomeTimelineSection(id: "notes", title: nil, entries: entries)]
+            }
+        } else {
+            for entry in entries {
+                let bucket = NoteListPresentation.dateBucket(
+                    for: entry.date,
+                    now: Date(),
+                    calendar: .autoupdatingCurrent
                 )
+                if sections.last?.id == bucket.id {
+                    sections[sections.count - 1].entries.append(entry)
+                } else {
+                    sections.append(
+                        HomeTimelineSection(
+                            id: bucket.id,
+                            title: bucket.title,
+                            entries: [entry]
+                        )
+                    )
+                }
             }
         }
         let smartFolderCounts = Dictionary(uniqueKeysWithValues: appModel.smartFolders.map { definition in
@@ -332,6 +461,101 @@ struct LibraryHomeView: View {
 
     private func refreshHomeTimelineProjection() {
         homeTimelineProjection = makeHomeTimelineProjection()
+    }
+
+    private func updateDirectoryWidth(_ availableWidth: CGFloat) {
+        let width = min(availableWidth * 0.86, 360)
+        guard abs(width - directoryPanelWidth) > 0.5 else { return }
+        directoryPanelWidth = width
+    }
+
+    private func directoryOverlay(width: CGFloat) -> some View {
+        let reveal = directoryReveal(width: width)
+        return ZStack(alignment: .leading) {
+            if !isDirectoryPresented {
+                Color.clear
+                    .frame(width: 32)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(directoryDragGesture(width: width))
+                    .accessibilityElement()
+                    .accessibilityLabel("Swipe right for folders")
+                    .accessibilityIdentifier("directory-swipe-edge")
+            }
+
+            if reveal > 0 {
+                Color.black
+                    .opacity(0.42 * reveal / max(width, 1))
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { closeDirectory() }
+                    .accessibilityElement()
+                    .accessibilityLabel("Close Folders")
+                    .accessibilityIdentifier("directory-backdrop")
+
+                directoryPanel(width: width)
+                    .offset(x: -width + reveal)
+                    .gesture(directoryDragGesture(width: width))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var navigationTitle: String {
+        if isDirectoryPresented { return String(localized: "Folders") }
+        if isSelectingNotes {
+            return String(
+                format: String(localized: "notes.selected.format"),
+                locale: .current,
+                selectedHomeEntryIDs.count
+            )
+        }
+        return String(localized: "Notes")
+    }
+
+    private var homeNavigationSubtitle: String? {
+        guard !isDirectoryPresented, !isSelectingNotes else { return nil }
+        return String(
+            format: String(localized: "notes.count.format"),
+            locale: .current,
+            homeTimelineProjection.entryCount
+        )
+    }
+
+    private var allHomeEntryIDs: Set<String> {
+        Set(homeTimelineProjection.sections.flatMap(\.entries).map(\.id))
+    }
+
+    private var allHomeEntriesSelected: Bool {
+        !allHomeEntryIDs.isEmpty && selectedHomeEntryIDs == allHomeEntryIDs
+    }
+
+    private func toggleHomeSelection(_ entry: HomeTimelineEntry) {
+        if !selectedHomeEntryIDs.insert(entry.id).inserted {
+            selectedHomeEntryIDs.remove(entry.id)
+        }
+    }
+
+    private func toggleAllHomeEntries() {
+        selectedHomeEntryIDs = allHomeEntriesSelected ? [] : allHomeEntryIDs
+    }
+
+    private func finishSelectingHomeNotes() {
+        selectedHomeEntryIDs = []
+        isSelectingNotes = false
+    }
+
+    private func deleteSelectedHomeEntries() {
+        let selected = homeTimelineProjection.sections
+            .flatMap(\.entries)
+            .filter { selectedHomeEntryIDs.contains($0.id) }
+        for entry in selected {
+            switch entry {
+            case .file(let file): appModel.moveToRecentlyDeleted(file)
+            case .memo(let memo): appModel.deleteMemo(memo)
+            }
+        }
+        finishSelectingHomeNotes()
     }
 
     private func directoryPanel(width: CGFloat) -> some View {
@@ -1137,6 +1361,178 @@ private struct NoteListOptionsMenu: View {
         }
         .accessibilityLabel("Sort Notes")
         .accessibilityIdentifier("note-list-options")
+    }
+}
+
+private struct HomeNoteOptionsMenu: View {
+    @Binding var viewStyleRawValue: String
+    @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
+    @Binding var groupByDate: Bool
+    var selectNotes: () -> Void
+    var viewAttachments: () -> Void
+
+    var body: some View {
+        HomeNoteOptionsButton(
+            viewStyleRawValue: $viewStyleRawValue,
+            sortOrderRawValue: $sortOrderRawValue,
+            sortDirectionRawValue: $sortDirectionRawValue,
+            groupByDate: $groupByDate,
+            selectNotes: selectNotes,
+            viewAttachments: viewAttachments
+        )
+        .frame(width: 28, height: 28)
+    }
+}
+
+private struct HomeNoteOptionsButton: UIViewRepresentable {
+    @Binding var viewStyleRawValue: String
+    @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
+    @Binding var groupByDate: Bool
+    var selectNotes: () -> Void
+    var viewAttachments: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(
+            UIImage(
+                systemName: "ellipsis",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+            ),
+            for: .normal
+        )
+        button.tintColor = .label
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityLabel = String(localized: "More")
+        button.accessibilityIdentifier = "home-note-options"
+        button.menu = context.coordinator.makeMenu()
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.parent = self
+        button.menu = context.coordinator.makeMenu()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var parent: HomeNoteOptionsButton
+
+        init(parent: HomeNoteOptionsButton) {
+            self.parent = parent
+        }
+
+        func makeMenu() -> UIMenu {
+            let viewStyle = NoteViewStyle(rawValue: parent.viewStyleRawValue) ?? .gallery
+            let sortOrder = NoteSortOrder(rawValue: parent.sortOrderRawValue) ?? .modified
+            let sortDirection = NoteSortDirection(rawValue: parent.sortDirectionRawValue) ?? .standard
+
+            let viewAction = UIAction(
+                title: String(localized: viewStyle == .gallery ? "View as List" : "View as Cards"),
+                image: UIImage(systemName: viewStyle == .gallery ? "list.bullet" : "square.grid.2x2")
+            ) { [weak self] _ in
+                self?.parent.viewStyleRawValue = viewStyle == .gallery
+                    ? NoteViewStyle.list.rawValue
+                    : NoteViewStyle.gallery.rawValue
+            }
+            let viewGroup = UIMenu(options: .displayInline, children: [viewAction])
+
+            let selectAction = UIAction(
+                title: String(localized: "Select Notes"),
+                image: UIImage(systemName: "checkmark.circle")
+            ) { [weak self] _ in self?.parent.selectNotes() }
+
+            let sortMenu = UIMenu(
+                title: String(localized: "Sort By"),
+                subtitle: sortSummary(sortOrder),
+                image: UIImage(systemName: "arrow.up.arrow.down"),
+                children: [sortOrderMenu(selected: sortOrder), sortDirectionMenu(
+                    selected: sortDirection,
+                    order: sortOrder
+                )]
+            )
+            let groupMenu = UIMenu(
+                title: String(localized: "Group By Date"),
+                subtitle: parent.groupByDate ? String(localized: "On") : String(localized: "Off"),
+                image: UIImage(systemName: "calendar"),
+                children: groupActions(disabled: sortOrder == .title)
+            )
+            let attachmentsAction = UIAction(
+                title: String(localized: "View Attachments"),
+                image: UIImage(systemName: "paperclip")
+            ) { [weak self] _ in self?.parent.viewAttachments() }
+            let commandGroup = UIMenu(
+                options: .displayInline,
+                children: [selectAction, sortMenu, groupMenu, attachmentsAction]
+            )
+            return UIMenu(children: [viewGroup, commandGroup])
+        }
+
+        private func sortOrderMenu(selected: NoteSortOrder) -> UIMenu {
+            let actions = NoteSortOrder.allCases.map { order in
+                UIAction(
+                    title: sortOrderTitle(order),
+                    state: order == selected ? .on : .off
+                ) { [weak self] _ in self?.parent.sortOrderRawValue = order.rawValue }
+            }
+            return UIMenu(options: .displayInline, children: actions)
+        }
+
+        private func sortDirectionMenu(
+            selected: NoteSortDirection,
+            order: NoteSortOrder
+        ) -> UIMenu {
+            let actions = NoteSortDirection.allCases.map { direction in
+                UIAction(
+                    title: sortDirectionTitle(direction, order: order),
+                    state: direction == selected ? .on : .off
+                ) { [weak self] _ in
+                    self?.parent.sortDirectionRawValue = direction.rawValue
+                }
+            }
+            return UIMenu(options: .displayInline, children: actions)
+        }
+
+        private func groupActions(disabled: Bool) -> [UIMenuElement] {
+            [true, false].map { value in
+                UIAction(
+                    title: value ? String(localized: "On") : String(localized: "Off"),
+                    attributes: disabled ? .disabled : [],
+                    state: parent.groupByDate == value ? .on : .off
+                ) { [weak self] _ in self?.parent.groupByDate = value }
+            }
+        }
+
+        private func sortSummary(_ order: NoteSortOrder) -> String {
+            switch order {
+            case .modified: String(localized: "Default (Date Edited)")
+            case .created: String(localized: "Date Created")
+            case .title: String(localized: "Title")
+            }
+        }
+
+        private func sortOrderTitle(_ order: NoteSortOrder) -> String {
+            switch order {
+            case .modified: String(localized: "Date Edited")
+            case .created: String(localized: "Date Created")
+            case .title: String(localized: "Title")
+            }
+        }
+
+        private func sortDirectionTitle(
+            _ direction: NoteSortDirection,
+            order: NoteSortOrder
+        ) -> String {
+            switch (order, direction) {
+            case (.title, .standard): String(localized: "Ascending")
+            case (.title, .reversed): String(localized: "Descending")
+            case (_, .standard): String(localized: "Newest First")
+            case (_, .reversed): String(localized: "Oldest First")
+            }
+        }
     }
 }
 
@@ -2409,6 +2805,9 @@ private struct NoteGallerySection: View {
 
 private struct HomeTimelineCardSection: View {
     var section: HomeTimelineSection
+    var isSelecting: Bool
+    var selectedIDs: Set<String>
+    var toggleSelection: (HomeTimelineEntry) -> Void
 
     private let columns = [
         GridItem(.flexible(), spacing: 12),
@@ -2419,28 +2818,171 @@ private struct HomeTimelineCardSection: View {
         Section {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                 ForEach(section.entries) { entry in
-                    switch entry {
-                    case .file(let file):
-                        NoteGalleryFileButton(file: file, dateBasis: .modified)
-                    case .memo(let memo):
-                        HomeMemoCardButton(memo: memo)
-                    }
+                    HomeTimelineGalleryEntryButton(
+                        entry: entry,
+                        isSelecting: isSelecting,
+                        isSelected: selectedIDs.contains(entry.id),
+                        toggleSelection: { toggleSelection(entry) }
+                    )
                 }
             }
         } header: {
-            HStack(spacing: 0) {
-                Text(section.title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(MudsnoteColors.text)
+            if let title = section.title {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
+                }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MudsnoteColors.canvas)
+                    .padding(.horizontal, -16)
+                    .accessibilityIdentifier("home-section-header-\(section.id)")
             }
+        }
+    }
+}
+
+private struct HomeTimelineListSection: View {
+    var section: HomeTimelineSection
+    var isSelecting: Bool
+    var selectedIDs: Set<String>
+    var toggleSelection: (HomeTimelineEntry) -> Void
+
+    var body: some View {
+        Section {
+            VStack(spacing: 0) {
+                ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
+                    HomeTimelineListEntryButton(
+                        entry: entry,
+                        isSelecting: isSelecting,
+                        isSelected: selectedIDs.contains(entry.id),
+                        toggleSelection: { toggleSelection(entry) }
+                    )
+                    if index < section.entries.count - 1 {
+                        Divider().padding(.leading, 14)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+        } header: {
+            if let title = section.title {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
+                    Spacer(minLength: 0)
+                }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(MudsnoteColors.canvas)
                 .padding(.horizontal, -16)
                 .accessibilityIdentifier("home-section-header-\(section.id)")
+            }
+        }
+    }
+}
+
+private struct HomeTimelineGalleryEntryButton: View {
+    var entry: HomeTimelineEntry
+    var isSelecting: Bool
+    var isSelected: Bool
+    var toggleSelection: () -> Void
+
+    var body: some View {
+        if isSelecting {
+            Button(action: toggleSelection) {
+                galleryContent
+                    .overlay(alignment: .topTrailing) {
+                        selectionIndicator.padding(9)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("selectable-home-note-\(entry.id)")
+        } else {
+            switch entry {
+            case .file(let file):
+                NoteGalleryFileButton(file: file, dateBasis: .modified)
+            case .memo(let memo):
+                HomeMemoCardButton(memo: memo)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var galleryContent: some View {
+        switch entry {
+        case .file(let file):
+            NoteGalleryCard(file: file, dateBasis: .modified)
+        case .memo(let memo):
+            HomeMemoCard(memo: memo)
+        }
+    }
+
+    private var selectionIndicator: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
+    }
+}
+
+private struct HomeTimelineListEntryButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var entry: HomeTimelineEntry
+    var isSelecting: Bool
+    var isSelected: Bool
+    var toggleSelection: () -> Void
+
+    var body: some View {
+        Button {
+            if isSelecting {
+                toggleSelection()
+            } else {
+                openEntry()
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(
+                            isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                        )
+                        .padding(.top, 12)
+                }
+                listContent
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(
+            isSelecting ? "selectable-home-note-\(entry.id)" : "home-list-note-\(entry.id)"
+        )
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        switch entry {
+        case .file(let file):
+            RecentFileRow(file: file, dateBasis: .modified)
+        case .memo(let memo):
+            HomeMemoListRow(memo: memo)
+        }
+    }
+
+    private func openEntry() {
+        switch entry {
+        case .file(let file): appModel.openFile(file)
+        case .memo(let memo): appModel.selectedMemo = memo
         }
     }
 }
@@ -2449,76 +2991,11 @@ private struct HomeMemoCardButton: View {
     @EnvironmentObject private var appModel: AppModel
     var memo: MemoBlock
 
-    private var contentLines: [String] {
-        memo.body
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
-    private var title: String {
-        guard let first = contentLines.first else {
-            return String(localized: "Untitled memo")
-        }
-        return first.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
-    }
-
-    private var preview: String {
-        contentLines.dropFirst().joined(separator: " ")
-    }
-
-    private var dateText: String {
-        let components = memo.dateText.split(separator: " ")
-        return components.last.map(String.init) ?? memo.dateText
-    }
-
     var body: some View {
         Button {
             appModel.selectedMemo = memo
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(title)
-                        .font(.system(.body, design: .rounded, weight: .bold))
-                        .foregroundStyle(MudsnoteColors.text)
-                        .lineLimit(2)
-
-                    Text(preview.isEmpty ? String(localized: "No additional text") : preview)
-                        .font(.subheadline)
-                        .foregroundStyle(MudsnoteColors.muted)
-                        .lineLimit(5)
-
-                    Spacer(minLength: 0)
-
-                    HStack(spacing: 5) {
-                        Image(systemName: "tray")
-                        Text("000-inbox")
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        if memo.hasUncheckedChecklist {
-                            Image(systemName: "checklist")
-                        }
-                        if memo.hasAttachments {
-                            Image(systemName: "paperclip")
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(MudsnoteColors.muted)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-                .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(MudsnoteColors.line, lineWidth: 1)
-                }
-
-                Text(dateText)
-                    .font(.caption)
-                    .foregroundStyle(MudsnoteColors.muted)
-                    .padding(.horizontal, 2)
-            }
-            .contentShape(Rectangle())
+            HomeMemoCard(memo: memo)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("home-memo-card-\(memo.id)")
@@ -2538,6 +3015,119 @@ private struct HomeMemoCardButton: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+    }
+}
+
+private struct HomeMemoCard: View {
+    var memo: MemoBlock
+
+    private var contentLines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var title: String {
+        contentLines.first?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+            ?? String(localized: "Untitled memo")
+    }
+
+    private var preview: String { contentLines.dropFirst().joined(separator: " ") }
+    private var dateText: String {
+        memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(2)
+                Text(preview.isEmpty ? String(localized: "No additional text") : preview)
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(5)
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    Image(systemName: "tray")
+                    Text("000-inbox").lineLimit(1)
+                    Spacer(minLength: 0)
+                    if memo.hasUncheckedChecklist { Image(systemName: "checklist") }
+                    if memo.hasAttachments { Image(systemName: "paperclip") }
+                }
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14).stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+            Text(dateText)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .padding(.horizontal, 2)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct HomeMemoListRow: View {
+    var memo: MemoBlock
+
+    private var lines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        NotesListRowContent(
+            title: lines.first?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+                ?? String(localized: "Untitled memo"),
+            dateText: memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText,
+            preview: lines.dropFirst().joined(separator: " "),
+            folderName: "000-inbox",
+            hasAttachments: memo.hasAttachments,
+            hasUncheckedChecklist: memo.hasUncheckedChecklist
+        )
+    }
+}
+
+private struct HomeSelectedNotesActionBar: View {
+    var count: Int
+    var delete: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(
+                String(
+                    format: String(localized: "notes.selected.format"),
+                    locale: .current,
+                    count
+                )
+            )
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(MudsnoteColors.muted)
+            Spacer(minLength: 0)
+            Button(role: .destructive, action: delete) {
+                Image(systemName: "trash").frame(width: 44, height: 44)
+            }
+            .disabled(count == 0)
+            .accessibilityLabel("Delete Selected Notes")
+            .accessibilityIdentifier("delete-selected-home-notes")
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 58)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1)
         }
     }
 }

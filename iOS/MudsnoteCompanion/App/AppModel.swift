@@ -60,6 +60,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var captureSubmissionIssue: String?
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
+    @Published private(set) var isInitialLibraryLoading = true
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -147,10 +148,12 @@ final class AppModel: ObservableObject {
             if let root = try folderAccess.resolvePersistedFolder() {
                 _ = try await configureFolder(root, configurationID: configurationID)
             } else if libraryConfigurationID == configurationID {
+                isInitialLibraryLoading = false
                 folderStatus = .missing
             }
         } catch {
             guard libraryConfigurationID == configurationID else { return }
+            isInitialLibraryLoading = false
             folderStatus = .error(error.localizedDescription)
             statusToast = .error(String(localized: "Folder access failed"))
         }
@@ -171,6 +174,7 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 guard libraryConfigurationID == configurationID else { return }
+                isInitialLibraryLoading = false
                 folderStatus = .error(error.localizedDescription)
                 statusToast = .error(String(localized: "Could not prepare folder"))
             }
@@ -180,6 +184,7 @@ final class AppModel: ObservableObject {
     func forgetFolderAndChooseAgain() {
         libraryConfigurationID = UUID()
         folderAccess.forgetPersistedFolder()
+        isInitialLibraryLoading = false
         folderStatus = .missing
         inboxItems = []
         libraryFiles = []
@@ -1778,6 +1783,7 @@ final class AppModel: ObservableObject {
         let configurationID = UUID()
         libraryConfigurationID = configurationID
         folderStatus = .loading
+        isInitialLibraryLoading = true
         searchGeneration += 1
         activeSearchQuery = ""
         activeSearchScope = .all
@@ -1815,12 +1821,16 @@ final class AppModel: ObservableObject {
             replayFailed = true
         }
         guard libraryConfigurationID == configurationID else { return false }
+        queue = nextQueue
+        // The full Markdown inventory can be large. Reveal the navigation shell
+        // as soon as folder access and pending-write recovery are safe, then fill
+        // the timeline when the actor finishes scanning the library.
+        folderStatus = .ready(root)
         let snapshot = try await fileStore.loadLibrarySnapshot()
         let pendingCount = await nextQueue.pendingCount()
         guard libraryConfigurationID == configurationID else { return false }
-        queue = nextQueue
         apply(snapshot, pendingCount: pendingCount)
-        folderStatus = .ready(root)
+        isInitialLibraryLoading = false
         libraryRevision += 1
         announceRecoveredDraftIfPossible()
         if replayFailed {

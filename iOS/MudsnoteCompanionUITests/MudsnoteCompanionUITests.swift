@@ -1837,6 +1837,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
         XCTAssertFalse(app.buttons["directory-button"].exists)
+        let options = app.buttons["home-note-options"]
+        XCTAssertTrue(options.exists)
+        let nativeTitle = app.navigationBars["Notes"].staticTexts["Notes"].firstMatch
+        XCTAssertTrue(nativeTitle.waitForExistence(timeout: 3))
+        let largeTitleHeight = nativeTitle.frame.height
 
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
@@ -1845,9 +1850,57 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
+        options.tap()
+        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Select Notes"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Sort By"))
+                .firstMatch.exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Group By Date"))
+                .firstMatch.exists
+        )
+        XCTAssertTrue(app.buttons["View Attachments"].exists)
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "Home Notes-style more menu"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+
+        app.buttons["View Attachments"].tap()
+        XCTAssertTrue(app.navigationBars["Attachments"].waitForExistence(timeout: 5))
+        app.navigationBars["Attachments"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5))
+
+        options.tap()
+        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        app.buttons["View as List"].tap()
+
+        let list = app.scrollViews["home-note-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let listFirst = app.buttons["home-list-note-file:Projects/UI Lifecycle.md"]
+        XCTAssertTrue(listFirst.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(listFirst.frame.width, app.frame.width * 0.78)
+        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
+        listScreenshot.name = "Home single-column detailed list"
+        listScreenshot.lifetime = .keepAlways
+        add(listScreenshot)
+
+        options.tap()
+        XCTAssertTrue(app.buttons["View as Cards"].waitForExistence(timeout: 3))
+        app.buttons["View as Cards"].tap()
+        XCTAssertTrue(app.scrollViews["home-note-gallery"].waitForExistence(timeout: 5))
+
         let gallery = app.scrollViews["home-note-gallery"]
         gallery.swipeUp()
         XCTAssertTrue(app.staticTexts["Today"].exists)
+        XCTAssertLessThan(
+            nativeTitle.frame.height,
+            largeTitleHeight - 4,
+            "The system navigation bar should collapse its large title while scrolling"
+        )
         let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
         scrolledScreenshot.name = "Home cards under opaque pinned date header"
         scrolledScreenshot.lifetime = .keepAlways

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 191. Faster iOS shell and native Notes home controls
+- Problem: Cold launch held the entire interface behind a progress screen until every Markdown file was indexed, the home timeline did not expose the Notes-style view controls, and its drawer's always-mounted scroll view prevented the system navigation bar from collapsing the large title like Apple Notes.
+- Fix: Folder access and pending-write recovery now reveal the home shell before the library actor completes its full scan, App Shortcut metadata refresh is deferred beyond the first visible frame, and the timeline displays an in-place loading state. The closed drawer no longer contributes a competing scroll view, so iOS 26 owns the large-title and note-count transition through `navigationSubtitle` plus the native hard scroll-edge effect. The home also persists card/list mode and uses a system `UIMenu` with selection, sort and group subtitles, date grouping, and the attachment destination.
+- Lesson: Perceived launch performance comes from separating safe navigation readiness from expensive indexing, and navigation chrome stays most faithful when the system sees one unambiguous primary scroll view instead of a parallel offscreen scroller.
+
 ### 190. Concise iOS delete wording
 - Problem: Destructive menus and confirmations described ordinary deletion as "Move to Recently Deleted," exposing storage mechanics instead of the user action.
 - Fix: Note, multi-note, folder-note, and conflict-copy actions now use Delete wording throughout menus, confirmations, errors, and success feedback while retaining the recoverable Recently Deleted behavior.
