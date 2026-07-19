@@ -1,5 +1,12 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (230)
+
+- macOS editor right-click menus contain only native Translate plus Cut, Copy, and Paste; formatting, link, attachment, table, AI, and other actions are not appended there.
+- Right-clicking the trailing blank area of a non-final text line preserves the existing insertion/selection range instead of letting `NSTextView` select the nearest line text.
+- Mouse-selected library text immediately opens a separate icon-backed shortcut menu with Bold, Italic, Underline, Strikethrough, portable yellow Highlight, and a Convert To submenu for body, heading levels, bullet, numbered, and checklist paragraphs; these commands are not added to the right-click menu.
+- Library search-highlight refreshes are coalesced into one text-storage editing transaction, and document highlights are restored after transient search highlights are removed.
+
 ## Latest iteration (225)
 
 - macOS and iPhone app icons share an original Notes-like black-header note motif with warm white paper and gray rules.

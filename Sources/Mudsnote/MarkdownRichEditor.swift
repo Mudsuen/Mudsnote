@@ -18,6 +18,7 @@ extension NSAttributedString.Key {
     static let qmTablePlaceholder = NSAttributedString.Key("MudsnoteTablePlaceholder")
     static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
+    static let qmHighlight = NSAttributedString.Key("MudsnoteHighlight")
 }
 
 final class MarkdownAttachmentReference: NSObject {
@@ -205,10 +206,26 @@ extension MarkdownTextViewCommands {
     }
 }
 
-final class MarkdownTextView: NSTextView {
+private final class ConciseEditorContextMenu: NSMenu {
+    var isSealed = false
+
+    override func addItem(_ newItem: NSMenuItem) {
+        guard !isSealed || newItem.identifier?.rawValue == "mudsnote.editor.context-menu.allowed" else { return }
+        super.addItem(newItem)
+    }
+
+    override func insertItem(_ newItem: NSMenuItem, at index: Int) {
+        guard !isSealed || newItem.identifier?.rawValue == "mudsnote.editor.context-menu.allowed" else { return }
+        super.insertItem(newItem, at: index)
+    }
+}
+
+final class MarkdownTextView: NSTextView, NSMenuDelegate {
+    private static let allowedContextMenuItemIdentifier = NSUserInterfaceItemIdentifier("mudsnote.editor.context-menu.allowed")
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
+    var selectionMenuProvider: (() -> NSMenu?)?
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -342,8 +359,81 @@ final class MarkdownTextView: NSTextView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = super.menu(for: event) ?? NSMenu()
+        let selectionBeforeContextClick = selectedRange()
+        let clickedTrailingWhitespace = isEventInTrailingLineWhitespace(event)
+        let nativeMenu = super.menu(for: event) ?? NSMenu()
+        if clickedTrailingWhitespace {
+            setSelectedRange(selectionBeforeContextClick)
+        }
+
+        let menu = conciseEditingMenu(from: nativeMenu)
         configureContextMenu?(menu, event)
+        sealContextMenu(menu)
+        menu.delegate = self
+        return menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        for item in menu.items.reversed()
+        where item.identifier != Self.allowedContextMenuItemIdentifier {
+            menu.removeItem(item)
+        }
+    }
+
+    func markCurrentContextMenuItemsAsAllowed(in menu: NSMenu) {
+        menu.items.forEach { $0.identifier = Self.allowedContextMenuItemIdentifier }
+    }
+
+    func sealContextMenu(_ menu: NSMenu) {
+        markCurrentContextMenuItemsAsAllowed(in: menu)
+        (menu as? ConciseEditorContextMenu)?.isSealed = true
+    }
+
+    func isEventInTrailingLineWhitespace(_ event: NSEvent) -> Bool {
+        guard let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 else {
+            return true
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        guard containerPoint.x >= 0, containerPoint.y >= 0 else { return false }
+
+        let glyphIndex = min(
+            layoutManager.glyphIndex(for: containerPoint, in: textContainer),
+            layoutManager.numberOfGlyphs - 1
+        )
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        guard lineRect.contains(NSPoint(x: lineRect.midX, y: containerPoint.y)) else { return true }
+
+        let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        return containerPoint.x > usedRect.maxX + 1
+    }
+
+    func conciseEditingMenu(from nativeMenu: NSMenu) -> NSMenu {
+        let menu = ConciseEditorContextMenu()
+        menu.allowsContextMenuPlugIns = false
+        if let translationItem = nativeMenu.items.first(where: {
+            let title = $0.title.lowercased()
+            return title.hasPrefix("translate") || title.hasPrefix("翻译")
+        }), let copiedItem = translationItem.copy() as? NSMenuItem {
+            copiedItem.title = "翻译"
+            menu.addItem(copiedItem)
+            menu.addItem(.separator())
+        }
+
+        let commands: [(String, Selector, String)] = [
+            ("剪切", #selector(NSText.cut(_:)), "x"),
+            ("拷贝", #selector(NSText.copy(_:)), "c"),
+            ("粘贴", #selector(NSText.paste(_:)), "v")
+        ]
+        for (title, action, keyEquivalent) in commands {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+            item.keyEquivalentModifierMask = [.command]
+            menu.addItem(item)
+        }
         return menu
     }
 
@@ -380,10 +470,27 @@ final class MarkdownTextView: NSTextView {
         }
 
         super.mouseDown(with: event)
+        showSelectionMenuIfNeeded()
     }
 
     override func mouseDragged(with event: NSEvent) {
         super.mouseDragged(with: event)
+    }
+
+    func showSelectionMenuIfNeeded() {
+        let selection = selectedRange()
+        guard selection.length > 0,
+              let menu = selectionMenuProvider?(),
+              !menu.items.isEmpty,
+              let layoutManager,
+              let textContainer else { return }
+
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+        var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        selectionRect.origin.x += textContainerInset.width
+        selectionRect.origin.y += textContainerInset.height
+        let anchor = NSPoint(x: selectionRect.midX, y: selectionRect.maxY + 4)
+        menu.popUp(positioning: nil, at: anchor, in: self)
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
@@ -417,7 +524,7 @@ final class MarkdownTextView: NSTextView {
     }
 
     func characterIndex(at event: NSEvent) -> Int? {
-        guard let layoutManager, let textContainer else { return nil }
+        guard !isEventInTrailingLineWhitespace(event), let layoutManager, let textContainer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         let containerPoint = NSPoint(
             x: point.x - textContainerInset.width,
@@ -1313,6 +1420,10 @@ enum MarkdownRichTextCodec {
             }
         }
 
+        if (attributes[.qmHighlight] as? Bool) == true {
+            wrapped = "<mark>\(wrapped)</mark>"
+        }
+
         return wrapped
     }
 
@@ -1467,6 +1578,27 @@ enum MarkdownRichTextCodec {
                 let contentStart = source.index(index, offsetBy: 3)
                 let content = String(source[contentStart..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue]))
+                index = end.upperBound
+                continue
+            }
+
+            if source[index...].hasPrefix("<mark>"),
+               let end = source[index...].range(of: "</mark>") {
+                let contentStart = source.index(index, offsetBy: 6)
+                let content = String(source[contentStart..<end.lowerBound])
+                let highlighted = parseInlineMarkdown(
+                    content,
+                    paragraphKind: paragraphKind,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+                if highlighted.length > 0 {
+                    highlighted.addAttributes([
+                        .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38),
+                        .qmHighlight: true
+                    ], range: NSRange(location: 0, length: highlighted.length))
+                }
+                output.append(highlighted)
                 index = end.upperBound
                 continue
             }

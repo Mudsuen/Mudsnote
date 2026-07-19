@@ -26,7 +26,6 @@ Markdown interoperability.
 AI is disabled by default and is designed as an explicit Markdown command layer,
 not a chat workspace. When enabled, Mudsnote can use a local Ollama provider for:
 
-- right-click AI actions in the editor
 - `/summarize`, `/fix`, and `/todos` slash commands
 - preview-before-apply insertion, replacement, or copy behavior
 

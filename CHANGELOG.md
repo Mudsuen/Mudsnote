@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 173. Focused macOS editor context menus and stable editing paint
+- Problem: Right-clicking blank space after text on a non-final line could highlight the whole line, the native text menu was crowded with unrelated system commands, selected text lacked direct everyday formatting and paragraph conversion actions, and active-search editing could visibly flash while highlights were removed and reapplied.
+- Fix: Added trailing-line whitespace hit testing that preserves the current selection and reduced the right-click menu to Translate, Cut, Copy, and Paste. Mouse selection now opens a separate icon-backed shortcut menu for bold, italic, underline, strikethrough, portable yellow highlight, and conversion to body/headings/lists/checklists. Search-highlight updates run as one text-storage transaction and preserve document highlights.
+- Lesson: Rich-editor context menus should distinguish text hits from nearby layout whitespace, while transient presentation attributes must be updated atomically and kept separate from persisted document formatting.
+
 ### 172. Unified black Notes-style app icons
 - Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
 - Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.

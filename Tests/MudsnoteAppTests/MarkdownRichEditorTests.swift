@@ -652,6 +652,71 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecRoundTripsPortableHighlightedFormatting() throws {
+        let markdown = "Keep <mark>**important**</mark> text"
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let importantRange = (rendered.string as NSString).range(of: "important")
+
+        #expect((rendered.attribute(.qmHighlight, at: importantRange.location, effectiveRange: nil) as? Bool) == true)
+        #expect(rendered.attribute(.backgroundColor, at: importantRange.location, effectiveRange: nil) as? NSColor != nil)
+        let font = try #require(rendered.attribute(.font, at: importantRange.location, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @Test
+    func editorContextMenuKeepsOnlyConciseNativeEditingCommands() {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        let nativeMenu = NSMenu()
+        nativeMenu.addItem(NSMenuItem(title: "查询", action: Selector(("lookUp:")), keyEquivalent: ""))
+        nativeMenu.addItem(NSMenuItem(title: "翻译“文字”", action: Selector(("translate:")), keyEquivalent: ""))
+        nativeMenu.addItem(.separator())
+        nativeMenu.addItem(NSMenuItem(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        nativeMenu.addItem(NSMenuItem(title: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        nativeMenu.addItem(NSMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        nativeMenu.addItem(NSMenuItem(title: "粘贴并匹配样式", action: nil, keyEquivalent: ""))
+
+        let conciseMenu = textView.conciseEditingMenu(from: nativeMenu)
+        #expect(!conciseMenu.allowsContextMenuPlugIns)
+        #expect(conciseMenu.items.map(\.title) == ["翻译", "", "剪切", "拷贝", "粘贴"])
+
+        textView.sealContextMenu(conciseMenu)
+        conciseMenu.addItem(NSMenuItem(title: "自动填充", action: nil, keyEquivalent: ""))
+        conciseMenu.addItem(NSMenuItem(title: "服务", action: nil, keyEquivalent: ""))
+        #expect(conciseMenu.items.map(\.title) == ["翻译", "", "剪切", "拷贝", "粘贴"])
+    }
+
+    @Test
+    func editorTrailingWhitespaceContextClickPreservesSelection() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 160),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 160))
+        textView.string = "First line\nSecond line"
+        window.contentView = textView
+        textView.layoutManager?.ensureLayout(for: try #require(textView.textContainer))
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 300, y: 150),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        #expect(textView.isEventInTrailingLineWhitespace(event))
+        _ = textView.menu(for: event)
+        #expect(textView.selectedRange() == NSRange(location: 0, length: 0))
+    }
+
+    @Test
     func richCodecKeepsEmptyBacktickPairVisibleWhileTyping() {
         let rendered = MarkdownRichTextCodec.renderLine("``", theme: theme)
 
@@ -3297,6 +3362,28 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
+        let selectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
+        #expect(selectionMenu.items.map(\.title) == [
+            "加粗", "斜体", "下划线", "删除线", "颜色", "转换为"
+        ])
+        #expect(selectionMenu.items.allSatisfy { $0.image != nil })
+        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.map(\.title) == ["黄色高亮", "无颜色"])
+        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.allSatisfy { $0.image != nil } == true)
+        #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == [
+            "正文", "标题", "副标题", "小标题", "项目符号列表", "编号列表", "待办列表"
+        ])
+        #expect(selectionMenu.items.last?.submenu?.items.allSatisfy { $0.image != nil } == true)
+        let highlightItem = try #require(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.first { $0.title == "黄色高亮" })
+        #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        let highlightedSelectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
+        let highlightedColorMenu = try #require(highlightedSelectionMenu.items.first { $0.title == "颜色" }?.submenu)
+        let activeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "黄色高亮" })
+        #expect(activeHighlightItem.state == .on)
+        let removeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "无颜色" })
+        #expect(NSApp.sendAction(try #require(removeHighlightItem.action), to: removeHighlightItem.target, from: removeHighlightItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+
         controller.markdownTextViewToggleBold(controller.editorTextView)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
 

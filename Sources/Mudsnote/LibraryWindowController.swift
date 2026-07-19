@@ -898,6 +898,8 @@ private enum LibraryFormatCommand: Int {
     case checklist
     case bullet
     case ordered
+    case highlight
+    case removeHighlight
 
     var paragraphKind: MarkdownParagraphKind? {
         switch self {
@@ -908,7 +910,7 @@ private enum LibraryFormatCommand: Int {
         case .checklist: return .checklist(checked: false)
         case .bullet: return .bullet
         case .ordered: return .ordered(index: 1)
-        case .bold, .italic, .underline, .strikethrough: return nil
+        case .bold, .italic, .underline, .strikethrough, .highlight, .removeHighlight: return nil
         }
     }
 }
@@ -3078,16 +3080,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
-        editorTextView.configureContextMenu = { [weak self] menu, event in
-            if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
-                self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
-            }
-            if let link = self?.editorTextView.linkReference(at: event) {
-                self?.configureLinkContextMenuForLibrary(menu, for: link)
-            }
-            if let characterIndex = self?.editorTextView.characterIndex(at: event) {
-                self?.configureMarkdownTableContextMenuForLibrary(menu, atCharacterIndex: characterIndex)
-            }
+        editorTextView.configureContextMenu = nil
+        editorTextView.selectionMenuProvider = { [weak self] in
+            self?.makeSelectionFormattingMenuForLibrary()
         }
         editorTextView.isRichText = true
         editorTextView.importsGraphics = false
@@ -6119,8 +6114,27 @@ final class LibraryWindowController: NSWindowController,
             }
         }
         for range in highlightedRanges {
-            storage.removeAttribute(.backgroundColor, range: range)
             storage.removeAttribute(.qmSearchHighlight, range: range)
+            var location = range.location
+            while location < NSMaxRange(range) {
+                var effectiveRange = NSRange(location: 0, length: 0)
+                let isDocumentHighlight = (storage.attribute(
+                    .qmHighlight,
+                    at: location,
+                    effectiveRange: &effectiveRange
+                ) as? Bool) == true
+                let clippedRange = NSIntersectionRange(range, effectiveRange)
+                if isDocumentHighlight {
+                    storage.addAttribute(
+                        .backgroundColor,
+                        value: NSColor.systemYellow.withAlphaComponent(0.38),
+                        range: clippedRange
+                    )
+                } else {
+                    storage.removeAttribute(.backgroundColor, range: clippedRange)
+                }
+                location = NSMaxRange(clippedRange)
+            }
         }
     }
 
@@ -8038,6 +8052,72 @@ final class LibraryWindowController: NSWindowController,
         return menu
     }
 
+    func makeSelectionFormattingMenuForLibrary() -> NSMenu? {
+        guard canEditCurrentDocument, editorTextView.selectedRange().length > 0 else { return nil }
+
+        let menu = NSMenu(title: "快捷格式")
+        let inlineCommands: [(String, String, LibraryFormatCommand)] = [
+            ("加粗", "bold", .bold),
+            ("斜体", "italic", .italic),
+            ("下划线", "underline", .underline),
+            ("删除线", "strikethrough", .strikethrough)
+        ]
+        for (title, symbolName, command) in inlineCommands {
+            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = command.rawValue
+            item.state = isFormatCommandActive(command) ? .on : .off
+            item.image = selectionMenuImage(symbolName: symbolName, title: title)
+            menu.addItem(item)
+        }
+
+        let colorItem = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
+        colorItem.image = selectionMenuImage(symbolName: "paintpalette", title: "颜色")
+        let colorMenu = NSMenu(title: "颜色")
+        for (title, symbolName, command) in [
+            ("黄色高亮", "highlighter", LibraryFormatCommand.highlight),
+            ("无颜色", "circle.slash", .removeHighlight)
+        ] {
+            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = command.rawValue
+            item.state = isFormatCommandActive(command) ? .on : .off
+            item.image = selectionMenuImage(symbolName: symbolName, title: title)
+            colorMenu.addItem(item)
+        }
+        colorItem.submenu = colorMenu
+        menu.addItem(colorItem)
+
+        let conversionItem = NSMenuItem(title: "转换为", action: nil, keyEquivalent: "")
+        conversionItem.image = selectionMenuImage(symbolName: "textformat", title: "转换为")
+        let conversionMenu = NSMenu(title: "转换为")
+        let conversionCommands: [(String, String, LibraryFormatCommand)] = [
+            ("正文", "textformat", .paragraph),
+            ("标题", "textformat.size.larger", .heading1),
+            ("副标题", "textformat.size", .heading2),
+            ("小标题", "textformat.size.smaller", .heading3),
+            ("项目符号列表", "list.bullet", .bullet),
+            ("编号列表", "list.number", .ordered),
+            ("待办列表", "checkmark.square", .checklist)
+        ]
+        for (title, symbolName, command) in conversionCommands {
+            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = command.rawValue
+            item.state = isFormatCommandActive(command) ? .on : .off
+            item.image = selectionMenuImage(symbolName: symbolName, title: title)
+            conversionMenu.addItem(item)
+        }
+        conversionItem.submenu = conversionMenu
+        menu.addItem(conversionItem)
+        return menu
+    }
+
+    private func selectionMenuImage(symbolName: String, title: String) -> NSImage? {
+        NSImage(systemSymbolName: symbolName, accessibilityDescription: title)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+    }
+
     private func isFormatCommandActive(_ command: LibraryFormatCommand) -> Bool {
         if let targetKind = command.paragraphKind,
            let storage = editorTextView.textStorage {
@@ -8065,6 +8145,10 @@ final class LibraryWindowController: NSWindowController,
             return (attributes[.underlineStyle] as? Int) == NSUnderlineStyle.single.rawValue
         case .strikethrough:
             return (attributes[.strikethroughStyle] as? Int) == NSUnderlineStyle.single.rawValue
+        case .highlight:
+            return (attributes[.qmHighlight] as? Bool) == true
+        case .removeHighlight:
+            return (attributes[.qmHighlight] as? Bool) != true
         default:
             return false
         }
@@ -8322,15 +8406,29 @@ final class LibraryWindowController: NSWindowController,
     private func libraryUserDidEdit() {
         guard !suppressEditorChanges else { return }
         let activeSearchQuery = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        removeEditorSearchHighlights()
+        let shouldRefreshSearchHighlights = !activeSearchQuery.isEmpty
+        if !shouldRefreshSearchHighlights {
+            removeEditorSearchHighlights()
+        }
         if !normalizeCurrentLineAfterListPrefixEdit() {
             interpretTypedMarkdownIfNeeded()
         }
         updateTypingAttributesFromInsertionPoint()
         markDirty()
-        if !activeSearchQuery.isEmpty {
-            applyEditorSearchHighlights(query: activeSearchQuery)
+        if shouldRefreshSearchHighlights {
+            refreshEditorSearchHighlightsAtomically(query: activeSearchQuery)
         }
+    }
+
+    private func refreshEditorSearchHighlightsAtomically(query: String) {
+        guard let storage = editorTextView.textStorage else { return }
+        let wasSuppressingEditorChanges = suppressEditorChanges
+        suppressEditorChanges = true
+        storage.beginEditing()
+        removeEditorSearchHighlights()
+        applyEditorSearchHighlights(query: query)
+        storage.endEditing()
+        suppressEditorChanges = wasSuppressingEditorChanges
     }
 
     private func interpretTypedMarkdownIfNeeded() {
@@ -8633,9 +8731,54 @@ final class LibraryWindowController: NSWindowController,
             toggleIntAttribute(.underlineStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "下划线")
         case .strikethrough:
             toggleIntAttribute(.strikethroughStyle, enabledValue: NSUnderlineStyle.single.rawValue, actionName: "删除线")
+        case .highlight:
+            setHighlightForLibrary(enabled: true)
+        case .removeHighlight:
+            setHighlightForLibrary(enabled: false)
         case .heading1, .heading2, .heading3, .paragraph, .checklist, .bullet, .ordered:
             break
         }
+    }
+
+    private func setHighlightForLibrary(enabled: Bool) {
+        guard selectedScope != .trash,
+              let storage = editorTextView.textStorage,
+              editorTextView.selectedRange().length > 0 else { return }
+        let selection = editorTextView.selectedRange()
+        suppressEditorChanges = true
+        storage.beginEditing()
+        if enabled {
+            storage.addAttributes([
+                .qmHighlight: true,
+                .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38)
+            ], range: selection)
+        } else {
+            storage.removeAttribute(.qmHighlight, range: selection)
+            var location = selection.location
+            while location < NSMaxRange(selection) {
+                var effectiveRange = NSRange(location: 0, length: 0)
+                let isSearchHighlight = storage.attribute(
+                    .qmSearchHighlight,
+                    at: location,
+                    effectiveRange: &effectiveRange
+                ) != nil
+                let clippedRange = NSIntersectionRange(selection, effectiveRange)
+                if isSearchHighlight {
+                    storage.addAttribute(
+                        .backgroundColor,
+                        value: NSColor.systemYellow.withAlphaComponent(0.30),
+                        range: clippedRange
+                    )
+                } else {
+                    storage.removeAttribute(.backgroundColor, range: clippedRange)
+                }
+                location = NSMaxRange(clippedRange)
+            }
+        }
+        storage.endEditing()
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(selection)
+        markDirty()
     }
 
     private func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
