@@ -678,12 +678,15 @@ struct MarkdownRichEditorTests {
 
         let conciseMenu = textView.conciseEditingMenu(from: nativeMenu)
         #expect(!conciseMenu.allowsContextMenuPlugIns)
-        #expect(conciseMenu.items.map(\.title) == ["翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.first?.keyEquivalent == "z")
+        #expect(conciseMenu.items.first?.keyEquivalentModifierMask == [.command])
+        #expect(conciseMenu.items.first?.image != nil)
 
         textView.sealContextMenu(conciseMenu)
         conciseMenu.addItem(NSMenuItem(title: "自动填充", action: nil, keyEquivalent: ""))
         conciseMenu.addItem(NSMenuItem(title: "服务", action: nil, keyEquivalent: ""))
-        #expect(conciseMenu.items.map(\.title) == ["翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
     }
 
     @Test

@@ -432,6 +432,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func conciseEditingMenu(from nativeMenu: NSMenu) -> NSMenu {
         let menu = ConciseEditorContextMenu()
         menu.allowsContextMenuPlugIns = false
+        let undoItem = NSMenuItem(title: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        undoItem.keyEquivalentModifierMask = [.command]
+        undoItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
+        menu.addItem(undoItem)
+        menu.addItem(.separator())
         if let translationItem = nativeMenu.items.first(where: {
             let title = $0.title.lowercased()
             return title.hasPrefix("translate") || title.hasPrefix("翻译")

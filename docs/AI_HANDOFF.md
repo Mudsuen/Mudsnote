@@ -1,6 +1,10 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (232)
+## Latest iteration (233)
+
+- The macOS editor's concise right-click menu starts with an icon-backed Undo command using the standard responder-chain `undo:` action and Command-Z equivalent, followed by Translate, Cut, Copy, Paste, and the library Insert submenu.
+
+## Previous iteration (232)
 
 - The automatic macOS selection-format menu yields immediately to keyboard editing: typing, Backspace/Delete, navigation, or editor shortcuts cancel menu tracking and replay the original key event to `MarkdownTextView`; Escape only dismisses the menu.
 

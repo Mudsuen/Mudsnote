@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 176. Undo in the concise editor context menu
+- Problem: Formatting was undoable from the keyboard, but the intentionally reduced right-click menu did not expose Undo.
+- Fix: Added an icon-backed Undo item using the standard macOS responder chain and Command-Z equivalent, ahead of Translate and the editing commands.
+- Lesson: A compact editing menu should still expose recovery as a first-class action, especially when nearby formatting commands can change attributed content.
+
 ### 175. Selection menu yields to normal editing
 - Problem: The automatic formatting menu could keep AppKit menu tracking active after selecting text, forcing users to dismiss it before Backspace, typing, navigation, or keyboard editing shortcuts worked.
 - Fix: Keyboard events now cancel selection-menu tracking and are replayed directly to the editor after it regains first-responder status; Escape dismisses without editing.

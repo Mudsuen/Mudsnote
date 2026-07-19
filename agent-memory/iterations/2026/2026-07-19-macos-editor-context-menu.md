@@ -15,6 +15,7 @@
 - The right-click menu now adds an Insert submenu for tables, links, and attachments. The toolbar's former attachment position toggles rendered content and editable Markdown source.
 - Automatic selection menus are gated on a genuinely changed selection, and search-highlight repaint is debounced after typing to reduce page and caret flicker.
 - While a selection menu is tracking, any normal keyboard-editing event dismisses it and is replayed directly to the editor; Escape dismisses without changing text.
+- The concise right-click menu includes an icon-backed Undo command routed through the standard responder chain before Translate, Cut, Copy, Paste, and the library Insert submenu.
 
 ## Verification contract
 
