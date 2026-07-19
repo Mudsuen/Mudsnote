@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import MudsnoteCore
 
@@ -177,6 +178,8 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool
     func markdownTextViewToggleBold(_ textView: MarkdownTextView)
     func markdownTextViewToggleItalic(_ textView: MarkdownTextView)
+    func markdownTextViewToggleUnderline(_ textView: MarkdownTextView)
+    func markdownTextViewToggleStrikethrough(_ textView: MarkdownTextView)
     func markdownTextViewToggleHeading(_ textView: MarkdownTextView)
     func markdownTextViewToggleBulletList(_ textView: MarkdownTextView)
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView)
@@ -222,7 +225,9 @@ private final class ConciseEditorContextMenu: NSMenu {
 
 private final class SelectionFormattingPanelButton: NSButton {
     let menuItem: NSMenuItem
-    var onDismiss: (() -> Void)?
+    var onPerform: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false
 
     init(menuItem: NSMenuItem) {
         self.menuItem = menuItem
@@ -237,10 +242,12 @@ private final class SelectionFormattingPanelButton: NSButton {
         bezelStyle = .toolbar
         isBordered = false
         focusRingType = .none
-        contentTintColor = menuItem.state == .on ? .controlAccentColor : .labelColor
+        wantsLayer = true
+        layer?.cornerRadius = 6
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: 32).isActive = true
         heightAnchor.constraint(equalToConstant: 28).isActive = true
+        updateAppearance()
     }
 
     @available(*, unavailable)
@@ -248,16 +255,51 @@ private final class SelectionFormattingPanelButton: NSButton {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        updateAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let isApplied = menuItem.state == .on
+        contentTintColor = isApplied ? .controlAccentColor : .labelColor
+        let color: NSColor = if isApplied {
+            .controlAccentColor.withAlphaComponent(isHovered ? 0.28 : 0.18)
+        } else if isHovered {
+            .selectedContentBackgroundColor.withAlphaComponent(0.16)
+        } else {
+            .clear
+        }
+        layer?.backgroundColor = color.cgColor
+    }
+
     @objc
     private func performMenuItem() {
         if let submenu = menuItem.submenu {
             submenu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: bounds.maxY + 4), in: self)
-            onDismiss?()
+            onPerform?()
             return
         }
-        onDismiss?()
         guard let action = menuItem.action else { return }
         NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+        onPerform?()
     }
 }
 
@@ -268,6 +310,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
     var selectionMenuProvider: (() -> NSMenu?)?
     private var selectionFormattingPanel: NSPanel?
+    private weak var selectionFormattingStack: NSStackView?
+    var isSelectionFormattingPanelVisible: Bool { selectionFormattingPanel?.isVisible == true }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -321,14 +365,57 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func keyDown(with event: NSEvent) {
         dismissSelectionFormattingPanel()
+        if handleFormattingShortcut(event) {
+            return
+        }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
         super.keyDown(with: event)
     }
 
+    private func handleFormattingShortcut(_ event: NSEvent) -> Bool {
+        guard let commandDelegate else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        switch (modifiers, event.keyCode) {
+        case ([.command], UInt16(kVK_ANSI_B)):
+            commandDelegate.markdownTextViewToggleBold(self)
+        case ([.command], UInt16(kVK_ANSI_I)):
+            commandDelegate.markdownTextViewToggleItalic(self)
+        case ([.command], UInt16(kVK_ANSI_U)):
+            commandDelegate.markdownTextViewToggleUnderline(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_X)):
+            commandDelegate.markdownTextViewToggleStrikethrough(self)
+        case ([.command, .option], UInt16(kVK_ANSI_1)):
+            commandDelegate.markdownTextViewToggleHeading(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_7)):
+            commandDelegate.markdownTextViewToggleOrderedList(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_8)):
+            commandDelegate.markdownTextViewToggleBulletList(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_9)):
+            commandDelegate.markdownTextViewToggleChecklist(self)
+        default:
+            return false
+        }
+        return true
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == [.command], event.keyCode == UInt16(kVK_ANSI_Z) {
+            dismissSelectionFormattingPanel()
+            undoManager?.undo()
+            return true
+        }
+        if modifiers == [.command, .shift], event.keyCode == UInt16(kVK_ANSI_Z) {
+            dismissSelectionFormattingPanel()
+            undoManager?.redo()
+            return true
+        }
+        if handleFormattingShortcut(event) {
+            DispatchQueue.main.async { [weak self] in self?.refreshSelectionFormattingPanel() }
+            return true
+        }
         if modifiers == [.command], event.keyCode == 9,
            pasteContents(from: pasteboardForPaste()) {
             return true
@@ -550,11 +637,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
 
-        for item in menu.items where !item.isSeparatorItem {
-            let button = SelectionFormattingPanelButton(menuItem: item)
-            button.onDismiss = { [weak self] in self?.dismissSelectionFormattingPanel() }
-            stack.addArrangedSubview(button)
-        }
+        populateSelectionFormattingStack(stack, with: menu)
         guard let hostWindow = window else { return }
         let panelSize = NSSize(width: CGFloat(stack.arrangedSubviews.count * 34 + 14), height: 40)
         let surface = NSVisualEffectView(frame: NSRect(origin: .zero, size: panelSize))
@@ -591,9 +674,37 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             y: selectionScreenRect.minY - panelSize.height - 6
         ))
         selectionFormattingPanel = panel
+        selectionFormattingStack = stack
         hostWindow.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
         hostWindow.makeFirstResponder(self)
+    }
+
+    private func populateSelectionFormattingStack(_ stack: NSStackView, with menu: NSMenu) {
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        for item in menu.items where !item.isSeparatorItem {
+            let button = SelectionFormattingPanelButton(menuItem: item)
+            button.onPerform = { [weak self] in
+                DispatchQueue.main.async { self?.refreshSelectionFormattingPanel() }
+            }
+            stack.addArrangedSubview(button)
+        }
+    }
+
+    private func refreshSelectionFormattingPanel() {
+        guard selectionFormattingPanel != nil,
+              selectedRange().length > 0,
+              let stack = selectionFormattingStack,
+              let menu = selectionMenuProvider?(),
+              !menu.items.isEmpty else {
+            dismissSelectionFormattingPanel()
+            return
+        }
+        populateSelectionFormattingStack(stack, with: menu)
+        window?.makeFirstResponder(self)
     }
 
     private func dismissSelectionFormattingPanel() {
@@ -601,6 +712,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
         selectionFormattingPanel = nil
+        selectionFormattingStack = nil
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {

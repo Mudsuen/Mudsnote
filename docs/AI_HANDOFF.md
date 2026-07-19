@@ -1,6 +1,13 @@
 # Mudsnote AI Handoff
 
-## Latest iteration (235)
+## Latest iteration (236)
+
+- macOS Settings separates the default new-note destination from registered library folders. Changing the default retains the previous root in the library; removing a non-default root only unregisters it and never moves or deletes files.
+- The optional AI command layer uses the signed-in local Codex runtime with an ephemeral read-only execution, automatic runtime discovery, and an optional explicit executable path. The former local-model URL/model settings and provider are removed.
+- The nonactivating selection-format panel now has hover and applied-state backgrounds. Applying an inline format refreshes the panel in place instead of closing it; ordinary keyboard editing still dismisses it before text handling.
+- `MarkdownTextView` owns rich-format key equivalents for library and quick-entry editors, including Bold, Italic, Underline, Strikethrough, headings, lists, checklist, Undo, and Redo, so they no longer depend on a window-specific menu route.
+
+## Previous iteration (235)
 
 - macOS selected-note file refresh no longer routes through the blank loading shell. External or delayed cache validation loads in the background, preserves the current editor selection, and skips attributed-text replacement entirely when normalized disk Markdown already matches the editor.
 - A monotonic editor-content revision invalidates note-load results started before any local edit, even after autosave clears `isDirty`; stale asynchronous results therefore cannot repaint the page or reset the caret to location zero.

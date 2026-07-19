@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 179. Clear library settings, local Codex, and persistent formatting controls
+- Problem: Settings conflated the default new-note destination with vaguely named “managed folders”, the AI pane still required a separate local-model service, the selection-format panel lacked hover/applied feedback and disappeared after every action, and rich-format/undo shortcuts stopped reaching the library editor.
+- Fix: Settings now separates a directly changeable default folder from registered library folders and explains that registration never moves files. AI commands use the signed-in local Codex runtime through ephemeral read-only executions, with automatic detection and optional executable selection; the former local-model provider and its URL/model controls are removed. Selection buttons show hover and applied backgrounds, refresh in place after formatting, and retain editor focus. The editor now handles rich-format and undo/redo key equivalents directly while still dismissing the panel for ordinary editing.
+- Lesson: Preferences should describe durable user choices, not implementation plumbing; transient editor chrome must preserve both responder ownership and command continuity, while local runtime integration should inherit an existing authenticated tool with the narrowest filesystem permissions.
+
 ### 178. Stable caret across autosave and file refresh
 - Problem: After autosave cleared the dirty flag, a delayed cache validation or file-system event could reload the selected note through the blank loading shell, repainting the page and resetting the caret to the beginning.
 - Fix: Selected-note refreshes now load without clearing the editor, preserve the current selection, and skip text-storage replacement when disk and editor Markdown are equivalent. Every local edit advances a content revision so asynchronous results started before that edit are discarded even after autosave. Tests cover external refresh selection preservation and the autosave-versus-stale-load race.

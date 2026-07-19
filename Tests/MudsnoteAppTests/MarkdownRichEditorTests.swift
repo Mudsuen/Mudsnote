@@ -3484,10 +3484,28 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(removeHighlightItem.action), to: removeHighlightItem.target, from: removeHighlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
+        controller.editorTextView.showSelectionMenuIfNeeded()
+        #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
+        let selectionPanelSubviews: [NSView] = (window.childWindows ?? []).flatMap { childWindow in
+            childWindow.contentView?.allSubviews ?? []
+        }
+        let selectionPanelButtons = selectionPanelSubviews.compactMap { $0 as? NSButton }
+        let formattingButton = try #require(selectionPanelButtons.first { $0.toolTip == "加粗" })
+        formattingButton.performClick(nil)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
+        #expect(controller.makeSelectionFormattingMenuForLibrary()?.items.first { $0.title == "加粗" }?.state == .on)
+
         controller.editorTextView.undoManager?.removeAllActions()
-        controller.markdownTextViewToggleBold(controller.editorTextView)
+        let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")
+        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
-        controller.editorTextView.undoManager?.undo()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        let undoShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command], characters: "z")
+        #expect(controller.editorTextView.performKeyEquivalent(with: undoShortcut))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
         controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
@@ -6608,8 +6626,7 @@ struct MarkdownRichEditorTests {
             floatingNoteStaysOnTop: true,
             spellCheckingEnabled: true,
             aiEnabled: false,
-            aiOllamaBaseURL: "http://localhost:11434",
-            aiOllamaModel: "llama3.2",
+            aiCodexExecutablePath: "",
             onPreviewOpacity: { _ in },
             onResetWindowFrames: {},
             onSave: { _ in }

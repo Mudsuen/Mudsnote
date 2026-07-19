@@ -76,9 +76,9 @@ public enum AIError: LocalizedError, Equatable {
         case .disabled:
             return "AI 功能已关闭。请在设置中启用 AI。"
         case .providerNotConfigured:
-            return "AI 提供方未配置。请在设置中配置本地 Ollama。"
+            return "未找到本机 Codex。请在设置中确认 Codex 运行时。"
         case .localProviderUnavailable(let baseURL):
-            return "无法连接本地 AI 提供方：\(baseURL)"
+            return "无法启动本机 Codex：\(baseURL)"
         case .emptyInput:
             return "没有可发送给 AI 的文本。"
         case .requestFailed(let message):

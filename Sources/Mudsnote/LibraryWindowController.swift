@@ -10086,6 +10086,8 @@ final class LibraryWindowController: NSWindowController,
 
     func markdownTextViewToggleBold(_ textView: MarkdownTextView) { applyFormatCommand(.bold) }
     func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { applyFormatCommand(.italic) }
+    func markdownTextViewToggleUnderline(_ textView: MarkdownTextView) { applyFormatCommand(.underline) }
+    func markdownTextViewToggleStrikethrough(_ textView: MarkdownTextView) { applyFormatCommand(.strikethrough) }
     func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { applyFormatCommand(.heading1) }
     func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) { applyFormatCommand(.bullet) }
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) { applyFormatCommand(.ordered) }

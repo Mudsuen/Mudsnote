@@ -860,8 +860,7 @@ struct MudsnoteCoreTests {
         #expect(store.libraryNoteColumnWidth == nil)
         #expect(store.librarySourceListVisible)
         #expect(!store.aiEnabled)
-        #expect(store.aiOllamaBaseURLString == "http://localhost:11434")
-        #expect(store.aiOllamaModel == "llama3.2")
+        #expect(store.aiCodexExecutablePath.isEmpty)
 
         store.revealSavedNoteInFinder = false
         store.floatingNoteStaysOnTop = false
@@ -877,8 +876,7 @@ struct MudsnoteCoreTests {
         store.libraryNoteColumnWidth = 388
         store.librarySourceListVisible = false
         store.aiEnabled = true
-        store.aiOllamaBaseURLString = "http://127.0.0.1:11434"
-        store.aiOllamaModel = "qwen2.5"
+        store.aiCodexExecutablePath = "/usr/local/bin/codex"
 
         #expect(!store.revealSavedNoteInFinder)
         #expect(!store.floatingNoteStaysOnTop)
@@ -894,8 +892,26 @@ struct MudsnoteCoreTests {
         #expect(store.libraryNoteColumnWidth == 388)
         #expect(!store.librarySourceListVisible)
         #expect(store.aiEnabled)
-        #expect(store.aiOllamaBaseURLString == "http://127.0.0.1:11434")
-        #expect(store.aiOllamaModel == "qwen2.5")
+        #expect(store.aiCodexExecutablePath == "/usr/local/bin/codex")
+    }
+
+    @Test
+    func codexRuntimeAndReadOnlyArgumentsFollowLocalRuntimeContract() throws {
+        let executable = try #require(CodexRuntimeLocator.resolve(
+            configuredPath: "/bin/sh",
+            environmentPath: nil,
+            homeDirectory: "/tmp"
+        ))
+        #expect(executable.path == "/bin/sh")
+
+        let workingDirectory = URL(fileURLWithPath: "/tmp/Notes", isDirectory: true)
+        let outputURL = URL(fileURLWithPath: "/tmp/output.txt")
+        let arguments = CodexAIProvider.makeArguments(workingDirectory: workingDirectory, outputURL: outputURL)
+        #expect(arguments.contains("--ephemeral"))
+        #expect(arguments.contains("read-only"))
+        #expect(arguments.contains("--skip-git-repo-check"))
+        #expect(arguments.contains(workingDirectory.path))
+        #expect(arguments.last == "-")
     }
 
     @Test

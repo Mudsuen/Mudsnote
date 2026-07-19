@@ -24,13 +24,14 @@ Markdown interoperability.
 ## AI Features
 
 AI is disabled by default and is designed as an explicit Markdown command layer,
-not a chat workspace. When enabled, Mudsnote can use a local Ollama provider for:
+not a chat workspace. When enabled, Mudsnote can use the signed-in Codex runtime on this Mac for:
 
 - `/summarize`, `/fix`, and `/todos` slash commands
 - preview-before-apply insertion, replacement, or copy behavior
 
 Mudsnote sends only the selected text, current paragraph, or active note needed
-for the command you invoke. See `PRIVACY.md` for the data-flow boundary.
+for the command you invoke. Each request runs as an ephemeral, read-only Codex
+session. See `PRIVACY.md` for the data-flow boundary.
 
 ## Build
 

@@ -55,8 +55,7 @@ extension EditorWindowController {
             presentAIError(AIError.disabled)
             return
         }
-        guard let baseURL = URL(string: noteStore.aiOllamaBaseURLString),
-              !noteStore.aiOllamaModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let executableURL = CodexRuntimeLocator.resolve(configuredPath: noteStore.aiCodexExecutablePath) else {
             presentAIError(AIError.providerNotConfigured)
             return
         }
@@ -76,7 +75,7 @@ extension EditorWindowController {
 
         let previousStatus = statusLabel.stringValue
         statusLabel.stringValue = "AI 正在生成..."
-        let provider = OllamaAIProvider(baseURL: baseURL, model: noteStore.aiOllamaModel)
+        let provider = CodexAIProvider(executableURL: executableURL, workingDirectory: noteStore.notesDirectory)
         let request = AIRequest(
             actionID: actionID,
             noteTitle: currentNoteTitleForAI(),
