@@ -64,9 +64,7 @@ This launches `/Applications/Mudsnote.app` against a temporary library and verif
 
 ## Development Notes
 
-- Run `./scripts/agent_context.sh --list` to choose a focused source/test route; add a narrow regex to search only that working set.
-- See `docs/ARCHITECTURE.md` for stable platform boundaries and module ownership.
-- See `docs/AI_HANDOFF.md` for the compact current product state, durable behavior constraints, and takeover guidance.
+- Start with `./scripts/agent_context.sh --list`; see `docs/ARCHITECTURE.md` for boundaries and `docs/AI_HANDOFF.md` for current constraints.
 - See `CHANGELOG.md` for iteration history, known issues, and lessons learned.
 
 ## License

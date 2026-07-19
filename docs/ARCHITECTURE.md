@@ -81,11 +81,11 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 | --- | --- | --- |
 | Core note storage, settings, migration, search | `Sources/MudsnoteCore/`; `Tests/MudsnoteCoreTests/` | App controller using the changed API |
 | macOS app launch, menus, URLs, hotkeys | `Sources/Mudsnote/AppController.swift`; `Sources/Mudsnote/HotKey.swift` | Destination window controller |
-| macOS library, source list, note list, gallery | `LibraryWindowController.swift`; `LibraryNoteListProjection.swift`; `LibraryGalleryView.swift` | Rich editor or store only at their boundary |
+| macOS library, source list, note list, gallery | `LibraryWindowController.swift`; `LibrarySourceProjection.swift`; `LibraryNotesLayout.swift`; list/gallery projections | Rich editor or store only at their boundary |
 | macOS rich editor, tables, links, attachments | `MarkdownRichEditor.swift`; focused Markdown/attachment helpers | Library or quick-capture command adapter |
 | macOS quick capture or floating editor | `EditorWindowController.swift` and focused extensions; `Chrome/`; `QuickCaptureDocumentState.swift` | Core draft/save code |
 | iOS app state and routing | `iOS/MudsnoteCompanion/App/` | The one feature/Core boundary involved |
-| iOS Markdown storage and lifecycle | `MarkdownFileStore.swift`; related focused Core actor/type | `AppModel` caller and focused tests |
+| iOS Markdown storage and lifecycle | `MarkdownFileStore.swift`; `AuthorizedLibraryPath.swift`; `MarkdownLibraryModels.swift`; `MarkdownSearch.swift` | `AppModel` caller and focused tests |
 | iOS library, folders, tags, search, gallery | `RecentSearchView.swift`; `SmartFolder.swift`; `AppModel.swift` | Store query/mutation used by the flow |
 | iOS note reader/editor and attachments | `MarkdownPreviewView.swift`; `Features/Shared/`; focused Core helpers | `AppModel` and UI tests |
 | Build, package, CI, install | `scripts/verify`; platform verify script; `.devflow.yaml` | Package/device script for the selected platform |
@@ -131,16 +131,5 @@ instead of line-count-driven churn.
 - macOS installed artifacts and the connected iPhone are shared across worktrees.
   Only an explicit `live` scope may mutate either target.
 
-## Change And Verification Flow
-
-1. Declare `macos`, `ios`, or explicit `both`.
-2. Run the matching context route and record a short set of confirmed facts.
-3. Make the smallest cohesive change and add focused coverage.
-4. Run `git diff --check`, then one focused test cycle.
-5. Fix all known issues, rerun focused coverage once, and run the selected final
-   `./scripts/verify <platform> pr|full|live` candidate.
-6. Update only the document that owns a new durable fact.
-7. Deliver through Devflow; real installs remain separate from PR CI.
-
-See `docs/delivery-workflow.md` for the lifecycle and `docs/AI_HANDOFF.md` for
-current product constraints.
+See `AGENTS.md` for the change method, `docs/delivery-workflow.md` for delivery,
+and `docs/AI_HANDOFF.md` for current product constraints.

@@ -73,6 +73,8 @@ load_topic() {
       DESCRIPTION="macOS three-pane library, source/list/gallery projection, and file monitoring"
       FILES=(
         Sources/Mudsnote/LibraryWindowController.swift
+        Sources/Mudsnote/LibrarySourceProjection.swift
+        Sources/Mudsnote/LibraryNotesLayout.swift
         Sources/Mudsnote/LibraryNoteListProjection.swift
         Sources/Mudsnote/LibraryGalleryView.swift
         Sources/Mudsnote/LibraryFileSystemMonitor.swift
@@ -128,6 +130,9 @@ load_topic() {
       DESCRIPTION="iOS security-scoped filesystem, Markdown lifecycle, drafts, and pending writes"
       FILES=(
         iOS/MudsnoteCompanion/Core/MarkdownFileStore.swift
+        iOS/MudsnoteCompanion/Core/AuthorizedLibraryPath.swift
+        iOS/MudsnoteCompanion/Core/MarkdownLibraryModels.swift
+        iOS/MudsnoteCompanion/Core/MarkdownSearch.swift
         iOS/MudsnoteCompanion/Core/FolderAccessService.swift
         iOS/MudsnoteCompanion/Core/PendingWriteQueue.swift
         iOS/MudsnoteCompanion/Core/CaptureDraft.swift
@@ -223,28 +228,28 @@ check_context_contract() {
     wc -w < docs/AI_HANDOFF.md
   } | awk '{ total += $1 } END { print total }')"
 
-  if (( handoff_lines > 180 )); then
-    echo "ERROR: docs/AI_HANDOFF.md exceeds its 180-line current-state budget ($handoff_lines)." >&2
+  if (( handoff_lines > 80 )); then
+    echo "ERROR: docs/AI_HANDOFF.md exceeds its 80-line current-state budget ($handoff_lines)." >&2
     failures=1
   fi
-  if (( architecture_lines > 220 )); then
-    echo "ERROR: docs/ARCHITECTURE.md exceeds its 220-line stable-map budget ($architecture_lines)." >&2
+  if (( architecture_lines > 170 )); then
+    echo "ERROR: docs/ARCHITECTURE.md exceeds its 170-line stable-map budget ($architecture_lines)." >&2
     failures=1
   fi
-  if (( handoff_words > 1000 )); then
-    echo "ERROR: docs/AI_HANDOFF.md exceeds its 1000-word current-state budget ($handoff_words)." >&2
+  if (( handoff_words > 500 )); then
+    echo "ERROR: docs/AI_HANDOFF.md exceeds its 500-word current-state budget ($handoff_words)." >&2
     failures=1
   fi
-  if (( architecture_words > 1200 )); then
-    echo "ERROR: docs/ARCHITECTURE.md exceeds its 1200-word stable-map budget ($architecture_words)." >&2
+  if (( architecture_words > 1100 )); then
+    echo "ERROR: docs/ARCHITECTURE.md exceeds its 1100-word stable-map budget ($architecture_words)." >&2
     failures=1
   fi
-  if (( default_lines > 320 )); then
-    echo "ERROR: default agent entry context exceeds 320 lines ($default_lines)." >&2
+  if (( default_lines > 220 )); then
+    echo "ERROR: default agent entry context exceeds 220 lines ($default_lines)." >&2
     failures=1
   fi
-  if (( default_words > 2200 )); then
-    echo "ERROR: default agent entry context exceeds 2200 words ($default_words)." >&2
+  if (( default_words > 1400 )); then
+    echo "ERROR: default agent entry context exceeds 1400 words ($default_words)." >&2
     failures=1
   fi
   if rg -n '^## Latest iteration' docs/AI_HANDOFF.md >/dev/null; then
