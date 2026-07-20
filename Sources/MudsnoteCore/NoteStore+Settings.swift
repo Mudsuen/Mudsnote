@@ -211,14 +211,9 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiEnabled) }
     }
 
-    public var aiOllamaBaseURLString: String {
-        get { defaults.string(forKey: NoteStoreDefaultsKey.aiOllamaBaseURL) ?? "http://localhost:11434" }
-        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiOllamaBaseURL) }
-    }
-
-    public var aiOllamaModel: String {
-        get { defaults.string(forKey: NoteStoreDefaultsKey.aiOllamaModel) ?? "llama3.2" }
-        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiOllamaModel) }
+    public var aiCodexExecutablePath: String {
+        get { defaults.string(forKey: NoteStoreDefaultsKey.aiCodexExecutablePath) ?? "" }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiCodexExecutablePath) }
     }
 
     public var quickCaptureWindowFrame: StoredWindowFrame? {

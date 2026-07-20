@@ -652,6 +652,74 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func richCodecRoundTripsPortableHighlightedFormatting() throws {
+        let markdown = "Keep <mark>**important**</mark> text"
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let importantRange = (rendered.string as NSString).range(of: "important")
+
+        #expect((rendered.attribute(.qmHighlight, at: importantRange.location, effectiveRange: nil) as? Bool) == true)
+        #expect(rendered.attribute(.backgroundColor, at: importantRange.location, effectiveRange: nil) as? NSColor != nil)
+        let font = try #require(rendered.attribute(.font, at: importantRange.location, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @Test
+    func editorContextMenuKeepsOnlyConciseNativeEditingCommands() {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        let nativeMenu = NSMenu()
+        nativeMenu.addItem(NSMenuItem(title: "查询", action: Selector(("lookUp:")), keyEquivalent: ""))
+        nativeMenu.addItem(NSMenuItem(title: "翻译“文字”", action: Selector(("translate:")), keyEquivalent: ""))
+        nativeMenu.addItem(.separator())
+        nativeMenu.addItem(NSMenuItem(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        nativeMenu.addItem(NSMenuItem(title: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        nativeMenu.addItem(NSMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        nativeMenu.addItem(NSMenuItem(title: "粘贴并匹配样式", action: nil, keyEquivalent: ""))
+
+        let conciseMenu = textView.conciseEditingMenu(from: nativeMenu)
+        #expect(!conciseMenu.allowsContextMenuPlugIns)
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.first?.keyEquivalent == "z")
+        #expect(conciseMenu.items.first?.keyEquivalentModifierMask == [.command])
+        #expect(conciseMenu.items.first?.image != nil)
+
+        textView.sealContextMenu(conciseMenu)
+        conciseMenu.addItem(NSMenuItem(title: "自动填充", action: nil, keyEquivalent: ""))
+        conciseMenu.addItem(NSMenuItem(title: "服务", action: nil, keyEquivalent: ""))
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
+    }
+
+    @Test
+    func editorTrailingWhitespaceContextClickPreservesSelection() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 160),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 160))
+        textView.string = "First line\nSecond line"
+        window.contentView = textView
+        textView.layoutManager?.ensureLayout(for: try #require(textView.textContainer))
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 300, y: 150),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        #expect(textView.isEventInTrailingLineWhitespace(event))
+        _ = textView.menu(for: event)
+        #expect(textView.selectedRange() == NSRange(location: 0, length: 0))
+    }
+
+    @Test
     func richCodecKeepsEmptyBacktickPairVisibleWhileTyping() {
         let rendered = MarkdownRichTextCodec.renderLine("``", theme: theme)
 
@@ -1396,9 +1464,9 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.checklist",
             "mudsnote.library.toolbar.table",
             "mudsnote.library.toolbar.link",
-            "mudsnote.library.toolbar.attachment"
+            "mudsnote.library.toolbar.source-mode"
         ])
-        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "添加附件"]))
+        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入表格", "插入链接", "显示 Markdown 源码"]))
         #expect(editorToolButtons.allSatisfy { $0.bezelStyle == .toolbar })
         #expect(editorToolButtons.allSatisfy { $0.isBordered })
         #expect(editorToolButtons.allSatisfy { $0.showsBorderOnlyWhileMouseInside })
@@ -2653,6 +2721,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
         #expect(controller.editorTextView.string == "Initial body")
+        controller.editorTextView.setSelectedRange(NSRange(location: 7, length: 0))
 
         try "# Selected externally\n\nUpdated outside Mudsnote\n".write(
             to: selectedURL,
@@ -2667,10 +2736,74 @@ struct MarkdownRichEditorTests {
                 )
             )
         ])
+        #expect(controller.editorTextView.string == "Initial body")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
         await controller.waitForExternalLibraryRefreshForTesting()
 
         #expect(controller.titleField.stringValue == "Selected externally")
         #expect(controller.editorTextView.string == "Updated outside Mudsnote")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
+    }
+
+    @Test
+    func staleExternalReloadCannotResetCaretAfterAutosavedEdit() async throws {
+        let suiteName = "mudsnote.library-stale-external-reload-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-stale-external-reload-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let selectedURL = try store.saveNewNote(title: "Selected", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.25)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try "# Selected externally\n\nExternal body\n".write(
+            to: selectedURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: selectedURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Local autosaved body",
+            theme: controller.theme,
+            baseURL: selectedURL
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        try controller.flushPendingAutosaveForTesting()
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        #expect(controller.editorTextView.string == "Local autosaved body")
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
     }
 
     @Test
@@ -3265,6 +3398,32 @@ struct MarkdownRichEditorTests {
         }?.view)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
         #expect(editorToolButtons.count == 5)
+        let sourceModeButton = try #require(editorToolButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.source-mode"
+        })
+        #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
+        #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
+        #expect(controller.editorTextView.string == "plain")
+        #expect(sourceModeButton.toolTip == "显示渲染模式")
+        #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
+        #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
+
+        let contextMenu = NSMenu()
+        let contextEvent = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        controller.editorTextView.configureContextMenu?(contextMenu, contextEvent)
+        let insertMenu = try #require(contextMenu.items.last { $0.title == "插入" }?.submenu)
+        #expect(insertMenu.items.map(\.title) == ["表格", "链接…", "附件…"])
+        #expect(insertMenu.items.allSatisfy { $0.image != nil })
 
         let initialFormatMenu = controller.makeFormatMenuForLibrary()
         #expect(initialFormatMenu.items.filter { !$0.isSeparatorItem }.map(\.title) == [
@@ -3297,7 +3456,58 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
-        controller.markdownTextViewToggleBold(controller.editorTextView)
+        let selectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
+        #expect(selectionMenu.items.map(\.title) == [
+            "加粗", "斜体", "下划线", "删除线", "颜色", "转换为"
+        ])
+        #expect(selectionMenu.items.allSatisfy { $0.image != nil })
+        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.map(\.title) == ["黄色高亮", "无颜色"])
+        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.allSatisfy { $0.image != nil } == true)
+        #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == [
+            "正文", "标题", "副标题", "小标题", "项目符号列表", "编号列表", "待办列表"
+        ])
+        #expect(selectionMenu.items.last?.submenu?.items.allSatisfy { $0.image != nil } == true)
+        let highlightItem = try #require(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.first { $0.title == "黄色高亮" })
+        controller.editorTextView.undoManager?.removeAllActions()
+        #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        #expect(controller.editorTextView.undoManager?.canUndo == true)
+        controller.editorTextView.undoManager?.undo()
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        controller.editorTextView.undoManager?.redo()
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        let highlightedSelectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
+        let highlightedColorMenu = try #require(highlightedSelectionMenu.items.first { $0.title == "颜色" }?.submenu)
+        let activeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "黄色高亮" })
+        #expect(activeHighlightItem.state == .on)
+        let removeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "无颜色" })
+        #expect(NSApp.sendAction(try #require(removeHighlightItem.action), to: removeHighlightItem.target, from: removeHighlightItem))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+
+        controller.editorTextView.showSelectionMenuIfNeeded()
+        #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
+        let selectionPanelSubviews: [NSView] = (window.childWindows ?? []).flatMap { childWindow in
+            childWindow.contentView?.allSubviews ?? []
+        }
+        let selectionPanelButtons = selectionPanelSubviews.compactMap { $0 as? NSButton }
+        let formattingButton = try #require(selectionPanelButtons.first { $0.toolTip == "加粗" })
+        formattingButton.performClick(nil)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
+        #expect(controller.makeSelectionFormattingMenuForLibrary()?.items.first { $0.title == "加粗" }?.state == .on)
+
+        controller.editorTextView.undoManager?.removeAllActions()
+        let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")
+        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        let undoShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command], characters: "z")
+        #expect(controller.editorTextView.performKeyEquivalent(with: undoShortcut))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
 
         controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))
@@ -5679,9 +5889,11 @@ struct MarkdownRichEditorTests {
         })
         controller.tableView.selectRowIndexes(IndexSet(integer: newerRow), byExtendingSelection: false)
         controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
+        controller.editorTextView.setSelectedRange(NSRange(location: 4, length: 0))
         await controller.waitForActiveNoteLoadForLibrary()
 
         #expect(controller.editorTextView.string.contains("Externally changed body"))
+        #expect(controller.editorTextView.selectedRange() == NSRange(location: 4, length: 0))
     }
 
     @MainActor
@@ -6414,8 +6626,7 @@ struct MarkdownRichEditorTests {
             floatingNoteStaysOnTop: true,
             spellCheckingEnabled: true,
             aiEnabled: false,
-            aiOllamaBaseURL: "http://localhost:11434",
-            aiOllamaModel: "llama3.2",
+            aiCodexExecutablePath: "",
             onPreviewOpacity: { _ in },
             onResetWindowFrames: {},
             onSave: { _ in }

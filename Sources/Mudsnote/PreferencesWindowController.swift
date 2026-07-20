@@ -13,8 +13,7 @@ struct PreferencesSettings {
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
     let aiEnabled: Bool
-    let aiOllamaBaseURL: String
-    let aiOllamaModel: String
+    let aiCodexExecutablePath: String
 }
 
 @MainActor
@@ -51,16 +50,18 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.settings.toolbar")
 
     private let tabView = NSTabView()
-    private let defaultDirectoryPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let defaultDirectoryPathLabel = NSTextField(labelWithString: "")
+    private let changeDefaultDirectoryButton = NSButton(title: "更改…", target: nil, action: nil)
+    private let libraryDirectoryPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let addDirectoryButton = NSButton(title: "添加...", target: nil, action: nil)
     private let removeDirectoryButton = NSButton(title: "移除", target: nil, action: nil)
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
-    private let aiOllamaBaseURLField = NSTextField(string: "")
-    private let aiOllamaModelField = NSTextField(string: "")
-    private let aiTestConnectionButton = NSButton(title: "测试连接", target: nil, action: nil)
+    private let aiCodexPathLabel = NSTextField(labelWithString: "")
+    private let aiChooseCodexButton = NSButton(title: "选择…", target: nil, action: nil)
+    private let aiTestConnectionButton = NSButton(title: "重新检测", target: nil, action: nil)
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -82,7 +83,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let initialOpacity: Double
 
     private var selectedDirectory: URL
+    private var selectedLibraryDirectory: URL
     private var managedDirectories: [URL]
+    private var aiCodexExecutablePath: String
     private var didSavePreferences = false
 
     init(
@@ -95,8 +98,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
         aiEnabled: Bool,
-        aiOllamaBaseURL: String,
-        aiOllamaModel: String,
+        aiCodexExecutablePath: String,
         onPreviewOpacity: @escaping (Double) -> Void,
         onResetWindowFrames: @escaping () -> Void,
         onSave: @escaping (PreferencesSettings) -> Void
@@ -110,7 +112,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         }
 
         self.selectedDirectory = normalizedCurrentDirectory
+        self.selectedLibraryDirectory = normalizedCurrentDirectory
         self.managedDirectories = normalizedDirectories
+        self.aiCodexExecutablePath = aiCodexExecutablePath
         self.initialOpacity = currentOpacity
         self.onPreviewOpacity = onPreviewOpacity
         self.onResetWindowFrames = onResetWindowFrames
@@ -142,9 +146,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             currentSaveShortcut: currentSaveShortcut,
             floatingNoteStaysOnTop: floatingNoteStaysOnTop,
             spellCheckingEnabled: spellCheckingEnabled,
-            aiEnabled: aiEnabled,
-            aiOllamaBaseURL: aiOllamaBaseURL,
-            aiOllamaModel: aiOllamaModel
+            aiEnabled: aiEnabled
         )
         refreshDirectoryControls()
     }
@@ -212,16 +214,19 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
-        aiEnabled: Bool,
-        aiOllamaBaseURL: String,
-        aiOllamaModel: String
+        aiEnabled: Bool
     ) {
         guard let contentView = window?.contentView else { return }
 
-        defaultDirectoryPopUp.target = self
-        defaultDirectoryPopUp.action = #selector(defaultDirectoryChanged(_:))
-        defaultDirectoryPopUp.controlSize = .regular
-        defaultDirectoryPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+        defaultDirectoryPathLabel.lineBreakMode = .byTruncatingMiddle
+        defaultDirectoryPathLabel.maximumNumberOfLines = 1
+        defaultDirectoryPathLabel.widthAnchor.constraint(equalToConstant: 310).isActive = true
+        changeDefaultDirectoryButton.target = self
+        changeDefaultDirectoryButton.action = #selector(changeDefaultFolderPressed)
+        libraryDirectoryPopUp.target = self
+        libraryDirectoryPopUp.action = #selector(libraryDirectoryChanged(_:))
+        libraryDirectoryPopUp.controlSize = .regular
+        libraryDirectoryPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 270).isActive = true
 
         addDirectoryButton.target = self
         addDirectoryButton.action = #selector(addFolderPressed)
@@ -232,14 +237,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
         spellCheckingButton.state = spellCheckingEnabled ? .on : .off
         aiEnabledButton.state = aiEnabled ? .on : .off
-        aiOllamaBaseURLField.stringValue = aiOllamaBaseURL
-        aiOllamaBaseURLField.placeholderString = "http://localhost:11434"
-        aiOllamaBaseURLField.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
-        aiOllamaModelField.stringValue = aiOllamaModel
-        aiOllamaModelField.placeholderString = "llama3.2"
-        aiOllamaModelField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        aiCodexPathLabel.lineBreakMode = .byTruncatingMiddle
+        aiCodexPathLabel.maximumNumberOfLines = 1
+        aiCodexPathLabel.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        aiChooseCodexButton.target = self
+        aiChooseCodexButton.action = #selector(chooseCodexPressed)
         aiTestConnectionButton.target = self
         aiTestConnectionButton.action = #selector(testAIConnectionPressed)
+        refreshCodexRuntimeStatus()
 
         opacitySlider.doubleValue = clampedOpacity(currentOpacity)
         opacitySlider.target = self
@@ -296,7 +301,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func makeGeneralPane() -> NSView {
-        let actions = NSStackView(views: [addDirectoryButton, removeDirectoryButton, revealDirectoryButton, NSView()])
+        let defaultControls = NSStackView(views: [defaultDirectoryPathLabel, changeDefaultDirectoryButton, NSView()])
+        defaultControls.orientation = .horizontal
+        defaultControls.alignment = .centerY
+        defaultControls.spacing = 8
+
+        let actions = NSStackView(views: [libraryDirectoryPopUp, addDirectoryButton, removeDirectoryButton, revealDirectoryButton, NSView()])
         actions.orientation = .horizontal
         actions.alignment = .centerY
         actions.spacing = 8
@@ -305,10 +315,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             sectionTitle("笔记"),
             preferenceRow(
                 label: "默认文件夹:",
-                control: defaultDirectoryPopUp,
-                help: "新笔记默认保存到这里。其他托管文件夹仍可在快速笔记中选择。"
+                control: defaultControls,
+                help: "新笔记默认保存到这里。更改后，原文件夹仍会保留在资料库中。"
             ),
-            preferenceRow(label: "托管文件夹:", control: actions)
+            preferenceRow(
+                label: "资料库文件夹:",
+                control: actions,
+                help: "Mudsnote 只索引这些文件夹，不会移动或复制其中的文件；移除只会停止显示。"
+            )
         ])
     }
 
@@ -324,35 +338,30 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func makeAIPane() -> NSView {
-        let provider = NSTextField(labelWithString: "本地 Ollama")
+        let provider = NSTextField(labelWithString: "本机 Codex")
         provider.font = .systemFont(ofSize: 13, weight: .medium)
 
-        let modelStack = NSStackView(views: [aiOllamaModelField, aiTestConnectionButton, NSView()])
-        modelStack.orientation = .horizontal
-        modelStack.alignment = .centerY
-        modelStack.spacing = 8
+        let runtimeStack = NSStackView(views: [aiCodexPathLabel, aiChooseCodexButton, aiTestConnectionButton, NSView()])
+        runtimeStack.orientation = .horizontal
+        runtimeStack.alignment = .centerY
+        runtimeStack.spacing = 8
 
         return contentPane(views: [
             sectionTitle("AI"),
             preferenceRow(
                 label: "",
                 control: aiEnabledButton,
-                help: "AI 默认关闭；只会在你通过右键菜单或斜杠命令明确调用时发送当前文本。"
+                help: "AI 默认关闭；只在你明确调用时，把选中文本交给本机 Codex 处理。"
             ),
             preferenceRow(
                 label: "提供方:",
                 control: provider,
-                help: "本轮只接入本地 Ollama，避免默认上传笔记内容。"
+                help: "沿用 Codex 已登录的本机账号，使用只读临时会话，不授予笔记文件写权限。"
             ),
             preferenceRow(
-                label: "Base URL:",
-                control: aiOllamaBaseURLField,
-                help: "默认连接本机 Ollama 服务。"
-            ),
-            preferenceRow(
-                label: "模型:",
-                control: modelStack,
-                help: "例如 llama3.2、qwen2.5、mistral。"
+                label: "运行时:",
+                control: runtimeStack,
+                help: "默认自动查找 Codex.app、ChatGPT.app、Homebrew 和当前 PATH；也可手动选择。"
             )
         ])
     }
@@ -497,18 +506,21 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func refreshDirectoryControls() {
-        defaultDirectoryPopUp.removeAllItems()
-        defaultDirectoryPopUp.addItems(withTitles: managedDirectories.map(directoryLabel(for:)))
+        defaultDirectoryPathLabel.stringValue = displayPath(selectedDirectory)
+        defaultDirectoryPathLabel.toolTip = displayPath(selectedDirectory)
+        libraryDirectoryPopUp.removeAllItems()
+        libraryDirectoryPopUp.addItems(withTitles: managedDirectories.map(directoryLabel(for:)))
 
-        if let selectedIndex = managedDirectories.firstIndex(where: { $0.path == selectedDirectory.path }) {
-            defaultDirectoryPopUp.selectItem(at: selectedIndex)
+        if let selectedIndex = managedDirectories.firstIndex(where: { $0.path == selectedLibraryDirectory.path }) {
+            libraryDirectoryPopUp.selectItem(at: selectedIndex)
         }
 
         removeDirectoryButton.isEnabled = managedDirectories.count > 1
+            && selectedLibraryDirectory.path != selectedDirectory.path
         revealDirectoryButton.isEnabled = true
 
         for (index, url) in managedDirectories.enumerated() {
-            defaultDirectoryPopUp.item(at: index)?.toolTip = displayPath(url)
+            libraryDirectoryPopUp.item(at: index)?.toolTip = displayPath(url)
         }
     }
 
@@ -523,37 +535,48 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     @objc
-    private func defaultDirectoryChanged(_ sender: NSPopUpButton) {
+    private func libraryDirectoryChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem
         guard managedDirectories.indices.contains(index) else { return }
-        selectedDirectory = managedDirectories[index]
+        selectedLibraryDirectory = managedDirectories[index]
         refreshDirectoryControls()
     }
 
     @objc
-    private func addFolderPressed() {
+    private func changeDefaultFolderPressed() {
         guard let url = chooseDirectory(startingAt: selectedDirectory)?.standardizedFileURL else { return }
         if !managedDirectories.contains(where: { $0.path == url.path }) {
             managedDirectories.append(url)
             managedDirectories.sort { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
         }
         selectedDirectory = url
+        selectedLibraryDirectory = url
+        refreshDirectoryControls()
+    }
+
+    @objc
+    private func addFolderPressed() {
+        guard let url = chooseDirectory(startingAt: selectedLibraryDirectory)?.standardizedFileURL else { return }
+        if !managedDirectories.contains(where: { $0.path == url.path }) {
+            managedDirectories.append(url)
+            managedDirectories.sort { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
+        }
+        selectedLibraryDirectory = url
         refreshDirectoryControls()
     }
 
     @objc
     private func removeFolderPressed() {
         guard managedDirectories.count > 1 else { return }
-        managedDirectories.removeAll { $0.path == selectedDirectory.path }
-        if let first = managedDirectories.first {
-            selectedDirectory = first
-        }
+        guard selectedLibraryDirectory.path != selectedDirectory.path else { return }
+        managedDirectories.removeAll { $0.path == selectedLibraryDirectory.path }
+        selectedLibraryDirectory = selectedDirectory
         refreshDirectoryControls()
     }
 
     @objc
     private func revealFolderPressed() {
-        NSWorkspace.shared.activateFileViewerSelecting([selectedDirectory])
+        NSWorkspace.shared.activateFileViewerSelecting([selectedLibraryDirectory])
     }
 
     @objc
@@ -623,38 +646,48 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
             spellCheckingEnabled: spellCheckingButton.state == .on,
             aiEnabled: aiEnabledButton.state == .on,
-            aiOllamaBaseURL: aiOllamaBaseURLField.stringValue,
-            aiOllamaModel: aiOllamaModelField.stringValue
+            aiCodexExecutablePath: aiCodexExecutablePath
         ))
         window?.close()
     }
 
     @objc
     private func testAIConnectionPressed() {
-        let baseURLString = aiOllamaBaseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = aiOllamaModelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let baseURL = URL(string: baseURLString), !model.isEmpty else {
-            presentValidationAlert(message: "AI 配置无效", details: "请填写 Ollama Base URL 和模型名称。")
+        refreshCodexRuntimeStatus()
+        if CodexRuntimeLocator.resolve(configuredPath: aiCodexExecutablePath) == nil {
+            presentValidationAlert(message: "未找到 Codex", details: "请先安装 Codex，或手动选择可执行文件。")
+        }
+    }
+
+    @objc
+    private func chooseCodexPressed() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        panel.message = "选择本机 Codex 可执行文件"
+        if let current = CodexRuntimeLocator.resolve(configuredPath: aiCodexExecutablePath) {
+            panel.directoryURL = current.deletingLastPathComponent()
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard FileManager.default.isExecutableFile(atPath: url.path) else {
+            presentValidationAlert(message: "文件不可执行", details: "请选择 Codex CLI 可执行文件。")
             return
         }
+        aiCodexExecutablePath = url.path
+        refreshCodexRuntimeStatus()
+    }
 
-        aiTestConnectionButton.isEnabled = false
-        aiTestConnectionButton.title = "测试中..."
-        Task {
-            let provider = OllamaAIProvider(baseURL: baseURL, model: model)
-            do {
-                try await provider.testConnection()
-                await MainActor.run {
-                    aiTestConnectionButton.title = "连接正常"
-                    aiTestConnectionButton.isEnabled = true
-                }
-            } catch {
-                await MainActor.run {
-                    aiTestConnectionButton.title = "测试连接"
-                    aiTestConnectionButton.isEnabled = true
-                    presentValidationAlert(message: "无法连接 Ollama", details: error.localizedDescription)
-                }
-            }
+    private func refreshCodexRuntimeStatus() {
+        if let url = CodexRuntimeLocator.resolve(configuredPath: aiCodexExecutablePath) {
+            aiCodexPathLabel.stringValue = url.path
+            aiCodexPathLabel.toolTip = url.path
+            aiCodexPathLabel.textColor = .labelColor
+        } else {
+            aiCodexPathLabel.stringValue = "未找到"
+            aiCodexPathLabel.toolTip = nil
+            aiCodexPathLabel.textColor = .systemRed
         }
     }
 

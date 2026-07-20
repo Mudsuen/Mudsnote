@@ -438,6 +438,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func markdownTextViewToggleBold(_ textView: MarkdownTextView) { toggleInlineFontTrait(.boldFontMask) }
     func markdownTextViewToggleItalic(_ textView: MarkdownTextView) { toggleInlineFontTrait(.italicFontMask) }
+    func markdownTextViewToggleUnderline(_ textView: MarkdownTextView) { applyUnderline() }
+    func markdownTextViewToggleStrikethrough(_ textView: MarkdownTextView) { applyStrikethrough() }
     func markdownTextViewToggleHeading(_ textView: MarkdownTextView) { toggleParagraphKind(.heading(level: 1)) }
     func markdownTextViewToggleBulletList(_ textView: MarkdownTextView) { toggleParagraphKind(.bullet) }
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView) { toggleParagraphKind(.ordered(index: 1)) }

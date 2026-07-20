@@ -17,6 +17,41 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 200. Clear library settings, local Codex, and persistent formatting controls
+- Problem: Settings conflated the default new-note destination with vaguely named “managed folders”, the AI pane still required a separate local-model service, the selection-format panel lacked hover/applied feedback and disappeared after every action, and rich-format/undo shortcuts stopped reaching the library editor.
+- Fix: Settings now separates a directly changeable default folder from registered library folders and explains that registration never moves files. AI commands use the signed-in local Codex runtime through ephemeral read-only executions, with automatic detection and optional executable selection; the former local-model provider and its URL/model controls are removed. Selection buttons show hover and applied backgrounds, refresh in place after formatting, and retain editor focus. The editor now handles rich-format and undo/redo key equivalents directly while still dismissing the panel for ordinary editing.
+- Lesson: Preferences should describe durable user choices, not implementation plumbing; transient editor chrome must preserve both responder ownership and command continuity, while local runtime integration should inherit an existing authenticated tool with the narrowest filesystem permissions.
+
+### 199. Stable caret across autosave and file refresh
+- Problem: After autosave cleared the dirty flag, a delayed cache validation or file-system event could reload the selected note through the blank loading shell, repainting the page and resetting the caret to the beginning.
+- Fix: Selected-note refreshes now load without clearing the editor, preserve the current selection, and skip text-storage replacement when disk and editor Markdown are equivalent. Every local edit advances a content revision so asynchronous results started before that edit are discarded even after autosave. Tests cover external refresh selection preservation and the autosave-versus-stale-load race.
+- Lesson: Dirty state is a save-state signal, not a sufficient concurrency token; asynchronous editor loads need a monotonic local-edit generation and must avoid no-op document replacement.
+
+### 198. Non-blocking selection formatting panel
+- Problem: The attempted menu-event replay did not intercept AppKit's tracking loop; pressing Delete while the automatic menu was open selected “Underline” through menu type-ahead instead of deleting text.
+- Fix: Replaced the automatically shown tracking menu with a nonactivating icon panel while keeping the editor as first responder. Keyboard input now closes the panel before normal editor handling, so Delete removes the selection without activating a formatting item. Color and conversion choices remain available as explicit submenus.
+- Lesson: An automatic editing affordance cannot use a modal menu-tracking loop when the first keystroke must remain owned by the text editor.
+
+### 197. Undo in the concise editor context menu
+- Problem: Formatting was undoable from the keyboard, but the intentionally reduced right-click menu did not expose Undo.
+- Fix: Added an icon-backed Undo item using the standard macOS responder chain and Command-Z equivalent, ahead of Translate and the editing commands.
+- Lesson: A compact editing menu should still expose recovery as a first-class action, especially when nearby formatting commands can change attributed content.
+
+### 196. Selection menu yields to normal editing
+- Problem: The automatic formatting menu could keep AppKit menu tracking active after selecting text, forcing users to dismiss it before Backspace, typing, navigation, or keyboard editing shortcuts worked.
+- Fix: Keyboard events now cancel selection-menu tracking and are replayed directly to the editor after it regains first-responder status; Escape dismisses without editing.
+- Lesson: A selection affordance must remain transient and subordinate to the text editor, including preserving the first editing keystroke that dismisses it.
+
+### 195. Undoable formatting and Markdown source toggle
+- Problem: Command-Z did not reverse formatting applied by the selection menu or editor shortcuts, selection/search repaint made the page and caret flash more often, and attachment insertion occupied a primary toolbar slot while Markdown source was inaccessible.
+- Fix: Library formatting now records undo/redo snapshots with selection restoration. Selection menus open only for newly changed selections, and search-highlight repaint is debounced and coalesced. The right-click menu gains an icon-backed Insert submenu for tables, links, and attachments, while the former attachment toolbar button toggles between rendered content and editable Markdown source.
+- Lesson: Rich-text mutations need to participate explicitly in the editor undo chain, and transient presentation work should be scheduled away from each keystroke; primary toolbar space is better used for switching editing representations than duplicating contextual insertion commands.
+
+### 194. Focused macOS editor context menus and stable editing paint
+- Problem: Right-clicking blank space after text on a non-final line could highlight the whole line, the native text menu was crowded with unrelated system commands, selected text lacked direct everyday formatting and paragraph conversion actions, and active-search editing could visibly flash while highlights were removed and reapplied.
+- Fix: Added trailing-line whitespace hit testing that preserves the current selection and reduced the right-click menu to Translate, Cut, Copy, and Paste. Mouse selection now opens a separate icon-backed shortcut menu for bold, italic, underline, strikethrough, portable yellow highlight, and conversion to body/headings/lists/checklists. Search-highlight updates run as one text-storage transaction and preserve document highlights.
+- Lesson: Rich-editor context menus should distinguish text hits from nearby layout whitespace, while transient presentation attributes must be updated atomically and kept separate from persisted document formatting.
+
 ### 193. Immediate iOS deletion and complete rendered Markdown
 - Problem: A deleted note remained visible until a complete library rescan finished, long-press Copy in the half/full-screen reader did not show the native selected range, and block Markdown such as checkboxes and code fences was flattened into ordinary text even though gallery cards rendered checklist state correctly.
 - Fix: Successful trash operations now remove affected notes from the in-memory list, folder, count, tag, conflict, and search projections before the background filesystem refresh. Both reader detents now share native text highlights, handles, and Copy behavior, plus semantic rendering for headings, checked and unchecked tasks, unordered and ordered lists, quotes, dividers, fenced code, tables, and existing inline styles.

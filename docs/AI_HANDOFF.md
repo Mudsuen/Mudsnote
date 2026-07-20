@@ -1,5 +1,43 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (236)
+
+- macOS Settings separates the default new-note destination from registered library folders. Changing the default retains the previous root in the library; removing a non-default root only unregisters it and never moves or deletes files.
+- The optional AI command layer uses the signed-in local Codex runtime with an ephemeral read-only execution, automatic runtime discovery, and an optional explicit executable path. The former local-model URL/model settings and provider are removed.
+- The nonactivating selection-format panel now has hover and applied-state backgrounds. Applying an inline format refreshes the panel in place instead of closing it; ordinary keyboard editing still dismisses it before text handling.
+- `MarkdownTextView` owns rich-format key equivalents for library and quick-entry editors, including Bold, Italic, Underline, Strikethrough, headings, lists, checklist, Undo, and Redo, so they no longer depend on a window-specific menu route.
+
+## Previous iteration (235)
+
+- macOS selected-note file refresh no longer routes through the blank loading shell. External or delayed cache validation loads in the background, preserves the current editor selection, and skips attributed-text replacement entirely when normalized disk Markdown already matches the editor.
+- A monotonic editor-content revision invalidates note-load results started before any local edit, even after autosave clears `isDirty`; stale asynchronous results therefore cannot repaint the page or reset the caret to location zero.
+
+## Previous iteration (234)
+
+- The automatic selection-format surface is now a nonactivating floating panel, not a tracking `NSMenu`. `MarkdownTextView` remains first responder, and any keyboard editing event closes the panel before normal `keyDown` handling, so Delete cannot become menu type-ahead or highlight “Underline”.
+- Root formatting actions remain icon buttons; Color and Convert To retain their existing submenus when explicitly clicked.
+
+## Previous iteration (233)
+
+- The macOS editor's concise right-click menu starts with an icon-backed Undo command using the standard responder-chain `undo:` action and Command-Z equivalent, followed by Translate, Cut, Copy, Paste, and the library Insert submenu.
+
+## Previous iteration (232)
+
+- The automatic macOS selection-format menu yields immediately to keyboard editing: typing, Backspace/Delete, navigation, or editor shortcuts cancel menu tracking and replay the original key event to `MarkdownTextView`; Escape only dismisses the menu.
+
+## Previous iteration (231)
+
+- macOS library formatting commands, including selection-menu highlight and keyboard bold/italic/list commands, register attributed-content snapshots with the editor undo manager so Command-Z and redo restore both formatting and selection.
+- The editor right-click menu adds an icon-backed Insert submenu for tables, links, and attachments. The former top attachment button now toggles between rendered rich text and editable Markdown source without changing the stored note merely by switching views.
+- Automatic selection menus only open for a newly changed non-empty selection, and active-search highlight repaint is delayed and coalesced after typing to avoid repeated page/caret repaint.
+
+## Previous iteration (230)
+
+- macOS editor right-click menus contain only native Translate plus Cut, Copy, and Paste; formatting, link, attachment, table, AI, and other actions are not appended there.
+- Right-clicking the trailing blank area of a non-final text line preserves the existing insertion/selection range instead of letting `NSTextView` select the nearest line text.
+- Mouse-selected library text immediately opens a separate icon-backed shortcut menu with Bold, Italic, Underline, Strikethrough, portable yellow Highlight, and a Convert To submenu for body, heading levels, bullet, numbered, and checklist paragraphs; these commands are not added to the right-click menu.
+- Library search-highlight refreshes are coalesced into one text-storage editing transaction, and document highlights are restored after transient search highlights are removed.
+
 ## Latest iteration (225)
 
 - macOS and iPhone app icons share an original Notes-like black-header note motif with warm white paper and gray rules.
