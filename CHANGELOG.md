@@ -17,10 +17,16 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 202. Automatic evidence-backed delivery
+- Problem: Draft-by-default delivery and moving per-platform baseline SHAs kept accepted work outside `main`, then added repeated context loading, Git archaeology, overlap decisions, and duplicate validation to compensate.
+- Fix: Replaced daily baseline markers with latest `origin/main`, Ready PRs carrying a Devflow v2 evidence manifest, one full merge-candidate CI pass, default-branch event-driven Squash Merge for reversible product work, explicit hard stops for external/control-plane risk, and a tested Revert PR command. Legacy PRs remain manual.
+- Lesson: Importance should control reporting, not approval. Stable automation comes from objective acceptance, a current merge candidate, independent policy checks, and a real rollback path—not from another moving acceptance marker.
+
 ### 201. Guarded platform verified baselines
 - Problem: An accepted macOS or iOS UI could remain in an unmerged Draft PR while the next task started mechanically from `main`, allowing internally green CI to ship a visually older baseline and forcing expensive Git archaeology, conflict repair, and repeated validation.
 - Fix: Added independent machine-readable macOS and iOS verified baselines. Platform Devflow tasks now declare `--track macos` or `--track ios`, prove the matching baseline is an ancestor, and stop when another open PR touches that platform's configured high-coupling files unless the stacked/combined baseline is explicitly reviewed. Repository verification validates both contracts.
 - Lesson: Git synchronization and product acceptance are different facts. A new task must prove both that its branch is current and that it contains the latest accepted product state before implementation begins.
+- Superseded by iteration 202: the fixed marker files and `--track` startup gate were removed after the complete workflow review.
 
 ### 200. Clear library settings, local Codex, and persistent formatting controls
 - Problem: Settings conflated the default new-note destination with vaguely named “managed folders”, the AI pane still required a separate local-model service, the selection-format panel lacked hover/applied feedback and disappeared after every action, and rich-format/undo shortcuts stopped reaching the library editor.

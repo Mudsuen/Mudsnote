@@ -1,4 +1,12 @@
-schema_version: 1
+schema_version: 2
+workflow_version: 2
+automation:
+  pull_request: ready
+  merge: event-driven
+  merge_method: squash
+  legacy_pull_requests: manual
+  control_plane: hold
+  full_verification: merge-candidate-once
 verification:
   pr: ./scripts/verify pr
   full: ./scripts/verify full
@@ -6,3 +14,28 @@ verification:
 data_policy:
   production_ci: forbidden
   credentials_ci: forbidden
+platforms:
+  macos:
+    pr: ./scripts/verify macos pr
+    full: ./scripts/verify macos full
+    live: ./scripts/verify macos live
+  ios:
+    pr: ./scripts/verify ios pr
+    full: ./scripts/verify ios full
+    live: ./scripts/verify ios live
+  both:
+    pr: ./scripts/verify both pr
+    full: ./scripts/verify both full
+    live: ./scripts/verify both live
+hard_stops:
+  - irreversible-data
+  - production-release
+  - signing-or-secret
+  - guardrail-weakening
+control_plane:
+  - .github/workflows/**
+  - .devflow.yaml
+  - scripts/verify*
+  - scripts/package*
+  - scripts/device_smoke.sh
+  - '**/*.entitlements'

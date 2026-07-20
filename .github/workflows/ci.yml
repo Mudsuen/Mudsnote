@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -25,7 +26,10 @@ jobs:
         run: |
           test -f AGENTS.md
           test -f .devflow.yaml
+          test -f .github/workflows/auto-merge.yml
           test -x scripts/verify
+          grep -q '^schema_version: 2$' .devflow.yaml
+          grep -q '^workflow_version: 2$' .devflow.yaml
           grep -qx '/.task' .gitignore
           if git ls-files | grep -E '(^|/)(\.env($|\.)|[^/]+\.(sqlite|sqlite3|db|pem|p8|p12|key|mobileprovision)$|\.netrc$|id_rsa$|id_ed25519$)'; then
             echo 'Tracked credential or database-like files violate the PR CI boundary.' >&2
@@ -44,5 +48,7 @@ jobs:
         run: |
           sw_vers
           swift --version
+      - name: Fetch current integration base
+        run: git fetch origin main
       - name: Verify
-        run: ./scripts/verify pr
+        run: ./scripts/verify full

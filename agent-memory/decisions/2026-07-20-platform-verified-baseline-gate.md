@@ -1,17 +1,13 @@
 # Platform verified baseline gate
 
-## Context
+Status: superseded on 2026-07-20 by Devflow V2.
 
-An accepted platform UI can remain in a Draft PR while a later task starts from `main`. The branch may be Git-current but still omit the accepted macOS or iOS product state, and CI can validate the isolated branch without recognizing the regression.
+The short-lived design stored separate moving macOS/iOS accepted commit markers and blocked overlapping PR paths. The full workflow review found that this preserved the original source of friction: accepted work could still remain outside `main`, while every task gained another marker and overlap decision.
 
-## Decision
+Current decision:
 
-- `.devflow-baselines.json` owns separate machine-readable `macos` and `ios` acceptance markers and high-coupling paths.
-- Every platform Devflow task starts with `--track macos` or `--track ios`.
-- The selected platform's `verified_commit` must be an ancestor of the chosen base.
-- Open PRs touching that track's protected paths block a parallel task. Prefer merging/closing the upstream PR or stacking from its head; an overlap override requires explicit review and remains recorded in task state.
-- Update only the affected platform marker after its accepted implementation is merged and the required real-artifact verification is complete.
-
-## Consequences
-
-Task startup may pause earlier when old platform PRs remain open. That early stop is intentional: resolving integration before implementation avoids UI rollback, repeated large-file reads, conflict repair, and duplicate full validation later. Independent markers also allow one platform to advance without falsely claiming that the other was re-verified.
+- latest `origin/main` is the only daily integration baseline;
+- reversible tasks use Ready PRs and event-driven merge after current merge-candidate CI;
+- legacy PRs remain manual instead of being treated as an implicit baseline;
+- important changes are highlighted after completion, while irreversible data, production/signing, guardrail weakening, and control-plane changes keep an independent hold;
+- code rollback uses a verified Revert PR.

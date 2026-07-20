@@ -8,8 +8,8 @@ When working in this repo:
 4. `CHANGELOG.md` is user-visible history, not the only technical truth.
 5. Quick-capture UI may span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
 6. Declare `macos`, `ios`, or explicit `both`, then use `./scripts/verify <scope> pr|full|live`.
-7. Start platform tasks with `--track macos` or `--track ios`; resolve baseline/PR overlap before development.
-8. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
+7. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
+8. Start product work from current `origin/main`; do not treat an unmerged PR or moving platform SHA as the default product baseline.
 
 ## Token-efficient repository workflow
 
@@ -28,7 +28,10 @@ When working in this repo:
 ## Delivery
 
 - Follow `/Users/Donald/Code/Devflow/README.md` and use `/Users/Donald/Code/Devflow/bin/devtask`.
-- Devflow may continue to call `./scripts/verify pr|full`; the dispatcher detects a single-platform diff and delegates only to that platform. Documentation-only changes run policy checks without building either app.
+- Devflow may call `./scripts/verify pr|full`; the dispatcher detects a single-platform diff and delegates only to that platform. Documentation-only changes run policy checks without building either app.
 - `live` always requires an explicit platform argument or `MUDSNOTE_PLATFORM_SCOPE`; it never infers an installation target.
 - Concurrent worktrees share `/Applications/Mudsnote.app` and the connected iPhone, so never run another platform's live flow as incidental verification.
 - PR CI must not access iCloud, Keychain, real note folders, personal settings, credentials, or other user data.
+- Reversible product tasks use Devflow v2 Ready PRs and event-driven merge by default. Importance changes the final report, not the approval path.
+- Irreversible data, production/App Store release, signing/secrets, guardrail weakening, and workflow/verification/package/entitlement changes remain held from automatic merge.
+- Existing legacy PRs without a Devflow v2 manifest remain manual and must never be merged retroactively by the automation.

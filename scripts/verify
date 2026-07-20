@@ -50,7 +50,7 @@ fi
 check_diff() {
   local base_ref=""
   if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
-    git fetch origin "$GITHUB_BASE_REF"
+    git fetch origin "$GITHUB_BASE_REF" --depth=1
     base_ref="origin/$GITHUB_BASE_REF"
   elif git show-ref --verify --quiet refs/remotes/origin/main; then
     base_ref="origin/main"
@@ -74,7 +74,6 @@ check_ci_boundary() {
 
 check_diff
 check_ci_boundary
-python3 scripts/validate_devflow_baselines.py
 ./scripts/agent_context.sh --check
 
 echo "Mudsnote verification scope: $PLATFORM_SCOPE ($MODE)"
