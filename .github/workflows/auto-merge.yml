@@ -129,4 +129,5 @@ jobs:
           fi
 
           gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch
-          echo "Merged PR #$pr_number after verified merge-candidate CI."
+          gh workflow run ci.yml --repo "$REPOSITORY" --ref main
+          echo "Merged PR #$pr_number and dispatched post-merge CI on main."

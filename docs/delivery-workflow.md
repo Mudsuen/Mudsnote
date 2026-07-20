@@ -15,11 +15,12 @@ flowchart TD
     G --> H{默认分支独立策略检查}
     H -->|可逆产品改动| I[串行 Squash Merge]
     H -->|控制面或 hard stop| J[保留 Draft/停止合并]
-    I --> K[重点或普通完成报告]
-    K --> L[需要时 devtask rollback 创建 Revert PR]
+    I --> K[显式 dispatch main full 验证]
+    K --> L[重点或普通完成报告]
+    L --> M[需要时 devtask rollback 创建 Revert PR]
 ```
 
-正常任务不需要用户确认，也不由 Agent 轮询 CI。GitHub 的 `workflow_run` 在 CI 结束后继续处理；同一仓库的合并决策串行执行。如果 `main` 在测试期间前进，自动化只更新任务分支并通过 `workflow_dispatch` 重跑一次当前候选，不会把基于旧 `main` 的绿灯直接用于合并。
+正常任务不需要用户确认，也不由 Agent 轮询 CI。GitHub 的 `workflow_run` 在 CI 结束后继续处理；同一仓库的合并决策串行执行。如果 `main` 在测试期间前进，自动化只更新任务分支并通过 `workflow_dispatch` 重跑一次当前候选，不会把基于旧 `main` 的绿灯直接用于合并。合并完成后还会显式 dispatch 一次 `main` CI，避免 `GITHUB_TOKEN` 发起的合并不产生后续 `push` workflow。
 
 ## Mudsnote 任务声明
 
