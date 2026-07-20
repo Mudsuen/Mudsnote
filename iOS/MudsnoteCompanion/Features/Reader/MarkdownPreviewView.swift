@@ -52,6 +52,7 @@ struct MarkdownPreviewView: View {
     @State private var originalMarkdown: String
     @State private var isEditing = false
     @State private var isSaving = false
+    @State private var isSaveProgressVisible = false
     @State private var saveState: SaveState = .idle
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
@@ -92,17 +93,24 @@ struct MarkdownPreviewView: View {
     @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
 
-    init(memo: MemoBlock) {
+    init(
+        memo: MemoBlock,
+        startsEditing: Bool = false
+    ) {
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
+        _isEditing = State(initialValue: startsEditing)
     }
 
-    init(document: MarkdownDocument) {
+    init(
+        document: MarkdownDocument,
+        startsEditing: Bool = false
+    ) {
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
-        _isEditing = State(initialValue: document.isNew)
+        _isEditing = State(initialValue: document.isNew || startsEditing)
     }
 
     var body: some View {
@@ -122,36 +130,38 @@ struct MarkdownPreviewView: View {
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 18) {
-                                metadataLabel
+                    VStack(alignment: .leading, spacing: 0) {
+                        metadataLabel
+                            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                            .padding(.top, MudsnoteSpacing.safeHorizontal)
+                            .padding(.bottom, 18)
+
+                        ScrollViewReader { proxy in
+                            ScrollView {
                                 markdownBody
                                     .environment(\.openURL, OpenURLAction { url in
                                         handleMarkdownURL(url)
                                     })
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("rendered-markdown")
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if !isFindingInNote { beginEditing() }
-                                    }
+                                    .textSelection(.enabled)
+                                    .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                                    .padding(.bottom, MudsnoteSpacing.safeHorizontal)
                             }
-                            .padding(MudsnoteSpacing.safeHorizontal)
-                        }
-                        .onChange(of: findQuery) { _, _ in
-                            activeFindIndex = 0
-                            scrollToActiveFindMatch(using: proxy)
-                        }
-                        .onChange(of: activeFindIndex) { _, _ in
-                            scrollToActiveFindMatch(using: proxy)
-                        }
-                        .onChange(of: findResults.map(\.id)) { _, _ in
-                            activeFindIndex = min(
-                                activeFindIndex,
-                                max(0, findResults.count - 1)
-                            )
-                            scrollToActiveFindMatch(using: proxy)
+                            .onChange(of: findQuery) { _, _ in
+                                activeFindIndex = 0
+                                scrollToActiveFindMatch(using: proxy)
+                            }
+                            .onChange(of: activeFindIndex) { _, _ in
+                                scrollToActiveFindMatch(using: proxy)
+                            }
+                            .onChange(of: findResults.map(\.id)) { _, _ in
+                                activeFindIndex = min(
+                                    activeFindIndex,
+                                    max(0, findResults.count - 1)
+                                )
+                                scrollToActiveFindMatch(using: proxy)
+                            }
                         }
                     }
                 }
@@ -166,156 +176,7 @@ struct MarkdownPreviewView: View {
                     noteFindBar
                 }
             }
-            .toolbar {
-                if !linkedSourceHistory.isEmpty, !isEditing {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: returnToPreviousLinkedNote) {
-                            Image(systemName: "chevron.left")
-                        }
-                        .accessibilityLabel("Previous Note")
-                        .accessibilityIdentifier("previous-linked-note")
-                    }
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if isEditing {
-                        Menu {
-                            Button {
-                                editorDisplayMode = .rich
-                            } label: {
-                                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
-                            }
-                            Button {
-                                editorDisplayMode = .source
-                            } label: {
-                                Label("Markdown Source", systemImage: editorDisplayMode == .source ? "checkmark" : "chevron.left.forwardslash.chevron.right")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .accessibilityLabel("Editor Options")
-                        .accessibilityIdentifier("markdown-display-mode")
-                    }
-
-                    if !isEditing {
-                        switch source {
-                        case .memo:
-                            EmptyView()
-                        case .document(let document):
-                            Menu {
-                                Button {
-                                    Task { await exportCurrentDocumentAsPDF(document) }
-                                } label: {
-                                    if isExportingPDF {
-                                        Label("Exporting PDF…", systemImage: "doc.richtext")
-                                    } else {
-                                        Label("Export as PDF", systemImage: "doc.richtext")
-                                    }
-                                }
-                                .disabled(isExportingPDF)
-                                Button {
-                                    beginFindingInNote()
-                                } label: {
-                                    Label("Find in Note", systemImage: "magnifyingglass")
-                                }
-                                .disabled(draftMarkdown.isEmpty)
-                                if hasRenderedAttachments {
-                                    Menu {
-                                        Button {
-                                            setAllAttachmentPresentationModes(.small)
-                                        } label: {
-                                            Label("Set All to Small", systemImage: "rectangle.compress.vertical")
-                                        }
-                                        Button {
-                                            setAllAttachmentPresentationModes(.large)
-                                        } label: {
-                                            Label("Set All to Large", systemImage: "rectangle.expand.vertical")
-                                        }
-                                    } label: {
-                                        Label("Attachment View", systemImage: "rectangle.grid.1x2")
-                                    }
-                                    .accessibilityIdentifier("attachment-view-menu")
-                                }
-                                if let file = currentFile, canManage(document) {
-                                    Divider()
-                                    Button {
-                                        appModel.togglePinned(file)
-                                    } label: {
-                                        Label(
-                                            file.isPinned ? "Unpin" : "Pin",
-                                            systemImage: file.isPinned ? "pin.slash" : "pin"
-                                        )
-                                    }
-                                    if canMoveToTopLevel || !moveDestinations.isEmpty {
-                                        Menu {
-                                            if canMoveToTopLevel {
-                                                Button {
-                                                    Task { await moveCurrentDocument(toFolder: nil) }
-                                                } label: {
-                                                    Label("Top Level", systemImage: "tray")
-                                                }
-                                            }
-                                            ForEach(moveDestinations) { folder in
-                                                Button(folder.relativePath) {
-                                                    Task {
-                                                        await moveCurrentDocument(
-                                                            toFolder: folder.relativePath
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        } label: {
-                                            Label("Move Note", systemImage: "folder")
-                                        }
-                                    }
-                                    Button {
-                                        appModel.duplicate(file)
-                                    } label: {
-                                        Label("Duplicate Note", systemImage: "plus.square.on.square")
-                                    }
-                                    Button {
-                                        noteName = document.title
-                                        isRenamingNote = true
-                                    } label: {
-                                        Label("Rename Note", systemImage: "pencil")
-                                    }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        isConfirmingNoteDeletion = true
-                                    } label: {
-                                        Label("Move to Recently Deleted", systemImage: "trash")
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                            }
-                            .accessibilityLabel("Note Options")
-                            .accessibilityIdentifier("note-options-menu")
-                        }
-                    }
-
-                    if isEditing {
-                        Button {
-                            Task { await persistDraft(finishEditing: true, announce: true) }
-                        } label: {
-                            if isSaving {
-                                ProgressView()
-                            } else {
-                                Text("Done")
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .disabled(
-                            isSaving
-                                || isAudioTransitioning
-                                || noteAudioRecorder.isRecording
-                                || pendingAudioRecording != nil
-                        )
-                        .accessibilityLabel("Save note")
-                        .accessibilityIdentifier("save-markdown-button")
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .interactiveDismissDisabled(
             (isEditing && draftMarkdown != originalMarkdown)
@@ -362,7 +223,7 @@ struct MarkdownPreviewView: View {
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
             Button("Keep Editing", role: .cancel) {
-                editorFocused = true
+                Task { await keepDraftAndRebase() }
             }
             Button("Reopen Saved Version", role: .destructive) {
                 Task { await reloadSavedVersion() }
@@ -392,12 +253,12 @@ struct MarkdownPreviewView: View {
             .disabled(noteName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .confirmationDialog(
-            "Move Note to Recently Deleted?",
+            "Delete Note?",
             isPresented: $isConfirmingNoteDeletion,
             titleVisibility: .visible
         ) {
             Button("Cancel", role: .cancel) {}
-            Button("Move to Recently Deleted", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 Task { await trashCurrentDocument() }
             }
         } message: {
@@ -563,6 +424,11 @@ struct MarkdownPreviewView: View {
             }
         }
         .frame(minHeight: 18)
+        .contextMenu {
+            if !isEditing {
+                readerContextMenuContent
+            }
+        }
     }
 
     private func applyLinkCommand(_ kind: MarkdownEditingCommand.Kind) {
@@ -882,140 +748,310 @@ struct MarkdownPreviewView: View {
 
     private var saveStatusText: LocalizedStringKey {
         switch saveState {
-        case .idle: draftMarkdown == originalMarkdown ? "Saved" : "Edited"
+        case .idle: "Saved"
         case .saving: "Saving…"
         case .saved: "Saved"
         case .failed: "Not Saved"
         }
     }
 
-    private var markdownToolbar: some View {
-        let attachmentIsPreparing = appModel.isPreparingAttachment
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if case .document = source {
-                    Menu {
-                        Button {
-                            isPhotoPickerPresented = true
-                        } label: {
-                            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
-                        }
-                        .accessibilityIdentifier("markdown-add-image")
-
-                        Button {
-                            editorFocused = false
-                            isCameraPresented = true
-                        } label: {
-                            Label("Take Photo or Video", systemImage: "camera")
-                        }
-                        .disabled(!CameraPhotoCapture.isAvailable)
-                        .accessibilityIdentifier("markdown-take-photo")
-
-                        Button {
-                            editorFocused = false
-                            isDrawingPresented = true
-                        } label: {
-                            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
-                        }
-                        .accessibilityIdentifier("markdown-add-drawing")
-
-                        Button {
-                            isFileImporterPresented = true
-                        } label: {
-                            Label("Add File", systemImage: "doc")
-                        }
-                        .accessibilityIdentifier("markdown-add-file")
-
-                        Button {
-                            isScannerPresented = true
-                        } label: {
-                            Label("Scan Document", systemImage: "doc.viewfinder")
-                        }
-                        .disabled(!VNDocumentCameraViewController.isSupported)
-                        .accessibilityIdentifier("markdown-scan-document")
-
-                        Button {
-                            editorFocused = true
-                            DispatchQueue.main.async {
-                                _ = CameraTextCapture.start()
-                            }
-                        } label: {
-                            Label("Scan Text", systemImage: "text.viewfinder")
-                        }
-                        .disabled(!CameraTextCapture.isAvailable)
-                        .accessibilityIdentifier("markdown-scan-text")
-                    } label: {
-                        editorToolIcon(attachmentIsPreparing ? "hourglass" : "paperclip")
-                    }
-                    .disabled(isSaving || appModel.isPreparingAttachment)
-                    .accessibilityLabel("Add Attachment")
-                    .accessibilityIdentifier("markdown-attachment-menu")
-
-                    Button {
-                        Task { await toggleDocumentAudioRecording() }
-                    } label: {
-                        editorToolIcon(
-                            audioButtonSystemImage,
-                            foreground: noteAudioRecorder.isRecording ? .white : MudsnoteColors.text,
-                            background: noteAudioRecorder.isRecording ? .red : MudsnoteColors.card
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(
-                        isSaving
-                            || appModel.isPreparingAttachment
-                            || isAudioTransitioning
-                    )
-                    .accessibilityLabel(audioButtonAccessibilityLabel)
-                    .accessibilityIdentifier("markdown-record-audio")
-                }
-
-                Menu {
-                    formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
-                    formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
-                    formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
-                    formatMenuButton("Body", systemImage: "textformat", command: .body)
-                    Divider()
-                    formatMenuButton("Bold", systemImage: "bold", command: .bold)
-                    formatMenuButton("Italic", systemImage: "italic", command: .italic)
-                    formatMenuButton("Underline", systemImage: "underline", command: .underline)
-                    formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
-                    formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
-                    Divider()
-                    formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
-                    formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
-                    formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
-                    formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
-                    Divider()
-                    formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
-                    formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
-                    formatMenuButton("Insert Link", systemImage: "link", command: .link)
-                } label: {
-                    Text("Aa")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(MudsnoteColors.text)
-                        .frame(width: 40, height: 40)
-                        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .accessibilityLabel("Formatting")
-                .accessibilityIdentifier("markdown-format-menu")
-
-                formatButton("checklist", .checklist)
-                formatButton("arrow.uturn.backward", .undo)
-                formatButton("arrow.uturn.forward", .redo)
+    @ViewBuilder
+    private var shareControl: some View {
+        if case .document(let document) = source,
+           let url = localFileURL(for: document.relativePath) {
+            ShareLink(item: url) {
+                Image(systemName: "square.and.arrow.up")
             }
-            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
-            .padding(.vertical, 8)
+            .accessibilityLabel("Share Note")
+            .accessibilityIdentifier("share-note-button")
+        } else {
+            ShareLink(item: draftMarkdown) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share Note")
+            .accessibilityIdentifier("share-note-button")
         }
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(MudsnoteColors.line).frame(height: 1) }
+    }
+
+    @ViewBuilder
+    private var attachmentMenuContent: some View {
+        Button {
+            isPhotoPickerPresented = true
+        } label: {
+            Label("Choose Photo or Video", systemImage: "photo.on.rectangle.angled")
+        }
+        .accessibilityIdentifier("markdown-add-image")
+
+        Button {
+            editorFocused = false
+            isCameraPresented = true
+        } label: {
+            Label("Take Photo or Video", systemImage: "camera")
+        }
+        .disabled(!CameraPhotoCapture.isAvailable)
+        .accessibilityIdentifier("markdown-take-photo")
+
+        Button {
+            editorFocused = false
+            isDrawingPresented = true
+        } label: {
+            Label("Add Drawing", systemImage: "pencil.tip.crop.circle")
+        }
+        .accessibilityIdentifier("markdown-add-drawing")
+
+        Button {
+            isFileImporterPresented = true
+        } label: {
+            Label("Add File", systemImage: "doc")
+        }
+        .accessibilityIdentifier("markdown-add-file")
+
+        Button {
+            isScannerPresented = true
+        } label: {
+            Label("Scan Document", systemImage: "doc.viewfinder")
+        }
+        .disabled(!VNDocumentCameraViewController.isSupported)
+        .accessibilityIdentifier("markdown-scan-document")
+
+        Button {
+            editorFocused = true
+            DispatchQueue.main.async {
+                _ = CameraTextCapture.start()
+            }
+        } label: {
+            Label("Scan Text", systemImage: "text.viewfinder")
+        }
+        .disabled(!CameraTextCapture.isAvailable)
+        .accessibilityIdentifier("markdown-scan-text")
+    }
+
+    @ViewBuilder
+    private var readerContextMenuContent: some View {
+        if case .document(let document) = source {
+            Button {
+                Task { await exportCurrentDocumentAsPDF(document) }
+            } label: {
+                Label(
+                    isExportingPDF ? "Exporting PDF…" : "Export as PDF",
+                    systemImage: "doc.richtext"
+                )
+            }
+            .disabled(isExportingPDF)
+        }
+
+        Button {
+            beginFindingInNote()
+        } label: {
+            Label("Find in Note", systemImage: "magnifyingglass")
+        }
+        .disabled(draftMarkdown.isEmpty)
+
+        if hasRenderedAttachments {
+            Menu {
+                Button("Set All to Small") { setAllAttachmentPresentationModes(.small) }
+                Button("Set All to Large") { setAllAttachmentPresentationModes(.large) }
+            } label: {
+                Label("Attachment View", systemImage: "rectangle.grid.1x2")
+            }
+            .accessibilityIdentifier("attachment-view-menu")
+        }
+
+        if case .document(let document) = source,
+           let file = currentFile,
+           canManage(document) {
+            Divider()
+            Button {
+                appModel.togglePinned(file)
+            } label: {
+                Label(
+                    file.isPinned ? "Unpin" : "Pin",
+                    systemImage: file.isPinned ? "pin.slash" : "pin"
+                )
+            }
+            if canMoveToTopLevel || !moveDestinations.isEmpty {
+                Menu {
+                    if canMoveToTopLevel {
+                        Button {
+                            Task { await moveCurrentDocument(toFolder: nil) }
+                        } label: {
+                            Label("Top Level", systemImage: "tray")
+                        }
+                    }
+                    ForEach(moveDestinations) { folder in
+                        Button(folder.relativePath) {
+                            Task { await moveCurrentDocument(toFolder: folder.relativePath) }
+                        }
+                    }
+                } label: {
+                    Label("Move Note", systemImage: "folder")
+                }
+            }
+            Button {
+                appModel.duplicate(file)
+            } label: {
+                Label("Duplicate Note", systemImage: "plus.square.on.square")
+            }
+            Button {
+                noteName = document.title
+                isRenamingNote = true
+            } label: {
+                Label("Rename Note", systemImage: "pencil")
+            }
+            Divider()
+            Button(role: .destructive) {
+                isConfirmingNoteDeletion = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var markdownToolbar: some View {
+        if #available(iOS 26.0, *) {
+            ZStack {
+                Color.clear
+                    .glassEffect(.regular, in: Capsule())
+                    .allowsHitTesting(false)
+
+                markdownToolbarContent
+                    .padding(.horizontal, 8)
+            }
+                .frame(height: 50)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("markdown-glass-toolbar")
+        } else {
+            markdownToolbarContent
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(.regularMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(MudsnoteColors.line)
+                        .frame(height: 0.5)
+                }
+        }
+    }
+
+    private var markdownToolbarContent: some View {
+        let attachmentIsPreparing = appModel.isPreparingAttachment
+        return HStack(spacing: 2) {
+            if case .document = source {
+                Menu {
+                    attachmentMenuContent
+                } label: {
+                    Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
+                        .frame(width: 42, height: 44)
+                }
+                .disabled(isSaving || appModel.isPreparingAttachment)
+                .accessibilityLabel("Add Attachment")
+                .accessibilityIdentifier("markdown-attachment-menu")
+
+                Button {
+                    Task { await toggleDocumentAudioRecording() }
+                } label: {
+                    Image(systemName: audioButtonSystemImage)
+                        .foregroundStyle(noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.text)
+                        .frame(width: 42, height: 44)
+                }
+                .disabled(
+                    isSaving
+                        || appModel.isPreparingAttachment
+                        || isAudioTransitioning
+                )
+                .accessibilityLabel(audioButtonAccessibilityLabel)
+                .accessibilityIdentifier("markdown-record-audio")
+            }
+
+            editorFormatMenu
+            formatButton("checklist", .checklist)
+            formatButton("arrow.uturn.backward", .undo)
+            formatButton("arrow.uturn.forward", .redo)
+
+            Spacer(minLength: 4)
+            Button {
+                Task { await finishEditingAfterPendingAutosave() }
+            } label: {
+                if isSaveProgressVisible {
+                    ProgressView()
+                } else {
+                    Image(systemName: "checkmark")
+                        .fontWeight(.semibold)
+                        .frame(width: 42, height: 44)
+                }
+            }
+            .disabled(
+                isSaveProgressVisible
+                    || isAudioTransitioning
+                    || noteAudioRecorder.isRecording
+                    || pendingAudioRecording != nil
+            )
+            .accessibilityLabel("Save note")
+            .accessibilityValue(isSaveProgressVisible ? "Saving" : "Ready")
+            .accessibilityIdentifier("save-markdown-button")
+        }
+        .font(.system(size: 17, weight: .medium))
+        .foregroundStyle(MudsnoteColors.text)
+    }
+
+    private var editorFormatMenu: some View {
+        Menu {
+            formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
+            formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
+            formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
+            formatMenuButton("Body", systemImage: "textformat", command: .body)
+            Divider()
+            formatMenuButton("Bold", systemImage: "bold", command: .bold)
+            formatMenuButton("Italic", systemImage: "italic", command: .italic)
+            formatMenuButton("Underline", systemImage: "underline", command: .underline)
+            formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
+            formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
+            Divider()
+            formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
+            formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
+            formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
+            formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
+            Divider()
+            formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
+            formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
+            formatMenuButton("Insert Link", systemImage: "link", command: .link)
+            Divider()
+            formatMenuButton("Undo", systemImage: "arrow.uturn.backward", command: .undo)
+            formatMenuButton("Redo", systemImage: "arrow.uturn.forward", command: .redo)
+            Divider()
+            Button {
+                editorDisplayMode = .rich
+            } label: {
+                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
+            }
+            Button {
+                editorDisplayMode = .source
+            } label: {
+                Label(
+                    "Markdown Source",
+                    systemImage: editorDisplayMode == .source
+                        ? "checkmark"
+                        : "chevron.left.forwardslash.chevron.right"
+                )
+            }
+        } label: {
+            Text("Aa")
+                .fontWeight(.medium)
+                .frame(width: 42, height: 44)
+        }
+        .accessibilityLabel("Formatting")
+        .accessibilityIdentifier("markdown-format-menu")
     }
 
     private func formatButton(_ systemImage: String, _ kind: MarkdownEditingCommand.Kind) -> some View {
         Button {
             editingCommand = MarkdownEditingCommand(kind: kind)
         } label: {
-            editorToolIcon(systemImage)
+            Image(systemName: systemImage)
+                .frame(width: 42, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
@@ -1034,23 +1070,6 @@ struct MarkdownPreviewView: View {
         .accessibilityIdentifier("markdown-format-\(command.identifier)")
     }
 
-    private func editorToolIcon(
-        _ systemImage: String,
-        foreground: Color = MudsnoteColors.text,
-        background: Color = MudsnoteColors.card
-    ) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(foreground)
-            .frame(width: 40, height: 40)
-            .background(background, in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func beginEditing() {
-        isEditing = true
-        focusEditorAfterPresentation()
-    }
-
     private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {
         guard let relativePath = MarkdownNoteLink.resolvedRelativePath(
             for: url.relativeString,
@@ -1066,9 +1085,19 @@ struct MarkdownPreviewView: View {
         return .handled
     }
 
+    private func openRenderedURL(_ url: URL) {
+        guard MarkdownNoteLink.resolvedRelativePath(
+            for: url.relativeString,
+            from: currentSourceRelativePath
+        ) != nil else {
+            UIApplication.shared.open(url)
+            return
+        }
+        _ = handleMarkdownURL(url)
+    }
+
     private func openLinkedNote(_ file: RecentMarkdownFile) async {
-        guard !isEditing,
-              file.relativePath != currentSourceRelativePath,
+        guard file.relativePath != currentSourceRelativePath,
               let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
         linkedSourceHistory.append(source)
         showLinkedSource(.document(target))
@@ -1082,6 +1111,8 @@ struct MarkdownPreviewView: View {
     private func showLinkedSource(_ linkedSource: Source) {
         closeFindInNote()
         collapsedHeadingIndices.removeAll()
+        isEditing = false
+        editorFocused = false
         source = linkedSource
         switch linkedSource {
         case .memo(let memo):
@@ -1137,6 +1168,12 @@ struct MarkdownPreviewView: View {
                             rows: rows,
                             blockIndex: item.index
                         )
+                    case .code(let language, let content):
+                        markdownCodeBlock(
+                            language: language,
+                            content: content,
+                            blockIndex: item.index
+                        )
                     }
                 }
                 .id(item.index)
@@ -1179,7 +1216,7 @@ struct MarkdownPreviewView: View {
     ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
             attachmentView(attachment, blockIndex: blockIndex)
-        } else if MarkdownHeading(line) != nil {
+        } else if case .heading(let heading) = MarkdownLineStyle(line) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if hasCollapsibleContent {
                     Button {
@@ -1204,14 +1241,48 @@ struct MarkdownPreviewView: View {
                 }
 
                 markdownText(
-                    line,
+                    heading.title,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                    selectionFont: heading.uiFont
+                )
+                .font(heading.font)
+            }
+        } else if case .task(let isChecked, let text, let indentation) = MarkdownLineStyle(line) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(
+                        isChecked ? Color(hex: 0xD7BD68) : MudsnoteColors.muted
+                    )
+                    .accessibilityLabel(isChecked ? "Completed" : "Not completed")
+                markdownText(
+                    text,
                     location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
                 )
+                .strikethrough(isChecked, color: MudsnoteColors.muted)
             }
-        } else if line.hasPrefix(">") {
+            .padding(.leading, CGFloat(indentation) * 16)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("markdown-task-\(blockIndex)")
+        } else if case .unordered(let text, let indentation) = MarkdownLineStyle(line) {
+            markdownListRow(
+                marker: "•",
+                text: text,
+                indentation: indentation,
+                blockIndex: blockIndex
+            )
+        } else if case .ordered(let marker, let text, let indentation) = MarkdownLineStyle(line) {
+            markdownListRow(
+                marker: marker,
+                text: text,
+                indentation: indentation,
+                blockIndex: blockIndex
+            )
+        } else if case .quote(let text) = MarkdownLineStyle(line) {
             markdownText(
-                line,
-                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                text,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                selectionFont: .preferredFont(forTextStyle: .body).withTraits(.traitItalic)
             )
                 .font(.body.italic())
                 .foregroundStyle(MudsnoteColors.muted)
@@ -1219,12 +1290,66 @@ struct MarkdownPreviewView: View {
                 .overlay(alignment: .leading) {
                     Rectangle().fill(MudsnoteColors.line).frame(width: 3)
                 }
+        } else if case .thematicBreak = MarkdownLineStyle(line) {
+            Divider()
+                .overlay(MudsnoteColors.line)
+                .accessibilityLabel("Separator")
         } else {
             markdownText(
                 line,
                 location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
             )
         }
+    }
+
+    private func markdownListRow(
+        marker: String,
+        text: String,
+        indentation: Int,
+        blockIndex: Int
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(marker)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(minWidth: 18, alignment: .trailing)
+            markdownText(
+                text,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
+        }
+        .padding(.leading, CGFloat(indentation) * 16)
+    }
+
+    private func markdownCodeBlock(
+        language: String?,
+        content: String,
+        blockIndex: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let language, !language.isEmpty {
+                Text(language.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                markdownText(
+                    content,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                    selectionFont: .monospacedSystemFont(ofSize: 15, weight: .regular),
+                    rendersInlineMarkdown: false
+                )
+                .font(.system(.callout, design: .monospaced))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+        .accessibilityIdentifier("rendered-markdown-code-\(blockIndex)")
     }
 
     private func markdownTable(
@@ -1275,6 +1400,9 @@ struct MarkdownPreviewView: View {
                     location: NoteFindLocation(
                         blockIndex: blockIndex,
                         cellIndex: cellOffset + index
+                    ),
+                    selectionFont: .preferredFont(
+                        forTextStyle: isHeader ? .headline : .body
                     )
                 )
                     .font(isHeader ? .headline : .body)
@@ -1561,15 +1689,41 @@ struct MarkdownPreviewView: View {
 
     private func markdownText(
         _ line: String,
-        location: NoteFindLocation
-    ) -> Text {
-        Text(NoteFindIndex.highlightedText(
+        location: NoteFindLocation,
+        selectionFont: UIFont = .preferredFont(forTextStyle: .body),
+        rendersInlineMarkdown: Bool = true
+    ) -> some View {
+        let renderedText = NoteFindIndex.highlightedText(
             for: line,
             query: findQuery,
             location: location,
-            activeMatch: activeFindMatch
-        ))
-        .foregroundStyle(MudsnoteColors.text)
+            activeMatch: activeFindMatch,
+            rendersInlineMarkdown: rendersInlineMarkdown
+        )
+        return Text(renderedText)
+            .foregroundStyle(MudsnoteColors.text)
+            .accessibilityHidden(true)
+            .overlay {
+                MarkdownTextSelectionOverlay(
+                    attributedText: renderedText,
+                    font: selectionFont,
+                    onOpenURL: { url in
+                        openRenderedURL(url)
+                    }
+                )
+            }
+            .accessibilityRepresentation {
+                Text(renderedText)
+            }
+    }
+
+    @MainActor
+    private func finishEditingAfterPendingAutosave() async {
+        while isSaving {
+            try? await Task.sleep(for: .milliseconds(30))
+            guard !Task.isCancelled else { return }
+        }
+        await persistDraft(finishEditing: true, announce: true)
     }
 
     @MainActor
@@ -1580,8 +1734,12 @@ struct MarkdownPreviewView: View {
             if finishEditing { isEditing = false }
             return
         }
+        let presentsSaveActivity = finishEditing || announce
         isSaving = true
-        saveState = .saving
+        if presentsSaveActivity {
+            isSaveProgressVisible = true
+            saveState = .saving
+        }
 
         var succeeded = true
         repeat {
@@ -1589,7 +1747,9 @@ struct MarkdownPreviewView: View {
             let saved = await save(snapshot, announce: announce)
             if saved {
                 originalMarkdown = snapshot
-                saveState = .saved
+                if presentsSaveActivity || saveState == .failed {
+                    saveState = .saved
+                }
             } else {
                 succeeded = false
                 saveState = .failed
@@ -1599,6 +1759,7 @@ struct MarkdownPreviewView: View {
         } while draftMarkdown != originalMarkdown
 
         isSaving = false
+        isSaveProgressVisible = false
         if finishEditing, succeeded, draftMarkdown == originalMarkdown {
             collapsedHeadingIndices.removeAll()
             isEditing = false
@@ -1649,6 +1810,24 @@ struct MarkdownPreviewView: View {
         } else {
             saveState = .failed
         }
+    }
+
+    @MainActor
+    private func keepDraftAndRebase() async {
+        switch source {
+        case .memo(let memo):
+            if let reloaded = await appModel.reloadMemo(memo) {
+                source = .memo(reloaded)
+                originalMarkdown = reloaded.body
+            }
+        case .document(let document):
+            if let reloaded = await appModel.reloadDocument(document) {
+                source = .document(reloaded)
+                originalMarkdown = reloaded.markdown
+            }
+        }
+        saveState = .idle
+        editorFocused = true
     }
 
     private func attachPhoto(_ item: PhotosPickerItem?) async {
@@ -1927,6 +2106,109 @@ struct MarkdownPreviewView: View {
             guard case .line(let line) = block else { return nil }
             return MarkdownAttachmentLine(line)?.path
         })
+    }
+}
+
+private struct MarkdownTextSelectionOverlay: UIViewRepresentable {
+    var attributedText: AttributedString
+    var font: UIFont
+    var onOpenURL: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.backgroundColor = .clear
+        textView.isOpaque = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.tintColor = .systemBlue
+        textView.clipsToBounds = false
+        textView.isAccessibilityElement = false
+        textView.accessibilityElementsHidden = true
+        textView.linkTextAttributes = [.foregroundColor: UIColor.clear]
+
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tap.cancelsTouchesInView = false
+        textView.addGestureRecognizer(tap)
+        context.coordinator.textView = textView
+        update(textView)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.parent = self
+        update(textView)
+    }
+
+    private func update(_ textView: UITextView) {
+        textView.font = font
+        let invisibleText = NSMutableAttributedString(
+            attributedString: NSAttributedString(attributedText)
+        )
+        let fullRange = NSRange(location: 0, length: invisibleText.length)
+        invisibleText.removeAttribute(.backgroundColor, range: fullRange)
+        invisibleText.addAttribute(.foregroundColor, value: UIColor.clear, range: fullRange)
+        textView.attributedText = invisibleText
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MarkdownTextSelectionOverlay
+        weak var textView: UITextView?
+
+        init(parent: MarkdownTextSelectionOverlay) {
+            self.parent = parent
+        }
+
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended, let textView else { return }
+            if let url = link(at: recognizer.location(in: textView), in: textView) {
+                parent.onOpenURL(url)
+            }
+        }
+
+        func textView(
+            _ textView: UITextView,
+            primaryActionFor textItem: UITextItem,
+            defaultAction: UIAction
+        ) -> UIAction? {
+            guard case .link = textItem.content else { return defaultAction }
+            return nil
+        }
+
+        private func link(at point: CGPoint, in textView: UITextView) -> URL? {
+            var location = point
+            location.x -= textView.textContainerInset.left
+            location.y -= textView.textContainerInset.top
+            let glyphIndex = textView.layoutManager.glyphIndex(
+                for: location,
+                in: textView.textContainer
+            )
+            let characterIndex = textView.layoutManager.characterIndexForGlyph(at: glyphIndex)
+            guard characterIndex < textView.attributedText.length else { return nil }
+            return textView.attributedText.attribute(
+                .link,
+                at: characterIndex,
+                effectiveRange: nil
+            ) as? URL
+        }
+    }
+}
+
+private extension UIFont {
+    func withTraits(_ traits: UIFontDescriptor.SymbolicTraits) -> UIFont {
+        guard let descriptor = fontDescriptor.withSymbolicTraits(traits) else { return self }
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
 
@@ -2329,15 +2611,37 @@ enum MarkdownInlineEditing {
 enum MarkdownRenderBlock: Equatable {
     case line(String)
     case table(headers: [String], rows: [[String]])
+    case code(language: String?, content: String)
 
     static func parse(_ markdown: String) -> [MarkdownRenderBlock] {
         let lines = markdown.components(separatedBy: .newlines)
         var blocks: [MarkdownRenderBlock] = []
         var index = 0
         while index < lines.count {
-            let line = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            let sourceLine = lines[index]
+            let line = sourceLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else {
                 index += 1
+                continue
+            }
+
+            if line.hasPrefix("```") || line.hasPrefix("~~~") {
+                let fence = String(line.prefix(3))
+                let language = line.dropFirst(3)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                var codeLines: [String] = []
+                index += 1
+                while index < lines.count,
+                      !lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                        .hasPrefix(fence) {
+                    codeLines.append(lines[index])
+                    index += 1
+                }
+                if index < lines.count { index += 1 }
+                blocks.append(.code(
+                    language: language.isEmpty ? nil : language,
+                    content: codeLines.joined(separator: "\n")
+                ))
                 continue
             }
 
@@ -2354,7 +2658,7 @@ enum MarkdownRenderBlock: Equatable {
                 continue
             }
 
-            blocks.append(.line(line))
+            blocks.append(.line(sourceLine))
             index += 1
         }
         return blocks
@@ -2400,6 +2704,101 @@ struct MarkdownHeading: Equatable {
         guard !title.isEmpty else { return nil }
         self.level = markerCount
         self.title = title
+    }
+
+    var font: Font {
+        switch level {
+        case 1: .title2.bold()
+        case 2: .title3.bold()
+        case 3: .headline
+        default: .subheadline.weight(.semibold)
+        }
+    }
+
+    var uiFont: UIFont {
+        switch level {
+        case 1: .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
+        case 2: .preferredFont(forTextStyle: .title3).withTraits(.traitBold)
+        case 3: .preferredFont(forTextStyle: .headline)
+        default: .preferredFont(forTextStyle: .subheadline).withTraits(.traitBold)
+        }
+    }
+}
+
+enum MarkdownLineStyle: Equatable {
+    case heading(MarkdownHeading)
+    case task(isChecked: Bool, text: String, indentation: Int)
+    case unordered(text: String, indentation: Int)
+    case ordered(marker: String, text: String, indentation: Int)
+    case quote(String)
+    case thematicBreak
+    case paragraph(String)
+
+    init(_ line: String) {
+        if let heading = MarkdownHeading(line) {
+            self = .heading(heading)
+            return
+        }
+
+        let indentation = min(line.prefix { $0 == " " || $0 == "\t" }.reduce(0) {
+            $0 + ($1 == "\t" ? 2 : 1)
+        } / 2, 3)
+        if let captures = Self.captures(
+            in: line,
+            pattern: #"^\s*[-*+]\s+\[([ xX])\]\s*(.*)$"#
+        ) {
+            self = .task(
+                isChecked: captures[0].lowercased() == "x",
+                text: captures[1],
+                indentation: indentation
+            )
+            return
+        }
+        if line.range(
+            of: #"^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$"#,
+            options: .regularExpression
+        ) != nil {
+            self = .thematicBreak
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*[-*+]\s+(.*)$"#) {
+            self = .unordered(text: captures[0], indentation: indentation)
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*(\d+[.)])\s+(.*)$"#) {
+            self = .ordered(
+                marker: captures[0],
+                text: captures[1],
+                indentation: indentation
+            )
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*>\s?(.*)$"#) {
+            self = .quote(captures[0])
+            return
+        }
+        self = .paragraph(line)
+    }
+
+    var visibleText: String {
+        switch self {
+        case .heading(let heading): heading.title
+        case .task(_, let text, _), .unordered(let text, _), .ordered(_, let text, _): text
+        case .quote(let text), .paragraph(let text): text
+        case .thematicBreak: ""
+        }
+    }
+
+    private static func captures(in value: String, pattern: String) -> [String]? {
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: value,
+                range: NSRange(value.startIndex..., in: value)
+              ) else { return nil }
+        return (1..<match.numberOfRanges).compactMap { index in
+            guard let range = Range(match.range(at: index), in: value) else { return nil }
+            return String(value[range])
+        }
     }
 }
 
@@ -2560,6 +2959,13 @@ enum NoteFindIndex {
                         location: location
                     ))
                 }
+            case .code(_, let content):
+                let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                results.append(contentsOf: matches(
+                    in: content,
+                    term: term,
+                    location: location
+                ))
             }
         }
         return results
@@ -2598,12 +3004,7 @@ enum NoteFindIndex {
     }
 
     static func visibleText(for markdown: String) -> String {
-        let source: String
-        if markdown.hasPrefix(">") {
-            source = markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
-        } else {
-            source = markdown
-        }
+        let source = MarkdownLineStyle(markdown).visibleText
         return String(MarkdownInlineRendering.attributedText(for: source).characters)
     }
 
@@ -2611,12 +3012,12 @@ enum NoteFindIndex {
         for markdown: String,
         query: String,
         location: NoteFindLocation,
-        activeMatch: NoteFindMatch?
+        activeMatch: NoteFindMatch?,
+        rendersInlineMarkdown: Bool = true
     ) -> AttributedString {
-        let source = markdown.hasPrefix(">")
-            ? markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
-            : markdown
-        let rendered = MarkdownInlineRendering.attributedText(for: source)
+        let rendered = rendersInlineMarkdown
+            ? MarkdownInlineRendering.attributedText(for: markdown)
+            : AttributedString(markdown)
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return rendered }
 
@@ -3155,6 +3556,11 @@ enum MarkdownEditorPresentation {
     }
 
     static func apply(to textView: UITextView, displaysSource: Bool) {
+        // Rewriting text storage while an input method owns marked text cancels
+        // the composition session (and can dismiss the software keyboard).
+        // Wait for UIKit to commit the marked text before rendering Markdown.
+        guard textView.markedTextRange == nil else { return }
+
         let storage = textView.textStorage
         let fullRange = NSRange(location: 0, length: storage.length)
         let selection = textView.selectedRange
@@ -3381,7 +3787,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
-        if view.text != text {
+        let isComposingText = view.markedTextRange != nil
+        if !isComposingText, view.text != text {
             let selection = view.selectedRange
             view.text = text
             view.selectedRange = NSRange(
@@ -3389,7 +3796,8 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 length: 0
             )
         }
-        if context.coordinator.lastPresentedText != text
+        if !isComposingText,
+           context.coordinator.lastPresentedText != text
             || context.coordinator.lastDisplaysSource != displaysSource {
             MarkdownEditorPresentation.apply(to: view, displaysSource: displaysSource)
             context.coordinator.lastPresentedText = text
@@ -3418,6 +3826,11 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
+            // Marked text is provisional input owned by the active IME. Publishing
+            // or restyling it makes SwiftUI update the representable mid-composition,
+            // which interrupts Chinese/Japanese/Korean keyboards. UIKit calls this
+            // delegate again after the composition is committed.
+            guard textView.markedTextRange == nil else { return }
             parent.text = textView.text
             MarkdownEditorPresentation.apply(
                 to: textView,

@@ -17,46 +17,150 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
-### 179. Clear library settings, local Codex, and persistent formatting controls
+### 200. Clear library settings, local Codex, and persistent formatting controls
 - Problem: Settings conflated the default new-note destination with vaguely named “managed folders”, the AI pane still required a separate local-model service, the selection-format panel lacked hover/applied feedback and disappeared after every action, and rich-format/undo shortcuts stopped reaching the library editor.
 - Fix: Settings now separates a directly changeable default folder from registered library folders and explains that registration never moves files. AI commands use the signed-in local Codex runtime through ephemeral read-only executions, with automatic detection and optional executable selection; the former local-model provider and its URL/model controls are removed. Selection buttons show hover and applied backgrounds, refresh in place after formatting, and retain editor focus. The editor now handles rich-format and undo/redo key equivalents directly while still dismissing the panel for ordinary editing.
 - Lesson: Preferences should describe durable user choices, not implementation plumbing; transient editor chrome must preserve both responder ownership and command continuity, while local runtime integration should inherit an existing authenticated tool with the narrowest filesystem permissions.
 
-### 178. Stable caret across autosave and file refresh
+### 199. Stable caret across autosave and file refresh
 - Problem: After autosave cleared the dirty flag, a delayed cache validation or file-system event could reload the selected note through the blank loading shell, repainting the page and resetting the caret to the beginning.
 - Fix: Selected-note refreshes now load without clearing the editor, preserve the current selection, and skip text-storage replacement when disk and editor Markdown are equivalent. Every local edit advances a content revision so asynchronous results started before that edit are discarded even after autosave. Tests cover external refresh selection preservation and the autosave-versus-stale-load race.
 - Lesson: Dirty state is a save-state signal, not a sufficient concurrency token; asynchronous editor loads need a monotonic local-edit generation and must avoid no-op document replacement.
 
-### 177. Non-blocking selection formatting panel
+### 198. Non-blocking selection formatting panel
 - Problem: The attempted menu-event replay did not intercept AppKit's tracking loop; pressing Delete while the automatic menu was open selected “Underline” through menu type-ahead instead of deleting text.
 - Fix: Replaced the automatically shown tracking menu with a nonactivating icon panel while keeping the editor as first responder. Keyboard input now closes the panel before normal editor handling, so Delete removes the selection without activating a formatting item. Color and conversion choices remain available as explicit submenus.
 - Lesson: An automatic editing affordance cannot use a modal menu-tracking loop when the first keystroke must remain owned by the text editor.
 
-### 176. Undo in the concise editor context menu
+### 197. Undo in the concise editor context menu
 - Problem: Formatting was undoable from the keyboard, but the intentionally reduced right-click menu did not expose Undo.
 - Fix: Added an icon-backed Undo item using the standard macOS responder chain and Command-Z equivalent, ahead of Translate and the editing commands.
 - Lesson: A compact editing menu should still expose recovery as a first-class action, especially when nearby formatting commands can change attributed content.
 
-### 175. Selection menu yields to normal editing
+### 196. Selection menu yields to normal editing
 - Problem: The automatic formatting menu could keep AppKit menu tracking active after selecting text, forcing users to dismiss it before Backspace, typing, navigation, or keyboard editing shortcuts worked.
 - Fix: Keyboard events now cancel selection-menu tracking and are replayed directly to the editor after it regains first-responder status; Escape dismisses without editing.
 - Lesson: A selection affordance must remain transient and subordinate to the text editor, including preserving the first editing keystroke that dismisses it.
 
-### 174. Undoable formatting and Markdown source toggle
+### 195. Undoable formatting and Markdown source toggle
 - Problem: Command-Z did not reverse formatting applied by the selection menu or editor shortcuts, selection/search repaint made the page and caret flash more often, and attachment insertion occupied a primary toolbar slot while Markdown source was inaccessible.
 - Fix: Library formatting now records undo/redo snapshots with selection restoration. Selection menus open only for newly changed selections, and search-highlight repaint is debounced and coalesced. The right-click menu gains an icon-backed Insert submenu for tables, links, and attachments, while the former attachment toolbar button toggles between rendered content and editable Markdown source.
 - Lesson: Rich-text mutations need to participate explicitly in the editor undo chain, and transient presentation work should be scheduled away from each keystroke; primary toolbar space is better used for switching editing representations than duplicating contextual insertion commands.
 
-### 173. Focused macOS editor context menus and stable editing paint
+### 194. Focused macOS editor context menus and stable editing paint
 - Problem: Right-clicking blank space after text on a non-final line could highlight the whole line, the native text menu was crowded with unrelated system commands, selected text lacked direct everyday formatting and paragraph conversion actions, and active-search editing could visibly flash while highlights were removed and reapplied.
 - Fix: Added trailing-line whitespace hit testing that preserves the current selection and reduced the right-click menu to Translate, Cut, Copy, and Paste. Mouse selection now opens a separate icon-backed shortcut menu for bold, italic, underline, strikethrough, portable yellow highlight, and conversion to body/headings/lists/checklists. Search-highlight updates run as one text-storage transaction and preserve document highlights.
 - Lesson: Rich-editor context menus should distinguish text hits from nearby layout whitespace, while transient presentation attributes must be updated atomically and kept separate from persisted document formatting.
 
-### 172. Unified black Notes-style app icons
+### 193. Immediate iOS deletion and complete rendered Markdown
+- Problem: A deleted note remained visible until a complete library rescan finished, long-press Copy in the half/full-screen reader did not show the native selected range, and block Markdown such as checkboxes and code fences was flattened into ordinary text even though gallery cards rendered checklist state correctly.
+- Fix: Successful trash operations now remove affected notes from the in-memory list, folder, count, tag, conflict, and search projections before the background filesystem refresh. Both reader detents now share native text highlights, handles, and Copy behavior, plus semantic rendering for headings, checked and unchecked tasks, unordered and ordered lists, quotes, dividers, fenced code, tables, and existing inline styles.
+- Lesson: A filesystem-backed app still needs immediate successful-operation projections, and a read-only Markdown surface must preserve block semantics as well as inline attribution.
+
+### 192. Unified black Notes-style app icons
 - Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
 - Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.
 - Lesson: Cross-platform branding should share a recognizable motif while respecting each platform's icon mask and optical scale; source-backed generators keep the small sizes and packaged artifacts aligned.
 
+### 191. Faster iOS shell and native Notes home controls
+- Problem: Cold launch held the entire interface behind a progress screen until every Markdown file was indexed, the home timeline did not expose the Notes-style view controls, and its drawer's always-mounted scroll view prevented the system navigation bar from collapsing the large title like Apple Notes.
+- Fix: Folder access and pending-write recovery now reveal the home shell before the library actor completes its full scan, App Shortcut metadata refresh is deferred beyond the first visible frame, and the timeline displays an in-place loading state. The closed drawer no longer contributes a competing scroll view, so iOS 26 owns the large-title and note-count transition through `navigationSubtitle` plus the native hard scroll-edge effect. The home also persists card/list mode and uses a system `UIMenu` with selection, sort and group subtitles, date grouping, and the attachment destination.
+- Lesson: Perceived launch performance comes from separating safe navigation readiness from expensive indexing, and navigation chrome stays most faithful when the system sees one unambiguous primary scroll view instead of a parallel offscreen scroller.
+
+### 190. Concise iOS delete wording
+- Problem: Destructive menus and confirmations described ordinary deletion as "Move to Recently Deleted," exposing storage mechanics instead of the user action.
+- Fix: Note, multi-note, folder-note, and conflict-copy actions now use Delete wording throughout menus, confirmations, errors, and success feedback while retaining the recoverable Recently Deleted behavior.
+- Lesson: A recoverable delete should be labeled by the user's intent; restoration details belong in the confirmation explanation and Recently Deleted destination.
+
+### 189. Quiet iOS autosave feedback
+- Problem: Every background autosave reused the explicit completion state, replacing the editor checkmark with a spinner and cycling the status label through Saving and Saved even though editing continued.
+- Fix: Background autosave now keeps the stable checkmark and Saved label while preserving write serialization and failure reporting. Visible progress remains reserved for explicit completion saves, and a recovered failure may still return the status to Saved.
+- Lesson: Durable background work should not borrow transient command feedback; autosave needs stable chrome unless the user must act on a failure.
+
+### 188. Fixed reader metadata and opaque card-stream headers
+- Problem: The swipe directory exposed an inert pull-to-refresh gesture, folder counts shifted horizontally depending on whether a row had a disclosure control, the reader timestamp scrolled away with the note, and home cards remained visible through the margins above pinned date headers.
+- Fix: Removed refresh from the directory/home container, standardized a monospaced count column plus fixed trailing accessory column, moved read-only metadata outside the content scroll view, and extended each pinned time header across the full viewport while making the navigation-bar background opaque.
+- Lesson: Persistent metadata and pinned grouping chrome must live outside scrolling/translucent content, and hierarchical rows need stable trailing layout slots regardless of disclosure state.
+
+### 187. Leaner swipe directory with named utility section
+- Problem: The directory duplicated its swipe gesture with a top-left sidebar button, exposed the backing folder name as a heading, mixed utility destinations with normal folders, and rebuilt the complete chronological projection throughout an interactive drag.
+- Fix: Removed the sidebar button and backing-folder label, added a fixed Folders heading with a compact Settings button, and moved Attachments plus Recently Deleted into a separate Library section. The drawer keeps its backdrop mounted, uses an opaque composited surface with a tighter spring, scopes close gestures to the drawer, lazily builds its vertical content, and caches both the time-sorted home projection and smart-folder counts by library revision instead of rescanning notes on animation frames.
+- Lesson: Smooth navigation depends as much on stable view identity and bounded recomputation as on the spring curve; navigation hierarchy and maintenance destinations should also remain visually distinct.
+
+### 186. Scroll-only reader content with selectable read-only text
+- Problem: Vertical gestures inside a half-height note could resize the sheet, tapping an expanded note silently entered editing, and the note-wide custom context menu prevented the native text copy menu from appearing.
+- Fix: Reader sheets now prioritize content scrolling at both detents, leaving detent changes to the native top drag indicator. Half and full readers remain read-only unless opened through an explicit Edit action. Rendered Markdown enables native text selection and copying, while note-level actions move to the date label's context menu.
+- Lesson: Reading, resizing, selection, and editing need separate gesture targets; overloading the content surface makes each interaction unpredictable.
+
+### 185. Independently expandable directory hierarchy
+- Problem: The swipe-out directory exposed only top-level folders, and its single row chevron made entering a folder and inspecting its descendants the same action.
+- Fix: Folder rows now keep the main row as navigation while reserving the right-side chevron for animated inline expansion and collapse. Expanded descendants render recursively with increasing indentation, counts, lifecycle actions, and the same independent behavior at every depth.
+- Lesson: Hierarchical navigation needs two explicit targets: the label enters the selected scope, while the disclosure control changes only the visible tree structure.
+
+### 184. Chronological card home with swipe-out directory
+- Problem: Launching into a folder index made note discovery one navigation step slower and treated the directory as the primary surface rather than the notes themselves.
+- Fix: iOS now opens directly into a two-column card stream that mixes Markdown files and individual Inbox captures in descending timestamp order without duplicating the aggregate `Inbox.md`. A rightward drag reveals the complete folder directory from the left; the reverse drag or backdrop tap closes it, while the sidebar button provides an explicit equivalent action.
+- Lesson: In a note-first mobile library, chronology is the default working surface and hierarchy is progressive navigation that should remain one gesture away.
+
+### 183. Detailed card-style iOS note rows
+- Problem: iOS note rows compressed the body preview beside the timestamp into a single line, making it difficult to recognize a note without opening it.
+- Fix: List cards now allow two-line titles and show up to three lines of body text. Checklist notes instead expose their first two tasks, while open-task and attachment indicators remain visible in the metadata row. Folder-scoped lists continue to omit their redundant folder name.
+- Lesson: A notes list should carry enough document shape to support recognition; time and status are metadata, while the content preview deserves its own vertical space.
+
+### 182. Tap outside a half-sheet note to close it
+- Problem: A note opened at the medium reading detent left the upper background visible, but tapping that empty region did nothing.
+- Fix: While the reader is at the medium detent, its presentation background is interactive and a dedicated backdrop tap dismisses the note. The backdrop action is disabled once the reader expands or enters editing.
+- Lesson: A partially presented reader should treat the exposed backdrop as an explicit, predictable dismissal surface.
+
+### 181. Stable first autosave for new notes
+- Problem: Typing the first paragraph of a new note triggered autosave, which immediately renamed `Untitled Note.md` from its content. Because the file path also identified the presented sheet, the rename recreated the editor; subsequent edits then saved from a stale document version and produced a conflict error.
+- Fix: Background autosave now writes new-note content in place while preserving both the temporary path and `isNew` state. Filename finalization waits for the explicit editing confirmation, and a path-changing final save no longer replaces the identity of the currently presented sheet.
+- Lesson: A document's persistent filename may change, but transient presentation identity must remain stable for the entire editing session.
+
+### 180. New notes save to folders, not existing documents
+- Problem: The New Note command opened the quick-capture composer, whose target menu appends content to an existing document. Presenting that menu as the note location made individual Markdown files appear selectable where only a save folder was expected.
+- Fix: New Note now creates a standalone Markdown document directly in the current folder and immediately opens its editor. From the library root it creates at the library root; from a folder or folder-scoped note list it uses that folder. The existing quick-capture target behavior remains isolated from document creation.
+- Lesson: An append destination and a new-document save location are different concepts and must not share the same entry point or picker.
+
+### 179. Half-sheet reading, direct editing, and recoverable saves
+- Problem: Opening a note jumped straight into a full-screen reader that could be edited immediately, list rows had no direct edit action, and choosing to keep a draft after an external-version conflict retained the stale save baseline so later save attempts could never succeed.
+- Fix: A normal row tap now presents a medium read-only sheet with a visible drag handle; expanding it to the large detent unlocks tap-to-edit. Long press exposes Edit and opens directly in the large editor. Conflict recovery now preserves the current draft while rebasing its expected version on the latest saved note, allowing the next autosave or confirmation to complete safely.
+- Lesson: Read and edit are distinct presentation intents, and conflict recovery must update both the visible draft and the version precondition used by the next write.
+
+### 178. Animated folder editing and unified Notes-style rows
+- Problem: Entering folder management replaced Edit with a static Done label, merged Inbox content still exposed two visibly different row designs, and folder note lists used plain list sections while redundantly repeating the current folder beneath every note.
+- Fix: Edit now transitions in place to a checkmark with a native blur-replace animation. Markdown files and Inbox quick notes share the same title, timestamp, preview, attachment, and grouped-card row language. Folder and Inbox lists use date-grouped inset cards with Notes-style headers and separators, while folder-scoped rows omit their already-known folder location.
+- Lesson: Merging data sources is incomplete until their presentation model is also unified; contextual metadata should disappear when navigation already communicates it.
+
+### 177. One merged Inbox and monochrome folder hierarchy
+- Problem: The library still exposed Daily and All Notes as synthetic destinations, while Inbox.md quick notes and Markdown files inside an existing Inbox folder appeared as two separate roots. Filled yellow folder symbols also made the hierarchy feel inconsistent with the quieter Inbox treatment.
+- Fix: The home now contains only the merged 000-inbox and real non-Inbox top-level folders. Opening 000-inbox shows both quick notes from Inbox.md and Markdown notes stored anywhere under the top-level Inbox folder without moving either source. Daily and All Notes are removed from the home hierarchy, and folder symbols use monochrome outline variants with neutral black-and-white styling.
+- Lesson: A folder-first library should consolidate equivalent sources at the presentation boundary while preserving the files on disk, and hierarchy icons should share one restrained visual language.
+
+### 176. Unified library hierarchy and native glass editing bar
+- Problem: The iPhone home split the authorized library's fixed note entries and real top-level folders into separate `mudsbuild` and `Folders` cards, open-note reading still carried a bottom action group, note rows could require tapping directly on their text, and the editor accessory was only a material strip rather than native Liquid Glass.
+- Fix: The home now presents `000-inbox`, Daily, All Notes, and every real first-level folder in one library card, with attachments, Recently Deleted, and Settings in a separate utility card. Common folder names receive semantic SF Symbols. Reading mode is fully chrome-free while long press preserves its document actions, list and search rows expose their entire width as a hit target, and iOS 26 renders the keyboard editing controls over a system glass capsule with a material fallback on older systems.
+- Lesson: A local-first library should mirror its real root hierarchy in one visual group; utility destinations and transient editing tools need their own clearly separated system surfaces.
+
+### 175. Quiet note chrome and Notes-style editing tools
+- Problem: Reader and editor actions crowded the top of an open note, while the editing controls used individually boxed custom buttons that did not match Apple Notes and disappeared when moved into a system bottom bar behind the keyboard.
+- Fix: Open notes now keep their top edge free of buttons in both reading and editing states. Reader actions stay in the native glass bottom group, and the editor uses a compact borderless input-accessory row above the keyboard for attachments, audio, formatting, checklists, undo, redo, and save.
+- Lesson: Note editing controls belong with the keyboard, while document chrome should stay quiet; system bottom bars are suitable for reading controls but cannot replace a keyboard-visible editing accessory.
+
+### 174. Restore the accepted native Notes command row
+- Problem: A later toolbar revision reintroduced a custom search field and voice action, regressing the previously accepted Apple Notes-like bottom silhouette.
+- Fix: iOS 26 again uses the system Search toolbar item with a fixed native gap before the independent New Note control, matching the earlier `Adopt native Notes toolbar grouping` implementation; older iOS keeps the existing fallback.
+- Lesson: When a visual baseline has already been approved, restore that exact system composition instead of approximating it with another custom glass arrangement.
+
+### 173. Native iOS 26 note navigation and reader controls
+- Problem: Folder actions drew their own card shapes inside the system toolbar, note readers opened as half-height sheets without an explicit return action, and reading mode had no bottom command bar.
+- Fix: Folder, list, and reader actions now let the iOS toolbar provide native Liquid Glass grouping and press feedback. Readers open at full height with Back, Share, and More controls, plus a working bottom group for checklist, attachments, formatting, and composing a new note.
+- Lesson: On iOS 26, toolbar placement should describe control relationships while the system owns their glass shape and interaction response; drawing circles and capsules inside toolbar labels produces nested chrome and weaker navigation cues.
+
+### 172. Stable iPhone input-method composition
+- Problem: The rich Markdown editor reapplied attributes and published SwiftUI state for every provisional marked-text change, interrupting Chinese and other composition keyboards while typing.
+- Fix: The UIKit editor now leaves marked text under input-method ownership, defers SwiftUI synchronization and Markdown styling until the composition commits, and verifies that autosave keeps the keyboard active for continued editing.
+- Lesson: A rich-text bridge must treat marked text as provisional UIKit state; rewriting text storage during composition can terminate the input session even when the visible string looks valid.
 ### 171. Search-first iPhone widget actions
 - Problem: The existing iPhone widget compressed text, audio, and image capture into a small surface even though a small WidgetKit family cannot reliably expose multiple independent tap targets, and it offered no direct path into note search.
 - Fix: The small widget is now a focused Quick Note launcher with clearer hierarchy. A separate medium Mudsnote Actions widget adds a full-width Search Notes row above equal Voice input and Quick Note actions. Search uses a new `mudsnote://search` route that survives cold launch and authorized-folder loading, then focuses the native library search field exactly once; capture actions retain the existing durable text/audio routes.

@@ -186,7 +186,7 @@ private struct ConflictResolutionView: View {
                                 Button(role: .destructive) {
                                     conflictToDelete = file
                                 } label: {
-                                    Label("Move to Recently Deleted", systemImage: "trash")
+                                    Label("Delete", systemImage: "trash")
                                 }
                             } label: {
                                 Image(systemName: "ellipsis.circle")
@@ -205,14 +205,14 @@ private struct ConflictResolutionView: View {
         .navigationTitle("Conflicts")
         .refreshable { await appModel.refreshInbox() }
         .confirmationDialog(
-            "Move Conflict to Recently Deleted?",
+            "Delete Conflict?",
             isPresented: Binding(
                 get: { conflictToDelete != nil },
                 set: { if !$0 { conflictToDelete = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Move to Recently Deleted", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 guard let file = conflictToDelete else { return }
                 appModel.moveToRecentlyDeleted(file)
                 conflictToDelete = nil
