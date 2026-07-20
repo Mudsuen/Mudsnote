@@ -813,8 +813,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
             aiEnabled: noteStore.aiEnabled,
-            aiOllamaBaseURL: noteStore.aiOllamaBaseURLString,
-            aiOllamaModel: noteStore.aiOllamaModel,
+            aiCodexExecutablePath: noteStore.aiCodexExecutablePath,
             onPreviewOpacity: { [weak self] opacity in
                 self?.updateOpenWindowOpacity(opacity)
             },
@@ -841,8 +840,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
         noteStore.aiEnabled = settings.aiEnabled
-        noteStore.aiOllamaBaseURLString = settings.aiOllamaBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        noteStore.aiOllamaModel = settings.aiOllamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteStore.aiCodexExecutablePath = settings.aiCodexExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             try noteStore.ensureNotesDirectory()

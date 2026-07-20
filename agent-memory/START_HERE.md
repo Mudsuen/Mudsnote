@@ -1,24 +1,23 @@
 # Mudsnote Agent Memory Start Here
 
-Read this before opening deeper Mudsnote memory.
-
 ## Fast Path
 
-1. Read `AGENTS.md`.
-2. For substantial app work, read `docs/AI_HANDOFF.md`.
-3. Search local memory and docs:
-   `rg -n "keyword1|keyword2" agent-memory docs Sources Tests`
-4. Use `.codex` memory only as a legacy fallback when local search misses.
+1. Read `AGENTS.md` and, for substantial work, `docs/AI_HANDOFF.md` once.
+2. Run `./scripts/agent_context.sh --list`, then search one route with
+   `./scripts/agent_context.sh <topic> '<regex>'`.
+3. Consult `docs/ARCHITECTURE.md` only for boundary changes.
+4. Search decisions/incidents only when current code does not answer the question;
+   use iterations, archives, and global memory last.
 
-## What Lives Where
+Default context is `README.md`, `AGENTS.md`, this file, and—when needed—the
+handoff. Roadmaps, changelog, refactor history, and old records are on demand.
 
-- `docs/AI_HANDOFF.md`
-  Current handoff and implementation map.
-- `docs/REFACTOR_LOG.md`
-  Refactor notes and iteration history.
-- `agent-memory/PROJECT_MEMORY_INDEX.md`
-  Migration index for Mudsnote / QuickMarkdown memory topics.
-- `agent-memory/incidents/YYYY/`
-  Concrete bugfix or packaging incidents.
-- `agent-memory/decisions/`
-  Durable app architecture or workflow decisions.
+## Routes
+
+- Current constraints: `docs/AI_HANDOFF.md`
+- Architecture: `docs/ARCHITECTURE.md`
+- Source/tests: `scripts/agent_context.sh`
+- Refactor history: `docs/REFACTOR_LOG.md`
+- Decisions: `agent-memory/decisions/`
+- Incidents: `agent-memory/incidents/YYYY/`
+- Historical evidence: `agent-memory/iterations/`, then `agent-memory/archive/`

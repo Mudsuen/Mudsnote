@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import MudsnoteCore
 
@@ -18,6 +19,7 @@ extension NSAttributedString.Key {
     static let qmTablePlaceholder = NSAttributedString.Key("MudsnoteTablePlaceholder")
     static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
+    static let qmHighlight = NSAttributedString.Key("MudsnoteHighlight")
 }
 
 final class MarkdownAttachmentReference: NSObject {
@@ -176,6 +178,8 @@ protocol MarkdownTextViewCommands: AnyObject {
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool
     func markdownTextViewToggleBold(_ textView: MarkdownTextView)
     func markdownTextViewToggleItalic(_ textView: MarkdownTextView)
+    func markdownTextViewToggleUnderline(_ textView: MarkdownTextView)
+    func markdownTextViewToggleStrikethrough(_ textView: MarkdownTextView)
     func markdownTextViewToggleHeading(_ textView: MarkdownTextView)
     func markdownTextViewToggleBulletList(_ textView: MarkdownTextView)
     func markdownTextViewToggleOrderedList(_ textView: MarkdownTextView)
@@ -205,10 +209,109 @@ extension MarkdownTextViewCommands {
     }
 }
 
-final class MarkdownTextView: NSTextView {
+private final class ConciseEditorContextMenu: NSMenu {
+    var isSealed = false
+
+    override func addItem(_ newItem: NSMenuItem) {
+        guard !isSealed || newItem.identifier?.rawValue == "mudsnote.editor.context-menu.allowed" else { return }
+        super.addItem(newItem)
+    }
+
+    override func insertItem(_ newItem: NSMenuItem, at index: Int) {
+        guard !isSealed || newItem.identifier?.rawValue == "mudsnote.editor.context-menu.allowed" else { return }
+        super.insertItem(newItem, at: index)
+    }
+}
+
+private final class SelectionFormattingPanelButton: NSButton {
+    let menuItem: NSMenuItem
+    var onPerform: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false
+
+    init(menuItem: NSMenuItem) {
+        self.menuItem = menuItem
+        super.init(frame: .zero)
+        target = self
+        action = #selector(performMenuItem)
+        image = menuItem.image
+        imagePosition = .imageOnly
+        imageScaling = .scaleProportionallyDown
+        toolTip = menuItem.title
+        setAccessibilityLabel(menuItem.title)
+        bezelStyle = .toolbar
+        isBordered = false
+        focusRingType = .none
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: 32).isActive = true
+        heightAnchor.constraint(equalToConstant: 28).isActive = true
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        updateAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let isApplied = menuItem.state == .on
+        contentTintColor = isApplied ? .controlAccentColor : .labelColor
+        let color: NSColor = if isApplied {
+            .controlAccentColor.withAlphaComponent(isHovered ? 0.28 : 0.18)
+        } else if isHovered {
+            .selectedContentBackgroundColor.withAlphaComponent(0.16)
+        } else {
+            .clear
+        }
+        layer?.backgroundColor = color.cgColor
+    }
+
+    @objc
+    private func performMenuItem() {
+        if let submenu = menuItem.submenu {
+            submenu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: bounds.maxY + 4), in: self)
+            onPerform?()
+            return
+        }
+        guard let action = menuItem.action else { return }
+        NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+        onPerform?()
+    }
+}
+
+final class MarkdownTextView: NSTextView, NSMenuDelegate {
+    private static let allowedContextMenuItemIdentifier = NSUserInterfaceItemIdentifier("mudsnote.editor.context-menu.allowed")
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
+    var selectionMenuProvider: (() -> NSMenu?)?
+    private var selectionFormattingPanel: NSPanel?
+    private weak var selectionFormattingStack: NSStackView?
+    var isSelectionFormattingPanelVisible: Bool { selectionFormattingPanel?.isVisible == true }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -261,14 +364,58 @@ final class MarkdownTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
+        dismissSelectionFormattingPanel()
+        if handleFormattingShortcut(event) {
+            return
+        }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
         super.keyDown(with: event)
     }
 
+    private func handleFormattingShortcut(_ event: NSEvent) -> Bool {
+        guard let commandDelegate else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        switch (modifiers, event.keyCode) {
+        case ([.command], UInt16(kVK_ANSI_B)):
+            commandDelegate.markdownTextViewToggleBold(self)
+        case ([.command], UInt16(kVK_ANSI_I)):
+            commandDelegate.markdownTextViewToggleItalic(self)
+        case ([.command], UInt16(kVK_ANSI_U)):
+            commandDelegate.markdownTextViewToggleUnderline(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_X)):
+            commandDelegate.markdownTextViewToggleStrikethrough(self)
+        case ([.command, .option], UInt16(kVK_ANSI_1)):
+            commandDelegate.markdownTextViewToggleHeading(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_7)):
+            commandDelegate.markdownTextViewToggleOrderedList(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_8)):
+            commandDelegate.markdownTextViewToggleBulletList(self)
+        case ([.command, .shift], UInt16(kVK_ANSI_9)):
+            commandDelegate.markdownTextViewToggleChecklist(self)
+        default:
+            return false
+        }
+        return true
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == [.command], event.keyCode == UInt16(kVK_ANSI_Z) {
+            dismissSelectionFormattingPanel()
+            undoManager?.undo()
+            return true
+        }
+        if modifiers == [.command, .shift], event.keyCode == UInt16(kVK_ANSI_Z) {
+            dismissSelectionFormattingPanel()
+            undoManager?.redo()
+            return true
+        }
+        if handleFormattingShortcut(event) {
+            DispatchQueue.main.async { [weak self] in self?.refreshSelectionFormattingPanel() }
+            return true
+        }
         if modifiers == [.command], event.keyCode == 9,
            pasteContents(from: pasteboardForPaste()) {
             return true
@@ -342,12 +489,92 @@ final class MarkdownTextView: NSTextView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = super.menu(for: event) ?? NSMenu()
+        let selectionBeforeContextClick = selectedRange()
+        let clickedTrailingWhitespace = isEventInTrailingLineWhitespace(event)
+        let nativeMenu = super.menu(for: event) ?? NSMenu()
+        if clickedTrailingWhitespace {
+            setSelectedRange(selectionBeforeContextClick)
+        }
+
+        let menu = conciseEditingMenu(from: nativeMenu)
         configureContextMenu?(menu, event)
+        sealContextMenu(menu)
+        menu.delegate = self
+        return menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        for item in menu.items.reversed()
+        where item.identifier != Self.allowedContextMenuItemIdentifier {
+            menu.removeItem(item)
+        }
+    }
+
+    func markCurrentContextMenuItemsAsAllowed(in menu: NSMenu) {
+        menu.items.forEach { $0.identifier = Self.allowedContextMenuItemIdentifier }
+    }
+
+    func sealContextMenu(_ menu: NSMenu) {
+        markCurrentContextMenuItemsAsAllowed(in: menu)
+        (menu as? ConciseEditorContextMenu)?.isSealed = true
+    }
+
+    func isEventInTrailingLineWhitespace(_ event: NSEvent) -> Bool {
+        guard let layoutManager, let textContainer, layoutManager.numberOfGlyphs > 0 else {
+            return true
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        guard containerPoint.x >= 0, containerPoint.y >= 0 else { return false }
+
+        let glyphIndex = min(
+            layoutManager.glyphIndex(for: containerPoint, in: textContainer),
+            layoutManager.numberOfGlyphs - 1
+        )
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        guard lineRect.contains(NSPoint(x: lineRect.midX, y: containerPoint.y)) else { return true }
+
+        let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        return containerPoint.x > usedRect.maxX + 1
+    }
+
+    func conciseEditingMenu(from nativeMenu: NSMenu) -> NSMenu {
+        let menu = ConciseEditorContextMenu()
+        menu.allowsContextMenuPlugIns = false
+        let undoItem = NSMenuItem(title: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        undoItem.keyEquivalentModifierMask = [.command]
+        undoItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
+        menu.addItem(undoItem)
+        menu.addItem(.separator())
+        if let translationItem = nativeMenu.items.first(where: {
+            let title = $0.title.lowercased()
+            return title.hasPrefix("translate") || title.hasPrefix("翻译")
+        }), let copiedItem = translationItem.copy() as? NSMenuItem {
+            copiedItem.title = "翻译"
+            menu.addItem(copiedItem)
+            menu.addItem(.separator())
+        }
+
+        let commands: [(String, Selector, String)] = [
+            ("剪切", #selector(NSText.cut(_:)), "x"),
+            ("拷贝", #selector(NSText.copy(_:)), "c"),
+            ("粘贴", #selector(NSText.paste(_:)), "v")
+        ]
+        for (title, action, keyEquivalent) in commands {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+            item.keyEquivalentModifierMask = [.command]
+            menu.addItem(item)
+        }
         return menu
     }
 
     override func mouseDown(with event: NSEvent) {
+        dismissSelectionFormattingPanel()
+        let selectionBeforeMouseDown = selectedRange()
         guard let layoutManager = layoutManager,
               let textContainer = textContainer else {
             super.mouseDown(with: event)
@@ -380,10 +607,112 @@ final class MarkdownTextView: NSTextView {
         }
 
         super.mouseDown(with: event)
+        let selectionAfterMouseDown = selectedRange()
+        if selectionAfterMouseDown.length > 0,
+           selectionAfterMouseDown != selectionBeforeMouseDown {
+            showSelectionMenuIfNeeded()
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
         super.mouseDragged(with: event)
+    }
+
+    func showSelectionMenuIfNeeded() {
+        dismissSelectionFormattingPanel()
+        let selection = selectedRange()
+        guard selection.length > 0,
+              let menu = selectionMenuProvider?(),
+              !menu.items.isEmpty,
+              let layoutManager,
+              let textContainer else { return }
+
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+        var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        selectionRect.origin.x += textContainerInset.width
+        selectionRect.origin.y += textContainerInset.height
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 7, bottom: 6, right: 7)
+
+        populateSelectionFormattingStack(stack, with: menu)
+        guard let hostWindow = window else { return }
+        let panelSize = NSSize(width: CGFloat(stack.arrangedSubviews.count * 34 + 14), height: 40)
+        let surface = NSVisualEffectView(frame: NSRect(origin: .zero, size: panelSize))
+        surface.material = .menu
+        surface.state = .active
+        surface.wantsLayer = true
+        surface.layer?.cornerRadius = 10
+        surface.layer?.masksToBounds = true
+        surface.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: surface.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor)
+        ])
+
+        let selectionWindowRect = convert(selectionRect, to: nil)
+        let selectionScreenRect = hostWindow.convertToScreen(selectionWindowRect)
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        panel.hidesOnDeactivate = true
+        panel.contentView = surface
+        panel.setFrameOrigin(NSPoint(
+            x: selectionScreenRect.midX - panelSize.width / 2,
+            y: selectionScreenRect.minY - panelSize.height - 6
+        ))
+        selectionFormattingPanel = panel
+        selectionFormattingStack = stack
+        hostWindow.addChildWindow(panel, ordered: .above)
+        panel.orderFront(nil)
+        hostWindow.makeFirstResponder(self)
+    }
+
+    private func populateSelectionFormattingStack(_ stack: NSStackView, with menu: NSMenu) {
+        for view in stack.arrangedSubviews {
+            stack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        for item in menu.items where !item.isSeparatorItem {
+            let button = SelectionFormattingPanelButton(menuItem: item)
+            button.onPerform = { [weak self] in
+                DispatchQueue.main.async { self?.refreshSelectionFormattingPanel() }
+            }
+            stack.addArrangedSubview(button)
+        }
+    }
+
+    private func refreshSelectionFormattingPanel() {
+        guard selectionFormattingPanel != nil,
+              selectedRange().length > 0,
+              let stack = selectionFormattingStack,
+              let menu = selectionMenuProvider?(),
+              !menu.items.isEmpty else {
+            dismissSelectionFormattingPanel()
+            return
+        }
+        populateSelectionFormattingStack(stack, with: menu)
+        window?.makeFirstResponder(self)
+    }
+
+    private func dismissSelectionFormattingPanel() {
+        guard let panel = selectionFormattingPanel else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        selectionFormattingPanel = nil
+        selectionFormattingStack = nil
     }
 
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
@@ -417,7 +746,7 @@ final class MarkdownTextView: NSTextView {
     }
 
     func characterIndex(at event: NSEvent) -> Int? {
-        guard let layoutManager, let textContainer else { return nil }
+        guard !isEventInTrailingLineWhitespace(event), let layoutManager, let textContainer else { return nil }
         let point = convert(event.locationInWindow, from: nil)
         let containerPoint = NSPoint(
             x: point.x - textContainerInset.width,
@@ -1313,6 +1642,10 @@ enum MarkdownRichTextCodec {
             }
         }
 
+        if (attributes[.qmHighlight] as? Bool) == true {
+            wrapped = "<mark>\(wrapped)</mark>"
+        }
+
         return wrapped
     }
 
@@ -1467,6 +1800,27 @@ enum MarkdownRichTextCodec {
                 let contentStart = source.index(index, offsetBy: 3)
                 let content = String(source[contentStart..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue]))
+                index = end.upperBound
+                continue
+            }
+
+            if source[index...].hasPrefix("<mark>"),
+               let end = source[index...].range(of: "</mark>") {
+                let contentStart = source.index(index, offsetBy: 6)
+                let content = String(source[contentStart..<end.lowerBound])
+                let highlighted = parseInlineMarkdown(
+                    content,
+                    paragraphKind: paragraphKind,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+                if highlighted.length > 0 {
+                    highlighted.addAttributes([
+                        .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38),
+                        .qmHighlight: true
+                    ], range: NSRange(location: 0, length: highlighted.length))
+                }
+                output.append(highlighted)
                 index = end.upperBound
                 continue
             }

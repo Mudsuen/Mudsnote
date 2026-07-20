@@ -28,15 +28,7 @@ extension EditorWindowController {
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
-        editorTextView.configureContextMenu = { [weak self] menu, event in
-            if let attachment = self?.editorTextView.fileAttachmentReference(at: event) {
-                self?.configureAttachmentContextMenu(menu, forAttachment: attachment)
-            }
-            if let link = self?.editorTextView.linkReference(at: event) {
-                self?.configureLinkContextMenu(menu, for: link)
-            }
-            self?.configureAIContextMenu(menu)
-        }
+        editorTextView.configureContextMenu = nil
         editorTextView.onTextInputStateChanged = { [weak self] in
             self?.refreshChrome()
         }
