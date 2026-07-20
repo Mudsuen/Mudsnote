@@ -115,10 +115,6 @@ devtask rollback Mudsnote <task-id>
 
 V2 不会自动处理当前历史 Draft PR。它们没有 `devflow-manifest` v2 证据，自动合并 workflow 会直接退出。产品 PR 仍需按各自真实功能与验收证据整理；新的工作流只保证此后可验证、可逆的完成项不再默认滞留在 Draft。
 
-## 工作流上线自检
-
-每次首次安装或实质修改自动合并控制面后，用一个不改产品代码和控制文件的 `docs` 域 v2 PR 做端到端自检。成功标准是 Ready PR 通过 `policy` 与 `build-and-test`，随后由默认分支的 `workflow_run` 自动 Squash Merge；只运行 workflow 或只看到 CI 绿灯都不算完成。
-
 ## 清理
 
 自动任务在 PR 已合并、worktree 干净且本地 HEAD 与 PR head 一致后，可直接执行：
