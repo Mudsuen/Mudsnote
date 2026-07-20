@@ -9,7 +9,6 @@ struct MudsnoteCompanionApp: App {
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
         _appModel = StateObject(wrappedValue: AppModel())
-        AppShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
@@ -18,6 +17,12 @@ struct MudsnoteCompanionApp: App {
                 .environmentObject(appModel)
                 .task {
                     appModel.consumeSystemEntryRequest()
+                }
+                .task(priority: .utility) {
+                    // Shortcut metadata does not affect the first visible frame.
+                    // Let SwiftUI present the library shell before refreshing it.
+                    await Task.yield()
+                    AppShortcuts.updateAppShortcutParameters()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
