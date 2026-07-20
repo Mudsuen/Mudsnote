@@ -10,6 +10,11 @@ enum CaptureRoute: String {
     case audio
 }
 
+enum NoteOpenMode {
+    case read
+    case edit
+}
+
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
     static let pendingSearchKey = "MudsnotePendingSystemSearch"
@@ -27,6 +32,8 @@ final class AppModel: ObservableObject {
     @Published var smartFolders: [SmartFolderDefinition] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
+    @Published var noteOpenMode: NoteOpenMode = .read
+    @Published var isReaderExpanded = false
     @Published var librarySummary = LibrarySummary()
     @Published var tagSummaries: [TagSummary] = []
     @Published var draft = CaptureDraft() {
@@ -53,6 +60,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var captureSubmissionIssue: String?
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
+    @Published private(set) var isInitialLibraryLoading = true
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -93,6 +101,26 @@ final class AppModel: ObservableObject {
         folders.flatMap(\.flattened)
     }
 
+    var visibleLibraryFolders: [LibraryFolderNode] {
+        folders.filter { !$0.isMergedInboxFolder }
+    }
+
+    var mergedInboxFiles: [RecentMarkdownFile] {
+        let roots = folders
+            .filter(\.isMergedInboxFolder)
+            .map(\.relativePath)
+        guard !roots.isEmpty else { return [] }
+        return libraryFiles.filter { file in
+            roots.contains { root in
+                file.relativePath.hasPrefix(root + "/")
+            }
+        }
+    }
+
+    var mergedInboxCount: Int {
+        inboxItems.count + mergedInboxFiles.count
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
@@ -123,10 +151,12 @@ final class AppModel: ObservableObject {
             if let root = try folderAccess.resolvePersistedFolder() {
                 _ = try await configureFolder(root, configurationID: configurationID)
             } else if libraryConfigurationID == configurationID {
+                isInitialLibraryLoading = false
                 folderStatus = .missing
             }
         } catch {
             guard libraryConfigurationID == configurationID else { return }
+            isInitialLibraryLoading = false
             folderStatus = .error(error.localizedDescription)
             statusToast = .error(String(localized: "Folder access failed"))
         }
@@ -147,6 +177,7 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 guard libraryConfigurationID == configurationID else { return }
+                isInitialLibraryLoading = false
                 folderStatus = .error(error.localizedDescription)
                 statusToast = .error(String(localized: "Could not prepare folder"))
             }
@@ -156,6 +187,7 @@ final class AppModel: ObservableObject {
     func forgetFolderAndChooseAgain() {
         libraryConfigurationID = UUID()
         folderAccess.forgetPersistedFolder()
+        isInitialLibraryLoading = false
         folderStatus = .missing
         inboxItems = []
         libraryFiles = []
@@ -691,7 +723,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openFile(_ file: RecentMarkdownFile) {
+    func openFile(_ file: RecentMarkdownFile, mode: NoteOpenMode = .read) {
+        noteOpenMode = mode
         Task {
             do {
                 selectedDocument = try await fileStore.loadMarkdownDocument(
@@ -699,6 +732,22 @@ final class AppModel: ObservableObject {
                 )
             } catch {
                 statusToast = .error(String(localized: "Could not open Markdown file"))
+            }
+        }
+    }
+
+    func createNote(inFolder relativeFolderPath: String? = nil) {
+        noteOpenMode = .edit
+        Task {
+            do {
+                let document = try await fileStore.createMarkdownDocument(
+                    inFolder: relativeFolderPath
+                )
+                selectedDocument = document
+                await refreshInbox()
+            } catch {
+                noteOpenMode = .read
+                statusToast = .error(String(localized: "Could not create note"))
             }
         }
     }
@@ -740,7 +789,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -755,7 +804,7 @@ final class AppModel: ObservableObject {
             if selectedDocument?.relativePath == file.relativePath {
                 selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -769,7 +818,7 @@ final class AppModel: ObservableObject {
     func moveToRecentlyDeleted(_ files: [RecentMarkdownFile]) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -785,7 +834,7 @@ final class AppModel: ObservableObject {
                files.contains(where: { $0.relativePath == selectedDocument.relativePath }) {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Selected Notes Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Selected Notes Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -1053,7 +1102,7 @@ final class AppModel: ObservableObject {
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Folder Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Folder Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -1297,11 +1346,27 @@ final class AppModel: ObservableObject {
         do {
             let updated: MarkdownDocument
             if document.isNew {
-                updated = try await fileStore.finalizeNewMarkdownDocument(
-                    relativePath: document.relativePath,
-                    markdown: markdown,
-                    expectedMarkdown: expectedMarkdown
-                )
+                if announce {
+                    updated = try await fileStore.finalizeNewMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                } else {
+                    let autosaved = try await fileStore.saveMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                    updated = MarkdownDocument(
+                        id: autosaved.id,
+                        title: autosaved.title,
+                        relativePath: autosaved.relativePath,
+                        markdown: autosaved.markdown,
+                        modifiedAt: autosaved.modifiedAt,
+                        isNew: true
+                    )
+                }
             } else {
                 updated = try await fileStore.saveMarkdownDocument(
                     relativePath: document.relativePath,
@@ -1309,7 +1374,10 @@ final class AppModel: ObservableObject {
                     expectedMarkdown: expectedMarkdown
                 )
             }
-            selectedDocument = updated
+            if selectedDocument?.relativePath == document.relativePath,
+               updated.relativePath == document.relativePath {
+                selectedDocument = updated
+            }
             if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
@@ -1750,6 +1818,7 @@ final class AppModel: ObservableObject {
         let configurationID = UUID()
         libraryConfigurationID = configurationID
         folderStatus = .loading
+        isInitialLibraryLoading = true
         searchGeneration += 1
         activeSearchQuery = ""
         activeSearchScope = .all
@@ -1787,12 +1856,16 @@ final class AppModel: ObservableObject {
             replayFailed = true
         }
         guard libraryConfigurationID == configurationID else { return false }
+        queue = nextQueue
+        // The full Markdown inventory can be large. Reveal the navigation shell
+        // as soon as folder access and pending-write recovery are safe, then fill
+        // the timeline when the actor finishes scanning the library.
+        folderStatus = .ready(root)
         let snapshot = try await fileStore.loadLibrarySnapshot()
         let pendingCount = await nextQueue.pendingCount()
         guard libraryConfigurationID == configurationID else { return false }
-        queue = nextQueue
         apply(snapshot, pendingCount: pendingCount)
-        folderStatus = .ready(root)
+        isInitialLibraryLoading = false
         libraryRevision += 1
         announceRecoveredDraftIfPossible()
         if replayFailed {

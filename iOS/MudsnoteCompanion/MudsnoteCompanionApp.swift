@@ -9,7 +9,6 @@ struct MudsnoteCompanionApp: App {
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
         _appModel = StateObject(wrappedValue: AppModel())
-        AppShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
@@ -18,6 +17,12 @@ struct MudsnoteCompanionApp: App {
                 .environmentObject(appModel)
                 .task {
                     appModel.consumeSystemEntryRequest()
+                }
+                .task(priority: .utility) {
+                    // Shortcut metadata does not affect the first visible frame.
+                    // Let the library shell appear before asking the system to refresh it.
+                    await Task.yield()
+                    AppShortcuts.updateAppShortcutParameters()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
@@ -44,12 +49,13 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let conflictCopyArgument = "-ui-testing-conflict-copy"
     private static let fileTagArgument = "-ui-testing-file-tag"
     private static let batchNotesArgument = "-ui-testing-batch-notes"
-    private static let markdownStylesArgument = "-ui-testing-markdown-styles"
+    private static let homeScrollNotesArgument = "-ui-testing-home-scroll-notes"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
     private static let interruptedWriteArgument = "-ui-testing-interrupted-write"
     private static let searchRouteArgument = "-ui-testing-search-route"
+    private static let inboxFolderArgument = "-ui-testing-inbox-folder"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
     static func prepareIfNeeded() {
@@ -63,11 +69,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(conflictCopyArgument)
                 || arguments.contains(fileTagArgument)
                 || arguments.contains(batchNotesArgument)
+                || arguments.contains(homeScrollNotesArgument)
                 || arguments.contains(ocrAttachmentArgument)
                 || arguments.contains(audioTranscriptArgument)
                 || arguments.contains(attachmentErrorArgument)
                 || arguments.contains(interruptedWriteArgument)
                 || arguments.contains(searchRouteArgument)
+                || arguments.contains(inboxFolderArgument)
         else { return }
 
         let access = FolderAccessService()
@@ -82,6 +90,10 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.noteSortDirection")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.groupNotesByDate")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteViewStyle")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortOrder")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortDirection")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeGroupNotesByDate")
             UserDefaults.standard.removeObject(
                 forKey: AttachmentPresentationPreferences.defaultsKey
             )
@@ -159,6 +171,25 @@ private enum MudsnoteUITestLaunchConfiguration {
                     atomically: true,
                     encoding: .utf8
                 )
+                if arguments.contains(inboxFolderArgument) {
+                    let inboxFolder = root.appendingPathComponent("Inbox", isDirectory: true)
+                    try FileManager.default.createDirectory(
+                        at: inboxFolder,
+                        withIntermediateDirectories: true
+                    )
+                    try "# Filed Note\n\nStored as a Markdown file.\n".write(
+                        to: inboxFolder.appendingPathComponent("Filed Note.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    let inbox = root.appendingPathComponent("Inbox.md")
+                    let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
+                    try (existingInbox + "\n## 2026-07-18 19:00\n\nOriginal inbox memo\n").write(
+                        to: inbox,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
                 if arguments.contains(fileTagArgument) {
                     try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project #work\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle.md"),
@@ -195,38 +226,18 @@ private enum MudsnoteUITestLaunchConfiguration {
                         encoding: .utf8
                     )
                 }
-                if arguments.contains(markdownStylesArgument) {
-                    try """
-                    # Rendered Markdown
+                if arguments.contains(homeScrollNotesArgument) {
+                    for index in 1...8 {
+                        try """
+                        # Scroll Fixture \(index)
 
-                    ## Tasks
-
-                    - [x] Completed item
-                    - [ ] Open item
-                    - Bullet item
-                      - Nested bullet
-                    1. First ordered item
-                    2. Second ordered item
-
-                    > A rendered quote
-
-                    **Bold**, *italic*, `inline code`, ~~struck~~, <u>underlined</u>, and <mark>highlighted</mark>.
-
-                    ---
-
-                    ```swift
-                    let rendered = true
-                    print(rendered)
-                    ```
-
-                    | Style | State |
-                    | --- | --- |
-                    | Table | Rendered |
-                    """.write(
-                        to: projects.appendingPathComponent("Rendered Markdown.md"),
-                        atomically: true,
-                        encoding: .utf8
-                    )
+                        This card verifies that notes remain hidden behind the opaque pinned date header.
+                        """.write(
+                            to: projects.appendingPathComponent("Scroll Fixture \(index).md"),
+                            atomically: true,
+                            encoding: .utf8
+                        )
+                    }
                 }
                 if arguments.contains(ocrAttachmentArgument) {
                     let image = UIGraphicsImageRenderer(
