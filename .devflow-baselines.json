@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "tracks": {
+    "macos": {
+      "verified_commit": "71e10ec4bae9a4365ed2839c7a80b11b8e62a22f",
+      "verified_at": "2026-07-20",
+      "scope": [
+        "library",
+        "quick-capture",
+        "editor",
+        "search",
+        "settings",
+        "app-launch",
+        "packaged-app"
+      ],
+      "protected_paths": [
+        "Sources/Mudsnote/AppController.swift",
+        "Sources/Mudsnote/EditorWindowController.swift",
+        "Sources/Mudsnote/EditorWindowController+UI.swift",
+        "Sources/Mudsnote/LibraryWindowController.swift",
+        "Sources/Mudsnote/MarkdownRichEditor.swift",
+        "Sources/Mudsnote/PreferencesWindowController.swift",
+        "Tests/MudsnoteAppTests/MarkdownRichEditorTests.swift",
+        "scripts/library_smoke.sh",
+        "scripts/package_app.sh"
+      ],
+      "evidence": [
+        "https://github.com/Mudsuen/Mudsnote/pull/5"
+      ]
+    },
+    "ios": {
+      "verified_commit": "0c8747b344dd513c908ca05fd2f094f017eba3ef",
+      "verified_at": "2026-07-20",
+      "scope": [
+        "home",
+        "bottom-search",
+        "reader",
+        "editor",
+        "cold-launch",
+        "delete-projection",
+        "markdown-rendering"
+      ],
+      "protected_paths": [
+        "iOS/MudsnoteCompanion/App/AppModel.swift",
+        "iOS/MudsnoteCompanion/App/RootView.swift",
+        "iOS/MudsnoteCompanion/Core/MarkdownFileStore.swift",
+        "iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift",
+        "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift",
+        "iOS/MudsnoteCompanion/MudsnoteCompanionApp.swift",
+        "iOS/MudsnoteCompanionTests/MudsnoteCompanionTests.swift",
+        "iOS/MudsnoteCompanionUITests/MudsnoteCompanionUITests.swift"
+      ],
+      "evidence": [
+        "https://github.com/Mudsuen/Mudsnote/pull/8",
+        "https://github.com/Mudsuen/Mudsnote/pull/9"
+      ]
+    }
+  }
+}

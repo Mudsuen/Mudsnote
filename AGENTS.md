@@ -8,7 +8,8 @@ When working in this repo:
 4. `CHANGELOG.md` is user-visible history, not the only technical truth.
 5. Quick-capture UI may span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
 6. Declare `macos`, `ios`, or explicit `both`, then use `./scripts/verify <scope> pr|full|live`.
-7. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
+7. Start platform tasks with `--track macos` or `--track ios`; resolve baseline/PR overlap before development.
+8. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
 
 ## Token-efficient repository workflow
 

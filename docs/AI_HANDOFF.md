@@ -40,6 +40,8 @@ relative attachments are canonical across separate macOS and iPhone apps.
 ## Durable Contracts
 
 - Follow `docs/ARCHITECTURE.md` ownership and dependency direction.
+- `.devflow-baselines.json` records independent accepted macOS/iOS commits and
+  protected paths; start platform tasks with `--track macos` or `--track ios`.
 - Paint from bounded snapshots; validate files off-main and reject stale results.
 - Reuse projections, caches, selection, and mutation paths—no parallel index or
   filesystem scan for another presentation.

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 201. Guarded platform verified baselines
+- Problem: An accepted macOS or iOS UI could remain in an unmerged Draft PR while the next task started mechanically from `main`, allowing internally green CI to ship a visually older baseline and forcing expensive Git archaeology, conflict repair, and repeated validation.
+- Fix: Added independent machine-readable macOS and iOS verified baselines. Platform Devflow tasks now declare `--track macos` or `--track ios`, prove the matching baseline is an ancestor, and stop when another open PR touches that platform's configured high-coupling files unless the stacked/combined baseline is explicitly reviewed. Repository verification validates both contracts.
+- Lesson: Git synchronization and product acceptance are different facts. A new task must prove both that its branch is current and that it contains the latest accepted product state before implementation begins.
+
 ### 200. Clear library settings, local Codex, and persistent formatting controls
 - Problem: Settings conflated the default new-note destination with vaguely named “managed folders”, the AI pane still required a separate local-model service, the selection-format panel lacked hover/applied feedback and disappeared after every action, and rich-format/undo shortcuts stopped reaching the library editor.
 - Fix: Settings now separates a directly changeable default folder from registered library folders and explains that registration never moves files. AI commands use the signed-in local Codex runtime through ephemeral read-only executions, with automatic detection and optional executable selection; the former local-model provider and its URL/model controls are removed. Selection buttons show hover and applied backgrounds, refresh in place after formatting, and retain editor focus. The editor now handles rich-format and undo/redo key equivalents directly while still dismissing the panel for ordinary editing.
