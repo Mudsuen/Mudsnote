@@ -31,6 +31,17 @@ struct LibraryHomeView: View {
             ScrollView {
                 if !showsSearchExperience {
                     VStack(alignment: .leading, spacing: 22) {
+                        if appModel.isInitialLibraryLoading {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Loading Notes…")
+                                    .font(.footnote)
+                                    .foregroundStyle(MudsnoteColors.muted)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .accessibilityIdentifier("initial-library-loading")
+                        }
                         accountSection
                         if !appModel.smartFolders.isEmpty {
                             smartFoldersSection

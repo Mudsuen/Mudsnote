@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 173. Faster interactive iPhone cold launch
+- Problem: Opening the iPhone app with an authorized iCloud library kept the full-screen launch spinner visible until every Markdown file had been scanned and parsed; App Shortcut metadata refresh also ran synchronously in app initialization.
+- Fix: The app now completes folder and pending-write safety checks, reveals the interactive folder shell, and shows a compact in-place indexing indicator while the library snapshot fills in. Shortcut metadata refresh yields until after the first visible frame, and a gated regression proves the shell is ready before indexing completes.
+- Lesson: Cold-launch readiness should be defined by the smallest safe interactive state; optional system metadata and full-library projections belong after the first frame.
+
 ### 172. Unified black Notes-style app icons
 - Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
 - Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.

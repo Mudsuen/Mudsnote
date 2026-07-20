@@ -53,6 +53,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var captureSubmissionIssue: String?
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
+    @Published private(set) var isInitialLibraryLoading = true
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -70,6 +71,7 @@ final class AppModel: ObservableObject {
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    private let initialLibraryLoadBarrier: @Sendable () async -> Void
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -98,11 +100,15 @@ final class AppModel: ObservableObject {
         fileStore: MarkdownFileStore = MarkdownFileStore(),
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
         restoreDraftImmediately: Bool? = nil,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        initialLibraryLoadBarrier: @escaping @Sendable () async -> Void = {
+            await Task.yield()
+        }
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
@@ -120,10 +126,12 @@ final class AppModel: ObservableObject {
             if let root = try folderAccess.resolvePersistedFolder() {
                 _ = try await configureFolder(root, configurationID: configurationID)
             } else if libraryConfigurationID == configurationID {
+                isInitialLibraryLoading = false
                 folderStatus = .missing
             }
         } catch {
             guard libraryConfigurationID == configurationID else { return }
+            isInitialLibraryLoading = false
             folderStatus = .error(error.localizedDescription)
             statusToast = .error(String(localized: "Folder access failed"))
         }
@@ -144,6 +152,7 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 guard libraryConfigurationID == configurationID else { return }
+                isInitialLibraryLoading = false
                 folderStatus = .error(error.localizedDescription)
                 statusToast = .error(String(localized: "Could not prepare folder"))
             }
@@ -153,6 +162,7 @@ final class AppModel: ObservableObject {
     func forgetFolderAndChooseAgain() {
         libraryConfigurationID = UUID()
         folderAccess.forgetPersistedFolder()
+        isInitialLibraryLoading = false
         folderStatus = .missing
         inboxItems = []
         libraryFiles = []
@@ -1715,6 +1725,7 @@ final class AppModel: ObservableObject {
         let configurationID = UUID()
         libraryConfigurationID = configurationID
         folderStatus = .loading
+        isInitialLibraryLoading = true
         searchGeneration += 1
         activeSearchQuery = ""
         activeSearchScope = .all
@@ -1752,21 +1763,27 @@ final class AppModel: ObservableObject {
             replayFailed = true
         }
         guard libraryConfigurationID == configurationID else { return false }
+        queue = nextQueue
+        // A full iCloud-backed Markdown inventory can take seconds on a cold
+        // launch. Folder access and queue recovery are already safe here, so
+        // reveal the interactive shell before scanning and parsing every note.
+        folderStatus = .ready(root)
+        announceRecoveredDraftIfPossible()
+        presentPendingCaptureIfPossible()
+        await initialLibraryLoadBarrier()
+        guard libraryConfigurationID == configurationID else { return false }
         let snapshot = try await fileStore.loadLibrarySnapshot()
         let pendingCount = await nextQueue.pendingCount()
         guard libraryConfigurationID == configurationID else { return false }
-        queue = nextQueue
         apply(snapshot, pendingCount: pendingCount)
-        folderStatus = .ready(root)
+        isInitialLibraryLoading = false
         libraryRevision += 1
-        announceRecoveredDraftIfPossible()
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
         } else if queueRecoveryWarning != nil {
             statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
         }
-        presentPendingCaptureIfPossible()
         return true
     }
 
