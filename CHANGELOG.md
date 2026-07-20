@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 194. Guarded iOS verified baseline
+- Problem: An accepted iOS UI could remain in an unmerged Draft PR while the next task started mechanically from `main`, allowing internally green CI to ship a visually older baseline and forcing expensive Git archaeology, conflict repair, and repeated validation.
+- Fix: Added a machine-readable iOS verified baseline covering the merged launch, home, search, reader, editor, deletion, and Markdown state. iOS Devflow tasks now declare `--track ios`, prove that baseline is an ancestor, and stop when another open PR touches the configured high-coupling files unless the stacked/combined baseline is explicitly reviewed. Repository verification validates the contract itself.
+- Lesson: Git synchronization and product acceptance are different facts. A new task must prove both that its branch is current and that it contains the latest accepted product state before implementation begins.
+
 ### 193. Immediate iOS deletion and complete rendered Markdown
 - Problem: A deleted note remained visible until a complete library rescan finished, long-press Copy in the half/full-screen reader did not show the native selected range, and block Markdown such as checkboxes and code fences was flattened into ordinary text even though gallery cards rendered checklist state correctly.
 - Fix: Successful trash operations now remove affected notes from the in-memory list, folder, count, tag, conflict, and search projections before the background filesystem refresh. Both reader detents now share native text highlights, handles, and Copy behavior, plus semantic rendering for headings, checked and unchecked tasks, unordered and ordered lists, quotes, dividers, fenced code, tables, and existing inline styles.

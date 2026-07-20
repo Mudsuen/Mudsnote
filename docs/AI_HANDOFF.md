@@ -1,5 +1,11 @@
 # Mudsnote AI Handoff
 
+## Latest iteration (230)
+
+- `.devflow-baselines.json` records the merged iOS baseline accepted across home, bottom search, reader/editor rendering, deletion projection, and cold launch.
+- Start every iOS Devflow task with `--track ios`; Devflow rejects a base missing the accepted commit and open PRs that touch the configured high-coupling paths.
+- `scripts/validate_devflow_baselines.py` keeps the contract parseable, repository-local, ancestry-safe, and covered by normal verification without building either app for policy-only changes.
+
 ## Latest iteration (225)
 
 - macOS and iPhone app icons share an original Notes-like black-header note motif with warm white paper and gray rules.

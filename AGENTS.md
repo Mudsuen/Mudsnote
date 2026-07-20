@@ -8,9 +8,10 @@ When working in this repo:
 4. Treat `CHANGELOG.md` as user-visible iteration history, not as the only source of technical truth.
 5. For quick-capture UI work, expect changes to span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
 6. Declare every implementation task as `macos`, `ios`, or explicitly `both` before validation.
-7. Validate macOS work with `./scripts/verify macos pr|full|live`; prefer a packaged-app smoke over screenshot-only validation.
-8. Validate iOS work with `./scripts/verify ios pr|full|live`; never run `package_app.sh` or mutate `/Applications/Mudsnote.app` from an iOS-only task.
-9. Use `./scripts/verify both ...` only when the user request explicitly spans both platforms. A dual-platform live run is allowed to install both artifacts in sequence.
+7. Start iOS Devflow tasks with `--track ios`; do not bypass a baseline/overlap refusal until the upstream PR has been merged, closed, or explicitly reviewed as the chosen stacked base.
+8. Validate macOS work with `./scripts/verify macos pr|full|live`; prefer a packaged-app smoke over screenshot-only validation.
+9. Validate iOS work with `./scripts/verify ios pr|full|live`; never run `package_app.sh` or mutate `/Applications/Mudsnote.app` from an iOS-only task.
+10. Use `./scripts/verify both ...` only when the user request explicitly spans both platforms. A dual-platform live run is allowed to install both artifacts in sequence.
 
 ## Delivery
 

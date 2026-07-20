@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "tracks": {
+    "ios": {
+      "verified_commit": "0c8747b344dd513c908ca05fd2f094f017eba3ef",
+      "verified_at": "2026-07-20",
+      "scope": [
+        "home",
+        "bottom-search",
+        "reader",
+        "editor",
+        "cold-launch",
+        "delete-projection",
+        "markdown-rendering"
+      ],
+      "protected_paths": [
+        "iOS/MudsnoteCompanion/App/AppModel.swift",
+        "iOS/MudsnoteCompanion/App/RootView.swift",
+        "iOS/MudsnoteCompanion/Core/MarkdownFileStore.swift",
+        "iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift",
+        "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift",
+        "iOS/MudsnoteCompanion/MudsnoteCompanionApp.swift",
+        "iOS/MudsnoteCompanionTests/MudsnoteCompanionTests.swift",
+        "iOS/MudsnoteCompanionUITests/MudsnoteCompanionUITests.swift"
+      ],
+      "evidence": [
+        "https://github.com/Mudsuen/Mudsnote/pull/8",
+        "https://github.com/Mudsuen/Mudsnote/pull/9"
+      ]
+    }
+  }
+}
