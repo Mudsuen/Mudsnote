@@ -2,8 +2,8 @@
 
 ## Latest iteration (230)
 
-- `.devflow-baselines.json` records the merged iOS baseline accepted across home, bottom search, reader/editor rendering, deletion projection, and cold launch.
-- Start every iOS Devflow task with `--track ios`; Devflow rejects a base missing the accepted commit and open PRs that touch the configured high-coupling paths.
+- `.devflow-baselines.json` records independent merged macOS and iOS baselines, so progress on one platform cannot silently redefine acceptance for the other.
+- Start platform Devflow tasks with `--track macos` or `--track ios`; Devflow rejects a base missing that platform's accepted commit and open PRs that touch its configured high-coupling paths.
 - `scripts/validate_devflow_baselines.py` keeps the contract parseable, repository-local, ancestry-safe, and covered by normal verification without building either app for policy-only changes.
 
 ## Latest iteration (225)
