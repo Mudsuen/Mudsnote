@@ -631,6 +631,49 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testFolderShellAppearsBeforeInitialLibraryIndexCompletes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.cold-launch.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let access = FolderAccessService(defaults: defaults)
+        let (barrier, releaseBarrier) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: access,
+            initialLibraryLoadBarrier: {
+                for await _ in barrier { break }
+            }
+        )
+
+        model.selectFolder(root)
+
+        let shellDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < shellDeadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .ready(let selectedRoot) = model.folderStatus else {
+            return XCTFail("The library shell never became ready")
+        }
+        XCTAssertEqual(selectedRoot, root)
+        XCTAssertTrue(model.isInitialLibraryLoading)
+        XCTAssertEqual(model.libraryRevision, 0)
+
+        releaseBarrier.yield()
+        releaseBarrier.finish()
+
+        let indexDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < indexDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertEqual(model.libraryRevision, 1)
+        XCTAssertEqual(model.libraryFiles.count, 2)
+    }
+
+    @MainActor
     func testSceneActivationReloadsSharedQueueAndExternalMarkdownChanges() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -681,6 +724,64 @@ final class MudsnoteCompanionTests: XCTestCase {
         try await verificationQueue.load()
         let remainingCount = await verificationQueue.pendingCount()
         XCTAssertEqual(remainingCount, 0)
+    }
+
+    @MainActor
+    func testTrashRemovesNoteBeforeFullLibraryRefreshCompletes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.trash-projection.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try "# Delete Immediately\n\nDo not wait for a rescan.\n".write(
+            to: projects.appendingPathComponent("Delete Immediately.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let access = FolderAccessService(defaults: defaults)
+        let (refreshBarrier, releaseRefresh) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: access,
+            libraryRefreshBarrier: {
+                for await _ in refreshBarrier { break }
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let file = try XCTUnwrap(
+            model.libraryFiles.first { $0.relativePath.hasPrefix("Daily/") == false
+                && $0.relativePath != "Inbox.md" }
+        )
+        let originalCount = model.libraryFiles.count
+        let trashTask = Task { await model.trashNote(file) }
+
+        let removalDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < removalDeadline,
+              model.libraryFiles.contains(where: { $0.relativePath == file.relativePath }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(
+            model.libraryFiles.contains { $0.relativePath == file.relativePath },
+            "The visible projection should update before the full filesystem refresh"
+        )
+        XCTAssertEqual(model.libraryFiles.count, originalCount - 1)
+        XCTAssertEqual(model.librarySummary.allNotesCount, originalCount - 1)
+        XCTAssertEqual(model.librarySummary.recentlyDeletedCount, 1)
+
+        releaseRefresh.yield()
+        releaseRefresh.finish()
+        let didTrash = await trashTask.value
+        XCTAssertTrue(didTrash)
+        XCTAssertFalse(model.libraryFiles.contains { $0.relativePath == file.relativePath })
+        XCTAssertEqual(model.trashedFiles.first?.originalRelativePath, file.relativePath)
     }
 
     func testMarkdownBlockFormat() {
@@ -1379,6 +1480,32 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(folders.map(\.relativePath), ["Work"])
         XCTAssertEqual(folders.first?.children.map(\.relativePath), ["Work/Deep"])
         XCTAssertEqual(folders.first?.totalNoteCount, 1)
+    }
+
+    func testInboxFolderRecognitionSupportsExistingAndNumberedNames() {
+        let inboxNames = ["Inbox", "000-inbox", "000 Inbox", "收件箱"]
+        for name in inboxNames {
+            XCTAssertTrue(
+                LibraryFolderNode(
+                    relativePath: name,
+                    name: name,
+                    directNoteCount: 0,
+                    totalNoteCount: 0,
+                    children: []
+                ).isMergedInboxFolder,
+                name
+            )
+        }
+
+        XCTAssertFalse(
+            LibraryFolderNode(
+                relativePath: "Inbox Archive",
+                name: "Inbox Archive",
+                directNoteCount: 0,
+                totalNoteCount: 0,
+                children: []
+            ).isMergedInboxFolder
+        )
     }
 
     func testMarkdownTrashRestoreAvoidsCollisionAndRefreshesInventory() async throws {
@@ -2978,6 +3105,61 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testRenderedBlockParsingPreservesCodeAndBlockStyles() {
+        XCTAssertEqual(
+            MarkdownRenderBlock.parse("""
+            # Release
+
+            - [x] Shipped
+            - [ ] Verify device
+            - Bullet
+              - Nested bullet
+            1. Ordered
+            > Quoted
+            ---
+
+            ```swift
+            let enabled = true
+            print(enabled)
+            ```
+            """),
+            [
+                .line("# Release"),
+                .line("- [x] Shipped"),
+                .line("- [ ] Verify device"),
+                .line("- Bullet"),
+                .line("  - Nested bullet"),
+                .line("1. Ordered"),
+                .line("> Quoted"),
+                .line("---"),
+                .code(language: "swift", content: "let enabled = true\nprint(enabled)"),
+            ]
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("- [x] Shipped"),
+            .task(isChecked: true, text: "Shipped", indentation: 0)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("  - [ ] Verify device"),
+            .task(isChecked: false, text: "Verify device", indentation: 1)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("- Bullet"),
+            .unordered(text: "Bullet", indentation: 0)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("  - Nested bullet"),
+            .unordered(text: "Nested bullet", indentation: 1)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("12. Ordered"),
+            .ordered(marker: "12.", text: "Ordered", indentation: 0)
+        )
+        XCTAssertEqual(MarkdownLineStyle("> Quoted"), .quote("Quoted"))
+        XCTAssertEqual(MarkdownLineStyle("---"), .thematicBreak)
+        XCTAssertEqual(NoteFindIndex.visibleText(for: "- [ ] Verify device"), "Verify device")
+    }
+
     func testMarkdownHeadingSectionsCollapseByLevelAndRevealFindTargets() {
         let blocks: [MarkdownRenderBlock] = [
             .line("# Plan"),
@@ -3612,6 +3794,36 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertGreaterThan(sourceMarkerColor.cgColor.alpha, 0.9)
         XCTAssertTrue(view.checklistMarkers.isEmpty)
         XCTAssertTrue(view.bulletMarkers.isEmpty)
+    }
+
+    @MainActor
+    func testMarkdownEditorPresentationDefersWhileInputMethodHasMarkedText() throws {
+        final class MarkedTextView: UITextView {
+            var simulatedMarkedTextRange: UITextRange?
+
+            override var markedTextRange: UITextRange? {
+                simulatedMarkedTextRange
+            }
+        }
+
+        let view = MarkedTextView()
+        view.text = "draft"
+        let start = try XCTUnwrap(view.position(from: view.beginningOfDocument, offset: 0))
+        let end = try XCTUnwrap(view.position(from: start, offset: 5))
+        view.simulatedMarkedTextRange = try XCTUnwrap(view.textRange(from: start, to: end))
+        let sentinelFont = UIFont.systemFont(ofSize: 11, weight: .black)
+        view.textStorage.setAttributes(
+            [.font: sentinelFont, .foregroundColor: UIColor.systemPink],
+            range: NSRange(location: 0, length: 5)
+        )
+
+        MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+
+        XCTAssertEqual(view.textStorage.attribute(.font, at: 0, effectiveRange: nil) as? UIFont, sentinelFont)
+        XCTAssertEqual(
+            view.textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor,
+            UIColor.systemPink
+        )
     }
 
     func testMarkdownListsContinueWithNativeReturnSemantics() {

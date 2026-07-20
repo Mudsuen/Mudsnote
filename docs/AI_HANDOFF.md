@@ -20,6 +20,12 @@ relative attachments are canonical across separate macOS and iPhone apps.
 - Finder/Open Markdown routes into the library without registering an external
   file's parent. Registered roots are never moved or deleted on removal.
 - Quick capture remains a separate compact title/body flow.
+- Settings distinguishes the default new-note destination from registered roots;
+  removing a root unregisters it without deleting files.
+- Optional AI commands use the signed-in local Codex runtime through ephemeral
+  read-only execution; no separate local-model service is required.
+- The nonactivating selection-format panel preserves editor focus, applied state,
+  rich-format shortcuts, undo/redo, and Markdown source switching.
 - AppKit owns native outline/table/collection behavior; Mudsnote owns Markdown
   models, projections, commands, and asynchronous validation.
 - Installed target: `/Applications/Mudsnote.app`.

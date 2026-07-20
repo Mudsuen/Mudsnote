@@ -15,7 +15,7 @@ AI features are disabled by default. When enabled, Mudsnote sends text only afte
 - Selection actions send only the selected text.
 - Paragraph actions send only the current paragraph.
 - Whole-note actions send only the active note content.
-- Local Ollama requests stay on the configured local endpoint.
+- AI commands run through the signed-in Codex runtime on this Mac in an ephemeral, read-only session.
 - AI output is saved only if you choose to apply it.
 
 Mudsnote does not perform background AI indexing, telemetry, analytics, or automatic note uploads.
