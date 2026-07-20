@@ -1066,9 +1066,19 @@ struct MarkdownPreviewView: View {
         return .handled
     }
 
+    private func openRenderedURL(_ url: URL) {
+        guard MarkdownNoteLink.resolvedRelativePath(
+            for: url.relativeString,
+            from: currentSourceRelativePath
+        ) != nil else {
+            UIApplication.shared.open(url)
+            return
+        }
+        _ = handleMarkdownURL(url)
+    }
+
     private func openLinkedNote(_ file: RecentMarkdownFile) async {
-        guard !isEditing,
-              file.relativePath != currentSourceRelativePath,
+        guard file.relativePath != currentSourceRelativePath,
               let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
         linkedSourceHistory.append(source)
         showLinkedSource(.document(target))
@@ -1082,6 +1092,8 @@ struct MarkdownPreviewView: View {
     private func showLinkedSource(_ linkedSource: Source) {
         closeFindInNote()
         collapsedHeadingIndices.removeAll()
+        isEditing = false
+        editorFocused = false
         source = linkedSource
         switch linkedSource {
         case .memo(let memo):
@@ -1211,7 +1223,8 @@ struct MarkdownPreviewView: View {
         } else if line.hasPrefix(">") {
             markdownText(
                 line,
-                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                selectionFont: .preferredFont(forTextStyle: .body).withTraits(.traitItalic)
             )
                 .font(.body.italic())
                 .foregroundStyle(MudsnoteColors.muted)
@@ -1275,6 +1288,9 @@ struct MarkdownPreviewView: View {
                     location: NoteFindLocation(
                         blockIndex: blockIndex,
                         cellIndex: cellOffset + index
+                    ),
+                    selectionFont: .preferredFont(
+                        forTextStyle: isHeader ? .headline : .body
                     )
                 )
                     .font(isHeader ? .headline : .body)
@@ -1561,15 +1577,33 @@ struct MarkdownPreviewView: View {
 
     private func markdownText(
         _ line: String,
-        location: NoteFindLocation
-    ) -> Text {
-        Text(NoteFindIndex.highlightedText(
+        location: NoteFindLocation,
+        selectionFont: UIFont = .preferredFont(forTextStyle: .body)
+    ) -> some View {
+        let renderedText = NoteFindIndex.highlightedText(
             for: line,
             query: findQuery,
             location: location,
             activeMatch: activeFindMatch
-        ))
-        .foregroundStyle(MudsnoteColors.text)
+        )
+        return Text(renderedText)
+            .foregroundStyle(MudsnoteColors.text)
+            .accessibilityHidden(true)
+            .overlay {
+                MarkdownTextSelectionOverlay(
+                    attributedText: renderedText,
+                    font: selectionFont,
+                    onTap: {
+                        if !isFindingInNote { beginEditing() }
+                    },
+                    onOpenURL: { url in
+                        openRenderedURL(url)
+                    }
+                )
+            }
+            .accessibilityRepresentation {
+                Text(renderedText)
+            }
     }
 
     @MainActor
@@ -1927,6 +1961,112 @@ struct MarkdownPreviewView: View {
             guard case .line(let line) = block else { return nil }
             return MarkdownAttachmentLine(line)?.path
         })
+    }
+}
+
+private struct MarkdownTextSelectionOverlay: UIViewRepresentable {
+    var attributedText: AttributedString
+    var font: UIFont
+    var onTap: () -> Void
+    var onOpenURL: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.backgroundColor = .clear
+        textView.isOpaque = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.tintColor = .systemBlue
+        textView.clipsToBounds = false
+        textView.isAccessibilityElement = false
+        textView.accessibilityElementsHidden = true
+        textView.linkTextAttributes = [.foregroundColor: UIColor.clear]
+
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tap.cancelsTouchesInView = false
+        textView.addGestureRecognizer(tap)
+        context.coordinator.textView = textView
+        update(textView)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.parent = self
+        update(textView)
+    }
+
+    private func update(_ textView: UITextView) {
+        textView.font = font
+        let invisibleText = NSMutableAttributedString(
+            attributedString: NSAttributedString(attributedText)
+        )
+        let fullRange = NSRange(location: 0, length: invisibleText.length)
+        invisibleText.removeAttribute(.backgroundColor, range: fullRange)
+        invisibleText.addAttribute(.foregroundColor, value: UIColor.clear, range: fullRange)
+        textView.attributedText = invisibleText
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MarkdownTextSelectionOverlay
+        weak var textView: UITextView?
+
+        init(parent: MarkdownTextSelectionOverlay) {
+            self.parent = parent
+        }
+
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended, let textView else { return }
+            if let url = link(at: recognizer.location(in: textView), in: textView) {
+                parent.onOpenURL(url)
+            } else {
+                parent.onTap()
+            }
+        }
+
+        func textView(
+            _ textView: UITextView,
+            primaryActionFor textItem: UITextItem,
+            defaultAction: UIAction
+        ) -> UIAction? {
+            guard case .link = textItem.content else { return defaultAction }
+            return nil
+        }
+
+        private func link(at point: CGPoint, in textView: UITextView) -> URL? {
+            var location = point
+            location.x -= textView.textContainerInset.left
+            location.y -= textView.textContainerInset.top
+            let glyphIndex = textView.layoutManager.glyphIndex(
+                for: location,
+                in: textView.textContainer
+            )
+            let characterIndex = textView.layoutManager.characterIndexForGlyph(at: glyphIndex)
+            guard characterIndex < textView.attributedText.length else { return nil }
+            return textView.attributedText.attribute(
+                .link,
+                at: characterIndex,
+                effectiveRange: nil
+            ) as? URL
+        }
+    }
+}
+
+private extension UIFont {
+    func withTraits(_ traits: UIFontDescriptor.SymbolicTraits) -> UIFont {
+        guard let descriptor = fontDescriptor.withSymbolicTraits(traits) else { return self }
+        return UIFont(descriptor: descriptor, size: pointSize)
     }
 }
 

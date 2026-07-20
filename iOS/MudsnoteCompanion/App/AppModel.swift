@@ -70,6 +70,7 @@ final class AppModel: ObservableObject {
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    private let libraryRefreshBarrier: @Sendable () async -> Void
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -98,11 +99,13 @@ final class AppModel: ObservableObject {
         fileStore: MarkdownFileStore = MarkdownFileStore(),
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
         restoreDraftImmediately: Bool? = nil,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        libraryRefreshBarrier: @escaping @Sendable () async -> Void = {}
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        self.libraryRefreshBarrier = libraryRefreshBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
@@ -745,7 +748,10 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
+            let trashed = try await fileStore.trashMarkdownDocument(
+                relativePath: file.relativePath
+            )
+            applyTrashedProjection([trashed])
             if selectedDocument?.relativePath == file.relativePath {
                 selectedDocument = nil
             }
@@ -771,9 +777,10 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            _ = try await fileStore.trashMarkdownDocuments(
+            let trashed = try await fileStore.trashMarkdownDocuments(
                 relativePaths: files.map(\.relativePath)
             )
+            applyTrashedProjection(trashed)
             if let selectedDocument,
                files.contains(where: { $0.relativePath == selectedDocument.relativePath }) {
                 self.selectedDocument = nil
@@ -1658,6 +1665,7 @@ final class AppModel: ObservableObject {
     func refreshInbox() async {
         guard folderAccess.currentRoot != nil else { return }
         do {
+            await libraryRefreshBarrier()
             let snapshot = try await fileStore.loadLibrarySnapshot()
             await apply(snapshot)
         } catch {
@@ -1709,6 +1717,33 @@ final class AppModel: ObservableObject {
         } else {
             syncStatus = .idle
         }
+    }
+
+    private func applyTrashedProjection(_ items: [TrashedMarkdownFile]) {
+        let paths = Set(items.map(\.originalRelativePath))
+        guard !paths.isEmpty else { return }
+        let directoryPaths = allFolders.map(\.relativePath)
+
+        libraryFiles.removeAll { paths.contains($0.relativePath) }
+        recentFiles.removeAll { paths.contains($0.relativePath) }
+        folders = LibraryFolderNode.makeTree(
+            directoryPaths: directoryPaths,
+            files: libraryFiles
+        )
+        trashedFiles.removeAll { item in
+            items.contains { $0.id == item.id }
+        }
+        trashedFiles.append(contentsOf: items)
+        trashedFiles.sort { $0.trashedAt > $1.trashedAt }
+        librarySummary.allNotesCount = libraryFiles.count
+        librarySummary.recentlyDeletedCount = trashedFiles.count
+        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
+        conflictWarnings.removeAll { paths.contains($0) }
+        searchResults.removeAll { result in
+            guard case .file(let file) = result.destination else { return false }
+            return paths.contains(file.relativePath)
+        }
+        libraryRevision += 1
     }
 
     private func beginLibraryConfiguration() -> UUID {

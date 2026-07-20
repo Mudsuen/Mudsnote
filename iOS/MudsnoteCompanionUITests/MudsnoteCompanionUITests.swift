@@ -1316,6 +1316,26 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["find-in-note-count"].label, "1 of 1")
     }
 
+    func testRenderedMarkdownLongPressShowsNativeTextSelection() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let body = app.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.press(forDuration: 1)
+        let copy = app.menuItems["Copy"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 3))
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Native rendered Markdown selection"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))

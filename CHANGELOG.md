@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 173. Immediate iPhone deletion and native reader selection
+- Problem: A deleted note remained visible until a complete library rescan finished, and long-press Copy in the half/full-screen reader did not show the native selected range.
+- Fix: Successful trash operations now remove affected notes from the in-memory list, folder, count, tag, conflict, and search projections before the background filesystem refresh. Rendered Markdown enables system text selection, so both reader detents share native highlights, handles, and Copy behavior.
+- Lesson: Filesystem durability and visible-state publication are separate stages; complete the mutation first, project it immediately, then use a full scan as validation rather than UI synchronization.
+
 ### 172. Unified black Notes-style app icons
 - Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
 - Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.
