@@ -3,6 +3,22 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      devflow_post_merge:
+        description: Run the lightweight post-merge verification contract
+        required: false
+        type: boolean
+        default: false
+      devflow_platform:
+        description: Platform recorded in the merged Devflow manifest
+        required: false
+        type: choice
+        options:
+          - none
+          - macos
+          - ios
+          - both
+        default: none
   push:
     branches:
       - main
@@ -51,4 +67,12 @@ jobs:
       - name: Fetch current integration base
         run: git fetch origin main
       - name: Verify
-        run: ./scripts/verify full
+        env:
+          DEVFLOW_POST_MERGE: ${{ inputs.devflow_post_merge }}
+          DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
+        run: |
+          if [[ "$DEVFLOW_POST_MERGE" == true ]]; then
+            MUDSNOTE_PLATFORM_SCOPE="$DEVFLOW_PLATFORM" ./scripts/verify pr
+          else
+            ./scripts/verify full
+          fi

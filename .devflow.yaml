@@ -7,6 +7,7 @@ automation:
   legacy_pull_requests: manual
   control_plane: hold
   full_verification: merge-candidate-once
+  post_merge_verification: platform-pr-smoke
 verification:
   pr: ./scripts/verify pr
   full: ./scripts/verify full
