@@ -166,16 +166,18 @@ struct LibraryHomeView: View {
             .toolbar {
                 NotesBottomCommandBar(
                     searchText: $searchQuery,
-                    searchFocused: $isSearchFocused
-                ) {
-                    isSearchFocused = false
-                    appModel.showCapture(.audio)
-                } newNote: {
-                    isSearchFocused = false
-                    appModel.showCapture(.text)
-                }
+                    searchFocused: $isSearchFocused,
+                    newNote: {
+                        isSearchFocused = false
+                        appModel.showCapture(.text)
+                    }
+                )
             }
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
     }
 
     @ViewBuilder
@@ -1096,6 +1098,10 @@ struct FolderNotesListView: View {
         .toolbar {
             listBottomToolbar
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
         .task(id: NotesListSearchTaskID(
             query: normalizedSearchQuery,
             libraryRevision: appModel.libraryRevision
@@ -1122,14 +1128,12 @@ struct FolderNotesListView: View {
         if !isSelecting {
             NotesBottomCommandBar(
                 searchText: $searchQuery,
-                searchFocused: $isSearchFocused
-            ) {
-                isSearchFocused = false
-                appModel.showCapture(.audio)
-            } newNote: {
-                isSearchFocused = false
-                appModel.showCapture(.text)
-            }
+                searchFocused: $isSearchFocused,
+                newNote: {
+                    isSearchFocused = false
+                    appModel.showCapture(.text)
+                }
+            )
         }
     }
 
@@ -1396,6 +1400,10 @@ struct LibraryFolderView: View {
         .toolbar {
             folderBottomToolbar
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder Name", text: $folderName)
             Button("Cancel", role: .cancel) {}
@@ -1566,14 +1574,12 @@ struct LibraryFolderView: View {
         if !isSelecting {
             NotesBottomCommandBar(
                 searchText: $searchQuery,
-                searchFocused: $isSearchFocused
-            ) {
-                isSearchFocused = false
-                appModel.showCapture(.audio)
-            } newNote: {
-                isSearchFocused = false
-                appModel.showCapture(.text)
-            }
+                searchFocused: $isSearchFocused,
+                newNote: {
+                    isSearchFocused = false
+                    appModel.showCapture(.text)
+                }
+            )
         }
     }
 
@@ -2926,59 +2932,111 @@ private struct TagFilterChip: View {
 struct NotesBottomCommandBar: ToolbarContent {
     @Binding var searchText: String
     @Binding var searchFocused: Bool
-    var record: () -> Void
     var newNote: () -> Void
 
+    @ToolbarContentBuilder
     var body: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) {
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.secondary)
-                NativeToolbarSearchField(
-                    text: $searchText,
-                    isFocused: $searchFocused
-                )
-                    .accessibilityIdentifier("library-search-field")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                        searchFocused = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                    .accessibilityIdentifier("clear-library-search")
+        if #available(iOS 26.0, *) {
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: newNote) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
                 }
+                .tint(.primary)
+                .accessibilityLabel("New note")
+                .accessibilityIdentifier("new-note-button")
             }
-            .foregroundStyle(MudsnoteColors.text)
-            .padding(.horizontal, 12)
-            .frame(minWidth: 190, idealWidth: 226)
-            .frame(height: 38)
-            .background(.regularMaterial, in: Capsule())
-            .accessibilityElement(children: .contain)
-        }
+        } else {
+            ToolbarItem(placement: .bottomBar) {
+                NotesToolbarSearchField(
+                    searchText: $searchText,
+                    searchFocused: $searchFocused,
+                    drawsFallbackBackground: true
+                )
+            }
 
-        ToolbarItemGroup(placement: .bottomBar) {
-            Button(action: record) {
-                Image(systemName: "mic")
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: newNote) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(Color.black)
+                        .frame(width: 46, height: 46)
+                        .background(.regularMaterial, in: Circle())
+                        .overlay {
+                            Circle().stroke(MudsnoteColors.line, lineWidth: 1)
+                        }
+                    }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New note")
+                .accessibilityIdentifier("new-note-button")
             }
-            .accessibilityLabel("Voice input")
-
-            Button(action: newNote) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 19, weight: .semibold))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(Color.black)
-                    .frame(width: 36, height: 36)
-                    .background(NotesCloneColors.folderYellow, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("New note")
-            .accessibilityIdentifier("new-note-button")
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func notesNativeToolbarSearch(
+        text: Binding<String>,
+        isPresented: Binding<Bool>
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            searchable(
+                text: text,
+                isPresented: isPresented,
+                placement: .toolbar,
+                prompt: Text("Search")
+            )
+        } else {
+            self
+        }
+    }
+}
+
+private struct NotesToolbarSearchField: View {
+    @Binding var searchText: String
+    @Binding var searchFocused: Bool
+    var drawsFallbackBackground: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+            NativeToolbarSearchField(
+                text: $searchText,
+                isFocused: $searchFocused
+            )
+            .accessibilityIdentifier("library-search-field")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("clear-library-search")
+            }
+        }
+        .foregroundStyle(MudsnoteColors.text)
+        .padding(.horizontal, 12)
+        .frame(minWidth: 190, idealWidth: 226)
+        .frame(height: 38)
+        .background {
+            if drawsFallbackBackground {
+                Capsule().fill(.regularMaterial)
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

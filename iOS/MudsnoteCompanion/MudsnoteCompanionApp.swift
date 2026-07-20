@@ -44,6 +44,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let conflictCopyArgument = "-ui-testing-conflict-copy"
     private static let fileTagArgument = "-ui-testing-file-tag"
     private static let batchNotesArgument = "-ui-testing-batch-notes"
+    private static let markdownStylesArgument = "-ui-testing-markdown-styles"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
@@ -190,6 +191,39 @@ private enum MudsnoteUITestLaunchConfiguration {
                     - [ ] Ship the note
                     """.write(
                         to: projects.appendingPathComponent("Second UI Note.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                }
+                if arguments.contains(markdownStylesArgument) {
+                    try """
+                    # Rendered Markdown
+
+                    ## Tasks
+
+                    - [x] Completed item
+                    - [ ] Open item
+                    - Bullet item
+                      - Nested bullet
+                    1. First ordered item
+                    2. Second ordered item
+
+                    > A rendered quote
+
+                    **Bold**, *italic*, `inline code`, ~~struck~~, <u>underlined</u>, and <mark>highlighted</mark>.
+
+                    ---
+
+                    ```swift
+                    let rendered = true
+                    print(rendered)
+                    ```
+
+                    | Style | State |
+                    | --- | --- |
+                    | Table | Rendered |
+                    """.write(
+                        to: projects.appendingPathComponent("Rendered Markdown.md"),
                         atomically: true,
                         encoding: .utf8
                     )

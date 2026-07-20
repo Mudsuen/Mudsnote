@@ -3036,6 +3036,61 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testRenderedBlockParsingPreservesCodeAndBlockStyles() {
+        XCTAssertEqual(
+            MarkdownRenderBlock.parse("""
+            # Release
+
+            - [x] Shipped
+            - [ ] Verify device
+            - Bullet
+              - Nested bullet
+            1. Ordered
+            > Quoted
+            ---
+
+            ```swift
+            let enabled = true
+            print(enabled)
+            ```
+            """),
+            [
+                .line("# Release"),
+                .line("- [x] Shipped"),
+                .line("- [ ] Verify device"),
+                .line("- Bullet"),
+                .line("  - Nested bullet"),
+                .line("1. Ordered"),
+                .line("> Quoted"),
+                .line("---"),
+                .code(language: "swift", content: "let enabled = true\nprint(enabled)"),
+            ]
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("- [x] Shipped"),
+            .task(isChecked: true, text: "Shipped", indentation: 0)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("  - [ ] Verify device"),
+            .task(isChecked: false, text: "Verify device", indentation: 1)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("- Bullet"),
+            .unordered(text: "Bullet", indentation: 0)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("  - Nested bullet"),
+            .unordered(text: "Nested bullet", indentation: 1)
+        )
+        XCTAssertEqual(
+            MarkdownLineStyle("12. Ordered"),
+            .ordered(marker: "12.", text: "Ordered", indentation: 0)
+        )
+        XCTAssertEqual(MarkdownLineStyle("> Quoted"), .quote("Quoted"))
+        XCTAssertEqual(MarkdownLineStyle("---"), .thematicBreak)
+        XCTAssertEqual(NoteFindIndex.visibleText(for: "- [ ] Verify device"), "Verify device")
+    }
+
     func testMarkdownHeadingSectionsCollapseByLevelAndRevealFindTargets() {
         let blocks: [MarkdownRenderBlock] = [
             .line("# Plan"),

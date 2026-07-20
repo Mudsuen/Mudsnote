@@ -1336,6 +1336,46 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testRenderedMarkdownShowsTasksAndBlockStyles() {
+        let app = launchApp(reset: true, fixtureFolder: true, markdownStyles: true)
+        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
+        app.buttons["all-notes-link"].tap()
+        let note = app.buttons["markdown-file-row-Projects/Rendered Markdown.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let tasks = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "markdown-task-")
+        )
+        XCTAssertEqual(tasks.count, 2)
+        XCTAssertTrue(app.staticTexts["Completed item"].exists)
+        XCTAssertTrue(app.staticTexts["Open item"].exists)
+        XCTAssertFalse(app.staticTexts["- [x] Completed item"].exists)
+        XCTAssertTrue(app.staticTexts["Bullet item"].exists)
+        XCTAssertTrue(app.staticTexts["First ordered item"].exists)
+        XCTAssertTrue(app.staticTexts["A rendered quote"].exists)
+        let code = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "rendered-markdown-code-")
+        ).firstMatch
+        let table = app.descendants(matching: .any)["rendered-markdown-table"]
+        XCTAssertTrue(code.exists)
+        XCTAssertTrue(table.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Rendered Markdown block styles"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        for _ in 0..<3 where !code.isHittable {
+            app.swipeUp(velocity: .fast)
+        }
+        XCTAssertTrue(code.isHittable)
+        let lowerStylesScreenshot = XCTAttachment(screenshot: app.screenshot())
+        lowerStylesScreenshot.name = "Rendered Markdown code and table"
+        lowerStylesScreenshot.lifetime = .keepAlways
+        add(lowerStylesScreenshot)
+    }
+
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
@@ -2005,7 +2045,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         attachmentError: Bool = false,
         interruptedWrite: Bool = false,
         scanText: Bool = false,
-        searchRoute: Bool = false
+        searchRoute: Bool = false,
+        markdownStyles: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -2024,7 +2065,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
             attachmentError ? "-ui-testing-attachment-error" : nil,
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
-            searchRoute ? "-ui-testing-search-route" : nil
+            searchRoute ? "-ui-testing-search-route" : nil,
+            markdownStyles ? "-ui-testing-markdown-styles" : nil
         ].compactMap { $0 }
         app.launch()
         return app

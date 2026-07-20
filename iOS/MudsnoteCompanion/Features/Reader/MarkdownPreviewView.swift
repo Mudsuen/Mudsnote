@@ -1149,6 +1149,12 @@ struct MarkdownPreviewView: View {
                             rows: rows,
                             blockIndex: item.index
                         )
+                    case .code(let language, let content):
+                        markdownCodeBlock(
+                            language: language,
+                            content: content,
+                            blockIndex: item.index
+                        )
                     }
                 }
                 .id(item.index)
@@ -1191,7 +1197,7 @@ struct MarkdownPreviewView: View {
     ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
             attachmentView(attachment, blockIndex: blockIndex)
-        } else if MarkdownHeading(line) != nil {
+        } else if case .heading(let heading) = MarkdownLineStyle(line) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if hasCollapsibleContent {
                     Button {
@@ -1216,13 +1222,46 @@ struct MarkdownPreviewView: View {
                 }
 
                 markdownText(
-                    line,
+                    heading.title,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                    selectionFont: heading.uiFont
+                )
+                .font(heading.font)
+            }
+        } else if case .task(let isChecked, let text, let indentation) = MarkdownLineStyle(line) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(
+                        isChecked ? Color(hex: 0xD7BD68) : MudsnoteColors.muted
+                    )
+                    .accessibilityLabel(isChecked ? "Completed" : "Not completed")
+                markdownText(
+                    text,
                     location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
                 )
+                .strikethrough(isChecked, color: MudsnoteColors.muted)
             }
-        } else if line.hasPrefix(">") {
+            .padding(.leading, CGFloat(indentation) * 16)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("markdown-task-\(blockIndex)")
+        } else if case .unordered(let text, let indentation) = MarkdownLineStyle(line) {
+            markdownListRow(
+                marker: "•",
+                text: text,
+                indentation: indentation,
+                blockIndex: blockIndex
+            )
+        } else if case .ordered(let marker, let text, let indentation) = MarkdownLineStyle(line) {
+            markdownListRow(
+                marker: marker,
+                text: text,
+                indentation: indentation,
+                blockIndex: blockIndex
+            )
+        } else if case .quote(let text) = MarkdownLineStyle(line) {
             markdownText(
-                line,
+                text,
                 location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
                 selectionFont: .preferredFont(forTextStyle: .body).withTraits(.traitItalic)
             )
@@ -1232,12 +1271,66 @@ struct MarkdownPreviewView: View {
                 .overlay(alignment: .leading) {
                     Rectangle().fill(MudsnoteColors.line).frame(width: 3)
                 }
+        } else if case .thematicBreak = MarkdownLineStyle(line) {
+            Divider()
+                .overlay(MudsnoteColors.line)
+                .accessibilityLabel("Separator")
         } else {
             markdownText(
                 line,
                 location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
             )
         }
+    }
+
+    private func markdownListRow(
+        marker: String,
+        text: String,
+        indentation: Int,
+        blockIndex: Int
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(marker)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(minWidth: 18, alignment: .trailing)
+            markdownText(
+                text,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+            )
+        }
+        .padding(.leading, CGFloat(indentation) * 16)
+    }
+
+    private func markdownCodeBlock(
+        language: String?,
+        content: String,
+        blockIndex: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let language, !language.isEmpty {
+                Text(language.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(MudsnoteColors.muted)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                markdownText(
+                    content,
+                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                    selectionFont: .monospacedSystemFont(ofSize: 15, weight: .regular),
+                    rendersInlineMarkdown: false
+                )
+                .font(.system(.callout, design: .monospaced))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+        .accessibilityIdentifier("rendered-markdown-code-\(blockIndex)")
     }
 
     private func markdownTable(
@@ -1578,13 +1671,15 @@ struct MarkdownPreviewView: View {
     private func markdownText(
         _ line: String,
         location: NoteFindLocation,
-        selectionFont: UIFont = .preferredFont(forTextStyle: .body)
+        selectionFont: UIFont = .preferredFont(forTextStyle: .body),
+        rendersInlineMarkdown: Bool = true
     ) -> some View {
         let renderedText = NoteFindIndex.highlightedText(
             for: line,
             query: findQuery,
             location: location,
-            activeMatch: activeFindMatch
+            activeMatch: activeFindMatch,
+            rendersInlineMarkdown: rendersInlineMarkdown
         )
         return Text(renderedText)
             .foregroundStyle(MudsnoteColors.text)
@@ -2469,15 +2564,37 @@ enum MarkdownInlineEditing {
 enum MarkdownRenderBlock: Equatable {
     case line(String)
     case table(headers: [String], rows: [[String]])
+    case code(language: String?, content: String)
 
     static func parse(_ markdown: String) -> [MarkdownRenderBlock] {
         let lines = markdown.components(separatedBy: .newlines)
         var blocks: [MarkdownRenderBlock] = []
         var index = 0
         while index < lines.count {
-            let line = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            let sourceLine = lines[index]
+            let line = sourceLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else {
                 index += 1
+                continue
+            }
+
+            if line.hasPrefix("```") || line.hasPrefix("~~~") {
+                let fence = String(line.prefix(3))
+                let language = line.dropFirst(3)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                var codeLines: [String] = []
+                index += 1
+                while index < lines.count,
+                      !lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                        .hasPrefix(fence) {
+                    codeLines.append(lines[index])
+                    index += 1
+                }
+                if index < lines.count { index += 1 }
+                blocks.append(.code(
+                    language: language.isEmpty ? nil : language,
+                    content: codeLines.joined(separator: "\n")
+                ))
                 continue
             }
 
@@ -2494,7 +2611,7 @@ enum MarkdownRenderBlock: Equatable {
                 continue
             }
 
-            blocks.append(.line(line))
+            blocks.append(.line(sourceLine))
             index += 1
         }
         return blocks
@@ -2540,6 +2657,101 @@ struct MarkdownHeading: Equatable {
         guard !title.isEmpty else { return nil }
         self.level = markerCount
         self.title = title
+    }
+
+    var font: Font {
+        switch level {
+        case 1: .title2.bold()
+        case 2: .title3.bold()
+        case 3: .headline
+        default: .subheadline.weight(.semibold)
+        }
+    }
+
+    var uiFont: UIFont {
+        switch level {
+        case 1: .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
+        case 2: .preferredFont(forTextStyle: .title3).withTraits(.traitBold)
+        case 3: .preferredFont(forTextStyle: .headline)
+        default: .preferredFont(forTextStyle: .subheadline).withTraits(.traitBold)
+        }
+    }
+}
+
+enum MarkdownLineStyle: Equatable {
+    case heading(MarkdownHeading)
+    case task(isChecked: Bool, text: String, indentation: Int)
+    case unordered(text: String, indentation: Int)
+    case ordered(marker: String, text: String, indentation: Int)
+    case quote(String)
+    case thematicBreak
+    case paragraph(String)
+
+    init(_ line: String) {
+        if let heading = MarkdownHeading(line) {
+            self = .heading(heading)
+            return
+        }
+
+        let indentation = min(line.prefix { $0 == " " || $0 == "\t" }.reduce(0) {
+            $0 + ($1 == "\t" ? 2 : 1)
+        } / 2, 3)
+        if let captures = Self.captures(
+            in: line,
+            pattern: #"^\s*[-*+]\s+\[([ xX])\]\s*(.*)$"#
+        ) {
+            self = .task(
+                isChecked: captures[0].lowercased() == "x",
+                text: captures[1],
+                indentation: indentation
+            )
+            return
+        }
+        if line.range(
+            of: #"^\s*(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$"#,
+            options: .regularExpression
+        ) != nil {
+            self = .thematicBreak
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*[-*+]\s+(.*)$"#) {
+            self = .unordered(text: captures[0], indentation: indentation)
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*(\d+[.)])\s+(.*)$"#) {
+            self = .ordered(
+                marker: captures[0],
+                text: captures[1],
+                indentation: indentation
+            )
+            return
+        }
+        if let captures = Self.captures(in: line, pattern: #"^\s*>\s?(.*)$"#) {
+            self = .quote(captures[0])
+            return
+        }
+        self = .paragraph(line)
+    }
+
+    var visibleText: String {
+        switch self {
+        case .heading(let heading): heading.title
+        case .task(_, let text, _), .unordered(let text, _), .ordered(_, let text, _): text
+        case .quote(let text), .paragraph(let text): text
+        case .thematicBreak: ""
+        }
+    }
+
+    private static func captures(in value: String, pattern: String) -> [String]? {
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: value,
+                range: NSRange(value.startIndex..., in: value)
+              ) else { return nil }
+        return (1..<match.numberOfRanges).compactMap { index in
+            guard let range = Range(match.range(at: index), in: value) else { return nil }
+            return String(value[range])
+        }
     }
 }
 
@@ -2700,6 +2912,13 @@ enum NoteFindIndex {
                         location: location
                     ))
                 }
+            case .code(_, let content):
+                let location = NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+                results.append(contentsOf: matches(
+                    in: content,
+                    term: term,
+                    location: location
+                ))
             }
         }
         return results
@@ -2738,12 +2957,7 @@ enum NoteFindIndex {
     }
 
     static func visibleText(for markdown: String) -> String {
-        let source: String
-        if markdown.hasPrefix(">") {
-            source = markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
-        } else {
-            source = markdown
-        }
+        let source = MarkdownLineStyle(markdown).visibleText
         return String(MarkdownInlineRendering.attributedText(for: source).characters)
     }
 
@@ -2751,12 +2965,12 @@ enum NoteFindIndex {
         for markdown: String,
         query: String,
         location: NoteFindLocation,
-        activeMatch: NoteFindMatch?
+        activeMatch: NoteFindMatch?,
+        rendersInlineMarkdown: Bool = true
     ) -> AttributedString {
-        let source = markdown.hasPrefix(">")
-            ? markdown.trimmingCharacters(in: CharacterSet(charactersIn: "> "))
-            : markdown
-        let rendered = MarkdownInlineRendering.attributedText(for: source)
+        let rendered = rendersInlineMarkdown
+            ? MarkdownInlineRendering.attributedText(for: markdown)
+            : AttributedString(markdown)
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return rendered }
 
