@@ -1539,12 +1539,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testRenderedMarkdownLongPressShowsNativeTextSelection() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+        let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
 
         let body = app.staticTexts["Restore this note end to end."]
         XCTAssertTrue(body.waitForExistence(timeout: 5))
@@ -1559,12 +1557,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testRenderedMarkdownShowsTasksAndBlockStyles() {
-        let app = launchApp(reset: true, fixtureFolder: true, markdownStyles: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            markdownStyles: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/Rendered Markdown.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
 
         let tasks = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "markdown-task-")
@@ -2378,6 +2379,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         interruptedWrite: Bool = false,
         scanText: Bool = false,
         searchRoute: Bool = false,
+        markdownStyles: Bool = false,
         inboxFolder: Bool = false,
         halfScreenReader: Bool = false,
         openDirectory: Bool = true
@@ -2402,6 +2404,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
             searchRoute ? "-ui-testing-search-route" : nil,
+            markdownStyles ? "-ui-testing-markdown-styles" : nil,
             inboxFolder ? "-ui-testing-inbox-folder" : nil,
             fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil
         ].compactMap { $0 }

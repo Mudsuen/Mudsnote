@@ -1707,9 +1707,6 @@ struct MarkdownPreviewView: View {
                 MarkdownTextSelectionOverlay(
                     attributedText: renderedText,
                     font: selectionFont,
-                    onTap: {
-                        if !isFindingInNote { beginEditing() }
-                    },
                     onOpenURL: { url in
                         openRenderedURL(url)
                     }
@@ -2115,7 +2112,6 @@ struct MarkdownPreviewView: View {
 private struct MarkdownTextSelectionOverlay: UIViewRepresentable {
     var attributedText: AttributedString
     var font: UIFont
-    var onTap: () -> Void
     var onOpenURL: (URL) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -2178,8 +2174,6 @@ private struct MarkdownTextSelectionOverlay: UIViewRepresentable {
             guard recognizer.state == .ended, let textView else { return }
             if let url = link(at: recognizer.location(in: textView), in: textView) {
                 parent.onOpenURL(url)
-            } else {
-                parent.onTap()
             }
         }
 
