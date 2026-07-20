@@ -79,6 +79,7 @@ final class AppModel: ObservableObject {
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
     private let libraryRefreshBarrier: @Sendable () async -> Void
+    private let initialLibraryLoadBarrier: @Sendable () async -> Void
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -128,12 +129,16 @@ final class AppModel: ObservableObject {
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
         restoreDraftImmediately: Bool? = nil,
         defaults: UserDefaults = .standard,
-        libraryRefreshBarrier: @escaping @Sendable () async -> Void = {}
+        libraryRefreshBarrier: @escaping @Sendable () async -> Void = {},
+        initialLibraryLoadBarrier: @escaping @Sendable () async -> Void = {
+            await Task.yield()
+        }
     ) {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
         self.libraryRefreshBarrier = libraryRefreshBarrier
+        self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
@@ -1857,24 +1862,26 @@ final class AppModel: ObservableObject {
         }
         guard libraryConfigurationID == configurationID else { return false }
         queue = nextQueue
-        // The full Markdown inventory can be large. Reveal the navigation shell
-        // as soon as folder access and pending-write recovery are safe, then fill
-        // the timeline when the actor finishes scanning the library.
+        // A full iCloud-backed Markdown inventory can take seconds on a cold
+        // launch. Folder access and queue recovery are already safe here, so
+        // reveal the interactive shell before scanning and parsing every note.
         folderStatus = .ready(root)
+        announceRecoveredDraftIfPossible()
+        presentPendingCaptureIfPossible()
+        await initialLibraryLoadBarrier()
+        guard libraryConfigurationID == configurationID else { return false }
         let snapshot = try await fileStore.loadLibrarySnapshot()
         let pendingCount = await nextQueue.pendingCount()
         guard libraryConfigurationID == configurationID else { return false }
         apply(snapshot, pendingCount: pendingCount)
         isInitialLibraryLoading = false
         libraryRevision += 1
-        announceRecoveredDraftIfPossible()
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
         } else if queueRecoveryWarning != nil {
             statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
         }
-        presentPendingCaptureIfPossible()
         return true
     }
 

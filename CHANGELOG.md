@@ -17,6 +17,16 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 193. Immediate iOS deletion and complete rendered Markdown
+- Problem: A deleted note remained visible until a complete library rescan finished, long-press Copy in the half/full-screen reader did not show the native selected range, and block Markdown such as checkboxes and code fences was flattened into ordinary text even though gallery cards rendered checklist state correctly.
+- Fix: Successful trash operations now remove affected notes from the in-memory list, folder, count, tag, conflict, and search projections before the background filesystem refresh. Both reader detents now share native text highlights, handles, and Copy behavior, plus semantic rendering for headings, checked and unchecked tasks, unordered and ordered lists, quotes, dividers, fenced code, tables, and existing inline styles.
+- Lesson: A filesystem-backed app still needs immediate successful-operation projections, and a read-only Markdown surface must preserve block semantics as well as inline attribution.
+
+### 192. Unified black Notes-style app icons
+- Problem: The macOS and iPhone apps used different dark note-card icons, so the product identity was inconsistent and did not match the requested Notes-like visual language.
+- Fix: Rebuilt both icon families around one original black-header note motif: a near-black top band, warm white paper, and restrained gray rules. The macOS asset keeps platform-appropriate transparent padding and rounding, while the iPhone asset uses a full-bleed composition for the system mask; both remain reproducibly generated at every declared size.
+- Lesson: Cross-platform branding should share a recognizable motif while respecting each platform's icon mask and optical scale; source-backed generators keep the small sizes and packaged artifacts aligned.
+
 ### 191. Faster iOS shell and native Notes home controls
 - Problem: Cold launch held the entire interface behind a progress screen until every Markdown file was indexed, the home timeline did not expose the Notes-style view controls, and its drawer's always-mounted scroll view prevented the system navigation bar from collapsing the large title like Apple Notes.
 - Fix: Folder access and pending-write recovery now reveal the home shell before the library actor completes its full scan, App Shortcut metadata refresh is deferred beyond the first visible frame, and the timeline displays an in-place loading state. The closed drawer no longer contributes a competing scroll view, so iOS 26 owns the large-title and note-count transition through `navigationSubtitle` plus the native hard scroll-edge effect. The home also persists card/list mode and uses a system `UIMenu` with selection, sort and group subtitles, date grouping, and the attachment destination.
@@ -116,7 +126,6 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Problem: The rich Markdown editor reapplied attributes and published SwiftUI state for every provisional marked-text change, interrupting Chinese and other composition keyboards while typing.
 - Fix: The UIKit editor now leaves marked text under input-method ownership, defers SwiftUI synchronization and Markdown styling until the composition commits, and verifies that autosave keeps the keyboard active for continued editing.
 - Lesson: A rich-text bridge must treat marked text as provisional UIKit state; rewriting text storage during composition can terminate the input session even when the visible string looks valid.
-
 ### 171. Search-first iPhone widget actions
 - Problem: The existing iPhone widget compressed text, audio, and image capture into a small surface even though a small WidgetKit family cannot reliably expose multiple independent tap targets, and it offered no direct path into note search.
 - Fix: The small widget is now a focused Quick Note launcher with clearer hierarchy. A separate medium Mudsnote Actions widget adds a full-width Search Notes row above equal Voice input and Quick Note actions. Search uses a new `mudsnote://search` route that survives cold launch and authorized-folder loading, then focuses the native library search field exactly once; capture actions retain the existing durable text/audio routes.

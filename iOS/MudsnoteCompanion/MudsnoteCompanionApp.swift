@@ -20,7 +20,7 @@ struct MudsnoteCompanionApp: App {
                 }
                 .task(priority: .utility) {
                     // Shortcut metadata does not affect the first visible frame.
-                    // Let the library shell appear before asking the system to refresh it.
+                    // Let SwiftUI present the library shell before refreshing it.
                     await Task.yield()
                     AppShortcuts.updateAppShortcutParameters()
                 }

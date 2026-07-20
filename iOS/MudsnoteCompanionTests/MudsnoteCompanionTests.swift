@@ -631,6 +631,49 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testFolderShellAppearsBeforeInitialLibraryIndexCompletes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.cold-launch.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let access = FolderAccessService(defaults: defaults)
+        let (barrier, releaseBarrier) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: access,
+            initialLibraryLoadBarrier: {
+                for await _ in barrier { break }
+            }
+        )
+
+        model.selectFolder(root)
+
+        let shellDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < shellDeadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .ready(let selectedRoot) = model.folderStatus else {
+            return XCTFail("The library shell never became ready")
+        }
+        XCTAssertEqual(selectedRoot, root)
+        XCTAssertTrue(model.isInitialLibraryLoading)
+        XCTAssertEqual(model.libraryRevision, 0)
+
+        releaseBarrier.yield()
+        releaseBarrier.finish()
+
+        let indexDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < indexDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertEqual(model.libraryRevision, 1)
+        XCTAssertEqual(model.libraryFiles.count, 2)
+    }
+
+    @MainActor
     func testSceneActivationReloadsSharedQueueAndExternalMarkdownChanges() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
