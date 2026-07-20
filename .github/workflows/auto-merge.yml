@@ -1,0 +1,132 @@
+name: Devflow Auto Merge
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: devflow-auto-merge-${{ github.event.workflow_run.repository.id }}-main
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'pull_request' ||
+       github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      TESTED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Merge eligible verified change
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_json="$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")"
+          pr_number="$(jq -r '.pull_requests[0].number // empty' <<<"$run_json")"
+          if [[ -z "$pr_number" ]]; then
+            pr_number="$(
+              gh api -H 'Accept: application/vnd.github+json' \
+                "repos/$REPOSITORY/commits/$TESTED_HEAD_SHA/pulls" \
+                --jq 'map(select(.state == "open" and .base.ref == "main"))[0].number // empty'
+            )"
+          fi
+          if [[ -z "$pr_number" ]]; then
+            echo 'No open main pull request is associated with this verified commit.'
+            exit 0
+          fi
+
+          pr_json="$(gh api "repos/$REPOSITORY/pulls/$pr_number")"
+          state="$(jq -r '.state' <<<"$pr_json")"
+          draft="$(jq -r '.draft' <<<"$pr_json")"
+          base_ref="$(jq -r '.base.ref' <<<"$pr_json")"
+          head_ref="$(jq -r '.head.ref' <<<"$pr_json")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+          head_repo="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
+          body="$(jq -r '.body // ""' <<<"$pr_json")"
+
+          if [[ "$state" != open || "$draft" != false || "$base_ref" != main ]]; then
+            echo 'PR is closed, Draft, or not targeting main; no automatic merge.'
+            exit 0
+          fi
+          if [[ "$head_repo" != "$REPOSITORY" || "$head_ref" != codex/* ]]; then
+            echo 'Only same-repository codex/* branches are eligible.'
+            exit 0
+          fi
+          if [[ "$head_sha" != "$TESTED_HEAD_SHA" ]]; then
+            echo 'PR head changed after this CI run; the newer run owns the decision.'
+            exit 0
+          fi
+
+          manifest="$(
+            BODY="$body" python3 - <<'PY'
+          import os
+          import re
+
+          match = re.search(r"<!-- devflow-manifest: (\{[^\n]+\}) -->", os.environ["BODY"])
+          print(match.group(1) if match else "")
+          PY
+          )"
+          if [[ -z "$manifest" ]]; then
+            echo 'No Devflow v2 manifest; legacy PR remains manual.'
+            exit 0
+          fi
+          if ! jq -e \
+            '.schema_version == 2 and .merge_policy == "auto" and .hard_stop == "none"' \
+            >/dev/null <<<"$manifest"; then
+            echo 'Manifest requires a merge hold.'
+            exit 0
+          fi
+
+          changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$pr_number/files" --jq '.[].filename')"
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/*|.devflow.yaml|bin/devtask|scripts/verify*|scripts/package*|scripts/deploy*|scripts/release*|templates/auto-merge.yml|templates/main-ruleset.json|migrations/*|*/migrations/*|*Migration*|*.xcdatamodeld/*|*.entitlements)
+                echo "Control-plane path requires an independent merge decision: $path"
+                exit 0
+                ;;
+            esac
+          done <<<"$changed_files"
+
+          current_base="$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha')"
+          run_base="$(jq -r '.pull_requests[0].base.sha // empty' <<<"$run_json")"
+          tested_event="$(jq -r '.event' <<<"$run_json")"
+          fresh=false
+          if [[ "$tested_event" == pull_request && "$run_base" == "$current_base" ]]; then
+            fresh=true
+          elif [[ "$tested_event" == workflow_dispatch ]]; then
+            compare_status="$(gh api "repos/$REPOSITORY/compare/$current_base...$head_sha" --jq '.status')"
+            if [[ "$compare_status" == ahead || "$compare_status" == identical ]]; then
+              fresh=true
+            fi
+          fi
+
+          if [[ "$fresh" != true ]]; then
+            echo 'main advanced after this candidate was tested; updating the branch and dispatching CI once.'
+            gh api --method PUT "repos/$REPOSITORY/pulls/$pr_number/update-branch" \
+              -f expected_head_sha="$head_sha" >/dev/null
+            gh workflow run ci.yml --repo "$REPOSITORY" --ref "$head_ref"
+            exit 0
+          fi
+
+          latest_base="$(gh api "repos/$REPOSITORY/commits/main" --jq '.sha')"
+          if [[ "$latest_base" != "$current_base" ]]; then
+            echo 'main changed during the decision; leaving the PR for a fresh run.'
+            exit 0
+          fi
+
+          gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch
+          echo "Merged PR #$pr_number after verified merge-candidate CI."

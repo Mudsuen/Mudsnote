@@ -11,6 +11,7 @@ When working in this repo:
 7. Validate macOS work with `./scripts/verify macos pr|full|live`; prefer a packaged-app smoke over screenshot-only validation.
 8. Validate iOS work with `./scripts/verify ios pr|full|live`; never run `package_app.sh` or mutate `/Applications/Mudsnote.app` from an iOS-only task.
 9. Use `./scripts/verify both ...` only when the user request explicitly spans both platforms. A dual-platform live run is allowed to install both artifacts in sequence.
+10. Start product work from current `origin/main`; do not treat an unmerged PR or moving platform SHA as the default product baseline.
 
 ## Delivery
 
@@ -19,3 +20,6 @@ When working in this repo:
 - `live` always requires an explicit platform argument or `MUDSNOTE_PLATFORM_SCOPE`; it never infers an installation target.
 - Concurrent worktrees share `/Applications/Mudsnote.app` and the connected iPhone, so never run another platform's live flow as incidental verification.
 - PR CI must not access iCloud, Keychain, real note folders, personal settings, credentials, or other user data.
+- Reversible product tasks use Devflow v2 Ready PRs and event-driven merge by default. Importance changes the final report, not the approval path.
+- Irreversible data, production/App Store release, signing/secrets, guardrail weakening, and workflow/verification/package/entitlement changes remain held from automatic merge.
+- Existing legacy PRs without a Devflow v2 manifest remain manual and must never be merged retroactively by the automation.

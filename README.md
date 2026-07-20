@@ -65,6 +65,7 @@ This launches `/Applications/Mudsnote.app` against a temporary library and verif
 ## Development Notes
 
 - See `docs/AI_HANDOFF.md` for project architecture, current product state, verification expectations, and takeover guidance for another AI.
+- See `docs/delivery-workflow.md` for the automatic PR/CI/merge lifecycle, hard stops, evidence, and rollback flow.
 - See `CHANGELOG.md` for iteration history, known issues, and lessons learned.
 
 ## License
