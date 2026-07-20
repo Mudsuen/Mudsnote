@@ -7,6 +7,81 @@ private struct NotesListSearchTaskID: Hashable {
     var libraryRevision: Int
 }
 
+private enum HomeTimelineEntry: Identifiable {
+    case file(RecentMarkdownFile)
+    case memo(MemoBlock)
+
+    private static let memoDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
+    var id: String {
+        switch self {
+        case .file(let file): "file:\(file.id)"
+        case .memo(let memo): "memo:\(memo.id)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .file(let file): file.modifiedAt
+        case .memo(let memo):
+            Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .file(let file):
+            return file.title
+        case .memo(let memo):
+            let firstLine = memo.body
+                .split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            return firstLine?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+                ?? String(localized: "Untitled memo")
+        }
+    }
+}
+
+private struct HomeTimelineSection: Identifiable {
+    var id: String
+    var title: String?
+    var entries: [HomeTimelineEntry]
+}
+
+private struct HomeTimelineProjection {
+    var sections: [HomeTimelineSection] = []
+    var entryCount = 0
+    var smartFolderCounts: [UUID: Int] = [:]
+}
+
+private extension View {
+    @ViewBuilder
+    func homeNavigationSubtitle(_ subtitle: String?) -> some View {
+        if #available(iOS 26.0, *), let subtitle {
+            navigationSubtitle(subtitle)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func homeTopScrollEdgeEffect() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
 struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
@@ -24,54 +99,56 @@ struct LibraryHomeView: View {
     @State private var isManagingFolders = false
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
+    @State private var isDirectoryPresented = false
+    @State private var directoryDragOffset: CGFloat = 0
+    @State private var directoryPanelWidth: CGFloat = 360
+    @State private var expandedDirectoryPaths = Set<String>()
+    @State private var homeTimelineProjection = HomeTimelineProjection()
+    @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
+    @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
+    @AppStorage("mudsnote.ios.homeNoteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
+    @AppStorage("mudsnote.ios.homeGroupNotesByDate") private var groupByDate = true
+    @State private var isSelectingNotes = false
+    @State private var selectedHomeEntryIDs = Set<String>()
+    @State private var isShowingAttachments = false
+    @State private var isConfirmingSelectedDeletion = false
     var chooseFolder: () -> Void
+
+    private var viewStyle: NoteViewStyle {
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .gallery
+    }
+
+    private var sortOrder: NoteSortOrder {
+        NoteSortOrder(rawValue: sortOrderRawValue) ?? .modified
+    }
+
+    private var sortDirection: NoteSortDirection {
+        NoteSortDirection(rawValue: sortDirectionRawValue) ?? .standard
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                if !showsSearchExperience {
-                    VStack(alignment: .leading, spacing: 22) {
-                        if appModel.isInitialLibraryLoading {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Loading Notes…")
-                                    .font(.footnote)
-                                    .foregroundStyle(MudsnoteColors.muted)
+            homeContent
+                .allowsHitTesting(directoryReveal(width: directoryPanelWidth) == 0)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onAppear { updateDirectoryWidth(proxy.size.width) }
+                            .onChange(of: proxy.size.width) { _, width in
+                                updateDirectoryWidth(width)
                             }
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .accessibilityIdentifier("initial-library-loading")
-                        }
-                        accountSection
-                        if !appModel.smartFolders.isEmpty {
-                            smartFoldersSection
-                        }
-                        if !appModel.folders.isEmpty {
-                            foldersSection
-                        }
-                        if !appModel.tagSummaries.isEmpty {
-                            tagsSection
-                        }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 110)
-                } else {
-                    searchSection
-                        .padding(.horizontal, 18)
-                        .padding(.top, 12)
-                        .padding(.bottom, 110)
                 }
+                .overlay(alignment: .leading) {
+                    directoryOverlay(width: directoryPanelWidth)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .simultaneousGesture(TapGesture().onEnded {
-                if isSearchFocused { isSearchFocused = false }
-            })
             .background(NotesCloneColors.background)
-            .refreshable {
-                await appModel.refreshInbox()
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .homeNavigationSubtitle(homeNavigationSubtitle)
+            .navigationDestination(isPresented: $isShowingAttachments) {
+                AttachmentLibraryView()
             }
-            .navigationTitle("Folders")
             .onChange(of: searchQuery) { _, value in
                 if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchSuggestion = nil
@@ -79,12 +156,34 @@ struct LibraryHomeView: View {
             }
             .onDisappear {
                 isSearchFocused = false
+                isDirectoryPresented = false
+                directoryDragOffset = 0
+                finishSelectingHomeNotes()
             }
             .onAppear {
+                refreshHomeTimelineProjection()
                 presentRequestedSearchIfNeeded()
+                if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
+                    isDirectoryPresented = true
+                }
             }
             .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
                 if requested { presentRequestedSearchIfNeeded() }
+            }
+            .onChange(of: appModel.libraryRevision) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: viewStyleRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: sortOrderRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: sortDirectionRawValue) { _, _ in
+                refreshHomeTimelineProjection()
+            }
+            .onChange(of: groupByDate) { _, _ in
+                refreshHomeTimelineProjection()
             }
             .task(id: SearchTaskID(
                 query: searchQuery,
@@ -101,44 +200,68 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        newFolderName = ""
-                        isCreatingFolder = true
-                    } label: {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 40, height: 40)
-                            .background(MudsnoteColors.card, in: Circle())
-                            .overlay {
-                                Circle().stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("New Folder")
-                    .accessibilityIdentifier("new-folder-button")
-
-                    Button {
-                        isSearchFocused = false
-                        searchQuery = ""
-                        searchSuggestion = nil
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isManagingFolders.toggle()
+                if isDirectoryPresented {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            newFolderName = ""
+                            isCreatingFolder = true
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
                         }
-                    } label: {
-                        Text(isManagingFolders ? "Done" : "Edit")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .padding(.horizontal, 18)
-                            .frame(minWidth: 68, minHeight: 40)
-                            .background(MudsnoteColors.card, in: Capsule())
-                            .overlay {
-                                Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
+                        .accessibilityLabel("New Folder")
+                        .accessibilityIdentifier("new-folder-button")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("edit-folders-button")
+
+                    if #available(iOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                    }
+
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isSearchFocused = false
+                            searchQuery = ""
+                            searchSuggestion = nil
+                            withAnimation(.snappy(duration: 0.28, extraBounce: 0.08)) {
+                                isManagingFolders.toggle()
+                            }
+                        } label: {
+                            Group {
+                                if isManagingFolders {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .accessibilityIdentifier("finish-folder-editing-icon")
+                                } else {
+                                    Text("Edit")
+                                }
+                            }
+                            .frame(minWidth: 34, minHeight: 24)
+                            .transition(.blurReplace)
+                        }
+                        .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
+                        .accessibilityIdentifier("edit-folders-button")
+                    }
+                } else if isSelectingNotes {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
+                            toggleAllHomeEntries()
+                        }
+                        .accessibilityIdentifier("toggle-select-all-home-notes")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { finishSelectingHomeNotes() }
+                            .accessibilityIdentifier("finish-home-note-selection")
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HomeNoteOptionsMenu(
+                            viewStyleRawValue: $viewStyleRawValue,
+                            sortOrderRawValue: $sortOrderRawValue,
+                            sortDirectionRawValue: $sortDirectionRawValue,
+                            groupByDate: $groupByDate,
+                            selectNotes: { isSelectingNotes = true },
+                            viewAttachments: { isShowingAttachments = true }
+                        )
+                    }
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -175,56 +298,331 @@ struct LibraryHomeView: View {
                 Text("Notes stay in their original folders.")
             }
             .toolbar {
-                NotesBottomCommandBar(
-                    searchText: $searchQuery,
-                    searchFocused: $isSearchFocused
-                ) {
-                    isSearchFocused = false
-                    appModel.showCapture(.audio)
-                } newNote: {
-                    isSearchFocused = false
-                    appModel.showCapture(.text)
+                if !isSelectingNotes {
+                    NotesBottomCommandBar(
+                        searchText: $searchQuery,
+                        searchFocused: $isSearchFocused,
+                        newNote: {
+                            isSearchFocused = false
+                            appModel.createNote()
+                        }
+                    )
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isSelectingNotes {
+                    HomeSelectedNotesActionBar(
+                        count: selectedHomeEntryIDs.count,
+                        delete: { isConfirmingSelectedDeletion = true }
+                    )
+                }
+            }
+            .confirmationDialog(
+                "Delete Selected Notes?",
+                isPresented: $isConfirmingSelectedDeletion,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { deleteSelectedHomeEntries() }
+            }
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
     }
 
     @ViewBuilder
-    private var foldersSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: String(localized: "Folders"))
-            notesCard {
-                ForEach(appModel.folders) { folder in
-                    if isManagingFolders {
-                        NotesFolderRow(
-                            title: folder.name,
-                            systemImage: "folder.fill",
-                            count: folder.totalNoteCount,
-                            showsChevron: false,
-                            trailingAccessoryWidth: 88
-                        )
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(
-                            FolderLifecycleActions(
-                                folder: folder,
-                                isManagementMode: true
+    private var homeContent: some View {
+        if showsSearchExperience {
+            ScrollView {
+                searchSection
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+                    .padding(.bottom, 110)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(TapGesture().onEnded {
+                if isSearchFocused { isSearchFocused = false }
+            })
+        } else {
+            homeCardStream
+        }
+    }
+
+    private var homeCardStream: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+                if appModel.isInitialLibraryLoading, homeTimelineProjection.sections.isEmpty {
+                    ProgressView("Loading Notes…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                } else if homeTimelineProjection.sections.isEmpty {
+                    ContentUnavailableView(
+                        "No Notes",
+                        systemImage: "note.text",
+                        description: Text("Create a note or swipe right to open your folders.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 60)
+                } else {
+                    ForEach(homeTimelineProjection.sections) { section in
+                        if viewStyle == .gallery {
+                            HomeTimelineCardSection(
+                                section: section,
+                                isSelecting: isSelectingNotes,
+                                selectedIDs: selectedHomeEntryIDs,
+                                toggleSelection: toggleHomeSelection
                             )
-                        )
-                    } else {
-                        NavigationLink {
-                            LibraryFolderView(folder: folder)
-                        } label: {
-                            NotesFolderRow(
-                                title: folder.name,
-                                systemImage: "folder.fill",
-                                count: folder.totalNoteCount
+                        } else {
+                            HomeTimelineListSection(
+                                section: section,
+                                isSelecting: isSelectingNotes,
+                                selectedIDs: selectedHomeEntryIDs,
+                                toggleSelection: toggleHomeSelection
                             )
                         }
-                        .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-                        .modifier(FolderLifecycleActions(folder: folder))
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 110)
+        }
+        .homeTopScrollEdgeEffect()
+        .accessibilityIdentifier(viewStyle == .gallery ? "home-note-gallery" : "home-note-list")
+    }
+
+    private func makeHomeTimelineProjection() -> HomeTimelineProjection {
+        let unsortedEntries = (
+            appModel.libraryFiles
+                .filter { $0.relativePath != "Inbox.md" }
+                .map(HomeTimelineEntry.file)
+                + appModel.inboxItems.map(HomeTimelineEntry.memo)
+        )
+        let entries = unsortedEntries.sorted { lhs, rhs in
+            let standard: Bool
+            switch sortOrder {
+            case .modified, .created:
+                if lhs.date != rhs.date {
+                    standard = lhs.date > rhs.date
+                    return sortDirection == .standard ? standard : !standard
+                }
+            case .title:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame {
+                    standard = comparison == .orderedAscending
+                    return sortDirection == .standard ? standard : !standard
+                }
+            }
+            standard = lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+            return sortDirection == .standard ? standard : !standard
+        }
+
+        var sections: [HomeTimelineSection] = []
+        if !groupByDate || sortOrder == .title {
+            if !entries.isEmpty {
+                sections = [HomeTimelineSection(id: "notes", title: nil, entries: entries)]
+            }
+        } else {
+            for entry in entries {
+                let bucket = NoteListPresentation.dateBucket(
+                    for: entry.date,
+                    now: Date(),
+                    calendar: .autoupdatingCurrent
+                )
+                if sections.last?.id == bucket.id {
+                    sections[sections.count - 1].entries.append(entry)
+                } else {
+                    sections.append(
+                        HomeTimelineSection(
+                            id: bucket.id,
+                            title: bucket.title,
+                            entries: [entry]
+                        )
+                    )
+                }
+            }
+        }
+        let smartFolderCounts = Dictionary(uniqueKeysWithValues: appModel.smartFolders.map { definition in
+            let count = appModel.libraryFiles.lazy.filter {
+                $0.relativePath != "Inbox.md" && definition.matches(file: $0)
+            }.count + appModel.inboxItems.lazy.filter {
+                definition.matches(memo: $0)
+            }.count
+            return (definition.id, count)
+        })
+        return HomeTimelineProjection(
+            sections: sections,
+            entryCount: entries.count,
+            smartFolderCounts: smartFolderCounts
+        )
+    }
+
+    private func refreshHomeTimelineProjection() {
+        homeTimelineProjection = makeHomeTimelineProjection()
+    }
+
+    private func updateDirectoryWidth(_ availableWidth: CGFloat) {
+        let width = min(availableWidth * 0.86, 360)
+        guard abs(width - directoryPanelWidth) > 0.5 else { return }
+        directoryPanelWidth = width
+    }
+
+    private func directoryOverlay(width: CGFloat) -> some View {
+        let reveal = directoryReveal(width: width)
+        return ZStack(alignment: .leading) {
+            if !isDirectoryPresented {
+                Color.clear
+                    .frame(width: 32)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(directoryDragGesture(width: width))
+                    .accessibilityElement()
+                    .accessibilityLabel("Swipe right for folders")
+                    .accessibilityIdentifier("directory-swipe-edge")
+            }
+
+            if reveal > 0 {
+                Color.black
+                    .opacity(0.42 * reveal / max(width, 1))
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { closeDirectory() }
+                    .accessibilityElement()
+                    .accessibilityLabel("Close Folders")
+                    .accessibilityIdentifier("directory-backdrop")
+
+                directoryPanel(width: width)
+                    .offset(x: -width + reveal)
+                    .gesture(directoryDragGesture(width: width))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var navigationTitle: String {
+        if isDirectoryPresented { return String(localized: "Folders") }
+        if isSelectingNotes {
+            return String(
+                format: String(localized: "notes.selected.format"),
+                locale: .current,
+                selectedHomeEntryIDs.count
+            )
+        }
+        return String(localized: "Notes")
+    }
+
+    private var homeNavigationSubtitle: String? {
+        guard !isDirectoryPresented, !isSelectingNotes else { return nil }
+        return String(
+            format: String(localized: "notes.count.format"),
+            locale: .current,
+            homeTimelineProjection.entryCount
+        )
+    }
+
+    private var allHomeEntryIDs: Set<String> {
+        Set(homeTimelineProjection.sections.flatMap(\.entries).map(\.id))
+    }
+
+    private var allHomeEntriesSelected: Bool {
+        !allHomeEntryIDs.isEmpty && selectedHomeEntryIDs == allHomeEntryIDs
+    }
+
+    private func toggleHomeSelection(_ entry: HomeTimelineEntry) {
+        if !selectedHomeEntryIDs.insert(entry.id).inserted {
+            selectedHomeEntryIDs.remove(entry.id)
+        }
+    }
+
+    private func toggleAllHomeEntries() {
+        selectedHomeEntryIDs = allHomeEntriesSelected ? [] : allHomeEntryIDs
+    }
+
+    private func finishSelectingHomeNotes() {
+        selectedHomeEntryIDs = []
+        isSelectingNotes = false
+    }
+
+    private func deleteSelectedHomeEntries() {
+        let selected = homeTimelineProjection.sections
+            .flatMap(\.entries)
+            .filter { selectedHomeEntryIDs.contains($0.id) }
+        for entry in selected {
+            switch entry {
+            case .file(let file): appModel.moveToRecentlyDeleted(file)
+            case .memo(let memo): appModel.deleteMemo(memo)
+            }
+        }
+        finishSelectingHomeNotes()
+    }
+
+    private func directoryPanel(width: CGFloat) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                accountSection
+                if !appModel.smartFolders.isEmpty {
+                    smartFoldersSection
+                }
+                if !appModel.tagSummaries.isEmpty {
+                    tagsSection
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
+            .padding(.bottom, 110)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(MudsnoteColors.canvas)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(MudsnoteColors.line)
+                .frame(width: 1)
+        }
+        .shadow(color: .black.opacity(0.22), radius: 12, x: 5)
+        .accessibilityIdentifier("directory-drawer")
+    }
+
+    private func directoryReveal(width: CGFloat) -> CGFloat {
+        if isDirectoryPresented {
+            return min(width, max(0, width + directoryDragOffset))
+        }
+        return min(width, max(0, directoryDragOffset))
+    }
+
+    private func directoryDragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if isDirectoryPresented {
+                    directoryDragOffset = min(0, value.translation.width)
+                } else {
+                    directoryDragOffset = max(0, value.translation.width)
+                }
+            }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let predicted = value.predictedEndTranslation.width
+                let shouldOpen: Bool
+                if isDirectoryPresented {
+                    shouldOpen = horizontal > -width * 0.18 && predicted > -width * 0.45
+                } else {
+                    shouldOpen = horizontal > width * 0.18 || predicted > width * 0.45
+                }
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
+                    isDirectoryPresented = shouldOpen
+                    directoryDragOffset = 0
+                }
+            }
+    }
+
+    private func closeDirectory() {
+        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
+            isDirectoryPresented = false
+            directoryDragOffset = 0
+            isManagingFolders = false
         }
     }
 
@@ -240,58 +638,101 @@ struct LibraryHomeView: View {
 
     @ViewBuilder
     private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: rootSectionTitle)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Text("Folders")
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundStyle(MudsnoteColors.text)
 
-            notesCard {
-                NavigationLink {
-                    InboxStreamView()
-                } label: {
-                    NotesFolderRow(title: String(localized: "Inbox"), systemImage: "tray.full", count: appModel.librarySummary.inboxCount)
-                }
+                    Spacer(minLength: 0)
 
-                NavigationLink {
-                    FolderNotesListView(
-                        title: String(localized: "Daily"),
-                        scope: .pathPrefix("Daily/")
-                    )
-                } label: {
-                    NotesFolderRow(title: String(localized: "Daily"), systemImage: "calendar", count: appModel.librarySummary.dailyCount)
+                    NavigationLink {
+                        SettingsRulesView(chooseFolder: chooseFolder)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .frame(width: 34, height: 34)
+                            .background(MudsnoteColors.card, in: Circle())
+                            .overlay {
+                                Circle().stroke(MudsnoteColors.line, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Settings")
+                    .accessibilityIdentifier("settings-link")
                 }
+                .padding(.horizontal, 2)
 
-                NavigationLink {
-                    FolderNotesListView(title: String(localized: "All Notes"), scope: .all)
-                } label: {
-                    NotesFolderRow(title: String(localized: "All Notes"), systemImage: "doc.text", count: appModel.librarySummary.allNotesCount)
-                }
-                .accessibilityIdentifier("all-notes-link")
+                notesCard {
+                    NavigationLink {
+                        InboxStreamView()
+                    } label: {
+                        NotesFolderRow(
+                            title: "000-inbox",
+                            systemImage: "tray",
+                            count: appModel.mergedInboxCount
+                        )
+                    }
+                    .accessibilityIdentifier("inbox-link")
 
-                NavigationLink {
-                    AttachmentLibraryView()
-                } label: {
-                    NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
+                    ForEach(appModel.visibleLibraryFolders) { folder in
+                        DirectoryFolderTree(
+                            folder: folder,
+                            depth: 0,
+                            isManaging: isManagingFolders,
+                            expandedPaths: $expandedDirectoryPaths,
+                            systemImage: folderSystemImage
+                        )
+                    }
                 }
-                .accessibilityIdentifier("attachments-link")
+            }
 
-                NavigationLink {
-                    RecentlyDeletedView()
-                } label: {
-                    NotesFolderRow(
-                        title: String(localized: "Recently Deleted"),
-                        systemImage: "trash",
-                        count: appModel.librarySummary.recentlyDeletedCount
-                    )
-                }
-                .accessibilityIdentifier("recently-deleted-link")
+            VStack(alignment: .leading, spacing: 10) {
+                NotesSectionHeader(title: String(localized: "Library"))
 
-                NavigationLink {
-                    SettingsRulesView(chooseFolder: chooseFolder)
-                } label: {
-                    NotesFolderRow(title: String(localized: "Settings"), systemImage: "gearshape", count: nil)
+                notesCard {
+                    NavigationLink {
+                        AttachmentLibraryView()
+                    } label: {
+                        NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
+                    }
+                    .accessibilityIdentifier("attachments-link")
+
+                    NavigationLink {
+                        RecentlyDeletedView()
+                    } label: {
+                        NotesFolderRow(
+                            title: String(localized: "Recently Deleted"),
+                            systemImage: "trash",
+                            count: appModel.librarySummary.recentlyDeletedCount
+                        )
+                    }
+                    .accessibilityIdentifier("recently-deleted-link")
                 }
-                .accessibilityIdentifier("settings-link")
             }
         }
+    }
+
+    private func folderSystemImage(for folder: LibraryFolderNode) -> String {
+        let name = folder.name.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+
+        if name.contains("inbox") || name.contains("收件") { return "tray" }
+        if name.contains("project") || name.contains("项目") { return "hammer" }
+        if name.contains("work") || name.contains("工作") { return "briefcase" }
+        if name.contains("personal") || name.contains("个人") { return "person.crop.circle" }
+        if name.contains("resource") || name.contains("reference") || name.contains("资料") {
+            return "books.vertical"
+        }
+        if name.contains("archive") || name.contains("归档") { return "archivebox" }
+        if name.contains("idea") || name.contains("灵感") { return "lightbulb" }
+        if name.contains("study") || name.contains("学习") { return "graduationcap" }
+        if name.contains("travel") || name.contains("旅行") { return "airplane" }
+        return "folder"
     }
 
     @ViewBuilder
@@ -519,7 +960,11 @@ struct LibraryHomeView: View {
             appModel.openSearchResult(result)
         } label: {
             SearchResultRow(result: result, query: query)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("search-result-\(result.id)")
     }
@@ -555,16 +1000,7 @@ struct LibraryHomeView: View {
     }
 
     private func smartFolderCount(_ definition: SmartFolderDefinition) -> Int {
-        appModel.libraryFiles.lazy.filter {
-            $0.relativePath != "Inbox.md" && definition.matches(file: $0)
-        }.count + appModel.inboxItems.lazy.filter { definition.matches(memo: $0) }.count
-    }
-
-    private var rootSectionTitle: String {
-        if case .ready(let url) = appModel.folderStatus {
-            return url.lastPathComponent
-        }
-        return "Mudsnote"
+        homeTimelineProjection.smartFolderCounts[definition.id] ?? 0
     }
 
     private func notesCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -575,6 +1011,103 @@ struct LibraryHomeView: View {
         .overlay {
             RoundedRectangle(cornerRadius: MudsnoteRadius.card)
                 .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+    }
+}
+
+private struct DirectoryFolderTree: View {
+    var folder: LibraryFolderNode
+    var depth: Int
+    var isManaging: Bool
+    @Binding var expandedPaths: Set<String>
+    var systemImage: (LibraryFolderNode) -> String
+
+    private var isExpanded: Bool {
+        expandedPaths.contains(folder.relativePath)
+    }
+
+    private var hasChildren: Bool {
+        !folder.children.isEmpty
+    }
+
+    private var trailingAccessoryWidth: CGFloat {
+        (isManaging ? 88 : 0) + 28
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .trailing) {
+                folderEntry
+
+                if hasChildren {
+                    Button {
+                        withAnimation(.snappy(duration: 0.26, extraBounce: 0.04)) {
+                            if !expandedPaths.insert(folder.relativePath).inserted {
+                                expandedPaths.remove(folder.relativePath)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .frame(width: 44, height: 58)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, isManaging ? 88 : 0)
+                    .accessibilityLabel(isExpanded ? "Collapse \(folder.name)" : "Expand \(folder.name)")
+                    .accessibilityIdentifier("folder-disclosure-\(folder.relativePath)")
+                }
+            }
+
+            if isExpanded {
+                ForEach(folder.children) { child in
+                    DirectoryFolderTree(
+                        folder: child,
+                        depth: depth + 1,
+                        isManaging: isManaging,
+                        expandedPaths: $expandedPaths,
+                        systemImage: systemImage
+                    )
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var folderEntry: some View {
+        if isManaging {
+            NotesFolderRow(
+                title: folder.name,
+                systemImage: systemImage(folder),
+                count: folder.totalNoteCount,
+                showsChevron: false,
+                trailingAccessoryWidth: trailingAccessoryWidth,
+                indentation: CGFloat(depth) * 18
+            )
+            .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+            .modifier(
+                FolderLifecycleActions(
+                    folder: folder,
+                    isManagementMode: true
+                )
+            )
+        } else {
+            NavigationLink {
+                LibraryFolderView(folder: folder)
+            } label: {
+                NotesFolderRow(
+                    title: folder.name,
+                    systemImage: systemImage(folder),
+                    count: folder.totalNoteCount,
+                    showsChevron: false,
+                    trailingAccessoryWidth: trailingAccessoryWidth,
+                    indentation: CGFloat(depth) * 18
+                )
+            }
+            .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+            .modifier(FolderLifecycleActions(folder: folder))
         }
     }
 }
@@ -778,7 +1311,7 @@ enum NoteListPresentation {
         return sections
     }
 
-    private static func dateBucket(
+    static func dateBucket(
         for date: Date,
         now: Date,
         calendar: Calendar
@@ -824,10 +1357,182 @@ private struct NoteListOptionsMenu: View {
                 groupByDate: $groupByDate
             )
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel("Sort Notes")
         .accessibilityIdentifier("note-list-options")
+    }
+}
+
+private struct HomeNoteOptionsMenu: View {
+    @Binding var viewStyleRawValue: String
+    @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
+    @Binding var groupByDate: Bool
+    var selectNotes: () -> Void
+    var viewAttachments: () -> Void
+
+    var body: some View {
+        HomeNoteOptionsButton(
+            viewStyleRawValue: $viewStyleRawValue,
+            sortOrderRawValue: $sortOrderRawValue,
+            sortDirectionRawValue: $sortDirectionRawValue,
+            groupByDate: $groupByDate,
+            selectNotes: selectNotes,
+            viewAttachments: viewAttachments
+        )
+        .frame(width: 28, height: 28)
+    }
+}
+
+private struct HomeNoteOptionsButton: UIViewRepresentable {
+    @Binding var viewStyleRawValue: String
+    @Binding var sortOrderRawValue: String
+    @Binding var sortDirectionRawValue: String
+    @Binding var groupByDate: Bool
+    var selectNotes: () -> Void
+    var viewAttachments: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setImage(
+            UIImage(
+                systemName: "ellipsis",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+            ),
+            for: .normal
+        )
+        button.tintColor = .label
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityLabel = String(localized: "More")
+        button.accessibilityIdentifier = "home-note-options"
+        button.menu = context.coordinator.makeMenu()
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.parent = self
+        button.menu = context.coordinator.makeMenu()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var parent: HomeNoteOptionsButton
+
+        init(parent: HomeNoteOptionsButton) {
+            self.parent = parent
+        }
+
+        func makeMenu() -> UIMenu {
+            let viewStyle = NoteViewStyle(rawValue: parent.viewStyleRawValue) ?? .gallery
+            let sortOrder = NoteSortOrder(rawValue: parent.sortOrderRawValue) ?? .modified
+            let sortDirection = NoteSortDirection(rawValue: parent.sortDirectionRawValue) ?? .standard
+
+            let viewAction = UIAction(
+                title: String(localized: viewStyle == .gallery ? "View as List" : "View as Cards"),
+                image: UIImage(systemName: viewStyle == .gallery ? "list.bullet" : "square.grid.2x2")
+            ) { [weak self] _ in
+                self?.parent.viewStyleRawValue = viewStyle == .gallery
+                    ? NoteViewStyle.list.rawValue
+                    : NoteViewStyle.gallery.rawValue
+            }
+            let viewGroup = UIMenu(options: .displayInline, children: [viewAction])
+
+            let selectAction = UIAction(
+                title: String(localized: "Select Notes"),
+                image: UIImage(systemName: "checkmark.circle")
+            ) { [weak self] _ in self?.parent.selectNotes() }
+
+            let sortMenu = UIMenu(
+                title: String(localized: "Sort By"),
+                subtitle: sortSummary(sortOrder),
+                image: UIImage(systemName: "arrow.up.arrow.down"),
+                children: [sortOrderMenu(selected: sortOrder), sortDirectionMenu(
+                    selected: sortDirection,
+                    order: sortOrder
+                )]
+            )
+            let groupMenu = UIMenu(
+                title: String(localized: "Group By Date"),
+                subtitle: parent.groupByDate ? String(localized: "On") : String(localized: "Off"),
+                image: UIImage(systemName: "calendar"),
+                children: groupActions(disabled: sortOrder == .title)
+            )
+            let attachmentsAction = UIAction(
+                title: String(localized: "View Attachments"),
+                image: UIImage(systemName: "paperclip")
+            ) { [weak self] _ in self?.parent.viewAttachments() }
+            let commandGroup = UIMenu(
+                options: .displayInline,
+                children: [selectAction, sortMenu, groupMenu, attachmentsAction]
+            )
+            return UIMenu(children: [viewGroup, commandGroup])
+        }
+
+        private func sortOrderMenu(selected: NoteSortOrder) -> UIMenu {
+            let actions = NoteSortOrder.allCases.map { order in
+                UIAction(
+                    title: sortOrderTitle(order),
+                    state: order == selected ? .on : .off
+                ) { [weak self] _ in self?.parent.sortOrderRawValue = order.rawValue }
+            }
+            return UIMenu(options: .displayInline, children: actions)
+        }
+
+        private func sortDirectionMenu(
+            selected: NoteSortDirection,
+            order: NoteSortOrder
+        ) -> UIMenu {
+            let actions = NoteSortDirection.allCases.map { direction in
+                UIAction(
+                    title: sortDirectionTitle(direction, order: order),
+                    state: direction == selected ? .on : .off
+                ) { [weak self] _ in
+                    self?.parent.sortDirectionRawValue = direction.rawValue
+                }
+            }
+            return UIMenu(options: .displayInline, children: actions)
+        }
+
+        private func groupActions(disabled: Bool) -> [UIMenuElement] {
+            [true, false].map { value in
+                UIAction(
+                    title: value ? String(localized: "On") : String(localized: "Off"),
+                    attributes: disabled ? .disabled : [],
+                    state: parent.groupByDate == value ? .on : .off
+                ) { [weak self] _ in self?.parent.groupByDate = value }
+            }
+        }
+
+        private func sortSummary(_ order: NoteSortOrder) -> String {
+            switch order {
+            case .modified: String(localized: "Default (Date Edited)")
+            case .created: String(localized: "Date Created")
+            case .title: String(localized: "Title")
+            }
+        }
+
+        private func sortOrderTitle(_ order: NoteSortOrder) -> String {
+            switch order {
+            case .modified: String(localized: "Date Edited")
+            case .created: String(localized: "Date Created")
+            case .title: String(localized: "Title")
+            }
+        }
+
+        private func sortDirectionTitle(
+            _ direction: NoteSortDirection,
+            order: NoteSortOrder
+        ) -> String {
+            switch (order, direction) {
+            case (.title, .standard): String(localized: "Ascending")
+            case (.title, .reversed): String(localized: "Descending")
+            case (_, .standard): String(localized: "Newest First")
+            case (_, .reversed): String(localized: "Oldest First")
+            }
+        }
     }
 }
 
@@ -902,7 +1607,10 @@ private struct NoteListSearchResultsView: View {
                         } label: {
                             SearchResultRow(result: result, query: query)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("list-search-result-\(result.id)")
 
@@ -931,7 +1639,7 @@ private struct NoteListSearchResultsView: View {
     }
 }
 
-private struct NotesListCountLabel: View {
+struct NotesListCountLabel: View {
     var count: Int
 
     var body: some View {
@@ -946,6 +1654,22 @@ private struct NotesListCountLabel: View {
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
         .accessibilityIdentifier("note-list-count")
+    }
+}
+
+struct NotesListSectionHeader: View {
+    var title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(.title3, design: .rounded, weight: .bold))
+            .foregroundStyle(MudsnoteColors.text)
+            .textCase(nil)
+            .padding(.bottom, 4)
+            .listRowInsets(
+                EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0)
+            )
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -1027,10 +1751,12 @@ struct FolderNotesListView: View {
                                     .foregroundStyle(MudsnoteColors.muted)
                             } else {
                                 if !pinnedFiles.isEmpty {
-                                    Section("Pinned") {
+                                    Section {
                                         ForEach(pinnedFiles) { file in
                                             noteRow(file)
                                         }
+                                    } header: {
+                                        NotesListSectionHeader(title: String(localized: "Pinned"))
                                     }
                                 }
                                 ForEach(otherSections) { section in
@@ -1040,15 +1766,16 @@ struct FolderNotesListView: View {
                                         }
                                     } header: {
                                         if let title = section.title {
-                                            Text(title)
+                                            NotesListSectionHeader(title: title)
                                         } else if !pinnedFiles.isEmpty {
-                                            Text("Notes")
+                                            NotesListSectionHeader(title: String(localized: "Notes"))
                                         }
                                     }
                                 }
                             }
                         }
-                        .listStyle(.plain)
+                        .listStyle(.insetGrouped)
+                        .listSectionSpacing(22)
                         .scrollContentBackground(.hidden)
                     }
                 }
@@ -1107,6 +1834,10 @@ struct FolderNotesListView: View {
         .toolbar {
             listBottomToolbar
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
         .task(id: NotesListSearchTaskID(
             query: normalizedSearchQuery,
             libraryRevision: appModel.libraryRevision
@@ -1133,14 +1864,12 @@ struct FolderNotesListView: View {
         if !isSelecting {
             NotesBottomCommandBar(
                 searchText: $searchQuery,
-                searchFocused: $isSearchFocused
-            ) {
-                isSearchFocused = false
-                appModel.showCapture(.audio)
-            } newNote: {
-                isSearchFocused = false
-                appModel.showCapture(.text)
-            }
+                searchFocused: $isSearchFocused,
+                newNote: {
+                    isSearchFocused = false
+                    appModel.createNote(inFolder: scope.newNoteFolder)
+                }
+            )
         }
     }
 
@@ -1180,6 +1909,7 @@ struct FolderNotesListView: View {
             SelectableNoteFileRow(
                 file: file,
                 dateBasis: sortOrder.dateBasis,
+                showsFolder: scope.newNoteFolder == nil,
                 isSelected: selectedPaths.contains(file.relativePath)
             ) {
                 if !selectedPaths.insert(file.relativePath).inserted {
@@ -1187,7 +1917,11 @@ struct FolderNotesListView: View {
                 }
             }
         } else {
-            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+            NoteFileButton(
+                file: file,
+                dateBasis: sortOrder.dateBasis,
+                showsFolder: scope.newNoteFolder == nil
+            )
         }
     }
 
@@ -1348,10 +2082,12 @@ struct LibraryFolderView: View {
                             }
 
                             if !pinnedFiles.isEmpty {
-                                Section("Pinned") {
+                                Section {
                                     ForEach(pinnedFiles) { file in
                                         noteRow(file)
                                     }
+                                } header: {
+                                    NotesListSectionHeader(title: String(localized: "Pinned"))
                                 }
                             }
                             ForEach(otherSections) { section in
@@ -1361,9 +2097,9 @@ struct LibraryFolderView: View {
                                     }
                                 } header: {
                                     if let title = section.title {
-                                        Text(title)
+                                        NotesListSectionHeader(title: title)
                                     } else if !pinnedFiles.isEmpty {
-                                        Text("Notes")
+                                        NotesListSectionHeader(title: String(localized: "Notes"))
                                     }
                                 }
                             }
@@ -1373,7 +2109,8 @@ struct LibraryFolderView: View {
                                     .listRowBackground(Color.clear)
                             }
                         }
-                        .listStyle(.plain)
+                        .listStyle(.insetGrouped)
+                        .listSectionSpacing(22)
                         .scrollContentBackground(.hidden)
                     }
                 }
@@ -1407,6 +2144,10 @@ struct LibraryFolderView: View {
         .toolbar {
             folderBottomToolbar
         }
+        .notesNativeToolbarSearch(
+            text: $searchQuery,
+            isPresented: $isSearchFocused
+        )
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder Name", text: $folderName)
             Button("Cancel", role: .cancel) {}
@@ -1437,7 +2178,7 @@ struct LibraryFolderView: View {
             titleVisibility: .visible
         ) {
             Button("Cancel", role: .cancel) {}
-            Button("Move Notes to Recently Deleted", role: .destructive) {
+            Button("Delete Notes", role: .destructive) {
                 let target = currentFolder
                 Task {
                     if await appModel.deleteFolder(target) {
@@ -1511,7 +2252,7 @@ struct LibraryFolderView: View {
             }
             folderMoveMenu
             Button {
-                appModel.showCapture(.text)
+                appModel.createNote(inFolder: currentFolder.relativePath)
             } label: {
                 Label("New Note", systemImage: "square.and.pencil")
             }
@@ -1529,7 +2270,7 @@ struct LibraryFolderView: View {
                 groupByDate: $groupByDate
             )
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Image(systemName: "ellipsis")
         }
         .accessibilityLabel("Folder Actions")
         .accessibilityIdentifier("folder-actions")
@@ -1577,14 +2318,12 @@ struct LibraryFolderView: View {
         if !isSelecting {
             NotesBottomCommandBar(
                 searchText: $searchQuery,
-                searchFocused: $isSearchFocused
-            ) {
-                isSearchFocused = false
-                appModel.showCapture(.audio)
-            } newNote: {
-                isSearchFocused = false
-                appModel.showCapture(.text)
-            }
+                searchFocused: $isSearchFocused,
+                newNote: {
+                    isSearchFocused = false
+                    appModel.createNote(inFolder: currentFolder.relativePath)
+                }
+            )
         }
     }
 
@@ -1657,6 +2396,7 @@ struct LibraryFolderView: View {
             SelectableNoteFileRow(
                 file: file,
                 dateBasis: sortOrder.dateBasis,
+                showsFolder: false,
                 isSelected: selectedPaths.contains(file.relativePath)
             ) {
                 if !selectedPaths.insert(file.relativePath).inserted {
@@ -1664,7 +2404,7 @@ struct LibraryFolderView: View {
                 }
             }
         } else {
-            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis)
+            NoteFileButton(file: file, dateBasis: sortOrder.dateBasis, showsFolder: false)
         }
     }
 
@@ -1765,7 +2505,7 @@ private struct FolderLifecycleActions: ViewModifier {
                 titleVisibility: .visible
             ) {
                 Button("Cancel", role: .cancel) {}
-                Button("Move Notes to Recently Deleted", role: .destructive) {
+                Button("Delete Notes", role: .destructive) {
                     let target = folder
                     Task { _ = await appModel.deleteFolder(target) }
                 }
@@ -1861,6 +2601,7 @@ private struct FolderLifecycleActions: ViewModifier {
 private struct SelectableNoteFileRow: View {
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis
+    var showsFolder = true
     var isSelected: Bool
     var toggle: () -> Void
 
@@ -1870,7 +2611,11 @@ private struct SelectableNoteFileRow: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
-                RecentFileRow(file: file, dateBasis: dateBasis)
+                RecentFileRow(
+                    file: file,
+                    dateBasis: dateBasis,
+                    showsFolder: showsFolder
+                )
             }
             .contentShape(Rectangle())
         }
@@ -1996,11 +2741,11 @@ private struct SelectedNotesActionBar: View {
             Rectangle().fill(MudsnoteColors.line).frame(height: 1)
         }
         .confirmationDialog(
-            "Move Selected Notes to Recently Deleted?",
+            "Delete Selected Notes?",
             isPresented: $isConfirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("Move to Recently Deleted", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 let selected = files
                 Task {
                     if await appModel.moveToRecentlyDeleted(selected) {
@@ -2058,6 +2803,335 @@ private struct NoteGallerySection: View {
     }
 }
 
+private struct HomeTimelineCardSection: View {
+    var section: HomeTimelineSection
+    var isSelecting: Bool
+    var selectedIDs: Set<String>
+    var toggleSelection: (HomeTimelineEntry) -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
+
+    var body: some View {
+        Section {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                ForEach(section.entries) { entry in
+                    HomeTimelineGalleryEntryButton(
+                        entry: entry,
+                        isSelecting: isSelecting,
+                        isSelected: selectedIDs.contains(entry.id),
+                        toggleSelection: { toggleSelection(entry) }
+                    )
+                }
+            }
+        } header: {
+            if let title = section.title {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
+
+                    Spacer(minLength: 0)
+                }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(MudsnoteColors.canvas)
+                    .padding(.horizontal, -16)
+                    .accessibilityIdentifier("home-section-header-\(section.id)")
+            }
+        }
+    }
+}
+
+private struct HomeTimelineListSection: View {
+    var section: HomeTimelineSection
+    var isSelecting: Bool
+    var selectedIDs: Set<String>
+    var toggleSelection: (HomeTimelineEntry) -> Void
+
+    var body: some View {
+        Section {
+            VStack(spacing: 0) {
+                ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
+                    HomeTimelineListEntryButton(
+                        entry: entry,
+                        isSelecting: isSelecting,
+                        isSelected: selectedIDs.contains(entry.id),
+                        toggleSelection: { toggleSelection(entry) }
+                    )
+                    if index < section.entries.count - 1 {
+                        Divider().padding(.leading, 14)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+        } header: {
+            if let title = section.title {
+                HStack(spacing: 0) {
+                    Text(title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(MudsnoteColors.canvas)
+                .padding(.horizontal, -16)
+                .accessibilityIdentifier("home-section-header-\(section.id)")
+            }
+        }
+    }
+}
+
+private struct HomeTimelineGalleryEntryButton: View {
+    var entry: HomeTimelineEntry
+    var isSelecting: Bool
+    var isSelected: Bool
+    var toggleSelection: () -> Void
+
+    var body: some View {
+        if isSelecting {
+            Button(action: toggleSelection) {
+                galleryContent
+                    .overlay(alignment: .topTrailing) {
+                        selectionIndicator.padding(9)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("selectable-home-note-\(entry.id)")
+        } else {
+            switch entry {
+            case .file(let file):
+                NoteGalleryFileButton(file: file, dateBasis: .modified)
+            case .memo(let memo):
+                HomeMemoCardButton(memo: memo)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var galleryContent: some View {
+        switch entry {
+        case .file(let file):
+            NoteGalleryCard(file: file, dateBasis: .modified)
+        case .memo(let memo):
+            HomeMemoCard(memo: memo)
+        }
+    }
+
+    private var selectionIndicator: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
+    }
+}
+
+private struct HomeTimelineListEntryButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var entry: HomeTimelineEntry
+    var isSelecting: Bool
+    var isSelected: Bool
+    var toggleSelection: () -> Void
+
+    var body: some View {
+        Button {
+            if isSelecting {
+                toggleSelection()
+            } else {
+                openEntry()
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(
+                            isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                        )
+                        .padding(.top, 12)
+                }
+                listContent
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(
+            isSelecting ? "selectable-home-note-\(entry.id)" : "home-list-note-\(entry.id)"
+        )
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        switch entry {
+        case .file(let file):
+            RecentFileRow(file: file, dateBasis: .modified)
+        case .memo(let memo):
+            HomeMemoListRow(memo: memo)
+        }
+    }
+
+    private func openEntry() {
+        switch entry {
+        case .file(let file): appModel.openFile(file)
+        case .memo(let memo): appModel.selectedMemo = memo
+        }
+    }
+}
+
+private struct HomeMemoCardButton: View {
+    @EnvironmentObject private var appModel: AppModel
+    var memo: MemoBlock
+
+    var body: some View {
+        Button {
+            appModel.selectedMemo = memo
+        } label: {
+            HomeMemoCard(memo: memo)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home-memo-card-\(memo.id)")
+        .contextMenu {
+            Button {
+                appModel.pinMemo(memo)
+            } label: {
+                Label("Pin", systemImage: "pin")
+            }
+            Button {
+                appModel.addDefaultTag(to: memo)
+            } label: {
+                Label("Tag", systemImage: "number")
+            }
+            Button(role: .destructive) {
+                appModel.deleteMemo(memo)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+}
+
+private struct HomeMemoCard: View {
+    var memo: MemoBlock
+
+    private var contentLines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var title: String {
+        contentLines.first?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+            ?? String(localized: "Untitled memo")
+    }
+
+    private var preview: String { contentLines.dropFirst().joined(separator: " ") }
+    private var dateText: String {
+        memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(2)
+                Text(preview.isEmpty ? String(localized: "No additional text") : preview)
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(5)
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    Image(systemName: "tray")
+                    Text("000-inbox").lineLimit(1)
+                    Spacer(minLength: 0)
+                    if memo.hasUncheckedChecklist { Image(systemName: "checklist") }
+                    if memo.hasAttachments { Image(systemName: "paperclip") }
+                }
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
+            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14).stroke(MudsnoteColors.line, lineWidth: 1)
+            }
+            Text(dateText)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+                .padding(.horizontal, 2)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct HomeMemoListRow: View {
+    var memo: MemoBlock
+
+    private var lines: [String] {
+        memo.body
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        NotesListRowContent(
+            title: lines.first?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
+                ?? String(localized: "Untitled memo"),
+            dateText: memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText,
+            preview: lines.dropFirst().joined(separator: " "),
+            folderName: "000-inbox",
+            hasAttachments: memo.hasAttachments,
+            hasUncheckedChecklist: memo.hasUncheckedChecklist
+        )
+    }
+}
+
+private struct HomeSelectedNotesActionBar: View {
+    var count: Int
+    var delete: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(
+                String(
+                    format: String(localized: "notes.selected.format"),
+                    locale: .current,
+                    count
+                )
+            )
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(MudsnoteColors.muted)
+            Spacer(minLength: 0)
+            Button(role: .destructive, action: delete) {
+                Image(systemName: "trash").frame(width: 44, height: 44)
+            }
+            .disabled(count == 0)
+            .accessibilityLabel("Delete Selected Notes")
+            .accessibilityIdentifier("delete-selected-home-notes")
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 58)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(MudsnoteColors.line).frame(height: 1)
+        }
+    }
+}
+
 private struct NoteGalleryFileButton: View {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
@@ -2068,7 +3142,9 @@ private struct NoteGalleryFileButton: View {
             appModel.openFile(file)
         } label: {
             NoteGalleryCard(file: file, dateBasis: dateBasis)
+                .contentShape(Rectangle())
         }
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
         .modifier(NoteLifecycleActions(file: file))
@@ -2216,17 +3292,25 @@ private struct NoteGalleryCard: View {
     }
 }
 
-private struct NoteFileButton: View {
+struct NoteFileButton: View {
     @EnvironmentObject private var appModel: AppModel
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis = .modified
+    var showsFolder = true
 
     var body: some View {
         Button {
             appModel.openFile(file)
         } label: {
-            RecentFileRow(file: file, dateBasis: dateBasis)
+            RecentFileRow(
+                file: file,
+                dateBasis: dateBasis,
+                showsFolder: showsFolder
+            )
+                .contentShape(Rectangle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
         .modifier(NoteLifecycleActions(file: file))
@@ -2283,6 +3367,13 @@ private struct NoteLifecycleActions: ViewModifier {
                 }
             }
             .contextMenu {
+                Button {
+                    appModel.openFile(file, mode: .edit)
+                } label: {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .accessibilityIdentifier("edit-note-\(file.id)")
+
                 if appModel.canMoveToRecentlyDeleted(file) {
                     Button {
                         appModel.togglePinned(file)
@@ -2330,7 +3421,7 @@ private struct NoteLifecycleActions: ViewModifier {
                     Button(role: .destructive) {
                         appModel.moveToRecentlyDeleted(file)
                     } label: {
-                        Label("Move to Recently Deleted", systemImage: "trash")
+                        Label("Delete", systemImage: "trash")
                     }
                 }
             }
@@ -2578,7 +3669,7 @@ struct RecentlyDeletedView: View {
                             Label("Select Notes", systemImage: "checkmark.circle")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "ellipsis")
                     }
                     .accessibilityLabel("Recently Deleted Options")
                     .accessibilityIdentifier("recently-deleted-options")
@@ -2757,18 +3848,20 @@ struct NotesSectionHeader: View {
 struct NotesFolderRow: View {
     var title: String
     var systemImage: String
-    var iconTint: Color = NotesCloneColors.folderYellow
+    var iconTint: Color = MudsnoteColors.text
     var count: Int?
     var showsChevron = true
     var trailingAccessoryWidth: CGFloat = 0
+    var indentation: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: systemImage)
                 .font(.system(size: 20, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
                 .foregroundStyle(iconTint)
                 .frame(width: 36, height: 36)
-                .background(iconTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .background(iconTint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
 
             Text(title)
                 .font(.system(.body, design: .rounded, weight: .medium))
@@ -2779,26 +3872,29 @@ struct NotesFolderRow: View {
             if let count {
                 Text("\(count)")
                     .font(.system(.subheadline, design: .rounded))
+                    .monospacedDigit()
                     .foregroundStyle(MudsnoteColors.muted)
+                    .frame(minWidth: 28, alignment: .trailing)
+                    .accessibilityIdentifier("folder-count-\(title)")
             }
 
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+            ZStack(alignment: .trailing) {
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+                }
             }
-
-            if trailingAccessoryWidth > 0 {
-                Color.clear.frame(width: trailingAccessoryWidth)
-            }
+            .frame(width: max(28, trailingAccessoryWidth), height: 44, alignment: .trailing)
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 18 + indentation)
+        .padding(.trailing, 18)
         .frame(minHeight: 58)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(NotesCloneColors.separator)
                 .frame(height: 1)
-                .padding(.leading, 72)
+                .padding(.leading, 72 + indentation)
         }
     }
 }
@@ -2937,59 +4033,111 @@ private struct TagFilterChip: View {
 struct NotesBottomCommandBar: ToolbarContent {
     @Binding var searchText: String
     @Binding var searchFocused: Bool
-    var record: () -> Void
     var newNote: () -> Void
 
+    @ToolbarContentBuilder
     var body: some ToolbarContent {
-        ToolbarItem(placement: .bottomBar) {
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.secondary)
-                NativeToolbarSearchField(
-                    text: $searchText,
-                    isFocused: $searchFocused
-                )
-                    .accessibilityIdentifier("library-search-field")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                        searchFocused = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                    .accessibilityIdentifier("clear-library-search")
+        if #available(iOS 26.0, *) {
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: newNote) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
                 }
+                .tint(.primary)
+                .accessibilityLabel("New note")
+                .accessibilityIdentifier("new-note-button")
             }
-            .foregroundStyle(MudsnoteColors.text)
-            .padding(.horizontal, 12)
-            .frame(minWidth: 190, idealWidth: 226)
-            .frame(height: 38)
-            .background(.regularMaterial, in: Capsule())
-            .accessibilityElement(children: .contain)
-        }
+        } else {
+            ToolbarItem(placement: .bottomBar) {
+                NotesToolbarSearchField(
+                    searchText: $searchText,
+                    searchFocused: $searchFocused,
+                    drawsFallbackBackground: true
+                )
+            }
 
-        ToolbarItemGroup(placement: .bottomBar) {
-            Button(action: record) {
-                Image(systemName: "mic")
+            ToolbarItem(placement: .bottomBar) {
+                Button(action: newNote) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(Color.black)
+                        .frame(width: 46, height: 46)
+                        .background(.regularMaterial, in: Circle())
+                        .overlay {
+                            Circle().stroke(MudsnoteColors.line, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New note")
+                .accessibilityIdentifier("new-note-button")
             }
-            .accessibilityLabel("Voice input")
-
-            Button(action: newNote) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 19, weight: .semibold))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(Color.black)
-                    .frame(width: 36, height: 36)
-                    .background(NotesCloneColors.folderYellow, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("New note")
-            .accessibilityIdentifier("new-note-button")
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func notesNativeToolbarSearch(
+        text: Binding<String>,
+        isPresented: Binding<Bool>
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            searchable(
+                text: text,
+                isPresented: isPresented,
+                placement: .toolbar,
+                prompt: Text("Search")
+            )
+        } else {
+            self
+        }
+    }
+}
+
+private struct NotesToolbarSearchField: View {
+    @Binding var searchText: String
+    @Binding var searchFocused: Bool
+    var drawsFallbackBackground: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+            NativeToolbarSearchField(
+                text: $searchText,
+                isFocused: $searchFocused
+            )
+            .accessibilityIdentifier("library-search-field")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    searchFocused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("clear-library-search")
+            }
+        }
+        .foregroundStyle(MudsnoteColors.text)
+        .padding(.horizontal, 12)
+        .frame(minWidth: 190, idealWidth: 226)
+        .frame(height: 38)
+        .background {
+            if drawsFallbackBackground {
+                Capsule().fill(.regularMaterial)
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -4023,6 +5171,7 @@ struct LibraryFolderRow: View {
 struct RecentFileRow: View {
     var file: RecentMarkdownFile
     var dateBasis: NoteDateBasis = .modified
+    var showsFolder = true
 
     private var displayedDate: Date { dateBasis.date(for: file) }
 
@@ -4039,48 +5188,116 @@ struct RecentFileRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(file.title)
+        NotesListRowContent(
+            title: file.title,
+            dateText: dateText,
+            preview: file.preview,
+            folderName: showsFolder ? folderName : nil,
+            checklistItems: file.galleryChecklistItems,
+            hasAttachments: file.hasAttachments,
+            hasUncheckedChecklist: file.hasUncheckedChecklist,
+            isPinned: file.isPinned,
+            pinIdentifier: "pin-indicator-\(file.id)"
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Open Markdown file")
+    }
+}
+
+struct NotesListRowContent: View {
+    var title: String
+    var dateText: String
+    var preview: String
+    var folderName: String?
+    var checklistItems: [MarkdownGalleryChecklistItem] = []
+    var hasAttachments = false
+    var hasUncheckedChecklist = false
+    var isPinned = false
+    var pinIdentifier: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title)
                     .font(.system(.body, design: .rounded, weight: .semibold))
                     .foregroundStyle(MudsnoteColors.text)
-                    .lineLimit(1)
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    .lineLimit(2)
+
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(dateText)
-                        .foregroundStyle(MudsnoteColors.muted)
-                    if !file.preview.isEmpty {
-                        Text(file.preview)
-                            .foregroundStyle(MudsnoteColors.muted)
-                            .lineLimit(1)
-                    }
+                        .lineLimit(1)
+                    detailBadges
                 }
                 .font(.subheadline)
-                HStack(spacing: 5) {
-                    Image(systemName: "folder")
-                    Text(folderName)
-                    if file.hasAttachments {
-                        Image(systemName: "paperclip")
-                            .padding(.leading, 4)
+                .foregroundStyle(MudsnoteColors.muted)
+
+                noteDetails
+
+                if let folderName {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder")
+                        Text(folderName)
                     }
-                }
                     .font(.caption)
                     .foregroundStyle(MudsnoteColors.muted)
                     .lineLimit(1)
+                }
             }
+
             Spacer(minLength: 8)
-            if file.isPinned {
+
+            if isPinned {
                 Image(systemName: "pin.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(NotesCloneColors.folderYellow)
                     .accessibilityLabel("Pinned")
-                    .accessibilityIdentifier("pin-indicator-\(file.id)")
+                    .accessibilityIdentifier(pinIdentifier ?? "pin-indicator")
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowBackground(MudsnoteColors.card)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Open Markdown file")
+    }
+
+    @ViewBuilder
+    private var noteDetails: some View {
+        if !checklistItems.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(checklistItems.prefix(2).enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(
+                                item.isChecked ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                            )
+                        Text(item.text)
+                            .font(.subheadline)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        } else if !preview.isEmpty {
+            Text(preview)
+                .font(.subheadline)
+                .foregroundStyle(MudsnoteColors.muted)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var detailBadges: some View {
+        if hasUncheckedChecklist {
+            Label("Open Tasks", systemImage: "checklist")
+                .labelStyle(.iconOnly)
+                .accessibilityLabel("Has Open Tasks")
+        }
+        if hasAttachments {
+            Label("Has Attachments", systemImage: "paperclip")
+                .labelStyle(.iconOnly)
+                .accessibilityLabel("Has Attachments")
+        }
     }
 }
 

@@ -10,6 +10,11 @@ enum CaptureRoute: String {
     case audio
 }
 
+enum NoteOpenMode {
+    case read
+    case edit
+}
+
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
     static let pendingSearchKey = "MudsnotePendingSystemSearch"
@@ -27,6 +32,8 @@ final class AppModel: ObservableObject {
     @Published var smartFolders: [SmartFolderDefinition] = []
     @Published var selectedMemo: MemoBlock?
     @Published var selectedDocument: MarkdownDocument?
+    @Published var noteOpenMode: NoteOpenMode = .read
+    @Published var isReaderExpanded = false
     @Published var librarySummary = LibrarySummary()
     @Published var tagSummaries: [TagSummary] = []
     @Published var draft = CaptureDraft() {
@@ -71,6 +78,7 @@ final class AppModel: ObservableObject {
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    private let libraryRefreshBarrier: @Sendable () async -> Void
     private let initialLibraryLoadBarrier: @Sendable () async -> Void
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
@@ -94,6 +102,26 @@ final class AppModel: ObservableObject {
         folders.flatMap(\.flattened)
     }
 
+    var visibleLibraryFolders: [LibraryFolderNode] {
+        folders.filter { !$0.isMergedInboxFolder }
+    }
+
+    var mergedInboxFiles: [RecentMarkdownFile] {
+        let roots = folders
+            .filter(\.isMergedInboxFolder)
+            .map(\.relativePath)
+        guard !roots.isEmpty else { return [] }
+        return libraryFiles.filter { file in
+            roots.contains { root in
+                file.relativePath.hasPrefix(root + "/")
+            }
+        }
+    }
+
+    var mergedInboxCount: Int {
+        inboxItems.count + mergedInboxFiles.count
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
@@ -101,6 +129,7 @@ final class AppModel: ObservableObject {
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
         restoreDraftImmediately: Bool? = nil,
         defaults: UserDefaults = .standard,
+        libraryRefreshBarrier: @escaping @Sendable () async -> Void = {},
         initialLibraryLoadBarrier: @escaping @Sendable () async -> Void = {
             await Task.yield()
         }
@@ -108,6 +137,7 @@ final class AppModel: ObservableObject {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        self.libraryRefreshBarrier = libraryRefreshBarrier
         self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
         draftRecoveryEnabled = true
@@ -698,7 +728,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openFile(_ file: RecentMarkdownFile) {
+    func openFile(_ file: RecentMarkdownFile, mode: NoteOpenMode = .read) {
+        noteOpenMode = mode
         Task {
             do {
                 selectedDocument = try await fileStore.loadMarkdownDocument(
@@ -706,6 +737,22 @@ final class AppModel: ObservableObject {
                 )
             } catch {
                 statusToast = .error(String(localized: "Could not open Markdown file"))
+            }
+        }
+    }
+
+    func createNote(inFolder relativeFolderPath: String? = nil) {
+        noteOpenMode = .edit
+        Task {
+            do {
+                let document = try await fileStore.createMarkdownDocument(
+                    inFolder: relativeFolderPath
+                )
+                selectedDocument = document
+                await refreshInbox()
+            } catch {
+                noteOpenMode = .read
+                statusToast = .error(String(localized: "Could not create note"))
             }
         }
     }
@@ -747,7 +794,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -755,11 +802,14 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            try await fileStore.trashMarkdownDocument(relativePath: file.relativePath)
+            let trashed = try await fileStore.trashMarkdownDocument(
+                relativePath: file.relativePath
+            )
+            applyTrashedProjection([trashed])
             if selectedDocument?.relativePath == file.relativePath {
                 selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -773,7 +823,7 @@ final class AppModel: ObservableObject {
     func moveToRecentlyDeleted(_ files: [RecentMarkdownFile]) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved to Recently Deleted."))
+            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -781,14 +831,15 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            _ = try await fileStore.trashMarkdownDocuments(
+            let trashed = try await fileStore.trashMarkdownDocuments(
                 relativePaths: files.map(\.relativePath)
             )
+            applyTrashedProjection(trashed)
             if let selectedDocument,
                files.contains(where: { $0.relativePath == selectedDocument.relativePath }) {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Selected Notes Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Selected Notes Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -1056,7 +1107,7 @@ final class AppModel: ObservableObject {
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 self.selectedDocument = nil
             }
-            statusToast = .saved(String(localized: "Folder Moved to Recently Deleted"))
+            statusToast = .saved(String(localized: "Folder Deleted"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
             return true
@@ -1300,11 +1351,27 @@ final class AppModel: ObservableObject {
         do {
             let updated: MarkdownDocument
             if document.isNew {
-                updated = try await fileStore.finalizeNewMarkdownDocument(
-                    relativePath: document.relativePath,
-                    markdown: markdown,
-                    expectedMarkdown: expectedMarkdown
-                )
+                if announce {
+                    updated = try await fileStore.finalizeNewMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                } else {
+                    let autosaved = try await fileStore.saveMarkdownDocument(
+                        relativePath: document.relativePath,
+                        markdown: markdown,
+                        expectedMarkdown: expectedMarkdown
+                    )
+                    updated = MarkdownDocument(
+                        id: autosaved.id,
+                        title: autosaved.title,
+                        relativePath: autosaved.relativePath,
+                        markdown: autosaved.markdown,
+                        modifiedAt: autosaved.modifiedAt,
+                        isNew: true
+                    )
+                }
             } else {
                 updated = try await fileStore.saveMarkdownDocument(
                     relativePath: document.relativePath,
@@ -1312,7 +1379,10 @@ final class AppModel: ObservableObject {
                     expectedMarkdown: expectedMarkdown
                 )
             }
-            selectedDocument = updated
+            if selectedDocument?.relativePath == document.relativePath,
+               updated.relativePath == document.relativePath {
+                selectedDocument = updated
+            }
             if announce { statusToast = .saved(String(localized: "Saved")) }
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
@@ -1668,6 +1738,7 @@ final class AppModel: ObservableObject {
     func refreshInbox() async {
         guard folderAccess.currentRoot != nil else { return }
         do {
+            await libraryRefreshBarrier()
             let snapshot = try await fileStore.loadLibrarySnapshot()
             await apply(snapshot)
         } catch {
@@ -1719,6 +1790,33 @@ final class AppModel: ObservableObject {
         } else {
             syncStatus = .idle
         }
+    }
+
+    private func applyTrashedProjection(_ items: [TrashedMarkdownFile]) {
+        let paths = Set(items.map(\.originalRelativePath))
+        guard !paths.isEmpty else { return }
+        let directoryPaths = allFolders.map(\.relativePath)
+
+        libraryFiles.removeAll { paths.contains($0.relativePath) }
+        recentFiles.removeAll { paths.contains($0.relativePath) }
+        folders = LibraryFolderNode.makeTree(
+            directoryPaths: directoryPaths,
+            files: libraryFiles
+        )
+        trashedFiles.removeAll { item in
+            items.contains { $0.id == item.id }
+        }
+        trashedFiles.append(contentsOf: items)
+        trashedFiles.sort { $0.trashedAt > $1.trashedAt }
+        librarySummary.allNotesCount = libraryFiles.count
+        librarySummary.recentlyDeletedCount = trashedFiles.count
+        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
+        conflictWarnings.removeAll { paths.contains($0) }
+        searchResults.removeAll { result in
+            guard case .file(let file) = result.destination else { return false }
+            return paths.contains(file.relativePath)
+        }
+        libraryRevision += 1
     }
 
     private func beginLibraryConfiguration() -> UUID {

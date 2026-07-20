@@ -377,7 +377,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testHomeCommandsStayInOneNotesStyleBottomRow() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         let newNote = app.buttons["new-note-button"]
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         XCTAssertTrue(newNote.exists)
@@ -390,13 +390,97 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testIOS26NotesNavigationReferenceStates() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            inboxFolder: true
+        )
+        let inbox = app.buttons["inbox-link"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["all-notes-link"].exists)
+        XCTAssertFalse(app.buttons["folder-row-Inbox"].exists)
+        XCTAssertFalse(app.staticTexts["Daily"].exists)
+
+        let foldersScreenshot = XCTAttachment(screenshot: app.screenshot())
+        foldersScreenshot.name = "iOS 26 reference - folders"
+        foldersScreenshot.lifetime = .keepAlways
+        add(foldersScreenshot)
+
+        inbox.tap()
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Inbox/Filed Note.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.staticTexts["Original inbox memo"].exists)
+        XCTAssertFalse(
+            app.buttons["markdown-file-row-Inbox/Filed Note.md"]
+                .label.contains("Inbox")
+        )
+
+        let mergedInboxScreenshot = XCTAttachment(screenshot: app.screenshot())
+        mergedInboxScreenshot.name = "iOS 26 reference - merged inbox"
+        mergedInboxScreenshot.lifetime = .keepAlways
+        add(mergedInboxScreenshot)
+
+        app.navigationBars["000-inbox"].buttons.firstMatch.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertFalse(note.label.contains("Projects"))
+
+        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
+        listScreenshot.name = "iOS 26 reference - note list"
+        listScreenshot.lifetime = .keepAlways
+        add(listScreenshot)
+
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["close-note-reader"].exists)
+        XCTAssertFalse(app.buttons["share-note-button"].exists)
+        XCTAssertFalse(app.buttons["save-markdown-button"].exists)
+        XCTAssertFalse(app.buttons["note-options-menu"].exists)
+        XCTAssertFalse(app.buttons["reader-checklist"].exists)
+        XCTAssertFalse(app.buttons["reader-attachment-menu"].exists)
+        XCTAssertFalse(app.buttons["reader-formatting"].exists)
+        XCTAssertFalse(app.buttons["reader-new-note"].exists)
+
+        let readerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        readerScreenshot.name = "iOS 26 reference - note reader"
+        readerScreenshot.lifetime = .keepAlways
+        add(readerScreenshot)
+
+        app.staticTexts["Restore this note end to end."].tap()
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["close-note-reader"].exists)
+        XCTAssertFalse(app.buttons["share-note-button"].exists)
+        XCTAssertTrue(app.buttons["markdown-format-menu"].exists)
+        XCTAssertTrue(app.buttons["save-markdown-button"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["markdown-glass-toolbar"]
+                .waitForExistence(timeout: 3)
+        )
+
+        let editorScreenshot = XCTAttachment(screenshot: app.screenshot())
+        editorScreenshot.name = "iOS 26 reference - note editor toolbar"
+        editorScreenshot.lifetime = .keepAlways
+        add(editorScreenshot)
+
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
+    }
+
     func testWidgetSearchEntryFocusesNativeLibrarySearch() {
         let app = launchApp(
             reset: true,
             fixtureFolder: true,
             searchRoute: true
         )
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 8))
         search.typeText("Restore")
         XCTAssertTrue(
@@ -458,8 +542,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
         alert.buttons["Create"].tap()
 
         XCTAssertTrue(waitForHittable(projects))
+        let disclosure = app.buttons["folder-disclosure-Projects"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        disclosure.tap()
+
+        let nested = app.buttons["folder-row-Projects/Launch"]
+        XCTAssertTrue(nested.waitForExistence(timeout: 5))
+        XCTAssertTrue(nested.isHittable)
+        XCTAssertTrue(app.navigationBars["Folders"].exists)
+
         projects.tap()
-        XCTAssertTrue(app.buttons["folder-row-Projects/Launch"].waitForExistence(timeout: 5))
+        XCTAssertTrue(nested.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Projects"].exists)
     }
 
     func testFolderContextMenuMovesNestedFolderToTopLevel() {
@@ -615,21 +709,43 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
-    func testNewNoteUsesUnifiedCaptureComposer() {
+    func testNewNoteCreatesDocumentInCurrentFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
         let newNoteButton = app.buttons["new-note-button"]
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
         newNoteButton.tap()
 
-        let editor = app.textViews["capture-body-editor"]
+        let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["quick-note-button"].exists)
+        XCTAssertFalse(app.buttons["capture-target-menu"].exists)
         editor.tap()
-        editor.typeText("Unified capture note")
-        app.buttons["save-memo-button"].tap()
-        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
-        XCTAssertFalse(editor.exists)
+        editor.typeText("Folder note")
+        let saveStatus = app.staticTexts["markdown-save-status"]
+        XCTAssertTrue(saveStatus.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "label == %@", "Saved"),
+                    object: saveStatus
+                )],
+                timeout: 5
+            ),
+            .completed
+        )
+        XCTAssertTrue(editor.exists, "The first autosave must not recreate the note sheet")
+        editor.typeText(" location")
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertFalse(app.alerts["Couldn’t Save Note"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
+        app.swipeDown(velocity: .fast)
+        app.swipeDown(velocity: .fast)
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/Folder note location.md"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     func testEmptyUnifiedCaptureClosesWithoutCreatingNote() {
@@ -726,8 +842,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["markdown-format-menu"].exists)
         XCTAssertTrue(app.buttons["markdown-format-checklist"].exists)
         XCTAssertFalse(app.buttons["markdown-format-table"].exists)
-        XCTAssertTrue(app.buttons["markdown-format-undo"].exists)
-        XCTAssertTrue(app.buttons["markdown-format-redo"].exists)
         attachmentMenu.tap()
         XCTAssertTrue(app.buttons["Choose Photo or Video"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Take Photo or Video"].exists)
@@ -740,11 +854,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(
             waitForValue(of: editor, containing: "Scanned into Markdown")
         )
-        let displayMode = app.buttons["markdown-display-mode"]
-        XCTAssertTrue(displayMode.exists)
-        displayMode.tap()
+        app.buttons["markdown-format-menu"].tap()
         XCTAssertTrue(app.buttons["Rich Text"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Markdown Source"].exists)
+        XCTAssertTrue(app.buttons["Undo"].exists)
+        XCTAssertTrue(app.buttons["Redo"].exists)
         app.buttons["Rich Text"].tap()
         editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
@@ -985,9 +1099,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         saveDrawing.tap()
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 8))
-        let displayMode = app.buttons["markdown-display-mode"]
-        XCTAssertTrue(displayMode.waitForExistence(timeout: 5))
-        displayMode.tap()
+        let formatMenu = app.buttons["markdown-format-menu"]
+        XCTAssertTrue(formatMenu.waitForExistence(timeout: 5))
+        formatMenu.tap()
         XCTAssertTrue(app.buttons["Markdown Source"].waitForExistence(timeout: 3))
         app.buttons["Markdown Source"].tap()
 
@@ -999,26 +1113,34 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String)?.contains(".png)") == true)
     }
 
-    func testMarkdownEditorAutosavesBeforeSheetDismissal() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+    func testMarkdownEditorAutosaveKeepsSaveFeedbackStable() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        let noteCenter = app.coordinate(withNormalizedOffset: CGVector(
+            dx: note.frame.midX / app.frame.width,
+            dy: note.frame.midY / app.frame.height
+        ))
+        noteCenter.press(forDuration: 1)
+        let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
 
-        let rendered = app.descendants(matching: .any)["rendered-markdown"]
-        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        let bodyText = rendered.staticTexts["Restore this note end to end."]
-        XCTAssertTrue(bodyText.waitForExistence(timeout: 5))
-        bodyText.tap()
         let editor = app.textViews["markdown-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
-        editor.typeText("\nAutosaved UI edit")
-
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
         let saved = app.staticTexts["markdown-save-status"]
+        let saveButton = app.buttons["save-markdown-button"]
         XCTAssertTrue(saved.waitForExistence(timeout: 3))
+        XCTAssertEqual(saved.label, "Saved")
+        XCTAssertEqual(saveButton.value as? String, "Ready")
+        editor.typeText("\nAutosaved UI edit A")
+
         let savedPredicate = NSPredicate(format: "label == %@", "Saved")
         XCTAssertEqual(
             XCTWaiter.wait(
@@ -1027,14 +1149,118 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ),
             .completed
         )
+        XCTAssertEqual(
+            saveButton.value as? String,
+            "Ready",
+            "Autosave must keep the confirmation icon stable"
+        )
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "Autosave must not dismiss the editor keyboard")
+        editor.typeText("B")
+        XCTAssertTrue((editor.value as? String)?.contains("Autosaved UI edit AB") == true)
+
+        let autosaveSettled = expectation(description: "Autosave settled without changing chrome")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            autosaveSettled.fulfill()
+        }
+        wait(for: [autosaveSettled], timeout: 2)
+        XCTAssertEqual(saved.label, "Saved")
+        XCTAssertEqual(saveButton.value as? String, "Ready")
 
         app.buttons["save-markdown-button"].tap()
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
-        app.swipeDown(velocity: .fast)
-        app.swipeDown(velocity: .fast)
-        XCTAssertTrue(waitForHittable(note))
+        XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
+    }
+
+    func testReaderScrollsAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
-        XCTAssertTrue(app.staticTexts["Autosaved UI edit"].waitForExistence(timeout: 5))
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        let bodyText = rendered.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.tap()
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+
+        let background = app.otherElements["note-reader-background-dismiss"]
+        XCTAssertTrue(background.waitForExistence(timeout: 3))
+        let metadata = app.staticTexts["note-modified-date"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 3))
+        let initialMetadataY = metadata.frame.midY
+        rendered.swipeUp()
+        XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
+        XCTAssertEqual(
+            metadata.frame.midY,
+            initialMetadataY,
+            accuracy: 2,
+            "The reader timestamp must remain fixed while note content scrolls"
+        )
+
+        rendered.swipeDown()
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.press(forDuration: 1)
+        let halfScreenCopy = copyMenuItem(in: app)
+        XCTAssertTrue(halfScreenCopy.waitForExistence(timeout: 3))
+        halfScreenCopy.tap()
+
+        let grabberY = max(
+            0.05,
+            min(0.9, (rendered.frame.minY - 48) / app.frame.height)
+        )
+        let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: grabberY))
+        let expandedPosition = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+        grabber.press(forDuration: 0.05, thenDragTo: expandedPosition)
+        XCTAssertTrue(waitForNonexistence(background))
+
+        XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
+        bodyText.tap()
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+        bodyText.press(forDuration: 1)
+        let fullScreenCopy = copyMenuItem(in: app)
+        XCTAssertTrue(fullScreenCopy.waitForExistence(timeout: 3))
+        fullScreenCopy.tap()
+
+        metadata.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
+    }
+
+    func testHalfScreenNoteDismissesFromUpperBackground() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        let background = app.otherElements["note-reader-background-dismiss"]
+        XCTAssertTrue(background.waitForExistence(timeout: 3))
+        background.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        XCTAssertTrue(waitForNonexistence(rendered))
+        XCTAssertTrue(waitForHittable(note))
+    }
+
+    func testLongPressNoteCanOpenDirectlyInEditMode() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.press(forDuration: 1)
+
+        let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 3))
+        edit.tap()
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
     }
 
     func testGenericAttachmentOpensSystemQuickLook() {
@@ -1119,16 +1345,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testRenderedNoteKeepsExportWithoutNoteShareAction() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        app.coordinate(withNormalizedOffset: CGVector(
+            dx: note.frame.midX / app.frame.width,
+            dy: note.frame.midY / app.frame.height
+        )).tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         XCTAssertFalse(app.buttons["Share Note"].exists)
         XCTAssertTrue(app.buttons["Export as PDF"].exists)
         XCTAssertTrue(app.buttons["Find in Note"].exists)
@@ -1137,7 +1366,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Move Note"].exists)
         XCTAssertTrue(app.buttons["Duplicate Note"].exists)
         XCTAssertTrue(app.buttons["Rename Note"].exists)
-        XCTAssertTrue(app.buttons["Move to Recently Deleted"].exists)
+        XCTAssertTrue(app.buttons["Delete"].exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Note export actions"
@@ -1200,8 +1429,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["Plain Link"].tap()
         XCTAssertTrue(waitForValue(of: attachment, containing: "plainLink"))
 
-        let options = app.buttons["note-options-menu"]
-        options.tap()
+        openRenderedNoteActions(in: app)
         let attachmentView = app.buttons["Attachment View"]
         XCTAssertTrue(attachmentView.waitForExistence(timeout: 3))
         attachmentView.tap()
@@ -1220,9 +1448,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let export = app.buttons["Export as PDF"]
         XCTAssertTrue(export.waitForExistence(timeout: 3))
         export.tap()
@@ -1250,9 +1476,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1303,9 +1527,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         toggle.tap()
         XCTAssertTrue(waitForNonexistence(body))
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.exists)
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1316,6 +1538,67 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["find-in-note-count"].label, "1 of 1")
     }
 
+    func testRenderedMarkdownLongPressShowsNativeTextSelection() {
+        let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+
+        let body = app.staticTexts["Restore this note end to end."]
+        XCTAssertTrue(body.waitForExistence(timeout: 5))
+        body.press(forDuration: 1)
+        let copy = app.menuItems["Copy"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 3))
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Native rendered Markdown selection"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testRenderedMarkdownShowsTasksAndBlockStyles() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            markdownStyles: true,
+            openDirectory: false
+        )
+        let note = app.buttons["markdown-file-row-Projects/Rendered Markdown.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+
+        let tasks = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "markdown-task-")
+        )
+        XCTAssertEqual(tasks.count, 2)
+        XCTAssertTrue(app.staticTexts["Completed item"].exists)
+        XCTAssertTrue(app.staticTexts["Open item"].exists)
+        XCTAssertFalse(app.staticTexts["- [x] Completed item"].exists)
+        XCTAssertTrue(app.staticTexts["Bullet item"].exists)
+        XCTAssertTrue(app.staticTexts["First ordered item"].exists)
+        XCTAssertTrue(app.staticTexts["A rendered quote"].exists)
+        let code = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "rendered-markdown-code-")
+        ).firstMatch
+        let table = app.descendants(matching: .any)["rendered-markdown-table"]
+        XCTAssertTrue(code.exists)
+        XCTAssertTrue(table.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Rendered Markdown block styles"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        for _ in 0..<3 where !code.isHittable {
+            app.swipeUp(velocity: .fast)
+        }
+        XCTAssertTrue(code.isHittable)
+        let lowerStylesScreenshot = XCTAttachment(screenshot: app.screenshot())
+        lowerStylesScreenshot.name = "Rendered Markdown code and table"
+        lowerStylesScreenshot.lifetime = .keepAlways
+        add(lowerStylesScreenshot)
+    }
+
     func testOpenedNoteCanBeRenamedWithoutLeavingTheReader() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
@@ -1324,9 +1607,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let rename = app.buttons["Rename Note"]
         XCTAssertTrue(rename.waitForExistence(timeout: 3))
 
@@ -1344,7 +1625,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         name.typeText("-Renamed")
         alert.buttons["Rename"].tap()
 
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
@@ -1362,29 +1642,28 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         app.buttons["Move Note"].tap()
         let topLevel = app.buttons["Top Level"]
         XCTAssertTrue(topLevel.waitForExistence(timeout: 3))
         topLevel.tap()
 
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
-        options.tap()
+        openRenderedNoteActions(in: app)
 
         let optionsScreenshot = XCTAttachment(screenshot: app.screenshot())
         optionsScreenshot.name = "Complete opened note actions"
         optionsScreenshot.lifetime = .keepAlways
         add(optionsScreenshot)
 
-        app.buttons["Move to Recently Deleted"].tap()
-        let confirmation = app.sheets["Move Note to Recently Deleted?"]
+        app.buttons["Delete"].tap()
+        let confirmation = app.sheets["Delete Note?"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
-        confirmation.buttons["Move to Recently Deleted"].tap()
+        confirmation.buttons["Delete"].tap()
 
-        XCTAssertTrue(waitForNonexistence(options))
+        XCTAssertTrue(
+            waitForNonexistence(app.descendants(matching: .any)["rendered-markdown"])
+        )
         XCTAssertTrue(waitForNonexistence(app.buttons["markdown-file-row-UI Lifecycle.md"]))
         app.navigationBars["All Notes"].buttons.firstMatch.tap()
         app.buttons["recently-deleted-link"].tap()
@@ -1422,7 +1701,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
 
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         search.typeText("Restore")
@@ -1450,7 +1729,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
 
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         search.tap()
         let attachments = app.buttons["search-suggestion-attachments"]
         XCTAssertTrue(attachments.waitForExistence(timeout: 5))
@@ -1487,7 +1766,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             ocrAttachment: true
         )
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         search.typeText("ORBITAL")
@@ -1521,9 +1800,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.tap()
 
-        let options = app.buttons["note-options-menu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
+        openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]
         XCTAssertTrue(find.waitForExistence(timeout: 3))
         find.tap()
@@ -1564,8 +1841,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Audio transcription"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Project ORBITAL is approved for launch."].exists)
-        let options = app.buttons["note-options-menu"]
-        options.tap()
+        openRenderedNoteActions(in: app)
         app.buttons["Find in Note"].tap()
         let field = app.textFields["find-in-note-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -1580,18 +1856,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testNotesStyleListShowsMetadataAndSortControls() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let allNotes = app.buttons["all-notes-link"]
-        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
-        allNotes.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
 
         let lifecycleNote = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(lifecycleNote.waitForExistence(timeout: 5))
         XCTAssertTrue(lifecycleNote.label.contains("UI Lifecycle"))
         XCTAssertTrue(lifecycleNote.label.contains("Restore this note end to end."))
-        XCTAssertTrue(lifecycleNote.label.contains("Projects"))
+        XCTAssertTrue(lifecycleNote.label.contains("Contact support@example.com"))
+        XCTAssertFalse(lifecycleNote.label.contains("Projects"))
+        XCTAssertGreaterThan(lifecycleNote.frame.height, 88)
         XCTAssertTrue(app.staticTexts["Today"].exists)
 
-        let sortButton = app.buttons["Sort Notes"]
+        let sortButton = app.buttons["folder-actions"]
         XCTAssertTrue(sortButton.exists)
         sortButton.tap()
         XCTAssertTrue(app.buttons["Date Edited"].waitForExistence(timeout: 3))
@@ -1603,9 +1881,123 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         app.tap()
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Notes-style metadata list"
+        screenshot.name = "Detailed card-style note list"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    func testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            homeScrollNotes: true,
+            openDirectory: false
+        )
+
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
+        XCTAssertFalse(app.buttons["directory-button"].exists)
+        let options = app.buttons["home-note-options"]
+        XCTAssertTrue(options.exists)
+        let nativeTitle = app.navigationBars["Notes"].staticTexts["Notes"].firstMatch
+        XCTAssertTrue(nativeTitle.waitForExistence(timeout: 3))
+        let largeTitleHeight = nativeTitle.frame.height
+
+        let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.exists)
+        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
+
+        options.tap()
+        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Select Notes"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Sort By"))
+                .firstMatch.exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", "Group By Date"))
+                .firstMatch.exists
+        )
+        XCTAssertTrue(app.buttons["View Attachments"].exists)
+        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
+        menuScreenshot.name = "Home Notes-style more menu"
+        menuScreenshot.lifetime = .keepAlways
+        add(menuScreenshot)
+
+        app.buttons["View Attachments"].tap()
+        XCTAssertTrue(app.navigationBars["Attachments"].waitForExistence(timeout: 5))
+        app.navigationBars["Attachments"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5))
+
+        options.tap()
+        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        app.buttons["View as List"].tap()
+
+        let list = app.scrollViews["home-note-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let listFirst = app.buttons["home-list-note-file:Projects/UI Lifecycle.md"]
+        XCTAssertTrue(listFirst.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(listFirst.frame.width, app.frame.width * 0.78)
+        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
+        listScreenshot.name = "Home single-column detailed list"
+        listScreenshot.lifetime = .keepAlways
+        add(listScreenshot)
+
+        options.tap()
+        XCTAssertTrue(app.buttons["View as Cards"].waitForExistence(timeout: 3))
+        app.buttons["View as Cards"].tap()
+        XCTAssertTrue(app.scrollViews["home-note-gallery"].waitForExistence(timeout: 5))
+
+        let gallery = app.scrollViews["home-note-gallery"]
+        gallery.swipeUp()
+        XCTAssertTrue(app.staticTexts["Today"].exists)
+        XCTAssertLessThan(
+            nativeTitle.frame.height,
+            largeTitleHeight - 4,
+            "The system navigation bar should collapse its large title while scrolling"
+        )
+        let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
+        scrolledScreenshot.name = "Home cards under opaque pinned date header"
+        scrolledScreenshot.lifetime = .keepAlways
+        add(scrolledScreenshot)
+        gallery.swipeDown()
+
+        let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
+        let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+
+        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
+        XCTAssertTrue(app.navigationBars["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Library"].exists)
+        XCTAssertTrue(app.buttons["settings-link"].isHittable)
+
+        let inboxCount = app.staticTexts["folder-count-000-inbox"]
+        let projectsCount = app.staticTexts["folder-count-Projects"]
+        XCTAssertTrue(inboxCount.exists)
+        XCTAssertTrue(projectsCount.exists)
+        XCTAssertEqual(
+            inboxCount.frame.maxX,
+            projectsCount.frame.maxX,
+            accuracy: 2,
+            "Folder counts must share one trailing alignment column"
+        )
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Home cards with left directory drawer"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 
     func testNoteListKeepsCaptureBarAndScopesFullTextSearch() {
@@ -1613,7 +2005,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
         app.buttons["all-notes-link"].tap()
 
-        let search = app.textFields["library-search-field"]
+        let search = librarySearchField(in: app)
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["quick-note-button"].exists)
         XCTAssertTrue(app.buttons["new-note-button"].exists)
@@ -1657,7 +2049,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(second.label.contains("Refine the draft"))
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertEqual(first.frame.midY, second.frame.midY, accuracy: 3)
-        let gallerySearch = app.textFields["library-search-field"]
+        let gallerySearch = librarySearchField(in: app)
         let galleryNewNote = app.buttons["new-note-button"]
         XCTAssertTrue(waitForHittable(gallerySearch))
         XCTAssertTrue(waitForHittable(galleryNewNote))
@@ -1832,7 +2224,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["selectable-note-row-Projects/UI Lifecycle.md"].tap()
         app.buttons["selectable-note-row-Projects/Second UI Note.md"].tap()
         app.buttons["delete-selected-notes"].tap()
-        let moveToDeleted = app.buttons["Move to Recently Deleted"]
+        let moveToDeleted = app.buttons["Delete"]
         XCTAssertTrue(moveToDeleted.waitForExistence(timeout: 3))
         moveToDeleted.tap()
         XCTAssertTrue(app.navigationBars["All Notes"].waitForExistence(timeout: 5))
@@ -1980,17 +2372,23 @@ final class MudsnoteCompanionUITests: XCTestCase {
         conflictCopy: Bool = false,
         fileTag: Bool = false,
         batchNotes: Bool = false,
+        homeScrollNotes: Bool = false,
         ocrAttachment: Bool = false,
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
         interruptedWrite: Bool = false,
         scanText: Bool = false,
-        searchRoute: Bool = false
+        searchRoute: Bool = false,
+        markdownStyles: Bool = false,
+        inboxFolder: Bool = false,
+        halfScreenReader: Bool = false,
+        openDirectory: Bool = true
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
+            halfScreenReader ? nil : "-ui-testing-full-reader",
             reset ? "-ui-testing-reset" : nil,
             fixtureFolder ? "-ui-testing-fixture-folder" : nil,
             invalidBookmark ? "-ui-testing-invalid-bookmark" : nil,
@@ -1999,15 +2397,40 @@ final class MudsnoteCompanionUITests: XCTestCase {
             conflictCopy ? "-ui-testing-conflict-copy" : nil,
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
+            homeScrollNotes ? "-ui-testing-home-scroll-notes" : nil,
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
-            searchRoute ? "-ui-testing-search-route" : nil
+            searchRoute ? "-ui-testing-search-route" : nil,
+            markdownStyles ? "-ui-testing-markdown-styles" : nil,
+            inboxFolder ? "-ui-testing-inbox-folder" : nil,
+            fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil
         ].compactMap { $0 }
         app.launch()
         return app
+    }
+
+    private func librarySearchField(in app: XCUIApplication) -> XCUIElement {
+        let nativeSearch = app.searchFields.firstMatch
+        if nativeSearch.exists { return nativeSearch }
+        return app.textFields["library-search-field"]
+    }
+
+    private func openRenderedNoteActions(in app: XCUIApplication) {
+        let metadata = app.staticTexts["note-modified-date"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 5))
+        metadata.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["Find in Note"].waitForExistence(timeout: 3))
+    }
+
+    private func copyMenuItem(in app: XCUIApplication) -> XCUIElement {
+        let menuItem = app.menuItems["Copy"]
+        if menuItem.waitForExistence(timeout: 1) {
+            return menuItem
+        }
+        return app.buttons["Copy"]
     }
 
     private func waitForEmptyValue(of element: XCUIElement) -> Bool {
