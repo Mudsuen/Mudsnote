@@ -75,6 +75,7 @@ check_ci_boundary() {
 check_diff
 check_ci_boundary
 python3 scripts/validate_devflow_baselines.py
+./scripts/agent_context.sh --check
 
 echo "Mudsnote verification scope: $PLATFORM_SCOPE ($MODE)"
 case "$PLATFORM_SCOPE" in

@@ -84,3 +84,15 @@ This document records every file-level change made during the structural refacto
 - No quick-capture UX changes (title/body separation, bottom shelf, native feel — all preserved)
 - Legacy migration code untouched
 - Test files untouched
+
+## Targeted context-boundary extraction (2026-07-19)
+
+Behavior-preserving moves continued the same focused-file rule:
+
+| Former hotspot | Extracted owner |
+| --- | --- |
+| `LibraryWindowController.swift` | `LibrarySourceProjection.swift` for folder/source projections; `LibraryNotesLayout.swift` for geometry and migration constants |
+| `MarkdownFileStore.swift` | `AuthorizedLibraryPath.swift` for path security; `MarkdownLibraryModels.swift` for list metadata/snapshots; `MarkdownSearch.swift` for query matching |
+
+Existing projection, layout, path-security, metadata, and search tests remain the
+behavior contract. No storage format, UI, or runtime flow changed.

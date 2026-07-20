@@ -1,6 +1,6 @@
 # Mudsnote 交付流程
 
-Mudsnote 使用 Devflow 管理非简单修改：任务契约 → 独立分支/worktree → 本地验证 → Draft PR → CI → 合并后真实验收 → 最终确认后清理。
+Mudsnote 使用 Devflow 管理非简单修改：任务契约 → 独立 worktree → 验证 → Draft PR → CI → 合并后真实验收 → 清理。
 
 ## 平台范围
 
@@ -18,7 +18,17 @@ Devflow 的单参数 `./scripts/verify pr|full` 会从任务 diff 自动识别�
 - `full`：该平台的 Release 构建与完整测试。
 - `live`：该平台的真实安装验收，仅限本地且必须显式声明平台。
 
-PR CI 只有 `policy` 与 `build-and-test` 两项稳定检查；`build-and-test` 由 dispatcher 根据改动路径只进入对应平台。CI 不访问 iCloud、Keychain、真实笔记目录、个人设置或凭证。真实笔记、分享入口、Widget、iCloud 和真机行为必须单独人工确认。
+PR CI 运行上下文预算、数据边界及对应平台构建；不访问 iCloud、Keychain、真实笔记、个人设置或凭证。真实数据、Widget、iCloud 和真机行为单独验收。
+
+## 高效验证节奏
+
+1. 完成一轮连贯修改后先运行 `git diff --check`。
+2. 运行一次与改动直接相关的测试组。
+3. 集中修复已知失败，再复测一次相关测试组。
+4. 稳定候选只运行一次对应平台的最终 `pr` 或 `full` 验证。
+5. `live` 只用于需要真实安装证据的稳定候选，不作为每个小补丁的反馈循环。
+
+完整输出交给 Devflow 日志；当前上下文只保留摘要和失败证据。文档、handoff 与决策记录在核心实现稳定后集中更新，并遵循 `docs/ARCHITECTURE.md` 的单一事实源分工。
 
 ## 日常最小操作
 

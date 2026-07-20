@@ -3,15 +3,27 @@
 When working in this repo:
 
 1. Read `README.md` first.
-2. Read `docs/AI_HANDOFF.md` before substantial feature work, bugfixing, or UI changes.
-3. Use `agent-memory/START_HERE.md` before opening deeper project memory or legacy `.codex` memory.
-4. Treat `CHANGELOG.md` as user-visible iteration history, not as the only source of technical truth.
-5. For quick-capture UI work, expect changes to span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
-6. Declare every implementation task as `macos`, `ios`, or explicitly `both` before validation.
-7. Start platform Devflow tasks with `--track macos` or `--track ios`; do not bypass a baseline/overlap refusal until the upstream PR has been merged, closed, or explicitly reviewed as the chosen stacked base.
-8. Validate macOS work with `./scripts/verify macos pr|full|live`; prefer a packaged-app smoke over screenshot-only validation.
-9. Validate iOS work with `./scripts/verify ios pr|full|live`; never run `package_app.sh` or mutate `/Applications/Mudsnote.app` from an iOS-only task.
-10. Use `./scripts/verify both ...` only when the user request explicitly spans both platforms. A dual-platform live run is allowed to install both artifacts in sequence.
+2. Before substantial work, read `docs/AI_HANDOFF.md`; use `agent-memory/START_HERE.md` before deeper memory.
+3. Run `./scripts/agent_context.sh <topic> [regex]`; read `docs/ARCHITECTURE.md` only for boundary changes.
+4. `CHANGELOG.md` is user-visible history, not the only technical truth.
+5. Quick-capture UI may span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
+6. Declare `macos`, `ios`, or explicit `both`, then use `./scripts/verify <scope> pr|full|live`.
+7. Start platform tasks with `--track macos` or `--track ios`; resolve baseline/PR overlap before development.
+8. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
+
+## Token-efficient repository workflow
+
+1. Expand search from routed file to module to repository only after a miss.
+2. Locate symbols first; read at most about 200 nearby lines and do not reread unchanged ranges.
+3. After editing, use a focused `git diff --unified=3` and a ≤12-line confirmed-facts summary.
+4. Test one coherent patch: focused run, at most one corrective rerun, then final verification.
+5. Put independent models, projections, services, and reusable views in focused files.
+6. Update only the document that owns a stable fact, after implementation is stable.
+
+## Documentation ownership
+
+- `ARCHITECTURE`: stable boundaries; `AI_HANDOFF`: current constraints; `CHANGELOG`: user-visible history.
+- `agent-memory/decisions/` and `incidents/`: rationale and failures. Never copy iteration logs into handoff.
 
 ## Delivery
 
