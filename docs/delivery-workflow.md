@@ -15,12 +15,12 @@ flowchart TD
     G --> H{默认分支独立策略检查}
     H -->|可逆产品改动| I[串行 Squash Merge]
     H -->|控制面或 hard stop| J[保留 Draft/停止合并]
-    I --> K[显式 dispatch main full 验证]
+    I --> K[显式 dispatch main 平台 pr smoke]
     K --> L[重点或普通完成报告]
     L --> M[需要时 devtask rollback 创建 Revert PR]
 ```
 
-正常任务不需要用户确认，也不由 Agent 轮询 CI。GitHub 的 `workflow_run` 在 CI 结束后继续处理；同一仓库的合并决策串行执行。如果 `main` 在测试期间前进，自动化只更新任务分支并通过 `workflow_dispatch` 重跑一次当前候选，不会把基于旧 `main` 的绿灯直接用于合并。合并完成后还会显式 dispatch 一次 `main` CI，避免 `GITHUB_TOKEN` 发起的合并不产生后续 `push` workflow。
+正常任务不需要用户确认，也不由 Agent 轮询 CI。GitHub 的 `workflow_run` 在 CI 结束后继续处理；同一仓库的合并决策串行执行。如果 `main` 在测试期间前进，自动化只更新任务分支并通过 `workflow_dispatch` 重跑一次当前候选，不会把基于旧 `main` 的绿灯直接用于合并。合并完成后还会把 PR Manifest 的平台范围传给 `main` CI，显式运行该平台的轻量 `pr` smoke；这既避开 `GITHUB_TOKEN` 不产生后续 `push` workflow 的限制，也不重复完整 `full` 矩阵。
 
 ## Mudsnote 任务声明
 
@@ -104,7 +104,7 @@ devtask rollback Mudsnote <task-id>
 | 默认 PR | Draft，等待再次确认 | Ready，符合资格后事件驱动合并 |
 | 合并基线 | `main` 之外还维护移动的 iOS/macOS 验收 SHA | 最新 `origin/main` 是唯一日常基线 |
 | 重要改动 | 容易与“必须确认”混为一谈 | 自动完成，但报告突出证据和回退 |
-| 验证 | 本地/PR/合并后容易重复全量执行 | 本地定向 + PR 快速 + merge candidate 完整一次 |
+| 验证 | 本地/PR/合并后容易重复全量执行 | 本地定向 + PR 快速 + merge candidate 完整一次 + main 平台 smoke |
 | CI 等待 | Agent 轮询 `gh ... --watch` | `workflow_run`/`workflow_dispatch` 事件驱动 |
 | 旧 PR | 长期 Draft 继续影响后续判断 | 没有 v2 manifest 的旧 PR保持手动，不追溯合并 |
 | 工作流修改 | 可与产品改动共用同一审批逻辑 | 默认分支独立识别控制面并阻止自我批准 |

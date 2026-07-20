@@ -19,8 +19,8 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ### 203. Reliable post-merge verification
 - Problem: GitHub does not start a new `push` workflow for a merge performed by the repository `GITHUB_TOKEN`, so automatic PRs could pass merge-candidate CI without actually exercising the documented post-merge `main` check.
-- Fix: The trusted auto-merge workflow now explicitly dispatches `ci.yml` on `main` immediately after a successful Squash Merge; the shared Devflow template has a contract test that preserves this ordering.
-- Lesson: Post-merge verification must be an explicit workflow action, not an assumed side effect of the token that performed the merge.
+- Fix: The trusted auto-merge workflow now passes the PR Manifest platform into an explicit `ci.yml` dispatch on `main` immediately after Squash Merge. The merge candidate still receives the single `full` pass; post-merge runs the affected platform's lighter `pr` smoke. The shared Devflow template has contract tests for the ordering and inputs.
+- Lesson: Post-merge verification must be explicit and scoped; relying on token side effects can skip it, while blindly repeating the full matrix wastes time.
 
 ### 202. Automatic evidence-backed delivery
 - Problem: Draft-by-default delivery and moving per-platform baseline SHAs kept accepted work outside `main`, then added repeated context loading, Git archaeology, overlap decisions, and duplicate validation to compensate.
