@@ -16,6 +16,9 @@
 		8E684EC683074A7F918B9D84 /* FolderAccessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EE5A9B767B480199D4A54D /* FolderAccessService.swift */; };
 		2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */; };
 		58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */; };
+		B71900000000000000000001 /* AuthorizedLibraryPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71900000000000000000101 /* AuthorizedLibraryPath.swift */; };
+		B71900000000000000000002 /* MarkdownLibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71900000000000000000102 /* MarkdownLibraryModels.swift */; };
+		B71900000000000000000003 /* MarkdownSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = B71900000000000000000103 /* MarkdownSearch.swift */; };
 		A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* AttachmentTextIndex.swift */; };
 		E10000000000000000000001 /* NotePDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* NotePDFExporter.swift */; };
 		F10000000000000000000001 /* AttachmentPresentationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* AttachmentPresentationPreferences.swift */; };
@@ -101,6 +104,9 @@
 		33EE5A9B767B480199D4A54D /* FolderAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/FolderAccessService.swift; sourceTree = "<group>"; };
 		D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/PendingWriteQueue.swift; sourceTree = "<group>"; };
 		B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownFileStore.swift; sourceTree = "<group>"; };
+		B71900000000000000000101 /* AuthorizedLibraryPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AuthorizedLibraryPath.swift; sourceTree = "<group>"; };
+		B71900000000000000000102 /* MarkdownLibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownLibraryModels.swift; sourceTree = "<group>"; };
+		B71900000000000000000103 /* MarkdownSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownSearch.swift; sourceTree = "<group>"; };
 		A50000000000000000000002 /* AttachmentTextIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentTextIndex.swift; sourceTree = "<group>"; };
 		E10000000000000000000002 /* NotePDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/NotePDFExporter.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* AttachmentPresentationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentPresentationPreferences.swift; sourceTree = "<group>"; };
@@ -210,6 +216,9 @@
 				33EE5A9B767B480199D4A54D /* FolderAccessService.swift */,
 				D83EF00712B84C0A93CD46ED /* PendingWriteQueue.swift */,
 				B9535A450C0740B6AEFAEDB1 /* MarkdownFileStore.swift */,
+				B71900000000000000000101 /* AuthorizedLibraryPath.swift */,
+				B71900000000000000000102 /* MarkdownLibraryModels.swift */,
+				B71900000000000000000103 /* MarkdownSearch.swift */,
 				A50000000000000000000002 /* AttachmentTextIndex.swift */,
 				E10000000000000000000002 /* NotePDFExporter.swift */,
 				F10000000000000000000002 /* AttachmentPresentationPreferences.swift */,
@@ -416,6 +425,9 @@
 				8E684EC683074A7F918B9D84 /* FolderAccessService.swift in Sources */,
 				2361A527D203476A8346F2B1 /* PendingWriteQueue.swift in Sources */,
 				58631241752C4E18B354611E /* MarkdownFileStore.swift in Sources */,
+				B71900000000000000000001 /* AuthorizedLibraryPath.swift in Sources */,
+				B71900000000000000000002 /* MarkdownLibraryModels.swift in Sources */,
+				B71900000000000000000003 /* MarkdownSearch.swift in Sources */,
 				A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */,
 				E10000000000000000000001 /* NotePDFExporter.swift in Sources */,
 				F10000000000000000000001 /* AttachmentPresentationPreferences.swift in Sources */,
