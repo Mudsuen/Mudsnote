@@ -3491,10 +3491,28 @@ struct MarkdownRichEditorTests {
         }
         let selectionPanelButtons = selectionPanelSubviews.compactMap { $0 as? NSButton }
         let formattingButton = try #require(selectionPanelButtons.first { $0.toolTip == "加粗" })
+        NSCursor.iBeam.set()
+        formattingButton.mouseEntered(with: contextEvent)
+        #expect(NSCursor.current === NSCursor.arrow)
         formattingButton.performClick(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
         #expect(controller.makeSelectionFormattingMenuForLibrary()?.items.first { $0.title == "加粗" }?.state == .on)
+        let refreshedSelectionPanelButtons: [NSButton] = (window.childWindows ?? []).flatMap { childWindow in
+            childWindow.contentView?.allSubviews.compactMap { $0 as? NSButton } ?? []
+        }
+        #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "加粗" } === formattingButton)
+
+        let underlineButton = try #require(refreshedSelectionPanelButtons.first { $0.toolTip == "下划线" })
+        underlineButton.performClick(nil)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect((controller.editorTextView.textStorage?.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
+        controller.editorTextView.textStorage?.addAttribute(.underlineColor, value: NSColor.controlAccentColor, range: NSRange(location: 0, length: 5))
+        underlineButton.performClick(nil)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(controller.editorTextView.textStorage?.attribute(.underlineStyle, at: 0, effectiveRange: nil) == nil)
+        #expect(controller.editorTextView.textStorage?.attribute(.underlineColor, at: 0, effectiveRange: nil) == nil)
+        #expect(controller.editorTextView.typingAttributes[.underlineStyle] == nil)
 
         controller.editorTextView.undoManager?.removeAllActions()
         let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")
