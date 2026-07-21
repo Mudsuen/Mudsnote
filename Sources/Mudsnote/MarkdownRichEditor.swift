@@ -407,10 +407,20 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         if handleFormattingShortcut(event) {
             return
         }
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)].contains(event.keyCode),
+           modifiers == [.shift] {
+            insertSoftLineBreak()
+            return
+        }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
         super.keyDown(with: event)
+    }
+
+    func insertSoftLineBreak() {
+        insertText("\u{2028}", replacementRange: selectedRange())
     }
 
     private func handleFormattingShortcut(_ event: NSEvent) -> Bool {
@@ -1223,7 +1233,24 @@ enum MarkdownRichTextCodec {
                 continue
             }
 
-            output.append(renderLine(lines[lineIndex], theme: theme, baseURL: baseURL))
+            let firstLine = removingHardLineBreakMarker(from: lines[lineIndex])
+            let kind = paragraphKind(for: firstLine)
+            output.append(renderLine(firstLine, theme: theme, baseURL: baseURL))
+
+            while hasHardLineBreakMarker(lines[lineIndex]), lineIndex + 1 < lines.count {
+                lineIndex += 1
+                output.append(NSAttributedString(
+                    string: "\u{2028}",
+                    attributes: theme.baseAttributes(for: kind)
+                ))
+                let continuation = removingHardLineBreakMarker(from: lines[lineIndex])
+                output.append(parseInlineMarkdown(
+                    continuation,
+                    paragraphKind: kind,
+                    theme: theme,
+                    baseURL: baseURL
+                ))
+            }
             if lineIndex < lines.count - 1 {
                 output.append(NSAttributedString(string: "\n", attributes: theme.baseAttributes(for: .paragraph)))
             }
@@ -1275,11 +1302,12 @@ enum MarkdownRichTextCodec {
                 continue
             }
 
-            let paragraphRange = nsString.paragraphRange(for: NSRange(location: location, length: 0))
-            let hasTrailingNewline = nsString.substring(with: paragraphRange).hasSuffix("\n")
+            let remainingRange = NSRange(location: location, length: nsString.length - location)
+            let newlineRange = nsString.range(of: "\n", options: [], range: remainingRange)
+            let hasTrailingNewline = newlineRange.location != NSNotFound
             let lineRange = NSRange(
-                location: paragraphRange.location,
-                length: max(paragraphRange.length - (hasTrailingNewline ? 1 : 0), 0)
+                location: location,
+                length: hasTrailingNewline ? newlineRange.location - location : nsString.length - location
             )
             let lineText = nsString.substring(with: lineRange)
             lines.append(serializeLine(
@@ -1289,7 +1317,7 @@ enum MarkdownRichTextCodec {
                 theme: theme,
                 context: context
             ))
-            location = NSMaxRange(paragraphRange)
+            location = hasTrailingNewline ? NSMaxRange(newlineRange) : nsString.length
         }
 
         if nsString.length == 0 {
@@ -1677,7 +1705,7 @@ enum MarkdownRichTextCodec {
             return "[\(text)](\(url))"
         }
 
-        var wrapped = text
+        var wrapped = text.replacingOccurrences(of: "\u{2028}", with: "  \n")
 
         if (attributes[.qmCode] as? Bool) == true {
             return "`\(wrapped)`"
@@ -1712,6 +1740,15 @@ enum MarkdownRichTextCodec {
         }
 
         return wrapped
+    }
+
+    private static func hasHardLineBreakMarker(_ line: String) -> Bool {
+        line.hasSuffix("  ")
+    }
+
+    private static func removingHardLineBreakMarker(from line: String) -> String {
+        guard hasHardLineBreakMarker(line) else { return line }
+        return String(line.dropLast(2))
     }
 
     private final class SerializationContext {

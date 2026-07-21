@@ -63,7 +63,8 @@ private func librarySearchResults(
     scope: LibraryScope,
     query: String,
     limit: Int,
-    searchesAllNotes: Bool
+    searchesAllNotes: Bool,
+    includesSubfolderNotes: Bool
 ) -> [NoteSearchResult] {
     if searchesAllNotes {
         return searchSession.searchNotes(query: query, limit: limit)
@@ -79,10 +80,26 @@ private func librarySearchResults(
     case .trash:
         return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
     case .folder(let url):
-        return searchSession.searchNotes(query: query, limit: limit, in: url)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            in: url,
+            includingDescendants: includesSubfolderNotes
+        )
     case .tag(let tag):
         return searchSession.searchNotes(query: query, limit: limit, tagged: tag)
     }
+}
+
+private func libraryNote(
+    _ note: NoteSearchResult,
+    isIn folderURL: URL,
+    includingDescendants: Bool
+) -> Bool {
+    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
+    let folderPath = folderURL.standardizedFileURL.path
+    return noteFolderPath == folderPath
+        || (includingDescendants && noteFolderPath.hasPrefix(folderPath + "/"))
 }
 
 private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
@@ -3485,7 +3502,10 @@ final class LibraryWindowController: NSWindowController,
             case .trash:
                 count = trashCount
             case .folder(let url):
-                count = countIndex.count(forFolder: url)
+                count = countIndex.count(
+                    forFolder: url,
+                    includingDescendants: noteStore.libraryIncludesSubfolderNotes
+                )
             case .tag(let tag):
                 count = countIndex.count(forTag: tag)
             }
@@ -3508,13 +3528,15 @@ final class LibraryWindowController: NSWindowController,
         loadFirstIfNeeded: Bool,
         allNotesSnapshot: [NoteSearchResult]? = nil,
         sourceCountIndex: LibrarySourceCountIndex? = nil,
-        refreshCounts: Bool = true
+        refreshCounts: Bool = true,
+        mutationAnimation: LibraryNoteMutationAnimation? = nil
     ) {
         cancelSourceSnapshotValidation()
         cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let allNotes = allNotesSnapshot ?? sourceCountSnapshot
         searchScopeControl.isHidden = query.isEmpty
+        let previousRows = listRows
         notes = query.isEmpty
             ? notesForSelectedScope(limit: 240, allNotes: allNotes)
             : searchResultsForSelectedScope(query: query, limit: 240)
@@ -3522,7 +3544,7 @@ final class LibraryWindowController: NSWindowController,
         updateNoteListHeader(query: query)
 
         suppressSelectionChanges = true
-        reloadNoteBrowserData()
+        reloadNoteBrowserData(animation: mutationAnimation, previousRows: previousRows)
         updateNoteListEmptyState(query: query)
 
         let preferredPath = preferredURL?.standardizedFileURL.path
@@ -3690,10 +3712,12 @@ final class LibraryWindowController: NSWindowController,
             predicate = { _ in true }
         case .folder(let url):
             candidates = allNotes
-            let folderPath = url.standardizedFileURL.path
             predicate = { note in
-                let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
-                return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+                libraryNote(
+                    note,
+                    isIn: url,
+                    includingDescendants: self.noteStore.libraryIncludesSubfolderNotes
+                )
             }
         case .tag(let tag):
             candidates = allNotes
@@ -3730,10 +3754,12 @@ final class LibraryWindowController: NSWindowController,
         case .trash:
             return Array(trashedNotesSnapshot.prefix(limit))
         case .folder(let url):
-            let folderPath = url.standardizedFileURL.path
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
-                let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
-                return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+                libraryNote(
+                    note,
+                    isIn: url,
+                    includingDescendants: self.noteStore.libraryIncludesSubfolderNotes
+                )
             }
         case .tag(let tag):
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
@@ -3783,10 +3809,12 @@ final class LibraryWindowController: NSWindowController,
             case .trash:
                 candidates = trashedNotesSnapshot
             case .folder(let folderURL):
-                let folderPath = folderURL.standardizedFileURL.path
                 candidates = sourceCountSnapshot.filter { note in
-                    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
-                    return noteFolderPath == folderPath || noteFolderPath.hasPrefix(folderPath + "/")
+                    libraryNote(
+                        note,
+                        isIn: folderURL,
+                        includingDescendants: self.noteStore.libraryIncludesSubfolderNotes
+                    )
                 }
             case .tag(let tag):
                 candidates = sourceCountSnapshot.filter { note in
@@ -3818,7 +3846,8 @@ final class LibraryWindowController: NSWindowController,
             scope: scope,
             query: query,
             limit: limit,
-            searchesAllNotes: searchesAllNotes
+            searchesAllNotes: searchesAllNotes,
+            includesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes
         )
     }
 
@@ -3904,16 +3933,19 @@ final class LibraryWindowController: NSWindowController,
         return shouldPin
     }
 
-    private func rebuildNoteListRowsForDisplayOptions() {
+    private func rebuildNoteListRowsForDisplayOptions(
+        mutationAnimation: LibraryNoteMutationAnimation? = nil
+    ) {
         let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map { $0.standardizedFileURL.path })
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousRows = listRows
         if query.isEmpty {
             notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
         }
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
 
         suppressSelectionChanges = true
-        reloadNoteBrowserData()
+        reloadNoteBrowserData(animation: mutationAnimation, previousRows: previousRows)
         let selectedRows = IndexSet(listRows.indices.filter { row in
             guard let note = listRows[row].note else { return false }
             return selectedPaths.contains(note.url.standardizedFileURL.path)
@@ -4732,9 +4764,42 @@ final class LibraryWindowController: NSWindowController,
         galleryCollectionView.reloadData()
     }
 
-    private func reloadNoteBrowserData() {
-        tableView.reloadData()
+    private func reloadNoteBrowserData(
+        animation: LibraryNoteMutationAnimation? = nil,
+        previousRows: [LibraryNoteListRow] = []
+    ) {
+        let canAnimate = animation != nil
+            && hasRequestedWindowPresentation
+            && window?.isVisible == true
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if canAnimate,
+           let animation,
+           let plan = LibraryNoteListMutationPlan(
+               previousRows: previousRows,
+               currentRows: listRows,
+               animation: animation
+           ) {
+            tableView.beginUpdates()
+            if !plan.removedRows.isEmpty {
+                tableView.removeRows(at: plan.removedRows, withAnimation: [.effectFade, .slideUp])
+            }
+            if !plan.insertedRows.isEmpty {
+                tableView.insertRows(at: plan.insertedRows, withAnimation: [.effectGap, .slideDown])
+            }
+            tableView.endUpdates()
+        } else {
+            tableView.reloadData()
+        }
+
         reloadGalleryData()
+        if canAnimate, noteListViewMode == .gallery {
+            galleryCollectionView.alphaValue = 0.72
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                galleryCollectionView.animator().alphaValue = 1
+            }
+        }
     }
 
     private func synchronizeGallerySelectionFromTable() {
@@ -5176,12 +5241,13 @@ final class LibraryWindowController: NSWindowController,
         let noteStore = noteStore
         let existingSearchSession = activeSearchSession
         let preferredDirectories = noteStore.preferredDirectories
+        let includesSubfolderNotes = noteStore.libraryIncludesSubfolderNotes
         isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
 
-        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, generation, preferredURL] in
+        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
             let searchSession = existingSearchSession
                 ?? noteStore.makeSearchSession(roots: preferredDirectories)
@@ -5191,7 +5257,8 @@ final class LibraryWindowController: NSWindowController,
                 scope: scope,
                 query: query,
                 limit: 240,
-                searchesAllNotes: searchesAllNotes
+                searchesAllNotes: searchesAllNotes,
+                includesSubfolderNotes: includesSubfolderNotes
             )
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
@@ -6070,7 +6137,10 @@ final class LibraryWindowController: NSWindowController,
             tags: selectedTags,
             modifiedAt: savedAt
         )
-        refreshVisibleNoteListAfterSave(selecting: savedURL)
+        refreshVisibleNoteListAfterSave(
+            selecting: savedURL,
+            isNewNote: previousURL == nil
+        )
         statusLabel.stringValue = editorDateText(for: savedAt)
         onSave(savedURL)
         updateToolbarActionState()
@@ -6113,7 +6183,7 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private func refreshVisibleNoteListAfterSave(selecting savedURL: URL) {
+    private func refreshVisibleNoteListAfterSave(selecting savedURL: URL, isNewNote: Bool) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty {
             scheduleSearchResultReload(query: query, selecting: savedURL)
@@ -6121,7 +6191,16 @@ final class LibraryWindowController: NSWindowController,
         }
 
         notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
-        rebuildNoteListRowsForDisplayOptions()
+        rebuildNoteListRowsForDisplayOptions(
+            mutationAnimation: isNewNote ? .insertion : nil
+        )
+        if isNewNote,
+           let row = rowIndex(for: savedURL.standardizedFileURL.path) {
+            suppressSelectionChanges = true
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            suppressSelectionChanges = false
+            synchronizeGallerySelectionFromTable()
+        }
         updateNoteListHeader(query: "")
         scheduleSourceCountRefresh(using: sourceCountSnapshot)
     }
@@ -6226,7 +6305,7 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotes(loadFirstIfNeeded: true)
+        reloadNotes(loadFirstIfNeeded: true, mutationAnimation: .deletion)
     }
 
     @discardableResult
@@ -6553,6 +6632,15 @@ final class LibraryWindowController: NSWindowController,
     func waitForSourceSnapshotValidationForLibrary() async {
         let task = sourceSnapshotValidationTask
         await task?.value
+    }
+
+    func refreshFolderNoteVisibilityForLibrary() {
+        activeSearchSession = nil
+        let previousURL = selectedURL
+        reloadNotesForNavigation(selecting: previousURL, loadFirstIfNeeded: true)
+        if notes.isEmpty {
+            clearCurrentDocumentAfterRemoval()
+        }
     }
 
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {

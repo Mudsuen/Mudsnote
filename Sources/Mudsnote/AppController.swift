@@ -812,6 +812,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             currentSaveShortcut: noteStore.saveShortcutString,
             floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
+            libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
             aiEnabled: noteStore.aiEnabled,
             aiCodexExecutablePath: noteStore.aiCodexExecutablePath,
             onPreviewOpacity: { [weak self] opacity in
@@ -839,6 +840,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.saveShortcutString = settings.saveShortcut.displayString
         noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
+        noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
         noteStore.aiEnabled = settings.aiEnabled
         noteStore.aiCodexExecutablePath = settings.aiCodexExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -853,6 +855,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         updateOpenWindowOpacity(settings.opacity)
         updateOpenEditorPreferences()
         updateFloatingNoteLevel()
+        libraryWindowController?.refreshFolderNoteVisibilityForLibrary()
     }
 
     private func updateOpenWindowOpacity(_ opacity: Double) {

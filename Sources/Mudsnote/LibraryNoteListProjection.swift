@@ -22,6 +22,70 @@ enum LibraryNoteViewMode: Int {
     case gallery = 1
 }
 
+enum LibraryNoteMutationAnimation {
+    case insertion
+    case deletion
+}
+
+struct LibraryNoteListMutationPlan: Equatable {
+    let removedRows: IndexSet
+    let insertedRows: IndexSet
+
+    init?(
+        previousRows: [LibraryNoteListRow],
+        currentRows: [LibraryNoteListRow],
+        animation: LibraryNoteMutationAnimation
+    ) {
+        let previousIdentifiers = Self.identifiers(for: previousRows)
+        let currentIdentifiers = Self.identifiers(for: currentRows)
+        guard Set(previousIdentifiers).count == previousIdentifiers.count,
+              Set(currentIdentifiers).count == currentIdentifiers.count else {
+            return nil
+        }
+
+        let previousSet = Set(previousIdentifiers)
+        let currentSet = Set(currentIdentifiers)
+        let removedRows = IndexSet(previousIdentifiers.indices.filter {
+            !currentSet.contains(previousIdentifiers[$0])
+        })
+        let insertedRows = IndexSet(currentIdentifiers.indices.filter {
+            !previousSet.contains(currentIdentifiers[$0])
+        })
+        let retainedPrevious = previousIdentifiers.filter(currentSet.contains)
+        let retainedCurrent = currentIdentifiers.filter(previousSet.contains)
+
+        guard retainedPrevious == retainedCurrent else { return nil }
+        switch animation {
+        case .insertion:
+            guard removedRows.isEmpty, !insertedRows.isEmpty else { return nil }
+        case .deletion:
+            guard insertedRows.isEmpty, !removedRows.isEmpty else { return nil }
+        }
+
+        self.removedRows = removedRows
+        self.insertedRows = insertedRows
+    }
+
+    private enum RowIdentifier: Hashable {
+        case group(title: String, occurrence: Int)
+        case note(path: String)
+    }
+
+    private static func identifiers(for rows: [LibraryNoteListRow]) -> [RowIdentifier] {
+        var groupOccurrences: [String: Int] = [:]
+        return rows.map { row in
+            switch row {
+            case .group(let title):
+                let occurrence = groupOccurrences[title, default: 0]
+                groupOccurrences[title] = occurrence + 1
+                return .group(title: title, occurrence: occurrence)
+            case .note(let note):
+                return .note(path: note.url.standardizedFileURL.path)
+            }
+        }
+    }
+}
+
 enum LibraryNoteListProjection {
     static func prefix<Notes: Sequence>(
         _ notes: Notes,

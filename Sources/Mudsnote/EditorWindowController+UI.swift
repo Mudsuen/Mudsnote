@@ -569,10 +569,10 @@ extension EditorWindowController {
         button.toolTip = action.toolTip
         button.controlSize = .small
         button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.preferredSize = NSSize(width: toolbarButtonWidth, height: toolbarButtonHeight)
+        button.preferredSize = NSSize(width: toolbarButtonWidth, height: toolbarButtonVisualHeight)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: toolbarButtonWidth).isActive = true
-        button.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
+        button.heightAnchor.constraint(equalToConstant: toolbarButtonVisualHeight).isActive = true
 
         if let symbolName = action.symbolName {
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: action.toolTip)?

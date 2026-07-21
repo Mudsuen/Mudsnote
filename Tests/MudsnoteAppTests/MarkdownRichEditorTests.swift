@@ -352,9 +352,129 @@ struct MarkdownRichEditorTests {
         #expect(index.inboxCount == 1)
         #expect(index.count(forFolder: notesFolder) == 1)
         #expect(index.count(forFolder: projectsFolder) == 2)
+        #expect(index.count(forFolder: projectsFolder, includingDescendants: false) == 1)
         #expect(index.count(forFolder: clientFolder) == 1)
         #expect(index.count(forTag: "alpha") == 2)
         #expect(index.count(forTag: "BETA") == 1)
+    }
+
+    @Test
+    func noteListMutationPlanAnimatesOnlyPureInsertionsAndDeletions() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Mutation Plan", isDirectory: true)
+        let first = NoteSearchResult(
+            url: root.appendingPathComponent("First.md"),
+            title: "First",
+            snippet: "",
+            modifiedAt: Date()
+        )
+        let second = NoteSearchResult(
+            url: root.appendingPathComponent("Second.md"),
+            title: "Second",
+            snippet: "",
+            modifiedAt: Date()
+        )
+        let previous: [LibraryNoteListRow] = [.note(first)]
+        let inserted: [LibraryNoteListRow] = [.note(second), .note(first)]
+
+        let insertion = LibraryNoteListMutationPlan(
+            previousRows: previous,
+            currentRows: inserted,
+            animation: .insertion
+        )
+        let deletion = LibraryNoteListMutationPlan(
+            previousRows: inserted,
+            currentRows: previous,
+            animation: .deletion
+        )
+
+        #expect(insertion?.insertedRows == IndexSet(integer: 0))
+        #expect(insertion?.removedRows.isEmpty == true)
+        #expect(deletion?.removedRows == IndexSet(integer: 0))
+        #expect(deletion?.insertedRows.isEmpty == true)
+        #expect(LibraryNoteListMutationPlan(
+            previousRows: previous,
+            currentRows: inserted,
+            animation: .deletion
+        ) == nil)
+    }
+
+    @MainActor
+    @Test
+    func shiftReturnCreatesPersistentShortSpacedLineBreak() throws {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "First", theme: theme))
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+        textView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [.shift],
+            characters: "\r"
+        ))
+        textView.insertText("Second", replacementRange: textView.selectedRange())
+
+        let markdown = MarkdownRichTextCodec.serialize(textView.attributedString(), theme: theme)
+        #expect(textView.string == "First\u{2028}Second")
+        #expect(markdown == "First  \nSecond")
+
+        let reopened = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        #expect(reopened.string == "First\u{2028}Second")
+        let style = try #require(reopened.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        #expect(style.lineSpacing == theme.lineSpacing)
+        #expect(style.paragraphSpacing == theme.paragraphSpacing)
+    }
+
+    @MainActor
+    @Test
+    func libraryFolderVisibilityCanExcludeSubfolderNotes() throws {
+        let suiteName = "mudsnote.folder-visibility-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-folder-visibility-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Library", isDirectory: true)
+        let childDirectory = notesDirectory.appendingPathComponent("Child", isDirectory: true)
+        try FileManager.default.createDirectory(at: childDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        #expect(store.libraryIncludesSubfolderNotes)
+        store.notesDirectory = notesDirectory
+        _ = try store.saveNewNote(title: "Direct", body: "Root note", in: notesDirectory)
+        _ = try store.saveNewNote(title: "Nested", body: "Child note", in: childDirectory)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        #expect(controller.selectSourceForLibrary(titled: "Library"))
+        #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == ["Direct", "Nested"])
+
+        store.libraryIncludesSubfolderNotes = false
+        #expect(!NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        ).libraryIncludesSubfolderNotes)
+        controller.refreshFolderNoteVisibilityForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Direct"])
+        controller.searchForLibrary(query: "Nested", allNotes: false)
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+
+        store.libraryIncludesSubfolderNotes = true
+        controller.refreshFolderNoteVisibilityForLibrary()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Nested"])
+        controller.searchForLibrary(query: "", allNotes: false)
+        #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == ["Direct", "Nested"])
     }
 
     @Test
@@ -6813,6 +6933,10 @@ struct MarkdownRichEditorTests {
         let controller = harness.controller
 
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == false)
+        #expect(controller.toolbarButtonsByAction.values.allSatisfy {
+            $0.preferredSize?.height == controller.toolbarButtonVisualHeight
+        })
+        #expect(controller.toolbarButtonVisualHeight < controller.toolbarButtonHeight)
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
         #expect(controller.floatingNoteTitlebarChromeViews.count == 1)

@@ -170,6 +170,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     let toolbarButtonWidth: CGFloat = 30
     let toolbarButtonHeight: CGFloat = 26
+    let toolbarButtonVisualHeight: CGFloat = 24
     let toolbarButtonSpacing: CGFloat = 0
     let footerGapToSave: CGFloat = 1
     let footerEdgeInset: CGFloat = 2
