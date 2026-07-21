@@ -5351,8 +5351,23 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func linkPressed() {
+    func linkPressed() {
         guard canEditCurrentDocument, !isEditorShowingMarkdownSource else { return }
+        if let link = editorTextView.linkReference(for: editorTextView.selectedRange()) {
+            presentLinkEditorForLibrary(
+                title: "编辑链接",
+                destination: link.url,
+                name: link.label
+            ) { [weak self] destination, name in
+                self?.updateLinkForLibrary(
+                    link,
+                    label: name.isEmpty ? destination : name,
+                    url: destination
+                )
+            }
+            return
+        }
+
         let defaultLabel = selectedTextForLinkDefault()
         presentLinkEditorForLibrary(
             title: "添加链接",

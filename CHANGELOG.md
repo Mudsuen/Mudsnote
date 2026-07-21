@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 204. Editable links from the link button
+- Problem: Pressing the library editor's Link button while the selection was already inside a link opened an empty Add Link sheet, forcing the destination to be entered again and risking a duplicate link.
+- Fix: The Link button now recognizes a caret or selection contained within one existing link, opens the Edit Link sheet with its current destination and name, and updates that link in place on confirmation. Unlinked selections retain the existing Add Link behavior.
+- Lesson: Insert-format commands should inspect the semantic content at the current selection and become edit commands when that content already exists.
+
 ### 203. Reliable post-merge verification
 - Problem: GitHub does not start a new `push` workflow for a merge performed by the repository `GITHUB_TOKEN`, so automatic PRs could pass merge-candidate CI without actually exercising the documented post-merge `main` check.
 - Fix: The trusted auto-merge workflow now passes the PR Manifest platform into an explicit `ci.yml` dispatch on `main` immediately after Squash Merge. The merge candidate still receives the single `full` pass; post-merge runs the affected platform's lighter `pr` smoke. The shared Devflow template has contract tests for the ordering and inputs.
