@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 206. Arrow cursor through the complete format-button click
+- Problem: The selection toolbar declared an arrow cursor while hovering, but applying a format returned first-responder handling to the text editor during the button's mouse-down lifecycle, so the pointer still changed to an I-beam after the action.
+- Fix: Format buttons now restore the arrow after dispatching their command and again after the real mouse-down completes. A deferred guard reapplies it after toolbar-state refresh only when the pointer is still inside that button, while cursor-update and mouse-move events keep the same ownership.
+- Lesson: A cursor rect is not enough when a control action changes the first responder; cursor ownership must survive the complete click and deferred refresh lifecycle without overriding the destination after the pointer leaves.
+
 ### 205. Clean formatting removal and stable selection-toolbar cursor
 - Problem: Removing paragraph selection formatting could leave a thin blue underline behind, and applying an option from the floating selection toolbar changed the pointer under that toolbar from the normal arrow to an I-beam.
 - Fix: Underline and strikethrough removal now clears their companion color attributes, refreshes typing attributes, and invalidates the affected glyph display. The selection toolbar updates its existing buttons in place and explicitly owns an arrow cursor instead of recreating the hovered button over the text editor.

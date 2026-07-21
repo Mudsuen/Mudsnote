@@ -278,6 +278,20 @@ private final class SelectionFormattingPanelButton: NSButton {
         NSCursor.arrow.set()
     }
 
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        restoreArrowCursorAfterAction()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.arrow.set()
+        super.mouseMoved(with: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         updateAppearance()
@@ -306,6 +320,7 @@ private final class SelectionFormattingPanelButton: NSButton {
 
     @objc
     private func performMenuItem() {
+        defer { restoreArrowCursorAfterAction() }
         if let submenu = menuItem.submenu {
             submenu.popUp(positioning: nil, at: NSPoint(x: bounds.minX, y: bounds.maxY + 4), in: self)
             onPerform?()
@@ -314,6 +329,16 @@ private final class SelectionFormattingPanelButton: NSButton {
         guard let action = menuItem.action else { return }
         NSApp.sendAction(action, to: menuItem.target, from: menuItem)
         onPerform?()
+    }
+
+    private func restoreArrowCursorAfterAction() {
+        NSCursor.arrow.set()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window else { return }
+            let pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            guard bounds.contains(pointer) else { return }
+            NSCursor.arrow.set()
+        }
     }
 }
 
