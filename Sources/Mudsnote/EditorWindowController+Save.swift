@@ -106,16 +106,21 @@ extension EditorWindowController {
         } else {
             controller = FloatingNoteBrowserController(
                 noteStore: noteStore,
-                selectedURL: activeFloatingNoteURL,
-                onSelect: { [weak self] url in
-                    self?.loadFloatingNote(at: url)
-                }
+                selectedWindowID: floatingWindowID,
+                openWindows: floatingNoteWindows,
+                onOpen: onRequestOpenFloatingNote,
+                onActivate: onRequestActivateFloatingNote,
+                onClose: onRequestCloseFloatingNote
             )
             floatingNoteBrowserController = controller
         }
 
-        controller.selectedURL = activeFloatingNoteURL
+        controller.selectedWindowID = floatingWindowID
         controller.show(relativeTo: anchorView, parentWindow: window)
+    }
+
+    func refreshFloatingNoteBrowser() {
+        floatingNoteBrowserController?.refresh()
     }
 
     @objc func quickCaptureDirectoryPressed() {

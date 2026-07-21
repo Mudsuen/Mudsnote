@@ -164,9 +164,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     // MARK: - Stored properties
 
     let noteStore: NoteStore
+    let floatingWindowID = UUID()
     let onSave: (URL) -> Void
     let onClose: () -> Void
     let onRequestSearch: () -> Void
+    let floatingNoteWindows: () -> [FloatingNoteWindowDescriptor]
+    let onRequestOpenFloatingNote: (URL) -> Void
+    let onRequestActivateFloatingNote: (UUID) -> Void
+    let onRequestCloseFloatingNote: (UUID) -> Void
 
     let toolbarButtonWidth: CGFloat = 30
     let toolbarButtonHeight: CGFloat = 26
@@ -191,7 +196,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     weak var quickCaptureTagButton: HoverToolbarButton?
     weak var floatingNotePlaceholderLabel: NSTextField?
     weak var floatingNoteTitlebarView: NSView?
-    weak var floatingNoteBrowseButton: HoverToolbarButton?
+    weak var floatingNoteBrowseButton: NSButton?
     var floatingNoteTitlebarChromeViews: [NSView] = []
     var activeFloatingNoteURL: URL?
     var floatingNoteBrowserController: FloatingNoteBrowserController?
@@ -247,11 +252,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void,
         onRequestSearch: @escaping () -> Void,
+        floatingNoteWindows: @escaping () -> [FloatingNoteWindowDescriptor] = { [] },
+        onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
+        onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
+        onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestPreferences: @escaping () -> Void
     ) {
         self.noteStore = noteStore
         self.currentPanelOpacity = panelOpacity
         self.fileURL = fileURL
+        if draftIDOverride == "floating-note" {
+            self.activeFloatingNoteURL = fileURL
+        }
         self.initialWindowFrame = initialWindowFrame
         self.draftIDOverride = draftIDOverride
         self.saveShortcut = saveShortcut
@@ -261,6 +273,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onSave = onSave
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch
+        self.floatingNoteWindows = floatingNoteWindows
+        self.onRequestOpenFloatingNote = onRequestOpenFloatingNote
+        self.onRequestActivateFloatingNote = onRequestActivateFloatingNote
+        self.onRequestCloseFloatingNote = onRequestCloseFloatingNote
         self.onRequestPreferences = onRequestPreferences
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
@@ -375,7 +391,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     var isFloatingNoteMode: Bool {
-        draftIDOverride == "floating-note" && fileURL == nil
+        draftIDOverride == "floating-note"
     }
 
     // MARK: - Window delegate

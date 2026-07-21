@@ -6938,13 +6938,20 @@ struct MarkdownRichEditorTests {
         })
         #expect(controller.toolbarButtonVisualHeight < controller.toolbarButtonHeight)
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
-        #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { !($0 is NSButton) })
         #expect(controller.floatingNoteTitlebarChromeViews.count == 1)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 1 })
-        let headerStack = try #require(controller.floatingNoteTitlebarChromeViews.first as? NSStackView)
-        #expect(headerStack.arrangedSubviews.count == 1)
-        #expect(controller.floatingNoteBrowseButton?.toolTip == "浏览笔记")
-        #expect(controller.floatingNoteBrowseButton?.performsActionOnMouseDown == true)
+        #expect(controller.floatingNoteBrowseButton?.toolTip == "管理悬浮笔记")
+        let managerButton = try #require(controller.floatingNoteBrowseButton as? HoverToolbarButton)
+        #expect(managerButton.target === controller)
+        #expect(managerButton.action == #selector(EditorWindowController.floatingBrowseNotesPressed(_:)))
+        #expect(managerButton.superview === controller.window?.contentView)
+        #expect(managerButton.accessibilityIdentifier() == "FloatingNoteManagerButton")
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let managerCenter = managerButton.convert(
+            NSPoint(x: managerButton.bounds.midX, y: managerButton.bounds.midY),
+            to: controller.window?.contentView
+        )
+        #expect(controller.window?.contentView?.hitTest(managerCenter) === managerButton)
 
         controller.setFloatingNoteTitlebarChromeVisible(true)
 
@@ -6988,17 +6995,157 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func floatingBrowseButtonOpensBrowserPanel() throws {
+    func floatingBrowseButtonDispatchesCompleteClicksToBrowserPanel() async throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
 
         controller.showWindowAndFocus()
-        controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
+        let managerButton = try #require(controller.floatingNoteBrowseButton)
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+
+        func dispatchClick(expectedPresentationCount: Int) async throws {
+            let location = managerButton.convert(
+                NSPoint(x: managerButton.bounds.midX, y: managerButton.bounds.midY),
+                to: nil
+            )
+            let windowNumber = controller.window?.windowNumber ?? 0
+            let mouseDown = try #require(NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: location,
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: windowNumber,
+                context: nil,
+                eventNumber: 1,
+                clickCount: 1,
+                pressure: 1
+            ))
+            let mouseUp = try #require(NSEvent.mouseEvent(
+                with: .leftMouseUp,
+                location: location,
+                modifierFlags: [],
+                timestamp: 0.01,
+                windowNumber: windowNumber,
+                context: nil,
+                eventNumber: 2,
+                clickCount: 1,
+                pressure: 0
+            ))
+            NSApp.postEvent(mouseDown, atStart: false)
+            NSApp.postEvent(mouseUp, atStart: false)
+
+            let deadline = Date().addingTimeInterval(1)
+            while (controller.floatingNoteBrowserController?.presentationCount ?? 0) < expectedPresentationCount,
+                  Date() < deadline {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        try await dispatchClick(expectedPresentationCount: 1)
 
         let browser = try #require(controller.floatingNoteBrowserController)
+        #expect(browser.presentationCount == 1)
         #expect(browser.window?.isVisible == true)
-        #expect(browser.window?.canBecomeKey == true)
+        #expect(browser.window?.isKeyWindow == true)
+        #expect(browser.window?.parent === controller.window)
+        if let browserFrame = browser.window?.frame,
+           let visibleFrame = controller.window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            #expect(browserFrame.intersects(visibleFrame))
+        }
+
+        browser.window?.close()
+        controller.window?.resignKey()
+        #expect(controller.window?.isKeyWindow == false)
+        try await dispatchClick(expectedPresentationCount: 2)
+        #expect(browser.presentationCount == 2)
+        #expect(browser.window?.isVisible == true)
+        #expect(browser.window?.parent === controller.window)
+        #expect(browser.window?.frame.width == 340)
+        #expect(browser.window?.contentView?.allSubviews.contains {
+            ($0 as? NSButton)?.title == "关闭窗口"
+        } == false)
+        browser.window?.close()
+    }
+
+    @MainActor
+    @Test
+    func floatingWindowManagerShowsAllOpenWindowsWithIndividualCloseActions() throws {
+        var openWindows: [FloatingNoteWindowDescriptor] = []
+        var closedWindowID: UUID?
+        var addedURL: URL?
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            floatingNoteWindows: { openWindows },
+            onRequestOpenFloatingNote: { addedURL = $0 },
+            onRequestCloseFloatingNote: { closedWindowID = $0 }
+        )
+        defer { harness.tearDown() }
+
+        try harness.store.ensureNotesDirectory()
+        let firstURL = try harness.store.saveNewNote(title: "First", body: "One", in: harness.store.notesDirectory)
+        let secondURL = try harness.store.saveNewNote(title: "Second", body: "Two", in: harness.store.notesDirectory)
+        let firstID = UUID()
+        openWindows = [
+            FloatingNoteWindowDescriptor(id: firstID, url: firstURL, title: "First", subtitle: "One"),
+            FloatingNoteWindowDescriptor(id: UUID(), url: secondURL, title: "Second", subtitle: "Two")
+        ]
+
+        harness.controller.showWindowAndFocus()
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        let browser = try #require(harness.controller.floatingNoteBrowserController)
+
+        #expect(browser.displayedURLs.map(\.standardizedFileURL) == [firstURL, secondURL].map(\.standardizedFileURL))
+        #expect(browser.displayedOpenStates == [true, true])
+        let firstCloseButton = try #require(browser.rowActionButton(at: 0))
+        #expect(firstCloseButton.toolTip?.hasPrefix("关闭") == true)
+        let action = try #require(firstCloseButton.action)
+        _ = NSApp.sendAction(action, to: firstCloseButton.target, from: firstCloseButton)
+        #expect(closedWindowID == firstID)
+        #expect(addedURL == nil)
+        browser.window?.close()
+    }
+
+    @Test
+    func floatingWindowsPreferASeparateOnScreenFrame() {
+        let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let first = NSRect(x: 514, y: 514, width: 412, height: 314)
+        let second = nonOverlappingPanelFrame(first, occupiedFrames: [first], visibleFrames: [screen])
+
+        #expect(screen.contains(second))
+        #expect(!first.intersects(second))
+    }
+
+    @MainActor
+    @Test
+    func separateNoteWindowReusesFloatingNoteChromeAndManager() throws {
+        let notesRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-floating-style-test-\(UUID().uuidString)", isDirectory: true)
+        let noteURL = notesRoot.appendingPathComponent("Managed.md")
+        try FileManager.default.createDirectory(at: notesRoot, withIntermediateDirectories: true)
+        try Data("# Managed\n\nBody".utf8).write(to: noteURL)
+        defer { try? FileManager.default.removeItem(at: notesRoot) }
+
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            fileURL: noteURL,
+            configureStore: { store in
+                store.notesDirectory = notesRoot
+            }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        #expect(controller.activeFloatingNoteURL == noteURL)
+        #expect(controller.floatingNotePlaceholderLabel?.isHidden == true)
+        #expect(controller.floatingNoteBrowseButton?.toolTip == "管理悬浮笔记")
+        #expect(controller.saveButton == nil)
+
+        controller.showWindowAndFocus()
+        controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
+        #expect(controller.floatingNoteBrowserController?.window?.isVisible == true)
     }
 
     @MainActor
@@ -7118,9 +7265,13 @@ struct MarkdownRichEditorTests {
     private func makeEditorControllerHarness(
         draftID: String,
         showsSaveButton: Bool,
+        fileURL: URL? = nil,
         saveShortcut: HotKeySpec? = nil,
         configureStore: (NoteStore) -> Void = { _ in },
-        onSave: @escaping (URL) -> Void = { _ in }
+        onSave: @escaping (URL) -> Void = { _ in },
+        floatingNoteWindows: @escaping () -> [FloatingNoteWindowDescriptor] = { [] },
+        onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
+        onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in }
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -7139,13 +7290,16 @@ struct MarkdownRichEditorTests {
         let controller = EditorWindowController(
             noteStore: store,
             panelOpacity: NoteStore.defaultPanelOpacity,
-            fileURL: nil,
+            fileURL: fileURL,
             draftIDOverride: draftID,
             saveShortcut: saveShortcut,
             showsSaveButton: showsSaveButton,
             onSave: onSave,
             onClose: {},
             onRequestSearch: {},
+            floatingNoteWindows: floatingNoteWindows,
+            onRequestOpenFloatingNote: onRequestOpenFloatingNote,
+            onRequestCloseFloatingNote: onRequestCloseFloatingNote,
             onRequestPreferences: {}
         )
 

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 208. User-owned multi-window floating notes
+- Problem: The floating-note manager was sized around a five-result browser, showed a count, info icon, and global close action, replaced the current editor when choosing another note, and reused one saved frame so multiple windows could overlap exactly; an unnamed floating window also had no independent management identity.
+- Fix: The compact manager now lists every open floating window by stable window ID with its own close button, uses search only to explicitly add more notes, removes the count and window cap, and lets every floating window open the same shared state. New windows prefer a separate on-screen frame, and the panel uses a narrower adaptive height with scrolling for larger sets.
+- Lesson: Multi-window management must model windows rather than search results or file paths; creation, activation, placement, and removal should remain explicit user actions backed by one shared owner.
+
 ### 207. Smoother note changes and folder-scoped browsing
 - Problem: Creating or deleting a macOS note changed the list abruptly, the floating-note formatting highlight touched the footer edge, Shift-Return still looked like a separate paragraph, and folder selection always included every descendant note.
 - Fix: Note insertions and deletions now use bounded native list transitions with a reduced-motion fallback, floating-note toolbar highlights sit inside the footer, and Shift-Return round-trips as a Markdown hard line break rendered within one short-spaced paragraph. Settings now offers either descendant-inclusive browsing or notes stored directly in the selected folder, with matching list, search, and folder counts.

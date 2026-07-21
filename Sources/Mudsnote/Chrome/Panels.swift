@@ -141,6 +141,11 @@ final class QuickEntryPanel: NSPanel {
     private func beginManualResizeIfNeeded(with event: NSEvent) -> Bool {
         guard let contentView else { return false }
 
+        let contentPoint = contentView.convert(event.locationInWindow, from: nil)
+        if let hitView = contentView.hitTest(contentPoint), hitView.isDescendantOfControl {
+            return false
+        }
+
         let location = event.locationInWindow
         let edges = resizeEdges(at: location, in: contentView.bounds)
         guard !edges.isEmpty else { return false }
@@ -235,6 +240,18 @@ final class QuickEntryPanel: NSPanel {
         }
     }
 
+}
+
+@MainActor
+private extension NSView {
+    var isDescendantOfControl: Bool {
+        var candidate: NSView? = self
+        while let view = candidate {
+            if view is NSControl { return true }
+            candidate = view.superview
+        }
+        return false
+    }
 }
 
 @MainActor
