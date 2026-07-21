@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 205. Clean formatting removal and stable selection-toolbar cursor
+- Problem: Removing paragraph selection formatting could leave a thin blue underline behind, and applying an option from the floating selection toolbar changed the pointer under that toolbar from the normal arrow to an I-beam.
+- Fix: Underline and strikethrough removal now clears their companion color attributes, refreshes typing attributes, and invalidates the affected glyph display. The selection toolbar updates its existing buttons in place and explicitly owns an arrow cursor instead of recreating the hovered button over the text editor.
+- Lesson: Removing rich-text decoration requires clearing the complete attribute family and repainting its glyph range; transient controls should preserve their identity and cursor region while refreshing applied state.
+
 ### 204. Editable links from the link button
 - Problem: Pressing the library editor's Link button while the selection was already inside a link opened an empty Add Link sheet, forcing the destination to be entered again and risking a duplicate link.
 - Fix: The Link button now recognizes a caret or selection contained within one existing link, opens the Edit Link sheet with its current destination and name, and updates that link in place on confirmation. Unlinked selections retain the existing Add Link behavior.

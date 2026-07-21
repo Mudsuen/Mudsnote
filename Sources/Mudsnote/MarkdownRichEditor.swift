@@ -224,7 +224,7 @@ private final class ConciseEditorContextMenu: NSMenu {
 }
 
 private final class SelectionFormattingPanelButton: NSButton {
-    let menuItem: NSMenuItem
+    private(set) var menuItem: NSMenuItem
     var onPerform: (() -> Void)?
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
@@ -267,9 +267,15 @@ private final class SelectionFormattingPanelButton: NSButton {
         trackingArea = area
     }
 
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         updateAppearance()
+        NSCursor.arrow.set()
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -288,6 +294,14 @@ private final class SelectionFormattingPanelButton: NSButton {
             .clear
         }
         layer?.backgroundColor = color.cgColor
+    }
+
+    func update(menuItem: NSMenuItem) {
+        self.menuItem = menuItem
+        image = menuItem.image
+        toolTip = menuItem.title
+        setAccessibilityLabel(menuItem.title)
+        updateAppearance()
     }
 
     @objc
@@ -703,8 +717,16 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             dismissSelectionFormattingPanel()
             return
         }
-        populateSelectionFormattingStack(stack, with: menu)
-        window?.makeFirstResponder(self)
+        let items = menu.items.filter { !$0.isSeparatorItem }
+        let buttons = stack.arrangedSubviews.compactMap { $0 as? SelectionFormattingPanelButton }
+        if buttons.count == items.count,
+           zip(buttons, items).allSatisfy({ pair in pair.0.menuItem.title == pair.1.title }) {
+            for (button, item) in zip(buttons, items) {
+                button.update(menuItem: item)
+            }
+        } else {
+            populateSelectionFormattingStack(stack, with: menu)
+        }
     }
 
     private func dismissSelectionFormattingPanel() {

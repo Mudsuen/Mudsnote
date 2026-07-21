@@ -8828,15 +8828,34 @@ final class LibraryWindowController: NSWindowController,
         }
 
         guard let storage = editorTextView.textStorage else { return }
-        let enabled = (storage.attribute(key, at: selection.location, effectiveRange: nil) as? Int) == enabledValue
+        var enabled = true
+        var location = selection.location
+        while location < NSMaxRange(selection) {
+            var effectiveRange = NSRange(location: 0, length: 0)
+            guard (storage.attribute(key, at: location, effectiveRange: &effectiveRange) as? Int) == enabledValue else {
+                enabled = false
+                break
+            }
+            location = max(location + 1, NSMaxRange(effectiveRange))
+        }
+
         suppressEditorChanges = true
+        storage.beginEditing()
         if enabled {
             storage.removeAttribute(key, range: selection)
+            if key == .underlineStyle {
+                storage.removeAttribute(.underlineColor, range: selection)
+            } else if key == .strikethroughStyle {
+                storage.removeAttribute(.strikethroughColor, range: selection)
+            }
         } else {
             storage.addAttribute(key, value: enabledValue, range: selection)
         }
+        storage.endEditing()
         suppressEditorChanges = false
         editorTextView.setSelectedRange(selection)
+        updateTypingAttributesFromInsertionPoint()
+        editorTextView.layoutManager?.invalidateDisplay(forCharacterRange: selection)
         _ = actionName
         markDirty()
     }
