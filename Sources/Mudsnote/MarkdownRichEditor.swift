@@ -745,6 +745,24 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         return MarkdownLinkReference(range: effectiveRange, label: label, url: url)
     }
 
+    func linkReference(for selection: NSRange) -> MarkdownLinkReference? {
+        guard let textStorage,
+              selection.location >= 0,
+              NSMaxRange(selection) <= textStorage.length else {
+            return nil
+        }
+
+        if selection.length == 0 {
+            return linkReference(atCharacterIndex: selection.location)
+        }
+
+        guard let reference = linkReference(atCharacterIndex: selection.location),
+              NSMaxRange(selection) <= NSMaxRange(reference.range) else {
+            return nil
+        }
+        return reference
+    }
+
     func characterIndex(at event: NSEvent) -> Int? {
         guard !isEventInTrailingLineWhitespace(event), let layoutManager, let textContainer else { return nil }
         let point = convert(event.locationInWindow, from: nil)

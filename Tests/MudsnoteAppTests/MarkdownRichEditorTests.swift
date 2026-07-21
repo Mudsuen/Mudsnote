@@ -3862,17 +3862,42 @@ struct MarkdownRichEditorTests {
         #expect(libraryLink.range == NSRange(location: linkLocation, length: 4))
         #expect(libraryLink.label == "Muds")
         #expect(libraryLink.url == "https://muds.top")
+        #expect(libraryController.editorTextView.linkReference(for: NSRange(location: linkLocation + 1, length: 0))?.url == "https://muds.top")
+        #expect(libraryController.editorTextView.linkReference(for: NSRange(location: linkLocation + 1, length: 2))?.url == "https://muds.top")
+        #expect(libraryController.editorTextView.linkReference(for: NSRange(location: linkLocation, length: 5)) == nil)
         #expect(openableMarkdownLinkURL("muds.top")?.absoluteString == "https://muds.top")
         #expect(openableMarkdownLinkURL("custom-scheme:value") == nil)
 
+        libraryController.editorTextView.setSelectedRange(NSRange(location: linkLocation + 1, length: 0))
+        libraryController.linkPressed()
+        let linkSheet = try #require(libraryController.window?.attachedSheet)
+        let destinationField = try #require(linkSheet.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LinkEditorDestinationField"
+        } as? NSTextField)
+        let nameField = try #require(linkSheet.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LinkEditorNameField"
+        } as? NSTextField)
+        #expect(destinationField.stringValue == "https://muds.top")
+        #expect(nameField.stringValue == "Muds")
+        destinationField.stringValue = "https://example.com"
+        let confirmButton = try #require(linkSheet.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LinkEditorConfirmButton"
+        } as? NSButton)
+        #expect(NSApp.sendAction(try #require(confirmButton.action), to: confirmButton.target, from: confirmButton))
+        #expect(MarkdownRichTextCodec.serialize(
+            libraryController.editorTextView.attributedString(),
+            theme: libraryController.theme
+        ) == "[Muds](https://example.com)")
+
         let libraryMenu = NSMenu()
-        #expect(libraryController.configureLinkContextMenuForLibrary(libraryMenu, for: libraryLink))
+        let editedLibraryLink = try #require(libraryController.editorTextView.linkReference(atCharacterIndex: linkLocation))
+        #expect(libraryController.configureLinkContextMenuForLibrary(libraryMenu, for: editedLibraryLink))
         #expect(libraryMenu.items.map(\.title) == ["打开链接", "编辑链接...", "复制链接", "移除链接"])
         let copyItem = try #require(libraryMenu.items.dropFirst(2).first)
         #expect(NSApp.sendAction(try #require(copyItem.action), to: copyItem.target, from: copyItem))
-        #expect(NSPasteboard.general.string(forType: .string) == "https://muds.top")
+        #expect(NSPasteboard.general.string(forType: .string) == "https://example.com")
 
-        libraryController.updateLinkForLibrary(libraryLink, label: "Example", url: "https://example.com")
+        libraryController.updateLinkForLibrary(editedLibraryLink, label: "Example", url: "https://example.com")
         #expect(MarkdownRichTextCodec.serialize(
             libraryController.editorTextView.attributedString(),
             theme: libraryController.theme
