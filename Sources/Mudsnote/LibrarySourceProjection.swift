@@ -128,12 +128,14 @@ enum LibraryFolderTreeProjection {
 
 struct LibrarySourceCountIndex: Sendable {
     let inboxCount: Int
-    private let folderCounts: [String: Int]
+    private let recursiveFolderCounts: [String: Int]
+    private let directFolderCounts: [String: Int]
     private let tagCounts: [String: Int]
 
     init(notes: [NoteSearchResult], folderPaths: Set<String>) {
         var inboxCount = 0
-        var folderCounts: [String: Int] = [:]
+        var recursiveFolderCounts: [String: Int] = [:]
+        var directFolderCounts: [String: Int] = [:]
         var tagCounts: [String: Int] = [:]
 
         for note in notes {
@@ -142,10 +144,13 @@ struct LibrarySourceCountIndex: Sendable {
             }
 
             var directory = note.url.deletingLastPathComponent().standardizedFileURL
+            if folderPaths.contains(directory.path) {
+                directFolderCounts[directory.path, default: 0] += 1
+            }
             while true {
                 let path = directory.path
                 if folderPaths.contains(path) {
-                    folderCounts[path, default: 0] += 1
+                    recursiveFolderCounts[path, default: 0] += 1
                 }
                 let parent = directory.deletingLastPathComponent().standardizedFileURL
                 guard parent.path != path else { break }
@@ -159,12 +164,14 @@ struct LibrarySourceCountIndex: Sendable {
         }
 
         self.inboxCount = inboxCount
-        self.folderCounts = folderCounts
+        self.recursiveFolderCounts = recursiveFolderCounts
+        self.directFolderCounts = directFolderCounts
         self.tagCounts = tagCounts
     }
 
-    func count(forFolder url: URL) -> Int {
-        folderCounts[url.standardizedFileURL.path, default: 0]
+    func count(forFolder url: URL, includingDescendants: Bool = true) -> Int {
+        let counts = includingDescendants ? recursiveFolderCounts : directFolderCounts
+        return counts[url.standardizedFileURL.path, default: 0]
     }
 
     func count(forTag tag: String) -> Int {

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 207. Smoother note changes and folder-scoped browsing
+- Problem: Creating or deleting a macOS note changed the list abruptly, the floating-note formatting highlight touched the footer edge, Shift-Return still looked like a separate paragraph, and folder selection always included every descendant note.
+- Fix: Note insertions and deletions now use bounded native list transitions with a reduced-motion fallback, floating-note toolbar highlights sit inside the footer, and Shift-Return round-trips as a Markdown hard line break rendered within one short-spaced paragraph. Settings now offers either descendant-inclusive browsing or notes stored directly in the selected folder, with matching list, search, and folder counts.
+- Lesson: Local-first UI polish must survive persistence and every projection: motion needs stable row identities, soft line layout needs a portable Markdown representation, and folder scope must agree across browsing, search, and counts.
+
 ### 206. Arrow cursor through the complete format-button click
 - Problem: The selection toolbar declared an arrow cursor while hovering, but applying a format returned first-responder handling to the text editor during the button's mouse-down lifecycle, so the pointer still changed to an I-beam after the action.
 - Fix: Format buttons now restore the arrow after dispatching their command and again after the real mouse-down completes. A deferred guard reapplies it after toolbar-state refresh only when the pointer is still inside that button, while cursor-update and mouse-move events keep the same ownership.

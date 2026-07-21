@@ -27,11 +27,17 @@ public final class NoteSearchSession: @unchecked Sendable {
         return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: recentEntries)
     }
 
-    public func searchNotes(query: String, limit: Int = 30, in directory: URL) -> [NoteSearchResult] {
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
+        in directory: URL,
+        includingDescendants: Bool = true
+    ) -> [NoteSearchResult] {
         let directoryPath = directory.standardizedFileURL.path
         return scopedSearchResults(query: query, limit: limit) { entry in
             let noteDirectoryPath = entry.url.deletingLastPathComponent().standardizedFileURL.path
-            return noteDirectoryPath == directoryPath || noteDirectoryPath.hasPrefix(directoryPath + "/")
+            return noteDirectoryPath == directoryPath
+                || (includingDescendants && noteDirectoryPath.hasPrefix(directoryPath + "/"))
         }
     }
 
@@ -138,11 +144,17 @@ extension NoteStore {
         )
     }
 
-    public func searchNotes(query: String, limit: Int = 30, in directory: URL) -> [NoteSearchResult] {
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
+        in directory: URL,
+        includingDescendants: Bool = true
+    ) -> [NoteSearchResult] {
         let directoryPath = directory.standardizedFileURL.path
         return scopedSearchResults(query: query, limit: limit) { entry in
             let noteDirectoryPath = entry.url.deletingLastPathComponent().standardizedFileURL.path
-            return noteDirectoryPath == directoryPath || noteDirectoryPath.hasPrefix(directoryPath + "/")
+            return noteDirectoryPath == directoryPath
+                || (includingDescendants && noteDirectoryPath.hasPrefix(directoryPath + "/"))
         }
     }
 
