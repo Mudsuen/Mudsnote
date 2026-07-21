@@ -3494,8 +3494,11 @@ struct MarkdownRichEditorTests {
         NSCursor.iBeam.set()
         formattingButton.mouseEntered(with: contextEvent)
         #expect(NSCursor.current === NSCursor.arrow)
+        NSCursor.iBeam.set()
         formattingButton.performClick(nil)
+        #expect(NSCursor.current === NSCursor.arrow)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(NSCursor.current === NSCursor.arrow)
         #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
         #expect(controller.makeSelectionFormattingMenuForLibrary()?.items.first { $0.title == "加粗" }?.state == .on)
         let refreshedSelectionPanelButtons: [NSButton] = (window.childWindows ?? []).flatMap { childWindow in
