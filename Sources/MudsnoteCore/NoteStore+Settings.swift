@@ -72,6 +72,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryNoteViewMode) }
     }
 
+    public var libraryIncludesSubfolderNotes: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) }
+    }
+
     public var libraryCollapsedFolderPaths: Set<String> {
         get { storedStandardizedPathSet(forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }
         set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }

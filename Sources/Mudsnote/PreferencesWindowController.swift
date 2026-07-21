@@ -12,6 +12,7 @@ struct PreferencesSettings {
     let saveShortcut: HotKeySpec
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
+    let libraryIncludesSubfolderNotes: Bool
     let aiEnabled: Bool
     let aiCodexExecutablePath: String
 }
@@ -56,6 +57,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let addDirectoryButton = NSButton(title: "添加...", target: nil, action: nil)
     private let removeDirectoryButton = NSButton(title: "移除", target: nil, action: nil)
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
+    private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
@@ -97,6 +99,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
+        libraryIncludesSubfolderNotes: Bool = true,
         aiEnabled: Bool,
         aiCodexExecutablePath: String,
         onPreviewOpacity: @escaping (Double) -> Void,
@@ -148,6 +151,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             spellCheckingEnabled: spellCheckingEnabled,
             aiEnabled: aiEnabled
         )
+        folderNoteVisibilityPopUp.addItems(withTitles: ["包含子文件夹", "仅本文件夹"])
+        folderNoteVisibilityPopUp.selectItem(at: libraryIncludesSubfolderNotes ? 0 : 1)
         refreshDirectoryControls()
     }
 
@@ -322,6 +327,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "资料库文件夹:",
                 control: actions,
                 help: "Mudsnote 只索引这些文件夹，不会移动或复制其中的文件；移除只会停止显示。"
+            ),
+            preferenceRow(
+                label: "文件夹显示:",
+                control: folderNoteVisibilityPopUp,
+                help: "选择资料库中的文件夹时，可包含所有子文件夹，或只显示直接存放在该文件夹中的笔记。"
             )
         ])
     }
@@ -645,6 +655,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             saveShortcut: saveShortcutSpec,
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
             spellCheckingEnabled: spellCheckingButton.state == .on,
+            libraryIncludesSubfolderNotes: folderNoteVisibilityPopUp.indexOfSelectedItem == 0,
             aiEnabled: aiEnabledButton.state == .on,
             aiCodexExecutablePath: aiCodexExecutablePath
         ))
