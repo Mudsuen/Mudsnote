@@ -1,45 +1,45 @@
-# Design QA: iOS Notes-style grouped note list
+# Floating Window Manager Design QA
 
-## Evidence
+**Comparison target**
 
-- Source visual truth: `/Users/Donald/Downloads/IMG_5241.PNG`
-- Final implementation screenshot: `/tmp/MudsnoteNotesListStyleFinalAttachments.II4pez/DE4DC3D3-C25A-4544-998B-E16A06657C71.png`
-- Full-view side-by-side comparison: `/tmp/MudsnoteNotesListComparison.png`
-- Viewport: source `1260x2736px`; implementation `1206x2622px`, normalized to the source size for comparison
-- State: dark appearance; source is Apple Notes All iCloud, implementation is the Projects folder with two notes in the Today section
-- Primary interactions tested: enter merged Inbox, open a folder, tap the full-width note row, enter editing, save, enter folder management, rename a folder, and exit management
+- Source visual truth: `/var/folders/hs/3lbg6xjs1kdc4xftnflt94y80000gn/T/codex-clipboard-9d53c08d-ad54-42b9-8bf2-fbd092ead49b.png` for the manager state and `/var/folders/hs/3lbg6xjs1kdc4xftnflt94y80000gn/T/codex-clipboard-b6899829-4dbb-43a7-9df5-1a1b77a33aa0.png` for the compact-row direction.
+- Rendered implementation: `/tmp/mudsnote-floating-manager-compact-final.png`.
+- Full-view comparison: `/tmp/mudsnote-manager-full-comparison-final.png`.
+- Focused row comparison: `/tmp/mudsnote-manager-row-comparison-final.png`.
+- Viewport: native macOS floating note at 300 x 314 points with its borderless manager at 300 x 116 points.
+- Pixels and density: source manager 690 x 352 pixels, row reference 552 x 106 pixels, implementation capture 692 x 628 pixels including the parent window. The implementation panel was compared at its 602 x 232 pixel crop, corresponding to approximately 301 x 116 points at 2x. The focused comparison normalized both row crops to 61 pixels high.
+- State: dark appearance, one current unsaved floating note, manager open, search empty and focused.
 
-## Findings
+**Full-view comparison evidence**
 
-- P0: none
-- P1: none
-- P2: none after the second comparison pass
-- Typography: the large navigation title, secondary note count, bold date section header, semibold row title, and muted timestamp/preview hierarchy match the native Notes reference closely.
-- Spacing and layout rhythm: section headers align with the inset card edge; grouped rows share one rounded container and use inset separators; the bottom search and compose controls remain unobstructed.
-- Colors and visual tokens: the implementation retains the project-native dark canvas and card tokens, which visually match the black Notes canvas and neutral dark grouped cards.
-- Image and icon fidelity: no raster assets are needed in the list; all visible controls use native SF Symbols. Attachment state uses the system paperclip inline with metadata.
-- Copy and content: fixture content differs from the personal reference by design. Folder location is intentionally absent because this screen is already scoped to Projects, as requested.
+- The implementation preserves the source manager's title, new-window action, search field, divider, current-window marker, title, subtitle, and close action.
+- The intended change is visible: the manager contracts from the source's approximately 345-point width and loose two-line result to the floating note's 300-point width and a single 36-point row.
+- Typography uses native system fonts with reduced sizes and weights; spacing, radii, and control dimensions follow the denser row reference. Colors continue to use the app's existing vibrancy-aware panel tokens.
+- Copy remains app-native and unchanged in meaning. No raster imagery, custom logos, or non-standard image assets are present; SF Symbols remain sharp at native density.
 
-## Comparison History
+**Focused region comparison evidence**
 
-### Pass 1
+- The focused row comparison confirms a continuous rounded row, one-line title and subtitle, compact marker, and trailing action aligned on the same center line as the reference.
+- The implementation intentionally retains the app's red current-window marker and close symbol instead of copying the reference row's pin/archive actions.
 
-- Evidence: `/tmp/MudsnoteNotesListStyleAttachments.UkJ9cN/112A3F14-A286-4CD8-AC78-AE26F5320EC1.png`
-- P2: attachment icons occupied a separate third line inside a folder, making rows taller than the Notes reference.
-- P2: the Today header had an extra inset and did not align with the grouped card edge.
-- Fix: moved the attachment indicator into the timestamp/preview line and set explicit section-header row insets.
+**Findings**
 
-### Pass 2
+- No actionable P0, P1, or P2 mismatch remains.
+- P3: the semantic close symbol is visually stronger than the reference's secondary actions, but it remains within a 24-point target and uses the secondary text token; this is acceptable for the destructive per-window action.
 
-- Evidence: `/tmp/MudsnoteNotesListStyleFinalAttachments.II4pez/DE4DC3D3-C25A-4544-998B-E16A06657C71.png`
-- Post-fix result: row density, section alignment, rounded grouping, separators, typography, and bottom controls have no remaining actionable P0/P1/P2 differences.
+**Comparison history**
 
-## Focused Region Comparison
+1. Initial comparison: the one-row manager still showed a vertical scroller and the table column did not fill the available list width (P2).
+2. First fix: made the single note column autoresize to the scroll viewport and enabled the vertical scroller only when more than five rows exist. The follow-up layout assertion showed that AppKit's inset table style still reserved approximately 16 points at each side (P2).
+3. Second fix: explicitly selected the plain table style so the compact row can use the scroll viewport's full width.
+4. Post-fix evidence: `/tmp/mudsnote-floating-manager-compact-final.png`, `/tmp/mudsnote-manager-full-comparison-final.png`, and `/tmp/mudsnote-manager-row-comparison-final.png` show the row reaching the intended 8-point panel margins with no unnecessary scroller.
 
-- A separate crop was not needed because the original-resolution side-by-side comparison keeps row typography, separators, attachment symbols, card radii, and section alignment clearly readable.
+**Implementation checklist**
 
-## Follow-up Polish
-
-- P3: content-dependent line lengths and the number of visible date groups will naturally vary from the personal Apple Notes library.
+- [x] Match the floating note's 300-point width.
+- [x] Use compact single-line result rows.
+- [x] Preserve new, search, activate, add, and close behavior.
+- [x] Keep overflow scrolling for lists longer than five rows.
+- [x] Verify the native rendered state against both supplied references.
 
 final result: passed

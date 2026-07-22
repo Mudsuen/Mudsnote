@@ -1618,6 +1618,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The macOS Editor settings pane now independently selects visible right-click commands and selection-toolbar buttons. Existing commands remain enabled by default, choices persist, and library and floating editors read the saved configuration when constructing each menu.
 - Lesson: Customization should filter one canonical command model at presentation time so behavior, shortcuts, and undo remain unchanged.
 
+### 232. Compact floating-window management
+
+- Problem: The floating-window manager was wider and taller than the floating note itself, and each open window used a loose two-line layout that made a short list feel oversized.
+- Fix: The macOS manager now fits the 300-point floating-note width, uses a dense 36-point single-line row for each window, and tightens its title, search field, padding, icons, and corner radii. Rows fill the available width, while the vertical scroller appears only when more than five results require it.
+- Lesson: A transient manager should inherit the scale of its owning window; compact one-line rows preserve scanability without turning a lightweight control into a second full-size surface.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

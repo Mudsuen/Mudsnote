@@ -20,26 +20,29 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = 9
         layer?.masksToBounds = true
+        layer?.backgroundColor = panelPrimaryTextColor().withAlphaComponent(0.08).cgColor
 
         marker.translatesAutoresizingMaskIntoConstraints = false
         marker.wantsLayer = true
-        marker.layer?.cornerRadius = 4
+        marker.layer?.cornerRadius = 3
         marker.layer?.backgroundColor = panelTertiaryTextColor().cgColor
 
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.textColor = panelPrimaryTextColor()
         titleLabel.lineBreakMode = .byTruncatingTail
 
-        snippetLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        snippetLabel.font = .systemFont(ofSize: 11, weight: .regular)
         snippetLabel.textColor = panelSecondaryTextColor()
         snippetLabel.lineBreakMode = .byTruncatingTail
 
+        titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        snippetLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let labels = NSStackView(views: [titleLabel, snippetLabel])
-        labels.orientation = .vertical
-        labels.alignment = .leading
-        labels.spacing = 3
+        labels.orientation = .horizontal
+        labels.alignment = .centerY
+        labels.spacing = 7
         labels.translatesAutoresizingMaskIntoConstraints = false
 
         actionButton.isBordered = false
@@ -54,19 +57,19 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         addSubview(actionButton)
 
         NSLayoutConstraint.activate([
-            marker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            marker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             marker.centerYAnchor.constraint(equalTo: centerYAnchor),
-            marker.widthAnchor.constraint(equalToConstant: 8),
-            marker.heightAnchor.constraint(equalToConstant: 8),
+            marker.widthAnchor.constraint(equalToConstant: 6),
+            marker.heightAnchor.constraint(equalToConstant: 6),
 
-            labels.leadingAnchor.constraint(equalTo: marker.trailingAnchor, constant: 10),
-            labels.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -8),
+            labels.leadingAnchor.constraint(equalTo: marker.trailingAnchor, constant: 8),
+            labels.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -6),
             labels.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            actionButton.widthAnchor.constraint(equalToConstant: 28),
-            actionButton.heightAnchor.constraint(equalToConstant: 28)
+            actionButton.widthAnchor.constraint(equalToConstant: 24),
+            actionButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
@@ -88,7 +91,7 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         let symbolName = isOpen ? "xmark" : "plus"
         actionButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
-        actionButton.contentTintColor = isOpen ? .systemRed : panelPrimaryTextColor()
+        actionButton.contentTintColor = panelSecondaryTextColor()
         let label = isOpen ? "关闭 \(titleLabel.stringValue)" : "添加 \(titleLabel.stringValue)"
         actionButton.toolTip = label
         actionButton.setAccessibilityLabel(label)
@@ -108,6 +111,11 @@ final class FloatingNoteBrowserPanel: NSPanel {
 
 @MainActor
 final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
+    static let compactPanelWidth: CGFloat = 300
+    static let compactRowHeight: CGFloat = 36
+    static let compactRowStride: CGFloat = 40
+    static let compactChromeHeight: CGFloat = 76
+
     private struct Item {
         let url: URL?
         let title: String
@@ -127,6 +135,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     let newWindowButton = NSButton()
     private let emptyLabel = NSTextField(labelWithString: "搜索笔记并添加悬浮窗口")
     private let tableView = NSTableView()
+    private let scrollView = NSScrollView()
     private var items: [Item] = []
     private(set) var presentationCount = 0
     private weak var presentationAnchorView: NSView?
@@ -139,6 +148,14 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         guard items.indices.contains(row) else { return nil }
         return (tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? FloatingNoteBrowserResultCellView)?.actionButton
     }
+
+    func resultCell(at row: Int) -> FloatingNoteBrowserResultCellView? {
+        guard items.indices.contains(row) else { return nil }
+        return tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? FloatingNoteBrowserResultCellView
+    }
+
+    var resultRowHeight: CGFloat { tableView.rowHeight }
+    var usesVerticalScroller: Bool { scrollView.hasVerticalScroller }
 
     var selectedWindowID: UUID? {
         didSet { tableView.reloadData() }
@@ -162,7 +179,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         self.onCreate = onCreate
 
         let panel = FloatingNoteBrowserPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 220),
+            contentRect: NSRect(x: 0, y: 0, width: Self.compactPanelWidth, height: 116),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -345,13 +362,13 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         surface.state = .active
         surface.blendingMode = .behindWindow
         surface.wantsLayer = true
-        surface.layer?.cornerRadius = 18
+        surface.layer?.cornerRadius = 14
         surface.layer?.masksToBounds = true
         contentView.addSubview(surface)
         pin(surface, to: contentView)
 
         let titleLabel = NSTextField(labelWithString: "悬浮窗口")
-        titleLabel.font = .systemFont(ofSize: 14, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         titleLabel.textColor = panelSecondaryTextColor()
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(titleLabel)
@@ -359,7 +376,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         newWindowButton.isBordered = false
         newWindowButton.bezelStyle = .regularSquare
         newWindowButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "新建悬浮窗口")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
         newWindowButton.imagePosition = .imageOnly
         newWindowButton.contentTintColor = panelPrimaryTextColor()
         newWindowButton.toolTip = "新建悬浮窗口"
@@ -370,7 +387,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         surface.addSubview(newWindowButton)
 
         searchField.placeholderString = "搜索并添加笔记"
-        searchField.font = .systemFont(ofSize: 15, weight: .semibold)
+        searchField.font = .systemFont(ofSize: 13, weight: .regular)
+        searchField.controlSize = .small
         searchField.focusRingType = .none
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -381,55 +399,58 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         divider.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(divider)
 
-        tableView.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("note")))
+        let noteColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("note"))
+        noteColumn.resizingMask = .autoresizingMask
+        tableView.addTableColumn(noteColumn)
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.style = .plain
         tableView.headerView = nil
-        tableView.rowHeight = 52
-        tableView.intercellSpacing = NSSize(width: 0, height: 3)
+        tableView.rowHeight = Self.compactRowHeight
+        tableView.intercellSpacing = NSSize(width: 0, height: Self.compactRowStride - Self.compactRowHeight)
         tableView.backgroundColor = .clear
-        tableView.selectionHighlightStyle = .regular
+        tableView.selectionHighlightStyle = .none
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedResult)
 
-        let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.documentView = tableView
         surface.addSubview(scrollView)
 
-        emptyLabel.font = .systemFont(ofSize: 13)
+        emptyLabel.font = .systemFont(ofSize: 12)
         emptyLabel.textColor = panelSecondaryTextColor()
         emptyLabel.alignment = .center
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(emptyLabel)
 
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 16),
-            titleLabel.topAnchor.constraint(equalTo: surface.topAnchor, constant: 14),
+            titleLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 12),
+            titleLabel.topAnchor.constraint(equalTo: surface.topAnchor, constant: 10),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: newWindowButton.leadingAnchor, constant: -8),
 
-            newWindowButton.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -12),
+            newWindowButton.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -8),
             newWindowButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            newWindowButton.widthAnchor.constraint(equalToConstant: 28),
-            newWindowButton.heightAnchor.constraint(equalToConstant: 28),
+            newWindowButton.widthAnchor.constraint(equalToConstant: 24),
+            newWindowButton.heightAnchor.constraint(equalToConstant: 24),
 
-            searchField.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 14),
-            searchField.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -14),
-            searchField.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
-            searchField.heightAnchor.constraint(equalToConstant: 30),
+            searchField.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 10),
+            searchField.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -10),
+            searchField.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+            searchField.heightAnchor.constraint(equalToConstant: 26),
 
             divider.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
-            divider.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            divider.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 7),
 
-            scrollView.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 10),
-            scrollView.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -10),
-            scrollView.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 8),
-            scrollView.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -10),
+            scrollView.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -8),
+            scrollView.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 6),
+            scrollView.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -8),
 
             emptyLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 16),
             emptyLabel.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -16),
@@ -456,6 +477,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             )
         }
         tableView.reloadData()
+        scrollView.hasVerticalScroller = items.count > 5
         emptyLabel.isHidden = !items.isEmpty
         resizeForContent()
     }
@@ -463,9 +485,9 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     private func resizeForContent() {
         guard let window else { return }
         let visibleRows = min(max(items.count, 1), 5)
-        let height = 116 + CGFloat(visibleRows * 55)
+        let height = Self.compactChromeHeight + CGFloat(visibleRows) * Self.compactRowStride
         let topEdge = window.frame.maxY
-        window.setContentSize(NSSize(width: 340, height: height))
+        window.setContentSize(NSSize(width: Self.compactPanelWidth, height: height))
         window.setFrameOrigin(NSPoint(x: window.frame.minX, y: topEdge - window.frame.height))
     }
 }

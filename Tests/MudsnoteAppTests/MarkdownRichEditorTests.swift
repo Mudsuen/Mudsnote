@@ -7346,7 +7346,8 @@ struct MarkdownRichEditorTests {
         #expect(browser.presentationCount == 2)
         #expect(browser.window?.isVisible == true)
         #expect(browser.window?.parent === controller.window)
-        #expect(browser.window?.frame.width == 340)
+        #expect(browser.window?.frame.width == FloatingNoteBrowserController.compactPanelWidth)
+        #expect(browser.window?.frame.height == 116)
         #expect(browser.window?.contentView?.allSubviews.contains {
             ($0 as? NSButton)?.title == "关闭窗口"
         } == false)
@@ -7385,6 +7386,17 @@ struct MarkdownRichEditorTests {
 
         #expect(browser.displayedURLs.map(\.standardizedFileURL) == [firstURL, secondURL].map(\.standardizedFileURL))
         #expect(browser.displayedOpenStates == [true, true])
+        #expect(browser.window?.frame.width == 300)
+        #expect(browser.window?.frame.height == 156)
+        #expect(browser.resultRowHeight == 36)
+        #expect(browser.usesVerticalScroller == false)
+        browser.window?.contentView?.layoutSubtreeIfNeeded()
+        let firstCell = try #require(browser.resultCell(at: 0))
+        firstCell.layoutSubtreeIfNeeded()
+        #expect(firstCell.frame.width > 270)
+        #expect(abs(firstCell.titleLabel.frame.midY - firstCell.snippetLabel.frame.midY) < 1)
+        #expect(firstCell.actionButton.frame.width == 24)
+        #expect(firstCell.layer?.cornerRadius == 9)
         let firstCloseButton = try #require(browser.rowActionButton(at: 0))
         #expect(firstCloseButton.toolTip?.hasPrefix("关闭") == true)
         let action = try #require(firstCloseButton.action)
