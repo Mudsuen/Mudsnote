@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 210. Explicit macOS library and preview folders
+- Problem: The macOS source list recreated a synthetic “All iCloud” folder whenever more than one library root existed or an outside Markdown file was previewed, obscuring which folders were actually registered.
+- Fix: The source list now contains only registered library folders and the real parent folders of outside files currently projected for preview. Opening an outside file selects that parent folder directly, while temporary preview folders expose only a safe Finder reveal action.
+- Lesson: A folder source list should represent concrete filesystem ownership; aggregate scopes can remain search behavior without masquerading as another directory.
+
 ### 209. Consistent macOS library dragging and editor commands
 - Problem: New notes did not enter the list until their first save, folder and note drops shared misleading between-row feedback, external items could not be dragged into the library, and the main and floating editors exposed different selection, slash-command, indentation, link, and popup-dismissal behavior.
 - Fix: New macOS notes now persist and animate into the list immediately. Folder rows can be reordered or moved under another folder, external Markdown and folders can be copied or registered by drag, and note drops are constrained to real folder targets. Both editors now share multi-line Tab/Shift-Tab indentation, automatic plain-link detection with Command-click opening, and selection formatting; the library editor also exposes formatting slash commands, while the floating-note manager closes when it loses focus. The existing setting for descendant-inclusive versus direct-folder-only notes remains the single source of folder-scope behavior.
