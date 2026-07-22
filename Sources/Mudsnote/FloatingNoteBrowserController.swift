@@ -10,7 +10,6 @@ struct FloatingNoteWindowDescriptor {
 
 @MainActor
 final class FloatingNoteBrowserResultCellView: NSTableCellView {
-    let marker = NSView()
     let titleLabel = NSTextField(labelWithString: "")
     let snippetLabel = NSTextField(labelWithString: "")
     let actionButton = NSButton()
@@ -23,11 +22,6 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         layer?.cornerRadius = 9
         layer?.masksToBounds = true
         layer?.backgroundColor = panelPrimaryTextColor().withAlphaComponent(0.08).cgColor
-
-        marker.translatesAutoresizingMaskIntoConstraints = false
-        marker.wantsLayer = true
-        marker.layer?.cornerRadius = 3
-        marker.layer?.backgroundColor = panelTertiaryTextColor().cgColor
 
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.textColor = panelPrimaryTextColor()
@@ -52,17 +46,11 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         actionButton.action = #selector(actionPressed)
         actionButton.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(marker)
         addSubview(labels)
         addSubview(actionButton)
 
         NSLayoutConstraint.activate([
-            marker.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            marker.centerYAnchor.constraint(equalTo: centerYAnchor),
-            marker.widthAnchor.constraint(equalToConstant: 6),
-            marker.heightAnchor.constraint(equalToConstant: 6),
-
-            labels.leadingAnchor.constraint(equalTo: marker.trailingAnchor, constant: 8),
+            labels.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             labels.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -6),
             labels.centerYAnchor.constraint(equalTo: centerYAnchor),
 
@@ -81,13 +69,11 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
     func configure(
         title: String,
         subtitle: String,
-        isCurrent: Bool,
         isOpen: Bool,
         onAction: @escaping () -> Void
     ) {
         titleLabel.stringValue = title
         snippetLabel.stringValue = subtitle
-        marker.layer?.backgroundColor = (isCurrent ? NSColor.systemRed : panelTertiaryTextColor()).cgColor
         let symbolName = isOpen ? "xmark" : "plus"
         actionButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
@@ -156,14 +142,11 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
 
     var resultRowHeight: CGFloat { tableView.rowHeight }
     var usesVerticalScroller: Bool { scrollView.hasVerticalScroller }
-
-    var selectedWindowID: UUID? {
-        didSet { tableView.reloadData() }
-    }
+    var verticalScrollElasticity: NSScrollView.Elasticity { scrollView.verticalScrollElasticity }
+    var verticalScrollOffset: CGFloat { scrollView.contentView.bounds.minY }
 
     init(
         noteStore: NoteStore,
-        selectedWindowID: UUID,
         openWindows: @escaping () -> [FloatingNoteWindowDescriptor],
         onOpen: @escaping (URL) -> Void,
         onActivate: @escaping (UUID) -> Void,
@@ -171,7 +154,6 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         onCreate: @escaping () -> Void
     ) {
         self.noteStore = noteStore
-        self.selectedWindowID = selectedWindowID
         self.openWindows = openWindows
         self.onOpen = onOpen
         self.onActivate = onActivate
@@ -227,7 +209,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         }
 
         if let proposedOrigin {
-            window.setFrameOrigin(visibleOrigin(for: window.frame.size, proposed: proposedOrigin, parentWindow: parentWindow))
+            window.setFrameOrigin(containedOrigin(for: window.frame.size, proposed: proposedOrigin, parentWindow: parentWindow))
         }
         if let parentWindow, window.parent !== parentWindow {
             parentWindow.addChildWindow(window, ordered: .above)
@@ -248,7 +230,16 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         reloadResults()
     }
 
-    func visibleOrigin(for windowSize: NSSize, proposed: NSPoint, parentWindow: NSWindow?) -> NSPoint {
+    func containedOrigin(for windowSize: NSSize, proposed: NSPoint, parentWindow: NSWindow?) -> NSPoint {
+        if let parentWindow {
+            let parentFrame = parentWindow.frame
+            let maximumX = max(parentFrame.minX, parentFrame.maxX - windowSize.width)
+            let maximumY = max(parentFrame.minY, parentFrame.maxY - windowSize.height)
+            return NSPoint(
+                x: min(max(proposed.x, parentFrame.minX), maximumX),
+                y: min(max(proposed.y, parentFrame.minY), maximumY)
+            )
+        }
         guard let visibleFrame = parentWindow?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
             return proposed
         }
@@ -320,7 +311,6 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         cell.configure(
             title: item.title,
             subtitle: item.subtitle,
-            isCurrent: item.openWindowID == selectedWindowID,
             isOpen: item.isOpen,
             onAction: { [weak self] in self?.performAction(for: item) }
         )
@@ -419,6 +409,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
+        scrollView.verticalScrollElasticity = .none
+        scrollView.horizontalScrollElasticity = .none
         scrollView.documentView = tableView
         surface.addSubview(scrollView)
 
@@ -477,7 +469,13 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             )
         }
         tableView.reloadData()
-        scrollView.hasVerticalScroller = items.count > 5
+        let needsScrolling = items.count > 5
+        scrollView.hasVerticalScroller = needsScrolling
+        scrollView.verticalScrollElasticity = needsScrolling ? .automatic : .none
+        if !needsScrolling {
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
         emptyLabel.isHidden = !items.isEmpty
         resizeForContent()
     }

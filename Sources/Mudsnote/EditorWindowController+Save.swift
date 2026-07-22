@@ -111,7 +111,6 @@ extension EditorWindowController {
         } else {
             controller = FloatingNoteBrowserController(
                 noteStore: noteStore,
-                selectedWindowID: floatingWindowID,
                 openWindows: floatingNoteWindows,
                 onOpen: onRequestOpenFloatingNote,
                 onActivate: onRequestActivateFloatingNote,
@@ -121,7 +120,6 @@ extension EditorWindowController {
             floatingNoteBrowserController = controller
         }
 
-        controller.selectedWindowID = floatingWindowID
         controller.show(relativeTo: anchorView, parentWindow: window)
     }
 
