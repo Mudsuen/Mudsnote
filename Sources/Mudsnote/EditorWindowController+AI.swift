@@ -103,7 +103,7 @@ extension EditorWindowController {
         if let title = quickCaptureTitleTextView?.string.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
-        return fileURL?.deletingPathExtension().lastPathComponent
+        return (activeFloatingNoteURL ?? fileURL)?.deletingPathExtension().lastPathComponent
     }
 
     private func selectedMarkdownOrWholeNote(preferWholeNote: Bool) -> AIEditorContext? {

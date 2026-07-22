@@ -154,24 +154,20 @@ extension EditorWindowController {
         footerBar.translatesAutoresizingMaskIntoConstraints = false
         shellContent.addSubview(footerBar)
 
-        let floatingHeaderActions = NSStackView()
-        floatingHeaderActions.orientation = .horizontal
-        floatingHeaderActions.alignment = .centerY
-        floatingHeaderActions.spacing = 6
-        floatingHeaderActions.translatesAutoresizingMaskIntoConstraints = false
-
         if isFloatingNoteMode {
-            topDragBar.addSubview(floatingHeaderActions)
             let browseButton = makeFloatingHeaderButton(
                 symbolName: "rectangle.stack",
-                toolTip: "浏览笔记",
+                toolTip: "管理悬浮笔记",
                 action: #selector(floatingBrowseNotesPressed(_:))
             )
-            browseButton.performsActionOnMouseDown = true
             floatingNoteBrowseButton = browseButton
-            toolbarButtons.append(browseButton)
-            floatingHeaderActions.addArrangedSubview(browseButton)
-            floatingNoteTitlebarChromeViews.append(floatingHeaderActions)
+            let buttonHost = window?.contentView ?? backdrop
+            buttonHost.addSubview(browseButton, positioned: .above, relativeTo: nil)
+            NSLayoutConstraint.activate([
+                browseButton.trailingAnchor.constraint(equalTo: buttonHost.trailingAnchor, constant: -20),
+                browseButton.topAnchor.constraint(equalTo: buttonHost.topAnchor, constant: 8)
+            ])
+            floatingNoteTitlebarChromeViews.append(browseButton)
             setFloatingNoteTitlebarChromeVisible(true)
         }
 
@@ -250,10 +246,6 @@ extension EditorWindowController {
         if isFloatingNoteMode {
             constraints.append(contentsOf: [
                 scrollView.topAnchor.constraint(equalTo: topDragBar.bottomAnchor),
-
-                floatingHeaderActions.trailingAnchor.constraint(equalTo: topDragBar.trailingAnchor, constant: -4),
-                floatingHeaderActions.centerYAnchor.constraint(equalTo: topDragBar.centerYAnchor),
-                floatingHeaderActions.heightAnchor.constraint(equalToConstant: 24),
 
                 floatingPlaceholderOverlay.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
                 floatingPlaceholderOverlay.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
@@ -600,7 +592,11 @@ extension EditorWindowController {
         return button
     }
 
-    func makeFloatingHeaderButton(symbolName: String, toolTip: String, action: Selector) -> HoverToolbarButton {
+    func makeFloatingHeaderButton(
+        symbolName: String,
+        toolTip: String,
+        action: Selector
+    ) -> HoverToolbarButton {
         let button = HoverToolbarButton(frame: .zero)
         button.target = self
         button.action = action
@@ -609,7 +605,11 @@ extension EditorWindowController {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
         button.imagePosition = .imageOnly
         button.title = ""
-        button.preferredSize = NSSize(width: 24, height: 24)
+        button.setAccessibilityIdentifier("FloatingNoteManagerButton")
+        button.isBordered = false
+        button.bezelStyle = .shadowlessSquare
+        button.focusRingType = .none
+        button.contentTintColor = NSColor.white.withAlphaComponent(0.74)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: 24).isActive = true
         button.heightAnchor.constraint(equalToConstant: 24).isActive = true
@@ -621,7 +621,7 @@ extension EditorWindowController {
     }
 
     @objc func floatingBrowseNotesPressed(_ sender: Any?) {
-        showFloatingNoteBrowser(relativeTo: sender as? NSView)
+        showFloatingNoteBrowser(relativeTo: (sender as? NSView) ?? floatingNoteBrowseButton)
     }
 
     func setFloatingNoteTitlebarChromeVisible(_ isVisible: Bool) {

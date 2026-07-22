@@ -555,10 +555,53 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return
         }
 
-        let controller = makeEditorWindowController(fileURL: url)
+        let controller = makeEditorWindowController(fileURL: url, usesFloatingNoteStyle: true)
         editorControllers[key] = controller
         controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
         controller.showWindowAndFocus()
+        refreshFloatingNoteBrowsers()
+    }
+
+    private func activeFloatingNoteWindows() -> [FloatingNoteWindowDescriptor] {
+        let controllers = ([floatingNoteController] + Array(editorControllers.values))
+            .compactMap { $0 }
+            .filter { $0.window?.isVisible == true && $0.isFloatingNoteMode }
+        return controllers.map { controller in
+            let document = controller.currentDocument()
+            let title = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let url = controller.activeFloatingNoteURL?.standardizedFileURL
+            return FloatingNoteWindowDescriptor(
+                id: controller.floatingWindowID,
+                url: url,
+                title: title.isEmpty ? "未命名笔记" : title,
+                subtitle: url.map(displayPath) ?? "尚未保存"
+            )
+        }.sorted {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private func closeFloatingNoteWindow(id: UUID) {
+        if let entry = editorControllers.first(where: { $0.value.floatingWindowID == id }) {
+            editorControllers.removeValue(forKey: entry.key)
+            entry.value.window?.close()
+        } else if floatingNoteController?.floatingWindowID == id {
+            floatingNoteController?.window?.close()
+            floatingNoteController = nil
+        }
+        refreshFloatingNoteBrowsers()
+    }
+
+    private func activateFloatingNoteWindow(id: UUID) {
+        let controller = ([floatingNoteController] + Array(editorControllers.values))
+            .compactMap { $0 }
+            .first { $0.floatingWindowID == id }
+        controller?.showWindowAndFocus()
+    }
+
+    private func refreshFloatingNoteBrowsers() {
+        floatingNoteController?.refreshFloatingNoteBrowser()
+        editorControllers.values.forEach { $0.refreshFloatingNoteBrowser() }
     }
 
     private func openExternalMarkdownFiles(_ urls: [URL]) {
@@ -887,59 +930,59 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     private func updateFloatingNoteLevel() {
-        floatingNoteController?.window?.level = noteStore.floatingNoteStaysOnTop ? .statusBar : .normal
+        let level = noteStore.floatingNoteStaysOnTop ? NSWindow.Level.statusBar : .normal
+        floatingNoteController?.window?.level = level
+        editorControllers.values
+            .filter { $0.isFloatingNoteMode }
+            .forEach { $0.window?.level = level }
     }
 
-    private func makeEditorWindowController(fileURL: URL?, remembersQuickCapturePosition: Bool = false) -> EditorWindowController {
-        EditorWindowController(
-            noteStore: noteStore,
-            panelOpacity: noteStore.panelOpacity,
-            fileURL: fileURL,
-            initialWindowFrame: remembersQuickCapturePosition ? storedQuickCaptureFrame() : nil,
-            draftIDOverride: remembersQuickCapturePosition ? "quick-capture" : nil,
-            saveShortcut: HotKeySpec.parse(noteStore.saveShortcutString),
-            showsSaveButton: true,
-            remembersWindowFrame: remembersQuickCapturePosition ? { [weak self] frame in
+    private func makeEditorWindowController(
+        fileURL: URL?,
+        remembersQuickCapturePosition: Bool = false,
+        usesFloatingNoteStyle: Bool = false
+    ) -> EditorWindowController {
+        let remembersFloatingNotePosition = usesFloatingNoteStyle
+        let remembersWindowFrame: ((NSRect) -> Void)?
+        if remembersQuickCapturePosition {
+            remembersWindowFrame = { [weak self] frame in
                 self?.noteStore.quickCaptureWindowFrame = StoredWindowFrame(
                     x: frame.origin.x,
                     y: frame.origin.y,
                     width: frame.size.width,
                     height: frame.size.height
                 )
-            } : nil,
-            onSave: { [weak self] savedURL in
-                self?.didSaveNote(at: savedURL)
-            },
-            onClose: { [weak self] in
-                self?.cleanupClosedWindows()
-            },
-            onRequestSearch: { [weak self] in
-                self?.showSearchWindow()
-            },
-            onRequestPreferences: { [weak self] in
-                self?.showPreferences()
             }
-        )
-    }
-
-    private func makeFloatingNoteWindowController() -> EditorWindowController {
-        EditorWindowController(
-            noteStore: noteStore,
-            panelOpacity: noteStore.panelOpacity,
-            fileURL: nil,
-            initialWindowFrame: storedFloatingNoteFrame(),
-            draftIDOverride: "floating-note",
-            saveShortcut: HotKeySpec.parse(noteStore.saveShortcutString),
-            showsSaveButton: false,
-            windowLevel: noteStore.floatingNoteStaysOnTop ? .statusBar : .normal,
-            remembersWindowFrame: { [weak self] frame in
+        } else if remembersFloatingNotePosition {
+            remembersWindowFrame = { [weak self] frame in
                 self?.noteStore.floatingNoteWindowFrame = StoredWindowFrame(
                     x: frame.origin.x,
                     y: frame.origin.y,
                     width: frame.size.width,
                     height: frame.size.height
                 )
-            },
+            }
+        } else {
+            remembersWindowFrame = nil
+        }
+
+        weak var controllerReference: EditorWindowController?
+        let controller = EditorWindowController(
+            noteStore: noteStore,
+            panelOpacity: noteStore.panelOpacity,
+            fileURL: fileURL,
+            initialWindowFrame: remembersQuickCapturePosition
+                ? storedQuickCaptureFrame()
+                : remembersFloatingNotePosition ? nextFloatingNoteFrame() : nil,
+            draftIDOverride: remembersQuickCapturePosition
+                ? "quick-capture"
+                : usesFloatingNoteStyle ? "floating-note" : nil,
+            saveShortcut: HotKeySpec.parse(noteStore.saveShortcutString),
+            showsSaveButton: !usesFloatingNoteStyle,
+            windowLevel: usesFloatingNoteStyle
+                ? (noteStore.floatingNoteStaysOnTop ? .statusBar : .normal)
+                : nil,
+            remembersWindowFrame: remembersWindowFrame,
             onSave: { [weak self] savedURL in
                 self?.didSaveNote(at: savedURL)
             },
@@ -949,10 +992,44 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             onRequestSearch: { [weak self] in
                 self?.showSearchWindow()
             },
+            floatingNoteWindows: { [weak self] in
+                self?.activeFloatingNoteWindows() ?? []
+            },
+            onRequestOpenFloatingNote: { [weak self] url in
+                self?.openFloatingNote(url, requestedBy: controllerReference)
+            },
+            onRequestActivateFloatingNote: { [weak self] id in
+                self?.activateFloatingNoteWindow(id: id)
+            },
+            onRequestCloseFloatingNote: { [weak self] id in
+                self?.closeFloatingNoteWindow(id: id)
+            },
             onRequestPreferences: { [weak self] in
                 self?.showPreferences()
             }
         )
+        controllerReference = controller
+        return controller
+    }
+
+    private func openFloatingNote(_ url: URL, requestedBy source: EditorWindowController?) {
+        let key = url.standardizedFileURL.path
+        if let source,
+           source === floatingNoteController,
+           source.activeFloatingNoteURL == nil,
+           editorControllers[key] == nil {
+            source.loadFloatingNote(at: url)
+            floatingNoteController = nil
+            editorControllers[key] = source
+            source.showWindowAndFocus()
+            refreshFloatingNoteBrowsers()
+            return
+        }
+        openEditor(for: url)
+    }
+
+    private func makeFloatingNoteWindowController() -> EditorWindowController {
+        makeEditorWindowController(fileURL: nil, usesFloatingNoteStyle: true)
     }
 
     private func storedQuickCaptureFrame() -> NSRect? {
@@ -970,6 +1047,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
             fallbackSize: NSSize(width: 412, height: 314),
             visibleFrames: NSScreen.screens.map(\.visibleFrame)
+        )
+    }
+
+    private func nextFloatingNoteFrame() -> NSRect? {
+        let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+        guard let visibleFrame = NSScreen.main?.visibleFrame ?? visibleFrames.first else {
+            return storedFloatingNoteFrame()
+        }
+        let size = NSSize(width: 412, height: 314)
+        let baseFrame = storedFloatingNoteFrame() ?? NSRect(
+            x: visibleFrame.midX - (size.width / 2),
+            y: visibleFrame.maxY - size.height - 72,
+            width: size.width,
+            height: size.height
+        )
+        let occupiedFrames = ([floatingNoteController] + Array(editorControllers.values))
+            .compactMap { controller -> NSRect? in
+                guard controller?.window?.isVisible == true else { return nil }
+                return controller?.window?.frame
+            }
+        return nonOverlappingPanelFrame(
+            baseFrame,
+            occupiedFrames: occupiedFrames,
+            visibleFrames: visibleFrames
         )
     }
 
@@ -1045,6 +1146,47 @@ func clampedPanelFrame(
         width: width,
         height: height
     )
+}
+
+func nonOverlappingPanelFrame(
+    _ baseFrame: NSRect,
+    occupiedFrames: [NSRect],
+    visibleFrames: [NSRect],
+    gap: CGFloat = 14
+) -> NSRect {
+    let base = clampedPanelFrame(baseFrame, fallbackSize: baseFrame.size, visibleFrames: visibleFrames)
+    guard occupiedFrames.contains(where: { $0.intersects(base) }) else { return base }
+    guard let visibleFrame = nearestVisibleFrame(to: base, in: visibleFrames) else { return base }
+
+    let horizontalStep = base.width + gap
+    let verticalStep = base.height + gap
+    for ring in 1...max(occupiedFrames.count + 1, 2) {
+        let candidates = [
+            NSPoint(x: base.minX + CGFloat(ring) * horizontalStep, y: base.minY),
+            NSPoint(x: base.minX - CGFloat(ring) * horizontalStep, y: base.minY),
+            NSPoint(x: base.minX, y: base.minY - CGFloat(ring) * verticalStep),
+            NSPoint(x: base.minX, y: base.minY + CGFloat(ring) * verticalStep)
+        ]
+        for origin in candidates {
+            let candidate = NSRect(origin: origin, size: base.size)
+            guard visibleFrame.contains(candidate),
+                  !occupiedFrames.contains(where: { $0.intersects(candidate) }) else { continue }
+            return candidate
+        }
+    }
+
+    for index in 1...max(occupiedFrames.count + 1, 2) {
+        let offset = CGFloat(index * 28)
+        let candidate = clampedPanelFrame(
+            base.offsetBy(dx: offset, dy: -offset),
+            fallbackSize: base.size,
+            visibleFrames: visibleFrames
+        )
+        if !occupiedFrames.contains(where: { $0.equalTo(candidate) }) {
+            return candidate
+        }
+    }
+    return base
 }
 
 private func nearestVisibleFrame(to frame: NSRect, in visibleFrames: [NSRect]) -> NSRect? {
