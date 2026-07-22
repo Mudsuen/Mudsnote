@@ -101,6 +101,7 @@ struct LibraryHomeView: View {
     @State private var smartFolderToDelete: SmartFolderDefinition?
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
+    @State private var directoryHapticTrigger = 0
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
@@ -489,16 +490,18 @@ struct LibraryHomeView: View {
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { closeDirectory() }
+                    .gesture(directoryDragGesture(width: width))
                     .accessibilityElement()
                     .accessibilityLabel("Close Folders")
                     .accessibilityIdentifier("directory-backdrop")
 
                 directoryPanel(width: width)
                     .offset(x: -width + reveal)
-                    .gesture(directoryDragGesture(width: width))
+                    .highPriorityGesture(directoryDragGesture(width: width))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .sensoryFeedback(.impact(weight: .light), trigger: directoryHapticTrigger)
     }
 
     private var navigationTitle: String {
@@ -605,6 +608,7 @@ struct LibraryHomeView: View {
             .onEnded { value in
                 let horizontal = value.translation.width
                 let predicted = value.predictedEndTranslation.width
+                let wasPresented = isDirectoryPresented
                 let shouldOpen: Bool
                 if isDirectoryPresented {
                     shouldOpen = horizontal > -width * 0.18 && predicted > -width * 0.45
@@ -614,6 +618,9 @@ struct LibraryHomeView: View {
                 withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
                     isDirectoryPresented = shouldOpen
                     directoryDragOffset = 0
+                }
+                if shouldOpen != wasPresented {
+                    directoryHapticTrigger += 1
                 }
             }
     }
