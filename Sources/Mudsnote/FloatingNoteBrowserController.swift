@@ -127,6 +127,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     private let tableView = NSTableView()
     private var items: [Item] = []
     private(set) var presentationCount = 0
+    private weak var presentationAnchorView: NSView?
+    private var outsideClickMonitor: Any?
 
     var displayedURLs: [URL] { items.compactMap(\.url) }
     var displayedOpenStates: [Bool] { items.map(\.isOpen) }
@@ -181,6 +183,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     func show(relativeTo anchorView: NSView?, parentWindow: NSWindow?) {
         guard let window else { return }
         presentationCount += 1
+        presentationAnchorView = anchorView
+        installOutsideClickMonitor()
         reloadResults()
         if let parentWindow {
             window.level = parentWindow.level
@@ -237,11 +241,41 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
 
     func windowWillClose(_ notification: Notification) {
         guard let window else { return }
+        removeOutsideClickMonitor()
         window.parent?.removeChildWindow(window)
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        if let event = NSApp.currentEvent, eventTargetsPresentationAnchor(event) {
+            return
+        }
         window?.close()
+    }
+
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            if event.window !== self.window,
+               !self.eventTargetsPresentationAnchor(event) {
+                self.window?.close()
+            }
+            return event
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        guard let outsideClickMonitor else { return }
+        NSEvent.removeMonitor(outsideClickMonitor)
+        self.outsideClickMonitor = nil
+    }
+
+    private func eventTargetsPresentationAnchor(_ event: NSEvent) -> Bool {
+        guard let anchor = presentationAnchorView,
+              event.window === anchor.window else { return false }
+        return anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil))
     }
 
     func controlTextDidChange(_ obj: Notification) {

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 211. Reliable macOS preview, links, transient panels, and inactive chrome
+- Problem: Moving an outside preview into the library could retain its missing original-path projection, typed web URLs were not reliably decorated after the live edit callback, the floating-window manager could reopen instead of dismissing, and the source scroller plus text-based `Aa` control did not match adjacent native inactive chrome.
+- Fix: External projections now prune missing paths and leave preview state when moved under a registered root. Automatic-link decoration runs after AppKit commits text changes. The floating manager toggles from its anchor and monitors outside clicks while respecting that anchor. The source scroller no longer overlaps the split divider, and `Aa` explicitly follows key-window focus tinting.
+- Lesson: Temporary projections and panels need lifecycle reconciliation against real filesystem and event state; native image controls and text controls also require separate inactive-state treatment even when they share one toolbar.
+
 ### 210. Explicit macOS library and preview folders
 - Problem: The macOS source list recreated a synthetic “All iCloud” folder whenever more than one library root existed or an outside Markdown file was previewed, obscuring which folders were actually registered.
 - Fix: The source list now contains only registered library folders and the real parent folders of outside files currently projected for preview. Opening an outside file selects that parent folder directly, while temporary preview folders expose only a safe Finder reveal action.

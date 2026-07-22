@@ -390,6 +390,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func didChangeText() {
+        super.didChangeText()
         if let textStorage, let theme = markdownPasteTheme {
             MarkdownRichTextCodec.refreshAutomaticLinks(
                 in: textStorage,
@@ -397,7 +398,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
                 theme: theme
             )
         }
-        super.didChangeText()
         window?.invalidateCursorRects(for: self)
     }
 
