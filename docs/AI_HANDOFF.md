@@ -5,8 +5,9 @@ memory, and Git history.
 
 ## Route
 
-Read this once for substantial work, then run `./scripts/agent_context.sh --list`.
-Use `docs/ARCHITECTURE.md` only when changing boundaries.
+This file is exception context, not a default prerequisite. Start from the
+Devflow task capsule and a routed source search; read this only when current
+constraints are relevant. Use `docs/ARCHITECTURE.md` only for boundary changes.
 
 ## Product State
 

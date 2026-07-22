@@ -8,6 +8,23 @@ automation:
   control_plane: hold
   full_verification: merge-candidate-once
   post_merge_verification: platform-pr-smoke
+agent_interface:
+  context: ./scripts/agent_context.sh --task
+  results: json
+  delivery_wait: devtask wait
+  documentation: on-error-or-process-change
+logging:
+  success: summary-only
+  failure_tail_lines: 24
+  failure_first_actionable_error: true
+iteration_modes:
+  ui-tuning: one-task-one-branch-one-pr
+post_merge_full_verification_reasons:
+  - base-changed-after-candidate
+  - merge-queue-created-new-candidate
+  - migration
+  - signing-or-release
+  - explicit-risk-review
 verification:
   pr: ./scripts/verify pr
   full: ./scripts/verify full

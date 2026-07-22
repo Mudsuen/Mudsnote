@@ -123,7 +123,9 @@ jobs:
             echo 'main advanced after this candidate was tested; updating the branch and dispatching CI once.'
             gh api --method PUT "repos/$REPOSITORY/pulls/$pr_number/update-branch" \
               -f expected_head_sha="$head_sha" >/dev/null
-            gh workflow run ci.yml --repo "$REPOSITORY" --ref "$head_ref"
+            gh workflow run ci.yml --repo "$REPOSITORY" --ref "$head_ref" \
+              -f devflow_post_merge=false -f devflow_platform="$post_merge_platform" \
+              -f devflow_full_reason=base-changed-after-candidate
             exit 0
           fi
 
@@ -135,5 +137,6 @@ jobs:
 
           gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch
           gh workflow run ci.yml --repo "$REPOSITORY" --ref main \
-            -f devflow_post_merge=true -f devflow_platform="$post_merge_platform"
+            -f devflow_post_merge=true -f devflow_platform="$post_merge_platform" \
+            -f devflow_full_reason=none
           echo "Merged PR #$pr_number and dispatched post-merge CI on main."
