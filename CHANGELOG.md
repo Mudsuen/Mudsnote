@@ -1624,6 +1624,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The macOS manager now fits the 300-point floating-note width, uses a dense 36-point single-line row for each window, and tightens its title, search field, padding, icons, and corner radii. Rows fill the available width, while the vertical scroller appears only when more than five results require it.
 - Lesson: A transient manager should inherit the scale of its owning window; compact one-line rows preserve scanability without turning a lightweight control into a second full-size surface.
 
+### 233. Contained and motionless short floating-window lists
+
+- Problem: The compact floating-window manager could still sit partly outside a resized note window, its red current-window dot repeated context the panel already implied, and a one-row list reacted to scrolling even though it had nowhere to go.
+- Fix: The macOS manager now clamps its complete frame to the parent note window, removes the redundant current-window marker and selection plumbing, and enables both the vertical scroller and elastic scrolling only when the result count exceeds five rows. Returning to a short list also resets the scroll position.
+- Lesson: A child panel should be constrained by its owning surface rather than only the screen, and a list without overflow should have neither a visible scrollbar nor invisible bounce behavior.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

@@ -7286,6 +7286,7 @@ struct MarkdownRichEditorTests {
         let controller = harness.controller
 
         controller.showWindowAndFocus()
+        controller.window?.setContentSize(NSSize(width: 300, height: 314))
         let managerButton = try #require(controller.floatingNoteBrowseButton)
         controller.window?.contentView?.layoutSubtreeIfNeeded()
 
@@ -7335,8 +7336,13 @@ struct MarkdownRichEditorTests {
         #expect(browser.window?.isKeyWindow == true)
         #expect(browser.window?.parent === controller.window)
         if let browserFrame = browser.window?.frame,
+           let parentFrame = controller.window?.frame,
            let visibleFrame = controller.window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
             #expect(browserFrame.intersects(visibleFrame))
+            #expect(browserFrame.minX >= parentFrame.minX)
+            #expect(browserFrame.maxX <= parentFrame.maxX)
+            #expect(browserFrame.minY >= parentFrame.minY)
+            #expect(browserFrame.maxY <= parentFrame.maxY)
         }
 
         browser.window?.close()
@@ -7390,15 +7396,32 @@ struct MarkdownRichEditorTests {
         #expect(browser.window?.frame.height == 156)
         #expect(browser.resultRowHeight == 36)
         #expect(browser.usesVerticalScroller == false)
+        #expect(browser.verticalScrollElasticity == .none)
         browser.window?.contentView?.layoutSubtreeIfNeeded()
         let firstCell = try #require(browser.resultCell(at: 0))
         firstCell.layoutSubtreeIfNeeded()
         #expect(firstCell.frame.width > 270)
+        let titleFrame = firstCell.convert(firstCell.titleLabel.frame, from: firstCell.titleLabel.superview)
+        #expect(titleFrame.minX >= 10)
         #expect(abs(firstCell.titleLabel.frame.midY - firstCell.snippetLabel.frame.midY) < 1)
         #expect(firstCell.actionButton.frame.width == 24)
         #expect(firstCell.layer?.cornerRadius == 9)
         let firstCloseButton = try #require(browser.rowActionButton(at: 0))
         #expect(firstCloseButton.toolTip?.hasPrefix("关闭") == true)
+
+        openWindows += (0..<4).map {
+            FloatingNoteWindowDescriptor(id: UUID(), url: nil, title: "Window \($0)", subtitle: "Unsaved")
+        }
+        browser.refresh()
+        #expect(browser.usesVerticalScroller == true)
+        #expect(browser.verticalScrollElasticity == .automatic)
+
+        openWindows.removeLast(4)
+        browser.refresh()
+        #expect(browser.usesVerticalScroller == false)
+        #expect(browser.verticalScrollElasticity == .none)
+        #expect(browser.verticalScrollOffset == 0)
+
         let action = try #require(firstCloseButton.action)
         _ = NSApp.sendAction(action, to: firstCloseButton.target, from: firstCloseButton)
         #expect(closedWindowID == firstID)
