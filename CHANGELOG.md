@@ -1606,6 +1606,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: Main-editor slash suggestions now refresh after the text view finishes inserting text. The selection panel centers on the pointer, exposes highlight directly, and uses `Aa` for format conversion. Floating-window management adds a dedicated new-window action, with new floating notes preferring an existing `Inbox` or numbered Inbox folder and falling back to the default library's `Inbox`.
 - Lesson: Editor affordances must be driven by post-input state, and creation commands should resolve their storage destination through one explicit policy shared by every entry point.
 
+### 230. Pointer-centered selection toolbar without vertical drift
+
+- Problem: Centering the selection toolbar on the pointer changed both axes, moving it away from its established position beneath the selected text.
+- Fix: The toolbar now follows only the pointer's horizontal center while retaining the original selection-based vertical origin below the text.
+- Lesson: Pointer-centered placement can be axis-specific; preserve the stable axis when only click reachability on the other axis needs improvement.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:
