@@ -64,7 +64,8 @@ This launches `/Applications/Mudsnote.app` against a temporary library and verif
 
 ## Development Notes
 
-- Start with `./scripts/agent_context.sh --list`; see `docs/ARCHITECTURE.md` for boundaries and `docs/AI_HANDOFF.md` for current constraints.
+- In a Devflow task, start with `./scripts/agent_context.sh --task`, then route directly with `./scripts/agent_context.sh <topic> '<regex>'`.
+- Read `docs/ARCHITECTURE.md`, `docs/AI_HANDOFF.md`, memory, and workflow docs only when the focused task or an exception needs them.
 - See `docs/delivery-workflow.md` for the automatic PR/CI/merge lifecycle, hard stops, evidence, and rollback flow.
 - See `CHANGELOG.md` for iteration history, known issues, and lessons learned.
 

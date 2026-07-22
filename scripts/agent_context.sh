@@ -21,6 +21,7 @@ TOPICS=(
 usage() {
   cat >&2 <<'USAGE'
 Usage:
+  ./scripts/agent_context.sh --task
   ./scripts/agent_context.sh --list
   ./scripts/agent_context.sh --check
   ./scripts/agent_context.sh <topic> [regex]
@@ -28,6 +29,24 @@ Usage:
 The topic command prints the smallest source/test working set. When a regex is
 provided it searches only that set and caps matches per file.
 USAGE
+}
+
+print_task_capsule() {
+  if [[ ! -L .task ]]; then
+    echo "ERROR: .task is missing; create the worktree with devtask start." >&2
+    return 2
+  fi
+  local task_id devflow_bin
+  task_id="$(basename "$(readlink .task)")"
+  devflow_bin="${DEVFLOW_BIN:-$(command -v devtask || true)}"
+  if [[ -z "$devflow_bin" ]]; then
+    devflow_bin="/Users/Donald/Code/Devflow/bin/devtask"
+  fi
+  if [[ ! -x "$devflow_bin" ]]; then
+    echo "ERROR: devtask is unavailable; set DEVFLOW_BIN to the executable." >&2
+    return 2
+  fi
+  "$devflow_bin" context Mudsnote "$task_id"
 }
 
 load_topic() {
@@ -210,23 +229,13 @@ check_context_contract() {
     done
   done
 
-  local handoff_lines handoff_words architecture_lines architecture_words default_lines default_words
+  local handoff_lines handoff_words architecture_lines architecture_words entry_lines entry_words
   handoff_lines="$(wc -l < docs/AI_HANDOFF.md | tr -d ' ')"
   handoff_words="$(wc -w < docs/AI_HANDOFF.md | tr -d ' ')"
   architecture_lines="$(wc -l < docs/ARCHITECTURE.md | tr -d ' ')"
   architecture_words="$(wc -w < docs/ARCHITECTURE.md | tr -d ' ')"
-  default_lines="$({
-    wc -l < README.md
-    wc -l < AGENTS.md
-    wc -l < agent-memory/START_HERE.md
-    wc -l < docs/AI_HANDOFF.md
-  } | awk '{ total += $1 } END { print total }')"
-  default_words="$({
-    wc -w < README.md
-    wc -w < AGENTS.md
-    wc -w < agent-memory/START_HERE.md
-    wc -w < docs/AI_HANDOFF.md
-  } | awk '{ total += $1 } END { print total }')"
+  entry_lines="$(wc -l < AGENTS.md | tr -d ' ')"
+  entry_words="$(wc -w < AGENTS.md | tr -d ' ')"
 
   if (( handoff_lines > 80 )); then
     echo "ERROR: docs/AI_HANDOFF.md exceeds its 80-line current-state budget ($handoff_lines)." >&2
@@ -244,15 +253,23 @@ check_context_contract() {
     echo "ERROR: docs/ARCHITECTURE.md exceeds its 1100-word stable-map budget ($architecture_words)." >&2
     failures=1
   fi
-  if (( default_lines > 220 )); then
-    echo "ERROR: default agent entry context exceeds 220 lines ($default_lines)." >&2
+  if (( entry_lines > 90 )); then
+    echo "ERROR: default agent entry context exceeds 90 lines ($entry_lines)." >&2
     failures=1
   fi
-  if (( default_words > 1400 )); then
-    echo "ERROR: default agent entry context exceeds 1400 words ($default_words)." >&2
+  if (( entry_words > 700 )); then
+    echo "ERROR: default agent entry context exceeds 700 words ($entry_words)." >&2
     failures=1
   fi
-  if rg -n '^## Latest iteration' docs/AI_HANDOFF.md >/dev/null; then
+  if ! grep -q -- '--task' AGENTS.md || ! grep -q '^agent_interface:' .devflow.yaml; then
+    echo "ERROR: minimal task capsule routing is missing from AGENTS.md or .devflow.yaml." >&2
+    failures=1
+  fi
+  if ! grep -q 'devflow_full_reason:' .github/workflows/ci.yml || ! grep -q 'devflow_full_reason=none' .github/workflows/auto-merge.yml || ! grep -q 'devflow_full_reason=base-changed-after-candidate' .github/workflows/auto-merge.yml; then
+    echo "ERROR: post-merge full-verification exception contract is incomplete." >&2
+    failures=1
+  fi
+  if grep -En '^## Latest iteration' docs/AI_HANDOFF.md >/dev/null; then
     echo "ERROR: chronological iteration logs do not belong in docs/AI_HANDOFF.md." >&2
     failures=1
   fi
@@ -261,7 +278,7 @@ check_context_contract() {
     return 1
   fi
 
-  echo "Agent context contract passed: default=$default_lines lines/$default_words words; handoff=$handoff_lines/$handoff_words; architecture=$architecture_lines/$architecture_words."
+  echo "Agent context contract passed: entry=$entry_lines lines/$entry_words words; handoff=$handoff_lines/$handoff_words; architecture=$architecture_lines/$architecture_words."
 }
 
 print_topic() {
@@ -320,6 +337,10 @@ print_topic() {
 }
 
 case "${1:-}" in
+  --task)
+    [[ $# -eq 1 ]] || { usage; exit 2; }
+    print_task_capsule
+    ;;
   --list)
     [[ $# -eq 1 ]] || { usage; exit 2; }
     print_list

@@ -19,6 +19,18 @@ on:
           - ios
           - both
         default: none
+      devflow_full_reason:
+        description: Explicit reason for another full verification after the merge candidate
+        required: false
+        type: choice
+        options:
+          - none
+          - base-changed-after-candidate
+          - merge-queue-created-new-candidate
+          - migration
+          - signing-or-release
+          - explicit-risk-review
+        default: none
   push:
     branches:
       - main
@@ -70,9 +82,12 @@ jobs:
         env:
           DEVFLOW_POST_MERGE: ${{ inputs.devflow_post_merge }}
           DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
+          DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
         run: |
-          if [[ "$DEVFLOW_POST_MERGE" == true ]]; then
-            MUDSNOTE_PLATFORM_SCOPE="$DEVFLOW_PLATFORM" ./scripts/verify pr
-          else
+          if [[ "${{ github.event_name }}" == pull_request ]]; then
             ./scripts/verify full
+          elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
+            MUDSNOTE_PLATFORM_SCOPE="$DEVFLOW_PLATFORM" ./scripts/verify full
+          else
+            MUDSNOTE_PLATFORM_SCOPE="${DEVFLOW_PLATFORM:-none}" ./scripts/verify pr
           fi

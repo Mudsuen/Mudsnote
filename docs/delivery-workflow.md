@@ -6,21 +6,23 @@
 
 ```mermaid
 flowchart TD
-    A[需求与可执行验收条件] --> B[最新 origin/main]
-    B --> C[Devflow 分支 + worktree + Task Manifest]
-    C --> D[定向实现与测试]
+    A[最小任务胶囊] --> B[最新 origin/main]
+    B --> C[Devflow 分支 + worktree]
+    C --> D[路由源码 + 定向实现与测试]
     D --> E[本地 scripts/verify 平台 pr]
     E --> F[Ready PR + v2 证据清单]
-    F --> G[CI 对 merge candidate 运行平台 full]
+    F --> G[CI 对 merge candidate 运行一次平台 full]
     G --> H{默认分支独立策略检查}
     H -->|可逆产品改动| I[串行 Squash Merge]
     H -->|控制面或 hard stop| J[保留 Draft/停止合并]
     I --> K[显式 dispatch main 平台 pr smoke]
-    K --> L[重点或普通完成报告]
+    K --> L[一次结构化完成结果]
     L --> M[需要时 devtask rollback 创建 Revert PR]
 ```
 
-正常任务不需要用户确认，也不由 Agent 轮询 CI。GitHub 的 `workflow_run` 在 CI 结束后继续处理；同一仓库的合并决策串行执行。如果 `main` 在测试期间前进，自动化只更新任务分支并通过 `workflow_dispatch` 重跑一次当前候选，不会把基于旧 `main` 的绿灯直接用于合并。合并完成后还会把 PR Manifest 的平台范围传给 `main` CI，显式运行该平台的轻量 `pr` smoke；这既避开 `GITHUB_TOKEN` 不产生后续 `push` workflow 的限制，也不重复完整 `full` 矩阵。
+正常任务先运行 `./scripts/agent_context.sh --task`，Codex 只接收目标、范围、基线、关键约束、已知证据和待验证项；README、handoff、Skill、memory、历史任务及完整日志均按异常或规则需要再读。`devtask wait` 在进程内等待，只返回一次 PR/CI/merge JSON，Agent 不轮询。merge candidate 运行一次 `full`；合并后按平台运行轻量 `pr` smoke。
+
+仅以下情况允许合并后再次 `full`：候选测试后基线变化、merge queue 生成新候选、迁移、签名/发布，或显式高风险复核。原因必须通过 `devflow_full_reason` 传入，不能从普通任务自动推断。
 
 ## Mudsnote 任务声明
 
@@ -32,6 +34,9 @@ devtask start Mudsnote fix-reader-checkbox \
   --domain ios-reader \
   --importance normal \
   --problem "查看态 checkbox 渲染错误" \
+  --constraint "不改动 Markdown 数据格式" \
+  --evidence "错误仅出现在 iOS 查看态" \
+  --pending "定向测试与 merge-candidate CI" \
   --expected "完成与未完成状态正确显示" \
   --scope "iOS reader 与对应测试"
 ```
@@ -50,6 +55,8 @@ devtask start Mudsnote optimize-ios-launch \
 
 `importance: important|critical` 只要求完成报告突出范围、指标、证据和回退入口；只要可机器验证且可 Git 回退，仍默认自动合并。
 
+连续 AppKit/UI 微调使用 `--iteration-mode ui-tuning`：同一任务、同一分支内完成定向测试与本地复测，界面稳定后只创建一次 PR。局部修复不自动加载 Product Design；只有视觉复刻或用户明确要求时使用。正式 `/Applications/Mudsnote.app` 安装使用 `devtask install ... --json`，只从已合并且与 `origin/main` 一致的干净 `main` 进行。
+
 以下 hard stop 会保持 Draft：
 
 - `irreversible-data`：无兼容/备份路径的文件格式或真实数据操作；
@@ -65,7 +72,7 @@ devtask start Mudsnote optimize-ios-launch \
 |---|---|---|---:|
 | 定向测试 | 开发 worktree | 当前根因的单元/少量 UI/性能断言 | 按需 |
 | `pr` | `devtask pr` 前 | 受影响平台的快速确定性构建和测试 | 每个提交候选 1 次，可缓存 |
-| `full` | GitHub merge candidate | 受影响平台的 Release/完整测试 | 最终候选 1 次 |
+| `full` | GitHub merge candidate | 受影响平台的 Release/完整测试 | 最终候选 1 次；仅显式例外重跑 |
 | `live` | 本机显式命令 | macOS 正式 App 或 iPhone 真机 | 仅任务明确需要 |
 
 平台命令保持不变：
@@ -105,12 +112,12 @@ devtask rollback Mudsnote <task-id>
 | 合并基线 | `main` 之外还维护移动的 iOS/macOS 验收 SHA | 最新 `origin/main` 是唯一日常基线 |
 | 重要改动 | 容易与“必须确认”混为一谈 | 自动完成，但报告突出证据和回退 |
 | 验证 | 本地/PR/合并后容易重复全量执行 | 本地定向 + PR 快速 + merge candidate 完整一次 + main 平台 smoke |
-| CI 等待 | Agent 轮询 `gh ... --watch` | `workflow_run`/`workflow_dispatch` 事件驱动 |
+| CI 等待 | Agent 轮询 `gh ... --watch` | `devtask wait` 内部等待并一次返回 |
 | 旧 PR | 长期 Draft 继续影响后续判断 | 没有 v2 manifest 的旧 PR保持手动，不追溯合并 |
 | 工作流修改 | 可与产品改动共用同一审批逻辑 | 默认分支独立识别控制面并阻止自我批准 |
 | 回退 | 手工查 PR 与 merge SHA | PR 内固定入口；`devtask rollback` 创建 Revert PR |
 | 清理 | 所有任务都要再次 `accept` | 自动任务合并后可直接安全 cleanup；held 任务仍需 accept |
-| Token 成本 | 重读长文档、Git 考古、重复验证、轮询 | 单一配置、Task Manifest、缓存、摘要日志、无轮询 |
+| Token 成本 | 重读长文档、完整日志、重复验证、轮询 | 最小胶囊、按需文档、结构化摘要、内部等待 |
 
 ## 对现有开放 PR 的处理
 

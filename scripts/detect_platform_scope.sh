@@ -31,7 +31,7 @@ while IFS= read -r path; do
     iOS/*|scripts/device_smoke.sh|scripts/validate_ios_app_store_metadata.py|scripts/verify_ios.sh)
       has_ios=1
       ;;
-    docs/*|agent-memory/*|.github/*|*.md|.gitignore|.devflow.yaml|.devflow-baselines.json|scripts/verify|scripts/detect_platform_scope.sh|scripts/validate_devflow_baselines.py)
+    docs/*|agent-memory/*|.github/*|*.md|.gitignore|.devflow.yaml|.devflow-baselines.json|scripts/verify|scripts/agent_context.sh|scripts/detect_platform_scope.sh|scripts/validate_devflow_baselines.py)
       ;;
     scripts/generate_ios_companion_icon.sh)
       has_ios=1
