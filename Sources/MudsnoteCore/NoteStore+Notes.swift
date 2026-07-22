@@ -6,6 +6,39 @@ private struct TrashedNoteMetadata: Codable {
 }
 
 extension NoteStore {
+    public var preferredInboxDirectory: URL {
+        let candidates = preferredDirectories.flatMap { root -> [URL] in
+            let children = (try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            return [root] + children.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }
+        }
+
+        if let inbox = candidates.enumerated().min(by: { lhs, rhs in
+            let lhsRank = Self.inboxDirectoryRank(lhs.element.lastPathComponent)
+            let rhsRank = Self.inboxDirectoryRank(rhs.element.lastPathComponent)
+            return lhsRank == rhsRank ? lhs.offset < rhs.offset : lhsRank < rhsRank
+        }), Self.inboxDirectoryRank(inbox.element.lastPathComponent) < Int.max {
+            return inbox.element.standardizedFileURL
+        }
+
+        return notesDirectory.appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL
+    }
+
+    private static func inboxDirectoryRank(_ name: String) -> Int {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "inbox" { return 0 }
+        if normalized.hasSuffix("-inbox") || normalized.hasSuffix("_inbox") || normalized.hasSuffix(" inbox") {
+            return 1
+        }
+        if normalized.contains("inbox") { return 2 }
+        return Int.max
+    }
+
     public func listRecentFiles(limit: Int = 8) -> [NoteFile] {
         let recentPaths = (defaults.array(forKey: NoteStoreDefaultsKey.recentFiles) as? [String]) ?? []
         let recentMetadata = storedRecentMetadata()

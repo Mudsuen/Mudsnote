@@ -2815,6 +2815,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }
+        editorTextView.onTextInputStateChanged = { [weak self] in
+            self?.updateEditorSlashSuggestions()
+        }
         editorTextView.isRichText = true
         editorTextView.importsGraphics = false
         editorTextView.usesFontPanel = false
@@ -8376,25 +8379,16 @@ final class LibraryWindowController: NSWindowController,
             menu.addItem(item)
         }
 
-        let colorItem = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
-        colorItem.image = selectionMenuImage(symbolName: "paintpalette", title: "颜色")
-        let colorMenu = NSMenu(title: "颜色")
-        for (title, symbolName, command) in [
-            ("黄色高亮", "highlighter", LibraryFormatCommand.highlight),
-            ("无颜色", "circle.slash", .removeHighlight)
-        ] {
-            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = command.rawValue
-            item.state = isFormatCommandActive(command) ? .on : .off
-            item.image = selectionMenuImage(symbolName: symbolName, title: title)
-            colorMenu.addItem(item)
-        }
-        colorItem.submenu = colorMenu
-        menu.addItem(colorItem)
+        let isHighlighted = isFormatCommandActive(.highlight)
+        let highlightItem = NSMenuItem(title: "高亮", action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+        highlightItem.target = self
+        highlightItem.tag = (isHighlighted ? LibraryFormatCommand.removeHighlight : .highlight).rawValue
+        highlightItem.state = isHighlighted ? .on : .off
+        highlightItem.image = selectionMenuImage(symbolName: "highlighter", title: "高亮")
+        menu.addItem(highlightItem)
 
         let conversionItem = NSMenuItem(title: "转换为", action: nil, keyEquivalent: "")
-        conversionItem.image = selectionMenuImage(symbolName: "textformat", title: "转换为")
+        conversionItem.image = selectionMenuTextImage("Aa", title: "转换为")
         let conversionMenu = NSMenu(title: "转换为")
         let conversionCommands: [(String, String, LibraryFormatCommand)] = [
             ("正文", "textformat", .paragraph),
@@ -8443,6 +8437,19 @@ final class LibraryWindowController: NSWindowController,
     private func selectionMenuImage(symbolName: String, title: String) -> NSImage? {
         NSImage(systemSymbolName: symbolName, accessibilityDescription: title)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+    }
+
+    private func selectionMenuTextImage(_ text: String, title: String) -> NSImage {
+        let image = NSImage(size: NSSize(width: 20, height: 16))
+        image.lockFocus()
+        (text as NSString).draw(at: NSPoint(x: 0, y: 0), withAttributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor.labelColor
+        ])
+        image.unlockFocus()
+        image.isTemplate = true
+        image.accessibilityDescription = title
+        return image
     }
 
     private func isFormatCommandActive(_ command: LibraryFormatCommand) -> Bool {

@@ -122,7 +122,9 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     private let onOpen: (URL) -> Void
     private let onActivate: (UUID) -> Void
     private let onClose: (UUID) -> Void
+    private let onCreate: () -> Void
     private let searchField = NSSearchField(string: "")
+    let newWindowButton = NSButton()
     private let emptyLabel = NSTextField(labelWithString: "搜索笔记并添加悬浮窗口")
     private let tableView = NSTableView()
     private var items: [Item] = []
@@ -148,7 +150,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         openWindows: @escaping () -> [FloatingNoteWindowDescriptor],
         onOpen: @escaping (URL) -> Void,
         onActivate: @escaping (UUID) -> Void,
-        onClose: @escaping (UUID) -> Void
+        onClose: @escaping (UUID) -> Void,
+        onCreate: @escaping () -> Void
     ) {
         self.noteStore = noteStore
         self.selectedWindowID = selectedWindowID
@@ -156,6 +159,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         self.onOpen = onOpen
         self.onActivate = onActivate
         self.onClose = onClose
+        self.onCreate = onCreate
 
         let panel = FloatingNoteBrowserPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 220),
@@ -327,6 +331,11 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         reloadResults()
     }
 
+    @objc private func createWindowPressed() {
+        window?.close()
+        onCreate()
+    }
+
     private func buildUI() {
         guard let contentView = window?.contentView else { return }
 
@@ -346,6 +355,19 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         titleLabel.textColor = panelSecondaryTextColor()
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(titleLabel)
+
+        newWindowButton.isBordered = false
+        newWindowButton.bezelStyle = .regularSquare
+        newWindowButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "新建悬浮窗口")?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
+        newWindowButton.imagePosition = .imageOnly
+        newWindowButton.contentTintColor = panelPrimaryTextColor()
+        newWindowButton.toolTip = "新建悬浮窗口"
+        newWindowButton.setAccessibilityLabel("新建悬浮窗口")
+        newWindowButton.target = self
+        newWindowButton.action = #selector(createWindowPressed)
+        newWindowButton.translatesAutoresizingMaskIntoConstraints = false
+        surface.addSubview(newWindowButton)
 
         searchField.placeholderString = "搜索并添加笔记"
         searchField.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -388,6 +410,12 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 16),
             titleLabel.topAnchor.constraint(equalTo: surface.topAnchor, constant: 14),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: newWindowButton.leadingAnchor, constant: -8),
+
+            newWindowButton.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -12),
+            newWindowButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            newWindowButton.widthAnchor.constraint(equalToConstant: 28),
+            newWindowButton.heightAnchor.constraint(equalToConstant: 28),
 
             searchField.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 14),
             searchField.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -14),

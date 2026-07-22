@@ -574,9 +574,9 @@ struct MarkdownRichEditorTests {
         #expect(store.listNotes(limit: 20).count == previousCount + 1)
         #expect(controller.noteListSearchResultsForLibrary().contains { $0.url.standardizedFileURL == createdURL.standardizedFileURL })
 
-        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "/", theme: controller.theme))
-        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
-        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "", theme: controller.theme))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         let titles = controller.editorSlashSuggestionTitlesForLibrary
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
@@ -1428,7 +1428,7 @@ struct MarkdownRichEditorTests {
         let storage = try #require(controller.editorTextView.textStorage)
         let kind = MarkdownRichTextCodec.paragraphKind(at: NSRange(location: 0, length: storage.length), in: storage)
         #expect(kind.headingLevel == 1)
-        #expect(controller.toolbarButtonsByAction.count == 8)
+        #expect(controller.toolbarButtonsByAction.count == 9)
         #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme) == "# selected text")
     }
 
@@ -3751,16 +3751,14 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
         let selectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
         #expect(selectionMenu.items.map(\.title) == [
-            "加粗", "斜体", "下划线", "删除线", "颜色", "转换为"
+            "加粗", "斜体", "下划线", "删除线", "高亮", "转换为"
         ])
         #expect(selectionMenu.items.allSatisfy { $0.image != nil })
-        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.map(\.title) == ["黄色高亮", "无颜色"])
-        #expect(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.allSatisfy { $0.image != nil } == true)
         #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == [
             "正文", "标题", "副标题", "小标题", "项目符号列表", "编号列表", "待办列表"
         ])
         #expect(selectionMenu.items.last?.submenu?.items.allSatisfy { $0.image != nil } == true)
-        let highlightItem = try #require(selectionMenu.items.first { $0.title == "颜色" }?.submenu?.items.first { $0.title == "黄色高亮" })
+        let highlightItem = try #require(selectionMenu.items.first { $0.title == "高亮" })
         controller.editorTextView.undoManager?.removeAllActions()
         #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
@@ -3770,11 +3768,9 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
         let highlightedSelectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
-        let highlightedColorMenu = try #require(highlightedSelectionMenu.items.first { $0.title == "颜色" }?.submenu)
-        let activeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "黄色高亮" })
+        let activeHighlightItem = try #require(highlightedSelectionMenu.items.first { $0.title == "高亮" })
         #expect(activeHighlightItem.state == .on)
-        let removeHighlightItem = try #require(highlightedColorMenu.items.first { $0.title == "无颜色" })
-        #expect(NSApp.sendAction(try #require(removeHighlightItem.action), to: removeHighlightItem.target, from: removeHighlightItem))
+        #expect(NSApp.sendAction(try #require(activeHighlightItem.action), to: activeHighlightItem.target, from: activeHighlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
 
         controller.editorTextView.showSelectionMenuIfNeeded()
@@ -7300,12 +7296,14 @@ struct MarkdownRichEditorTests {
         var openWindows: [FloatingNoteWindowDescriptor] = []
         var closedWindowID: UUID?
         var addedURL: URL?
+        var createCount = 0
         let harness = try makeEditorControllerHarness(
             draftID: "floating-note",
             showsSaveButton: false,
             floatingNoteWindows: { openWindows },
             onRequestOpenFloatingNote: { addedURL = $0 },
-            onRequestCloseFloatingNote: { closedWindowID = $0 }
+            onRequestCloseFloatingNote: { closedWindowID = $0 },
+            onRequestCreateFloatingNote: { createCount += 1 }
         )
         defer { harness.tearDown() }
 
@@ -7330,7 +7328,57 @@ struct MarkdownRichEditorTests {
         _ = NSApp.sendAction(action, to: firstCloseButton.target, from: firstCloseButton)
         #expect(closedWindowID == firstID)
         #expect(addedURL == nil)
+        #expect(browser.newWindowButton.toolTip == "新建悬浮窗口")
+        browser.newWindowButton.performClick(nil)
+        #expect(createCount == 1)
+        #expect(browser.window?.isVisible == false)
         browser.window?.close()
+    }
+
+    @MainActor
+    @Test
+    func floatingNotesDefaultToExistingInboxAndHighlightDirectly() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            configureStore: { store in
+                let inbox = store.notesDirectory.appendingPathComponent("000-Inbox", isDirectory: true)
+                try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            }
+        )
+        defer { harness.tearDown() }
+
+        let expectedInbox = harness.store.notesDirectory.appendingPathComponent("000-Inbox", isDirectory: true)
+        #expect(harness.store.preferredInboxDirectory == expectedInbox.standardizedFileURL)
+        #expect(harness.controller.selectedDirectoryURL == expectedInbox.standardizedFileURL)
+
+        let controller = harness.controller
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: "highlight me",
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 9))
+        let menu = try #require(controller.makeSelectionFormattingMenu())
+        let highlight = try #require(menu.items.first { $0.title == "高亮" })
+        #expect(NSApp.sendAction(try #require(highlight.action), to: highlight.target, from: highlight))
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>highlight</mark> me")
+    }
+
+    @Test
+    func floatingSelectionPanelCentersOnPointerAndClampsToScreen() {
+        let visibleFrame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        let panelSize = NSSize(width: 240, height: 40)
+
+        #expect(MarkdownTextView.selectionFormattingPanelOrigin(
+            centeredAt: NSPoint(x: 400, y: 300),
+            panelSize: panelSize,
+            visibleFrame: visibleFrame
+        ) == NSPoint(x: 280, y: 280))
+        #expect(MarkdownTextView.selectionFormattingPanelOrigin(
+            centeredAt: NSPoint(x: 10, y: 590),
+            panelSize: panelSize,
+            visibleFrame: visibleFrame
+        ) == NSPoint(x: 0, y: 560))
     }
 
     @Test
@@ -7504,7 +7552,8 @@ struct MarkdownRichEditorTests {
         onSave: @escaping (URL) -> Void = { _ in },
         floatingNoteWindows: @escaping () -> [FloatingNoteWindowDescriptor] = { [] },
         onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
-        onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in }
+        onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
+        onRequestCreateFloatingNote: @escaping () -> Void = {}
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -7533,6 +7582,7 @@ struct MarkdownRichEditorTests {
             floatingNoteWindows: floatingNoteWindows,
             onRequestOpenFloatingNote: onRequestOpenFloatingNote,
             onRequestCloseFloatingNote: onRequestCloseFloatingNote,
+            onRequestCreateFloatingNote: onRequestCreateFloatingNote,
             onRequestPreferences: {}
         )
 

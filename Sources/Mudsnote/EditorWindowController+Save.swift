@@ -115,7 +115,8 @@ extension EditorWindowController {
                 openWindows: floatingNoteWindows,
                 onOpen: onRequestOpenFloatingNote,
                 onActivate: onRequestActivateFloatingNote,
-                onClose: onRequestCloseFloatingNote
+                onClose: onRequestCloseFloatingNote,
+                onCreate: onRequestCreateFloatingNote
             )
             floatingNoteBrowserController = controller
         }

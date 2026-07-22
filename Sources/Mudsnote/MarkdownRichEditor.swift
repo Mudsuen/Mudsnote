@@ -352,6 +352,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private var selectionFormattingPanel: NSPanel?
     private weak var selectionFormattingStack: NSStackView?
     var isSelectionFormattingPanelVisible: Bool { selectionFormattingPanel?.isVisible == true }
+    var selectionFormattingPanelFrame: NSRect? { selectionFormattingPanel?.frame }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
 
@@ -739,14 +740,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let selection = selectedRange()
         guard selection.length > 0,
               let menu = selectionMenuProvider?(),
-              !menu.items.isEmpty,
-              let layoutManager,
-              let textContainer else { return }
-
-        let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
-        var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-        selectionRect.origin.x += textContainerInset.width
-        selectionRect.origin.y += textContainerInset.height
+              !menu.items.isEmpty else { return }
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -771,8 +765,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor)
         ])
 
-        let selectionWindowRect = convert(selectionRect, to: nil)
-        let selectionScreenRect = hostWindow.convertToScreen(selectionWindowRect)
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -785,15 +777,31 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = true
         panel.contentView = surface
-        panel.setFrameOrigin(NSPoint(
-            x: selectionScreenRect.midX - panelSize.width / 2,
-            y: selectionScreenRect.minY - panelSize.height - 6
+        panel.setFrameOrigin(Self.selectionFormattingPanelOrigin(
+            centeredAt: NSEvent.mouseLocation,
+            panelSize: panelSize,
+            visibleFrame: hostWindow.screen?.visibleFrame
         ))
         selectionFormattingPanel = panel
         selectionFormattingStack = stack
         hostWindow.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
         hostWindow.makeFirstResponder(self)
+    }
+
+    nonisolated static func selectionFormattingPanelOrigin(
+        centeredAt pointer: NSPoint,
+        panelSize: NSSize,
+        visibleFrame: NSRect?
+    ) -> NSPoint {
+        var origin = NSPoint(
+            x: pointer.x - panelSize.width / 2,
+            y: pointer.y - panelSize.height / 2
+        )
+        guard let visibleFrame else { return origin }
+        origin.x = min(max(origin.x, visibleFrame.minX), max(visibleFrame.maxX - panelSize.width, visibleFrame.minX))
+        origin.y = min(max(origin.y, visibleFrame.minY), max(visibleFrame.maxY - panelSize.height, visibleFrame.minY))
+        return origin
     }
 
     private func populateSelectionFormattingStack(_ stack: NSStackView, with menu: NSMenu) {
