@@ -1600,6 +1600,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The title-field delegate now consumes Return after native IME handling, focuses the rich Markdown body, and places the insertion point at its first line without changing either field. Added direct AppKit regression coverage and an installed-app keyboard assertion to the library smoke.
 - Lesson: A visually continuous title/body editor built from separate native controls needs an explicit Return transition; relying on single-line field-editor defaults breaks the expected Notes-style writing flow.
 
+### 229. Main-editor commands and Inbox-first floating windows
+
+- Problem: Slash commands could miss real keyboard input in the main editor, the selection toolbar was detached from the pointer and hid highlighting behind a second-level menu, and the floating-window manager could not create a fresh window or choose the expected Inbox destination.
+- Fix: Main-editor slash suggestions now refresh after the text view finishes inserting text. The selection panel centers on the pointer, exposes highlight directly, and uses `Aa` for format conversion. Floating-window management adds a dedicated new-window action, with new floating notes preferring an existing `Inbox` or numbered Inbox folder and falling back to the default library's `Inbox`.
+- Lesson: Editor affordances must be driven by post-input state, and creation commands should resolve their storage destination through one explicit policy shared by every entry point.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

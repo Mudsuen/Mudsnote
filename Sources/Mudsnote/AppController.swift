@@ -562,6 +562,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         refreshFloatingNoteBrowsers()
     }
 
+    private func createFloatingNoteWindow() {
+        do {
+            let url = try noteStore.saveNewNote(
+                title: "",
+                body: "",
+                in: noteStore.preferredInboxDirectory
+            )
+            openEditor(for: url)
+            rebuildMenu()
+        } catch {
+            presentErrorAlert(message: "无法新建悬浮笔记", details: error.localizedDescription)
+        }
+    }
+
     private func activeFloatingNoteWindows() -> [FloatingNoteWindowDescriptor] {
         let controllers = ([floatingNoteController] + Array(editorControllers.values))
             .compactMap { $0 }
@@ -1003,6 +1017,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             },
             onRequestCloseFloatingNote: { [weak self] id in
                 self?.closeFloatingNoteWindow(id: id)
+            },
+            onRequestCreateFloatingNote: { [weak self] in
+                self?.createFloatingNoteWindow()
             },
             onRequestPreferences: { [weak self] in
                 self?.showPreferences()

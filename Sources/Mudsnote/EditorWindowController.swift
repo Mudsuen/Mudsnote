@@ -82,7 +82,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     enum ToolbarAction: Int, CaseIterable {
-        case heading, bold, italic, strikethrough, underline, checklist, orderedList, bulletList
+        case heading, bold, italic, strikethrough, underline, highlight, checklist, orderedList, bulletList
 
         var title: String? {
             switch self {
@@ -100,6 +100,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             case .checklist: return "checkmark.square"
             case .orderedList: return "list.number"
             case .bulletList: return "list.bullet"
+            case .highlight: return "highlighter"
             default: return nil
             }
         }
@@ -111,6 +112,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             case .italic: return "斜体"
             case .strikethrough: return "删除线"
             case .underline: return "下划线"
+            case .highlight: return "高亮"
             case .checklist: return "待办列表"
             case .orderedList: return "编号列表"
             case .bulletList: return "项目符号列表"
@@ -172,6 +174,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let onRequestOpenFloatingNote: (URL) -> Void
     let onRequestActivateFloatingNote: (UUID) -> Void
     let onRequestCloseFloatingNote: (UUID) -> Void
+    let onRequestCreateFloatingNote: () -> Void
 
     let toolbarButtonWidth: CGFloat = 30
     let toolbarButtonHeight: CGFloat = 26
@@ -256,6 +259,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
         onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
+        onRequestCreateFloatingNote: @escaping () -> Void = {},
         onRequestPreferences: @escaping () -> Void
     ) {
         self.noteStore = noteStore
@@ -269,7 +273,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.saveShortcut = saveShortcut
         self.showsSaveButton = showsSaveButton
         self.remembersWindowFrame = remembersWindowFrame
-        self.selectedDirectoryURL = fileURL?.deletingLastPathComponent() ?? noteStore.notesDirectory
+        self.selectedDirectoryURL = fileURL?.deletingLastPathComponent()
+            ?? (draftIDOverride == "floating-note" ? noteStore.preferredInboxDirectory : noteStore.notesDirectory)
         self.onSave = onSave
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch
@@ -277,6 +282,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onRequestOpenFloatingNote = onRequestOpenFloatingNote
         self.onRequestActivateFloatingNote = onRequestActivateFloatingNote
         self.onRequestCloseFloatingNote = onRequestCloseFloatingNote
+        self.onRequestCreateFloatingNote = onRequestCreateFloatingNote
         self.onRequestPreferences = onRequestPreferences
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))

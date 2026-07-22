@@ -16,6 +16,7 @@ extension EditorWindowController {
             ("斜体", "italic", .italic),
             ("下划线", "underline", .underline),
             ("删除线", "strikethrough", .strikethrough),
+            ("高亮", "highlighter", .highlight),
             ("待办列表", "checkmark.square", .checklist),
             ("项目符号列表", "list.bullet", .bulletList),
             ("编号列表", "list.number", .orderedList)
@@ -316,6 +317,20 @@ extension EditorWindowController {
         toggleIntAttribute(.underlineStyle, enabledValue: NSUnderlineStyle.single.rawValue)
     }
 
+    func toggleHighlightFormatting() {
+        let selection = formattingSelection()
+        guard selection.length > 0, let storage = editorTextView.textStorage else { return }
+        let isHighlighted = (storage.attribute(.qmHighlight, at: selection.location, effectiveRange: nil) as? Bool) == true
+        if isHighlighted {
+            applyAttribute([:], removing: [.qmHighlight, .backgroundColor], actionName: "高亮")
+        } else {
+            applyAttribute([
+                .qmHighlight: true,
+                .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38)
+            ], actionName: "高亮")
+        }
+    }
+
     private func applyAttribute(
         _ attributes: [NSAttributedString.Key: Any],
         removing keys: [NSAttributedString.Key] = [],
@@ -389,6 +404,7 @@ extension EditorWindowController {
         setToolbarActionState(.italic, active: isItalicActive(font: font, obliqueness: attributes[.obliqueness]))
         setToolbarActionState(.underline, active: ((attributes[.underlineStyle] as? Int) ?? 0) != 0)
         setToolbarActionState(.strikethrough, active: ((attributes[.strikethroughStyle] as? Int) ?? 0) != 0)
+        setToolbarActionState(.highlight, active: (attributes[.qmHighlight] as? Bool) == true)
         setToolbarActionState(.bulletList, active: { if case .bullet = paragraphKind { return true }; return false }())
         setToolbarActionState(.orderedList, active: { if case .ordered = paragraphKind { return true }; return false }())
         setToolbarActionState(.checklist, active: { if case .checklist = paragraphKind { return true }; return false }())
@@ -448,6 +464,7 @@ extension EditorWindowController {
         case .italic: toggleInlineFontTrait(.italicFontMask)
         case .strikethrough: applyStrikethrough()
         case .underline: applyUnderline()
+        case .highlight: toggleHighlightFormatting()
         case .checklist: toggleParagraphKind(.checklist(checked: false))
         case .orderedList: toggleParagraphKind(.ordered(index: 1))
         case .bulletList: toggleParagraphKind(.bullet)
