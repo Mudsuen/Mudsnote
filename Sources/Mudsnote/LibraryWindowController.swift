@@ -1547,6 +1547,14 @@ final class LibraryWindowController: NSWindowController,
         scheduleLibraryWindowFramePersistence()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        refreshToolbarEditorTextButtonFocus(isWindowFocused: true)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        refreshToolbarEditorTextButtonFocus(isWindowFocused: false)
+    }
+
     func windowDidResize(_ notification: Notification) {
         scheduleLibraryWindowFramePersistence()
     }
@@ -1799,7 +1807,7 @@ final class LibraryWindowController: NSWindowController,
             bottom: LibraryNotesLayout.sourceListBottomInset,
             right: LibraryNotesLayout.sourceListTrailingInset
         )
-        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: -4)
+        scrollView.scrollerInsets = NSEdgeInsets()
         sourceList.addSubview(scrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -2479,6 +2487,7 @@ final class LibraryWindowController: NSWindowController,
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.contentTintColor = toolbarIconTintColor(isEnabled: true)
+        updateToolbarEditorTextButtonAppearance(button, isEnabled: true, isWindowFocused: true)
         button.translatesAutoresizingMaskIntoConstraints = false
 
         let wrapper = NSView(frame: NSRect(
@@ -3992,6 +4001,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func includingExternallyOpenedDocuments(in notes: [NoteSearchResult]) -> [NoteSearchResult] {
+        externallyOpenedDocumentsByPath = externallyOpenedDocumentsByPath.filter {
+            FileManager.default.fileExists(atPath: $0.key)
+        }
         var merged = notes
         for note in externallyOpenedDocumentsByPath.values {
             LibraryNoteListProjection.upsertByModifiedDate(
@@ -6498,6 +6510,11 @@ final class LibraryWindowController: NSWindowController,
         let destinationBySourcePath = Dictionary(uniqueKeysWithValues: zip(sourceURLs, destinationURLs).map {
             ($0.standardizedFileURL.path, $1.standardizedFileURL)
         })
+        for (sourcePath, destinationURL) in destinationBySourcePath {
+            guard let externalNote = externallyOpenedDocumentsByPath.removeValue(forKey: sourcePath),
+                  !isInsideConfiguredLibraryRoot(destinationURL) else { continue }
+            externallyOpenedDocumentsByPath[destinationURL.path] = externalNote.replacingURL(destinationURL)
+        }
         sourceCountSnapshot = sourceCountSnapshot.map { note in
             guard let destinationURL = destinationBySourcePath[note.url.standardizedFileURL.path] else { return note }
             return note.replacingURL(destinationURL)
@@ -7943,8 +7960,44 @@ final class LibraryWindowController: NSWindowController,
         if let button = view as? NSButton {
             button.alphaValue = 1
             button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isEnabled)
+            updateToolbarEditorTextButtonAppearance(
+                button,
+                isEnabled: isEnabled,
+                isWindowFocused: window?.isKeyWindow == true
+            )
         }
         view.subviews.forEach { setEditorToolControls(in: $0, enabled: isEnabled) }
+    }
+
+    private func updateToolbarEditorTextButtonAppearance(
+        _ button: NSButton,
+        isEnabled: Bool,
+        isWindowFocused: Bool
+    ) {
+        guard button.identifier?.rawValue == Self.formatToolbarItemIdentifier.rawValue else { return }
+        let titleAlpha = isEnabled && isWindowFocused
+            ? LibraryNotesLayout.toolbarIconEnabledAlpha
+            : LibraryNotesLayout.toolbarIconDisabledAlpha
+        button.attributedTitle = NSAttributedString(string: "Aa", attributes: [
+            .font: NSFont.systemFont(
+                ofSize: LibraryNotesLayout.toolbarEditorFormatFontSize,
+                weight: .regular
+            ),
+            .foregroundColor: panelPrimaryTextColor().withAlphaComponent(titleAlpha)
+        ])
+    }
+
+    private func refreshToolbarEditorTextButtonFocus(isWindowFocused: Bool) {
+        for item in window?.toolbar?.items ?? [] where item.itemIdentifier == Self.editorToolsToolbarItemIdentifier {
+            guard let view = item.view else { continue }
+            for button in editorToolButtons(in: view) {
+                updateToolbarEditorTextButtonAppearance(
+                    button,
+                    isEnabled: button.isEnabled,
+                    isWindowFocused: isWindowFocused
+                )
+            }
+        }
     }
 
     func sourceContextMenuForLibrary(row: Int) -> NSMenu? {

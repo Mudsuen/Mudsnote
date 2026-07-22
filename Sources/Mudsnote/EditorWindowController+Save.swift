@@ -100,6 +100,11 @@ extension EditorWindowController {
     func showFloatingNoteBrowser(relativeTo anchorView: NSView?) {
         guard isFloatingNoteMode else { return }
 
+        if floatingNoteBrowserController?.window?.isVisible == true {
+            floatingNoteBrowserController?.window?.close()
+            return
+        }
+
         let controller: FloatingNoteBrowserController
         if let existing = floatingNoteBrowserController {
             controller = existing

@@ -430,8 +430,17 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
 
         let textView = MarkdownTextView(frame: .zero)
+        textView.markdownPasteTheme = theme
         textView.textStorage?.setAttributedString(rendered)
         #expect(textView.linkReference(atCharacterIndex: urlLocation)?.url == "https://example.com/path")
+
+        textView.textStorage?.setAttributedString(NSAttributedString(
+            string: "",
+            attributes: theme.baseAttributes(for: .paragraph)
+        ))
+        textView.insertText("Typed https://openai.com/docs", replacementRange: NSRange(location: 0, length: 0))
+        let typedLocation = (textView.string as NSString).range(of: "https://openai.com/docs").location
+        #expect(textView.linkReference(atCharacterIndex: typedLocation)?.url == "https://openai.com/docs")
     }
 
     @MainActor
@@ -1742,6 +1751,19 @@ struct MarkdownRichEditorTests {
         #expect(formatButton.title == "Aa")
         #expect(formatButton.image == nil)
         #expect(formatButton.font?.pointSize == LibraryNotesLayout.toolbarEditorFormatFontSize)
+        controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
+        let focusedFormatColor = try #require(formatButton.attributedTitle.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSColor)
+        controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: window))
+        let unfocusedFormatColor = try #require(formatButton.attributedTitle.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSColor)
+        #expect(unfocusedFormatColor.alphaComponent < focusedFormatColor.alphaComponent)
         #expect(LibraryNotesLayout.toolbarEditorFormatFontSize == 17)
         #expect(LibraryNotesLayout.toolbarEditorToolSymbolPointSize == 13)
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
@@ -1912,6 +1934,11 @@ struct MarkdownRichEditorTests {
         #expect(sourceOutline.intercellSpacing == .zero)
         #expect(sourceOutline.enclosingScrollView?.hasVerticalScroller == true)
         #expect(sourceOutline.enclosingScrollView?.autohidesScrollers == true)
+        let sourceScrollerInsets = try #require(sourceOutline.enclosingScrollView?.scrollerInsets)
+        #expect(sourceScrollerInsets.top == 0)
+        #expect(sourceScrollerInsets.left == 0)
+        #expect(sourceScrollerInsets.bottom == 0)
+        #expect(sourceScrollerInsets.right == 0)
         #expect(sourceOutline.enclosingScrollView is LibrarySourceScrollView)
         let sourceTitles = controller.sourceTitlesForLibrary()
         #expect(!sourceTitles.contains("All iCloud"))
@@ -6468,6 +6495,50 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func movingPreviewedExternalMarkdownIntoLibraryRemovesOldProjection() throws {
+        let suiteName = "mudsnote.external-preview-move-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-external-preview-move-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let previewDirectory = root.appendingPathComponent("Preview", isDirectory: true)
+        let externalURL = previewDirectory.appendingPathComponent("Move Me.md")
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+        try "# Move Me\n\nBody".write(to: externalURL, atomically: true, encoding: .utf8)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: false,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try controller.openMarkdownDocumentForLibrary(at: externalURL)
+        let movedURL = try #require(controller.moveSelectedNotesForLibrary(to: notesDirectory).first)
+
+        #expect(!FileManager.default.fileExists(atPath: externalURL.path))
+        #expect(FileManager.default.fileExists(atPath: movedURL.path))
+        let matchingNotes = controller.noteListSearchResultsForLibrary().filter { $0.title == "Move Me" }
+        #expect(matchingNotes.map { $0.url.standardizedFileURL } == [movedURL.standardizedFileURL])
+        #expect(!controller.sourceFolderURLsForLibrary().contains(previewDirectory.standardizedFileURL))
+    }
+
+    @MainActor
+    @Test
     func applicationMainMenuProvidesNotesLikeCoreCommands() throws {
         let controller = AppController()
         let mainMenu = controller.makeMainMenuForApplication()
@@ -7301,6 +7372,10 @@ struct MarkdownRichEditorTests {
         controller.showWindowAndFocus()
         controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
         let browser = try #require(controller.floatingNoteBrowserController)
+        #expect(browser.window?.isVisible == true)
+        controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
+        #expect(browser.window?.isVisible == false)
+        controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
         #expect(browser.window?.isVisible == true)
         browser.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: browser.window))
         #expect(browser.window?.isVisible == false)
