@@ -870,6 +870,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             floatingNoteStaysOnTop: noteStore.floatingNoteStaysOnTop,
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
             libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
+            editorContextMenuOptions: noteStore.enabledEditorContextMenuOptions,
+            selectionToolbarOptions: noteStore.enabledSelectionToolbarOptions,
             aiEnabled: noteStore.aiEnabled,
             aiCodexExecutablePath: noteStore.aiCodexExecutablePath,
             onPreviewOpacity: { [weak self] opacity in
@@ -898,6 +900,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.floatingNoteStaysOnTop = settings.floatingNoteStaysOnTop
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
         noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
+        noteStore.enabledEditorContextMenuOptions = settings.editorContextMenuOptions
+        noteStore.enabledSelectionToolbarOptions = settings.selectionToolbarOptions
         noteStore.aiEnabled = settings.aiEnabled
         noteStore.aiCodexExecutablePath = settings.aiCodexExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
 

@@ -13,6 +13,8 @@ struct PreferencesSettings {
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
     let libraryIncludesSubfolderNotes: Bool
+    let editorContextMenuOptions: Set<EditorContextMenuOption>
+    let selectionToolbarOptions: Set<SelectionToolbarOption>
     let aiEnabled: Bool
     let aiCodexExecutablePath: String
 }
@@ -78,6 +80,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let floatingHotKeyRecorder = ShortcutRecorderButton()
     private let saveShortcutRecorder = ShortcutRecorderButton()
     private let resetShortcutsButton = NSButton(title: "恢复默认值", target: nil, action: nil)
+    private(set) var contextMenuOptionButtons: [EditorContextMenuOption: NSButton] = [:]
+    private(set) var selectionToolbarOptionButtons: [SelectionToolbarOption: NSButton] = [:]
 
     private let onPreviewOpacity: (Double) -> Void
     private let onResetWindowFrames: () -> Void
@@ -100,6 +104,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
         libraryIncludesSubfolderNotes: Bool = true,
+        editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
+        selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
         aiEnabled: Bool,
         aiCodexExecutablePath: String,
         onPreviewOpacity: @escaping (Double) -> Void,
@@ -149,6 +155,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             currentSaveShortcut: currentSaveShortcut,
             floatingNoteStaysOnTop: floatingNoteStaysOnTop,
             spellCheckingEnabled: spellCheckingEnabled,
+            editorContextMenuOptions: editorContextMenuOptions,
+            selectionToolbarOptions: selectionToolbarOptions,
             aiEnabled: aiEnabled
         )
         folderNoteVisibilityPopUp.addItems(withTitles: ["包含子文件夹", "仅本文件夹"])
@@ -219,6 +227,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
+        editorContextMenuOptions: Set<EditorContextMenuOption>,
+        selectionToolbarOptions: Set<SelectionToolbarOption>,
         aiEnabled: Bool
     ) {
         guard let contentView = window?.contentView else { return }
@@ -241,6 +251,16 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         revealDirectoryButton.action = #selector(revealFolderPressed)
         floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
         spellCheckingButton.state = spellCheckingEnabled ? .on : .off
+        contextMenuOptionButtons = optionButtons(
+            options: EditorContextMenuOption.allCases,
+            enabled: editorContextMenuOptions,
+            title: \.title
+        )
+        selectionToolbarOptionButtons = optionButtons(
+            options: SelectionToolbarOption.allCases,
+            enabled: selectionToolbarOptions,
+            title: \.title
+        )
         aiEnabledButton.state = aiEnabled ? .on : .off
         aiCodexPathLabel.lineBreakMode = .byTruncatingMiddle
         aiCodexPathLabel.maximumNumberOfLines = 1
@@ -343,8 +363,48 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "",
                 control: spellCheckingButton,
                 help: "作用于快速笔记、悬浮笔记和普通笔记窗口的正文编辑器。"
+            ),
+            sectionDivider(),
+            preferenceRow(
+                label: "右键菜单:",
+                control: optionGrid(EditorContextMenuOption.allCases.compactMap { contextMenuOptionButtons[$0] }),
+                help: "选择正文编辑器右键菜单中显示的命令。顺序保持固定。"
+            ),
+            preferenceRow(
+                label: "浮动工具栏:",
+                control: optionGrid(SelectionToolbarOption.allCases.compactMap { selectionToolbarOptionButtons[$0] }),
+                help: "选择选中文字后浮动格式工具栏中显示的按钮。"
             )
         ])
+    }
+
+    private func optionButtons<Option: Hashable>(
+        options: [Option],
+        enabled: Set<Option>,
+        title: KeyPath<Option, String>
+    ) -> [Option: NSButton] {
+        Dictionary(uniqueKeysWithValues: options.map { option in
+            let button = NSButton(checkboxWithTitle: option[keyPath: title], target: nil, action: nil)
+            button.state = enabled.contains(option) ? .on : .off
+            button.widthAnchor.constraint(equalToConstant: 112).isActive = true
+            return (option, button)
+        })
+    }
+
+    private func optionGrid(_ buttons: [NSButton]) -> NSView {
+        let rows = stride(from: 0, to: buttons.count, by: 3).map { start -> NSStackView in
+            let slice = Array(buttons[start..<min(start + 3, buttons.count)])
+            let row = NSStackView(views: slice + [NSView()])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 8
+            return row
+        }
+        let grid = NSStackView(views: rows)
+        grid.orientation = .vertical
+        grid.alignment = .leading
+        grid.spacing = 5
+        return grid
     }
 
     private func makeAIPane() -> NSView {
@@ -656,6 +716,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
             spellCheckingEnabled: spellCheckingButton.state == .on,
             libraryIncludesSubfolderNotes: folderNoteVisibilityPopUp.indexOfSelectedItem == 0,
+            editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
+            selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             aiEnabled: aiEnabledButton.state == .on,
             aiCodexExecutablePath: aiCodexExecutablePath
         ))

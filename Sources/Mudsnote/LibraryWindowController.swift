@@ -2812,6 +2812,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.configureContextMenu = { [weak self] menu, _ in
             self?.configureEditorInsertContextMenu(menu)
         }
+        editorTextView.contextMenuOptionsProvider = { [weak self] in
+            self?.noteStore.enabledEditorContextMenuOptions ?? Set(EditorContextMenuOption.allCases)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }
@@ -8364,13 +8367,14 @@ final class LibraryWindowController: NSWindowController,
               editorTextView.selectedRange().length > 0 else { return nil }
 
         let menu = NSMenu(title: "快捷格式")
-        let inlineCommands: [(String, String, LibraryFormatCommand)] = [
-            ("加粗", "bold", .bold),
-            ("斜体", "italic", .italic),
-            ("下划线", "underline", .underline),
-            ("删除线", "strikethrough", .strikethrough)
+        let enabled = noteStore.enabledSelectionToolbarOptions
+        let inlineCommands: [(SelectionToolbarOption, String, String, LibraryFormatCommand)] = [
+            (.bold, "加粗", "bold", .bold),
+            (.italic, "斜体", "italic", .italic),
+            (.underline, "下划线", "underline", .underline),
+            (.strikethrough, "删除线", "strikethrough", .strikethrough)
         ]
-        for (title, symbolName, command) in inlineCommands {
+        for (option, title, symbolName, command) in inlineCommands where enabled.contains(option) {
             let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
             item.target = self
             item.tag = command.rawValue
@@ -8379,51 +8383,59 @@ final class LibraryWindowController: NSWindowController,
             menu.addItem(item)
         }
 
-        let isHighlighted = isFormatCommandActive(.highlight)
-        let highlightItem = NSMenuItem(title: "高亮", action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
-        highlightItem.target = self
-        highlightItem.tag = (isHighlighted ? LibraryFormatCommand.removeHighlight : .highlight).rawValue
-        highlightItem.state = isHighlighted ? .on : .off
-        highlightItem.image = selectionMenuImage(symbolName: "highlighter", title: "高亮")
-        menu.addItem(highlightItem)
-
-        let conversionItem = NSMenuItem(title: "转换为", action: nil, keyEquivalent: "")
-        conversionItem.image = selectionMenuTextImage("Aa", title: "转换为")
-        let conversionMenu = NSMenu(title: "转换为")
-        let conversionCommands: [(String, String, LibraryFormatCommand)] = [
-            ("正文", "textformat", .paragraph),
-            ("标题", "textformat.size.larger", .heading1),
-            ("副标题", "textformat.size", .heading2),
-            ("小标题", "textformat.size.smaller", .heading3),
-            ("项目符号列表", "list.bullet", .bullet),
-            ("编号列表", "list.number", .ordered),
-            ("待办列表", "checkmark.square", .checklist)
-        ]
-        for (title, symbolName, command) in conversionCommands {
-            let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = command.rawValue
-            item.state = isFormatCommandActive(command) ? .on : .off
-            item.image = selectionMenuImage(symbolName: symbolName, title: title)
-            conversionMenu.addItem(item)
+        if enabled.contains(.highlight) {
+            let isHighlighted = isFormatCommandActive(.highlight)
+            let highlightItem = NSMenuItem(title: "高亮", action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+            highlightItem.target = self
+            highlightItem.tag = (isHighlighted ? LibraryFormatCommand.removeHighlight : .highlight).rawValue
+            highlightItem.state = isHighlighted ? .on : .off
+            highlightItem.image = selectionMenuImage(symbolName: "highlighter", title: "高亮")
+            menu.addItem(highlightItem)
         }
-        conversionItem.submenu = conversionMenu
-        menu.addItem(conversionItem)
+
+        let conversionOptions: Set<SelectionToolbarOption> = [.conversion, .checklist, .bulletList, .orderedList]
+        if !enabled.isDisjoint(with: conversionOptions) {
+            let conversionItem = NSMenuItem(title: "转换为", action: nil, keyEquivalent: "")
+            conversionItem.image = selectionMenuTextImage("Aa", title: "转换为")
+            let conversionMenu = NSMenu(title: "转换为")
+            let conversionCommands: [(SelectionToolbarOption, String, String, LibraryFormatCommand)] = [
+                (.conversion, "正文", "textformat", .paragraph),
+                (.conversion, "标题", "textformat.size.larger", .heading1),
+                (.conversion, "副标题", "textformat.size", .heading2),
+                (.conversion, "小标题", "textformat.size.smaller", .heading3),
+                (.bulletList, "项目符号列表", "list.bullet", .bullet),
+                (.orderedList, "编号列表", "list.number", .ordered),
+                (.checklist, "待办列表", "checkmark.square", .checklist)
+            ]
+            for (option, title, symbolName, command) in conversionCommands where enabled.contains(option) {
+                let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = command.rawValue
+                item.state = isFormatCommandActive(command) ? .on : .off
+                item.image = selectionMenuImage(symbolName: symbolName, title: title)
+                conversionMenu.addItem(item)
+            }
+            conversionItem.submenu = conversionMenu
+            menu.addItem(conversionItem)
+        }
         return menu
     }
 
     private func configureEditorInsertContextMenu(_ menu: NSMenu) {
-        menu.addItem(.separator())
+        let enabled = noteStore.enabledEditorContextMenuOptions
+        let commands: [(EditorContextMenuOption, String, String, Selector)] = [
+            (.insertTable, "表格", "tablecells", #selector(tablePressed)),
+            (.insertLink, "链接…", "link", #selector(linkPressed)),
+            (.insertAttachment, "附件…", "paperclip", #selector(attachmentPressed))
+        ]
+        let visibleCommands = commands.filter { enabled.contains($0.0) }
+        guard !visibleCommands.isEmpty else { return }
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
         let insertItem = NSMenuItem(title: "插入", action: nil, keyEquivalent: "")
         insertItem.image = selectionMenuImage(symbolName: "plus", title: "插入")
         insertItem.isEnabled = canEditCurrentDocument && !isEditorShowingMarkdownSource
         let insertMenu = NSMenu(title: "插入")
-        let commands: [(String, String, Selector)] = [
-            ("表格", "tablecells", #selector(tablePressed)),
-            ("链接…", "link", #selector(linkPressed)),
-            ("附件…", "paperclip", #selector(attachmentPressed))
-        ]
-        for (title, symbolName, action) in commands {
+        for (_, title, symbolName, action) in visibleCommands {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
             item.image = selectionMenuImage(symbolName: symbolName, title: title)
