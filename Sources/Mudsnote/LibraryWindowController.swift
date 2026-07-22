@@ -2854,23 +2854,26 @@ final class LibraryWindowController: NSWindowController,
         var roots: [LibrarySourceOutlineItem] = []
 
         let libraryRoots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
-        if libraryRoots.count == 1,
-           selectedScope == .all,
-           externallyOpenedDocumentsByPath.isEmpty,
-           let onlyRoot = libraryRoots.first {
-            selectedScope = .folder(onlyRoot)
+        let previewFolders = externalPreviewFolderURLs()
+        if selectedScope == .all,
+           let visibleFolder = preferredVisibleSourceFolder(
+               libraryRoots: libraryRoots,
+               previewFolders: previewFolders
+           ) {
+            selectedScope = .folder(visibleFolder)
         }
 
         let iCloudGroup = makeSourceOutlineItem(
             identifier: "group:icloud",
             kind: .group(title: "iCloud", section: .folders)
         )
-        if libraryRoots.count > 1 || !externallyOpenedDocumentsByPath.isEmpty {
-            iCloudGroup.append(makeSourceOutlineScopeItem(.all))
-        }
-
         for folderRoot in makeSourceFolderOutlineRoots() {
             iCloudGroup.append(folderRoot)
+        }
+        for previewFolder in previewFolders where !sourceFolderTreeRows.contains(where: {
+            $0.url.standardizedFileURL.path == previewFolder.standardizedFileURL.path
+        }) {
+            iCloudGroup.append(makeSourceOutlineScopeItem(.folder(previewFolder)))
         }
         if inlineFolderEditOperation == nil {
             if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
@@ -2984,6 +2987,34 @@ final class LibraryWindowController: NSWindowController,
         }
 
         return roots
+    }
+
+    private func externalPreviewFolderURLs() -> [URL] {
+        var seenPaths = Set<String>()
+        return externallyOpenedDocumentsByPath.values
+            .map { $0.url.deletingLastPathComponent().standardizedFileURL }
+            .filter { seenPaths.insert($0.path).inserted }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    private func preferredVisibleSourceFolder(
+        libraryRoots: [URL],
+        previewFolders: [URL]
+    ) -> URL? {
+        if let selectedURL {
+            let selectedPath = selectedURL.standardizedFileURL.path
+            if let previewFolder = previewFolders.first(where: {
+                selectedPath.hasPrefix($0.standardizedFileURL.path + "/")
+            }) {
+                return previewFolder
+            }
+            if let libraryRoot = libraryRoots.first(where: {
+                selectedPath.hasPrefix($0.standardizedFileURL.path + "/")
+            }) {
+                return libraryRoot
+            }
+        }
+        return libraryRoots.first ?? previewFolders.first
     }
 
     private func restoreSourceOutlineExpansion() {
@@ -3385,7 +3416,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func sourceFolderURLsForLibrary() -> [URL] {
-        sourceFolderTreeRows.map(\.url)
+        var seenPaths = Set<String>()
+        return (sourceFolderTreeRows.map(\.url) + externalPreviewFolderURLs()).filter {
+            seenPaths.insert($0.standardizedFileURL.path).inserted
+        }
     }
 
     var editorSlashSuggestionTitlesForLibrary: [String] {
@@ -3496,7 +3530,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func currentSourceFolderPaths() -> Set<String> {
-        Set(sourceFolderRows.map { $0.url.standardizedFileURL.path })
+        Set(
+            sourceFolderRows.map { $0.url.standardizedFileURL.path }
+                + externalPreviewFolderURLs().map(\.path)
+        )
     }
 
     private func refreshSourceCounts(
@@ -5302,7 +5339,7 @@ final class LibraryWindowController: NSWindowController,
                 applyNoteListViewModeChrome(animated: window?.isVisible == true)
             }
             if selectedScope == .trash {
-                selectedScope = .all
+                selectedScope = .folder(noteStore.notesDirectory)
             }
             cancelActiveNoteLoad()
             isLoadingInitialNote = false
@@ -6573,7 +6610,8 @@ final class LibraryWindowController: NSWindowController,
             )
         }
         activeSearchSession = nil
-        selectedScope = .all
+        selectedScope = restoredURL.map { .folder($0.deletingLastPathComponent()) }
+            ?? .folder(noteStore.notesDirectory)
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
@@ -6613,10 +6651,11 @@ final class LibraryWindowController: NSWindowController,
 
         externallyOpenedDocumentsByPath[standardizedURL.path] = note
         sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
-        selectedScope = .all
+        selectedScope = .folder(standardizedURL.deletingLastPathComponent())
         searchField.stringValue = ""
         activeSearchSession = nil
         _ = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
+        rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(
             selecting: standardizedURL,
             loadFirstIfNeeded: true,
@@ -7255,7 +7294,7 @@ final class LibraryWindowController: NSWindowController,
         if case .folder(let selectedFolder) = selectedScope,
            (selectedFolder.standardizedFileURL.path == candidate.path
             || selectedFolder.standardizedFileURL.path.hasPrefix(candidate.path + "/")) {
-            selectedScope = .all
+            selectedScope = .folder(noteStore.notesDirectory)
         }
         if let selectedURL, selectedURL.standardizedFileURL.path.hasPrefix(candidate.path + "/") {
             clearCurrentDocumentAfterRemoval()
@@ -7470,7 +7509,7 @@ final class LibraryWindowController: NSWindowController,
         removeSourceSnapshotNotes(in: folderURL)
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
-        selectedScope = .all
+        selectedScope = .folder(noteStore.notesDirectory)
         clearCurrentDocumentAfterRemoval()
         projectSourceFolderTreeRows(LibraryFolderTreeProjection.removing(
             folderURL,
@@ -7932,6 +7971,9 @@ final class LibraryWindowController: NSWindowController,
         let rootPaths = Set(Self.rootPreferredDirectories(from: noteStore.preferredDirectories).map(\.path))
         let isRoot = rootPaths.contains(standardizedFolder.path)
         let isDefaultRoot = standardizedFolder.path == noteStore.notesDirectory.standardizedFileURL.path
+        let isExternalPreviewFolder = externalPreviewFolderURLs().contains {
+            $0.standardizedFileURL.path == standardizedFolder.path
+        }
 
         let revealItem = NSMenuItem(
             title: "在 Finder 中显示",
@@ -7953,6 +7995,10 @@ final class LibraryWindowController: NSWindowController,
                 removeItem.representedObject = standardizedFolder
                 menu.addItem(removeItem)
             }
+            return menu
+        }
+
+        if isExternalPreviewFolder {
             return menu
         }
 

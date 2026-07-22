@@ -5843,7 +5843,7 @@ struct MarkdownRichEditorTests {
 
         try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
         #expect(store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
-        #expect(controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
         #expect(controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(controller.selectSourceForLibrary(titled: "External Library"))
         let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
@@ -6443,6 +6443,15 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().contains {
             $0.url.standardizedFileURL == externalURL.standardizedFileURL
         })
+        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(controller.sourceTitlesForLibrary().contains(root.lastPathComponent))
+        #expect(controller.selectedSourceTitleForLibrary == root.lastPathComponent)
+        #expect(controller.noteListTitleLabel.stringValue == root.lastPathComponent)
+        #expect(controller.sourceFolderURLsForLibrary().contains(root.standardizedFileURL))
+        let previewFolderMenu = try #require(controller.sourceContextMenuForLibrary(
+            row: controller.sourceOutlineView.selectedRow
+        ))
+        #expect(previewFolderMenu.items.map(\.title) == ["在 Finder 中显示"])
 
         let updated = MarkdownRichTextCodec.render(markdown: "Updated body", theme: controller.theme)
         controller.titleField.stringValue = "Changed Heading"
