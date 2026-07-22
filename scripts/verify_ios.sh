@@ -9,7 +9,17 @@ DERIVED_DATA_PATH="${IOS_VERIFY_DERIVED_DATA_PATH:-$ROOT_DIR/build/IOSVerifyDeri
 
 cd "$ROOT_DIR"
 
-python3 scripts/validate_ios_app_store_metadata.py
+simulator_id_from_destinations() {
+  awk '
+    /platform:iOS Simulator,/ && $0 !~ /placeholder/ {
+      destination = $0
+      sub(/^.*id:/, "", destination)
+      sub(/[,}].*$/, "", destination)
+      print destination
+      exit
+    }
+  '
+}
 
 simulator_destination() {
   if [[ -n "${IOS_SIMULATOR_DESTINATION:-}" ]]; then
@@ -20,8 +30,7 @@ simulator_destination() {
   local simulator_id
   simulator_id="$(
     xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
-      | sed -nE 's/.*platform:iOS Simulator,.*id:([^,}]+).*/\1/p' \
-      | head -n 1
+      | simulator_id_from_destinations
   )"
   if [[ -z "$simulator_id" ]]; then
     echo "No available iOS Simulator destination found." >&2
@@ -29,6 +38,12 @@ simulator_destination() {
   fi
   printf 'id=%s\n' "$simulator_id"
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return
+fi
+
+python3 scripts/validate_ios_app_store_metadata.py
 
 case "$MODE" in
   pr)
