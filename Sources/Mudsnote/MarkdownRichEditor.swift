@@ -7,6 +7,7 @@ extension NSAttributedString.Key {
     static let qmParagraphKind = NSAttributedString.Key("MudsnoteParagraphKind")
     static let qmCode = NSAttributedString.Key("MudsnoteCode")
     static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
+    static let qmAutomaticLink = NSAttributedString.Key("MudsnoteAutomaticLink")
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
@@ -389,6 +390,13 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func didChangeText() {
+        if let textStorage, let theme = markdownPasteTheme {
+            MarkdownRichTextCodec.refreshAutomaticLinks(
+                in: textStorage,
+                around: selectedRange().location,
+                theme: theme
+            )
+        }
         super.didChangeText()
         window?.invalidateCursorRects(for: self)
     }
@@ -404,10 +412,15 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func keyDown(with event: NSEvent) {
         dismissSelectionFormattingPanel()
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.keyCode == UInt16(kVK_Tab),
+           modifiers.isSubset(of: [.shift]),
+           indentSelectedParagraphs(outdent: modifiers.contains(.shift)) {
+            return
+        }
         if handleFormattingShortcut(event) {
             return
         }
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)].contains(event.keyCode),
            modifiers == [.shift] {
             insertSoftLineBreak()
@@ -417,6 +430,60 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return
         }
         super.keyDown(with: event)
+    }
+
+    @discardableResult
+    func indentSelectedParagraphs(outdent: Bool) -> Bool {
+        guard let textStorage else { return false }
+        let selection = selectedRange()
+        guard selection.length > 0 else { return false }
+
+        let string = textStorage.string as NSString
+        let boundedSelection = NSIntersectionRange(selection, NSRange(location: 0, length: string.length))
+        guard boundedSelection.length > 0 else { return false }
+        let paragraphRange = string.paragraphRange(for: boundedSelection)
+        let paragraphText = string.substring(with: paragraphRange) as NSString
+        var lineStarts: [Int] = [paragraphRange.location]
+        var cursor = 0
+        while cursor < paragraphText.length {
+            let newline = paragraphText.range(
+                of: "\n",
+                options: [],
+                range: NSRange(location: cursor, length: paragraphText.length - cursor)
+            )
+            guard newline.location != NSNotFound, NSMaxRange(newline) < paragraphText.length else { break }
+            lineStarts.append(paragraphRange.location + NSMaxRange(newline))
+            cursor = NSMaxRange(newline)
+        }
+        guard lineStarts.count > 1 else { return false }
+
+        let editableStarts = outdent
+            ? lineStarts.filter { start in
+                start < textStorage.length && (textStorage.string as NSString).substring(with: NSRange(location: start, length: 1)) == "\t"
+            }
+            : lineStarts
+        guard !editableStarts.isEmpty else { return true }
+        guard shouldChangeText(in: paragraphRange, replacementString: nil) else { return true }
+
+        textStorage.beginEditing()
+        for start in editableStarts.reversed() {
+            if outdent {
+                textStorage.deleteCharacters(in: NSRange(location: start, length: 1))
+            } else {
+                let attributes = start < textStorage.length ? textStorage.attributes(at: start, effectiveRange: nil) : typingAttributes
+                textStorage.insert(NSAttributedString(string: "\t", attributes: attributes), at: start)
+            }
+        }
+        textStorage.endEditing()
+
+        let selectionStartDelta = editableStarts.filter { $0 <= selection.location }.count * (outdent ? -1 : 1)
+        let selectionEnd = NSMaxRange(selection)
+        let selectionEndDelta = editableStarts.filter { $0 < selectionEnd }.count * (outdent ? -1 : 1)
+        let newLocation = max(selection.location + selectionStartDelta, 0)
+        let newEnd = max(selectionEnd + selectionEndDelta, newLocation)
+        setSelectedRange(NSRange(location: newLocation, length: newEnd - newLocation))
+        didChangeText()
+        return true
     }
 
     func insertSoftLineBreak() {
@@ -1701,6 +1768,10 @@ enum MarkdownRichTextCodec {
             return text
         }
 
+        if (attributes[.qmAutomaticLink] as? Bool) == true {
+            return text
+        }
+
         if let url = attributes[.qmLinkURL] as? String {
             return "[\(text)](\(url))"
         }
@@ -1989,7 +2060,57 @@ enum MarkdownRichTextCodec {
         if output.length == 0 {
             output.append(NSAttributedString(string: "", attributes: baseAttributes))
         }
+        applyAutomaticLinks(in: output, range: NSRange(location: 0, length: output.length), theme: theme)
         return output
+    }
+
+    @MainActor
+    static func refreshAutomaticLinks(
+        in textStorage: NSTextStorage,
+        around location: Int,
+        theme: MarkdownEditorTheme
+    ) {
+        guard textStorage.length > 0 else { return }
+        let string = textStorage.string as NSString
+        let safeLocation = min(max(location, 0), max(string.length - 1, 0))
+        let paragraphRange = string.paragraphRange(for: NSRange(location: safeLocation, length: 0))
+        applyAutomaticLinks(in: textStorage, range: paragraphRange, theme: theme)
+    }
+
+    @MainActor
+    private static func applyAutomaticLinks(
+        in attributedString: NSMutableAttributedString,
+        range: NSRange,
+        theme: MarkdownEditorTheme
+    ) {
+        guard range.length > 0,
+              let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return }
+
+        attributedString.enumerateAttribute(.qmAutomaticLink, in: range) { value, effectiveRange, _ in
+            guard (value as? Bool) == true else { return }
+            attributedString.removeAttribute(.qmAutomaticLink, range: effectiveRange)
+            attributedString.removeAttribute(.qmLinkURL, range: effectiveRange)
+            attributedString.removeAttribute(.underlineStyle, range: effectiveRange)
+            attributedString.addAttribute(.foregroundColor, value: theme.textColor, range: effectiveRange)
+        }
+
+        let text = attributedString.string as NSString
+        for match in detector.matches(in: text as String, range: range) {
+            let matchRange = match.range
+            guard matchRange.length > 0,
+                  matchRange.location >= 0,
+                  NSMaxRange(matchRange) <= attributedString.length,
+                  attributedString.attribute(.qmLinkURL, at: matchRange.location, effectiveRange: nil) == nil,
+                  attributedString.attribute(.qmCode, at: matchRange.location, effectiveRange: nil) == nil,
+                  attributedString.attribute(.qmAttachmentMarkdown, at: matchRange.location, effectiveRange: nil) == nil,
+                  let url = match.url else { continue }
+            attributedString.addAttributes([
+                .qmLinkURL: url.absoluteString,
+                .qmAutomaticLink: true,
+                .foregroundColor: theme.accentColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ], range: matchRange)
+        }
     }
 
     private static func attributed(_ string: String, base: [NSAttributedString.Key: Any], extra: [NSAttributedString.Key: Any] = [:]) -> NSAttributedString {

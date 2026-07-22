@@ -87,6 +87,33 @@ extension NoteStore {
         set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryExpandedFolderPaths) }
     }
 
+    public var libraryFolderOrderPaths: [String] {
+        get {
+            var seen = Set<String>()
+            return (defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryFolderOrderPaths) ?? []).compactMap {
+                let path = URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
+                return seen.insert(path).inserted ? path : nil
+            }
+        }
+        set {
+            var seen = Set<String>()
+            let paths = newValue.compactMap {
+                let path = URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
+                return seen.insert(path).inserted ? path : nil
+            }
+            defaults.set(paths, forKey: NoteStoreDefaultsKey.libraryFolderOrderPaths)
+        }
+    }
+
+    public func replaceLibraryFolderOrderPathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let newPath = newDirectory.standardizedFileURL.path
+        libraryFolderOrderPaths = libraryFolderOrderPaths.map { path in
+            guard path == oldPath || path.hasPrefix(oldPath + "/") else { return path }
+            return newPath + String(path.dropFirst(oldPath.count))
+        }
+    }
+
     public var libraryFoldersSectionCollapsed: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.libraryFoldersSectionCollapsed) as? Bool ?? false }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryFoldersSectionCollapsed) }

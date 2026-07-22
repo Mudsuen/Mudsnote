@@ -400,6 +400,60 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func tabIndentsEverySelectedLineAndShiftTabOutdentsThem() throws {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
+        textView.markdownPasteTheme = theme
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "First\nSecond\nThird",
+            theme: theme
+        ))
+        textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
+
+        textView.keyDown(with: try keyEvent(keyCode: UInt16(kVK_Tab), modifiers: [], characters: "\t"))
+        #expect(MarkdownRichTextCodec.serialize(textView.attributedString(), theme: theme) == "\tFirst\n\tSecond\n\tThird")
+
+        textView.keyDown(with: try keyEvent(keyCode: UInt16(kVK_Tab), modifiers: [.shift], characters: "\t"))
+        #expect(MarkdownRichTextCodec.serialize(textView.attributedString(), theme: theme) == "First\nSecond\nThird")
+    }
+
+    @MainActor
+    @Test
+    func bareLinksAreDetectedWithoutRewritingMarkdown() throws {
+        let markdown = "Visit https://example.com/path and mail hello@example.com"
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let urlLocation = (rendered.string as NSString).range(of: "https://example.com/path").location
+        let emailLocation = (rendered.string as NSString).range(of: "hello@example.com").location
+
+        #expect(rendered.attribute(.qmAutomaticLink, at: urlLocation, effectiveRange: nil) as? Bool == true)
+        #expect(rendered.attribute(.qmAutomaticLink, at: emailLocation, effectiveRange: nil) as? Bool == true)
+        #expect((rendered.attribute(.qmLinkURL, at: emailLocation, effectiveRange: nil) as? String)?.hasPrefix("mailto:") == true)
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+
+        let textView = MarkdownTextView(frame: .zero)
+        textView.textStorage?.setAttributedString(rendered)
+        #expect(textView.linkReference(atCharacterIndex: urlLocation)?.url == "https://example.com/path")
+    }
+
+    @MainActor
+    @Test
+    func floatingEditorExposesSelectionFormattingToolbar() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Selected text",
+            theme: controller.theme
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+
+        let titles = controller.editorTextView.selectionMenuProvider?()?.items.map(\.title) ?? []
+        #expect(titles.contains("加粗"))
+        #expect(titles.contains("待办列表"))
+        #expect(titles.contains("编号列表"))
+    }
+
+    @MainActor
+    @Test
     func shiftReturnCreatesPersistentShortSpacedLineBreak() throws {
         let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
         textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "First", theme: theme))
@@ -475,6 +529,98 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Nested"])
         controller.searchForLibrary(query: "", allNotes: false)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == ["Direct", "Nested"])
+    }
+
+    @MainActor
+    @Test
+    func libraryCreatesNotesImmediatelyAndSupportsSlashCommands() throws {
+        let suiteName = "mudsnote.library-immediate-slash-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-immediate-slash-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Seed", body: "Body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let previousCount = store.listNotes(limit: 20).count
+        controller.createNewNoteForLibrary()
+        let createdURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        #expect(FileManager.default.fileExists(atPath: createdURL.path))
+        #expect(store.listNotes(limit: 20).count == previousCount + 1)
+        #expect(controller.noteListSearchResultsForLibrary().contains { $0.url.standardizedFileURL == createdURL.standardizedFileURL })
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "/", theme: controller.theme))
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        let titles = controller.editorSlashSuggestionTitlesForLibrary
+        let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
+        controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
+    }
+
+    @MainActor
+    @Test
+    func libraryImportsExternalItemsAndUsesPersistedFolderOrder() throws {
+        let suiteName = "mudsnote.library-folder-drag-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-folder-drag-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let library = root.appendingPathComponent("Library", isDirectory: true)
+        store.notesDirectory = library
+        let alpha = try store.createFolder(named: "Alpha", in: library)
+        let beta = try store.createFolder(named: "Beta", in: library)
+        store.libraryFolderOrderPaths = [beta.path, alpha.path]
+        let external = root.appendingPathComponent("External.md")
+        try "# External\n\nBody".write(to: external, atomically: true, encoding: .utf8)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.loadSourceFoldersForLibrary()
+        let directChildren = controller.sourceFolderURLsForLibrary().filter {
+            $0.deletingLastPathComponent().standardizedFileURL == library.standardizedFileURL
+        }
+        #expect(directChildren.map(\.lastPathComponent) == ["Beta", "Alpha"])
+
+        let imported = try controller.importExternalLibraryItemForTesting(external, to: beta)
+        #expect(FileManager.default.fileExists(atPath: external.path))
+        #expect(FileManager.default.fileExists(atPath: imported.path))
+        #expect(imported.deletingLastPathComponent().standardizedFileURL == beta.standardizedFileURL)
+
+        let moved = try store.moveFolder(at: beta, to: alpha)
+        controller.loadSourceFoldersForLibrary()
+        #expect(moved.deletingLastPathComponent().standardizedFileURL == alpha.standardizedFileURL)
+        #expect(controller.sourceFolderURLsForLibrary().contains { $0.standardizedFileURL == moved.standardizedFileURL })
     }
 
     @Test
@@ -7145,7 +7291,10 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         controller.floatingBrowseNotesPressed(controller.floatingNoteBrowseButton)
-        #expect(controller.floatingNoteBrowserController?.window?.isVisible == true)
+        let browser = try #require(controller.floatingNoteBrowserController)
+        #expect(browser.window?.isVisible == true)
+        browser.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: browser.window))
+        #expect(browser.window?.isVisible == false)
     }
 
     @MainActor

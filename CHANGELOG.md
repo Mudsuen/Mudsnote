@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 209. Consistent macOS library dragging and editor commands
+- Problem: New notes did not enter the list until their first save, folder and note drops shared misleading between-row feedback, external items could not be dragged into the library, and the main and floating editors exposed different selection, slash-command, indentation, link, and popup-dismissal behavior.
+- Fix: New macOS notes now persist and animate into the list immediately. Folder rows can be reordered or moved under another folder, external Markdown and folders can be copied or registered by drag, and note drops are constrained to real folder targets. Both editors now share multi-line Tab/Shift-Tab indentation, automatic plain-link detection with Command-click opening, and selection formatting; the library editor also exposes formatting slash commands, while the floating-note manager closes when it loses focus. The existing setting for descendant-inclusive versus direct-folder-only notes remains the single source of folder-scope behavior.
+- Lesson: Shared text views still drift when controllers install different capabilities, and drag feedback is only useful when every shown insertion target maps to a durable filesystem or ordering operation.
+
 ### 208. User-owned multi-window floating notes
 - Problem: The floating-note manager was sized around a five-result browser, showed a count, info icon, and global close action, replaced the current editor when choosing another note, and reused one saved frame so multiple windows could overlap exactly; an unnamed floating window also had no independent management identity.
 - Fix: The compact manager now lists every open floating window by stable window ID with its own close button, uses search only to explicitly add more notes, removes the count and window cap, and lets every floating window open the same shared state. New windows prefer a separate on-screen frame, and the panel uses a narrower adaptive height with scrolling for larger sets.

@@ -240,6 +240,10 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         window.parent?.removeChildWindow(window)
     }
 
+    func windowDidResignKey(_ notification: Notification) {
+        window?.close()
+    }
+
     func controlTextDidChange(_ obj: Notification) {
         reloadResults()
     }
