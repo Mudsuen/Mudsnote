@@ -8,6 +8,32 @@ private struct FormattingUndoSnapshot {
 
 extension EditorWindowController {
 
+    func makeSelectionFormattingMenu() -> NSMenu? {
+        guard editorTextView.selectedRange().length > 0 else { return nil }
+        let menu = NSMenu(title: "快捷格式")
+        let items: [(String, String, ToolbarAction)] = [
+            ("加粗", "bold", .bold),
+            ("斜体", "italic", .italic),
+            ("下划线", "underline", .underline),
+            ("删除线", "strikethrough", .strikethrough),
+            ("待办列表", "checkmark.square", .checklist),
+            ("项目符号列表", "list.bullet", .bulletList),
+            ("编号列表", "list.number", .orderedList)
+        ]
+        for (title, symbolName, action) in items {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(selectionFormattingMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.tag = action.rawValue
+            item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+            menu.addItem(item)
+        }
+        return menu
+    }
+
     // MARK: - Paragraph kind
 
     func handleStructuredNewline() -> Bool {
@@ -167,10 +193,12 @@ extension EditorWindowController {
                 storage.replaceCharacters(in: reference.range, with: label)
             }
             let updatedRange = NSRange(location: reference.range.location, length: (label ?? reference.label).utf16.count)
+            storage.removeAttribute(.qmAutomaticLink, range: updatedRange)
             storage.addAttribute(.qmLinkURL, value: url, range: updatedRange)
             storage.addAttribute(.foregroundColor, value: theme.accentColor, range: updatedRange)
             storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: updatedRange)
         } else {
+            storage.removeAttribute(.qmAutomaticLink, range: reference.range)
             storage.removeAttribute(.qmLinkURL, range: reference.range)
             storage.removeAttribute(.underlineStyle, range: reference.range)
             storage.addAttribute(.foregroundColor, value: theme.textColor, range: reference.range)
@@ -400,6 +428,15 @@ extension EditorWindowController {
 
     @objc func toolbarButtonPressed(_ sender: NSButton) {
         guard let action = ToolbarAction(rawValue: sender.tag) else { return }
+        performToolbarAction(action)
+    }
+
+    @objc private func selectionFormattingMenuItemPressed(_ sender: NSMenuItem) {
+        guard let action = ToolbarAction(rawValue: sender.tag) else { return }
+        performToolbarAction(action)
+    }
+
+    private func performToolbarAction(_ action: ToolbarAction) {
         focusEditorForToolbarAction()
         defer {
             rememberEditorSelectionForToolbarActions()

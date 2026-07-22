@@ -29,6 +29,9 @@ extension EditorWindowController {
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
         editorTextView.configureContextMenu = nil
+        editorTextView.selectionMenuProvider = { [weak self] in
+            self?.makeSelectionFormattingMenu()
+        }
         editorTextView.onTextInputStateChanged = { [weak self] in
             self?.refreshChrome()
         }

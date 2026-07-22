@@ -154,6 +154,29 @@ extension NoteStore {
         return movedURL
     }
 
+    public func moveFolder(at url: URL, to parentDirectory: URL) throws -> URL {
+        let sourceURL = url.standardizedFileURL
+        let targetParent = parentDirectory.standardizedFileURL
+        guard sourceURL != notesDirectory.standardizedFileURL,
+              sourceURL.deletingLastPathComponent() != targetParent,
+              !targetParent.path.hasPrefix(sourceURL.path + "/") else {
+            return sourceURL
+        }
+        try fileManager.createDirectory(at: targetParent, withIntermediateDirectories: true)
+        let destinationURL = uniqueFolderURL(
+            directory: targetParent,
+            folderName: sourceURL.lastPathComponent,
+            excluding: sourceURL
+        )
+        try fileManager.moveItem(at: sourceURL, to: destinationURL)
+        replaceRecentPathPrefix(sourceURL, with: destinationURL)
+        replaceLibraryPinnedNotePathPrefix(sourceURL, with: destinationURL)
+        replaceLibraryFolderDisclosurePathPrefix(sourceURL, with: destinationURL)
+        replaceLibraryFolderOrderPathPrefix(sourceURL, with: destinationURL)
+        replacePreferredDirectory(sourceURL, with: destinationURL)
+        return destinationURL
+    }
+
     public func trashFolder(at directory: URL) throws -> URL {
         try trashFolderWithNoteURLs(at: directory).directory
     }

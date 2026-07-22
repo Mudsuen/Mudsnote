@@ -1182,6 +1182,8 @@ final class LibraryWindowController: NSWindowController,
     private var isCommittingInlineFolderEdit = false
     private var inlineFolderEditHasReceivedFocus = false
     private var linkEditorSheetController: LinkEditorSheetController?
+    private let editorSuggestionController = SuggestionPopoverController()
+    private var editorSlashSuggestion: (replacementRange: NSRange, commands: [EditorWindowController.SlashCommand])?
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
@@ -1770,7 +1772,8 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.delegate = self
         sourceOutlineView.dataSource = self
         sourceOutlineView.registerForDraggedTypes([.fileURL])
-        sourceOutlineView.setDraggingSourceOperationMask([], forLocal: false)
+        sourceOutlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+        sourceOutlineView.setDraggingSourceOperationMask(.copy, forLocal: false)
         sourceOutlineView.contextMenuProvider = { [weak self] row in
             self?.sourceContextMenuForLibrary(row: row)
         }
@@ -2825,6 +2828,12 @@ final class LibraryWindowController: NSWindowController,
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+        editorSuggestionController.view.isHidden = true
+        editorSuggestionController.view.translatesAutoresizingMaskIntoConstraints = true
+        editorSuggestionController.onSelect = { [weak self] index in
+            self?.acceptEditorSlashSuggestion(at: index)
+        }
+        window?.contentView?.addSubview(editorSuggestionController.view, positioned: .above, relativeTo: nil)
     }
 
     private func rebuildSourceRows(includeTags: Bool) {
@@ -3028,10 +3037,14 @@ final class LibraryWindowController: NSWindowController,
               !sourceFoldersLoading else { return }
         sourceFoldersLoading = true
         let preferredDirectories = noteStore.preferredDirectories
+        let folderOrderPaths = noteStore.libraryFolderOrderPaths
         let collapsedPaths = collapsedFolderPaths
         let expandedPaths = expandedFolderPaths
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let treeRows = Self.folderTreeRowsForSourceList(from: preferredDirectories)
+            let treeRows = Self.folderTreeRowsForSourceList(
+                from: preferredDirectories,
+                orderedPaths: folderOrderPaths
+            )
             let rows = Self.visibleFolderRowsForSourceList(
                 from: treeRows,
                 collapsedFolderPaths: collapsedPaths,
@@ -3103,7 +3116,10 @@ final class LibraryWindowController: NSWindowController,
     private func reloadSourceFolderRowsForCurrentState() {
         sourceFoldersLoaded = true
         sourceFoldersLoading = false
-        applySourceFolderTreeRows(Self.folderTreeRowsForSourceList(from: noteStore.preferredDirectories))
+        applySourceFolderTreeRows(Self.folderTreeRowsForSourceList(
+            from: noteStore.preferredDirectories,
+            orderedPaths: noteStore.libraryFolderOrderPaths
+        ))
     }
 
     private func applySourceFolderTreeRows(_ treeRows: [LibraryFolderRow]) {
@@ -3141,17 +3157,29 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func rootFolderRowsForSourceList() -> [LibraryFolderRow] {
-        Self.rootFolderRowsForSourceList(from: noteStore.preferredDirectories)
+        Self.rootFolderRowsForSourceList(
+            from: noteStore.preferredDirectories,
+            orderedPaths: noteStore.libraryFolderOrderPaths
+        )
     }
 
-    nonisolated private static func rootFolderRowsForSourceList(from directories: [URL]) -> [LibraryFolderRow] {
-        rootPreferredDirectories(from: directories).map {
+    nonisolated private static func rootFolderRowsForSourceList(
+        from directories: [URL],
+        orderedPaths: [String] = []
+    ) -> [LibraryFolderRow] {
+        sortedFolderURLs(rootPreferredDirectories(from: directories), orderedPaths: orderedPaths).map {
             LibraryFolderRow(url: $0, depth: 0, hasChildren: false)
         }
     }
 
-    nonisolated private static func folderTreeRowsForSourceList(from directories: [URL]) -> [LibraryFolderRow] {
-        let preferredRoots = rootPreferredDirectories(from: directories)
+    nonisolated private static func folderTreeRowsForSourceList(
+        from directories: [URL],
+        orderedPaths: [String] = []
+    ) -> [LibraryFolderRow] {
+        let preferredRoots = sortedFolderURLs(
+            rootPreferredDirectories(from: directories),
+            orderedPaths: orderedPaths
+        )
         var seenPaths = Set<String>()
         var rows: [LibraryFolderRow] = []
 
@@ -3160,6 +3188,7 @@ final class LibraryWindowController: NSWindowController,
                 root,
                 depth: 0,
                 maxDepth: 3,
+                orderedPaths: orderedPaths,
                 seenPaths: &seenPaths,
                 rows: &rows
             )
@@ -3211,12 +3240,13 @@ final class LibraryWindowController: NSWindowController,
         _ folderURL: URL,
         depth: Int,
         maxDepth: Int,
+        orderedPaths: [String],
         seenPaths: inout Set<String>,
         rows: inout [LibraryFolderRow]
     ) {
         let standardized = folderURL.standardizedFileURL
         guard seenPaths.insert(standardized.path).inserted else { return }
-        let children = childFolderURLs(of: standardized)
+        let children = sortedFolderURLs(childFolderURLs(of: standardized), orderedPaths: orderedPaths)
         rows.append(LibraryFolderRow(url: standardized, depth: depth, hasChildren: !children.isEmpty))
         guard depth < maxDepth else { return }
 
@@ -3225,9 +3255,22 @@ final class LibraryWindowController: NSWindowController,
                 child,
                 depth: depth + 1,
                 maxDepth: maxDepth,
+                orderedPaths: orderedPaths,
                 seenPaths: &seenPaths,
                 rows: &rows
             )
+        }
+    }
+
+    nonisolated private static func sortedFolderURLs(_ urls: [URL], orderedPaths: [String]) -> [URL] {
+        let ranks = Dictionary(uniqueKeysWithValues: orderedPaths.enumerated().map { ($0.element, $0.offset) })
+        return urls.sorted { lhs, rhs in
+            let lhsRank = ranks[lhs.standardizedFileURL.path]
+            let rhsRank = ranks[rhs.standardizedFileURL.path]
+            if let lhsRank, let rhsRank, lhsRank != rhsRank { return lhsRank < rhsRank }
+            if lhsRank != nil { return true }
+            if rhsRank != nil { return false }
+            return lhs.lastPathComponent.localizedCaseInsensitiveCompare(rhs.lastPathComponent) == .orderedAscending
         }
     }
 
@@ -3339,6 +3382,23 @@ final class LibraryWindowController: NSWindowController,
                   let scope = item.scope else { return nil }
             return sourceTitle(for: scope)
         }
+    }
+
+    func sourceFolderURLsForLibrary() -> [URL] {
+        sourceFolderTreeRows.map(\.url)
+    }
+
+    var editorSlashSuggestionTitlesForLibrary: [String] {
+        editorSlashSuggestion?.commands.map(\.title) ?? []
+    }
+
+    func acceptEditorSlashSuggestionForLibrary(at index: Int) {
+        acceptEditorSlashSuggestion(at: index)
+    }
+
+    @discardableResult
+    func importExternalLibraryItemForTesting(_ sourceURL: URL, to targetDirectory: URL) throws -> URL {
+        try importExternalLibraryItem(sourceURL, to: targetDirectory)
     }
 
     @discardableResult
@@ -4350,10 +4410,33 @@ final class LibraryWindowController: NSWindowController,
         proposedChildIndex index: Int
     ) -> NSDragOperation {
         guard outlineView === sourceOutlineView,
-              let item = item as? LibrarySourceOutlineItem,
-              case .folder(let targetDirectory)? = item.scope else { return [] }
-        let noteURLs = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
-        return canMoveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) ? .move : []
+              let item = item as? LibrarySourceOutlineItem else { return [] }
+        let urls = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
+        guard !urls.isEmpty else { return [] }
+
+        let directories = urls.filter { sourceOutlineURLIsDirectory($0) }
+        if directories.isEmpty {
+            guard urls.allSatisfy(isMarkdownFileForLibrary),
+                  case .folder(let targetDirectory)? = item.scope else { return [] }
+            outlineView.setDropItem(item, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return urls.allSatisfy(isInsideConfiguredLibraryRoot)
+                ? (canMoveDraggedNotesForLibrary(at: urls, to: targetDirectory) ? .move : [])
+                : .copy
+        }
+
+        guard directories.count == 1, urls.count == 1 else { return [] }
+        let source = directories[0]
+        if isManagedLibraryFolder(source) {
+            return canMoveOrReorderFolderForLibrary(source, under: item, childIndex: index) ? .move : []
+        }
+        if case .folder = item.scope {
+            outlineView.setDropItem(item, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return .copy
+        }
+        if case .group(_, .folders) = item.kind {
+            return .copy
+        }
+        return []
     }
 
     func outlineView(
@@ -4363,13 +4446,166 @@ final class LibraryWindowController: NSWindowController,
         childIndex index: Int
     ) -> Bool {
         guard outlineView === sourceOutlineView,
-              let item = item as? LibrarySourceOutlineItem,
-              case .folder(let targetDirectory)? = item.scope else { return false }
-        let noteURLs = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
-        guard let moved = try? moveDraggedNotesForLibrary(at: noteURLs, to: targetDirectory) else {
+              let item = item as? LibrarySourceOutlineItem else { return false }
+        let urls = sourceOutlineDraggedFileURLs(from: info.draggingPasteboard)
+        guard !urls.isEmpty else { return false }
+
+        do {
+            if urls.count == 1, sourceOutlineURLIsDirectory(urls[0]) {
+                let source = urls[0]
+                if isManagedLibraryFolder(source) {
+                    return try moveOrReorderFolderForLibrary(source, under: item, childIndex: index)
+                }
+                if case .group(_, .folders) = item.kind {
+                    try addExistingLibraryFolderForLibrary(at: source)
+                    return true
+                }
+                guard case .folder(let targetDirectory)? = item.scope else { return false }
+                _ = try importExternalLibraryItem(source, to: targetDirectory)
+                return true
+            }
+
+            guard urls.allSatisfy(isMarkdownFileForLibrary),
+                  case .folder(let targetDirectory)? = item.scope else { return false }
+            if urls.allSatisfy(isInsideConfiguredLibraryRoot) {
+                return !(try moveDraggedNotesForLibrary(at: urls, to: targetDirectory)).isEmpty
+            }
+            for url in urls {
+                _ = try importExternalLibraryItem(url, to: targetDirectory)
+            }
+            return true
+        } catch {
+            presentErrorAlert(message: "拖拽失败", details: error.localizedDescription)
             return false
         }
-        return !moved.isEmpty
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+        guard outlineView === sourceOutlineView,
+              let item = item as? LibrarySourceOutlineItem,
+              case .folder(let folderURL)? = item.scope else { return nil }
+        return folderURL as NSURL
+    }
+
+    private func sourceOutlineURLIsDirectory(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+
+    private func isMarkdownFileForLibrary(_ url: URL) -> Bool {
+        ["md", "markdown"].contains(url.pathExtension.lowercased())
+    }
+
+    private func isManagedLibraryFolder(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return noteStore.preferredDirectories.contains { root in
+            let rootPath = root.standardizedFileURL.path
+            return path == rootPath || path.hasPrefix(rootPath + "/")
+        }
+    }
+
+    private func canMoveOrReorderFolderForLibrary(
+        _ sourceURL: URL,
+        under item: LibrarySourceOutlineItem,
+        childIndex: Int
+    ) -> Bool {
+        let source = sourceURL.standardizedFileURL
+        guard sourceFolderTreeRows.contains(where: { $0.url.standardizedFileURL.path == source.path }) else {
+            return false
+        }
+        if case .group(_, .folders) = item.kind {
+            return sourceFolderTreeRows.first(where: { $0.url.standardizedFileURL.path == source.path })?.depth == 0
+        }
+        guard case .folder(let target)? = item.scope else { return false }
+        let targetURL = target.standardizedFileURL
+        return source.path != noteStore.notesDirectory.standardizedFileURL.path
+            && targetURL.path != source.path
+            && !targetURL.path.hasPrefix(source.path + "/")
+    }
+
+    @discardableResult
+    private func moveOrReorderFolderForLibrary(
+        _ sourceURL: URL,
+        under item: LibrarySourceOutlineItem,
+        childIndex: Int
+    ) throws -> Bool {
+        let source = sourceURL.standardizedFileURL
+        guard canMoveOrReorderFolderForLibrary(source, under: item, childIndex: childIndex) else { return false }
+
+        if case .group(_, .folders) = item.kind {
+            persistFolderOrder(moving: source, among: item.children, insertionIndex: childIndex)
+            reloadSourceFolderRowsForCurrentState()
+            return true
+        }
+
+        guard case .folder(let targetParent)? = item.scope else { return false }
+        let parent = targetParent.standardizedFileURL
+        let destination: URL
+        if source.deletingLastPathComponent().standardizedFileURL == parent {
+            destination = source
+        } else {
+            try saveCurrentNoteIfNeeded()
+            destination = try noteStore.moveFolder(at: source, to: parent)
+            recordInternalFileSystemChanges(for: [source, destination])
+            remapSourceSnapshotFolder(from: source, to: destination)
+            if let selectedURL, selectedURL.standardizedFileURL.path.hasPrefix(source.path + "/") {
+                let suffix = String(selectedURL.standardizedFileURL.path.dropFirst(source.path.count))
+                self.selectedURL = URL(fileURLWithPath: destination.path + suffix)
+            }
+        }
+        persistFolderOrder(moving: destination, among: item.children, insertionIndex: childIndex)
+        activeSearchSession = nil
+        reloadSourceFolderRowsForCurrentState()
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
+        return true
+    }
+
+    private func persistFolderOrder(
+        moving folderURL: URL,
+        among children: [LibrarySourceOutlineItem],
+        insertionIndex: Int
+    ) {
+        let folderPath = folderURL.standardizedFileURL.path
+        var siblingPaths = children.compactMap { child -> String? in
+            guard case .folder(let url)? = child.scope else { return nil }
+            let path = url.standardizedFileURL.path
+            return path == folderPath ? nil : path
+        }
+        let targetIndex = insertionIndex == NSOutlineViewDropOnItemIndex
+            ? siblingPaths.count
+            : min(max(insertionIndex, 0), siblingPaths.count)
+        siblingPaths.insert(folderPath, at: targetIndex)
+        let siblingSet = Set(siblingPaths)
+        noteStore.libraryFolderOrderPaths = noteStore.libraryFolderOrderPaths.filter {
+            !siblingSet.contains($0) && $0 != folderPath
+        } + siblingPaths
+    }
+
+    @discardableResult
+    private func importExternalLibraryItem(_ sourceURL: URL, to targetDirectory: URL) throws -> URL {
+        let source = sourceURL.standardizedFileURL
+        let target = targetDirectory.standardizedFileURL
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        var destination = target.appendingPathComponent(
+            source.lastPathComponent,
+            isDirectory: sourceOutlineURLIsDirectory(source)
+        )
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: destination.path) {
+            let stem = source.deletingPathExtension().lastPathComponent
+            let filename = source.pathExtension.isEmpty
+                ? "\(stem) \(suffix)"
+                : "\(stem) \(suffix).\(source.pathExtension)"
+            destination = target.appendingPathComponent(filename, isDirectory: sourceOutlineURLIsDirectory(source))
+            suffix += 1
+        }
+        try FileManager.default.copyItem(at: source, to: destination)
+        recordInternalFileSystemChanges(for: [destination])
+        activeSearchSession = nil
+        reloadSourceFolderRowsForCurrentState()
+        forceFullLibrarySnapshotReload()
+        selectedScope = sourceOutlineURLIsDirectory(destination) ? .folder(destination) : .folder(target)
+        refreshSourceSelection()
+        return destination
     }
 
     private func sourceOutlineDraggedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
@@ -4947,9 +5183,15 @@ final class LibraryWindowController: NSWindowController,
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
+            updateEditorSlashSuggestions()
         } else {
             markDirty()
         }
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        guard let object = notification.object as AnyObject?, object === editorTextView else { return }
+        updateEditorSlashSuggestions()
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
@@ -5072,7 +5314,8 @@ final class LibraryWindowController: NSWindowController,
             suppressSelectionChanges = false
             setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
-            isDirty = false
+            isDirty = true
+            _ = try saveCurrentNote(force: true)
             statusLabel.stringValue = editorDateText(for: Date())
             refreshSourceSelection()
             updateToolbarActionState()
@@ -8241,10 +8484,12 @@ final class LibraryWindowController: NSWindowController,
                 storage.replaceCharacters(in: link.range, with: label)
             }
             let updatedRange = NSRange(location: link.range.location, length: (label ?? link.label).utf16.count)
+            storage.removeAttribute(.qmAutomaticLink, range: updatedRange)
             storage.addAttribute(.qmLinkURL, value: url, range: updatedRange)
             storage.addAttribute(.foregroundColor, value: theme.accentColor, range: updatedRange)
             storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: updatedRange)
         } else {
+            storage.removeAttribute(.qmAutomaticLink, range: link.range)
             storage.removeAttribute(.qmLinkURL, range: link.range)
             storage.removeAttribute(.underlineStyle, range: link.range)
             storage.addAttribute(.foregroundColor, value: theme.textColor, range: link.range)
@@ -9864,6 +10109,24 @@ final class LibraryWindowController: NSWindowController,
 
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
         guard textView === editorTextView else { return false }
+        if !editorSuggestionController.view.isHidden {
+            switch event.keyCode {
+            case UInt16(kVK_DownArrow):
+                editorSuggestionController.moveSelection(delta: 1)
+                return true
+            case UInt16(kVK_UpArrow):
+                editorSuggestionController.moveSelection(delta: -1)
+                return true
+            case UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter):
+                editorSuggestionController.acceptSelection()
+                return true
+            case UInt16(kVK_Escape):
+                dismissEditorSlashSuggestions()
+                return true
+            default:
+                break
+            }
+        }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if event.keyCode == UInt16(kVK_Space),
            modifiers.isEmpty,
@@ -9876,6 +10139,90 @@ final class LibraryWindowController: NSWindowController,
             return false
         }
         return deleteCurrentMarkdownTableRowForLibrary()
+    }
+
+    private func updateEditorSlashSuggestions() {
+        guard !isEditorShowingMarkdownSource,
+              selectedScope != .trash,
+              editorTextView.selectedRange().length == 0,
+              let host = window?.contentView else {
+            dismissEditorSlashSuggestions()
+            return
+        }
+        let string = editorTextView.string as NSString
+        let caret = min(editorTextView.selectedRange().location, string.length)
+        let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
+        let prefixRange = NSRange(location: paragraphRange.location, length: max(caret - paragraphRange.location, 0))
+        let prefix = string.substring(with: prefixRange)
+        guard let match = prefix.range(of: #"(^|\s)/([^\s/]*)$"#, options: .regularExpression) else {
+            dismissEditorSlashSuggestions()
+            return
+        }
+        let token = String(prefix[match])
+        let trimmedToken = token.trimmingCharacters(in: .whitespaces)
+        let query = String(trimmedToken.dropFirst()).lowercased()
+        let commands = EditorWindowController.SlashCommand.allCases.filter { command in
+            command.aiActionID == nil && (
+                query.isEmpty
+                    || command.title.lowercased().contains(query)
+                    || command.subtitle.lowercased().contains(query)
+                    || command.searchAliases.contains { $0.lowercased().contains(query) }
+            )
+        }
+        guard !commands.isEmpty else {
+            dismissEditorSlashSuggestions()
+            return
+        }
+        let replacementRange = NSRange(
+            location: paragraphRange.location
+                + prefix.distance(from: prefix.startIndex, to: match.lowerBound)
+                + (token.hasPrefix(" ") ? 1 : 0),
+            length: trimmedToken.utf16.count
+        )
+        editorSlashSuggestion = (replacementRange, commands)
+        editorSuggestionController.updateItems(commands.map {
+            SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName)
+        })
+        let size = editorSuggestionController.preferredContentSize
+        let tokenRect = editorTextView.convert(
+            caretRectInWindow(for: editorTextView, at: replacementRange.location),
+            to: host
+        )
+        var origin = NSPoint(x: tokenRect.minX, y: tokenRect.minY - size.height - 6)
+        origin.x = min(max(origin.x, 4), max(host.bounds.width - size.width - 4, 4))
+        origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
+        editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
+        editorSuggestionController.view.isHidden = false
+    }
+
+    private func dismissEditorSlashSuggestions() {
+        editorSlashSuggestion = nil
+        editorSuggestionController.view.isHidden = true
+    }
+
+    private func acceptEditorSlashSuggestion(at index: Int) {
+        guard let suggestion = editorSlashSuggestion,
+              suggestion.commands.indices.contains(index),
+              let storage = editorTextView.textStorage else { return }
+        let command = suggestion.commands[index]
+        suppressEditorChanges = true
+        storage.replaceCharacters(in: suggestion.replacementRange, with: "")
+        suppressEditorChanges = false
+        editorTextView.setSelectedRange(NSRange(location: suggestion.replacementRange.location, length: 0))
+        dismissEditorSlashSuggestions()
+        switch command {
+        case .heading1: applyFormatCommand(.heading1)
+        case .heading2: applyFormatCommand(.heading2)
+        case .heading3: applyFormatCommand(.heading3)
+        case .checklist: applyFormatCommand(.checklist)
+        case .bulletList: applyFormatCommand(.bullet)
+        case .orderedList: applyFormatCommand(.ordered)
+        case .divider:
+            editorTextView.insertText("---", replacementRange: editorTextView.selectedRange())
+            libraryUserDidEdit()
+        case .aiSummarize, .aiFix, .aiTodos:
+            break
+        }
     }
 
     func markdownTextViewToggleBold(_ textView: MarkdownTextView) { applyFormatCommand(.bold) }
