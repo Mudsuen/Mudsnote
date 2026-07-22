@@ -1612,6 +1612,12 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 - Fix: The toolbar now follows only the pointer's horizontal center while retaining the original selection-based vertical origin below the text.
 - Lesson: Pointer-centered placement can be axis-specific; preserve the stable axis when only click reachability on the other axis needs improvement.
 
+### 231. Customizable editor menus
+
+- Problem: The editor's right-click menu and selection floating toolbar always showed a fixed command set, even when a writing workflow used only a small subset.
+- Fix: The macOS Editor settings pane now independently selects visible right-click commands and selection-toolbar buttons. Existing commands remain enabled by default, choices persist, and library and floating editors read the saved configuration when constructing each menu.
+- Lesson: Customization should filter one canonical command model at presentation time so behavior, shortcuts, and undo remain unchanged.
+
 ## Maintenance Rule
 
 For every future Mudsnote fix:

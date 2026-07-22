@@ -11,17 +11,18 @@ extension EditorWindowController {
     func makeSelectionFormattingMenu() -> NSMenu? {
         guard editorTextView.selectedRange().length > 0 else { return nil }
         let menu = NSMenu(title: "快捷格式")
-        let items: [(String, String, ToolbarAction)] = [
-            ("加粗", "bold", .bold),
-            ("斜体", "italic", .italic),
-            ("下划线", "underline", .underline),
-            ("删除线", "strikethrough", .strikethrough),
-            ("高亮", "highlighter", .highlight),
-            ("待办列表", "checkmark.square", .checklist),
-            ("项目符号列表", "list.bullet", .bulletList),
-            ("编号列表", "list.number", .orderedList)
+        let enabled = noteStore.enabledSelectionToolbarOptions
+        let items: [(SelectionToolbarOption, String, String, ToolbarAction)] = [
+            (.bold, "加粗", "bold", .bold),
+            (.italic, "斜体", "italic", .italic),
+            (.underline, "下划线", "underline", .underline),
+            (.strikethrough, "删除线", "strikethrough", .strikethrough),
+            (.highlight, "高亮", "highlighter", .highlight),
+            (.checklist, "待办列表", "checkmark.square", .checklist),
+            (.bulletList, "项目符号列表", "list.bullet", .bulletList),
+            (.orderedList, "编号列表", "list.number", .orderedList)
         ]
-        for (title, symbolName, action) in items {
+        for (option, title, symbolName, action) in items where enabled.contains(option) {
             let item = NSMenuItem(
                 title: title,
                 action: #selector(selectionFormattingMenuItemPressed(_:)),

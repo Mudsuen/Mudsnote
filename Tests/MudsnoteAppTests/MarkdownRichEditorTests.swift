@@ -463,6 +463,60 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func editorMenuCustomizationFiltersContextAndSelectionSurfaces() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            configureStore: { store in
+                store.enabledEditorContextMenuOptions = [.copy, .insertLink]
+                store.enabledSelectionToolbarOptions = [.bold, .orderedList]
+            }
+        )
+        defer { harness.tearDown() }
+
+        let floatingController = harness.controller
+        floatingController.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Selected text",
+            theme: floatingController.theme
+        ))
+        floatingController.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        #expect(floatingController.editorTextView.conciseEditingMenu(from: NSMenu()).items.map(\.title) == ["拷贝"])
+        #expect(floatingController.makeSelectionFormattingMenu()?.items.map(\.title) == ["加粗", "编号列表"])
+        #expect(harness.store.editorContextMenuItemIdentifiers == ["copy", "insertLink"])
+        #expect(harness.store.selectionToolbarItemIdentifiers == ["bold", "orderedList"])
+
+        _ = try harness.store.saveNewNote(title: "Custom Menus", body: "Selected text")
+        let libraryController = LibraryWindowController(
+            noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { libraryController.close() }
+        libraryController.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
+        let selectionMenu = try #require(libraryController.makeSelectionFormattingMenuForLibrary())
+        #expect(selectionMenu.items.map(\.title) == ["加粗", "转换为"])
+        #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == ["编号列表"])
+
+        let contextMenu = libraryController.editorTextView.conciseEditingMenu(from: NSMenu())
+        let contextEvent = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: libraryController.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        libraryController.editorTextView.configureContextMenu?(contextMenu, contextEvent)
+        #expect(contextMenu.items.first?.title == "拷贝")
+        #expect(contextMenu.items.last { $0.title == "插入" }?.submenu?.items.map(\.title) == ["链接…"])
+    }
+
+    @MainActor
+    @Test
     func shiftReturnCreatesPersistentShortSpacedLineBreak() throws {
         let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
         textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "First", theme: theme))
@@ -7004,6 +7058,7 @@ struct MarkdownRichEditorTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
+        var savedSettings: PreferencesSettings?
         let controller = PreferencesWindowController(
             currentDirectory: root,
             availableDirectories: [root],
@@ -7017,7 +7072,7 @@ struct MarkdownRichEditorTests {
             aiCodexExecutablePath: "",
             onPreviewOpacity: { _ in },
             onResetWindowFrames: {},
-            onSave: { _ in }
+            onSave: { savedSettings = $0 }
         )
         defer { controller.close() }
 
@@ -7033,6 +7088,14 @@ struct MarkdownRichEditorTests {
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.contains {
             $0.title == "保存后在 Finder 中显示笔记"
         } == false)
+        #expect(controller.contextMenuOptionButtons.count == EditorContextMenuOption.allCases.count)
+        #expect(controller.selectionToolbarOptionButtons.count == SelectionToolbarOption.allCases.count)
+        controller.contextMenuOptionButtons[.paste]?.state = .off
+        controller.selectionToolbarOptionButtons[.highlight]?.state = .off
+        let saveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "保存" })
+        saveButton.performClick(nil)
+        #expect(savedSettings?.editorContextMenuOptions.contains(.paste) == false)
+        #expect(savedSettings?.selectionToolbarOptions.contains(.highlight) == false)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)

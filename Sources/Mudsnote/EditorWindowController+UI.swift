@@ -29,6 +29,9 @@ extension EditorWindowController {
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
         editorTextView.configureContextMenu = nil
+        editorTextView.contextMenuOptionsProvider = { [weak self] in
+            self?.noteStore.enabledEditorContextMenuOptions ?? Set(EditorContextMenuOption.allCases)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenu()
         }

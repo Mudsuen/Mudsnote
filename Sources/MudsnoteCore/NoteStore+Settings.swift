@@ -57,6 +57,16 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.spellCheckingEnabled) }
     }
 
+    public var editorContextMenuItemIdentifiers: [String]? {
+        get { defaults.array(forKey: NoteStoreDefaultsKey.editorContextMenuItems) as? [String] }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.editorContextMenuItems) }
+    }
+
+    public var selectionToolbarItemIdentifiers: [String]? {
+        get { defaults.array(forKey: NoteStoreDefaultsKey.selectionToolbarItems) as? [String] }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.selectionToolbarItems) }
+    }
+
     public var libraryNoteSortOrderRawValue: Int {
         get { defaults.object(forKey: NoteStoreDefaultsKey.libraryNoteSortOrder) as? Int ?? 0 }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryNoteSortOrder) }

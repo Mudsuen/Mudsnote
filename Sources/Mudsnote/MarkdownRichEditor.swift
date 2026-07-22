@@ -348,6 +348,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
+    var contextMenuOptionsProvider: (() -> Set<EditorContextMenuOption>)?
     var selectionMenuProvider: (() -> NSMenu?)?
     private var selectionFormattingPanel: NSPanel?
     private weak var selectionFormattingStack: NSStackView?
@@ -662,29 +663,39 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func conciseEditingMenu(from nativeMenu: NSMenu) -> NSMenu {
         let menu = ConciseEditorContextMenu()
         menu.allowsContextMenuPlugIns = false
-        let undoItem = NSMenuItem(title: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        undoItem.keyEquivalentModifierMask = [.command]
-        undoItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
-        menu.addItem(undoItem)
-        menu.addItem(.separator())
-        if let translationItem = nativeMenu.items.first(where: {
+        let options = contextMenuOptionsProvider?() ?? Set(EditorContextMenuOption.allCases)
+        var groups: [[NSMenuItem]] = []
+
+        if options.contains(.undo) {
+            let undoItem = NSMenuItem(title: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+            undoItem.keyEquivalentModifierMask = [.command]
+            undoItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
+            groups.append([undoItem])
+        }
+        if options.contains(.translate), let translationItem = nativeMenu.items.first(where: {
             let title = $0.title.lowercased()
             return title.hasPrefix("translate") || title.hasPrefix("翻译")
         }), let copiedItem = translationItem.copy() as? NSMenuItem {
             copiedItem.title = "翻译"
-            menu.addItem(copiedItem)
-            menu.addItem(.separator())
+            groups.append([copiedItem])
         }
 
-        let commands: [(String, Selector, String)] = [
-            ("剪切", #selector(NSText.cut(_:)), "x"),
-            ("拷贝", #selector(NSText.copy(_:)), "c"),
-            ("粘贴", #selector(NSText.paste(_:)), "v")
+        let commands: [(EditorContextMenuOption, String, Selector, String)] = [
+            (.cut, "剪切", #selector(NSText.cut(_:)), "x"),
+            (.copy, "拷贝", #selector(NSText.copy(_:)), "c"),
+            (.paste, "粘贴", #selector(NSText.paste(_:)), "v")
         ]
-        for (title, action, keyEquivalent) in commands {
+        let editingItems = commands.compactMap { option, title, action, keyEquivalent -> NSMenuItem? in
+            guard options.contains(option) else { return nil }
             let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
             item.keyEquivalentModifierMask = [.command]
-            menu.addItem(item)
+            return item
+        }
+        if !editingItems.isEmpty { groups.append(editingItems) }
+
+        for (index, group) in groups.enumerated() {
+            if index > 0 { menu.addItem(.separator()) }
+            group.forEach(menu.addItem)
         }
         return menu
     }
