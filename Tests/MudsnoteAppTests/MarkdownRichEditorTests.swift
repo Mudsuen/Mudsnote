@@ -7365,20 +7365,22 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func floatingSelectionPanelCentersOnPointerAndClampsToScreen() {
+    func floatingSelectionPanelCentersHorizontallyOnPointerAndPreservesSelectionY() {
         let visibleFrame = NSRect(x: 0, y: 0, width: 800, height: 600)
         let panelSize = NSSize(width: 240, height: 40)
 
         #expect(MarkdownTextView.selectionFormattingPanelOrigin(
-            centeredAt: NSPoint(x: 400, y: 300),
+            centeredAtPointerX: 400,
+            verticalOrigin: 182,
             panelSize: panelSize,
             visibleFrame: visibleFrame
-        ) == NSPoint(x: 280, y: 280))
+        ) == NSPoint(x: 280, y: 182))
         #expect(MarkdownTextView.selectionFormattingPanelOrigin(
-            centeredAt: NSPoint(x: 10, y: 590),
+            centeredAtPointerX: 10,
+            verticalOrigin: -24,
             panelSize: panelSize,
             visibleFrame: visibleFrame
-        ) == NSPoint(x: 0, y: 560))
+        ) == NSPoint(x: 0, y: -24))
     }
 
     @Test

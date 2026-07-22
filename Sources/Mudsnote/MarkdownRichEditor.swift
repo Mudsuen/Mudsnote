@@ -740,7 +740,14 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let selection = selectedRange()
         guard selection.length > 0,
               let menu = selectionMenuProvider?(),
-              !menu.items.isEmpty else { return }
+              !menu.items.isEmpty,
+              let layoutManager,
+              let textContainer else { return }
+
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+        var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        selectionRect.origin.x += textContainerInset.width
+        selectionRect.origin.y += textContainerInset.height
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
@@ -777,8 +784,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = true
         panel.contentView = surface
+        let selectionWindowRect = convert(selectionRect, to: nil)
+        let selectionScreenRect = hostWindow.convertToScreen(selectionWindowRect)
         panel.setFrameOrigin(Self.selectionFormattingPanelOrigin(
-            centeredAt: NSEvent.mouseLocation,
+            centeredAtPointerX: NSEvent.mouseLocation.x,
+            verticalOrigin: selectionScreenRect.minY - panelSize.height - 6,
             panelSize: panelSize,
             visibleFrame: hostWindow.screen?.visibleFrame
         ))
@@ -790,17 +800,17 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     nonisolated static func selectionFormattingPanelOrigin(
-        centeredAt pointer: NSPoint,
+        centeredAtPointerX pointerX: CGFloat,
+        verticalOrigin: CGFloat,
         panelSize: NSSize,
         visibleFrame: NSRect?
     ) -> NSPoint {
         var origin = NSPoint(
-            x: pointer.x - panelSize.width / 2,
-            y: pointer.y - panelSize.height / 2
+            x: pointerX - panelSize.width / 2,
+            y: verticalOrigin
         )
         guard let visibleFrame else { return origin }
         origin.x = min(max(origin.x, visibleFrame.minX), max(visibleFrame.maxX - panelSize.width, visibleFrame.minX))
-        origin.y = min(max(origin.y, visibleFrame.minY), max(visibleFrame.maxY - panelSize.height, visibleFrame.minY))
         return origin
     }
 
