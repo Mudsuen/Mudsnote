@@ -110,8 +110,8 @@ jobs:
       - name: Verify
         run: ./scripts/verify macos "${{ needs.scope.outputs.mode }}"
 
-  ios-tests:
-    name: iOS tests
+  ios-verify:
+    name: iOS verification
     needs: scope
     if: needs.scope.outputs.platform == 'ios' || needs.scope.outputs.platform == 'both'
     runs-on: macos-latest
@@ -128,39 +128,15 @@ jobs:
         run: git fetch origin main
       - name: Verify
         env:
-          IOS_VERIFY_FULL_PHASE: tests
+          IOS_VERIFY_PARALLEL_FULL: 1
         run: ./scripts/verify ios "${{ needs.scope.outputs.mode }}"
-
-  ios-release:
-    name: iOS Release build
-    needs: scope
-    if: >-
-      needs.scope.outputs.mode == 'full' &&
-      (needs.scope.outputs.platform == 'ios' || needs.scope.outputs.platform == 'both')
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-      - name: Show toolchain
-        run: |
-          sw_vers
-          swift --version
-      - name: Fetch current integration base
-        run: git fetch origin main
-      - name: Verify
-        env:
-          IOS_VERIFY_FULL_PHASE: release
-        run: ./scripts/verify ios full
 
   build-and-test:
     name: build-and-test
     needs:
       - scope
       - macos-verify
-      - ios-tests
-      - ios-release
+      - ios-verify
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -169,11 +145,10 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
           MACOS_RESULT: ${{ needs.macos-verify.result }}
-          IOS_TESTS_RESULT: ${{ needs.ios-tests.result }}
-          IOS_RELEASE_RESULT: ${{ needs.ios-release.result }}
+          IOS_RESULT: ${{ needs.ios-verify.result }}
         run: |
           test "$SCOPE_RESULT" = success
-          for result in "$MACOS_RESULT" "$IOS_TESTS_RESULT" "$IOS_RELEASE_RESULT"; do
+          for result in "$MACOS_RESULT" "$IOS_RESULT"; do
             case "$result" in
               success|skipped) ;;
               *) exit 1 ;;
