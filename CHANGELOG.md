@@ -19,7 +19,7 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ### 212. Reversible iOS folder drawer gesture
 - Problem: The iOS folder drawer could open from the left edge, but its scroll and row-drag gestures could prevent the reverse left swipe from closing it, and successful drawer transitions had no tactile confirmation.
-- Fix: The open drawer now gives its horizontal close gesture priority over its contents, accepts the same gesture from the backdrop, and emits one light haptic only after a swipe actually changes the drawer between open and closed.
+- Fix: The open drawer now gives its horizontal close gesture priority over its contents, accepts the same gesture from the backdrop, and uses a prewarmed UIKit impact generator for one physical medium haptic only after a swipe actually changes the drawer between open and closed.
 - Lesson: A reversible drawer gesture must own horizontal intent across interactive descendants while reserving feedback for completed state transitions.
 
 ### 211. Reliable macOS preview, links, transient panels, and inactive chrome

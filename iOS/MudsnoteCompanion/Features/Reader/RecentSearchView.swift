@@ -62,6 +62,26 @@ private struct HomeTimelineProjection {
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
+private final class DirectoryHapticFeedback {
+    private let generator = UIImpactFeedbackGenerator(style: .medium)
+    private var isPrepared = false
+
+    func prepare() {
+        guard !isPrepared else { return }
+        generator.prepare()
+        isPrepared = true
+    }
+
+    func impact() {
+        generator.impactOccurred(intensity: 1)
+        isPrepared = false
+    }
+
+    func cancel() {
+        isPrepared = false
+    }
+}
+
 private extension View {
     @ViewBuilder
     func homeNavigationSubtitle(_ subtitle: String?) -> some View {
@@ -101,7 +121,7 @@ struct LibraryHomeView: View {
     @State private var smartFolderToDelete: SmartFolderDefinition?
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
-    @State private var directoryHapticTrigger = 0
+    @State private var directoryHapticFeedback = DirectoryHapticFeedback()
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
@@ -501,7 +521,6 @@ struct LibraryHomeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .sensoryFeedback(.impact(weight: .light), trigger: directoryHapticTrigger)
     }
 
     private var navigationTitle: String {
@@ -599,6 +618,7 @@ struct LibraryHomeView: View {
         DragGesture(minimumDistance: 16, coordinateSpace: .local)
             .onChanged { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                directoryHapticFeedback.prepare()
                 if isDirectoryPresented {
                     directoryDragOffset = min(0, value.translation.width)
                 } else {
@@ -620,7 +640,9 @@ struct LibraryHomeView: View {
                     directoryDragOffset = 0
                 }
                 if shouldOpen != wasPresented {
-                    directoryHapticTrigger += 1
+                    directoryHapticFeedback.impact()
+                } else {
+                    directoryHapticFeedback.cancel()
                 }
             }
     }
