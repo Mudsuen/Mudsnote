@@ -60,8 +60,60 @@ jobs:
             exit 1
           fi
 
-  build-and-test:
-    name: build-and-test
+  scope:
+    name: verification-scope
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.contract.outputs.platform }}
+      mode: ${{ steps.contract.outputs.mode }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - run: git fetch origin main
+      - id: contract
+        name: Select platform and verification tier
+        shell: bash
+        env:
+          DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
+          DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
+        run: |
+          if [[ "${{ github.event_name }}" == pull_request ]]; then
+            platform="$(./scripts/detect_platform_scope.sh)"
+            mode=full
+          elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
+            platform="${DEVFLOW_PLATFORM:-none}"
+            mode=full
+          else
+            platform="${DEVFLOW_PLATFORM:-none}"
+            mode=pr
+          fi
+          echo "platform=$platform" >>"$GITHUB_OUTPUT"
+          echo "mode=$mode" >>"$GITHUB_OUTPUT"
+
+  macos-verify:
+    name: macOS verification
+    needs: scope
+    if: needs.scope.outputs.platform == 'macos' || needs.scope.outputs.platform == 'both'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+      - name: Fetch current integration base
+        run: git fetch origin main
+      - name: Verify
+        run: ./scripts/verify macos "${{ needs.scope.outputs.mode }}"
+
+  ios-tests:
+    name: iOS tests
+    needs: scope
+    if: needs.scope.outputs.platform == 'ios' || needs.scope.outputs.platform == 'both'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -76,14 +128,54 @@ jobs:
         run: git fetch origin main
       - name: Verify
         env:
-          DEVFLOW_POST_MERGE: ${{ inputs.devflow_post_merge }}
-          DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
-          DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
+          IOS_VERIFY_FULL_PHASE: tests
+        run: ./scripts/verify ios "${{ needs.scope.outputs.mode }}"
+
+  ios-release:
+    name: iOS Release build
+    needs: scope
+    if: >-
+      needs.scope.outputs.mode == 'full' &&
+      (needs.scope.outputs.platform == 'ios' || needs.scope.outputs.platform == 'both')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Show toolchain
         run: |
-          if [[ "${{ github.event_name }}" == pull_request ]]; then
-            ./scripts/verify full
-          elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
-            MUDSNOTE_PLATFORM_SCOPE="$DEVFLOW_PLATFORM" ./scripts/verify full
-          else
-            MUDSNOTE_PLATFORM_SCOPE="${DEVFLOW_PLATFORM:-none}" ./scripts/verify pr
-          fi
+          sw_vers
+          swift --version
+      - name: Fetch current integration base
+        run: git fetch origin main
+      - name: Verify
+        env:
+          IOS_VERIFY_FULL_PHASE: release
+        run: ./scripts/verify ios full
+
+  build-and-test:
+    name: build-and-test
+    needs:
+      - scope
+      - macos-verify
+      - ios-tests
+      - ios-release
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected verification lane
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          MACOS_RESULT: ${{ needs.macos-verify.result }}
+          IOS_TESTS_RESULT: ${{ needs.ios-tests.result }}
+          IOS_RELEASE_RESULT: ${{ needs.ios-release.result }}
+        run: |
+          test "$SCOPE_RESULT" = success
+          for result in "$MACOS_RESULT" "$IOS_TESTS_RESULT" "$IOS_RELEASE_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

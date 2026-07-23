@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-pr}"
+FULL_PHASE="${IOS_VERIFY_FULL_PHASE:-all}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$ROOT_DIR/iOS/MudsnoteCompanion.xcodeproj"
 SCHEME="MudsnoteCompanion"
@@ -111,6 +112,15 @@ fi
 
 python3 scripts/validate_ios_app_store_metadata.py
 
+case "$FULL_PHASE" in
+  all|tests|release)
+    ;;
+  *)
+    echo "ERROR: invalid IOS_VERIFY_FULL_PHASE: $FULL_PHASE" >&2
+    exit 2
+    ;;
+esac
+
 case "$MODE" in
   pr)
     xcodebuild \
@@ -124,34 +134,38 @@ case "$MODE" in
       build-for-testing
     ;;
   full)
-    destination="$(simulator_destination)"
-    test_selectors=(-only-testing:MudsnoteCompanionTests)
-    while IFS= read -r focused_ui_test; do
-      if [[ -n "$focused_ui_test" ]]; then
-        test_selectors+=("-only-testing:$focused_ui_test")
-      fi
-    done < <(changed_paths_against_base | focused_ui_tests_from_paths)
+    if [[ "$FULL_PHASE" == "all" || "$FULL_PHASE" == "tests" ]]; then
+      destination="$(simulator_destination)"
+      test_selectors=(-only-testing:MudsnoteCompanionTests)
+      while IFS= read -r focused_ui_test; do
+        if [[ -n "$focused_ui_test" ]]; then
+          test_selectors+=("-only-testing:$focused_ui_test")
+        fi
+      done < <(changed_paths_against_base | focused_ui_tests_from_paths)
 
-    xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration Debug \
-      -destination "$destination" \
-      -derivedDataPath "$DERIVED_DATA_PATH" \
-      CODE_SIGNING_ALLOWED=NO \
-      COMPILER_INDEX_STORE_ENABLE=NO \
-      -parallel-testing-enabled NO \
-      "${test_selectors[@]}" \
-      test
-    xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration Release \
-      -destination 'generic/platform=iOS' \
-      -derivedDataPath "$DERIVED_DATA_PATH" \
-      CODE_SIGNING_ALLOWED=NO \
-      COMPILER_INDEX_STORE_ENABLE=NO \
-      build
+      xcodebuild \
+        -project "$PROJECT" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -destination "$destination" \
+        -derivedDataPath "$DERIVED_DATA_PATH" \
+        CODE_SIGNING_ALLOWED=NO \
+        COMPILER_INDEX_STORE_ENABLE=NO \
+        -parallel-testing-enabled NO \
+        "${test_selectors[@]}" \
+        test
+    fi
+    if [[ "$FULL_PHASE" == "all" || "$FULL_PHASE" == "release" ]]; then
+      xcodebuild \
+        -project "$PROJECT" \
+        -scheme "$SCHEME" \
+        -configuration Release \
+        -destination 'generic/platform=iOS' \
+        -derivedDataPath "$DERIVED_DATA_PATH" \
+        CODE_SIGNING_ALLOWED=NO \
+        COMPILER_INDEX_STORE_ENABLE=NO \
+        build
+    fi
     ;;
   live)
     if [[ -n "${CI:-}" ]]; then
