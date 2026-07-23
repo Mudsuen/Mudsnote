@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 212. Reversible iOS folder drawer gesture
+- Problem: The iOS folder drawer could open from the left edge, but its scroll and row-drag gestures could prevent the reverse left swipe from closing it, and successful drawer transitions had no tactile confirmation.
+- Fix: The open drawer now gives its horizontal close gesture priority over its contents, accepts the same gesture from the backdrop, and uses a prewarmed UIKit impact generator for one physical medium haptic only after a swipe actually changes the drawer between open and closed.
+- Lesson: A reversible drawer gesture must own horizontal intent across interactive descendants while reserving feedback for completed state transitions.
+
 ### 211. Reliable macOS preview, links, transient panels, and inactive chrome
 - Problem: Moving an outside preview into the library could retain its missing original-path projection, typed web URLs were not reliably decorated after the live edit callback, the floating-window manager could reopen instead of dismissing, and the source scroller plus text-based `Aa` control did not match adjacent native inactive chrome.
 - Fix: External projections now prune missing paths and leave preview state when moved under a registered root. Automatic-link decoration runs after AppKit commits text changes. The floating manager toggles from its anchor and monitors outside clicks while respecting that anchor. The source scroller no longer overlaps the split divider, and `Aa` explicitly follows key-window focus tinting.

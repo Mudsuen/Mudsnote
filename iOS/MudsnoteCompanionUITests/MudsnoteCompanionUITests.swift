@@ -1995,7 +1995,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        let closeSwipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
+        let closeSwipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45))
+        closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
