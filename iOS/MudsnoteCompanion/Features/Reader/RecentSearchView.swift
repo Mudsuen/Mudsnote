@@ -63,7 +63,7 @@ private struct HomeTimelineProjection {
 }
 
 private final class DirectoryHapticFeedback {
-    private let generator = UIImpactFeedbackGenerator(style: .medium)
+    private let generator = UIImpactFeedbackGenerator(style: .light)
     private var isPrepared = false
 
     func prepare() {
@@ -655,10 +655,17 @@ struct LibraryHomeView: View {
     }
 
     private func closeDirectory() {
-        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
+        guard isDirectoryPresented else { return }
+        directoryHapticFeedback.prepare()
+        withAnimation(
+            .interactiveSpring(response: 0.28, dampingFraction: 0.92),
+            completionCriteria: .logicallyComplete
+        ) {
             isDirectoryPresented = false
             directoryDragOffset = 0
             isManagingFolders = false
+        } completion: {
+            directoryHapticFeedback.impact()
         }
     }
 

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 216. Consistent light iOS drawer completion feedback
+- Problem: Tapping outside the open folder drawer animated it closed without tactile confirmation, while swipe transitions used a stronger impact than the intended light completion cue.
+- Fix: Swipe transitions now use a light UIKit impact, and outside-tap dismissal prepares the same feedback before closing but fires it only after the close animation completes.
+- Lesson: Every successful drawer transition should share one feedback timing contract regardless of whether it starts from a drag or a backdrop tap.
+
 ### 215. Hidden empty backlink section
 - Problem: Notes without incoming or outgoing links still reserved editor space for an empty 双链关系 section.
 - Fix: The backlink section now disappears completely when both relation groups are empty and returns automatically when either group contains a note.
