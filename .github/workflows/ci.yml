@@ -228,7 +228,7 @@ jobs:
           esac
 
   merge-candidate:
-    name: ${{ needs.scope.outputs.mode == 'full' && 'merge-candidate' || 'not-a-merge-candidate' }}
+    name: merge-candidate
     needs:
       - scope
       - verification-result
