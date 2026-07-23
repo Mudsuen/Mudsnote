@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 215. Hidden empty backlink section
+- Problem: Notes without incoming or outgoing links still reserved editor space for an empty 双链关系 section.
+- Fix: The backlink section now disappears completely when both relation groups are empty and returns automatically when either group contains a note.
+- Lesson: Relationship UI should consume editor space only when it has navigable information to show.
+
 ### 214. In-app local Markdown links and visible backlinks
 - Problem: Command-clicking a Markdown link to a local file could reinterpret its filesystem path as a web address and open a browser, while the library offered no way to see which notes linked to or from the current note.
 - Fix: Local `file://`, absolute, and relative Markdown destinations now resolve against the current note and open inside the Mudsnote library. The editor also shows a compact 双链关系 section with incoming and outgoing linked notes, including an overflow menu for larger graphs.

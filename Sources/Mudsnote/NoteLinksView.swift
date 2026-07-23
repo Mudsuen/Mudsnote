@@ -32,7 +32,6 @@ final class NoteLinksView: NSView {
 
     private let incomingContent = NSStackView()
     private let outgoingContent = NSStackView()
-    private let emptyLabel = NSTextField(labelWithString: "暂无关联笔记")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -48,12 +47,10 @@ final class NoteLinksView: NSView {
 
         configureContentStack(incomingContent)
         configureContentStack(outgoingContent)
-        emptyLabel.font = .systemFont(ofSize: 11)
-        emptyLabel.textColor = .tertiaryLabelColor
 
         let incomingRow = relationRow(title: "链接到此笔记", content: incomingContent)
         let outgoingRow = relationRow(title: "此笔记链接", content: outgoingContent)
-        let stack = NSStackView(views: [titleLabel, emptyLabel, incomingRow, outgoingRow])
+        let stack = NSStackView(views: [titleLabel, incomingRow, outgoingRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 5
@@ -81,7 +78,7 @@ final class NoteLinksView: NSView {
         populate(incomingContent, with: relations.incoming)
         populate(outgoingContent, with: relations.outgoing)
         let isEmpty = relations.incoming.isEmpty && relations.outgoing.isEmpty
-        emptyLabel.isHidden = !isEmpty
+        isHidden = isEmpty
         incomingContent.superview?.isHidden = relations.incoming.isEmpty
         outgoingContent.superview?.isHidden = relations.outgoing.isEmpty
     }
