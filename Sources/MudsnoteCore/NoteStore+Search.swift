@@ -264,7 +264,7 @@ extension NoteStore {
         )
     }
 
-    private func indexedEntries(roots: [URL]? = nil) -> [NoteSearchIndexEntry] {
+    func indexedEntries(roots: [URL]? = nil) -> [NoteSearchIndexEntry] {
         searchIndexLock.lock()
         defer { searchIndexLock.unlock() }
 

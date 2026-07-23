@@ -611,6 +611,62 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func localMarkdownLinksResolveRelativeAbsoluteAndFileURLs() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-local-link-tests-\(UUID().uuidString)", isDirectory: true)
+        let sourceURL = root.appendingPathComponent("Source.md")
+        let targetURL = root.appendingPathComponent("关联 笔记.md")
+
+        #expect(
+            MarkdownLocalLinkResolver.fileURL(
+                for: "%E5%85%B3%E8%81%94%20%E7%AC%94%E8%AE%B0.md#section",
+                relativeTo: sourceURL
+            ) == targetURL.standardizedFileURL
+        )
+        #expect(
+            MarkdownLocalLinkResolver.fileURL(
+                for: targetURL.path,
+                relativeTo: sourceURL
+            ) == targetURL.standardizedFileURL
+        )
+        #expect(
+            MarkdownLocalLinkResolver.fileURL(
+                for: targetURL.absoluteString,
+                relativeTo: sourceURL
+            ) == targetURL.standardizedFileURL
+        )
+        #expect(MarkdownLocalLinkResolver.fileURL(
+            for: "https://example.com/note.md",
+            relativeTo: sourceURL
+        ) == nil)
+    }
+
+    @Test
+    func linkRelationsReportIncomingAndOutgoingMarkdownNotes() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+
+        let relatedURL = try store.saveNewNote(title: "Related", body: "Related body", in: notesDirectory)
+        let targetURL = try store.saveNewNote(
+            title: "Target",
+            body: "[Related](\(relatedURL.lastPathComponent))",
+            in: notesDirectory
+        )
+        let sourceURL = try store.saveNewNote(
+            title: "Source",
+            body: "[Target](\(targetURL.path))\n\n![Not a backlink](\(targetURL.path))",
+            in: notesDirectory
+        )
+
+        let relations = store.linkRelations(for: targetURL, roots: [notesDirectory])
+
+        #expect(relations.incoming == [NoteLinkItem(url: sourceURL.standardizedFileURL, title: "Source")])
+        #expect(relations.outgoing == [NoteLinkItem(url: relatedURL.standardizedFileURL, title: "Related")])
+    }
+
+    @Test
     func listNotesResolvesLocalImageThumbnailReferences() throws {
         let harness = try TestHarness()
         let store = harness.store
