@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 217. Finger-tracking iOS folder drawer
+- Problem: Opening or closing the folder drawer required a noticeable initial drag distance, and its first revealed frame also had to construct the drawer hierarchy, making the motion feel detached from the finger.
+- Fix: The edge gesture now mounts and starts tracking as soon as the finger touches down, the open drawer recognizes closing movement after 6 points, drag offsets apply with animations disabled, and the drawer unmounts only after a cancelled or completed close settles.
+- Lesson: An interactive drawer should reserve animation for release settling; gesture frames need a just-in-time warm hierarchy without leaving an offscreen scroll view attached to the navigation container.
+
 ### 216. Consistent light iOS drawer completion feedback
 - Problem: Tapping outside the open folder drawer animated it closed without tactile confirmation, while swipe transitions used a stronger impact than the intended light completion cue.
 - Fix: Swipe transitions now use a light UIKit impact, and outside-tap dismissal prepares the same feedback before closing but fires it only after the close animation completes.
