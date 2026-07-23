@@ -21,19 +21,45 @@ simulator_id_from_destinations() {
   '
 }
 
+simulator_id_from_simctl() {
+  python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except (json.JSONDecodeError, UnicodeDecodeError):
+    raise SystemExit(0)
+
+for runtime, devices in payload.get("devices", {}).items():
+    if ".iOS-" not in runtime:
+        continue
+    for device in devices:
+        identifier = device.get("udid")
+        if device.get("isAvailable") and identifier:
+            print(identifier)
+            raise SystemExit(0)
+'
+}
+
 simulator_destination() {
   if [[ -n "${IOS_SIMULATOR_DESTINATION:-}" ]]; then
     printf '%s\n' "$IOS_SIMULATOR_DESTINATION"
     return
   fi
 
-  local simulator_id
-  simulator_id="$(
+  local simulator_id destinations simctl_devices
+  destinations="$(
     xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
-      | simulator_id_from_destinations
+      || true
   )"
+  simulator_id="$(printf '%s\n' "$destinations" | simulator_id_from_destinations)"
   if [[ -z "$simulator_id" ]]; then
-    echo "No available iOS Simulator destination found." >&2
+    simctl_devices="$(xcrun simctl list devices available --json 2>/dev/null || true)"
+    simulator_id="$(printf '%s\n' "$simctl_devices" | simulator_id_from_simctl)"
+  fi
+  if [[ -z "$simulator_id" ]]; then
+    echo "No available concrete iOS Simulator destination found." >&2
     exit 1
   fi
   printf 'id=%s\n' "$simulator_id"

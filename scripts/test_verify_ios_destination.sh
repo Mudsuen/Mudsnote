@@ -20,4 +20,24 @@ placeholder_only='{ platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPl
 actual="$(printf '%s\n' "$placeholder_only" | simulator_id_from_destinations)"
 test -z "$actual"
 
+simctl_devices='{
+  "devices": {
+    "com.apple.CoreSimulator.SimRuntime.visionOS-26-5": [
+      {"isAvailable": true, "udid": "VISION-SIMULATOR"}
+    ],
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-4": [
+      {"isAvailable": false, "udid": "UNAVAILABLE-IOS-SIMULATOR"}
+    ],
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
+      {"isAvailable": true, "udid": "SIMCTL-IOS-SIMULATOR"},
+      {"isAvailable": true, "udid": "SECOND-SIMCTL-IOS-SIMULATOR"}
+    ]
+  }
+}'
+actual="$(printf '%s\n' "$simctl_devices" | simulator_id_from_simctl)"
+test "$actual" = "SIMCTL-IOS-SIMULATOR"
+
+actual="$(printf '%s\n' '{}' | simulator_id_from_simctl)"
+test -z "$actual"
+
 echo "verify_ios simulator destination parsing passed"
