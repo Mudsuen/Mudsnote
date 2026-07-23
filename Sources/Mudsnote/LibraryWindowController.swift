@@ -1072,6 +1072,7 @@ final class LibraryWindowController: NSWindowController,
     let galleryEmptyLabel = NSTextField(labelWithString: "")
     let titleField = NSTextField(string: "")
     let editorTextView = MarkdownTextView(frame: .zero)
+    let noteLinksView = NoteLinksView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
 
@@ -1125,6 +1126,9 @@ final class LibraryWindowController: NSWindowController,
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
+    private var noteLinksRefreshTask: Task<Void, Never>?
+    private var noteLinksRefreshWorkItem: DispatchWorkItem?
+    private var noteLinksRefreshGeneration = 0
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
@@ -1361,6 +1365,7 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = true
         isCreatingNewNote = false
         selectedURL = note.url
+        noteLinksView.update(.empty)
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
@@ -2037,7 +2042,15 @@ final class LibraryWindowController: NSWindowController,
             dateRow.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.editorDateRowHeight)
         ])
 
-        let stack = NSStackView(views: [dateRow, titleField, bodyContainer])
+        noteLinksView.onOpen = { [weak self] url in
+            do {
+                try self?.openMarkdownDocumentForLibrary(at: url)
+            } catch {
+                self?.presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+            }
+        }
+
+        let stack = NSStackView(views: [dateRow, titleField, bodyContainer, noteLinksView])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -2045,6 +2058,7 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 0
         stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
         stack.setCustomSpacing(LibraryNotesLayout.editorTitleToBodySpacing, after: titleField)
+        stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
             top: LibraryNotesLayout.editorTopInset,
             left: LibraryNotesLayout.editorHorizontalInset,
@@ -2101,7 +2115,8 @@ final class LibraryWindowController: NSWindowController,
         NSLayoutConstraint.activate([
             dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
             titleField.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
-            bodyContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
+            bodyContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
+            noteLinksView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
@@ -5239,6 +5254,7 @@ final class LibraryWindowController: NSWindowController,
         if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
             updateEditorSlashSuggestions()
+            scheduleNoteLinksRefresh()
         } else {
             markDirty()
         }
@@ -5363,6 +5379,7 @@ final class LibraryWindowController: NSWindowController,
             isLoadingInitialNote = false
             isCreatingNewNote = true
             selectedURL = nil
+            noteLinksView.update(.empty)
             selectedTags = []
             suppressSelectionChanges = true
             tableView.deselectAll(nil)
@@ -6097,7 +6114,45 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.stringValue = editorDateText(for: note.modifiedAt)
         applyEditorSearchHighlightsForCurrentQuery()
         updateToolbarActionState()
+        refreshNoteLinks(for: note.url, body: cached.loaded.body)
         prefetchAdjacentNotes(around: note)
+    }
+
+    private func scheduleNoteLinksRefresh() {
+        noteLinksRefreshWorkItem?.cancel()
+        guard let selectedURL else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.refreshNoteLinks(for: selectedURL, body: self.currentEditorMarkdownBody())
+        }
+        noteLinksRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func refreshNoteLinks(for noteURL: URL, body: String) {
+        noteLinksRefreshTask?.cancel()
+        noteLinksRefreshGeneration += 1
+        let generation = noteLinksRefreshGeneration
+        let noteStore = noteStore
+        let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
+        let task = Task.detached(priority: .utility) { [weak self] in
+            let relations = noteStore.linkRelations(
+                for: noteURL,
+                currentBody: body,
+                roots: roots
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      generation == self.noteLinksRefreshGeneration,
+                      self.selectedURL?.standardizedFileURL == noteURL.standardizedFileURL else {
+                    return
+                }
+                self.noteLinksRefreshTask = nil
+                self.noteLinksView.update(relations)
+            }
+        }
+        noteLinksRefreshTask = task
     }
 
     private func applyDocument(
@@ -6264,6 +6319,11 @@ final class LibraryWindowController: NSWindowController,
 
     func waitForActiveNoteLoadForLibrary() async {
         let task = noteLoadTask
+        await task?.value
+    }
+
+    func waitForNoteLinksRefreshForLibrary() async {
+        let task = noteLinksRefreshTask
         await task?.value
     }
 
@@ -8519,7 +8579,7 @@ final class LibraryWindowController: NSWindowController,
         let openItem = NSMenuItem(title: "打开链接", action: #selector(openLinkMenuItemPressed(_:)), keyEquivalent: "")
         openItem.target = self
         openItem.representedObject = link
-        openItem.isEnabled = openableMarkdownLinkURL(link.url) != nil
+        openItem.isEnabled = markdownLinkDestination(link.url, relativeTo: selectedURL) != nil
 
         let editItem = NSMenuItem(title: "编辑链接...", action: #selector(editLinkMenuItemPressed(_:)), keyEquivalent: "")
         editItem.target = self
@@ -8581,8 +8641,20 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func openMarkdownLinkForLibrary(_ link: MarkdownLinkReference) -> Bool {
-        guard let url = openableMarkdownLinkURL(link.url) else { return false }
-        NSWorkspace.shared.open(url)
+        guard let destination = markdownLinkDestination(link.url, relativeTo: selectedURL) else {
+            return false
+        }
+        switch destination {
+        case .localMarkdown(let url):
+            do {
+                try openMarkdownDocumentForLibrary(at: url)
+            } catch {
+                presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+                return false
+            }
+        case .external(let url):
+            NSWorkspace.shared.open(url)
+        }
         return true
     }
 

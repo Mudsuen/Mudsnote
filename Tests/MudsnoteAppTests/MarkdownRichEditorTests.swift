@@ -4316,6 +4316,65 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func localMarkdownCommandClickOpensInsideLibraryAndShowsLinkRelations() async throws {
+        let suiteName = "mudsnote.local-link-navigation-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-local-link-navigation-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let relatedURL = try store.saveNewNote(title: "Related", body: "Related body", in: notesDirectory)
+        let targetURL = try store.saveNewNote(
+            title: "Target",
+            body: "[Related](\(relatedURL.lastPathComponent))",
+            in: notesDirectory
+        )
+        let sourceURL = try store.saveNewNote(
+            title: "Source",
+            body: "[Target](\(targetURL.path))",
+            in: notesDirectory
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try controller.openMarkdownDocumentForLibrary(at: targetURL)
+        await controller.waitForNoteLinksRefreshForLibrary()
+        let relationButtonTitles = controller.noteLinksView.allSubviews
+            .compactMap { ($0 as? NSButton)?.title }
+        #expect(relationButtonTitles.contains("Source"))
+        #expect(relationButtonTitles.contains("Related"))
+
+        try controller.openMarkdownDocumentForLibrary(at: sourceURL)
+        await controller.waitForActiveNoteLoadForLibrary()
+        let linkLocation = (controller.editorTextView.string as NSString).range(of: "Target").location
+        #expect(controller.markdownTextView(
+            controller.editorTextView,
+            didCommandClickLinkAt: linkLocation
+        ))
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Target")
+    }
+
+    @MainActor
+    @Test
     func markdownTablesRenderAsNativeGridsAndRoundTrip() throws {
         let markdown = """
         Before

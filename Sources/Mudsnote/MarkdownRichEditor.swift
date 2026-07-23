@@ -47,6 +47,25 @@ final class MarkdownLinkReference: NSObject {
     }
 }
 
+enum MarkdownLinkDestination: Equatable {
+    case localMarkdown(URL)
+    case external(URL)
+}
+
+func markdownLinkDestination(_ rawValue: String, relativeTo sourceURL: URL?) -> MarkdownLinkDestination? {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    if let sourceURL,
+       let localURL = MarkdownLocalLinkResolver.fileURL(for: trimmed, relativeTo: sourceURL) {
+        guard FileManager.default.fileExists(atPath: localURL.path) else { return nil }
+        return .localMarkdown(localURL)
+    }
+
+    guard let externalURL = openableMarkdownLinkURL(trimmed) else { return nil }
+    return .external(externalURL)
+}
+
 func openableMarkdownLinkURL(_ rawValue: String) -> URL? {
     let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }

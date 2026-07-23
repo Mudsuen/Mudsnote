@@ -1025,6 +1025,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             onRequestCreateFloatingNote: { [weak self] in
                 self?.createFloatingNoteWindow()
             },
+            onRequestOpenMarkdownDocument: { [weak self] url in
+                self?.openExternalMarkdownFiles([url])
+            },
             onRequestPreferences: { [weak self] in
                 self?.showPreferences()
             }

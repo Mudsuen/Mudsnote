@@ -226,6 +226,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let saveShortcut: HotKeySpec?
     let showsSaveButton: Bool
     let remembersWindowFrame: ((NSRect) -> Void)?
+    let onRequestOpenMarkdownDocument: (URL) -> Void
     let onRequestPreferences: () -> Void
     var hasPresentedWindow = false
     var didCloseWindow = false
@@ -260,6 +261,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCreateFloatingNote: @escaping () -> Void = {},
+        onRequestOpenMarkdownDocument: @escaping (URL) -> Void = { _ in },
         onRequestPreferences: @escaping () -> Void
     ) {
         self.noteStore = noteStore
@@ -283,6 +285,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onRequestActivateFloatingNote = onRequestActivateFloatingNote
         self.onRequestCloseFloatingNote = onRequestCloseFloatingNote
         self.onRequestCreateFloatingNote = onRequestCreateFloatingNote
+        self.onRequestOpenMarkdownDocument = onRequestOpenMarkdownDocument
         self.onRequestPreferences = onRequestPreferences
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
@@ -493,7 +496,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         let openItem = NSMenuItem(title: "打开链接", action: #selector(openLinkMenuItemPressed(_:)), keyEquivalent: "")
         openItem.target = self
         openItem.representedObject = link
-        openItem.isEnabled = openableMarkdownLinkURL(link.url) != nil
+        openItem.isEnabled = markdownLinkDestination(link.url, relativeTo: currentMarkdownDocumentURL) != nil
 
         let editItem = NSMenuItem(title: "编辑链接...", action: #selector(editLinkMenuItemPressed(_:)), keyEquivalent: "")
         editItem.target = self
@@ -553,9 +556,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     @discardableResult
     private func openMarkdownLink(_ link: MarkdownLinkReference) -> Bool {
-        guard let url = openableMarkdownLinkURL(link.url) else { return false }
-        NSWorkspace.shared.open(url)
+        guard let destination = markdownLinkDestination(
+            link.url,
+            relativeTo: currentMarkdownDocumentURL
+        ) else {
+            return false
+        }
+        switch destination {
+        case .localMarkdown(let url):
+            onRequestOpenMarkdownDocument(url)
+        case .external(let url):
+            NSWorkspace.shared.open(url)
+        }
         return true
+    }
+
+    private var currentMarkdownDocumentURL: URL {
+        fileURL ?? selectedDirectoryURL.appendingPathComponent(".mudsnote-unsaved.md")
     }
 
     private func presentLinkEditor(
