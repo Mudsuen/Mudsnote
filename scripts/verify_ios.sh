@@ -135,15 +135,22 @@ esac
 run_full_tests() {
   local destination
   local focused_ui_test
+  local focused_ui_output
   local -a test_selectors
 
   destination="$(simulator_destination)"
   test_selectors=(-only-testing:MudsnoteCompanionTests)
+  if ! focused_ui_output="$(
+    changed_paths_against_base | focused_ui_tests_from_paths
+  )"; then
+    echo "ERROR: failed to determine focused iOS UI tests." >&2
+    exit 1
+  fi
   while IFS= read -r focused_ui_test; do
     if [[ -n "$focused_ui_test" ]]; then
       test_selectors+=("-only-testing:$focused_ui_test")
     fi
-  done < <(changed_paths_against_base | focused_ui_tests_from_paths)
+  done <<<"$focused_ui_output"
 
   xcodebuild \
     -project "$PROJECT" \
@@ -173,12 +180,18 @@ run_release_build() {
 case "$MODE" in
   pr)
     destination="$(simulator_destination)"
+    if ! focused_ui_output="$(
+      changed_paths_against_base | focused_ui_tests_from_paths
+    )"; then
+      echo "ERROR: failed to determine focused iOS UI tests." >&2
+      exit 1
+    fi
     focused_ui_tests=()
     while IFS= read -r focused_ui_test; do
       if [[ -n "$focused_ui_test" ]]; then
         focused_ui_tests+=("-only-testing:$focused_ui_test")
       fi
-    done < <(changed_paths_against_base | focused_ui_tests_from_paths)
+    done <<<"$focused_ui_output"
 
     xcodebuild \
       -project "$PROJECT" \

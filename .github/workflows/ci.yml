@@ -37,11 +37,24 @@ on:
           - signing-or-release
           - explicit-risk-review
         default: none
+      devflow_expected_head_sha:
+        description: Exact refreshed PR head that this candidate must verify
+        required: false
+        type: string
+        default: ""
+      devflow_post_merge_sha:
+        description: Exact merge commit for the post-merge smoke
+        required: false
+        type: string
+        default: ""
+  push:
+    branches:
+      - main
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ inputs.devflow_post_merge_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -51,6 +64,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.devflow_expected_head_sha || inputs.devflow_post_merge_sha || github.sha }}
       - name: Check delivery policy
         shell: bash
         run: |
@@ -65,6 +80,8 @@ jobs:
             echo 'Tracked credential or database-like files violate the PR CI boundary.' >&2
             exit 1
           fi
+      - name: Test iOS verification routing
+        run: bash scripts/test_verify_ios_destination.sh
 
   scope:
     name: verification-scope
@@ -76,7 +93,19 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - run: git fetch origin main
+          ref: ${{ inputs.devflow_expected_head_sha || inputs.devflow_post_merge_sha || github.sha }}
+      - name: Bind verification to the requested Git object
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.devflow_expected_head_sha }}
+          POST_MERGE_SHA: ${{ inputs.devflow_post_merge_sha }}
+        run: |
+          expected_sha="${POST_MERGE_SHA:-$EXPECTED_HEAD_SHA}"
+          if [[ -n "$expected_sha" ]]; then
+            test "$(git rev-parse HEAD)" = "$expected_sha"
+          fi
+          if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
+            test "${{ github.sha }}" = "$EXPECTED_HEAD_SHA"
+          fi
       - id: contract
         name: Select platform and verification tier
         shell: bash
@@ -85,18 +114,33 @@ jobs:
           DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
+          detected_platform="$(./scripts/detect_platform_scope.sh)"
+          requested_platform="${DEVFLOW_PLATFORM:-none}"
+          case "$requested_platform" in
+            none|macos|ios|both) ;;
+            *) echo "Invalid requested platform: $requested_platform" >&2; exit 2 ;;
+          esac
+
           if [[ "${{ github.event_name }}" == pull_request ]]; then
-            platform="$(./scripts/detect_platform_scope.sh)"
+            platform="$detected_platform"
             if [[ "$PR_DRAFT" == true ]]; then
               mode=pr
             else
               mode=full
             fi
+          elif [[ "${{ github.event_name }}" == push ]]; then
+            platform=both
+            mode=pr
           elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
-            platform="${DEVFLOW_PLATFORM:-none}"
+            case "$detected_platform:$requested_platform" in
+              none:none) platform=none ;;
+              ios:none|none:ios|ios:ios) platform=ios ;;
+              macos:none|none:macos|macos:macos) platform=macos ;;
+              *) platform=both ;;
+            esac
             mode=full
           else
-            platform="${DEVFLOW_PLATFORM:-none}"
+            platform="$requested_platform"
             mode=pr
           fi
           echo "platform=$platform" >>"$GITHUB_OUTPUT"
@@ -112,12 +156,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          ref: ${{ inputs.devflow_expected_head_sha || inputs.devflow_post_merge_sha || github.sha }}
       - name: Show toolchain
         run: |
           sw_vers
           swift --version
-      - name: Fetch current integration base
-        run: git fetch origin main
       - name: Verify
         run: ./scripts/verify macos "${{ needs.scope.outputs.mode }}"
 
@@ -131,12 +174,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          ref: ${{ inputs.devflow_expected_head_sha || inputs.devflow_post_merge_sha || github.sha }}
       - name: Show toolchain
         run: |
           sw_vers
           swift --version
-      - name: Fetch current integration base
-        run: git fetch origin main
       - name: Verify
         env:
           IOS_VERIFY_PARALLEL_FULL: 1
@@ -145,6 +187,7 @@ jobs:
   verification-result:
     name: ${{ needs.scope.outputs.mode == 'full' && 'build-and-test' || 'iteration-check' }}
     needs:
+      - policy
       - scope
       - macos-verify
       - ios-verify
@@ -154,27 +197,59 @@ jobs:
     steps:
       - name: Require every selected verification lane
         env:
+          POLICY_RESULT: ${{ needs.policy.result }}
           SCOPE_RESULT: ${{ needs.scope.result }}
+          PLATFORM: ${{ needs.scope.outputs.platform }}
           MACOS_RESULT: ${{ needs.macos-verify.result }}
           IOS_RESULT: ${{ needs.ios-verify.result }}
         run: |
+          test "$POLICY_RESULT" = success
           test "$SCOPE_RESULT" = success
-          for result in "$MACOS_RESULT" "$IOS_RESULT"; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done
+          case "$PLATFORM" in
+            none)
+              test "$MACOS_RESULT" = skipped
+              test "$IOS_RESULT" = skipped
+              ;;
+            macos)
+              test "$MACOS_RESULT" = success
+              test "$IOS_RESULT" = skipped
+              ;;
+            ios)
+              test "$MACOS_RESULT" = skipped
+              test "$IOS_RESULT" = success
+              ;;
+            both)
+              test "$MACOS_RESULT" = success
+              test "$IOS_RESULT" = success
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
 
   merge-candidate:
-    name: merge-candidate
+    name: ${{ needs.scope.outputs.mode == 'full' && 'merge-candidate' || 'not-a-merge-candidate' }}
     needs:
       - scope
       - verification-result
-    if: >-
-      needs.scope.outputs.mode == 'full' &&
-      needs.verification-result.result == 'success'
+    if: always() && needs.scope.outputs.mode == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - run: echo "Full merge-candidate verification passed."
+      - name: Require successful full verification
+        env:
+          VERIFICATION_RESULT: ${{ needs.verification-result.result }}
+          TESTED_HEAD_SHA: ${{ inputs.devflow_expected_head_sha || github.sha }}
+          TESTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EFFECTIVE_SCOPE: ${{ needs.scope.outputs.platform }}
+        run: |
+          test "$VERIFICATION_RESULT" = success
+          test -n "$TESTED_HEAD_SHA"
+          test -n "$EFFECTIVE_SCOPE"
+          {
+            echo "workflow_version=2"
+            echo "mode=full"
+            echo "scope=$EFFECTIVE_SCOPE"
+            echo "tested_head_sha=$TESTED_HEAD_SHA"
+            echo "tested_base_sha=${TESTED_BASE_SHA:-dispatch-refreshed-base}"
+          } >>"$GITHUB_STEP_SUMMARY"

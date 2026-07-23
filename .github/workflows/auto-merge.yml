@@ -36,13 +36,12 @@ jobs:
           set -euo pipefail
 
           run_json="$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")"
-          candidate_conclusion="$(
+          mapfile -t candidate_conclusions < <(
             gh api --paginate "repos/$REPOSITORY/actions/runs/$RUN_ID/jobs" \
-              --jq '.jobs[] | select(.name == "merge-candidate") | .conclusion' \
-              | tail -n 1
-          )"
-          if [[ "$candidate_conclusion" != success ]]; then
-            echo 'This run is a fast iteration check, not a verified merge candidate.'
+              --jq '.jobs[] | select(.name == "merge-candidate") | .conclusion'
+          )
+          if [[ "${#candidate_conclusions[@]}" != 1 || "${candidate_conclusions[0]}" != success ]]; then
+            echo 'This run has no unique successful merge-candidate attestation.'
             exit 0
           fi
 
@@ -95,7 +94,12 @@ jobs:
             exit 0
           fi
           if ! jq -e \
-            '.schema_version == 2 and .merge_policy == "auto" and .hard_stop == "none"' \
+            '.schema_version == 2 and
+             .workflow_version == 2 and
+             .merge_policy == "auto" and
+             .hard_stop == "none" and
+             .data_policy.production_read == false and
+             .data_policy.production_write == "forbidden"' \
             >/dev/null <<<"$manifest"; then
             echo 'Manifest requires a merge hold.'
             exit 0
@@ -109,7 +113,7 @@ jobs:
           changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$pr_number/files" --jq '.[].filename')"
           while IFS= read -r path; do
             case "$path" in
-              .github/workflows/*|.devflow.yaml|bin/devtask|scripts/verify*|scripts/package*|scripts/deploy*|scripts/release*|templates/auto-merge.yml|templates/main-ruleset.json|migrations/*|*/migrations/*|*Migration*|*.xcdatamodeld/*|*.entitlements)
+              .github/workflows/*|.devflow.yaml|bin/devtask|scripts/verify*|scripts/detect_platform_scope.sh|scripts/agent_context.sh|scripts/test_verify_ios_destination.sh|scripts/validate_ios_app_store_metadata.py|scripts/device_smoke.sh|scripts/package*|scripts/deploy*|scripts/release*|templates/auto-merge.yml|templates/main-ruleset.json|migrations/*|*/migrations/*|*Migration*|*.xcdatamodeld/*|*.entitlements)
                 echo "Control-plane path requires an independent merge decision: $path"
                 exit 0
                 ;;
@@ -133,9 +137,27 @@ jobs:
             echo 'main advanced after this candidate was tested; updating the branch and dispatching CI once.'
             gh api --method PUT "repos/$REPOSITORY/pulls/$pr_number/update-branch" \
               -f expected_head_sha="$head_sha" >/dev/null
+
+            updated_head="$head_sha"
+            for _ in {1..30}; do
+              updated_head="$(gh api "repos/$REPOSITORY/pulls/$pr_number" --jq '.head.sha')"
+              [[ "$updated_head" != "$head_sha" ]] && break
+              sleep 2
+            done
+            if [[ "$updated_head" == "$head_sha" ]]; then
+              echo 'Timed out waiting for the updated PR head; no CI dispatch.'
+              exit 1
+            fi
+            updated_status="$(gh api "repos/$REPOSITORY/compare/$current_base...$updated_head" --jq '.status')"
+            if [[ "$updated_status" != ahead && "$updated_status" != identical ]]; then
+              echo 'Updated PR head is not based on the current main branch; no CI dispatch.'
+              exit 1
+            fi
+
             gh workflow run ci.yml --repo "$REPOSITORY" --ref "$head_ref" \
               -f devflow_post_merge=false -f devflow_platform="$post_merge_platform" \
-              -f devflow_full_reason=base-changed-after-candidate
+              -f devflow_full_reason=base-changed-after-candidate \
+              -f devflow_expected_head_sha="$updated_head"
             exit 0
           fi
 
@@ -145,8 +167,14 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch
+          gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch \
+            --match-head-commit "$TESTED_HEAD_SHA"
+          merged_sha="$(gh api "repos/$REPOSITORY/pulls/$pr_number" --jq '.merge_commit_sha // empty')"
+          if [[ -z "$merged_sha" ]]; then
+            echo 'Merge completed without an observable merge commit SHA; no smoke dispatch.'
+            exit 1
+          fi
           gh workflow run ci.yml --repo "$REPOSITORY" --ref main \
             -f devflow_post_merge=true -f devflow_platform="$post_merge_platform" \
-            -f devflow_full_reason=none
-          echo "Merged PR #$pr_number and dispatched post-merge CI on main."
+            -f devflow_full_reason=none -f devflow_post_merge_sha="$merged_sha"
+          echo "Merged PR #$pr_number and dispatched post-merge CI for $merged_sha."
