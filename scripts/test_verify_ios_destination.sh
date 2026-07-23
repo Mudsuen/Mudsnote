@@ -40,4 +40,22 @@ test "$actual" = "SIMCTL-IOS-SIMULATOR"
 actual="$(printf '%s\n' '{}' | simulator_id_from_simctl)"
 test -z "$actual"
 
-echo "verify_ios simulator destination parsing passed"
+focused_ui_tests="$(
+  printf '%s\n' \
+    "CHANGELOG.md" \
+    "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift" \
+    "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift" \
+    | focused_ui_tests_from_paths
+)"
+test "$focused_ui_tests" = \
+  "MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory"
+
+focused_ui_tests="$(
+  printf '%s\n' \
+    "CHANGELOG.md" \
+    "iOS/MudsnoteCompanion/Core/MarkdownFileStore.swift" \
+    | focused_ui_tests_from_paths
+)"
+test -z "$focused_ui_tests"
+
+echo "verify_ios simulator destination and focused UI routing passed"
