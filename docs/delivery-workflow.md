@@ -20,7 +20,7 @@ flowchart TD
     L --> M[需要时 devtask rollback 创建 Revert PR]
 ```
 
-正常任务先运行 `./scripts/agent_context.sh --task`，Codex 只接收目标、范围、基线、关键约束、已知证据和待验证项；README、handoff、Skill、memory、历史任务及完整日志均按异常或规则需要再读。`devtask wait` 在进程内等待，只返回一次 PR/CI/merge JSON，Agent 不轮询。merge candidate 运行一次 `full`；合并后按平台运行轻量 `pr` smoke。
+正常任务先运行 `./scripts/agent_context.sh --task`，Codex 只接收目标、范围、基线、关键约束、已知证据和待验证项；README、handoff、Skill、memory、历史任务及完整日志均按异常或规则需要再读。`devtask wait` 在进程内等待，只返回一次 PR/CI/merge JSON，Agent 不轮询。merge candidate 运行一次 `full`；合并后按平台运行轻量 `pr` smoke。CI 不监听每次 `main` push；post-merge smoke 只由 Devflow 在合并成功后显式 `workflow_dispatch`，避免同一提交重复触发。
 
 仅以下情况允许合并后再次 `full`：候选测试后基线变化、merge queue 生成新候选、迁移、签名/发布，或显式高风险复核。原因必须通过 `devflow_full_reason` 传入，不能从普通任务自动推断。
 

@@ -31,10 +31,6 @@ on:
           - signing-or-release
           - explicit-risk-review
         default: none
-  push:
-    branches:
-      - main
-
 permissions:
   contents: read
 
