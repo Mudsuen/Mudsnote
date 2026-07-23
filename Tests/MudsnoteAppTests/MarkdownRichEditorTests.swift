@@ -4357,20 +4357,49 @@ struct MarkdownRichEditorTests {
 
         try controller.openMarkdownDocumentForLibrary(at: targetURL)
         await controller.waitForNoteLinksRefreshForLibrary()
+        #expect(!controller.noteLinksView.isHidden)
         let relationButtonTitles = controller.noteLinksView.allSubviews
             .compactMap { ($0 as? NSButton)?.title }
         #expect(relationButtonTitles.contains("Source"))
         #expect(relationButtonTitles.contains("Related"))
 
-        try controller.openMarkdownDocumentForLibrary(at: sourceURL)
-        await controller.waitForActiveNoteLoadForLibrary()
-        let linkLocation = (controller.editorTextView.string as NSString).range(of: "Target").location
-        #expect(controller.markdownTextView(
-            controller.editorTextView,
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(10)],
+            ofItemAtPath: sourceURL.path
+        )
+        let navigationController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { navigationController.close() }
+        let linkLocation = (navigationController.editorTextView.string as NSString).range(of: "Target").location
+        #expect(navigationController.markdownTextView(
+            navigationController.editorTextView,
             didCommandClickLinkAt: linkLocation
         ))
-        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
-        #expect(controller.titleField.stringValue == "Target")
+        #expect(navigationController.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+        #expect(navigationController.titleField.stringValue == "Target")
+    }
+
+    @MainActor
+    @Test
+    func noteLinksViewHidesWhenCurrentNoteHasNoRelations() {
+        let view = NoteLinksView(frame: .zero)
+        #expect(view.isHidden)
+
+        view.update(NoteLinkRelations(
+            incoming: [NoteLinkItem(
+                url: URL(fileURLWithPath: "/tmp/source.md"),
+                title: "Source"
+            )],
+            outgoing: []
+        ))
+        #expect(!view.isHidden)
+
+        view.update(.empty)
+        #expect(view.isHidden)
     }
 
     @MainActor
