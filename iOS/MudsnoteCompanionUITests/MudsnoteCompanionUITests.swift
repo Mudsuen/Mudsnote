@@ -2000,6 +2000,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
+
+        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 
     func testNoteListKeepsCaptureBarAndScopesFullTextSearch() {
