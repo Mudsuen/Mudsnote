@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 213. Smooth iOS folder drawer haptic timing
+- Problem: Triggering the physical impact in the same main-thread callback that committed the folder drawer spring could delay its first animation frame and make the open or close motion feel uneven.
+- Fix: Drawer state changes now run their spring independently and fire the prepared physical impact from the animation completion, while cancelled swipes reset without feedback.
+- Lesson: UIKit haptic delivery should not share the animation-start frame with a SwiftUI state transition when the motion itself is the primary feedback.
+
 ### 212. Reversible iOS folder drawer gesture
 - Problem: The iOS folder drawer could open from the left edge, but its scroll and row-drag gestures could prevent the reverse left swipe from closing it, and successful drawer transitions had no tactile confirmation.
 - Fix: The open drawer now gives its horizontal close gesture priority over its contents, accepts the same gesture from the backdrop, and uses a prewarmed UIKit impact generator for one physical medium haptic only after a swipe actually changes the drawer between open and closed.

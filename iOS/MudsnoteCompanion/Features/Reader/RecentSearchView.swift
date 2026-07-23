@@ -635,14 +635,21 @@ struct LibraryHomeView: View {
                 } else {
                     shouldOpen = horizontal > width * 0.18 || predicted > width * 0.45
                 }
-                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
-                    isDirectoryPresented = shouldOpen
-                    directoryDragOffset = 0
-                }
                 if shouldOpen != wasPresented {
-                    directoryHapticFeedback.impact()
+                    withAnimation(
+                        .interactiveSpring(response: 0.28, dampingFraction: 0.92),
+                        completionCriteria: .logicallyComplete
+                    ) {
+                        isDirectoryPresented = shouldOpen
+                        directoryDragOffset = 0
+                    } completion: {
+                        directoryHapticFeedback.impact()
+                    }
                 } else {
                     directoryHapticFeedback.cancel()
+                    withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) {
+                        directoryDragOffset = 0
+                    }
                 }
             }
     }
