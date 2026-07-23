@@ -65,14 +65,6 @@ simulator_destination() {
   printf 'id=%s\n' "$simulator_id"
 }
 
-boot_simulator_destination() {
-  local destination="$1"
-  local simulator_id="${destination#id=}"
-
-  xcrun simctl boot "$simulator_id" 2>/dev/null || true
-  xcrun simctl bootstatus "$simulator_id" -b
-}
-
 changed_paths_against_base() {
   local base_ref=""
   if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
@@ -128,11 +120,11 @@ case "$MODE" in
       -destination 'generic/platform=iOS Simulator' \
       -derivedDataPath "$DERIVED_DATA_PATH" \
       CODE_SIGNING_ALLOWED=NO \
+      COMPILER_INDEX_STORE_ENABLE=NO \
       build-for-testing
     ;;
   full)
     destination="$(simulator_destination)"
-    boot_simulator_destination "$destination"
     test_selectors=(-only-testing:MudsnoteCompanionTests)
     while IFS= read -r focused_ui_test; do
       if [[ -n "$focused_ui_test" ]]; then
@@ -147,18 +139,10 @@ case "$MODE" in
       -destination "$destination" \
       -derivedDataPath "$DERIVED_DATA_PATH" \
       CODE_SIGNING_ALLOWED=NO \
-      "${test_selectors[@]}" \
-      build-for-testing
-    xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration Debug \
-      -destination "$destination" \
-      -derivedDataPath "$DERIVED_DATA_PATH" \
-      CODE_SIGNING_ALLOWED=NO \
+      COMPILER_INDEX_STORE_ENABLE=NO \
       -parallel-testing-enabled NO \
       "${test_selectors[@]}" \
-      test-without-building
+      test
     xcodebuild \
       -project "$PROJECT" \
       -scheme "$SCHEME" \
@@ -166,6 +150,7 @@ case "$MODE" in
       -destination 'generic/platform=iOS' \
       -derivedDataPath "$DERIVED_DATA_PATH" \
       CODE_SIGNING_ALLOWED=NO \
+      COMPILER_INDEX_STORE_ENABLE=NO \
       build
     ;;
   live)
