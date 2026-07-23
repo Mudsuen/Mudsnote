@@ -2,6 +2,12 @@ name: CI
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
   workflow_dispatch:
     inputs:
       devflow_post_merge:
@@ -77,10 +83,15 @@ jobs:
         env:
           DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
           DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           if [[ "${{ github.event_name }}" == pull_request ]]; then
             platform="$(./scripts/detect_platform_scope.sh)"
-            mode=full
+            if [[ "$PR_DRAFT" == true ]]; then
+              mode=pr
+            else
+              mode=full
+            fi
           elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
             platform="${DEVFLOW_PLATFORM:-none}"
             mode=full
@@ -131,8 +142,8 @@ jobs:
           IOS_VERIFY_PARALLEL_FULL: 1
         run: ./scripts/verify ios "${{ needs.scope.outputs.mode }}"
 
-  build-and-test:
-    name: build-and-test
+  verification-result:
+    name: ${{ needs.scope.outputs.mode == 'full' && 'build-and-test' || 'iteration-check' }}
     needs:
       - scope
       - macos-verify
@@ -154,3 +165,16 @@ jobs:
               *) exit 1 ;;
             esac
           done
+
+  merge-candidate:
+    name: merge-candidate
+    needs:
+      - scope
+      - verification-result
+    if: >-
+      needs.scope.outputs.mode == 'full' &&
+      needs.verification-result.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "Full merge-candidate verification passed."

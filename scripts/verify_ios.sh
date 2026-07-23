@@ -172,15 +172,37 @@ run_release_build() {
 
 case "$MODE" in
   pr)
+    destination="$(simulator_destination)"
+    focused_ui_tests=()
+    while IFS= read -r focused_ui_test; do
+      if [[ -n "$focused_ui_test" ]]; then
+        focused_ui_tests+=("-only-testing:$focused_ui_test")
+      fi
+    done < <(changed_paths_against_base | focused_ui_tests_from_paths)
+
     xcodebuild \
       -project "$PROJECT" \
       -scheme "$SCHEME" \
       -configuration Debug \
-      -destination 'generic/platform=iOS Simulator' \
+      -destination "$destination" \
       -derivedDataPath "$DERIVED_DATA_PATH" \
       CODE_SIGNING_ALLOWED=NO \
       COMPILER_INDEX_STORE_ENABLE=NO \
       build-for-testing
+
+    if (( ${#focused_ui_tests[@]} > 0 )); then
+      xcodebuild \
+        -project "$PROJECT" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -destination "$destination" \
+        -derivedDataPath "$DERIVED_DATA_PATH" \
+        CODE_SIGNING_ALLOWED=NO \
+        COMPILER_INDEX_STORE_ENABLE=NO \
+        -parallel-testing-enabled NO \
+        "${focused_ui_tests[@]}" \
+        test-without-building
+    fi
     ;;
   full)
     if [[ "$FULL_PHASE" == "all" && "$PARALLEL_FULL" == "1" ]]; then
