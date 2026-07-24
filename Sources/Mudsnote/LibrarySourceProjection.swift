@@ -182,3 +182,26 @@ struct LibrarySourceCountIndex: Sendable {
         tag.folding(options: [.caseInsensitive], locale: .current)
     }
 }
+
+enum LibrarySourceSnapshotStabilizer {
+    static func needsConfirmation(
+        previous: [NoteSearchResult],
+        candidate: [NoteSearchResult]
+    ) -> Bool {
+        guard !previous.isEmpty else { return false }
+        let candidatePaths = Set(candidate.map { $0.url.standardizedFileURL.path })
+        return previous.contains {
+            !candidatePaths.contains($0.url.standardizedFileURL.path)
+        }
+    }
+
+    static func stabilized(
+        previous: [NoteSearchResult],
+        firstCandidate: [NoteSearchResult],
+        confirmedCandidate: [NoteSearchResult]
+    ) -> [NoteSearchResult] {
+        needsConfirmation(previous: previous, candidate: firstCandidate)
+            ? confirmedCandidate
+            : firstCandidate
+    }
+}

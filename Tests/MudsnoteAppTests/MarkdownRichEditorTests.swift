@@ -49,6 +49,35 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
+    @Test
+    func sourceSnapshotStabilizerConfirmsDroppedNotesBeforePublishingThem() {
+        let note = NoteSearchResult(
+            url: URL(fileURLWithPath: "/tmp/Transient.md"),
+            title: "Transient",
+            snippet: "",
+            modifiedAt: Date()
+        )
+
+        #expect(LibrarySourceSnapshotStabilizer.needsConfirmation(
+            previous: [note],
+            candidate: []
+        ))
+        #expect(LibrarySourceSnapshotStabilizer.stabilized(
+            previous: [note],
+            firstCandidate: [],
+            confirmedCandidate: [note]
+        ) == [note])
+        #expect(LibrarySourceSnapshotStabilizer.stabilized(
+            previous: [note],
+            firstCandidate: [],
+            confirmedCandidate: []
+        ).isEmpty)
+        #expect(!LibrarySourceSnapshotStabilizer.needsConfirmation(
+            previous: [note],
+            candidate: [note]
+        ))
+    }
+
     @Test func boundedNoteProjectionStopsAfterReachingItsLimit() {
         var visited = 0
         let matches = LibraryNoteListProjection.prefix(0..<10_000, limit: 240) { value in
@@ -5878,6 +5907,78 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceCount-3"
         })
         #expect(trashCount.stringValue == "2")
+    }
+
+    @MainActor
+    @Test
+    func folderContextMenuMovesAndDeletesWithoutConfirmation() throws {
+        let suiteName = "mudsnote.library-folder-menu-actions-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-folder-menu-actions-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let projects = try store.createFolder(named: "Projects")
+        let archive = try store.createFolder(named: "Archive")
+        let active = try store.createFolder(named: "Active", in: projects)
+        _ = try store.saveNewNote(title: "Move Seed", body: "Body", in: active)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        _ = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+        #expect(controller.selectSourceForLibrary(titled: "Active"))
+
+        let contextMenu = try #require(controller.sourceContextMenuForLibrary(
+            row: controller.sourceOutlineView.selectedRow
+        ))
+        let moveItem = try #require(contextMenu.items.first { $0.title == "移动到文件夹" })
+        let moveMenu = try #require(moveItem.submenu)
+        let archiveItem = try #require(moveMenu.items.first {
+            $0.title.trimmingCharacters(in: .whitespaces) == "Archive"
+        })
+        let projectsItem = try #require(moveMenu.items.first {
+            $0.title.trimmingCharacters(in: .whitespaces) == "Projects"
+        })
+        #expect(archiveItem.isEnabled)
+        #expect(!projectsItem.isEnabled)
+        #expect(!moveMenu.items.contains {
+            $0.title.trimmingCharacters(in: .whitespaces) == "Active"
+        })
+
+        #expect(NSApp.sendAction(
+            try #require(archiveItem.action),
+            to: archiveItem.target,
+            from: archiveItem
+        ))
+        let moved = archive.appendingPathComponent("Active", isDirectory: true)
+        #expect(moved.deletingLastPathComponent().standardizedFileURL == archive.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: moved.path))
+        #expect(!FileManager.default.fileExists(atPath: active.path))
+        #expect(controller.selectedSourceTitleForLibrary == "Active")
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Move Seed"])
+
+        let deleteItem = NSMenuItem()
+        deleteItem.representedObject = moved
+        controller.deleteFolderMenuItemPressed(deleteItem)
+        #expect(!FileManager.default.fileExists(atPath: moved.path))
+        #expect(store.listTrashedNotes(limit: 10).map(\.title) == ["Move Seed"])
     }
 
     @MainActor
