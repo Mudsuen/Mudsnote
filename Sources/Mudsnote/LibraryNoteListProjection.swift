@@ -226,7 +226,7 @@ enum LibraryNoteListProjection {
         var rows: [LibraryNoteListRow] = []
         rows.reserveCapacity(notes.count + 6)
         if !pinnedNotes.isEmpty {
-            rows.append(.group(title: "Pinned"))
+            rows.append(.group(title: LibraryCopy.pinned))
             rows.append(contentsOf: pinnedNotes.map { .note($0.note) })
         }
 
@@ -320,21 +320,21 @@ enum LibraryNoteListProjection {
 
     private static func groupTitle(for date: Date, now: Date, calendar: Calendar) -> String {
         if calendar.isDate(date, inSameDayAs: now) {
-            return "Today"
+            return LibraryCopy.today
         }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) {
-            return "Yesterday"
+            return LibraryCopy.yesterday
         }
 
         let startOfToday = calendar.startOfDay(for: now)
         let startOfDate = calendar.startOfDay(for: date)
         let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
         if (2...7).contains(daysAgo) {
-            return "Previous 7 Days"
+            return LibraryCopy.previousSevenDays
         }
         if (8...30).contains(daysAgo) {
-            return "Previous 30 Days"
+            return LibraryCopy.previousThirtyDays
         }
         return String(calendar.component(.year, from: date))
     }

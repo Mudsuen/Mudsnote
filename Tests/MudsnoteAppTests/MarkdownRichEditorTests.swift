@@ -843,11 +843,11 @@ struct MarkdownRichEditorTests {
         }
 
         #expect(descriptions == [
-            "group:Pinned",
+            "group:置顶",
             "note:Alpha",
-            "group:Today",
+            "group:今天",
             "note:Zulu",
-            "group:Previous 7 Days",
+            "group:过去 7 天",
             "note:Beta"
         ])
     }
@@ -1935,8 +1935,8 @@ struct MarkdownRichEditorTests {
         let noteURL = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
         let noteModifiedAt = try #require((try? FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate]) as? Date)
         let noteDateFormatter = DateFormatter()
-        noteDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        noteDateFormatter.dateFormat = "MMMM d, yyyy 'at' HH:mm"
+        noteDateFormatter.locale = Locale(identifier: "zh_Hans_CN")
+        noteDateFormatter.dateFormat = "yyyy年M月d日 HH:mm"
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -2425,7 +2425,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
         #expect(controller.tableView(controller.tableView, pasteboardWriterForRow: 0) == nil)
         let groupCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(groupCell.titleLabel.stringValue == "Today")
+        #expect(groupCell.titleLabel.stringValue == "今天")
         #expect(LibraryGroupHeaderCellView.titleLeadingInset == 16)
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
         #expect(groupCell.isFirstGroup)
@@ -3143,7 +3143,7 @@ struct MarkdownRichEditorTests {
         let pinnedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
         #expect(store.isLibraryNotePinned(at: pinnedURL))
         let pinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(pinnedHeader.titleLabel.stringValue == "Pinned")
+        #expect(pinnedHeader.titleLabel.stringValue == "置顶")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == pinnedURL.standardizedFileURL.path)
         #expect(controller.makeMoreActionsMenuForLibrary().items.contains { $0.title == "取消置顶" })
 
@@ -3152,7 +3152,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.groupsNoteListByDate)
         #expect(controller.tableView.numberOfRows == 3)
         let ungroupedPinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(ungroupedPinnedHeader.titleLabel.stringValue == "Pinned")
+        #expect(ungroupedPinnedHeader.titleLabel.stringValue == "置顶")
 
         let noteRows = (0..<controller.tableView.numberOfRows).filter { row in
             controller.tableView(controller.tableView, pasteboardWriterForRow: row) is NSURL
@@ -3198,7 +3198,7 @@ struct MarkdownRichEditorTests {
 
         let modifiedAt = try #require(Calendar.current.date(byAdding: .day, value: -3, to: Date()))
         let weekdayFormatter = DateFormatter()
-        weekdayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        weekdayFormatter.locale = Locale(identifier: "zh_Hans_CN")
         weekdayFormatter.dateFormat = "EEEE"
         let weekday = weekdayFormatter.string(from: modifiedAt)
         let noteURL = try store.saveNewNote(title: "Weekday Prefix", body: "\(weekday)  动机")
