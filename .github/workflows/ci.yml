@@ -117,8 +117,17 @@ jobs:
           DEVFLOW_PLATFORM: ${{ inputs.devflow_platform }}
           DEVFLOW_FULL_REASON: ${{ inputs.devflow_full_reason }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
         run: |
-          detected_platform="$(./scripts/detect_platform_scope.sh)"
+          if [[ "${{ github.event_name }}" == push ]]; then
+            detected_platform="$(
+              DEVFLOW_DIFF_BASE="$PUSH_BASE_SHA" DEVFLOW_DIFF_HEAD="$PUSH_HEAD_SHA" \
+                ./scripts/detect_platform_scope.sh
+            )"
+          else
+            detected_platform="$(./scripts/detect_platform_scope.sh)"
+          fi
           requested_platform="${DEVFLOW_PLATFORM:-none}"
           case "$requested_platform" in
             none|macos|ios|both) ;;
@@ -133,7 +142,7 @@ jobs:
               mode=full
             fi
           elif [[ "${{ github.event_name }}" == push ]]; then
-            platform=both
+            platform="$detected_platform"
             mode=pr
           elif [[ "$DEVFLOW_FULL_REASON" != "" && "$DEVFLOW_FULL_REASON" != none ]]; then
             case "$detected_platform:$requested_platform" in
