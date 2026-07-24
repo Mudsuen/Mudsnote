@@ -1719,7 +1719,9 @@ final class LibraryWindowController: NSWindowController,
         requiresVisibleWindow: Bool = true
     ) {
         guard !requiresVisibleWindow || window?.isVisible == true else { return }
-        let externalChanges = changes.filter { !isSuppressedInternalChange($0) }
+        let externalChanges = changes.filter {
+            $0.requiresFullRescan || !isSuppressedInternalChange($0)
+        }
         guard !externalChanges.isEmpty else { return }
 
         let markdownPaths = Set(externalChanges.filter(\.isMarkdownFile).map {

@@ -2,21 +2,37 @@ import CoreServices
 import Foundation
 
 struct LibraryFileSystemChange: Hashable, Sendable {
+    private static let supportedNoteFileExtensions = Set(["md", "markdown", "txt"])
+    private static let fullRescanFlags = FSEventStreamEventFlags(
+        kFSEventStreamEventFlagMustScanSubDirs
+            | kFSEventStreamEventFlagUserDropped
+            | kFSEventStreamEventFlagKernelDropped
+            | kFSEventStreamEventFlagEventIdsWrapped
+            | kFSEventStreamEventFlagRootChanged
+    )
+
     let path: String
     let flags: FSEventStreamEventFlags
 
     var isMarkdownFile: Bool {
-        URL(fileURLWithPath: path).pathExtension.localizedCaseInsensitiveCompare("md") == .orderedSame
+        Self.supportedNoteFileExtensions.contains(
+            URL(fileURLWithPath: path).pathExtension.lowercased()
+        )
+    }
+
+    var requiresFullRescan: Bool {
+        flags & Self.fullRescanFlags != 0
     }
 
     var changesDirectoryStructure: Bool {
+        if requiresFullRescan {
+            return true
+        }
         let isDirectory = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
         let structuralFlags = FSEventStreamEventFlags(
             kFSEventStreamEventFlagItemCreated
                 | kFSEventStreamEventFlagItemRemoved
                 | kFSEventStreamEventFlagItemRenamed
-                | kFSEventStreamEventFlagRootChanged
-                | kFSEventStreamEventFlagMustScanSubDirs
         )
         return isDirectory && flags & structuralFlags != 0
     }

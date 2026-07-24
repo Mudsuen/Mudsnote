@@ -3141,7 +3141,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func libraryFileSystemMonitorReportsExternalMarkdownCreation() async throws {
+    func libraryFileSystemMonitorReportsEverySupportedNoteExtension() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-library-file-monitor-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3161,29 +3161,63 @@ struct MarkdownRichEditorTests {
         defer { monitor.stop() }
         try await Task.sleep(for: .milliseconds(120))
 
-        let externalURL = root.appendingPathComponent("External Event.md")
-        try "# External Event\n\nWritten outside Mudsnote\n".write(
-            to: externalURL,
-            atomically: true,
-            encoding: .utf8
-        )
+        let externalURLs = ["md", "markdown", "txt"].map {
+            root.appendingPathComponent("External Event.\($0)")
+        }
+        for externalURL in externalURLs {
+            try "# External Event\n\nWritten outside Mudsnote\n".write(
+                to: externalURL,
+                atomically: true,
+                encoding: .utf8
+            )
+        }
 
         var observedChanges: Set<LibraryFileSystemChange> = []
         for _ in 0..<80 {
             observedChanges = await recorder.snapshot()
-            if observedChanges.contains(where: {
-                URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
-                    && $0.isMarkdownFile
-            }) {
+            let observedPaths = Set(observedChanges.filter(\.isMarkdownFile).map {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.path
+            })
+            if externalURLs.allSatisfy({ observedPaths.contains($0.standardizedFileURL.path) }) {
                 break
             }
             try await Task.sleep(for: .milliseconds(50))
         }
 
-        #expect(observedChanges.contains(where: {
-            URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
-                && $0.isMarkdownFile
-        }))
+        let observedPaths = Set(observedChanges.filter(\.isMarkdownFile).map {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path
+        })
+        #expect(externalURLs.allSatisfy { observedPaths.contains($0.standardizedFileURL.path) })
+    }
+
+    @Test
+    func libraryFileSystemMonitorRequiresFullRescanForDroppedOrInvalidatedEvents() {
+        let flags = [
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagUserDropped,
+            kFSEventStreamEventFlagKernelDropped,
+            kFSEventStreamEventFlagEventIdsWrapped,
+            kFSEventStreamEventFlagRootChanged
+        ]
+
+        for flag in flags {
+            let change = LibraryFileSystemChange(
+                path: "/tmp/Mudsnote Notes",
+                flags: FSEventStreamEventFlags(flag)
+            )
+            #expect(change.requiresFullRescan)
+            #expect(change.changesDirectoryStructure)
+            #expect(change.requiresLibraryRefresh)
+        }
+
+        #expect(LibraryFileSystemChange(
+            path: "/tmp/Note.MARKDOWN",
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        ).isMarkdownFile)
+        #expect(LibraryFileSystemChange(
+            path: "/tmp/Note.txt",
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        ).isMarkdownFile)
     }
 
     @Test
