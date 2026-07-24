@@ -1026,6 +1026,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func richCodecDefersImagePixelDecodingUntilAttachmentDrawing() async throws {
+        await MarkdownImageDecodeService.shared.resetForTesting()
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-async-image-tests-\(UUID().uuidString)", isDirectory: true)
         let noteURL = root.appendingPathComponent("Note.md")
@@ -1055,6 +1056,45 @@ struct MarkdownRichEditorTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(cell.hasDecodedImage)
+        let firstDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(firstDecodeCount == 1)
+
+        let secondRendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let secondAttachment = try #require(
+            secondRendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let secondCell = try #require(secondAttachment.attachmentCell as? AsyncImageAttachmentCell)
+        secondCell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !secondCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(secondCell.hasDecodedImage)
+        let cachedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(cachedDecodeCount == 1)
+
+        var revisedPNGData = pngData
+        revisedPNGData.append(0)
+        try revisedPNGData.write(to: imageURL, options: .atomic)
+        let revisedRendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let revisedAttachment = try #require(
+            revisedRendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let revisedCell = try #require(revisedAttachment.attachmentCell as? AsyncImageAttachmentCell)
+        revisedCell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !revisedCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(revisedCell.hasDecodedImage)
+        let revisedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(revisedDecodeCount == 2)
     }
 
     @MainActor

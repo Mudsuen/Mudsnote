@@ -1714,7 +1714,10 @@ enum MarkdownImageDecoding {
         return NSSize(width: width.doubleValue, height: height.doubleValue)
     }
 
-    nonisolated static func thumbnail(at imageURL: URL) -> CGImage? {
+    nonisolated static func thumbnail(
+        at imageURL: URL,
+        maximumPixelSize: Int = maximumThumbnailPixelSize
+    ) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, [
             kCGImageSourceShouldCache: false
         ] as CFDictionary) else {
@@ -1723,17 +1726,70 @@ enum MarkdownImageDecoding {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maximumThumbnailPixelSize,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
             kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary)
     }
 }
 
-private actor MarkdownImageDecodeService {
+private final class MarkdownDecodedImageCacheEntry: NSObject {
+    let image: CGImage
+
+    init(image: CGImage) {
+        self.image = image
+    }
+}
+
+actor MarkdownImageDecodeService {
     static let shared = MarkdownImageDecodeService()
 
-    func thumbnail(at imageURL: URL) -> CGImage? {
-        MarkdownImageDecoding.thumbnail(at: imageURL)
+    private let cache: NSCache<NSString, MarkdownDecodedImageCacheEntry>
+    private(set) var decodeCount = 0
+
+    init() {
+        cache = NSCache<NSString, MarkdownDecodedImageCacheEntry>()
+        cache.countLimit = 64
+        cache.totalCostLimit = 128 * 1_024 * 1_024
+    }
+
+    func thumbnail(
+        at imageURL: URL,
+        maximumPixelSize: Int = MarkdownImageDecoding.maximumThumbnailPixelSize
+    ) -> CGImage? {
+        let standardizedURL = imageURL.standardizedFileURL
+        let values = try? standardizedURL.resourceValues(forKeys: [
+            .contentModificationDateKey,
+            .fileSizeKey
+        ])
+        let modifiedAt = values?.contentModificationDate?.timeIntervalSinceReferenceDate ?? -1
+        let fileSize = values?.fileSize ?? -1
+        let key = [
+            standardizedURL.path,
+            String(modifiedAt),
+            String(fileSize),
+            String(maximumPixelSize)
+        ].joined(separator: "|") as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached.image
+        }
+        guard let image = MarkdownImageDecoding.thumbnail(
+            at: standardizedURL,
+            maximumPixelSize: maximumPixelSize
+        ) else {
+            return nil
+        }
+        decodeCount += 1
+        cache.setObject(
+            MarkdownDecodedImageCacheEntry(image: image),
+            forKey: key,
+            cost: image.bytesPerRow * image.height
+        )
+        return image
+    }
+
+    func resetForTesting() {
+        cache.removeAllObjects()
+        decodeCount = 0
     }
 }
 
