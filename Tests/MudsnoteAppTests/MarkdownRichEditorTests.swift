@@ -5748,6 +5748,54 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Cached Trash Result"])
     }
 
+    @Test
+    func recentlyDeletedSearchFiltersBeforeApplyingItsResultLimit() throws {
+        let suiteName = "mudsnote.trash-search-limit-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-trash-search-limit-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let decoyOne = try store.trashNote(at: store.saveNewNote(title: "Recent One", body: "No match"))
+        let decoyTwo = try store.trashNote(at: store.saveNewNote(title: "Recent Two", body: "No match"))
+        let bodyMatch = try store.trashNote(at: store.saveNewNote(
+            title: "Older Body",
+            body: "The recovery needle is here"
+        ))
+        let tagMatch = try store.trashNote(at: store.saveNewNote(
+            title: "Oldest Tag",
+            body: "No body match",
+            tags: ["needle-tag"]
+        ))
+        let dates: [(URL, Date)] = [
+            (decoyOne, Date(timeIntervalSince1970: 400)),
+            (decoyTwo, Date(timeIntervalSince1970: 300)),
+            (bodyMatch, Date(timeIntervalSince1970: 200)),
+            (tagMatch, Date(timeIntervalSince1970: 100))
+        ]
+        for (url, date) in dates {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+
+        let results = libraryFilteredTrashedNotes(noteStore: store, query: "needle", limit: 2)
+        #expect(Set(results.map(\.title)) == Set(["Older Body", "Oldest Tag"]))
+        let bodyResult = results.first { $0.title == "Older Body" }
+        #expect(bodyResult?.snippet.localizedCaseInsensitiveContains("needle") == true)
+        #expect(libraryFilteredTrashedNotes(noteStore: store, query: "needle", limit: 0).isEmpty)
+    }
+
     @MainActor
     @Test
     func libraryWindowHidesEmptyTagPlaceholderLikeAppleNotes() throws {

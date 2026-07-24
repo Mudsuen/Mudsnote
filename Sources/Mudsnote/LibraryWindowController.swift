@@ -102,13 +102,21 @@ private func libraryNote(
         || (includingDescendants && noteFolderPath.hasPrefix(folderPath + "/"))
 }
 
-private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
+func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
+    guard limit > 0 else { return [] }
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
 
-    return noteStore.listTrashedNotes(limit: limit).compactMap { note in
+    var results: [NoteSearchResult] = []
+    results.reserveCapacity(limit)
+    for note in noteStore.listTrashedNotes(limit: .max) {
+        guard !Task.isCancelled else { break }
         guard let loaded = try? noteStore.loadNote(at: note.url) else {
-            return note.title.localizedCaseInsensitiveContains(trimmedQuery) ? note : nil
+            if note.title.localizedCaseInsensitiveContains(trimmedQuery) {
+                results.append(note)
+            }
+            if results.count == limit { break }
+            continue
         }
 
         let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
@@ -117,9 +125,9 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
         let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        guard matchesTitle || matchingLine != nil || matchesTag else { return nil }
+        guard matchesTitle || matchingLine != nil || matchesTag else { continue }
 
-        return NoteSearchResult(
+        results.append(NoteSearchResult(
             url: note.url,
             title: loaded.title,
             snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
@@ -129,8 +137,10 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
             tags: loaded.tags,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
-        )
+        ))
+        if results.count == limit { break }
     }
+    return results
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
