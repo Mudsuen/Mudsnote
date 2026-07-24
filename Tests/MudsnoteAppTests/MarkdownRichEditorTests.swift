@@ -995,10 +995,12 @@ struct MarkdownRichEditorTests {
         let imageFrame = try #require(
             firstController.editorTextView.imageAttachmentFrame(atCharacterIndex: firstImageIndex)
         )
-        let dragStart = NSPoint(x: imageFrame.maxX - 1, y: imageFrame.midY)
+        let dragStart = NSPoint(x: imageFrame.maxX, y: imageFrame.midY)
+        let dragMiddle = NSPoint(x: dragStart.x + 48, y: dragStart.y)
         let dragEnd = NSPoint(x: dragStart.x + 96, y: dragStart.y)
         let window = try #require(firstController.editorTextView.window)
         let startInWindow = firstController.editorTextView.convert(dragStart, to: nil)
+        let middleInWindow = firstController.editorTextView.convert(dragMiddle, to: nil)
         let endInWindow = firstController.editorTextView.convert(dragEnd, to: nil)
         let mouseDown = try #require(NSEvent.mouseEvent(
             with: .leftMouseDown,
@@ -1011,14 +1013,25 @@ struct MarkdownRichEditorTests {
             clickCount: 1,
             pressure: 1
         ))
-        let mouseDragged = try #require(NSEvent.mouseEvent(
+        let mouseDraggedMiddle = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: middleInWindow,
+            modifierFlags: [],
+            timestamp: 0.05,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let mouseDraggedEnd = try #require(NSEvent.mouseEvent(
             with: .leftMouseDragged,
             location: endInWindow,
             modifierFlags: [],
             timestamp: 0.1,
             windowNumber: window.windowNumber,
             context: nil,
-            eventNumber: 2,
+            eventNumber: 3,
             clickCount: 1,
             pressure: 1
         ))
@@ -1029,12 +1042,24 @@ struct MarkdownRichEditorTests {
             timestamp: 0.2,
             windowNumber: window.windowNumber,
             context: nil,
-            eventNumber: 3,
+            eventNumber: 4,
             clickCount: 1,
             pressure: 0
         ))
         firstController.editorTextView.mouseDown(with: mouseDown)
-        firstController.editorTextView.mouseDragged(with: mouseDragged)
+        #expect(firstController.editorTextView.selectedRange().length == 0)
+        firstController.editorTextView.mouseDragged(with: mouseDraggedMiddle)
+        let middleReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(middleReference.displaySize.width > initialReference.displaySize.width)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == nil)
+        firstController.editorTextView.mouseDragged(with: mouseDraggedEnd)
+        let endReferenceBeforeMouseUp = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(endReferenceBeforeMouseUp.displaySize.width > middleReference.displaySize.width)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == nil)
         firstController.editorTextView.mouseUp(with: mouseUp)
         let resizedReference = try #require(
             firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
