@@ -137,6 +137,46 @@ struct MarkdownRichEditorTests {
         #expect(creationResults.first?.title == "Alpha Global")
     }
 
+    @Test func fullLibrarySnapshotKeepsNotesBeyondTenThousandReachable() {
+        let root = URL(fileURLWithPath: "/tmp/mudsnote-full-snapshot", isDirectory: true)
+        var notes = (0..<10_001).map { index in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: String(format: "Zulu %05d", index),
+                snippet: "",
+                modifiedAt: Date(timeIntervalSince1970: Double(10_001 - index)),
+                tags: ["archive"],
+                hasAttachments: false,
+                thumbnailURL: nil
+            )
+        }
+        notes[10_000] = NoteSearchResult(
+            url: notes[10_000].url,
+            title: "Alpha Oldest",
+            snippet: "",
+            modifiedAt: notes[10_000].modifiedAt,
+            tags: ["archive"],
+            hasAttachments: false,
+            thumbnailURL: nil
+        )
+
+        let snapshot = Array(notes.prefix(LibraryWindowController.sourceCountSnapshotLimit))
+        let titleResults = LibraryNoteListProjection.rankedPrefix(
+            snapshot,
+            limit: 240,
+            sortOrder: .title,
+            groupsByDate: false,
+            includesPinnedGroup: false,
+            pinnedPaths: []
+        ) { _ in true }
+        let countIndex = LibrarySourceCountIndex(notes: snapshot, folderPaths: [root.path])
+
+        #expect(snapshot.count == 10_001)
+        #expect(titleResults.first?.title == "Alpha Oldest")
+        #expect(countIndex.count(forFolder: root) == 10_001)
+        #expect(countIndex.count(forTag: "archive") == 10_001)
+    }
+
     @Test func groupedTitleProjectionPrioritizesRecentDateGroupsAndPinnedNotes() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt

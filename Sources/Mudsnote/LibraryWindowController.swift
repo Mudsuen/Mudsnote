@@ -1245,7 +1245,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var sourceListView: NSView?
     private weak var editorStackView: NSStackView?
     private weak var galleryScrollView: NSScrollView?
-    private static let sourceCountSnapshotLimit = 10_000
+    static let sourceCountSnapshotLimit = Int.max
     private static let sourceSnapshotConfirmationDelay = Duration.milliseconds(240)
 
     let theme = MarkdownEditorTheme(
