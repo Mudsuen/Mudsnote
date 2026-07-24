@@ -87,6 +87,28 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) }
     }
 
+    public func libraryImageDisplayWidth(for fileURL: URL) -> Double? {
+        let path = fileURL.standardizedFileURL.path
+        guard let widths = defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryImageDisplayWidths),
+              let width = widths[path] as? NSNumber,
+              width.doubleValue.isFinite,
+              width.doubleValue > 0 else {
+            return nil
+        }
+        return width.doubleValue
+    }
+
+    public func setLibraryImageDisplayWidth(_ width: Double?, for fileURL: URL) {
+        let path = fileURL.standardizedFileURL.path
+        var widths = defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryImageDisplayWidths) ?? [:]
+        if let width, width.isFinite, width > 0 {
+            widths[path] = width
+        } else {
+            widths.removeValue(forKey: path)
+        }
+        defaults.set(widths, forKey: NoteStoreDefaultsKey.libraryImageDisplayWidths)
+    }
+
     public var libraryCollapsedFolderPaths: Set<String> {
         get { storedStandardizedPathSet(forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }
         set { storeStandardizedPathSet(newValue, forKey: NoteStoreDefaultsKey.libraryCollapsedFolderPaths) }

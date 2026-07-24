@@ -32,6 +32,9 @@ extension EditorWindowController {
         editorTextView.contextMenuOptionsProvider = { [weak self] in
             self?.noteStore.enabledEditorContextMenuOptions ?? Set(EditorContextMenuOption.allCases)
         }
+        editorTextView.onImageDisplayWidthChanged = { [weak self] fileURL, width in
+            self?.noteStore.setLibraryImageDisplayWidth(width, for: fileURL)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenu()
         }
@@ -731,7 +734,12 @@ extension EditorWindowController {
 
     func applyBodyMarkdown(_ markdown: String) {
         suppressTextDidChange = true
-        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: activeFloatingNoteURL ?? fileURL)
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: theme,
+            baseURL: activeFloatingNoteURL ?? fileURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+        )
         editorTextView.textStorage?.setAttributedString(rendered)
         suppressTextDidChange = false
     }

@@ -48,7 +48,8 @@ extension EditorWindowController {
         let rendered = MarkdownRichTextCodec.render(
             markdown: markdown,
             theme: theme,
-            baseURL: renderingBaseURL
+            baseURL: renderingBaseURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
         )
         suppressTextDidChange = true
         storage.replaceCharacters(in: selection, with: rendered)

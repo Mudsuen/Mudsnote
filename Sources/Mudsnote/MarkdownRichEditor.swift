@@ -10,6 +10,7 @@ extension NSAttributedString.Key {
     static let qmAutomaticLink = NSAttributedString.Key("MudsnoteAutomaticLink")
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
+    static let qmImageFilePath = NSAttributedString.Key("MudsnoteImageFilePath")
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
     static let qmAttachmentFilePath = NSAttributedString.Key("MudsnoteAttachmentFilePath")
     static let qmAttachmentMetadata = NSAttributedString.Key("MudsnoteAttachmentMetadata")
@@ -21,6 +22,20 @@ extension NSAttributedString.Key {
     static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
     static let qmHighlight = NSAttributedString.Key("MudsnoteHighlight")
+}
+
+final class MarkdownImageAttachmentReference: NSObject {
+    let range: NSRange
+    let path: String
+    let naturalSize: NSSize
+    let displaySize: NSSize
+
+    init(range: NSRange, path: String, naturalSize: NSSize, displaySize: NSSize) {
+        self.range = range
+        self.path = path
+        self.naturalSize = naturalSize
+        self.displaySize = displaySize
+    }
 }
 
 final class MarkdownAttachmentReference: NSObject {
@@ -363,14 +378,24 @@ private final class SelectionFormattingPanelButton: NSButton {
 }
 
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
+    private struct ImageResizeDragState {
+        let characterIndex: Int
+        let initialPointerX: CGFloat
+        let initialWidth: CGFloat
+        let horizontalDirection: CGFloat
+    }
+
     private static let allowedContextMenuItemIdentifier = NSUserInterfaceItemIdentifier("mudsnote.editor.context-menu.allowed")
+    private static let imageResizeEdgeHitWidth: CGFloat = 10
     weak var commandDelegate: MarkdownTextViewCommands?
     var onTextInputStateChanged: (() -> Void)?
     var configureContextMenu: ((NSMenu, NSEvent) -> Void)?
     var contextMenuOptionsProvider: (() -> Set<EditorContextMenuOption>)?
     var selectionMenuProvider: (() -> NSMenu?)?
+    var onImageDisplayWidthChanged: ((URL, Double?) -> Void)?
     private var selectionFormattingPanel: NSPanel?
     private weak var selectionFormattingStack: NSStackView?
+    private var imageResizeDragState: ImageResizeDragState?
     var isSelectionFormattingPanelVisible: Bool { selectionFormattingPanel?.isVisible == true }
     var selectionFormattingPanelFrame: NSRect? { selectionFormattingPanel?.frame }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
@@ -391,7 +416,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
-        if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer)
+        if imageResizeEdge(at: event) != nil {
+            NSCursor.resizeLeftRight.set()
+        } else if didHitChecklistPrefix(at: containerPoint, layoutManager: layoutManager, textContainer: textContainer)
+            || imageAttachmentReference(atCharacterIndex: characterIndex) != nil
             || fileAttachmentReference(atCharacterIndex: characterIndex) != nil
             || linkReference(atCharacterIndex: characterIndex) != nil {
             NSCursor.pointingHand.set()
@@ -640,6 +668,80 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         return menu
     }
 
+    @discardableResult
+    func resizeImage(
+        atCharacterIndex characterIndex: Int,
+        preferredWidth: Double
+    ) -> Bool {
+        guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex),
+              let textStorage,
+              let attachment = textStorage.attribute(
+                .attachment,
+                at: reference.range.location,
+                effectiveRange: nil
+              ) as? NSTextAttachment else {
+            return false
+        }
+
+        let displaySize = MarkdownImageDisplaySizing.displaySize(
+            for: reference.naturalSize,
+            preferredWidth: preferredWidth
+        )
+        attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
+        layoutManager?.invalidateLayout(
+            forCharacterRange: reference.range,
+            actualCharacterRange: nil
+        )
+        layoutManager?.invalidateDisplay(forCharacterRange: reference.range)
+        onImageDisplayWidthChanged?(URL(fileURLWithPath: reference.path), preferredWidth)
+        return true
+    }
+
+    func imageAttachmentFrame(atCharacterIndex characterIndex: Int) -> NSRect? {
+        guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex),
+              let layoutManager,
+              let textContainer else {
+            return nil
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: reference.range,
+            actualCharacterRange: nil
+        )
+        var frame = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        frame.origin.x += textContainerInset.width
+        frame.origin.y += textContainerInset.height
+        return frame
+    }
+
+    private func imageResizeEdge(at event: NSEvent) -> (characterIndex: Int, direction: CGFloat)? {
+        guard let layoutManager,
+              let textContainer,
+              layoutManager.numberOfGlyphs > 0 else {
+            return nil
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        let containerPoint = NSPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard let frame = imageAttachmentFrame(atCharacterIndex: characterIndex),
+              point.y >= frame.minY,
+              point.y <= frame.maxY else {
+            return nil
+        }
+
+        if abs(point.x - frame.minX) <= Self.imageResizeEdgeHitWidth {
+            return (characterIndex, -1)
+        }
+        if abs(point.x - frame.maxX) <= Self.imageResizeEdgeHitWidth {
+            return (characterIndex, 1)
+        }
+        return nil
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         for item in menu.items.reversed()
         where item.identifier != Self.allowedContextMenuItemIdentifier {
@@ -736,6 +838,20 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
+        if event.type == .leftMouseDown,
+           let resizeEdge = imageResizeEdge(at: event),
+           let reference = imageAttachmentReference(atCharacterIndex: resizeEdge.characterIndex) {
+            imageResizeDragState = ImageResizeDragState(
+                characterIndex: resizeEdge.characterIndex,
+                initialPointerX: point.x,
+                initialWidth: reference.displaySize.width,
+                horizontalDirection: resizeEdge.direction
+            )
+            setSelectedRange(reference.range)
+            NSCursor.resizeLeftRight.set()
+            return
+        }
+
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command],
            linkReference(atCharacterIndex: characterIndex) != nil,
            commandDelegate?.markdownTextView(self, didCommandClickLinkAt: characterIndex) == true {
@@ -762,7 +878,27 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let resize = imageResizeDragState {
+            let pointerX = convert(event.locationInWindow, from: nil).x
+            let width = resize.initialWidth
+                + (pointerX - resize.initialPointerX) * resize.horizontalDirection
+            _ = resizeImage(
+                atCharacterIndex: resize.characterIndex,
+                preferredWidth: MarkdownImageDisplaySizing.clampedWidth(width)
+            )
+            NSCursor.resizeLeftRight.set()
+            return
+        }
         super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if imageResizeDragState != nil {
+            imageResizeDragState = nil
+            updateHoverCursor(with: event)
+            return
+        }
+        super.mouseUp(with: event)
     }
 
     func showSelectionMenuIfNeeded() {
@@ -890,6 +1026,36 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func fileAttachmentReference(at event: NSEvent) -> MarkdownAttachmentReference? {
         guard let characterIndex = characterIndex(at: event) else { return nil }
         return fileAttachmentReference(atCharacterIndex: characterIndex)
+    }
+
+    func imageAttachmentReference(atCharacterIndex characterIndex: Int) -> MarkdownImageAttachmentReference? {
+        guard let textStorage,
+              characterIndex >= 0,
+              characterIndex < textStorage.length else {
+            return nil
+        }
+        var effectiveRange = NSRange(location: 0, length: 0)
+        guard let path = textStorage.attribute(
+            .qmImageFilePath,
+            at: characterIndex,
+            effectiveRange: &effectiveRange
+        ) as? String,
+        let attachment = textStorage.attribute(
+            .attachment,
+            at: characterIndex,
+            effectiveRange: nil
+        ) as? NSTextAttachment,
+        let naturalSize = attachment.image?.size,
+        naturalSize.width > 0,
+        naturalSize.height > 0 else {
+            return nil
+        }
+        return MarkdownImageAttachmentReference(
+            range: effectiveRange,
+            path: path,
+            naturalSize: naturalSize,
+            displaySize: attachment.bounds.size
+        )
     }
 
     func linkReference(at event: NSEvent) -> MarkdownLinkReference? {
@@ -1329,7 +1495,12 @@ enum MarkdownRichTextCodec {
     }
 
     @MainActor
-    static func render(markdown: String, theme: MarkdownEditorTheme, baseURL: URL? = nil) -> NSMutableAttributedString {
+    static func render(
+        markdown: String,
+        theme: MarkdownEditorTheme,
+        baseURL: URL? = nil,
+        imageDisplayWidthProvider: ((URL) -> Double?)? = nil
+    ) -> NSMutableAttributedString {
         let normalized = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         let output = NSMutableAttributedString()
@@ -1372,7 +1543,43 @@ enum MarkdownRichTextCodec {
             lineIndex += 1
         }
 
+        if let imageDisplayWidthProvider {
+            applyImageDisplayWidths(
+                to: output,
+                imageDisplayWidthProvider: imageDisplayWidthProvider
+            )
+        }
         return output
+    }
+
+    private static func applyImageDisplayWidths(
+        to attributedString: NSAttributedString,
+        imageDisplayWidthProvider: (URL) -> Double?
+    ) {
+        attributedString.enumerateAttribute(
+            .qmImageFilePath,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, range, _ in
+            guard let path = value as? String,
+                  let attachment = attributedString.attribute(
+                    .attachment,
+                    at: range.location,
+                    effectiveRange: nil
+                  ) as? NSTextAttachment,
+                  let naturalSize = attachment.image?.size else {
+                return
+            }
+            let displaySize = MarkdownImageDisplaySizing.displaySize(
+                for: naturalSize,
+                preferredWidth: imageDisplayWidthProvider(URL(fileURLWithPath: path))
+            )
+            attachment.bounds = NSRect(
+                x: 0,
+                y: -4,
+                width: displaySize.width,
+                height: displaySize.height
+            )
+        }
     }
 
     @MainActor
@@ -2236,12 +2443,7 @@ enum MarkdownRichTextCodec {
             return nil
         }
 
-        let maxSize = NSSize(width: 420, height: 240)
-        let scale = min(maxSize.width / image.size.width, maxSize.height / image.size.height, 1)
-        let displaySize = NSSize(
-            width: max(1, image.size.width * scale),
-            height: max(1, image.size.height * scale)
-        )
+        let displaySize = MarkdownImageDisplaySizing.fitSize(for: image.size)
 
         let attachment = NSTextAttachment()
         attachment.image = image
@@ -2250,6 +2452,7 @@ enum MarkdownRichTextCodec {
         let attributed = NSMutableAttributedString(attachment: attachment)
         attributed.addAttributes(baseAttributes.merging([
             .qmImageMarkdown: markdown,
+            .qmImageFilePath: imageURL.path,
             .toolTip: label.isEmpty ? imageURL.lastPathComponent : label,
             .paragraphStyle: theme.paragraphStyle(for: paragraphKind),
             .qmParagraphKind: paragraphKind.encodedValue

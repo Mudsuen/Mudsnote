@@ -124,6 +124,7 @@ enum NoteStoreDefaultsKey {
     static let libraryGroupsNotesByDate = "mudsnote.library.groupsNotesByDate"
     static let libraryNoteViewMode = "mudsnote.library.noteViewMode"
     static let libraryIncludesSubfolderNotes = "mudsnote.library.includesSubfolderNotes"
+    static let libraryImageDisplayWidths = "mudsnote.library.imageDisplayWidths"
     static let libraryPinnedNotePaths = "mudsnote.library.pinnedNotePaths"
     static let libraryCollapsedFolderPaths = "mudsnote.library.collapsedFolderPaths"
     static let libraryExpandedFolderPaths = "mudsnote.library.expandedFolderPaths"
