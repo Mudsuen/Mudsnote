@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import ImageIO
 import MudsnoteCore
 
 extension NSAttributedString.Key {
@@ -1075,7 +1076,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             at: characterIndex,
             effectiveRange: nil
         ) as? NSTextAttachment,
-        let naturalSize = attachment.image?.size,
+        let naturalSize = MarkdownRichTextCodec.naturalImageSize(for: attachment),
         naturalSize.width > 0,
         naturalSize.height > 0 else {
             return nil
@@ -1516,6 +1517,95 @@ private final class FileAttachmentPreviewCell: NSTextAttachmentCell {
     }
 }
 
+enum MarkdownImageDecoding {
+    static let maximumThumbnailPixelSize = 2_400
+
+    static func pixelSize(at imageURL: URL) -> NSSize? {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.doubleValue > 0,
+              height.doubleValue > 0 else {
+            return nil
+        }
+        return NSSize(width: width.doubleValue, height: height.doubleValue)
+    }
+
+    nonisolated static func thumbnail(at imageURL: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary) else {
+            return nil
+        }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumThumbnailPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
+    }
+}
+
+private actor MarkdownImageDecodeService {
+    static let shared = MarkdownImageDecodeService()
+
+    func thumbnail(at imageURL: URL) -> CGImage? {
+        MarkdownImageDecoding.thumbnail(at: imageURL)
+    }
+}
+
+@MainActor
+final class AsyncImageAttachmentCell: NSTextAttachmentCell {
+    private let imageURL: URL
+    let naturalSize: NSSize
+    private var decodeTask: Task<Void, Never>?
+    private(set) var hasDecodedImage = false
+
+    init(imageURL: URL, naturalSize: NSSize) {
+        self.imageURL = imageURL
+        self.naturalSize = naturalSize
+        super.init(imageCell: NSImage(size: naturalSize))
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        decodeTask?.cancel()
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        beginDecodingIfNeeded(in: controlView)
+        if hasDecodedImage {
+            super.draw(withFrame: cellFrame, in: controlView)
+        } else {
+            let placeholder = NSBezierPath(roundedRect: cellFrame, xRadius: 8, yRadius: 8)
+            panelSubtleFillColor().withAlphaComponent(0.18).setFill()
+            placeholder.fill()
+        }
+    }
+
+    func beginDecodingIfNeeded(in controlView: NSView?) {
+        guard decodeTask == nil, !hasDecodedImage else { return }
+        let imageURL = imageURL
+        let naturalSize = naturalSize
+        weak let textView = controlView as? NSTextView
+        decodeTask = Task { [weak self, weak textView] in
+            guard !Task.isCancelled,
+                  let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL),
+                  !Task.isCancelled,
+                  let self else {
+                return
+            }
+            self.image = NSImage(cgImage: thumbnail, size: naturalSize)
+            self.hasDecodedImage = true
+            textView?.needsDisplay = true
+        }
+    }
+}
+
 enum MarkdownRichTextCodec {
     private static let tablePlaceholder = "\u{200B}"
 
@@ -1598,7 +1688,7 @@ enum MarkdownRichTextCodec {
                     at: range.location,
                     effectiveRange: nil
                   ) as? NSTextAttachment,
-                  let naturalSize = attachment.image?.size else {
+                  let naturalSize = naturalImageSize(for: attachment) else {
                 return
             }
             let displaySize = MarkdownImageDisplaySizing.displaySize(
@@ -1612,6 +1702,13 @@ enum MarkdownRichTextCodec {
                 height: displaySize.height
             )
         }
+    }
+
+    static func naturalImageSize(for attachment: NSTextAttachment) -> NSSize? {
+        if let cell = attachment.attachmentCell as? AsyncImageAttachmentCell {
+            return cell.naturalSize
+        }
+        return attachment.image?.size
     }
 
     @MainActor
@@ -2554,17 +2651,18 @@ enum MarkdownRichTextCodec {
         baseURL: URL?
     ) -> NSAttributedString? {
         guard let imageURL = localImageURL(path: path, baseURL: baseURL),
-              let image = NSImage(contentsOf: imageURL),
-              image.size.width > 0,
-              image.size.height > 0
+              let naturalSize = MarkdownImageDecoding.pixelSize(at: imageURL)
         else {
             return nil
         }
 
-        let displaySize = MarkdownImageDisplaySizing.fitSize(for: image.size)
+        let displaySize = MarkdownImageDisplaySizing.fitSize(for: naturalSize)
 
         let attachment = NSTextAttachment()
-        attachment.image = image
+        attachment.attachmentCell = AsyncImageAttachmentCell(
+            imageURL: imageURL,
+            naturalSize: naturalSize
+        )
         attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
 
         let attributed = NSMutableAttributedString(attachment: attachment)

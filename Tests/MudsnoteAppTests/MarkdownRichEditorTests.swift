@@ -1025,6 +1025,40 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func richCodecDefersImagePixelDecodingUntilAttachmentDrawing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-async-image-tests-\(UUID().uuidString)", isDirectory: true)
+        let noteURL = root.appendingPathComponent("Note.md")
+        let imageURL = root.appendingPathComponent("preview.png")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pngData = try #require(Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        ))
+        try pngData.write(to: imageURL)
+
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let attachment = try #require(
+            rendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let cell = try #require(attachment.attachmentCell as? AsyncImageAttachmentCell)
+
+        #expect(!cell.hasDecodedImage)
+        #expect(cell.naturalSize == NSSize(width: 1, height: 1))
+
+        cell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !cell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(cell.hasDecodedImage)
+    }
+
+    @MainActor
+    @Test
     func libraryImageResizePersistsOutsideMarkdownWithoutRewritingImage() throws {
         let suiteName = "mudsnote.image-resize-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
