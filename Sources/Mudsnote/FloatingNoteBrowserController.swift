@@ -14,6 +14,7 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
     let snippetLabel = NSTextField(labelWithString: "")
     let actionButton = NSButton()
     private var onAction: (() -> Void)?
+    private(set) var isSelectedForPresentation = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -81,7 +82,18 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         let label = isOpen ? "关闭 \(titleLabel.stringValue)" : "添加 \(titleLabel.stringValue)"
         actionButton.toolTip = label
         actionButton.setAccessibilityLabel(label)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.row)
+        setAccessibilityLabel(subtitle.isEmpty ? title : "\(title)，\(subtitle)")
         self.onAction = onAction
+    }
+
+    func setSelected(_ isSelected: Bool) {
+        isSelectedForPresentation = isSelected
+        layer?.backgroundColor = panelPrimaryTextColor()
+            .withAlphaComponent(isSelected ? 0.18 : 0.08)
+            .cgColor
+        setAccessibilitySelected(isSelected)
     }
 
     @objc private func actionPressed() {
@@ -101,6 +113,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     static let compactRowHeight: CGFloat = 36
     static let compactRowStride: CGFloat = 40
     static let compactChromeHeight: CGFloat = 76
+    static let maximumSearchResults = 100
 
     private struct Item {
         let url: URL?
@@ -109,6 +122,12 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         let openWindowID: UUID?
 
         var isOpen: Bool { openWindowID != nil }
+        var selectionIdentifier: String {
+            if let openWindowID {
+                return "window:\(openWindowID.uuidString)"
+            }
+            return "url:\(url?.standardizedFileURL.path ?? "")"
+        }
     }
 
     private let noteStore: NoteStore
@@ -117,7 +136,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     private let onActivate: (UUID) -> Void
     private let onClose: (UUID) -> Void
     private let onCreate: () -> Void
-    private let searchField = NSSearchField(string: "")
+    let searchField = NSSearchField(string: "")
     let newWindowButton = NSButton()
     private let emptyLabel = NSTextField(labelWithString: "搜索笔记并添加悬浮窗口")
     private let tableView = NSTableView()
@@ -129,6 +148,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
 
     var displayedURLs: [URL] { items.compactMap(\.url) }
     var displayedOpenStates: [Bool] { items.map(\.isOpen) }
+    var selectedResultRow: Int { tableView.selectedRow }
 
     func rowActionButton(at row: Int) -> NSButton? {
         guard items.indices.contains(row) else { return nil }
@@ -294,6 +314,28 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         reloadResults()
     }
 
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard control === searchField else { return false }
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)),
+             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+            openSelectedResult()
+        case #selector(NSResponder.moveDown(_:)):
+            moveSelection(by: 1)
+        case #selector(NSResponder.moveUp(_:)):
+            moveSelection(by: -1)
+        case #selector(NSResponder.cancelOperation(_:)):
+            window?.close()
+        default:
+            return false
+        }
+        return true
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
         items.count
     }
@@ -314,7 +356,12 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             isOpen: item.isOpen,
             onAction: { [weak self] in self?.performAction(for: item) }
         )
+        cell.setSelected(row == tableView.selectedRow)
         return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateVisibleSelectionState()
     }
 
     @objc private func openSelectedResult() {
@@ -381,6 +428,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         searchField.controlSize = .small
         searchField.focusRingType = .none
         searchField.delegate = self
+        searchField.setAccessibilityLabel("搜索悬浮笔记")
         searchField.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(searchField)
 
@@ -399,6 +447,8 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         tableView.intercellSpacing = NSSize(width: 0, height: Self.compactRowStride - Self.compactRowHeight)
         tableView.backgroundColor = .clear
         tableView.selectionHighlightStyle = .none
+        tableView.allowsEmptySelection = true
+        tableView.setAccessibilityLabel("悬浮笔记搜索结果")
         tableView.delegate = self
         tableView.dataSource = self
         tableView.target = self
@@ -451,12 +501,16 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     }
 
     private func reloadResults() {
+        let selectedIdentifier = items.indices.contains(tableView.selectedRow)
+            ? items[tableView.selectedRow].selectionIdentifier
+            : nil
         let windows = openWindows()
         let openPaths = Set(windows.compactMap { $0.url?.standardizedFileURL.path })
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidates = query.isEmpty
             ? []
-            : noteStore.searchNotes(query: query, limit: .max).filter { !openPaths.contains($0.url.standardizedFileURL.path) }
+            : noteStore.searchNotes(query: query, limit: Self.maximumSearchResults)
+                .filter { !openPaths.contains($0.url.standardizedFileURL.path) }
 
         items = windows.map {
             Item(url: $0.url, title: $0.title, subtitle: $0.subtitle, openWindowID: $0.id)
@@ -469,6 +523,16 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             )
         }
         tableView.reloadData()
+        let selectedRow = selectedIdentifier.flatMap { identifier in
+            items.firstIndex { $0.selectionIdentifier == identifier }
+        } ?? (items.isEmpty ? nil : 0)
+        if let selectedRow {
+            tableView.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
+            tableView.scrollRowToVisible(selectedRow)
+        } else {
+            tableView.deselectAll(nil)
+        }
+        updateVisibleSelectionState()
         let needsScrolling = items.count > 5
         scrollView.hasVerticalScroller = needsScrolling
         scrollView.verticalScrollElasticity = needsScrolling ? .automatic : .none
@@ -478,6 +542,30 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         }
         emptyLabel.isHidden = !items.isEmpty
         resizeForContent()
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard !items.isEmpty else { return }
+        let currentRow = tableView.selectedRow
+        let nextRow: Int
+        if currentRow < 0 {
+            nextRow = offset < 0 ? items.count - 1 : 0
+        } else {
+            nextRow = min(max(currentRow + offset, 0), items.count - 1)
+        }
+        tableView.selectRowIndexes(IndexSet(integer: nextRow), byExtendingSelection: false)
+        tableView.scrollRowToVisible(nextRow)
+    }
+
+    private func updateVisibleSelectionState() {
+        let visibleRows = tableView.rows(in: tableView.visibleRect)
+        guard visibleRows.location != NSNotFound else { return }
+        let upperBound = min(NSMaxRange(visibleRows), items.count)
+        guard visibleRows.location < upperBound else { return }
+        for row in visibleRows.location..<upperBound {
+            (tableView.view(atColumn: 0, row: row, makeIfNecessary: false) as? FloatingNoteBrowserResultCellView)?
+                .setSelected(row == tableView.selectedRow)
+        }
     }
 
     private func resizeForContent() {
