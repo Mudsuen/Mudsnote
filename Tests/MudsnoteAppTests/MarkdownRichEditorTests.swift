@@ -46,6 +46,31 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
     }
 }
 
+private final class DraftPersistenceRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let beforeRecord: ((DraftSnapshot) -> Void)?
+    private var savedTitles: [String] = []
+    private var observedMainThread = false
+
+    init(beforeRecord: ((DraftSnapshot) -> Void)? = nil) {
+        self.beforeRecord = beforeRecord
+    }
+
+    func record(_ snapshot: DraftSnapshot) {
+        beforeRecord?(snapshot)
+        lock.lock()
+        savedTitles.append(snapshot.title)
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+    }
+
+    func snapshot() -> (savedTitles: [String], observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (savedTitles, observedMainThread)
+    }
+}
+
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
@@ -5527,6 +5552,65 @@ struct MarkdownRichEditorTests {
         try controller.persistDraft(force: true)
         #expect(controller.statusLabel.stringValue == statusBeforeEdit)
         #expect(harness.store.loadDraft(id: "quiet-autosave-status")?.title == "Quiet draft")
+    }
+
+    @MainActor
+    @Test
+    func floatingDraftAutosaveWritesOffMainAndClearsMatchingRevision() async throws {
+        let recorder = DraftPersistenceRecorder()
+        let harness = try makeEditorControllerHarness(
+            draftID: "background-draft-autosave",
+            showsSaveButton: false,
+            saveDraftSnapshot: recorder.record
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        controller.editorTextView.string = "Background draft"
+        controller.markDocumentDirty()
+        await controller.flushPendingDraftAutosaveForTesting()
+
+        let recorded = recorder.snapshot()
+        #expect(recorded.savedTitles == ["Background draft"])
+        #expect(!recorded.observedMainThread)
+        #expect(!controller.isDirty)
+    }
+
+    @MainActor
+    @Test
+    func draftPersistenceCoalescesQueuedSnapshotsAndFlushesAfterActiveWrite() throws {
+        let activeWriteStarted = DispatchSemaphore(value: 0)
+        let releaseActiveWrite = DispatchSemaphore(value: 0)
+        let recorder = DraftPersistenceRecorder { snapshot in
+            guard snapshot.title == "First" else { return }
+            activeWriteStarted.signal()
+            releaseActiveWrite.wait()
+        }
+        let coordinator = DraftPersistenceCoordinator(
+            save: recorder.record,
+            delete: { _ in }
+        )
+        func snapshot(_ title: String) -> DraftSnapshot {
+            DraftSnapshot(
+                id: "coalesced-draft",
+                sourcePath: nil,
+                selectedDirectoryPath: "/tmp",
+                title: title,
+                body: "",
+                updatedAt: Date()
+            )
+        }
+
+        coordinator.enqueue(.save(snapshot("First"))) { _ in }
+        #expect(activeWriteStarted.wait(timeout: .now() + 1) == .success)
+        coordinator.enqueue(.save(snapshot("Stale"))) { _ in }
+        coordinator.enqueue(.save(snapshot("Latest"))) { _ in }
+        releaseActiveWrite.signal()
+        coordinator.waitUntilIdle()
+
+        #expect(recorder.snapshot().savedTitles == ["First", "Latest"])
+        try coordinator.flush(.save(snapshot("Closing")))
+        #expect(recorder.snapshot().savedTitles == ["First", "Latest", "Closing"])
     }
 
     @MainActor

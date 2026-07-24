@@ -178,6 +178,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let saveDraftSnapshot: (DraftSnapshot) throws -> Void
     let deleteDraftSnapshot: (String) -> Void
     let draftPersistenceErrorHandler: ((Error) -> Void)?
+    lazy var draftPersistenceCoordinator = DraftPersistenceCoordinator(
+        save: saveDraftSnapshot,
+        delete: deleteDraftSnapshot
+    )
 
     let toolbarButtonWidth: CGFloat = 30
     let toolbarButtonHeight: CGFloat = 26
@@ -212,6 +216,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var observers: [NSObjectProtocol] = []
     var autosaveTimer: Timer?
     var isDirty = false
+    var draftContentRevision = 0
+    var draftPersistenceGeneration = 0
     var suppressAutosave = false
     var suppressTextDidChange = false
     var currentPanelOpacity: Double

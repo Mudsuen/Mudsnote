@@ -6,16 +6,12 @@ extension EditorWindowController {
 
     func markDocumentDirty() {
         guard !suppressAutosave else { return }
+        draftContentRevision &+= 1
         isDirty = true
         autosaveTimer?.invalidate()
         autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    try self.persistDraft(force: false)
-                } catch {
-                    self.handleDraftPersistenceFailure(error)
-                }
+                self?.persistDraftInBackground()
             }
         }
     }
@@ -25,15 +21,47 @@ extension EditorWindowController {
         autosaveTimer = nil
         guard isDirty || force else { return }
 
-        let document = currentDocument()
+        draftPersistenceGeneration &+= 1
+        try draftPersistenceCoordinator.flush(currentDraftPersistenceAction())
+        isDirty = false
+    }
 
-        if document.title.isEmpty && document.body.isEmpty {
-            deleteDraftSnapshot(currentDraftID)
-            isDirty = false
-            return
+    private func persistDraftInBackground() {
+        autosaveTimer?.invalidate()
+        autosaveTimer = nil
+        guard isDirty else { return }
+
+        let revision = draftContentRevision
+        draftPersistenceGeneration &+= 1
+        let generation = draftPersistenceGeneration
+        let action = currentDraftPersistenceAction()
+        draftPersistenceCoordinator.enqueue(action) { [weak self] result in
+            guard let self,
+                  self.draftContentRevision == revision,
+                  self.draftPersistenceGeneration == generation else {
+                return
+            }
+            switch result {
+            case .success:
+                self.isDirty = false
+            case .failure(let error):
+                self.handleDraftPersistenceFailure(error)
+            }
         }
+    }
 
-        let snapshot = DraftSnapshot(
+    func flushPendingDraftAutosaveForTesting() async {
+        persistDraftInBackground()
+        draftPersistenceCoordinator.waitUntilIdle()
+        await Task.yield()
+    }
+
+    private func currentDraftPersistenceAction() -> DraftPersistenceAction {
+        let document = currentDocument()
+        guard !document.title.isEmpty || !document.body.isEmpty else {
+            return .delete(currentDraftID)
+        }
+        return .save(DraftSnapshot(
             id: currentDraftID,
             sourcePath: activeFloatingNoteURL?.path ?? fileURL?.path,
             selectedDirectoryPath: selectedDirectoryURL.path,
@@ -41,10 +69,7 @@ extension EditorWindowController {
             body: document.body,
             tags: document.tags,
             updatedAt: Date()
-        )
-
-        try saveDraftSnapshot(snapshot)
-        isDirty = false
+        ))
     }
 
     @discardableResult
