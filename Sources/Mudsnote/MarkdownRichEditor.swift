@@ -696,7 +696,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     @discardableResult
     func resizeImage(
         atCharacterIndex characterIndex: Int,
-        preferredWidth: Double,
+        preferredWidth: Double?,
         persistsDisplayWidth: Bool = true
     ) -> Bool {
         guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex),
@@ -738,17 +738,14 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         preferredWidth: Double?,
         registersUndo: Bool = true
     ) -> Bool {
-        guard let characterIndex = characterIndexForImage(at: fileURL),
-              let reference = imageAttachmentReference(atCharacterIndex: characterIndex) else {
+        guard let characterIndex = characterIndexForImage(at: fileURL) else {
             return false
         }
         let standardizedURL = fileURL.standardizedFileURL
         let previousWidth = imageDisplayWidthProvider?(standardizedURL)
-        let resolvedWidth = preferredWidth
-            ?? Double(MarkdownImageDisplaySizing.fitSize(for: reference.naturalSize).width)
         guard resizeImage(
             atCharacterIndex: characterIndex,
-            preferredWidth: resolvedWidth,
+            preferredWidth: preferredWidth,
             persistsDisplayWidth: false
         ) else {
             return false

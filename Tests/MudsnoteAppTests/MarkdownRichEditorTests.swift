@@ -5719,6 +5719,7 @@ struct MarkdownRichEditorTests {
         #expect(!loadedCell.thumbnailImageView.isHidden)
         #expect(loadedCell.attachmentImageView.isHidden)
         #expect(controller.thumbnailImageDecodeCountForLibrary == 1)
+        #expect(controller.thumbnailReloadBatchCountForLibrary == 1)
     }
 
     @MainActor

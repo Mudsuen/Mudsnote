@@ -1152,8 +1152,12 @@ final class LibraryWindowController: NSWindowController,
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
-    private var listRows: [LibraryNoteListRow] = []
-    private var gallerySections: [LibraryGallerySection] = []
+    private var listRows: [LibraryNoteListRow] = [] {
+        didSet { rebuildThumbnailRowIndex() }
+    }
+    private var gallerySections: [LibraryGallerySection] = [] {
+        didSet { rebuildThumbnailItemIndex() }
+    }
     private var visualQASelectedURL: URL?
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
@@ -1214,7 +1218,12 @@ final class LibraryWindowController: NSWindowController,
         return cache
     }()
     private var thumbnailImageLoadTasks: [String: Task<Void, Never>] = [:]
+    private var thumbnailRowsByPath: [String: IndexSet] = [:]
+    private var thumbnailItemsByPath: [String: Set<IndexPath>] = [:]
+    private var pendingThumbnailReloadPaths = Set<String>()
+    private var thumbnailReloadScheduled = false
     private(set) var thumbnailImageDecodeCountForLibrary = 0
+    private(set) var thumbnailReloadBatchCountForLibrary = 0
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceFolderLoadGeneration = 0
@@ -1618,6 +1627,8 @@ final class LibraryWindowController: NSWindowController,
         notePrefetchTask = nil
         thumbnailImageLoadTasks.values.forEach { $0.cancel() }
         thumbnailImageLoadTasks.removeAll()
+        pendingThumbnailReloadPaths.removeAll()
+        thumbnailReloadScheduled = false
         fileSystemMonitor?.stop()
         fileSystemMonitor = nil
         internallyMutatedPaths.removeAll()
@@ -4934,31 +4945,72 @@ final class LibraryWindowController: NSWindowController,
                 }
                 self.cacheThumbnailImage(image, key: key)
                 guard self.window?.isVisible == true else { return }
-
-                let matchingRows = IndexSet(self.listRows.indices.filter { row in
-                    self.listRows[row].note?.thumbnailURL?.standardizedFileURL.path == key
-                })
-                if !matchingRows.isEmpty {
-                    self.tableView.reloadData(
-                        forRowIndexes: matchingRows,
-                        columnIndexes: IndexSet(integer: 0)
-                    )
-                }
-                let matchingItems = Set(self.gallerySections.indices.flatMap { section in
-                    self.gallerySections[section].notes.indices.compactMap { item -> IndexPath? in
-                        self.gallerySections[section].notes[item].thumbnailURL?.standardizedFileURL.path == key
-                            ? IndexPath(item: item, section: section)
-                            : nil
-                    }
-                })
-                if self.noteListViewMode == .gallery,
-                   self.hasRequestedWindowPresentation,
-                   !matchingItems.isEmpty {
-                    self.galleryCollectionView.reloadItems(at: matchingItems)
-                }
+                self.scheduleThumbnailReload(for: key)
             }
         }
         thumbnailImageLoadTasks[key] = task
+    }
+
+    private func rebuildThumbnailRowIndex() {
+        var rowsByPath: [String: IndexSet] = [:]
+        for (row, listRow) in listRows.enumerated() {
+            guard let path = listRow.note?.thumbnailURL?.standardizedFileURL.path else { continue }
+            rowsByPath[path, default: []].insert(row)
+        }
+        thumbnailRowsByPath = rowsByPath
+    }
+
+    private func rebuildThumbnailItemIndex() {
+        var itemsByPath: [String: Set<IndexPath>] = [:]
+        for (section, gallerySection) in gallerySections.enumerated() {
+            for (item, note) in gallerySection.notes.enumerated() {
+                guard let path = note.thumbnailURL?.standardizedFileURL.path else { continue }
+                itemsByPath[path, default: []].insert(IndexPath(item: item, section: section))
+            }
+        }
+        thumbnailItemsByPath = itemsByPath
+    }
+
+    private func scheduleThumbnailReload(for path: String) {
+        pendingThumbnailReloadPaths.insert(path)
+        guard !thumbnailReloadScheduled else { return }
+        thumbnailReloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.flushPendingThumbnailReloads()
+        }
+    }
+
+    private func flushPendingThumbnailReloads() {
+        guard thumbnailReloadScheduled else { return }
+        thumbnailReloadScheduled = false
+        let paths = pendingThumbnailReloadPaths
+        pendingThumbnailReloadPaths.removeAll()
+        guard window?.isVisible == true else { return }
+
+        var matchingRows = IndexSet()
+        var matchingItems = Set<IndexPath>()
+        for path in paths {
+            if let rows = thumbnailRowsByPath[path] {
+                matchingRows.formUnion(rows)
+            }
+            if let items = thumbnailItemsByPath[path] {
+                matchingItems.formUnion(items)
+            }
+        }
+
+        guard !matchingRows.isEmpty || !matchingItems.isEmpty else { return }
+        thumbnailReloadBatchCountForLibrary += 1
+        if !matchingRows.isEmpty {
+            tableView.reloadData(
+                forRowIndexes: matchingRows,
+                columnIndexes: IndexSet(integer: 0)
+            )
+        }
+        if noteListViewMode == .gallery,
+           hasRequestedWindowPresentation,
+           !matchingItems.isEmpty {
+            galleryCollectionView.reloadItems(at: matchingItems)
+        }
     }
 
     private func cacheThumbnailImage(_ image: NSImage?, key: String) {
@@ -4986,6 +5038,7 @@ final class LibraryWindowController: NSWindowController,
         for task in tasks {
             await task.value
         }
+        flushPendingThumbnailReloads()
     }
 
     func highlightedSearchString(
