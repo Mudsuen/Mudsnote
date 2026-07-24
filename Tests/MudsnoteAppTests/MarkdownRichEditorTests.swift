@@ -5448,9 +5448,56 @@ struct MarkdownRichEditorTests {
         controller.markDocumentDirty()
         #expect(controller.statusLabel.stringValue == statusBeforeEdit)
 
-        controller.persistDraft(force: true)
+        try controller.persistDraft(force: true)
         #expect(controller.statusLabel.stringValue == statusBeforeEdit)
         #expect(harness.store.loadDraft(id: "quiet-autosave-status")?.title == "Quiet draft")
+    }
+
+    @MainActor
+    @Test
+    func draftFailureBlocksWindowCloseAndApplicationTermination() throws {
+        var shouldFail = true
+        var reportedErrors = 0
+        let harness = try makeEditorControllerHarness(
+            draftID: "guarded-draft-close",
+            showsSaveButton: false,
+            saveDraftSnapshot: { _ in
+                if shouldFail {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+            },
+            draftPersistenceErrorHandler: { _ in
+                reportedErrors += 1
+            }
+        )
+        defer {
+            shouldFail = false
+            harness.tearDown()
+        }
+        let controller = harness.controller
+        let window = try #require(controller.window)
+
+        controller.editorTextView.string = "Unsaved guarded draft"
+        controller.markDocumentDirty()
+
+        #expect(!controller.windowShouldClose(window))
+        #expect(controller.isDirty)
+        #expect(controller.statusLabel.stringValue == "草稿保存失败，当前编辑仍保留")
+        #expect(reportedErrors == 1)
+
+        #expect(AppController.terminationReply(
+            editorControllers: [controller],
+            libraryController: nil
+        ) == .terminateCancel)
+        #expect(controller.isDirty)
+        #expect(reportedErrors == 2)
+
+        shouldFail = false
+        #expect(AppController.terminationReply(
+            editorControllers: [controller],
+            libraryController: nil
+        ) == .terminateNow)
+        #expect(!controller.isDirty)
     }
 
     @MainActor
@@ -8835,7 +8882,9 @@ struct MarkdownRichEditorTests {
         onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
         onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
-        onRequestCreateFloatingNote: @escaping () -> Void = {}
+        onRequestCreateFloatingNote: @escaping () -> Void = {},
+        saveDraftSnapshot: ((DraftSnapshot) throws -> Void)? = nil,
+        draftPersistenceErrorHandler: ((Error) -> Void)? = nil
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -8866,6 +8915,8 @@ struct MarkdownRichEditorTests {
             onRequestActivateFloatingNote: onRequestActivateFloatingNote,
             onRequestCloseFloatingNote: onRequestCloseFloatingNote,
             onRequestCreateFloatingNote: onRequestCreateFloatingNote,
+            saveDraftSnapshot: saveDraftSnapshot,
+            draftPersistenceErrorHandler: draftPersistenceErrorHandler,
             onRequestPreferences: {}
         )
 

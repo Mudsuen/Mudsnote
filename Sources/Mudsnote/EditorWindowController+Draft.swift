@@ -9,11 +9,18 @@ extension EditorWindowController {
         isDirty = true
         autosaveTimer?.invalidate()
         autosaveTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.persistDraft(force: false) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try self.persistDraft(force: false)
+                } catch {
+                    self.handleDraftPersistenceFailure(error)
+                }
+            }
         }
     }
 
-    func persistDraft(force: Bool) {
+    func persistDraft(force: Bool) throws {
         autosaveTimer?.invalidate()
         autosaveTimer = nil
         guard isDirty || force else { return }
@@ -21,7 +28,8 @@ extension EditorWindowController {
         let document = currentDocument()
 
         if document.title.isEmpty && document.body.isEmpty {
-            noteStore.deleteDraft(id: currentDraftID)
+            deleteDraftSnapshot(currentDraftID)
+            isDirty = false
             return
         }
 
@@ -35,10 +43,31 @@ extension EditorWindowController {
             updatedAt: Date()
         )
 
+        try saveDraftSnapshot(snapshot)
+        isDirty = false
+    }
+
+    @discardableResult
+    func prepareForApplicationTermination() -> Bool {
         do {
-            try noteStore.saveDraft(snapshot)
+            try persistDraft(force: false)
+            return true
         } catch {
-            NSSound.beep()
+            handleDraftPersistenceFailure(error)
+            return false
+        }
+    }
+
+    private func handleDraftPersistenceFailure(_ error: Error) {
+        statusLabel.stringValue = "草稿保存失败，当前编辑仍保留"
+        NSSound.beep()
+        if let draftPersistenceErrorHandler {
+            draftPersistenceErrorHandler(error)
+        } else {
+            presentErrorAlert(
+                message: "无法保存草稿",
+                details: "窗口保持打开，当前编辑没有被丢弃。\n\n\(error.localizedDescription)"
+            )
         }
     }
 
