@@ -7943,6 +7943,61 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func preferencesResetWindowPositionsCommitsOnlyOnSave() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-preferences-reset-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var resetCount = 0
+        func makeController() -> PreferencesWindowController {
+            PreferencesWindowController(
+                currentDirectory: root,
+                availableDirectories: [root],
+                currentOpacity: NoteStore.defaultPanelOpacity,
+                currentQuickCaptureHotKey: "option+shift+n",
+                currentFloatingHotKey: "option+r",
+                currentSaveShortcut: "command+return",
+                floatingNoteStaysOnTop: true,
+                spellCheckingEnabled: true,
+                aiEnabled: false,
+                aiCodexExecutablePath: "",
+                onPreviewOpacity: { _ in },
+                onResetWindowFrames: { resetCount += 1 },
+                onSave: { _ in }
+            )
+        }
+
+        let cancelledController = makeController()
+        let cancelledWindow = try #require(cancelledController.window)
+        let cancelledResetButton = cancelledController.resetWindowPositionsButton
+        cancelledResetButton.performClick(nil)
+        #expect(resetCount == 0)
+        #expect(cancelledResetButton.title == "保存后重置")
+        #expect(cancelledResetButton.isEnabled == false)
+        let cancelButton = try #require(
+            cancelledWindow.contentView?.allSubviews.compactMap { $0 as? NSButton }
+                .first { $0.title == "取消" }
+        )
+        cancelButton.performClick(nil)
+        #expect(resetCount == 0)
+
+        let savedController = makeController()
+        defer { savedController.close() }
+        let savedWindow = try #require(savedController.window)
+        let savedResetButton = savedController.resetWindowPositionsButton
+        savedResetButton.performClick(nil)
+        #expect(resetCount == 0)
+        let saveButton = try #require(
+            savedWindow.contentView?.allSubviews.compactMap { $0 as? NSButton }
+                .first { $0.title == "保存" }
+        )
+        saveButton.performClick(nil)
+        #expect(resetCount == 1)
+    }
+
+    @MainActor
+    @Test
     func editorDisablesSpellCheckingFromPreference() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "quick-capture",

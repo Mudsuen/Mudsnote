@@ -75,7 +75,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     )
     private let opacityValueLabel = NSTextField(labelWithString: "")
     private let resetOpacityButton = NSButton(title: "重置透明度", target: nil, action: nil)
-    private let resetWindowPositionsButton = NSButton(title: "重置窗口位置", target: nil, action: nil)
+    let resetWindowPositionsButton = NSButton(title: "重置窗口位置", target: nil, action: nil)
     private let quickCaptureHotKeyRecorder = ShortcutRecorderButton()
     private let floatingHotKeyRecorder = ShortcutRecorderButton()
     private let saveShortcutRecorder = ShortcutRecorderButton()
@@ -93,6 +93,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private var managedDirectories: [URL]
     private var aiCodexExecutablePath: String
     private var didSavePreferences = false
+    private var shouldResetWindowFrames = false
 
     init(
         currentDirectory: URL,
@@ -658,11 +659,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     @objc
     private func resetWindowPositionsPressed() {
-        onResetWindowFrames()
-        resetWindowPositionsButton.title = "窗口位置已重置"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.resetWindowPositionsButton.title = "重置窗口位置"
-        }
+        shouldResetWindowFrames = true
+        resetWindowPositionsButton.title = "保存后重置"
+        resetWindowPositionsButton.isEnabled = false
     }
 
     @objc
@@ -721,6 +720,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             aiEnabled: aiEnabledButton.state == .on,
             aiCodexExecutablePath: aiCodexExecutablePath
         ))
+        if shouldResetWindowFrames {
+            onResetWindowFrames()
+        }
         window?.close()
     }
 
@@ -785,6 +787,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         if !didSavePreferences {
             onPreviewOpacity(initialOpacity)
         }
+        shouldResetWindowFrames = false
+        resetWindowPositionsButton.title = "重置窗口位置"
+        resetWindowPositionsButton.isEnabled = true
     }
 
     func updatePanelOpacity(_ opacity: Double) {
