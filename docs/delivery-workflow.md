@@ -10,17 +10,21 @@ flowchart TD
     B --> C[Devflow 分支 + worktree]
     C --> D[路由源码 + 定向实现与测试]
     D --> E[本地 scripts/verify 平台 pr]
-    E --> F[Ready PR + v2 证据清单]
+    E --> N{用户要求立即体验?}
+    N -->|可逆| O[候选安装 + live smoke + 来源收据]
+    N -->|否| P[本地链路完成]
+    O --> P
+    E --> F[Ready PR + remote_pending]
     F --> G[CI 对 merge candidate 运行一次平台 full]
     G --> H{默认分支独立策略检查}
     H -->|可逆产品改动| I[串行 Squash Merge]
     H -->|控制面或 hard stop| J[保留 Draft/停止合并]
     I --> K[显式 dispatch main 平台 pr smoke]
-    K --> L[一次结构化完成结果]
+    K --> L[按需 wait 对账正式结果]
     L --> M[需要时 devtask rollback 创建 Revert PR]
 ```
 
-正常任务先运行 `./scripts/agent_context.sh --task`，Codex 只接收目标、范围、基线、关键约束、已知证据和待验证项；README、handoff、Skill、memory、历史任务及完整日志均按异常或规则需要再读。`devtask wait` 在进程内等待，只返回一次 PR/CI/merge JSON，Agent 不轮询。merge candidate 运行一次 `full`；合并后按平台运行轻量 `pr` smoke。CI 不监听每次 `main` push；post-merge smoke 只由 Devflow 在合并成功后显式 `workflow_dispatch`，避免同一提交重复触发。
+正常任务先运行 `./scripts/agent_context.sh --task`，Codex 只接收目标、范围、基线、关键约束、已知证据和待验证项；README、handoff、Skill、memory、历史任务及完整日志均按异常或规则需要再读。`devtask pr` 返回 `remote_pending` 后，本地链路结束，不自动调用 `wait`，也不轮询 `gh`。只有用户明确要求云端最终状态、正式验收、清理或发布时，才运行一次 `devtask wait`。merge candidate 在云端独立运行一次 `full`；合并后按平台运行轻量 `pr` smoke。CI 不监听每次 `main` push；post-merge smoke 只由 Devflow 在合并成功后显式 `workflow_dispatch`，避免同一提交重复触发。
 
 仅以下情况允许合并后再次 `full`：候选测试后基线变化、merge queue 生成新候选、迁移、签名/发布，或显式高风险复核。原因必须通过 `devflow_full_reason` 传入，不能从普通任务自动推断。
 
@@ -55,7 +59,15 @@ devtask start Mudsnote optimize-ios-launch \
 
 `importance: important|critical` 只要求完成报告突出范围、指标、证据和回退入口；只要可机器验证且可 Git 回退，仍默认自动合并。
 
-连续 AppKit/UI 微调使用 `--iteration-mode ui-tuning`：同一任务、同一分支内完成定向测试与本地复测，界面稳定后只创建一次 PR。局部修复不自动加载 Product Design；只有视觉复刻或用户明确要求时使用。正式 `/Applications/Mudsnote.app` 安装使用 `devtask install ... --json`，只从已合并且与 `origin/main` 一致的干净 `main` 进行。
+连续 AppKit/UI 微调使用 `--iteration-mode ui-tuning`：同一任务、同一分支内完成定向测试与本地复测，界面稳定后只创建一次 PR。局部修复不自动加载 Product Design；只有视觉复刻或用户明确要求时使用。
+
+用户要求立即体验且任务可由 Git revert 完整恢复、没有不可逆外部副作用时，本地验证通过后直接运行：
+
+```bash
+devtask install Mudsnote <task-id> --candidate --json
+```
+
+候选安装从精确已验证提交运行 `live`，收据明确记录 `source: verified_task`、commit、`remote_status` 和 `--restore-main` 命令；GitHub、CI 和 merge 状态不是前置条件。随后可尝试创建 PR，但网络或云端状态失败只影响远端链路，不否定或阻塞已经完成的本地安装。正式 `/Applications/Mudsnote.app` 安装继续使用无 flag 的 `devtask install ... --json`，只从已合并且与 `origin/main` 一致的干净 `main` 进行。
 
 以下 hard stop 会保持 Draft：
 
@@ -112,7 +124,7 @@ devtask rollback Mudsnote <task-id>
 | 合并基线 | `main` 之外还维护移动的 iOS/macOS 验收 SHA | 最新 `origin/main` 是唯一日常基线 |
 | 重要改动 | 容易与“必须确认”混为一谈 | 自动完成，但报告突出证据和回退 |
 | 验证 | 本地/PR/合并后容易重复全量执行 | 本地定向 + PR 快速 + merge candidate 完整一次 + main 平台 smoke |
-| CI 等待 | Agent 轮询 `gh ... --watch` | `devtask wait` 内部等待并一次返回 |
+| CI 等待 | Agent 轮询 `gh ... --watch` | 默认不等待；需要正式对账时 `devtask wait` 一次返回 |
 | 旧 PR | 长期 Draft 继续影响后续判断 | 没有 v2 manifest 的旧 PR保持手动，不追溯合并 |
 | 工作流修改 | 可与产品改动共用同一审批逻辑 | 默认分支独立识别控制面并阻止自我批准 |
 | 回退 | 手工查 PR 与 merge SHA | PR 内固定入口；`devtask rollback` 创建 Revert PR |
