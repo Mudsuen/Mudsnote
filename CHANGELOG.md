@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 221. Conflict-safe macOS library saves
+- Problem: An external editor or synced device could change the open Markdown file after Mudsnote loaded it, while autosave, note switching, or window closing could still overwrite that disk version or leave the list selection out of sync with the editor.
+- Fix: The macOS library now records a content revision for the loaded file, refuses to overwrite a changed or unverifiable disk version, keeps local edits and the original selection on cancellation, blocks closing after unresolved save failures, and offers native choices to reload the disk version or preserve local work as a conflict copy.
+- Lesson: A file-backed editor needs an explicit compare-before-write and leave-document contract; filesystem event suppression alone cannot prove that a later write is safe.
+
 ### 220. Live and stable macOS image resizing
 - Problem: Dragging an inserted image edge selected the attachment, persisted every intermediate width, and let AppKit repeatedly restore the text cursor during layout, so the image lagged behind the pointer while the cursor and selection visuals flickered.
 - Fix: Image resizing now redraws each drag position synchronously, keeps the horizontal resize cursor for the complete gesture, avoids selecting the attachment, and persists only the final width on mouse-up.

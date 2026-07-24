@@ -3347,11 +3347,229 @@ struct MarkdownRichEditorTests {
         ))
         controller.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
-        try controller.flushPendingAutosaveForTesting()
+        #expect(throws: LibraryDocumentSaveProtectionError.self) {
+            _ = try controller.flushPendingAutosaveForTesting()
+        }
         await controller.waitForExternalLibraryRefreshForTesting()
 
         #expect(controller.editorTextView.string == "Local autosaved body")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
+        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(try String(contentsOf: selectedURL, encoding: .utf8) == "# Selected externally\n\nExternal body\n")
+    }
+
+    @Test
+    func documentRevisionDetectsEqualSizeRewriteWithRestoredModificationDate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-document-revision-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let url = root.appendingPathComponent("Revision.md")
+        let originalDate = Date(timeIntervalSince1970: 1_700_000_000)
+        try "alpha".write(to: url, atomically: false, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
+        let original = try LibraryDocumentRevision.read(at: url)
+
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data("bravo".utf8))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
+        let rewritten = try LibraryDocumentRevision.read(at: url)
+
+        #expect(original.fileSize == rewritten.fileSize)
+        #expect(original.contentModificationDate == rewritten.contentModificationDate)
+        #expect(!original.hasSameContent(as: rewritten))
+        #expect(original != rewritten)
+    }
+
+    @Test
+    func libraryConflictKeepsEditorAndRestoresPreviousSelection() throws {
+        let suiteName = "mudsnote.library-conflict-selection-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-conflict-selection-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Older", body: "Older body")
+        _ = try store.saveNewNote(title: "Newer", body: "Newer body")
+        var conflictCount = 0
+        let controller = LibraryWindowController(
+            noteStore: store,
+            conflictResolutionHandler: { _ in
+                conflictCount += 1
+                return .keepEditing
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let originalURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Local protected edit",
+            theme: controller.theme,
+            baseURL: originalURL
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        try "# Changed outside\n\nExternal body\n".write(
+            to: originalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let otherRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            guard let writer = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else {
+                return false
+            }
+            return (writer as URL).standardizedFileURL != originalURL.standardizedFileURL
+        })
+        controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+
+        #expect(conflictCount == 1)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == originalURL.standardizedFileURL)
+        #expect(controller.editorTextView.string == "Local protected edit")
+        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(controller.statusLabel.stringValue == "磁盘版本已更改，当前编辑已保留")
+        #expect(try String(contentsOf: originalURL, encoding: .utf8) == "# Changed outside\n\nExternal body\n")
+    }
+
+    @Test
+    func libraryConflictPreventsWindowCloseUntilUserChoosesRecovery() throws {
+        let suiteName = "mudsnote.library-conflict-close-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-conflict-close-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Close Guard", body: "Initial body")
+        var resolution = LibrarySaveConflictResolution.keepEditing
+        var didClose = false
+        let controller = LibraryWindowController(
+            noteStore: store,
+            conflictResolutionHandler: { _ in resolution },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: { didClose = true }
+        )
+        defer {
+            resolution = .reloadFromDisk
+            controller.close()
+        }
+
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Unsaved close edit",
+            theme: controller.theme,
+            baseURL: noteURL
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        try "# Close Guard\n\nChanged outside\n".write(
+            to: noteURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let window = try #require(controller.window)
+        #expect(!controller.windowShouldClose(window))
+        #expect(!didClose)
+        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(controller.editorTextView.string == "Unsaved close edit")
+    }
+
+    @Test
+    func libraryConflictSaveCopyPreservesBothVersionsBeforeSelectionChange() throws {
+        let suiteName = "mudsnote.library-conflict-copy-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-conflict-copy-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Other", body: "Other body")
+        _ = try store.saveNewNote(title: "Current", body: "Initial body")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            conflictResolutionHandler: { _ in .saveCopy },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let originalURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Local copy body",
+            theme: controller.theme,
+            baseURL: originalURL
+        ))
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        try "# Changed outside\n\nExternal original\n".write(
+            to: originalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let otherRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            guard let writer = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else {
+                return false
+            }
+            return (writer as URL).standardizedFileURL != originalURL.standardizedFileURL
+        })
+        let targetURL = try #require(
+            controller.tableView(controller.tableView, pasteboardWriterForRow: otherRow) as? NSURL
+        ) as URL
+        controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+
+        let noteURLs = try FileManager.default.contentsOfDirectory(
+            at: store.notesDirectory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "md" }
+        let copyURL = try #require(noteURLs.first { url in
+            url.standardizedFileURL != originalURL.standardizedFileURL
+                && url.standardizedFileURL != targetURL.standardizedFileURL
+        })
+
+        #expect(try String(contentsOf: originalURL, encoding: .utf8) == "# Changed outside\n\nExternal original\n")
+        #expect(try store.loadNote(at: copyURL).body == "Local copy body")
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }
 
     @Test
