@@ -153,6 +153,29 @@ private enum InlineFolderEditOperation: Equatable {
 
 private typealias LoadedLibraryNote = (title: String, body: String, tags: [String])
 
+enum LibrarySaveConflictResolution {
+    case keepEditing
+    case reloadFromDisk
+    case saveCopy
+}
+
+enum LibraryDocumentSaveProtectionError: LocalizedError {
+    case externalModification(URL)
+    case revisionUnavailable(URL, Error)
+    case transitionCancelled
+
+    var errorDescription: String? {
+        switch self {
+        case .externalModification:
+            return "磁盘版本已被其他应用或设备修改，Mudsnote 未覆盖该版本。"
+        case .revisionUnavailable(let url, let error):
+            return "无法确认 \(url.lastPathComponent) 的磁盘版本，Mudsnote 未写入文件。\(error.localizedDescription)"
+        case .transitionCancelled:
+            return "已保留当前编辑。"
+        }
+    }
+}
+
 private final class LoadedLibraryNoteCacheEntry: NSObject {
     let loaded: LoadedLibraryNote
     let fileModifiedAt: Date
@@ -1114,6 +1137,7 @@ final class LibraryWindowController: NSWindowController,
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
     private let fileModificationDateLoader: @Sendable (URL) -> Date?
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
+    private let conflictResolutionHandler: (URL) -> LibrarySaveConflictResolution
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
@@ -1129,6 +1153,8 @@ final class LibraryWindowController: NSWindowController,
     private var selectedURL: URL?
     private var selectedTags: [String] = []
     private var isDirty = false
+    private var loadedDocumentRevision: LibraryDocumentRevision?
+    private var loadedDocumentRevisionPath: String?
     private var autosaveTask: Task<Void, Never>?
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
@@ -1234,6 +1260,7 @@ final class LibraryWindowController: NSWindowController,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
         fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
+        conflictResolutionHandler: ((URL) -> LibrarySaveConflictResolution)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
@@ -1249,6 +1276,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
+        self.conflictResolutionHandler = conflictResolutionHandler ?? Self.presentExternalModificationConflict
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
@@ -1376,6 +1404,8 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = true
         isCreatingNewNote = false
         selectedURL = note.url
+        loadedDocumentRevision = nil
+        loadedDocumentRevisionPath = note.url.standardizedFileURL.path
         noteLinksView.update(.empty)
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
@@ -1550,6 +1580,18 @@ final class LibraryWindowController: NSWindowController,
         scheduleFullLibrarySnapshotReload()
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        do {
+            try saveCurrentNoteIfNeeded()
+            return true
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            return false
+        } catch {
+            presentErrorAlert(message: "无法关闭资料库", details: error.localizedDescription)
+            return false
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         if let librarySplitView {
             NotificationCenter.default.removeObserver(
@@ -1585,7 +1627,6 @@ final class LibraryWindowController: NSWindowController,
         windowFramePersistenceWorkItem = nil
         persistLibraryWindowFrameForLibrary()
         persistLibrarySplitLayoutForLibrary()
-        try? saveCurrentNoteIfNeeded()
         onClose()
     }
 
@@ -4444,6 +4485,8 @@ final class LibraryWindowController: NSWindowController,
             reloadNotesForNavigation(loadFirstIfNeeded: true)
             refreshVisibleSourceOutlinePresentation()
             return true
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            return false
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
             return false
@@ -5026,6 +5069,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func handleNoteBrowserSelectionChange() {
+        let previousURL = selectedURL
         do {
             try saveCurrentNoteIfNeeded()
             if preservesCurrentLoadedNoteForMultiSelection() {
@@ -5033,9 +5077,24 @@ final class LibraryWindowController: NSWindowController,
             } else {
                 loadSelectedRow()
             }
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            restoreNoteBrowserSelection(to: previousURL)
         } catch {
+            restoreNoteBrowserSelection(to: previousURL)
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
+    }
+
+    private func restoreNoteBrowserSelection(to url: URL?) {
+        suppressSelectionChanges = true
+        if let url,
+           let row = rowIndex(for: url.standardizedFileURL.path) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
+        }
+        suppressSelectionChanges = false
+        synchronizeGallerySelectionFromTable()
     }
 
     func numberOfSections(in collectionView: NSCollectionView) -> Int {
@@ -5452,6 +5511,8 @@ final class LibraryWindowController: NSWindowController,
             isLoadingInitialNote = false
             isCreatingNewNote = true
             selectedURL = nil
+            loadedDocumentRevision = nil
+            loadedDocumentRevisionPath = nil
             noteLinksView.update(.empty)
             selectedTags = []
             suppressSelectionChanges = true
@@ -5469,6 +5530,8 @@ final class LibraryWindowController: NSWindowController,
                 guard let self, self.isCreatingNewNote else { return }
                 self.window?.makeFirstResponder(self.titleField)
             }
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            return
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
         }
@@ -5512,6 +5575,12 @@ final class LibraryWindowController: NSWindowController,
     private func savePressed() {
         do {
             _ = try saveCurrentNoteForLibrary()
+        } catch LibraryDocumentSaveProtectionError.externalModification(let url) {
+            do {
+                try resolveExternalModificationForExplicitSave(at: url)
+            } catch {
+                presentErrorAlert(message: "保存失败", details: error.localizedDescription)
+            }
         } catch {
             presentErrorAlert(message: "保存失败", details: error.localizedDescription)
         }
@@ -5724,6 +5793,9 @@ final class LibraryWindowController: NSWindowController,
             suppressSelectionChanges = false
             tableView.scrollRowToVisible(targetRow)
             loadSelectedRow()
+            return true
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            suppressSelectionChanges = false
             return true
         } catch {
             suppressSelectionChanges = false
@@ -6159,6 +6231,7 @@ final class LibraryWindowController: NSWindowController,
         preservingEditorSelection: Bool
     ) {
         selectedURL = note.url
+        refreshDocumentRevisionBaseline(for: note.url)
         setEditorEditable(selectedScope != .trash)
 
         let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
@@ -6516,14 +6589,158 @@ final class LibraryWindowController: NSWindowController,
 
         do {
             _ = try saveCurrentNote(force: false)
+        } catch LibraryDocumentSaveProtectionError.externalModification {
+            statusLabel.stringValue = "磁盘版本已更改，未自动保存"
+            updateToolbarActionState()
         } catch {
+            statusLabel.stringValue = "自动保存失败，编辑仍保留"
             NSSound.beep()
         }
     }
 
     private func saveCurrentNoteIfNeeded() throws {
         guard isDirty else { return }
-        _ = try saveCurrentNote(force: false)
+        do {
+            _ = try saveCurrentNote(force: false)
+        } catch LibraryDocumentSaveProtectionError.externalModification(let url) {
+            try resolveExternalModificationBeforeLeaving(at: url)
+        }
+    }
+
+    private func refreshDocumentRevisionBaseline(for url: URL) {
+        let standardizedURL = url.standardizedFileURL
+        loadedDocumentRevisionPath = standardizedURL.path
+        loadedDocumentRevision = try? LibraryDocumentRevision.read(at: standardizedURL)
+    }
+
+    private func verifyDocumentRevisionBeforeSave(at url: URL) throws {
+        let standardizedURL = url.standardizedFileURL
+        let path = standardizedURL.path
+        guard loadedDocumentRevisionPath == path,
+              let baseline = loadedDocumentRevision else {
+            let error = CocoaError(.fileReadUnknown)
+            throw LibraryDocumentSaveProtectionError.revisionUnavailable(standardizedURL, error)
+        }
+
+        let current: LibraryDocumentRevision
+        do {
+            current = try LibraryDocumentRevision.read(at: standardizedURL)
+        } catch {
+            throw LibraryDocumentSaveProtectionError.revisionUnavailable(standardizedURL, error)
+        }
+
+        if current == baseline {
+            return
+        }
+        if current.hasSameContent(as: baseline) {
+            loadedDocumentRevision = current
+            return
+        }
+
+        throw LibraryDocumentSaveProtectionError.externalModification(standardizedURL)
+    }
+
+    private func resolveExternalModificationBeforeLeaving(at url: URL) throws {
+        switch conflictResolutionHandler(url) {
+        case .keepEditing:
+            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateToolbarActionState()
+            throw LibraryDocumentSaveProtectionError.transitionCancelled
+        case .reloadFromDisk:
+            try reloadDocumentFromDiskAfterConflict(at: url)
+            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateToolbarActionState()
+        case .saveCopy:
+            let copyURL = try saveConflictCopy(beside: url)
+            try reloadDocumentFromDiskAfterConflict(at: url)
+            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateToolbarActionState()
+        }
+    }
+
+    private func resolveExternalModificationForExplicitSave(at url: URL) throws {
+        switch conflictResolutionHandler(url) {
+        case .keepEditing:
+            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateToolbarActionState()
+        case .reloadFromDisk:
+            try reloadDocumentFromDiskAfterConflict(at: url)
+            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateToolbarActionState()
+        case .saveCopy:
+            let copyURL = try saveConflictCopy(beside: url)
+            selectedURL = copyURL
+            isDirty = false
+            refreshDocumentRevisionBaseline(for: copyURL)
+            reloadNotes(selecting: copyURL, loadFirstIfNeeded: true)
+            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateToolbarActionState()
+        }
+    }
+
+    private func reloadDocumentFromDiskAfterConflict(at url: URL) throws {
+        let standardizedURL = url.standardizedFileURL
+        loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: standardizedURL))
+        let loaded = try noteLoader(standardizedURL)
+        let modifiedAt = fileModificationDateLoader(standardizedURL) ?? Date()
+        let note = NoteSearchResult(
+            url: standardizedURL,
+            title: loaded.title,
+            snippet: libraryFirstMeaningfulLine(from: loaded.body) ?? "",
+            modifiedAt: modifiedAt,
+            tags: loaded.tags,
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: standardizedURL)
+        )
+        let cached = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
+        applyLoadedNote(cached, for: note)
+    }
+
+    private func saveConflictCopy(beside originalURL: URL) throws -> URL {
+        let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = "\(rawTitle.isEmpty ? "无标题" : rawTitle)（冲突副本）"
+        let body = currentEditorMarkdownBody().trimmingCharacters(in: .whitespacesAndNewlines)
+        let savedURL = try noteStore.saveNewNote(
+            title: title,
+            body: body,
+            tags: selectedTags,
+            in: originalURL.deletingLastPathComponent()
+        )
+        recordInternalFileSystemChanges(for: [savedURL])
+        let savedAt = fileModificationDate(at: savedURL) ?? Date()
+        updateSourceCountSnapshotAfterSave(
+            previousURL: nil,
+            savedURL: savedURL,
+            title: title,
+            body: body,
+            tags: selectedTags,
+            modifiedAt: savedAt
+        )
+        onSave(savedURL)
+        return savedURL
+    }
+
+    private static func presentExternalModificationConflict(at url: URL) -> LibrarySaveConflictResolution {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "磁盘版本已更改"
+        alert.informativeText = """
+        \(url.lastPathComponent) 已被其他应用或设备修改。Mudsnote 没有覆盖磁盘版本。
+
+        你可以保留当前编辑、重新载入磁盘版本，或把当前编辑另存为副本。
+        """
+        alert.addButton(withTitle: "保留编辑")
+        alert.addButton(withTitle: "重新载入")
+        alert.addButton(withTitle: "另存副本")
+
+        switch alert.runModal() {
+        case .alertSecondButtonReturn:
+            return .reloadFromDisk
+        case .alertThirdButtonReturn:
+            return .saveCopy
+        default:
+            return .keepEditing
+        }
     }
 
     private func currentEditorMarkdownBody() -> String {
@@ -6550,6 +6767,7 @@ final class LibraryWindowController: NSWindowController,
         let previousURL = selectedURL
         let savedURL: URL
         if let previousURL {
+            try verifyDocumentRevisionBeforeSave(at: previousURL)
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
             if externallyOpenedDocumentsByPath[previousURL.standardizedFileURL.path] != nil {
                 savedURL = try noteStore.updateNoteInPlace(
@@ -6572,6 +6790,7 @@ final class LibraryWindowController: NSWindowController,
 
         recordInternalFileSystemChanges(for: [previousURL, savedURL].compactMap { $0 })
         selectedURL = savedURL
+        refreshDocumentRevisionBaseline(for: savedURL)
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
@@ -6805,6 +7024,10 @@ final class LibraryWindowController: NSWindowController,
 
     func selectedMarkdownFileURLForLibrary() -> URL? {
         selectedMarkdownFileURLsForLibrary().first
+    }
+
+    var currentNoteHasUnsavedChangesForLibrary: Bool {
+        isDirty
     }
 
     func openMarkdownDocumentForLibrary(at url: URL) throws {
@@ -7331,6 +7554,8 @@ final class LibraryWindowController: NSWindowController,
 
         do {
             try saveCurrentNoteIfNeeded()
+        } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+            return
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
             return
@@ -7808,6 +8033,8 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = false
         isCreatingNewNote = false
         selectedURL = nil
+        loadedDocumentRevision = nil
+        loadedDocumentRevisionPath = nil
         selectedTags = []
         isDirty = false
         setEditorEditable(selectedScope != .trash)
@@ -8273,6 +8500,9 @@ final class LibraryWindowController: NSWindowController,
                 tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 suppressSelectionChanges = false
                 load(note: clickedNote)
+            } catch LibraryDocumentSaveProtectionError.transitionCancelled {
+                suppressSelectionChanges = false
+                return nil
             } catch {
                 suppressSelectionChanges = false
                 presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
