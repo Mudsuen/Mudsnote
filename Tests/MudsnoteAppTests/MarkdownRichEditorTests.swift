@@ -8357,7 +8357,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func floatingWindowManagerBoundsSearchCandidates() throws {
+    func floatingWindowManagerBoundsSearchCandidates() async throws {
         let harness = try makeEditorControllerHarness(
             draftID: "floating-note",
             showsSaveButton: false
@@ -8381,10 +8381,89 @@ struct MarkdownRichEditorTests {
             name: NSControl.textDidChangeNotification,
             object: browser.searchField
         ))
+        await browser.waitForSearchForTesting()
 
         #expect(browser.displayedURLs.count == FloatingNoteBrowserController.maximumSearchResults)
         #expect(browser.selectedResultRow == 0)
         browser.window?.close()
+    }
+
+    @MainActor
+    @Test
+    func debouncedNoteSearchPublishesOnlyTheLatestGeneration() async throws {
+        let suiteName = "mudsnote.debounced-search-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-debounced-search-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha", body: "First")
+        _ = try store.saveNewNote(title: "Beta", body: "Second")
+
+        let controller = DebouncedNoteSearchController(noteStore: store, limit: 10)
+        var deliveries: [DebouncedNoteSearchResults] = []
+        controller.submit(query: "Alpha") { deliveries.append($0) }
+        controller.submit(query: "Beta") { deliveries.append($0) }
+        #expect(deliveries.isEmpty)
+
+        await controller.waitForCurrentSearchForTesting()
+        #expect(deliveries.map(\.query) == ["Beta"])
+        #expect(deliveries.first?.results.map(\.title) == ["Beta"])
+
+        controller.submit(query: "Alpha") { deliveries.append($0) }
+        controller.cancel()
+        await controller.waitForCurrentSearchForTesting()
+        #expect(deliveries.map(\.query) == ["Beta"])
+    }
+
+    @MainActor
+    @Test
+    func searchWindowDebouncesTypingAndAppliesBackgroundResults() async throws {
+        let suiteName = "mudsnote.search-window-background-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-search-window-background-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha", body: "First")
+        _ = try store.saveNewNote(title: "Beta", body: "Second")
+
+        let controller = SearchWindowController(noteStore: store, onOpen: { _ in }, onClose: {})
+        defer { controller.close() }
+        await controller.waitForSearchForTesting()
+
+        controller.searchField.stringValue = "Beta"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        #expect(controller.searchInfoForTesting == "正在搜索…")
+        await controller.waitForSearchForTesting()
+
+        #expect(controller.resultTitlesForTesting == ["Beta"])
+        #expect(controller.searchInfoForTesting.contains("1 条匹配"))
     }
 
     @MainActor

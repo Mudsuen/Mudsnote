@@ -142,6 +142,10 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private var items: [Item] = []
+    private lazy var searchController = DebouncedNoteSearchController(
+        noteStore: noteStore,
+        limit: Self.maximumSearchResults
+    )
     private(set) var presentationCount = 0
     private weak var presentationAnchorView: NSView?
     private var outsideClickMonitor: Any?
@@ -241,7 +245,6 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         DispatchQueue.main.async { [weak self, weak window] in
             window?.makeKeyAndOrderFront(nil)
             self?.searchField.selectText(nil)
-            self?.reloadResults()
         }
     }
 
@@ -273,6 +276,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
 
     func windowWillClose(_ notification: Notification) {
         guard let window else { return }
+        searchController.cancel()
         removeOutsideClickMonitor()
         window.parent?.removeChildWindow(window)
     }
@@ -311,7 +315,7 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        reloadResults()
+        reloadResults(delay: DebouncedNoteSearchController.defaultDelay)
     }
 
     func control(
@@ -500,21 +504,44 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         ])
     }
 
-    private func reloadResults() {
+    private func reloadResults(delay: Duration = .zero) {
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchController.cancel()
+            applySearchCandidates([], query: query)
+            return
+        }
+        searchController.submit(
+            query: query,
+            delay: delay,
+            onStart: { [weak self] in
+                guard let self, self.items.isEmpty else { return }
+                self.emptyLabel.stringValue = "正在搜索…"
+                self.emptyLabel.isHidden = false
+            },
+            completion: { [weak self] payload in
+                guard let self,
+                      self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) == payload.query else {
+                    return
+                }
+                self.applySearchCandidates(payload.results, query: payload.query)
+            }
+        )
+    }
+
+    private func applySearchCandidates(_ candidates: [NoteSearchResult], query: String) {
         let selectedIdentifier = items.indices.contains(tableView.selectedRow)
             ? items[tableView.selectedRow].selectionIdentifier
             : nil
         let windows = openWindows()
         let openPaths = Set(windows.compactMap { $0.url?.standardizedFileURL.path })
-        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidates = query.isEmpty
-            ? []
-            : noteStore.searchNotes(query: query, limit: Self.maximumSearchResults)
-                .filter { !openPaths.contains($0.url.standardizedFileURL.path) }
+        let visibleCandidates = candidates.filter {
+            !openPaths.contains($0.url.standardizedFileURL.path)
+        }
 
         items = windows.map {
             Item(url: $0.url, title: $0.title, subtitle: $0.subtitle, openWindowID: $0.id)
-        } + candidates.map {
+        } + visibleCandidates.map {
             Item(
                 url: $0.url,
                 title: $0.title.isEmpty ? $0.url.deletingPathExtension().lastPathComponent : $0.title,
@@ -540,8 +567,13 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
+        emptyLabel.stringValue = query.isEmpty ? "搜索笔记并添加悬浮窗口" : "没有匹配的笔记"
         emptyLabel.isHidden = !items.isEmpty
         resizeForContent()
+    }
+
+    func waitForSearchForTesting() async {
+        await searchController.waitForCurrentSearchForTesting()
     }
 
     private func moveSelection(by offset: Int) {
