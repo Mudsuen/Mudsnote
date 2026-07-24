@@ -11,7 +11,10 @@ automation:
 agent_interface:
   context: ./scripts/agent_context.sh --task
   results: json
-  delivery_wait: devtask wait
+  delivery_wait: explicit-reconciliation-only
+  local_candidate_install: devtask install --candidate
+  local_candidate_restore: devtask install --restore-main
+  remote_completion: asynchronous
   documentation: on-error-or-process-change
 logging:
   success: summary-only
