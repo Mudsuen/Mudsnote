@@ -1,4 +1,8 @@
 name: CI
+run-name: >-
+  ${{ inputs.devflow_post_merge_sha != '' && format('Post-merge smoke {0}', inputs.devflow_post_merge_sha) ||
+      github.event_name == 'push' && format('Post-merge smoke {0}', github.sha) ||
+      format('CI {0}', github.sha) }}
 
 on:
   pull_request:
