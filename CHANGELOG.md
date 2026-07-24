@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 218. Direct macOS folder actions and stable note snapshots
+- Problem: Folder context menus could rename or delete nested folders but not move them, deletion required an extra confirmation despite remaining recoverable from Recently Deleted, and a transient filesystem scan could briefly replace an existing note list with `0 notes`.
+- Fix: Nested-folder context menus now offer valid destination folders while excluding the folder itself, its descendants, and the current parent. Folder deletion runs immediately and retains the existing recoverable trash behavior. Note snapshot refreshes confirm any disk scan that unexpectedly drops known notes before publishing it to the sidebar and list.
+- Lesson: Filesystem-backed navigation should reuse one move contract across drag and menus, and a single lossy scan must not become visible state when cloud synchronization or atomic replacement can make directory enumeration momentarily incomplete.
+
 ### 217. Finger-tracking iOS folder drawer
 - Problem: Opening or closing the folder drawer required a noticeable initial drag distance, and its first revealed frame also had to construct the drawer hierarchy, making the motion feel detached from the finger.
 - Fix: The edge gesture now mounts and starts tracking as soon as the finger touches down, the open drawer recognizes closing movement after 6 points, drag offsets apply with animations disabled, and the drawer unmounts only after a cancelled or completed close settles.

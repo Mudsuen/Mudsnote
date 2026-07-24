@@ -575,6 +575,16 @@ private enum LibraryActionError: LocalizedError {
     }
 }
 
+private final class LibraryFolderMoveRequest: NSObject {
+    let source: URL
+    let destinationParent: URL
+
+    init(source: URL, destinationParent: URL) {
+        self.source = source.standardizedFileURL
+        self.destinationParent = destinationParent.standardizedFileURL
+    }
+}
+
 private enum LibraryFormatCommand: Int {
     case heading1 = 1
     case heading2
@@ -1199,6 +1209,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var editorStackView: NSStackView?
     private weak var galleryScrollView: NSScrollView?
     private static let sourceCountSnapshotLimit = 10_000
+    private static let sourceSnapshotConfirmationDelay = Duration.milliseconds(240)
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -1470,11 +1481,17 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let allNotes = noteStore.listNotes(limit: snapshotLimit, roots: preferredDirectories)
+        let previousSnapshot = sourceCountSnapshot
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let allNotes = await Self.loadStableSourceSnapshot(
+                noteStore: noteStore,
+                limit: snapshotLimit,
+                roots: preferredDirectories,
+                previous: previousSnapshot
+            )
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
-            DispatchQueue.main.async {
+            await MainActor.run {
                 guard let self,
                       generation == self.fullLibrarySnapshotReloadGeneration else { return }
                 self.fullLibrarySnapshotReloadScheduled = false
@@ -1501,6 +1518,30 @@ final class LibraryWindowController: NSWindowController,
                 )
             }
         }
+    }
+
+    private nonisolated static func loadStableSourceSnapshot(
+        noteStore: NoteStore,
+        limit: Int,
+        roots: [URL],
+        previous: [NoteSearchResult]
+    ) async -> [NoteSearchResult] {
+        let firstCandidate = noteStore.listNotes(limit: limit, roots: roots)
+        guard LibrarySourceSnapshotStabilizer.needsConfirmation(
+            previous: previous,
+            candidate: firstCandidate
+        ) else {
+            return firstCandidate
+        }
+
+        try? await Task.sleep(for: sourceSnapshotConfirmationDelay)
+        guard !Task.isCancelled else { return firstCandidate }
+        let confirmedCandidate = noteStore.listNotes(limit: limit, roots: roots)
+        return LibrarySourceSnapshotStabilizer.stabilized(
+            previous: previous,
+            firstCandidate: firstCandidate,
+            confirmedCandidate: confirmedCandidate
+        )
     }
 
     private func forceFullLibrarySnapshotReload() {
@@ -3727,11 +3768,17 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
+        let previousSnapshot = sourceCountSnapshot
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
             await Task.yield()
             guard !Task.isCancelled else { return }
-            let allNotes = noteStore.listNotes(limit: snapshotLimit, roots: preferredDirectories)
+            let allNotes = await Self.loadStableSourceSnapshot(
+                noteStore: noteStore,
+                limit: snapshotLimit,
+                roots: preferredDirectories,
+                previous: previousSnapshot
+            )
             guard !Task.isCancelled else { return }
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
@@ -4613,20 +4660,43 @@ final class LibraryWindowController: NSWindowController,
         if source.deletingLastPathComponent().standardizedFileURL == parent {
             destination = source
         } else {
-            try saveCurrentNoteIfNeeded()
-            destination = try noteStore.moveFolder(at: source, to: parent)
-            recordInternalFileSystemChanges(for: [source, destination])
-            remapSourceSnapshotFolder(from: source, to: destination)
-            if let selectedURL, selectedURL.standardizedFileURL.path.hasPrefix(source.path + "/") {
-                let suffix = String(selectedURL.standardizedFileURL.path.dropFirst(source.path.count))
-                self.selectedURL = URL(fileURLWithPath: destination.path + suffix)
-            }
+            destination = try moveFolderForLibrary(at: source, to: parent)
         }
         persistFolderOrder(moving: destination, among: item.children, insertionIndex: childIndex)
+        reloadSourceFolderRowsForCurrentState()
+        return true
+    }
+
+    @discardableResult
+    func moveFolderForLibrary(at sourceURL: URL, to parentDirectory: URL) throws -> URL {
+        let source = sourceURL.standardizedFileURL
+        let parent = parentDirectory.standardizedFileURL
+        try saveCurrentNoteIfNeeded()
+        let destination = try noteStore.moveFolder(at: source, to: parent)
+        guard destination != source else { return source }
+
+        recordInternalFileSystemChanges(for: [source, destination])
+        remapSourceSnapshotFolder(from: source, to: destination)
+        selectedURL = remappedLibraryURL(selectedURL, from: source, to: destination)
+        if case .folder(let selectedFolder) = selectedScope,
+           let remappedFolder = remappedLibraryURL(selectedFolder, from: source, to: destination) {
+            selectedScope = .folder(remappedFolder)
+        }
         activeSearchSession = nil
+        reloadPersistedSourceDisclosureState()
         reloadSourceFolderRowsForCurrentState()
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
-        return true
+        return destination
+    }
+
+    private func remappedLibraryURL(_ url: URL?, from source: URL, to destination: URL) -> URL? {
+        guard let url else { return nil }
+        let path = url.standardizedFileURL.path
+        guard path == source.path || path.hasPrefix(source.path + "/") else { return url }
+        return URL(
+            fileURLWithPath: destination.path + String(path.dropFirst(source.path.count)),
+            isDirectory: path == source.path
+        )
     }
 
     private func persistFolderOrder(
@@ -5857,18 +5927,24 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func deleteFolderMenuItemPressed(_ sender: NSMenuItem) {
-        guard let directory = sender.representedObject as? URL,
-              confirmDestructiveAction(
-                title: "删除文件夹？",
-                message: "文件夹中的 Markdown 笔记会移动到最近删除。"
-              ) else { return }
+    func deleteFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = sender.representedObject as? URL else { return }
 
         do {
             selectedScope = .folder(directory)
             try deleteSelectedFolderForLibrary()
         } catch {
             presentErrorAlert(message: "无法删除文件夹", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func moveFolderMenuItemPressed(_ sender: NSMenuItem) {
+        guard let request = sender.representedObject as? LibraryFolderMoveRequest else { return }
+        do {
+            _ = try moveFolderForLibrary(at: request.source, to: request.destinationParent)
+        } catch {
+            presentErrorAlert(message: "无法移动文件夹", details: error.localizedDescription)
         }
     }
 
@@ -8128,11 +8204,48 @@ final class LibraryWindowController: NSWindowController,
         renameItem.representedObject = folderURL
         menu.addItem(renameItem)
 
+        let moveItem = NSMenuItem(title: "移动到文件夹", action: nil, keyEquivalent: "")
+        moveItem.submenu = makeMoveFolderMenu(for: standardizedFolder)
+        moveItem.isEnabled = moveItem.submenu?.items.contains(where: \.isEnabled) == true
+        menu.addItem(moveItem)
+
         let deleteItem = NSMenuItem(title: "删除文件夹", action: #selector(deleteFolderMenuItemPressed(_:)), keyEquivalent: "")
         deleteItem.target = self
         deleteItem.representedObject = folderURL
         menu.addItem(deleteItem)
 
+        return menu
+    }
+
+    func makeMoveFolderMenuForLibrary(at folderURL: URL) -> NSMenu {
+        makeMoveFolderMenu(for: folderURL.standardizedFileURL)
+    }
+
+    private func makeMoveFolderMenu(for sourceFolder: URL) -> NSMenu {
+        let menu = NSMenu()
+        let source = sourceFolder.standardizedFileURL
+        let currentParentPath = source.deletingLastPathComponent().standardizedFileURL.path
+
+        for folderRow in sourceFolderTreeRows {
+            let destination = folderRow.url.standardizedFileURL
+            guard destination.path != source.path,
+                  !destination.path.hasPrefix(source.path + "/") else {
+                continue
+            }
+            let title = String(repeating: "  ", count: folderRow.depth) + folderTitle(for: destination)
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(moveFolderMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = LibraryFolderMoveRequest(
+                source: source,
+                destinationParent: destination
+            )
+            item.isEnabled = destination.path != currentParentPath
+            menu.addItem(item)
+        }
         return menu
     }
 
