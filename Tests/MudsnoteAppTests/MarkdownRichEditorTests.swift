@@ -925,6 +925,153 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func imageDisplaySizingPreservesAspectRatioAndBounds() {
+        let naturalSize = NSSize(width: 840, height: 480)
+        let fitted = MarkdownImageDisplaySizing.fitSize(for: naturalSize)
+        let preferred = MarkdownImageDisplaySizing.displaySize(
+            for: naturalSize,
+            preferredWidth: 315
+        )
+
+        #expect(fitted == NSSize(width: 420, height: 240))
+        #expect(preferred == NSSize(width: 315, height: 180))
+        #expect(MarkdownImageDisplaySizing.clampedWidth(20) == 80)
+        #expect(MarkdownImageDisplaySizing.clampedWidth(1_400) == 1_200)
+    }
+
+    @MainActor
+    @Test
+    func libraryImageResizePersistsOutsideMarkdownWithoutRewritingImage() throws {
+        let suiteName = "mudsnote.image-resize-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-image-resize-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let imageURL = notesDirectory
+            .appendingPathComponent("Attachments", isDirectory: true)
+            .appendingPathComponent("preview.png")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let pngData = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        try pngData.write(to: imageURL)
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = notesDirectory
+        let markdown = "![Preview](Attachments/preview.png)"
+        _ = try store.saveNewNote(title: "Resizable Image", body: markdown)
+
+        var controller: LibraryWindowController? = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        let firstController = try #require(controller)
+        let firstImageIndex = try #require((0..<firstController.editorTextView.attributedString().length).first {
+            firstController.editorTextView.attributedString().attribute(
+                .qmImageFilePath,
+                at: $0,
+                effectiveRange: nil
+            ) != nil
+        })
+        let initialReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        firstController.showWindow(nil)
+        firstController.editorTextView.layoutManager?.ensureLayout(
+            for: try #require(firstController.editorTextView.textContainer)
+        )
+        let imageFrame = try #require(
+            firstController.editorTextView.imageAttachmentFrame(atCharacterIndex: firstImageIndex)
+        )
+        let dragStart = NSPoint(x: imageFrame.maxX - 1, y: imageFrame.midY)
+        let dragEnd = NSPoint(x: dragStart.x + 96, y: dragStart.y)
+        let window = try #require(firstController.editorTextView.window)
+        let startInWindow = firstController.editorTextView.convert(dragStart, to: nil)
+        let endInWindow = firstController.editorTextView.convert(dragEnd, to: nil)
+        let mouseDown = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: startInWindow,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let mouseDragged = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: endInWindow,
+            modifierFlags: [],
+            timestamp: 0.1,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let mouseUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: endInWindow,
+            modifierFlags: [],
+            timestamp: 0.2,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 3,
+            clickCount: 1,
+            pressure: 0
+        ))
+        firstController.editorTextView.mouseDown(with: mouseDown)
+        firstController.editorTextView.mouseDragged(with: mouseDragged)
+        firstController.editorTextView.mouseUp(with: mouseUp)
+        let resizedReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(resizedReference.displaySize.width > initialReference.displaySize.width)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == Double(resizedReference.displaySize.width))
+        #expect(MarkdownRichTextCodec.serialize(
+            firstController.editorTextView.attributedString(),
+            theme: firstController.theme
+        ) == markdown)
+        #expect(try Data(contentsOf: imageURL) == pngData)
+        firstController.close()
+        controller = nil
+
+        let reopenedController = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { reopenedController.close() }
+        let reopenedImageIndex = try #require((0..<reopenedController.editorTextView.attributedString().length).first {
+            reopenedController.editorTextView.attributedString().attribute(
+                .qmImageFilePath,
+                at: $0,
+                effectiveRange: nil
+            ) != nil
+        })
+        let reopenedReference = try #require(
+            reopenedController.editorTextView.imageAttachmentReference(atCharacterIndex: reopenedImageIndex)
+        )
+        #expect(reopenedReference.displaySize == resizedReference.displaySize)
+        store.setLibraryImageDisplayWidth(nil, for: imageURL)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == nil)
+    }
+
+    @Test
     func richCodecRendersLocalMarkdownFileAttachmentsAndSerializesPath() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-rich-file-attachment-tests-\(UUID().uuidString)", isDirectory: true)

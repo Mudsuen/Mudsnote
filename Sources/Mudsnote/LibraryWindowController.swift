@@ -2871,6 +2871,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.contextMenuOptionsProvider = { [weak self] in
             self?.noteStore.enabledEditorContextMenuOptions ?? Set(EditorContextMenuOption.allCases)
         }
+        editorTextView.onImageDisplayWidthChanged = { [weak self] fileURL, width in
+            self?.noteStore.setLibraryImageDisplayWidth(width, for: fileURL)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }
@@ -5864,7 +5867,12 @@ final class LibraryWindowController: NSWindowController,
             editorTextView.isRichText = true
             editorTextView.markdownPasteTheme = theme
             storage.setAttributedString(
-                MarkdownRichTextCodec.render(markdown: markdown, theme: theme, baseURL: selectedURL)
+                MarkdownRichTextCodec.render(
+                    markdown: markdown,
+                    theme: theme,
+                    baseURL: selectedURL,
+                    imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+                )
             )
             editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
             isEditorShowingMarkdownSource = false
@@ -6171,7 +6179,8 @@ final class LibraryWindowController: NSWindowController,
             let rendered = MarkdownRichTextCodec.render(
                 markdown: cached.loaded.body,
                 theme: theme,
-                baseURL: note.url
+                baseURL: note.url,
+                imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
             renderedBody = rendered
             if !MarkdownEditorDocument.containsAttachmentReference(in: cached.loaded.body) {
@@ -6247,7 +6256,12 @@ final class LibraryWindowController: NSWindowController,
         titleField.stringValue = title
         selectedTags = tags
         editorTextView.textStorage?.setAttributedString(
-            renderedBody ?? MarkdownRichTextCodec.render(markdown: body, theme: theme, baseURL: selectedURL)
+            renderedBody ?? MarkdownRichTextCodec.render(
+                markdown: body,
+                theme: theme,
+                baseURL: selectedURL,
+                imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+            )
         )
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
         let requestedSelection = preservedSelection ?? NSRange(location: 0, length: 0)
@@ -9728,7 +9742,12 @@ final class LibraryWindowController: NSWindowController,
     private func insertEmptyMarkdownTableRow(after targetLineRange: NSRange, columnCount: Int, in storage: NSTextStorage) -> Int {
         let insertionLocation = NSMaxRange(targetLineRange)
         let rowMarkdown = "\n" + emptyMarkdownTableRow(columnCount: columnCount)
-        let rendered = MarkdownRichTextCodec.render(markdown: rowMarkdown, theme: theme, baseURL: selectedURL)
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: rowMarkdown,
+            theme: theme,
+            baseURL: selectedURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+        )
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: NSRange(location: insertionLocation, length: 0), with: rendered)
@@ -9875,7 +9894,8 @@ final class LibraryWindowController: NSWindowController,
         let rendered = MarkdownRichTextCodec.render(
             markdown: replacementLines.joined(separator: "\n"),
             theme: theme,
-            baseURL: selectedURL
+            baseURL: selectedURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
         )
 
         suppressEditorChanges = true
@@ -10017,7 +10037,12 @@ final class LibraryWindowController: NSWindowController,
             return [rowLine, markdownTableLine(cells: Array(repeating: "---", count: row.count))]
         }
         let source = lines.joined(separator: "\n")
-        let rendered = MarkdownRichTextCodec.render(markdown: source, theme: theme, baseURL: selectedURL)
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: source,
+            theme: theme,
+            baseURL: selectedURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+        )
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: snapshot.tableRange, with: rendered)
@@ -10367,7 +10392,8 @@ final class LibraryWindowController: NSWindowController,
         let rendered = MarkdownRichTextCodec.render(
             markdown: markdown,
             theme: theme,
-            baseURL: renderingBaseURL ?? selectedURL
+            baseURL: renderingBaseURL ?? selectedURL,
+            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
         )
 
         suppressEditorChanges = true

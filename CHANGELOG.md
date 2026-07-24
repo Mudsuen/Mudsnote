@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 219. Direct edge resizing for inserted macOS images
+- Problem: Images inserted into macOS notes rendered at one fixed fitted size, so reviewing a detail or reclaiming editor space required changing the source image instead of adjusting its presentation.
+- Fix: Hovering either vertical image edge now exposes horizontal resizing, and dragging that edge resizes the image proportionally within safe bounds. The chosen width survives reopening the note without rewriting its Markdown or original attachment file.
+- Lesson: Local presentation preferences can stay platform-specific while the portable Markdown and attachment bytes remain the durable cross-platform note contract.
+
 ### 218. Direct macOS folder actions and stable note snapshots
 - Problem: Folder context menus could rename or delete nested folders but not move them, deletion required an extra confirmation despite remaining recoverable from Recently Deleted, and a transient filesystem scan could briefly replace an existing note list with `0 notes`.
 - Fix: Nested-folder context menus now offer valid destination folders while excluding the folder itself, its descendants, and the current parent. Folder deletion runs immediately and retains the existing recoverable trash behavior. Note snapshot refreshes confirm any disk scan that unexpectedly drops known notes before publishing it to the sidebar and list.
