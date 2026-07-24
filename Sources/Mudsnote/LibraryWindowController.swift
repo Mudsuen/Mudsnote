@@ -1142,6 +1142,14 @@ final class LibraryWindowController: NSWindowController,
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
+    private enum EditorStatusKind {
+        case normal
+        case saving
+        case success
+        case warning
+        case failure
+    }
+
     private let onOpenInSeparateWindow: (URL) -> Void
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
@@ -1430,7 +1438,7 @@ final class LibraryWindowController: NSWindowController,
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
-        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        updateEditorStatus(editorDateText(for: note.modifiedAt))
         updateToolbarActionState()
     }
 
@@ -1502,7 +1510,7 @@ final class LibraryWindowController: NSWindowController,
         suppressSelectionChanges = false
         synchronizeGallerySelectionFromTable()
         clearCurrentDocumentAfterRemoval()
-        statusLabel.stringValue = ""
+        updateEditorStatus("")
         updateNoteListHeader(query: "")
         updateNoteListEmptyState(query: "")
 
@@ -2106,7 +2114,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.delegate = self
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
-        statusLabel.setAccessibilityLabel("修改时间")
+        statusLabel.setAccessibilityLabel("笔记状态")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
@@ -5593,7 +5601,7 @@ final class LibraryWindowController: NSWindowController,
             applyDocument(title: "", body: "", tags: [])
             isDirty = true
             _ = try saveCurrentNote(force: true)
-            statusLabel.stringValue = editorDateText(for: Date())
+            updateEditorStatus(editorDateText(for: Date()))
             refreshSourceSelection()
             updateToolbarActionState()
             window?.makeFirstResponder(titleField)
@@ -6311,7 +6319,7 @@ final class LibraryWindowController: NSWindowController,
            selectedTags == cached.loaded.tags,
            normalizedEditorMarkdownBody() == normalizedMarkdownBody(cached.loaded.body) {
             isDirty = false
-            statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+            updateEditorStatus(editorDateText(for: note.modifiedAt))
             updateToolbarActionState()
             return
         }
@@ -6340,7 +6348,7 @@ final class LibraryWindowController: NSWindowController,
             preservedSelection: preservedSelection
         )
         isDirty = false
-        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        updateEditorStatus(editorDateText(for: note.modifiedAt))
         applyEditorSearchHighlightsForCurrentQuery()
         updateToolbarActionState()
         refreshNoteLinks(for: note.url, body: cached.loaded.body)
@@ -6658,13 +6666,24 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         guard isDirty, selectedScope != .trash else { return }
 
+        updateEditorStatus("正在保存…", kind: .saving)
         do {
             _ = try saveCurrentNote(force: false)
         } catch LibraryDocumentSaveProtectionError.externalModification {
-            statusLabel.stringValue = "磁盘版本已更改，未自动保存"
+            updateEditorStatus(
+                "磁盘版本已更改，未自动保存",
+                kind: .warning,
+                toolTip: "按 Command-S 选择保留编辑、重新载入或另存副本",
+                announcesChange: true
+            )
             updateToolbarActionState()
         } catch {
-            statusLabel.stringValue = "自动保存失败，编辑仍保留"
+            updateEditorStatus(
+                "自动保存失败，编辑仍保留",
+                kind: .failure,
+                toolTip: "按 Command-S 重试保存",
+                announcesChange: true
+            )
             NSSound.beep()
         }
     }
@@ -6714,17 +6733,26 @@ final class LibraryWindowController: NSWindowController,
     private func resolveExternalModificationBeforeLeaving(at url: URL) throws {
         switch conflictResolutionHandler(url) {
         case .keepEditing:
-            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateEditorStatus(
+                "磁盘版本已更改，当前编辑已保留",
+                kind: .warning,
+                toolTip: "按 Command-S 再次选择恢复方式",
+                announcesChange: true
+            )
             updateToolbarActionState()
             throw LibraryDocumentSaveProtectionError.transitionCancelled
         case .reloadFromDisk:
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateEditorStatus("已重新载入磁盘版本", kind: .success, announcesChange: true)
             updateToolbarActionState()
         case .saveCopy:
             let copyURL = try saveConflictCopy(beside: url)
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateEditorStatus(
+                "已另存副本：\(copyURL.lastPathComponent)",
+                kind: .success,
+                announcesChange: true
+            )
             updateToolbarActionState()
         }
     }
@@ -6732,11 +6760,16 @@ final class LibraryWindowController: NSWindowController,
     private func resolveExternalModificationForExplicitSave(at url: URL) throws {
         switch conflictResolutionHandler(url) {
         case .keepEditing:
-            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateEditorStatus(
+                "磁盘版本已更改，当前编辑已保留",
+                kind: .warning,
+                toolTip: "按 Command-S 再次选择恢复方式",
+                announcesChange: true
+            )
             updateToolbarActionState()
         case .reloadFromDisk:
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateEditorStatus("已重新载入磁盘版本", kind: .success, announcesChange: true)
             updateToolbarActionState()
         case .saveCopy:
             let copyURL = try saveConflictCopy(beside: url)
@@ -6744,7 +6777,11 @@ final class LibraryWindowController: NSWindowController,
             isDirty = false
             refreshDocumentRevisionBaseline(for: copyURL)
             reloadNotes(selecting: copyURL, loadFirstIfNeeded: true)
-            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateEditorStatus(
+                "已另存副本：\(copyURL.lastPathComponent)",
+                kind: .success,
+                announcesChange: true
+            )
             updateToolbarActionState()
         }
     }
@@ -6821,6 +6858,31 @@ final class LibraryWindowController: NSWindowController,
         return MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
     }
 
+    private func updateEditorStatus(
+        _ text: String,
+        kind: EditorStatusKind = .normal,
+        toolTip: String? = nil,
+        announcesChange: Bool = false
+    ) {
+        statusLabel.stringValue = text
+        statusLabel.toolTip = toolTip
+        statusLabel.setAccessibilityValue(text)
+        switch kind {
+        case .normal, .success:
+            statusLabel.textColor = panelTertiaryTextColor()
+        case .saving:
+            statusLabel.textColor = panelSecondaryTextColor()
+        case .warning:
+            statusLabel.textColor = .systemOrange
+        case .failure:
+            statusLabel.textColor = .systemRed
+        }
+        if announcesChange {
+            NSAccessibility.post(element: statusLabel, notification: .valueChanged)
+        }
+        statusLabel.displayIfNeeded()
+    }
+
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
         guard force || isDirty else { return selectedURL }
@@ -6879,7 +6941,11 @@ final class LibraryWindowController: NSWindowController,
             selecting: savedURL,
             isNewNote: previousURL == nil
         )
-        statusLabel.stringValue = editorDateText(for: savedAt)
+        updateEditorStatus(
+            "已保存 · \(editorDateText(for: savedAt))",
+            kind: .success,
+            announcesChange: true
+        )
         onSave(savedURL)
         updateToolbarActionState()
         return savedURL
