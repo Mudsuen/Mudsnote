@@ -2,10 +2,13 @@
 set -euo pipefail
 
 MODE="${1:-pr}"
+FULL_PHASE="${IOS_VERIFY_FULL_PHASE:-all}"
+PARALLEL_FULL="${IOS_VERIFY_PARALLEL_FULL:-0}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$ROOT_DIR/iOS/MudsnoteCompanion.xcodeproj"
 SCHEME="MudsnoteCompanion"
 DERIVED_DATA_PATH="${IOS_VERIFY_DERIVED_DATA_PATH:-$ROOT_DIR/build/IOSVerifyDerivedData}"
+RELEASE_DERIVED_DATA_PATH="${IOS_VERIFY_RELEASE_DERIVED_DATA_PATH:-$ROOT_DIR/build/IOSReleaseVerifyDerivedData}"
 
 cd "$ROOT_DIR"
 
@@ -65,25 +68,131 @@ simulator_destination() {
   printf 'id=%s\n' "$simulator_id"
 }
 
+changed_paths_against_base() {
+  local base_ref=""
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    base_ref="origin/$GITHUB_BASE_REF"
+  elif git show-ref --verify --quiet refs/remotes/origin/main; then
+    base_ref="origin/main"
+  fi
+
+  if [[ -n "$base_ref" ]]; then
+    {
+      git diff --name-only "$(git merge-base HEAD "$base_ref")..HEAD"
+      git diff --name-only
+      git diff --cached --name-only
+    } | sort -u
+  else
+    {
+      git diff --name-only HEAD
+      git diff --cached --name-only
+    } | sort -u
+  fi
+}
+
+focused_ui_tests_from_paths() {
+  local needs_directory_drawer_test=0
+  local path
+
+  while IFS= read -r path; do
+    case "$path" in
+      iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift)
+        needs_directory_drawer_test=1
+        ;;
+    esac
+  done
+
+  if [[ "$needs_directory_drawer_test" == "1" ]]; then
+    printf '%s\n' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory'
+  fi
+}
+
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return
 fi
 
 python3 scripts/validate_ios_app_store_metadata.py
 
+case "$FULL_PHASE" in
+  all|tests|release)
+    ;;
+  *)
+    echo "ERROR: invalid IOS_VERIFY_FULL_PHASE: $FULL_PHASE" >&2
+    exit 2
+    ;;
+esac
+
+case "$PARALLEL_FULL" in
+  0|1)
+    ;;
+  *)
+    echo "ERROR: invalid IOS_VERIFY_PARALLEL_FULL: $PARALLEL_FULL" >&2
+    exit 2
+    ;;
+esac
+
+run_full_tests() {
+  local destination
+  local focused_ui_test
+  local focused_ui_output
+  local -a test_selectors
+
+  destination="$(simulator_destination)"
+  test_selectors=(-only-testing:MudsnoteCompanionTests)
+  if ! focused_ui_output="$(
+    changed_paths_against_base | focused_ui_tests_from_paths
+  )"; then
+    echo "ERROR: failed to determine focused iOS UI tests." >&2
+    exit 1
+  fi
+  while IFS= read -r focused_ui_test; do
+    if [[ -n "$focused_ui_test" ]]; then
+      test_selectors+=("-only-testing:$focused_ui_test")
+    fi
+  done <<<"$focused_ui_output"
+
+  xcodebuild \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration Debug \
+    -destination "$destination" \
+    -derivedDataPath "$DERIVED_DATA_PATH" \
+    CODE_SIGNING_ALLOWED=NO \
+    COMPILER_INDEX_STORE_ENABLE=NO \
+    -parallel-testing-enabled NO \
+    "${test_selectors[@]}" \
+    test
+}
+
+run_release_build() {
+  xcodebuild \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration Release \
+    -destination 'generic/platform=iOS' \
+    -derivedDataPath "$RELEASE_DERIVED_DATA_PATH" \
+    CODE_SIGNING_ALLOWED=NO \
+    COMPILER_INDEX_STORE_ENABLE=NO \
+    build
+}
+
 case "$MODE" in
   pr)
-    xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration Debug \
-      -destination 'generic/platform=iOS Simulator' \
-      -derivedDataPath "$DERIVED_DATA_PATH" \
-      CODE_SIGNING_ALLOWED=NO \
-      build-for-testing
-    ;;
-  full)
     destination="$(simulator_destination)"
+    if ! focused_ui_output="$(
+      changed_paths_against_base | focused_ui_tests_from_paths
+    )"; then
+      echo "ERROR: failed to determine focused iOS UI tests." >&2
+      exit 1
+    fi
+    focused_ui_tests=()
+    while IFS= read -r focused_ui_test; do
+      if [[ -n "$focused_ui_test" ]]; then
+        focused_ui_tests+=("-only-testing:$focused_ui_test")
+      fi
+    done <<<"$focused_ui_output"
+
     xcodebuild \
       -project "$PROJECT" \
       -scheme "$SCHEME" \
@@ -91,16 +200,53 @@ case "$MODE" in
       -destination "$destination" \
       -derivedDataPath "$DERIVED_DATA_PATH" \
       CODE_SIGNING_ALLOWED=NO \
-      -only-testing:MudsnoteCompanionTests \
-      test
-    xcodebuild \
-      -project "$PROJECT" \
-      -scheme "$SCHEME" \
-      -configuration Release \
-      -destination 'generic/platform=iOS' \
-      -derivedDataPath "$DERIVED_DATA_PATH" \
-      CODE_SIGNING_ALLOWED=NO \
-      build
+      COMPILER_INDEX_STORE_ENABLE=NO \
+      build-for-testing
+
+    if (( ${#focused_ui_tests[@]} > 0 )); then
+      xcodebuild \
+        -project "$PROJECT" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -destination "$destination" \
+        -derivedDataPath "$DERIVED_DATA_PATH" \
+        CODE_SIGNING_ALLOWED=NO \
+        COMPILER_INDEX_STORE_ENABLE=NO \
+        -parallel-testing-enabled NO \
+        "${focused_ui_tests[@]}" \
+        test-without-building
+    fi
+    ;;
+  full)
+    if [[ "$FULL_PHASE" == "all" && "$PARALLEL_FULL" == "1" ]]; then
+      release_log="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/mudsnote-ios-release.XXXXXX")"
+      trap 'rm -f "$release_log"' EXIT
+
+      echo "Starting Release build concurrently with Debug tests."
+      run_release_build >"$release_log" 2>&1 &
+      release_pid=$!
+
+      set +e
+      run_full_tests
+      tests_status=$?
+      wait "$release_pid"
+      release_status=$?
+      set -e
+
+      echo "Release build output:"
+      cat "$release_log"
+      if [[ "$tests_status" != "0" || "$release_status" != "0" ]]; then
+        echo "ERROR: iOS verification failed (tests=$tests_status, release=$release_status)." >&2
+        exit 1
+      fi
+    else
+      if [[ "$FULL_PHASE" == "all" || "$FULL_PHASE" == "tests" ]]; then
+        run_full_tests
+      fi
+      if [[ "$FULL_PHASE" == "all" || "$FULL_PHASE" == "release" ]]; then
+        run_release_build
+      fi
+    fi
     ;;
   live)
     if [[ -n "${CI:-}" ]]; then

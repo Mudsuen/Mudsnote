@@ -54,6 +54,10 @@ control_plane:
   - .github/workflows/**
   - .devflow.yaml
   - scripts/verify*
+  - scripts/detect_platform_scope.sh
+  - scripts/agent_context.sh
+  - scripts/test_verify_ios_destination.sh
+  - scripts/validate_ios_app_store_metadata.py
   - scripts/package*
   - scripts/device_smoke.sh
   - '**/*.entitlements'
