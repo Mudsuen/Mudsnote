@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 222. Keyboard-first floating note search
+- Problem: The floating note browser required pointer interaction to choose a result, lost its selection when refreshed, and requested an unbounded candidate list even though only a handful of rows are visible.
+- Fix: Search now selects and visibly identifies the first result, supports Up/Down navigation, Return to open, and Escape to close while focus stays in the search field, preserves the selected note across refreshes, exposes selection to accessibility, and bounds search candidates to 100 while retaining all already-open windows.
+- Lesson: Compact search panels need one stable selection model shared by keyboard, pointer, refresh, and accessibility; bounding invisible candidates reduces work without hiding active state.
+
 ### 221. Conflict-safe macOS library saves
 - Problem: An external editor or synced device could change the open Markdown file after Mudsnote loaded it, while autosave, note switching, or window closing could still overwrite that disk version or leave the list selection out of sync with the editor.
 - Fix: The macOS library now records a content revision for the loaded file, refuses to overwrite a changed or unverifiable disk version, keeps local edits and the original selection on cancellation, blocks closing after unresolved save failures, and offers native choices to reload the disk version or preserve local work as a conflict copy.

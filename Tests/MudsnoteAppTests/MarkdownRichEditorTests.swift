@@ -8014,6 +8014,120 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func floatingWindowManagerSupportsKeyboardNavigationAndPreservesSelection() throws {
+        var openWindows: [FloatingNoteWindowDescriptor] = []
+        var activatedWindowID: UUID?
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            floatingNoteWindows: { openWindows },
+            onRequestActivateFloatingNote: { activatedWindowID = $0 }
+        )
+        defer { harness.tearDown() }
+
+        let firstID = UUID()
+        let secondID = UUID()
+        let thirdID = UUID()
+        openWindows = [
+            FloatingNoteWindowDescriptor(id: firstID, url: nil, title: "First", subtitle: "One"),
+            FloatingNoteWindowDescriptor(id: secondID, url: nil, title: "Second", subtitle: "Two"),
+            FloatingNoteWindowDescriptor(id: thirdID, url: nil, title: "Third", subtitle: "Three")
+        ]
+
+        harness.controller.showWindowAndFocus()
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        let browser = try #require(harness.controller.floatingNoteBrowserController)
+        let fieldEditor = NSTextView()
+
+        #expect(browser.selectedResultRow == 0)
+        browser.window?.contentView?.layoutSubtreeIfNeeded()
+        #expect(browser.resultCell(at: 0)?.isSelectedForPresentation == true)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.selectedResultRow == 1)
+        #expect(browser.resultCell(at: 1)?.isSelectedForPresentation == true)
+
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.selectedResultRow == 2)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveUp(_:))
+        ))
+        #expect(browser.selectedResultRow == 1)
+
+        openWindows = [
+            FloatingNoteWindowDescriptor(id: thirdID, url: nil, title: "Third", subtitle: "Three"),
+            FloatingNoteWindowDescriptor(id: firstID, url: nil, title: "First", subtitle: "One"),
+            FloatingNoteWindowDescriptor(id: secondID, url: nil, title: "Second", subtitle: "Two")
+        ]
+        browser.refresh()
+        #expect(browser.selectedResultRow == 2)
+
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        #expect(activatedWindowID == secondID)
+        #expect(browser.window?.isVisible == false)
+
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        #expect(browser.window?.isVisible == true)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+        ))
+        #expect(browser.window?.isVisible == false)
+    }
+
+    @MainActor
+    @Test
+    func floatingWindowManagerBoundsSearchCandidates() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false
+        )
+        defer { harness.tearDown() }
+
+        try harness.store.ensureNotesDirectory()
+        for index in 0..<(FloatingNoteBrowserController.maximumSearchResults + 5) {
+            _ = try harness.store.saveNewNote(
+                title: "Needle \(index)",
+                body: "Bounded floating search result",
+                in: harness.store.notesDirectory
+            )
+        }
+
+        harness.controller.showWindowAndFocus()
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        let browser = try #require(harness.controller.floatingNoteBrowserController)
+        browser.searchField.stringValue = "Needle"
+        browser.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: browser.searchField
+        ))
+
+        #expect(browser.displayedURLs.count == FloatingNoteBrowserController.maximumSearchResults)
+        #expect(browser.selectedResultRow == 0)
+        browser.window?.close()
+    }
+
+    @MainActor
+    @Test
     func floatingNotesDefaultToExistingInboxAndHighlightDirectly() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "floating-note",
@@ -8231,6 +8345,7 @@ struct MarkdownRichEditorTests {
         onSave: @escaping (URL) -> Void = { _ in },
         floatingNoteWindows: @escaping () -> [FloatingNoteWindowDescriptor] = { [] },
         onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
+        onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCreateFloatingNote: @escaping () -> Void = {}
     ) throws -> EditorControllerHarness {
@@ -8260,6 +8375,7 @@ struct MarkdownRichEditorTests {
             onRequestSearch: {},
             floatingNoteWindows: floatingNoteWindows,
             onRequestOpenFloatingNote: onRequestOpenFloatingNote,
+            onRequestActivateFloatingNote: onRequestActivateFloatingNote,
             onRequestCloseFloatingNote: onRequestCloseFloatingNote,
             onRequestCreateFloatingNote: onRequestCreateFloatingNote,
             onRequestPreferences: {}
