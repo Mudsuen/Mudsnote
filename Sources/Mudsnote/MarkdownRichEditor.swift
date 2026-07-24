@@ -40,6 +40,16 @@ final class MarkdownImageAttachmentReference: NSObject {
     }
 }
 
+private final class MarkdownImageResizeMenuCommand: NSObject {
+    let fileURL: URL
+    let preferredWidth: Double?
+
+    init(fileURL: URL, preferredWidth: Double?) {
+        self.fileURL = fileURL
+        self.preferredWidth = preferredWidth
+    }
+}
+
 final class MarkdownAttachmentReference: NSObject {
     let path: String
     let markdown: String
@@ -386,6 +396,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let initialWidth: CGFloat
         let horizontalDirection: CGFloat
         let fileURL: URL
+        let initialPersistedWidth: Double?
         var currentWidth: Double
     }
 
@@ -397,6 +408,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var contextMenuOptionsProvider: (() -> Set<EditorContextMenuOption>)?
     var selectionMenuProvider: (() -> NSMenu?)?
     var onImageDisplayWidthChanged: ((URL, Double?) -> Void)?
+    var imageDisplayWidthProvider: ((URL) -> Double?)?
     private var selectionFormattingPanel: NSPanel?
     private weak var selectionFormattingStack: NSStackView?
     private var imageResizeDragState: ImageResizeDragState?
@@ -674,6 +686,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
 
         let menu = conciseEditingMenu(from: nativeMenu)
+        appendImageResizeMenuIfNeeded(to: menu, for: event)
         configureContextMenu?(menu, event)
         sealContextMenu(menu)
         menu.delegate = self
@@ -701,6 +714,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             preferredWidth: preferredWidth
         )
         attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
+        if let cell = attachment.attachmentCell as? NSCell {
+            cell.setAccessibilityLabel("图片")
+            cell.setAccessibilityValue("宽度 \(Int(displaySize.width.rounded())) 点")
+        }
         layoutManager?.invalidateLayout(
             forCharacterRange: reference.range,
             actualCharacterRange: nil
@@ -713,6 +730,132 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             onImageDisplayWidthChanged?(URL(fileURLWithPath: reference.path), preferredWidth)
         }
         return true
+    }
+
+    @discardableResult
+    func applyImageDisplayWidth(
+        for fileURL: URL,
+        preferredWidth: Double?,
+        registersUndo: Bool = true
+    ) -> Bool {
+        guard let characterIndex = characterIndexForImage(at: fileURL),
+              let reference = imageAttachmentReference(atCharacterIndex: characterIndex) else {
+            return false
+        }
+        let standardizedURL = fileURL.standardizedFileURL
+        let previousWidth = imageDisplayWidthProvider?(standardizedURL)
+        let resolvedWidth = preferredWidth
+            ?? Double(MarkdownImageDisplaySizing.fitSize(for: reference.naturalSize).width)
+        guard resizeImage(
+            atCharacterIndex: characterIndex,
+            preferredWidth: resolvedWidth,
+            persistsDisplayWidth: false
+        ) else {
+            return false
+        }
+        onImageDisplayWidthChanged?(standardizedURL, preferredWidth)
+        if registersUndo, previousWidth != preferredWidth {
+            registerImageResizeUndo(fileURL: standardizedURL, restoring: previousWidth)
+        }
+        return true
+    }
+
+    func imageResizeMenu(atCharacterIndex characterIndex: Int) -> NSMenu? {
+        guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex) else {
+            return nil
+        }
+        let fileURL = URL(fileURLWithPath: reference.path).standardizedFileURL
+        let availableWidth = MarkdownImageDisplaySizing.clampedWidth(
+            max(visibleRect.width - (textContainerInset.width * 2) - 8, 80)
+        )
+        let menu = NSMenu(title: "图片大小")
+        let commands: [(String, Double?)] = [
+            ("适合编辑器", availableWidth),
+            ("25%", availableWidth * 0.25),
+            ("50%", availableWidth * 0.5),
+            ("75%", availableWidth * 0.75),
+            ("100%", availableWidth),
+            ("原始大小", Double(reference.naturalSize.width))
+        ]
+        for (title, preferredWidth) in commands {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(imageResizeMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = MarkdownImageResizeMenuCommand(
+                fileURL: fileURL,
+                preferredWidth: preferredWidth.map {
+                    MarkdownImageDisplaySizing.clampedWidth(CGFloat($0))
+                }
+            )
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let reset = NSMenuItem(
+            title: "重置自定义大小",
+            action: #selector(imageResizeMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        reset.target = self
+        reset.representedObject = MarkdownImageResizeMenuCommand(fileURL: fileURL, preferredWidth: nil)
+        menu.addItem(reset)
+        return menu
+    }
+
+    private func appendImageResizeMenuIfNeeded(to menu: NSMenu, for event: NSEvent) {
+        guard let characterIndex = characterIndex(at: event),
+              let submenu = imageResizeMenu(atCharacterIndex: characterIndex) else {
+            return
+        }
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        let item = NSMenuItem(title: "图片大小", action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "photo", accessibilityDescription: "图片大小")
+        item.submenu = submenu
+        menu.addItem(item)
+    }
+
+    @objc
+    private func imageResizeMenuItemPressed(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? MarkdownImageResizeMenuCommand else {
+            return
+        }
+        _ = applyImageDisplayWidth(
+            for: command.fileURL,
+            preferredWidth: command.preferredWidth
+        )
+    }
+
+    private func characterIndexForImage(at fileURL: URL) -> Int? {
+        guard let textStorage else { return nil }
+        let path = fileURL.standardizedFileURL.path
+        var match: Int?
+        textStorage.enumerateAttribute(
+            .qmImageFilePath,
+            in: NSRange(location: 0, length: textStorage.length)
+        ) { value, range, stop in
+            guard let candidate = value as? String,
+                  URL(fileURLWithPath: candidate).standardizedFileURL.path == path else {
+                return
+            }
+            match = range.location
+            stop.pointee = true
+        }
+        return match
+    }
+
+    private func registerImageResizeUndo(fileURL: URL, restoring preferredWidth: Double?) {
+        undoManager?.registerUndo(withTarget: self) { target in
+            _ = target.applyImageDisplayWidth(
+                for: fileURL,
+                preferredWidth: preferredWidth,
+                registersUndo: true
+            )
+        }
+        undoManager?.setActionName("调整图片大小")
     }
 
     func imageAttachmentFrame(atCharacterIndex characterIndex: Int) -> NSRect? {
@@ -865,6 +1008,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
                 initialWidth: reference.displaySize.width,
                 horizontalDirection: resizeEdge.direction,
                 fileURL: URL(fileURLWithPath: reference.path),
+                initialPersistedWidth: imageDisplayWidthProvider?(
+                    URL(fileURLWithPath: reference.path).standardizedFileURL
+                ),
                 currentWidth: Double(reference.displaySize.width)
             )
             window?.invalidateCursorRects(for: self)
@@ -924,12 +1070,48 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     override func mouseUp(with event: NSEvent) {
         if let resize = imageResizeDragState {
             imageResizeDragState = nil
-            onImageDisplayWidthChanged?(resize.fileURL, resize.currentWidth)
+            if abs(resize.currentWidth - Double(resize.initialWidth)) > 0.5 {
+                onImageDisplayWidthChanged?(resize.fileURL, resize.currentWidth)
+                registerImageResizeUndo(
+                    fileURL: resize.fileURL.standardizedFileURL,
+                    restoring: resize.initialPersistedWidth
+                )
+            }
             window?.invalidateCursorRects(for: self)
             updateHoverCursor(with: event)
             return
         }
         super.mouseUp(with: event)
+    }
+
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        var actions = super.accessibilityCustomActions() ?? []
+        guard let fileURL = selectedImageFileURL() else { return actions }
+        let fitAction = NSAccessibilityCustomAction(name: "图片适合编辑器") { [weak self] in
+            guard let self else { return false }
+            let width = MarkdownImageDisplaySizing.clampedWidth(
+                max(self.visibleRect.width - (self.textContainerInset.width * 2) - 8, 80)
+            )
+            return self.applyImageDisplayWidth(for: fileURL, preferredWidth: width)
+        }
+        let resetAction = NSAccessibilityCustomAction(name: "重置图片大小") { [weak self] in
+            self?.applyImageDisplayWidth(for: fileURL, preferredWidth: nil) ?? false
+        }
+        actions.append(contentsOf: [fitAction, resetAction])
+        return actions
+    }
+
+    private func selectedImageFileURL() -> URL? {
+        guard let textStorage, textStorage.length > 0 else { return nil }
+        let location = min(selectedRange().location, textStorage.length - 1)
+        guard let path = textStorage.attribute(
+            .qmImageFilePath,
+            at: location,
+            effectiveRange: nil
+        ) as? String else {
+            return nil
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
     }
 
     func showSelectionMenuIfNeeded() {

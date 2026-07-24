@@ -2930,6 +2930,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.onImageDisplayWidthChanged = { [weak self] fileURL, width in
             self?.noteStore.setLibraryImageDisplayWidth(width, for: fileURL)
         }
+        editorTextView.imageDisplayWidthProvider = { [weak self] fileURL in
+            self?.noteStore.libraryImageDisplayWidth(for: fileURL)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }

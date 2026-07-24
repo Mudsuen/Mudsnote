@@ -1106,6 +1106,28 @@ struct MarkdownRichEditorTests {
         let initialReference = try #require(
             firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
         )
+        let resizeMenu = try #require(
+            firstController.editorTextView.imageResizeMenu(atCharacterIndex: firstImageIndex)
+        )
+        #expect(resizeMenu.items.map(\.title) == [
+            "适合编辑器",
+            "25%",
+            "50%",
+            "75%",
+            "100%",
+            "原始大小",
+            "",
+            "重置自定义大小"
+        ])
+        firstController.editorTextView.setSelectedRange(NSRange(location: firstImageIndex, length: 0))
+        #expect(
+            firstController.editorTextView.accessibilityCustomActions()?.map(\.name)
+                .contains("图片适合编辑器") == true
+        )
+        #expect(
+            firstController.editorTextView.accessibilityCustomActions()?.map(\.name)
+                .contains("重置图片大小") == true
+        )
         firstController.showWindow(nil)
         firstController.editorTextView.layoutManager?.ensureLayout(
             for: try #require(firstController.editorTextView.textContainer)
@@ -1183,6 +1205,20 @@ struct MarkdownRichEditorTests {
             firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
         )
         #expect(resizedReference.displaySize.width > initialReference.displaySize.width)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == Double(resizedReference.displaySize.width))
+        #expect(firstController.editorTextView.undoManager?.canUndo == true)
+        firstController.editorTextView.undoManager?.undo()
+        let undoReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(undoReference.displaySize == initialReference.displaySize)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == nil)
+        #expect(firstController.editorTextView.undoManager?.canRedo == true)
+        firstController.editorTextView.undoManager?.redo()
+        let redoReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(redoReference.displaySize == resizedReference.displaySize)
         #expect(store.libraryImageDisplayWidth(for: imageURL) == Double(resizedReference.displaySize.width))
         #expect(MarkdownRichTextCodec.serialize(
             firstController.editorTextView.attributedString(),
