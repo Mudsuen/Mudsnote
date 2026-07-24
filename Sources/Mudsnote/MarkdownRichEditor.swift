@@ -18,6 +18,7 @@ extension NSAttributedString.Key {
     static let qmTableRow = NSAttributedString.Key("MudsnoteTableRow")
     static let qmTableColumn = NSAttributedString.Key("MudsnoteTableColumn")
     static let qmTableColumnCount = NSAttributedString.Key("MudsnoteTableColumnCount")
+    static let qmTableColumnAlignment = NSAttributedString.Key("MudsnoteTableColumnAlignment")
     static let qmTablePlaceholder = NSAttributedString.Key("MudsnoteTablePlaceholder")
     static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
@@ -1520,6 +1521,7 @@ enum MarkdownRichTextCodec {
 
     private struct ParsedMarkdownTable {
         let rows: [[String]]
+        let alignments: [String]
         let consumedLineCount: Int
     }
 
@@ -1540,6 +1542,7 @@ enum MarkdownRichTextCodec {
                 let nextLineIndex = lineIndex + table.consumedLineCount
                 output.append(renderTable(
                     rows: table.rows,
+                    alignments: table.alignments,
                     representsFollowingMarkdownLine: nextLineIndex < lines.count,
                     theme: theme,
                     baseURL: baseURL
@@ -1690,6 +1693,7 @@ enum MarkdownRichTextCodec {
     @MainActor
     private static func renderTable(
         rows: [[String]],
+        alignments: [String],
         representsFollowingMarkdownLine: Bool,
         theme: MarkdownEditorTheme,
         baseURL: URL?
@@ -1749,7 +1753,10 @@ enum MarkdownRichTextCodec {
                     .qmTableID: tableID,
                     .qmTableRow: rowIndex,
                     .qmTableColumn: columnIndex,
-                    .qmTableColumnCount: columnCount
+                    .qmTableColumnCount: columnCount,
+                    .qmTableColumnAlignment: alignments.indices.contains(columnIndex)
+                        ? alignments[columnIndex]
+                        : "---"
                 ], range: cellRange)
                 if isPlaceholder {
                     cell.addAttribute(.qmTablePlaceholder, value: true, range: cellRange)
@@ -1780,6 +1787,8 @@ enum MarkdownRichTextCodec {
               separator.allSatisfy(isMarkdownTableSeparatorCell) else {
             return nil
         }
+        let alignments = separator.compactMap(markdownTableAlignment)
+        guard alignments.count == header.count else { return nil }
 
         var rows = [header]
         var nextIndex = index + 2
@@ -1790,23 +1799,67 @@ enum MarkdownRichTextCodec {
             rows.append(row)
             nextIndex += 1
         }
-        return ParsedMarkdownTable(rows: rows, consumedLineCount: nextIndex - index)
+        return ParsedMarkdownTable(
+            rows: rows,
+            alignments: alignments,
+            consumedLineCount: nextIndex - index
+        )
     }
 
     private static func markdownTableCells(in line: String) -> [String]? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
-        let cells = trimmed
-            .split(separator: "|", omittingEmptySubsequences: false)
-            .dropFirst()
-            .dropLast()
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let interior = trimmed.dropFirst().dropLast()
+        var cells: [String] = []
+        var cell = ""
+        var pendingBackslashes = 0
+
+        func appendPendingBackslashes(removingEscape: Bool = false) {
+            let count = max(pendingBackslashes - (removingEscape ? 1 : 0), 0)
+            if count > 0 {
+                cell.append(String(repeating: "\\", count: count))
+            }
+            pendingBackslashes = 0
+        }
+
+        for character in interior {
+            if character == "\\" {
+                pendingBackslashes += 1
+                continue
+            }
+            if character == "|" {
+                if pendingBackslashes > 0 {
+                    appendPendingBackslashes(removingEscape: true)
+                    cell.append("|")
+                } else {
+                    cells.append(cell.trimmingCharacters(in: .whitespacesAndNewlines))
+                    cell = ""
+                }
+                continue
+            }
+            appendPendingBackslashes()
+            cell.append(character)
+        }
+        appendPendingBackslashes()
+        cells.append(cell.trimmingCharacters(in: .whitespacesAndNewlines))
         return cells.count >= 2 ? cells : nil
     }
 
     private static func isMarkdownTableSeparatorCell(_ cell: String) -> Bool {
         let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
         return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
+    }
+
+    private static func markdownTableAlignment(_ cell: String) -> String? {
+        guard isMarkdownTableSeparatorCell(cell) else { return nil }
+        let hasLeadingColon = cell.hasPrefix(":")
+        let hasTrailingColon = cell.hasSuffix(":")
+        switch (hasLeadingColon, hasTrailingColon) {
+        case (true, true): return ":---:"
+        case (true, false): return ":---"
+        case (false, true): return "---:"
+        case (false, false): return "---"
+        }
     }
 
     private static func serializedTable(
@@ -1822,6 +1875,7 @@ enum MarkdownRichTextCodec {
 
         let nsString = attributedString.string as NSString
         var rows: [Int: [Int: String]] = [:]
+        var alignments: [Int: String] = [:]
         var columnCount = 0
         var cursor = location
 
@@ -1844,6 +1898,14 @@ enum MarkdownRichTextCodec {
                 columnCount,
                 attributedString.attribute(.qmTableColumnCount, at: metadataLocation, effectiveRange: nil) as? Int ?? 0
             )
+            if alignments[column] == nil,
+               let alignment = attributedString.attribute(
+                   .qmTableColumnAlignment,
+                   at: metadataLocation,
+                   effectiveRange: nil
+               ) as? String {
+                alignments[column] = alignment
+            }
             let markdown = serializeInline(
                 range: contentRange,
                 in: attributedString,
@@ -1864,7 +1926,8 @@ enum MarkdownRichTextCodec {
             let cells = (0..<columnCount).map { rows[row]?[$0] ?? "" }
             markdownLines.append("| " + cells.joined(separator: " | ") + " |")
             if row == 0 {
-                markdownLines.append("| " + Array(repeating: "---", count: columnCount).joined(separator: " | ") + " |")
+                let separatorCells = (0..<columnCount).map { alignments[$0] ?? "---" }
+                markdownLines.append("| " + separatorCells.joined(separator: " | ") + " |")
             }
         }
         return (markdownLines.joined(separator: "\n"), cursor)
@@ -2206,7 +2269,7 @@ enum MarkdownRichTextCodec {
         while index < source.endIndex {
             if source[index...].hasPrefix("!["),
                let closeBracket = source[source.index(index, offsetBy: 2)...].range(of: "]("),
-               let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
+               let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
                 let label = String(source[source.index(index, offsetBy: 2)..<closeBracket.lowerBound])
                 let path = String(source[closeBracket.upperBound..<closeParen])
                 let markdown = String(source[index...closeParen])
@@ -2297,7 +2360,7 @@ enum MarkdownRichTextCodec {
 
             if source[index...].hasPrefix("["),
                let closeBracket = source[index...].range(of: "]("),
-               let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
+               let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
                 let label = String(source[source.index(after: index)..<closeBracket.lowerBound])
                 let url = String(source[closeBracket.upperBound..<closeParen])
                 let markdown = String(source[index...closeParen])
@@ -2346,6 +2409,32 @@ enum MarkdownRichTextCodec {
         }
         applyAutomaticLinks(in: output, range: NSRange(location: 0, length: output.length), theme: theme)
         return output
+    }
+
+    private static func closingLinkParenthesis(
+        in source: String,
+        after destinationStart: String.Index
+    ) -> String.Index? {
+        var nestedDepth = 0
+        var isEscaped = false
+        var cursor = destinationStart
+        while cursor < source.endIndex {
+            let character = source[cursor]
+            if isEscaped {
+                isEscaped = false
+            } else if character == "\\" {
+                isEscaped = true
+            } else if character == "(" {
+                nestedDepth += 1
+            } else if character == ")" {
+                if nestedDepth == 0 {
+                    return cursor
+                }
+                nestedDepth -= 1
+            }
+            cursor = source.index(after: cursor)
+        }
+        return nil
     }
 
     @MainActor

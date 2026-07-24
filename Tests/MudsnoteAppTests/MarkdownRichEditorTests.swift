@@ -514,6 +514,50 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func markdownLinksRoundTripBalancedAndEscapedParentheses() {
+        let markdown = #"Links [nested](https://host/a_(b)) and [escaped](https://host/a_\(b\))"#
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let nestedLocation = (rendered.string as NSString).range(of: "nested").location
+        let escapedLocation = (rendered.string as NSString).range(of: "escaped").location
+
+        #expect(rendered.attribute(.qmLinkURL, at: nestedLocation, effectiveRange: nil) as? String == "https://host/a_(b)")
+        #expect(rendered.attribute(.qmLinkURL, at: escapedLocation, effectiveRange: nil) as? String == #"https://host/a_\(b\)"#)
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @MainActor
+    @Test
+    func markdownAttachmentsRoundTripPathsContainingParentheses() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-parenthesized-attachment-tests-\(UUID().uuidString)", isDirectory: true)
+        let attachments = root.appendingPathComponent("Attachments", isDirectory: true)
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let noteURL = root.appendingPathComponent("Note.md")
+        let fileURL = attachments.appendingPathComponent("spec_(v2).pdf")
+        let imageURL = attachments.appendingPathComponent("image_(v2).png")
+        try Data("PDF".utf8).write(to: fileURL)
+        let pngData = try #require(Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        ))
+        try pngData.write(to: imageURL)
+
+        let markdown = """
+        [Spec](Attachments/spec_(v2).pdf)
+        ![Diagram](Attachments/image_(v2).png)
+        """
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: theme,
+            baseURL: noteURL
+        )
+
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @MainActor
+    @Test
     func floatingEditorExposesSelectionFormattingToolbar() throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
@@ -4930,6 +4974,21 @@ struct MarkdownRichEditorTests {
         | Alpha |  |
         After
         """)
+    }
+
+    @MainActor
+    @Test
+    func markdownTablesPreserveEscapedPipesBackslashesEmptyCellsAndAlignment() {
+        let markdown = #"""
+        | Value | Path | Empty | Alignment |
+        | :--- | ---: | :---: | --- |
+        | A\|B | slash\\|pipe |  | Plain |
+        """#
+
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        #expect(rendered.string.contains("A|B"))
+        #expect(rendered.string.contains(#"slash\|pipe"#))
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
     }
 
     @MainActor
