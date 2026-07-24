@@ -16,17 +16,17 @@ private enum LibraryScope: Equatable, Sendable {
     var buttonTitle: String {
         switch self {
         case .all:
-            return "All iCloud"
+            return "所有 iCloud 笔记"
         case .recent:
             return "最近"
         case .inbox:
-            return "Inbox"
+            return "收件箱"
         case .folder(let url):
-            return url.lastPathComponent.isEmpty ? "Notes" : url.lastPathComponent
+            return url.lastPathComponent.isEmpty ? "笔记" : url.lastPathComponent
         case .tag(let tag):
             return libraryBareTag(tag)
         case .trash:
-            return "Recently Deleted"
+            return "最近删除"
         }
     }
 
@@ -263,9 +263,9 @@ private enum LibrarySourceSection: Int {
     var title: String {
         switch self {
         case .folders:
-            return "Folders"
+            return "文件夹"
         case .tags:
-            return "Tags"
+            return "标签"
         }
     }
 
@@ -2235,9 +2235,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
-        searchField.placeholderString = "Search"
-        searchField.toolTip = "Search Notes"
-        searchField.setAccessibilityLabel("Search Notes")
+        searchField.placeholderString = "搜索"
+        searchField.toolTip = "搜索笔记"
+        searchField.setAccessibilityLabel("搜索笔记")
         searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
         searchField.isBordered = true
@@ -2434,9 +2434,9 @@ final class LibraryWindowController: NSWindowController,
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Search"
-            item.paletteLabel = "Search"
-            item.toolTip = "Search Notes"
+            item.label = "搜索"
+            item.paletteLabel = "搜索"
+            item.toolTip = "搜索笔记"
             item.visibilityPriority = .high
             let wrapper = NSView(frame: NSRect(
                 x: 0,
@@ -3009,12 +3009,12 @@ final class LibraryWindowController: NSWindowController,
             if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
                 iCloudGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:loading",
-                    kind: .status("Loading Folders...")
+                    kind: .status("正在载入文件夹…")
                 ))
             } else if sourceFolderTreeRows.isEmpty {
                 iCloudGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:empty",
-                    kind: .status("No Folders")
+                    kind: .status("没有文件夹")
                 ))
             }
         }
@@ -3023,7 +3023,7 @@ final class LibraryWindowController: NSWindowController,
 
         let tagsGroup = makeSourceOutlineItem(
             identifier: "group:tags",
-            kind: .group(title: "Tags", section: .tags)
+            kind: .group(title: "标签", section: .tags)
         )
         for tag in sourceTagNames {
             tagsGroup.append(makeSourceOutlineScopeItem(.tag(tag)))
@@ -3495,7 +3495,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func folderTitle(for url: URL) -> String {
         let standardizedURL = url.standardizedFileURL
-        return standardizedURL.lastPathComponent.isEmpty ? "Notes" : standardizedURL.lastPathComponent
+        return standardizedURL.lastPathComponent.isEmpty ? "笔记" : standardizedURL.lastPathComponent
     }
 
     private func refreshSourceSelection() {
@@ -3894,7 +3894,7 @@ final class LibraryWindowController: NSWindowController,
         if query.isEmpty {
             noteListCountLabel.stringValue = notesCountText(notes.count)
         } else if hasPendingSearchReload || isSearchResultReloading {
-            noteListCountLabel.stringValue = "Searching..."
+            noteListCountLabel.stringValue = "正在搜索…"
         } else {
             noteListCountLabel.stringValue = resultsCountText(notes.count)
         }
@@ -3908,13 +3908,13 @@ final class LibraryWindowController: NSWindowController,
 
         let message: String
         if !query.isEmpty, hasPendingSearchReload || isSearchResultReloading {
-            message = "Searching..."
+            message = "正在搜索…"
         } else if !query.isEmpty {
-            message = "No Results"
+            message = "没有结果"
         } else if selectedScope == .trash {
-            message = "Recently Deleted is empty"
+            message = "最近删除为空"
         } else {
-            message = "No Notes"
+            message = "没有笔记"
         }
         noteListEmptyLabel.stringValue = message
         galleryEmptyLabel.stringValue = message
@@ -4884,7 +4884,7 @@ final class LibraryWindowController: NSWindowController,
         guard title.isEmpty else { return title }
         let fallback = note.url.deletingPathExtension().lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return fallback.isEmpty ? "New Note" : fallback
+        return fallback.isEmpty ? "新建笔记" : fallback
     }
 
     private func thumbnailImage(for note: NoteSearchResult) -> NSImage? {
@@ -5138,7 +5138,7 @@ final class LibraryWindowController: NSWindowController,
         let rawPreview = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
         galleryItem.configure(
             title: noteListDisplayTitle(for: note),
-            preview: rawPreview.isEmpty ? "No additional text" : rawPreview,
+            preview: rawPreview.isEmpty ? "无其他内容" : rawPreview,
             date: noteListDateText(for: noteListDisplayDateForLibrary(note)),
             metadata: noteListFolderText(for: note),
             thumbnail: thumbnailImage(for: note)
@@ -8111,7 +8111,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
         let snippet = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
-        let preview = snippet.isEmpty ? "No additional text" : snippet
+        let preview = snippet.isEmpty ? "无其他内容" : snippet
         let dateText = noteListDateText(for: noteListDisplayDateForLibrary(note))
         let cleanedPreview = noteListPreviewText(preview, removingDuplicateDateText: dateText)
         guard !cleanedPreview.isEmpty else { return dateText }
@@ -8142,7 +8142,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func noteListFolderText(for note: NoteSearchResult) -> String {
         let folder = isTrashURL(note.url)
-            ? "Recently Deleted"
+            ? "最近删除"
             : folderTitle(for: note.url.deletingLastPathComponent())
         let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
@@ -8158,7 +8158,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if calendar.isDateInYesterday(date) {
-            return "Yesterday"
+            return "昨天"
         }
 
         let startOfToday = calendar.startOfDay(for: now)
@@ -8176,11 +8176,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func notesCountText(_ count: Int) -> String {
-        "\(count) \(count == 1 ? "note" : "notes")"
+        "\(count) 条笔记"
     }
 
     private func resultsCountText(_ count: Int) -> String {
-        "\(count) \(count == 1 ? "result" : "results")"
+        "\(count) 条结果"
     }
 
     private func isTrashURL(_ url: URL) -> Bool {

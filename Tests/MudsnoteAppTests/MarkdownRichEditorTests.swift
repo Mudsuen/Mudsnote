@@ -2059,9 +2059,9 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
         #expect(toolbarSearchField.font?.pointSize == 14)
-        #expect(toolbarSearchField.placeholderString == "Search")
-        #expect(toolbarSearchField.toolTip == "Search Notes")
-        #expect(toolbarSearchField.accessibilityLabel() == "Search Notes")
+        #expect(toolbarSearchField.placeholderString == "搜索")
+        #expect(toolbarSearchField.toolTip == "搜索笔记")
+        #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 19)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
@@ -2314,11 +2314,11 @@ struct MarkdownRichEditorTests {
         #expect(sourceScrollerInsets.right == 0)
         #expect(sourceOutline.enclosingScrollView is LibrarySourceScrollView)
         let sourceTitles = controller.sourceTitlesForLibrary()
-        #expect(!sourceTitles.contains("All iCloud"))
+        #expect(!sourceTitles.contains("所有 iCloud 笔记"))
         #expect(sourceTitles.contains("Notes"))
-        #expect(sourceTitles.contains("Recently Deleted"))
+        #expect(sourceTitles.contains("最近删除"))
         #expect(!sourceTitles.contains("最近"))
-        #expect(!sourceTitles.contains("Inbox"))
+        #expect(!sourceTitles.contains("收件箱"))
         #expect(!sourceTitles.contains("Call Recordings"))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
@@ -2341,7 +2341,7 @@ struct MarkdownRichEditorTests {
         #expect(noteListTitle.stringValue == "Notes")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
-        #expect(noteListCount.stringValue == "1 note")
+        #expect(noteListCount.stringValue == "1 条笔记")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
         #expect(noteListEmpty.isHidden)
         #expect(controller.tableView.numberOfRows == 2)
@@ -2609,7 +2609,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceRow-3"
         })
         #expect(trashSourceCell.accessibilityPerformPress())
-        #expect(controller.selectedSourceTitleForLibrary == "Recently Deleted")
+        #expect(controller.selectedSourceTitleForLibrary == "最近删除")
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
@@ -3208,7 +3208,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         controller.selectRecentScopeForLibrary()
         #expect(controller.noteListTitleLabel.stringValue == "最近")
-        #expect(controller.noteListCountLabel.stringValue == "0 notes")
+        #expect(controller.noteListCountLabel.stringValue == "0 条笔记")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
     }
 
@@ -3809,7 +3809,7 @@ struct MarkdownRichEditorTests {
 
         let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(noteCell.titleLabel.attributedStringValue.string == "New Note")
-        #expect(noteCell.snippetLabel.attributedStringValue.string.contains("No additional text"))
+        #expect(noteCell.snippetLabel.attributedStringValue.string.contains("无其他内容"))
         #expect(noteCell.metaLabel.stringValue == "Notes")
     }
 
@@ -4124,7 +4124,7 @@ struct MarkdownRichEditorTests {
         #expect(normalExportMenu.items.allSatisfy { $0.isEnabled })
 
         try selectedController.deleteSelectedNoteForLibrary()
-        #expect(selectedController.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(selectedController.selectSourceForLibrary(titled: "最近删除"))
 
         #expect(!selectedController.validateToolbarItem(formatItem))
         #expect(!selectedController.validateToolbarItem(checklistItem))
@@ -5649,7 +5649,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
-        #expect(controller.noteListCountLabel.stringValue == "1 result")
+        #expect(controller.noteListCountLabel.stringValue == "1 条结果")
 
         let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         let titleHighlight = cell.titleLabel.attributedStringValue.attribute(
@@ -5686,8 +5686,8 @@ struct MarkdownRichEditorTests {
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(controller.noteListCountLabel.stringValue == "2 results")
+        #expect(controller.noteListTitleLabel.stringValue == "所有 iCloud 笔记")
+        #expect(controller.noteListCountLabel.stringValue == "2 条结果")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
         #expect(controller.activeSearchSessionForLibrary() === allNotesSearchSession)
@@ -5698,7 +5698,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
         #expect(!emptyLabel.isHidden)
-        #expect(emptyLabel.stringValue == "No Results")
+        #expect(emptyLabel.stringValue == "没有结果")
     }
 
     @MainActor
@@ -5802,16 +5802,16 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
         #expect(!controller.searchScopeControl.isHidden)
-        #expect(controller.noteListCountLabel.stringValue == "Searching...")
+        #expect(controller.noteListCountLabel.stringValue == "正在搜索…")
 
         let deadline = Date().addingTimeInterval(6)
         while Date() < deadline,
               controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"]
-                || controller.noteListCountLabel.stringValue != "1 result" {
+                || controller.noteListCountLabel.stringValue != "1 条结果" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
-        #expect(controller.noteListCountLabel.stringValue == "1 result")
+        #expect(controller.noteListCountLabel.stringValue == "1 条结果")
 
         controller.searchField.stringValue = "beta"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
@@ -5823,7 +5823,7 @@ struct MarkdownRichEditorTests {
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         #expect(controller.searchScopeControl.isHidden)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
-        #expect(controller.noteListCountLabel.stringValue == "2 notes")
+        #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
     }
 
     @MainActor
@@ -5901,7 +5901,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         try FileManager.default.removeItem(at: trashedURL)
 
         controller.searchField.stringValue = "cached"
@@ -6055,7 +6055,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "library") == 1)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == true)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
@@ -6063,7 +6063,7 @@ struct MarkdownRichEditorTests {
         controller.toggleSourceTagsSectionForLibrary()
         #expect(controller.sourceTitlesForLibrary().contains("library"))
         #expect(!controller.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == false)
         #expect(store.libraryTagsSectionCollapsed)
 
         let reopenedCollapsedTagsController = LibraryWindowController(
@@ -6076,12 +6076,12 @@ struct MarkdownRichEditorTests {
         reopenedCollapsedTagsController.loadSourceTagsForLibrary()
         #expect(reopenedCollapsedTagsController.sourceTitlesForLibrary().contains("library"))
         #expect(!reopenedCollapsedTagsController.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(reopenedCollapsedTagsController.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
+        #expect(reopenedCollapsedTagsController.isSourceGroupExpandedForLibrary(titled: "标签") == false)
 
         controller.toggleSourceTagsSectionForLibrary()
         #expect(!store.libraryTagsSectionCollapsed)
         #expect(controller.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == true)
 
         #expect(controller.selectSourceForLibrary(titled: "library"))
         #expect(controller.noteListTitleLabel.stringValue == "#library")
@@ -6140,7 +6140,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Projects") == 2)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Client") == 3)
-        #expect(controller.sourceOutlineLevelForLibrary(titled: "Recently Deleted") == 1)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "最近删除") == 1)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
 
         controller.toggleSourceFoldersSectionForLibrary()
@@ -6714,7 +6714,7 @@ struct MarkdownRichEditorTests {
 
         try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
         #expect(store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(controller.selectSourceForLibrary(titled: "External Library"))
         let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
@@ -6731,7 +6731,7 @@ struct MarkdownRichEditorTests {
         #expect(!store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
         #expect(FileManager.default.fileExists(atPath: externalDirectory.path))
         #expect(FileManager.default.fileExists(atPath: externalNote.path))
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(!controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(throws: (any Error).self) {
             try controller.removeRegisteredLibraryFolderForLibrary(at: notesDirectory)
@@ -6873,13 +6873,13 @@ struct MarkdownRichEditorTests {
         let trashedURL = try #require(store.listTrashedNotes(limit: 10).first?.url)
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(!controller.canDeleteSelectedNotesFromMenuForLibrary)
         #expect(controller.canRestoreSelectedNotesFromMenuForLibrary)
         #expect(controller.titleField.stringValue == "Trash Seed")
         #expect(!controller.titleField.isEditable)
         #expect(!controller.editorTextView.isEditable)
-        #expect(controller.sourceCountTextForLibrary(titled: "Recently Deleted") == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "最近删除") == "1")
 
         let trashMoreMenu = controller.makeMoreActionsMenuForLibrary()
         let trashMenuTitles = trashMoreMenu.items.map(\.title)
@@ -6909,12 +6909,12 @@ struct MarkdownRichEditorTests {
         #expect(controller.editorTextView.isEditable)
 
         try controller.deleteSelectedNoteForLibrary()
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.titleField.stringValue == "Trash Seed")
         try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
-        #expect(controller.noteListEmptyLabel.stringValue == "Recently Deleted is empty")
+        #expect(controller.noteListEmptyLabel.stringValue == "最近删除为空")
         #expect(!controller.noteListEmptyLabel.isHidden)
     }
 
@@ -6957,7 +6957,7 @@ struct MarkdownRichEditorTests {
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.titleField.stringValue == "Keyboard Seed")
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
@@ -7314,7 +7314,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().contains {
             $0.url.standardizedFileURL == externalURL.standardizedFileURL
         })
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(controller.sourceTitlesForLibrary().contains(root.lastPathComponent))
         #expect(controller.selectedSourceTitleForLibrary == root.lastPathComponent)
         #expect(controller.noteListTitleLabel.stringValue == root.lastPathComponent)
@@ -7789,7 +7789,7 @@ struct MarkdownRichEditorTests {
         }
 
         controller.showWindowAndFocus()
-        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
@@ -7893,7 +7893,7 @@ struct MarkdownRichEditorTests {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
-        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
         #expect(controller.tableView.selectedRow >= 0)
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "External Deferred")
@@ -7973,7 +7973,7 @@ struct MarkdownRichEditorTests {
 
         let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
         _ = try store.trashNote(at: noteURL)
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
 
         let deadline = Date().addingTimeInterval(6)
