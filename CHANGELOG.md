@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 220. Live and stable macOS image resizing
+- Problem: Dragging an inserted image edge selected the attachment, persisted every intermediate width, and let AppKit repeatedly restore the text cursor during layout, so the image lagged behind the pointer while the cursor and selection visuals flickered.
+- Fix: Image resizing now redraws each drag position synchronously, keeps the horizontal resize cursor for the complete gesture, avoids selecting the attachment, and persists only the final width on mouse-up.
+- Lesson: Interactive resizing needs separate transient and durable state; the drag loop should own rendering and cursor feedback while persistence waits for gesture completion.
+
 ### 219. Direct edge resizing for inserted macOS images
 - Problem: Images inserted into macOS notes rendered at one fixed fitted size, so reviewing a detail or reclaiming editor space required changing the source image instead of adjusting its presentation.
 - Fix: Hovering either vertical image edge now exposes horizontal resizing, and dragging that edge resizes the image proportionally within safe bounds. The chosen width survives reopening the note without rewriting its Markdown or original attachment file.

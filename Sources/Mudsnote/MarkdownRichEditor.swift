@@ -383,6 +383,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let initialPointerX: CGFloat
         let initialWidth: CGFloat
         let horizontalDirection: CGFloat
+        let fileURL: URL
+        var currentWidth: Double
     }
 
     private static let allowedContextMenuItemIdentifier = NSUserInterfaceItemIdentifier("mudsnote.editor.context-menu.allowed")
@@ -402,6 +404,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var markdownPasteTheme: MarkdownEditorTheme?
 
     private func updateHoverCursor(with event: NSEvent) {
+        if imageResizeDragState != nil {
+            NSCursor.resizeLeftRight.set()
+            return
+        }
         guard let layoutManager, let textContainer else {
             NSCursor.iBeam.set()
             return
@@ -434,6 +440,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        if imageResizeDragState != nil {
+            addCursorRect(bounds, cursor: .resizeLeftRight)
+            return
+        }
         addCursorRect(bounds, cursor: .iBeam)
         addChecklistCursorRects()
     }
@@ -671,7 +681,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     @discardableResult
     func resizeImage(
         atCharacterIndex characterIndex: Int,
-        preferredWidth: Double
+        preferredWidth: Double,
+        persistsDisplayWidth: Bool = true
     ) -> Bool {
         guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex),
               let textStorage,
@@ -693,7 +704,12 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             actualCharacterRange: nil
         )
         layoutManager?.invalidateDisplay(forCharacterRange: reference.range)
-        onImageDisplayWidthChanged?(URL(fileURLWithPath: reference.path), preferredWidth)
+        layoutManager?.ensureLayout(forCharacterRange: reference.range)
+        needsDisplay = true
+        displayIfNeeded()
+        if persistsDisplayWidth {
+            onImageDisplayWidthChanged?(URL(fileURLWithPath: reference.path), preferredWidth)
+        }
         return true
     }
 
@@ -733,11 +749,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return nil
         }
 
-        if abs(point.x - frame.minX) <= Self.imageResizeEdgeHitWidth {
-            return (characterIndex, -1)
-        }
-        if abs(point.x - frame.maxX) <= Self.imageResizeEdgeHitWidth {
-            return (characterIndex, 1)
+        let leftDistance = abs(point.x - frame.minX)
+        let rightDistance = abs(point.x - frame.maxX)
+        let nearestDistance = min(leftDistance, rightDistance)
+        if nearestDistance <= Self.imageResizeEdgeHitWidth {
+            return (characterIndex, leftDistance < rightDistance ? -1 : 1)
         }
         return nil
     }
@@ -845,9 +861,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
                 characterIndex: resizeEdge.characterIndex,
                 initialPointerX: point.x,
                 initialWidth: reference.displaySize.width,
-                horizontalDirection: resizeEdge.direction
+                horizontalDirection: resizeEdge.direction,
+                fileURL: URL(fileURLWithPath: reference.path),
+                currentWidth: Double(reference.displaySize.width)
             )
-            setSelectedRange(reference.range)
+            window?.invalidateCursorRects(for: self)
             NSCursor.resizeLeftRight.set()
             return
         }
@@ -878,14 +896,23 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if let resize = imageResizeDragState {
+        if var resize = imageResizeDragState {
             let pointerX = convert(event.locationInWindow, from: nil).x
-            let width = resize.initialWidth
-                + (pointerX - resize.initialPointerX) * resize.horizontalDirection
-            _ = resizeImage(
-                atCharacterIndex: resize.characterIndex,
-                preferredWidth: MarkdownImageDisplaySizing.clampedWidth(width)
+            let width = MarkdownImageDisplaySizing.clampedWidth(
+                resize.initialWidth
+                    + (pointerX - resize.initialPointerX) * resize.horizontalDirection
             )
+            guard resizeImage(
+                atCharacterIndex: resize.characterIndex,
+                preferredWidth: width,
+                persistsDisplayWidth: false
+            ) else {
+                imageResizeDragState = nil
+                window?.invalidateCursorRects(for: self)
+                return
+            }
+            resize.currentWidth = width
+            imageResizeDragState = resize
             NSCursor.resizeLeftRight.set()
             return
         }
@@ -893,8 +920,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if imageResizeDragState != nil {
+        if let resize = imageResizeDragState {
             imageResizeDragState = nil
+            onImageDisplayWidthChanged?(resize.fileURL, resize.currentWidth)
+            window?.invalidateCursorRects(for: self)
             updateHoverCursor(with: event)
             return
         }
