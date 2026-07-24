@@ -58,4 +58,50 @@ focused_ui_tests="$(
 )"
 test -z "$focused_ui_tests"
 
-echo "verify_ios simulator destination and focused UI routing passed"
+scope_fixture="$(mktemp -d)"
+trap 'rm -rf "$scope_fixture"' EXIT
+
+git -C "$scope_fixture" init -q -b main
+git -C "$scope_fixture" config user.email devflow-test@example.invalid
+git -C "$scope_fixture" config user.name "Devflow Test"
+printf 'fixture\n' >"$scope_fixture/README.md"
+git -C "$scope_fixture" add README.md
+git -C "$scope_fixture" commit -qm fixture
+base_sha="$(git -C "$scope_fixture" rev-parse HEAD)"
+
+mkdir -p "$scope_fixture/iOS/Fixture"
+printf 'struct IOSFixture {}\n' >"$scope_fixture/iOS/Fixture/IOSFixture.swift"
+git -C "$scope_fixture" add iOS/Fixture/IOSFixture.swift
+git -C "$scope_fixture" commit -qm ios
+ios_sha="$(git -C "$scope_fixture" rev-parse HEAD)"
+
+printf 'struct MacFixture {}\n' >"$scope_fixture/MacFixture.swift"
+git -C "$scope_fixture" add MacFixture.swift
+git -C "$scope_fixture" commit -qm macos
+mac_sha="$(git -C "$scope_fixture" rev-parse HEAD)"
+
+platform_scope="$(
+  DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD="$ios_sha" \
+    "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
+)"
+test "$platform_scope" = ios
+
+platform_scope="$(
+  DEVFLOW_DIFF_BASE="$ios_sha" DEVFLOW_DIFF_HEAD="$mac_sha" \
+    "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
+)"
+test "$platform_scope" = macos
+
+platform_scope="$(
+  DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD="$mac_sha" \
+    "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
+)"
+test "$platform_scope" = both
+
+if DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD=missing \
+  "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture" >/dev/null 2>&1; then
+  echo "ERROR: invalid push range was accepted." >&2
+  exit 1
+fi
+
+echo "verify_ios destination, focused UI, and platform scope routing passed"
