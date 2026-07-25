@@ -14,8 +14,8 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
         let completion: Completion
     }
 
-    private let save: (DraftSnapshot) throws -> Void
-    private let delete: (String) -> Void
+    private let save: @Sendable (DraftSnapshot) throws -> Void
+    private let delete: @Sendable (String) -> Void
     private let queue = DispatchQueue(
         label: "top.muds.mudsnote.draft-persistence",
         qos: .utility
@@ -25,8 +25,8 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
     private var isWorkerScheduled = false
 
     init(
-        save: @escaping (DraftSnapshot) throws -> Void,
-        delete: @escaping (String) -> Void
+        save: @escaping @Sendable (DraftSnapshot) throws -> Void,
+        delete: @escaping @Sendable (String) -> Void
     ) {
         self.save = save
         self.delete = delete
