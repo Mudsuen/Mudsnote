@@ -71,6 +71,49 @@ private final class DraftPersistenceRecorder: @unchecked Sendable {
     }
 }
 
+private final class ThreadObservationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var observedMainThread = false
+
+    func recordCurrentThread() {
+        lock.lock()
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+    }
+
+    func didObserveMainThread() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return observedMainThread
+    }
+}
+
+private final class BlockingAutosaveRecorder: @unchecked Sendable {
+    let firstWriteStarted = DispatchSemaphore(value: 0)
+    let releaseFirstWrite = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var callCount = 0
+    private var observedMainThread = false
+
+    func record() {
+        lock.lock()
+        callCount += 1
+        let currentCall = callCount
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+        if currentCall == 1 {
+            firstWriteStarted.signal()
+            releaseFirstWrite.wait()
+        }
+    }
+
+    func snapshot() -> (callCount: Int, observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (callCount, observedMainThread)
+    }
+}
+
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
@@ -5520,11 +5563,13 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Autosave Seed", body: "Original body")
+        let writeThreadRecorder = ThreadObservationRecorder()
         let oldModifiedAt = Date().addingTimeInterval(-86_400)
         try FileManager.default.setAttributes([.modificationDate: oldModifiedAt], ofItemAtPath: noteURL.path)
 
         let controller = LibraryWindowController(
             noteStore: store,
+            backgroundAutosaveWillPersist: writeThreadRecorder.recordCurrentThread,
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -5541,15 +5586,72 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.statusLabel.stringValue == displayedTimeBeforeEdit)
 
-        try controller.flushPendingAutosaveForTesting()
+        controller.flushBackgroundAutosaveForTesting()
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
+        #expect(!writeThreadRecorder.didObserveMainThread())
         #expect(controller.statusLabel.stringValue.hasPrefix("已保存 · "))
         #expect(controller.statusLabel.accessibilityValue() == controller.statusLabel.stringValue)
         #expect(controller.statusLabel.toolTip == nil)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
         await controller.waitForSourceCountRefreshForLibrary()
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
+    }
+
+    @MainActor
+    @Test
+    func libraryBackgroundAutosaveCoalescesToLatestEditorRevision() async throws {
+        let suiteName = "mudsnote.library-autosave-coalescing-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-autosave-coalescing-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Coalescing", body: "Original")
+        let recorder = BlockingAutosaveRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundAutosaveWillPersist: recorder.record,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.editorTextView.string = "First revision"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        let firstStarted = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(
+                    returning: recorder.firstWriteStarted.wait(timeout: .now() + 2)
+                )
+            }
+        }
+        #expect(firstStarted == .success)
+
+        controller.editorTextView.string = "Latest revision"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        recorder.releaseFirstWrite.signal()
+        await controller.waitForBackgroundAutosaveForTesting()
+
+        #expect(try store.loadNote(at: noteURL).body == "Latest revision")
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
+        let observation = recorder.snapshot()
+        #expect(observation.callCount == 2)
+        #expect(!observation.observedMainThread)
     }
 
     @MainActor

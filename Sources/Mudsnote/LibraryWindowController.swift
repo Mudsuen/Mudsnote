@@ -186,6 +186,57 @@ enum LibraryDocumentSaveProtectionError: LocalizedError {
     }
 }
 
+private struct LibraryBackgroundSaveSnapshot: Sendable {
+    let generation: Int
+    let editorRevision: Int
+    let previousURL: URL?
+    let title: String
+    let body: String
+    let tags: [String]
+    let targetDirectory: URL
+    let updatesInPlace: Bool
+    let baselineRevision: LibraryDocumentRevision?
+    let baselinePath: String?
+}
+
+private struct LibraryBackgroundSaveSuccess: Sendable {
+    let snapshot: LibraryBackgroundSaveSnapshot
+    let savedURL: URL
+    let savedAt: Date
+    let savedRevision: LibraryDocumentRevision
+}
+
+private final class LibraryBackgroundSaveResultBox: @unchecked Sendable {
+    let result: Result<LibraryBackgroundSaveSuccess, Error>
+
+    init(_ result: Result<LibraryBackgroundSaveSuccess, Error>) {
+        self.result = result
+    }
+}
+
+private final class LibraryBackgroundSaveResultStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Int: LibraryBackgroundSaveResultBox] = [:]
+
+    func insert(_ result: LibraryBackgroundSaveResultBox, for generation: Int) {
+        lock.lock()
+        results[generation] = result
+        lock.unlock()
+    }
+
+    func remove(generation: Int) -> LibraryBackgroundSaveResultBox? {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.removeValue(forKey: generation)
+    }
+
+    func pendingGenerations() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.keys.sorted()
+    }
+}
+
 private final class LoadedLibraryNoteCacheEntry: NSObject {
     let loaded: LoadedLibraryNote
     let fileModifiedAt: Date
@@ -1156,6 +1207,7 @@ final class LibraryWindowController: NSWindowController,
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
     private let fileModificationDateLoader: @Sendable (URL) -> Date?
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
+    private let backgroundAutosaveWillPersist: @Sendable () -> Void
     private let conflictResolutionHandler: (URL) -> LibrarySaveConflictResolution
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
@@ -1179,6 +1231,14 @@ final class LibraryWindowController: NSWindowController,
     private var loadedDocumentRevision: LibraryDocumentRevision?
     private var loadedDocumentRevisionPath: String?
     private var autosaveTask: Task<Void, Never>?
+    private let autosavePersistenceQueue = DispatchQueue(
+        label: "local.codex.mudsnote.library-autosave",
+        qos: .utility
+    )
+    private let backgroundAutosaveResultStore = LibraryBackgroundSaveResultStore()
+    private var backgroundAutosaveGeneration = 0
+    private var backgroundAutosaveIsActive = false
+    private var backgroundAutosaveNeedsLatest = false
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
     private var notePrefetchTask: Task<Void, Never>?
@@ -1288,6 +1348,7 @@ final class LibraryWindowController: NSWindowController,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
         fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
+        backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
         conflictResolutionHandler: ((URL) -> LibrarySaveConflictResolution)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
@@ -1304,6 +1365,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
+        self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
         self.conflictResolutionHandler = conflictResolutionHandler ?? Self.presentExternalModificationConflict
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
@@ -6691,17 +6753,129 @@ final class LibraryWindowController: NSWindowController,
         guard isDirty, selectedScope != .trash else { return }
 
         updateEditorStatus("正在保存…", kind: .saving)
-        do {
-            _ = try saveCurrentNote(force: false)
-        } catch LibraryDocumentSaveProtectionError.externalModification {
-            updateEditorStatus(
-                "磁盘版本已更改，未自动保存",
-                kind: .warning,
-                toolTip: "按 Command-S 选择保留编辑、重新载入或另存副本",
-                announcesChange: true
+        enqueueBackgroundAutosave()
+    }
+
+    private func enqueueBackgroundAutosave() {
+        if backgroundAutosaveIsActive {
+            backgroundAutosaveNeedsLatest = true
+            return
+        }
+        let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = currentEditorMarkdownBody().trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = rawTitle.isEmpty ? "无标题" : rawTitle
+        guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return }
+
+        backgroundAutosaveGeneration &+= 1
+        backgroundAutosaveIsActive = true
+        let generation = backgroundAutosaveGeneration
+        let previousURL = selectedURL
+        let snapshot = LibraryBackgroundSaveSnapshot(
+            generation: generation,
+            editorRevision: editorContentRevision,
+            previousURL: previousURL,
+            title: title,
+            body: body,
+            tags: selectedTags,
+            targetDirectory: previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote(),
+            updatesInPlace: previousURL.map {
+                externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
+            } ?? false,
+            baselineRevision: loadedDocumentRevision,
+            baselinePath: loadedDocumentRevisionPath
+        )
+        cancelSourceSnapshotValidation()
+        let noteStore = noteStore
+        let resultStore = backgroundAutosaveResultStore
+        let willPersist = backgroundAutosaveWillPersist
+        autosavePersistenceQueue.async { [weak self] in
+            willPersist()
+            let result = Result {
+                try Self.performBackgroundSave(snapshot, noteStore: noteStore)
+            }
+            resultStore.insert(LibraryBackgroundSaveResultBox(result), for: generation)
+            DispatchQueue.main.async { [weak self] in
+                self?.finishBackgroundAutosave(generation: generation)
+            }
+        }
+    }
+
+    private nonisolated static func performBackgroundSave(
+        _ snapshot: LibraryBackgroundSaveSnapshot,
+        noteStore: NoteStore
+    ) throws -> LibraryBackgroundSaveSuccess {
+        let savedURL: URL
+        if let previousURL = snapshot.previousURL {
+            let standardizedURL = previousURL.standardizedFileURL
+            guard snapshot.baselinePath == standardizedURL.path,
+                  let baseline = snapshot.baselineRevision else {
+                throw LibraryDocumentSaveProtectionError.revisionUnavailable(
+                    standardizedURL,
+                    CocoaError(.fileReadUnknown)
+                )
+            }
+            let current: LibraryDocumentRevision
+            do {
+                current = try LibraryDocumentRevision.read(at: standardizedURL)
+            } catch {
+                throw LibraryDocumentSaveProtectionError.revisionUnavailable(standardizedURL, error)
+            }
+            guard current == baseline || current.hasSameContent(as: baseline) else {
+                throw LibraryDocumentSaveProtectionError.externalModification(standardizedURL)
+            }
+
+            if snapshot.updatesInPlace {
+                savedURL = try noteStore.updateNoteInPlace(
+                    at: standardizedURL,
+                    title: snapshot.title,
+                    body: snapshot.body,
+                    tags: snapshot.tags
+                )
+            } else {
+                savedURL = try noteStore.updateNote(
+                    at: standardizedURL,
+                    title: snapshot.title,
+                    body: snapshot.body,
+                    tags: snapshot.tags
+                )
+            }
+        } else {
+            savedURL = try noteStore.saveNewNote(
+                title: snapshot.title,
+                body: snapshot.body,
+                tags: snapshot.tags,
+                in: snapshot.targetDirectory
             )
-            updateToolbarActionState()
-        } catch {
+        }
+
+        let savedRevision = try LibraryDocumentRevision.read(at: savedURL)
+        return LibraryBackgroundSaveSuccess(
+            snapshot: snapshot,
+            savedURL: savedURL,
+            savedAt: savedRevision.contentModificationDate ?? Date(),
+            savedRevision: savedRevision
+        )
+    }
+
+    private func finishBackgroundAutosave(generation: Int) {
+        let boxedResult = backgroundAutosaveResultStore.remove(generation: generation)
+        guard let boxedResult else { return }
+        backgroundAutosaveIsActive = false
+
+        switch boxedResult.result {
+        case .success(let success):
+            applyBackgroundSaveSuccess(success)
+            if backgroundAutosaveNeedsLatest, isDirty {
+                backgroundAutosaveNeedsLatest = false
+                enqueueBackgroundAutosave()
+            } else {
+                backgroundAutosaveNeedsLatest = false
+            }
+        case .failure(let error as LibraryDocumentSaveProtectionError):
+            backgroundAutosaveNeedsLatest = false
+            applyBackgroundSaveProtectionError(error)
+        case .failure:
+            backgroundAutosaveNeedsLatest = false
             updateEditorStatus(
                 "自动保存失败，编辑仍保留",
                 kind: .failure,
@@ -6709,6 +6883,76 @@ final class LibraryWindowController: NSWindowController,
                 announcesChange: true
             )
             NSSound.beep()
+        }
+    }
+
+    private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
+        let snapshot = success.snapshot
+        guard selectedURL?.standardizedFileURL == snapshot.previousURL?.standardizedFileURL,
+              selectedScope != .trash else {
+            return
+        }
+        recordInternalFileSystemChanges(for: [snapshot.previousURL, success.savedURL].compactMap { $0 })
+        selectedURL = success.savedURL
+        loadedDocumentRevisionPath = success.savedURL.standardizedFileURL.path
+        loadedDocumentRevision = success.savedRevision
+        activeSearchSession = nil
+        isCreatingNewNote = false
+        isDirty = editorContentRevision != snapshot.editorRevision
+        updateSourceCountSnapshotAfterSave(
+            previousURL: snapshot.previousURL,
+            savedURL: success.savedURL,
+            title: snapshot.title,
+            body: snapshot.body,
+            tags: snapshot.tags,
+            modifiedAt: success.savedAt
+        )
+        refreshVisibleNoteListAfterSave(
+            selecting: success.savedURL,
+            isNewNote: snapshot.previousURL == nil
+        )
+        if isDirty {
+            updateEditorStatus("已保存较早编辑，正在等待最新更改…", kind: .saving)
+        } else {
+            updateEditorStatus(
+                "已保存 · \(editorDateText(for: success.savedAt))",
+                kind: .success,
+                announcesChange: true
+            )
+        }
+        onSave(success.savedURL)
+        updateToolbarActionState()
+    }
+
+    private func applyBackgroundSaveProtectionError(_ error: LibraryDocumentSaveProtectionError) {
+        switch error {
+        case .externalModification:
+            updateEditorStatus(
+                "磁盘版本已更改，未自动保存",
+                kind: .warning,
+                toolTip: "按 Command-S 选择保留编辑、重新载入或另存副本",
+                announcesChange: true
+            )
+            updateToolbarActionState()
+        case .revisionUnavailable:
+            updateEditorStatus(
+                "自动保存失败，编辑仍保留",
+                kind: .failure,
+                toolTip: "按 Command-S 重试保存",
+                announcesChange: true
+            )
+            NSSound.beep()
+        case .transitionCancelled:
+            break
+        }
+    }
+
+    private func drainBackgroundAutosaves() {
+        while backgroundAutosaveIsActive {
+            autosavePersistenceQueue.sync {}
+            for generation in backgroundAutosaveResultStore.pendingGenerations() {
+                finishBackgroundAutosave(generation: generation)
+            }
         }
     }
 
@@ -6909,6 +7153,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
+        drainBackgroundAutosaves()
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
         autosaveTask?.cancel()
@@ -7087,6 +7332,30 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func flushPendingAutosaveForTesting() throws -> URL? {
         try saveCurrentNote(force: false)
+    }
+
+    func flushBackgroundAutosaveForTesting() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        autosaveCurrentNote()
+        drainBackgroundAutosaves()
+    }
+
+    func triggerBackgroundAutosaveForTesting() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        autosaveCurrentNote()
+    }
+
+    func waitForBackgroundAutosaveForTesting() async {
+        while backgroundAutosaveIsActive {
+            await withCheckedContinuation { continuation in
+                autosavePersistenceQueue.async {
+                    continuation.resume()
+                }
+            }
+            drainBackgroundAutosaves()
+        }
     }
 
     func deleteSelectedNoteForLibrary() throws {

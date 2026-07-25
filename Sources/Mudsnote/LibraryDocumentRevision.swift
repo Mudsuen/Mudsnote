@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct LibraryDocumentRevision: Equatable {
+struct LibraryDocumentRevision: Equatable, Sendable {
     let standardizedPath: String
     let fileResourceIdentifier: String?
     let contentModificationDate: Date?
