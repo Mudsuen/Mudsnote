@@ -50,6 +50,72 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func managedUpdatesPreserveMarkdownAndTextExtensions() throws {
+        for pathExtension in ["markdown", "txt"] {
+            let harness = try TestHarness()
+            let store = harness.store
+            let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+            try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+            let originalURL = notesDirectory
+                .appendingPathComponent("Original")
+                .appendingPathExtension(pathExtension)
+            try "# Original\n\nBody\n".write(to: originalURL, atomically: true, encoding: .utf8)
+
+            let updatedURL = try store.updateNote(
+                at: originalURL,
+                title: "Renamed",
+                body: "Updated body"
+            )
+
+            #expect(updatedURL.pathExtension == pathExtension)
+            #expect(updatedURL.deletingPathExtension().lastPathComponent.hasSuffix("-renamed"))
+            #expect(!FileManager.default.fileExists(atPath: originalURL.path))
+            #expect(try store.loadNote(at: updatedURL).body == "Updated body")
+        }
+    }
+
+    @Test
+    func failedManagedUpdateRollsBackDestinationAndPreservesSource() throws {
+        for checkpoint in [
+            NoteUpdateCommitCheckpoint.afterStaging,
+            NoteUpdateCommitCheckpoint.afterDestinationCommit
+        ] {
+            let harness = try TestHarness()
+            let store = harness.store
+            let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+            let archiveDirectory = harness.root.appendingPathComponent("Archive", isDirectory: true)
+            try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+            let originalURL = notesDirectory.appendingPathComponent("Original.markdown")
+            let originalContent = "# Original\n\nOriginal body\n"
+            try originalContent.write(to: originalURL, atomically: true, encoding: .utf8)
+            store.updateNoteCommitHook = { observedCheckpoint in
+                guard observedCheckpoint == checkpoint else { return }
+                throw CocoaError(.fileWriteUnknown)
+            }
+
+            #expect(throws: CocoaError.self) {
+                _ = try store.updateNote(
+                    at: originalURL,
+                    title: "Renamed",
+                    body: "Replacement body",
+                    in: archiveDirectory
+                )
+            }
+
+            #expect(FileManager.default.fileExists(atPath: originalURL.path))
+            #expect(try String(contentsOf: originalURL, encoding: .utf8) == originalContent)
+            #expect(!FileManager.default.fileExists(
+                atPath: archiveDirectory.appendingPathComponent("Renamed.markdown").path
+            ))
+            let stagedFiles = (try? FileManager.default.contentsOfDirectory(
+                at: archiveDirectory,
+                includingPropertiesForKeys: nil
+            )) ?? []
+            #expect(stagedFiles.isEmpty)
+        }
+    }
+
+    @Test
     func registeredRootSearchSessionAndTagsExcludeRecentExternalDirectories() throws {
         let harness = try TestHarness()
         let store = harness.store

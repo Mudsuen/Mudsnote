@@ -114,20 +114,25 @@ extension NoteStore {
     }
 
     public func updateNote(at url: URL, title: String, body: String, tags: [String] = [], in directory: URL? = nil) throws -> URL {
-        let currentDirectory = url.deletingLastPathComponent()
+        let sourceURL = url.standardizedFileURL
+        let currentDirectory = sourceURL.deletingLastPathComponent()
         let targetDirectory = directory ?? currentDirectory
         try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
 
-        let desiredURL = uniqueUpdatedFileURL(for: title, currentURL: url, in: targetDirectory)
-        if desiredURL != url {
-            try fileManager.moveItem(at: url, to: desiredURL)
+        let desiredURL = uniqueUpdatedFileURL(for: title, currentURL: sourceURL, in: targetDirectory)
+        if desiredURL == sourceURL {
+            try writeNote(to: sourceURL, title: title, body: body, tags: tags)
+        } else {
+            try commitUpdatedNote(
+                from: sourceURL,
+                to: desiredURL,
+                content: storedNoteContent(title: title, body: body, tags: tags)
+            )
         }
 
-        try writeNote(to: desiredURL, title: title, body: body, tags: tags)
-        try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: desiredURL.path)
-        rememberRecentFile(desiredURL, replacing: desiredURL == url ? nil : url)
-        if desiredURL.standardizedFileURL != url.standardizedFileURL {
-            replaceLibraryPinnedNotePath(url, with: desiredURL)
+        rememberRecentFile(desiredURL, replacing: desiredURL == sourceURL ? nil : sourceURL)
+        if desiredURL != sourceURL {
+            replaceLibraryPinnedNotePath(sourceURL, with: desiredURL)
         }
         return desiredURL
     }
@@ -135,7 +140,6 @@ extension NoteStore {
     public func updateNoteInPlace(at url: URL, title: String, body: String, tags: [String] = []) throws -> URL {
         let standardizedURL = url.standardizedFileURL
         try writeNote(to: standardizedURL, title: title, body: body, tags: tags)
-        try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: standardizedURL.path)
         rememberRecentFile(standardizedURL)
         return standardizedURL
     }
@@ -399,6 +403,11 @@ extension NoteStore {
     }
 
     private func writeNote(to url: URL, title: String, body: String, tags: [String] = []) throws {
+        try storedNoteContent(title: title, body: body, tags: tags)
+            .write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func storedNoteContent(title: String, body: String, tags: [String]) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedTags = MarkdownEditorDocument.normalizedTags(tags)
@@ -412,15 +421,33 @@ extension NoteStore {
             content = "# \(trimmedTitle)\n\n\(trimmedBody)\n"
         }
 
-        let storedContent: String
         if normalizedTags.isEmpty {
-            storedContent = content
-        } else {
-            let tagLines = normalizedTags.map { "- \($0)" }.joined(separator: "\n")
-            storedContent = "---\ntags:\n\(tagLines)\n---\n\n\(content)"
+            return content
         }
 
-        try storedContent.write(to: url, atomically: true, encoding: .utf8)
+        let tagLines = normalizedTags.map { "- \($0)" }.joined(separator: "\n")
+        return "---\ntags:\n\(tagLines)\n---\n\n\(content)"
+    }
+
+    private func commitUpdatedNote(from sourceURL: URL, to destinationURL: URL, content: String) throws {
+        let stagingURL = destinationURL.deletingLastPathComponent()
+            .appendingPathComponent(".mudsnote-update-\(UUID().uuidString).tmp")
+        defer {
+            if fileManager.fileExists(atPath: stagingURL.path) {
+                try? fileManager.removeItem(at: stagingURL)
+            }
+        }
+
+        try content.write(to: stagingURL, atomically: true, encoding: .utf8)
+        try updateNoteCommitHook?(.afterStaging)
+        try fileManager.moveItem(at: stagingURL, to: destinationURL)
+        do {
+            try updateNoteCommitHook?(.afterDestinationCommit)
+            try fileManager.removeItem(at: sourceURL)
+        } catch {
+            try? fileManager.removeItem(at: destinationURL)
+            throw error
+        }
     }
 
     private func uniqueFileURL(for title: String, in directory: URL) -> URL {
@@ -431,7 +458,12 @@ extension NoteStore {
     private func uniqueUpdatedFileURL(for title: String, currentURL: URL, in directory: URL) -> URL {
         let base = filenameStem(for: title)
         let excludedURL = currentURL.deletingLastPathComponent() == directory ? currentURL : nil
-        return uniqueURL(directory: directory, baseName: base, excluding: excludedURL)
+        return uniqueURLPreservingExtension(
+            directory: directory,
+            filenameStem: base,
+            pathExtension: currentURL.pathExtension.isEmpty ? "md" : currentURL.pathExtension,
+            excluding: excludedURL
+        )
     }
 
     private func uniqueURL(directory: URL, baseName: String, excluding existingURL: URL?) -> URL {
@@ -462,12 +494,17 @@ extension NoteStore {
         )
     }
 
-    private func uniqueURLPreservingExtension(directory: URL, filenameStem: String, pathExtension: String) -> URL {
+    private func uniqueURLPreservingExtension(
+        directory: URL,
+        filenameStem: String,
+        pathExtension: String,
+        excluding existingURL: URL? = nil
+    ) -> URL {
         let ext = pathExtension.isEmpty ? "md" : pathExtension
         var candidate = directory.appendingPathComponent(filenameStem).appendingPathExtension(ext)
         var counter = 2
 
-        while fileManager.fileExists(atPath: candidate.path) {
+        while fileManager.fileExists(atPath: candidate.path) && candidate != existingURL {
             candidate = directory.appendingPathComponent("\(filenameStem)-\(counter)").appendingPathExtension(ext)
             counter += 1
         }
