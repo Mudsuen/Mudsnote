@@ -1108,6 +1108,7 @@ final class LibraryWindowController: NSWindowController,
     let noteLinksView = NoteLinksView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
+    private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1611,6 +1612,8 @@ final class LibraryWindowController: NSWindowController,
         fileSystemMonitor = nil
         internallyMutatedPaths.removeAll()
         attachmentQuickLookController.dismiss()
+        attachmentManagerWindowController?.close()
+        attachmentManagerWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -7032,6 +7035,9 @@ final class LibraryWindowController: NSWindowController,
 
     func openMarkdownDocumentForLibrary(at url: URL) throws {
         try saveCurrentNoteIfNeeded()
+        cancelActiveNoteLoad()
+        isLoadingInitialNote = false
+        isCreatingNewNote = false
         let standardizedURL = url.standardizedFileURL
         let loaded = try noteLoader(standardizedURL)
         let modifiedAt = fileModificationDateLoader(standardizedURL) ?? Date()
@@ -7050,17 +7056,48 @@ final class LibraryWindowController: NSWindowController,
         selectedScope = .folder(standardizedURL.deletingLastPathComponent())
         searchField.stringValue = ""
         activeSearchSession = nil
-        _ = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
+        let cached = cacheLoadedNote(loaded, for: note, fileModifiedAt: modifiedAt)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(
             selecting: standardizedURL,
-            loadFirstIfNeeded: true,
+            loadFirstIfNeeded: false,
             allNotesSnapshot: sourceCountSnapshot
         )
+        applyLoadedNote(cached, for: note)
         if let row = rowIndex(for: standardizedURL.path) {
             tableView.scrollRowToVisible(row)
         }
         window?.makeFirstResponder(editorTextView)
+    }
+
+    func showAttachmentManagerForLibrary() {
+        let controller: LibraryAttachmentManagerWindowController
+        if let existing = attachmentManagerWindowController {
+            controller = existing
+        } else {
+            controller = LibraryAttachmentManagerWindowController(
+                rootsProvider: { [weak self] in
+                    self?.noteStore.preferredDirectories ?? []
+                },
+                onOpenNote: { [weak self] url in
+                    do {
+                        try self?.openMarkdownDocumentForLibrary(at: url)
+                    } catch {
+                        self?.presentErrorAlert(
+                            message: "无法打开引用笔记",
+                            details: error.localizedDescription
+                        )
+                    }
+                }
+            )
+            attachmentManagerWindowController = controller
+        }
+        controller.showAndRefresh()
+    }
+
+    @objc
+    private func manageAttachmentsPressed() {
+        showAttachmentManagerForLibrary()
     }
 
     func selectNoteForVisualQA(at url: URL) {
@@ -8720,6 +8757,16 @@ final class LibraryWindowController: NSWindowController,
         exportItem.target = self
         exportItem.isEnabled = canExportSelectedNote
         menu.addItem(exportItem)
+
+        menu.addItem(.separator())
+
+        let manageAttachmentsItem = NSMenuItem(
+            title: "管理附件…",
+            action: #selector(manageAttachmentsPressed),
+            keyEquivalent: ""
+        )
+        manageAttachmentsItem.target = self
+        menu.addItem(manageAttachmentsItem)
 
         menu.addItem(.separator())
 
