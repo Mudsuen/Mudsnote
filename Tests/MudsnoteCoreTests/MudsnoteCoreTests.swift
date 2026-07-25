@@ -199,6 +199,97 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func movingNoteCopiesAndRewritesRelativeAttachmentsWithoutDeletingSources() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let sourceDirectory = harness.root.appendingPathComponent("Source", isDirectory: true)
+        let destinationDirectory = harness.root.appendingPathComponent("Destination", isDirectory: true)
+        let relativeDirectory = "Attachments/2026/07"
+        let sourceAttachments = sourceDirectory.appendingPathComponent(relativeDirectory, isDirectory: true)
+        let destinationAttachments = destinationDirectory.appendingPathComponent(relativeDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceAttachments, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationAttachments, withIntermediateDirectories: true)
+
+        let imageURL = sourceAttachments.appendingPathComponent("示例 图片.png")
+        let pdfURL = sourceAttachments.appendingPathComponent("spec sheet.pdf")
+        let imageData = Data([0x89, 0x50, 0x4E, 0x47])
+        let pdfData = Data("%PDF-test".utf8)
+        try imageData.write(to: imageURL)
+        try pdfData.write(to: pdfURL)
+        try Data("existing".utf8).write(
+            to: destinationAttachments.appendingPathComponent("示例 图片.png")
+        )
+
+        let noteURL = sourceDirectory.appendingPathComponent("Move Me.markdown")
+        let original = """
+        # Move Me
+
+        ![Preview](<Attachments/2026/07/示例 图片.png>)
+        [Specification](Attachments/2026/07/spec%20sheet.pdf)
+        [Shared preview](<Attachments/2026/07/示例 图片.png>)
+        [Remote](https://example.com/file.pdf)
+        [Absolute](/tmp/file.pdf)
+        """
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let movedURL = try store.moveNote(at: noteURL, to: destinationDirectory)
+        let movedText = try String(contentsOf: movedURL, encoding: .utf8)
+
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(try Data(contentsOf: imageURL) == imageData)
+        #expect(try Data(contentsOf: pdfURL) == pdfData)
+        #expect(try Data(contentsOf: destinationAttachments.appendingPathComponent("示例 图片-2.png")) == imageData)
+        #expect(try Data(contentsOf: destinationAttachments.appendingPathComponent("spec sheet.pdf")) == pdfData)
+        #expect(movedText.contains("Attachments/2026/07/%E7%A4%BA%E4%BE%8B%20%E5%9B%BE%E7%89%87-2.png"))
+        #expect(movedText.components(separatedBy: "%E7%A4%BA%E4%BE%8B%20%E5%9B%BE%E7%89%87-2.png").count == 3)
+        #expect(movedText.contains("Attachments/2026/07/spec%20sheet.pdf"))
+        #expect(movedText.contains("https://example.com/file.pdf"))
+        #expect(movedText.contains("](/tmp/file.pdf)"))
+    }
+
+    @Test
+    func failedCrossDirectoryUpdateRemovesCopiedAttachmentsAndPreservesSource() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let sourceDirectory = harness.root.appendingPathComponent("Source", isDirectory: true)
+        let destinationDirectory = harness.root.appendingPathComponent("Destination", isDirectory: true)
+        let attachmentURL = sourceDirectory
+            .appendingPathComponent("Attachments/2026/07", isDirectory: true)
+            .appendingPathComponent("asset.png")
+        try FileManager.default.createDirectory(
+            at: attachmentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([1, 2, 3]).write(to: attachmentURL)
+        let noteURL = sourceDirectory.appendingPathComponent("Original.md")
+        let original = "# Original\n\n![Asset](Attachments/2026/07/asset.png)\n"
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+        store.updateNoteCommitHook = { checkpoint in
+            guard checkpoint == .afterStaging else { return }
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        #expect(throws: CocoaError.self) {
+            _ = try store.updateNote(
+                at: noteURL,
+                title: "Moved",
+                body: "![Asset](Attachments/2026/07/asset.png)",
+                in: destinationDirectory
+            )
+        }
+
+        #expect(try String(contentsOf: noteURL, encoding: .utf8) == original)
+        #expect(try Data(contentsOf: attachmentURL) == Data([1, 2, 3]))
+        #expect(!FileManager.default.fileExists(
+            atPath: destinationDirectory.appendingPathComponent("Attachments").path
+        ))
+        #expect((try FileManager.default.contentsOfDirectory(
+            at: destinationDirectory,
+            includingPropertiesForKeys: nil
+        )).isEmpty)
+    }
+
+    @Test
     func registeredRootSearchSessionAndTagsExcludeRecentExternalDirectories() throws {
         let harness = try TestHarness()
         let store = harness.store

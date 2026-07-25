@@ -5,6 +5,11 @@ private struct TrashedNoteMetadata: Codable {
     let deletedAt: Date
 }
 
+private struct NoteAttachmentRelocation {
+    let markdown: String
+    let copiedURLs: [URL]
+}
+
 extension NoteStore {
     public var preferredInboxDirectory: URL {
         let candidates = preferredDirectories.flatMap { root -> [URL] in
@@ -121,11 +126,22 @@ extension NoteStore {
 
         let existingText = try String(contentsOf: sourceURL, encoding: .utf8)
         let desiredURL = uniqueUpdatedFileURL(for: title, currentURL: sourceURL, in: targetDirectory)
+        let relocation = try relocatingAttachmentsIfNeeded(
+            in: body,
+            from: currentDirectory,
+            to: targetDirectory
+        )
+        var didCommitRelocation = false
+        defer {
+            if !didCommitRelocation {
+                removeRelocatedAttachments(relocation.copiedURLs, inside: targetDirectory)
+            }
+        }
         if desiredURL == sourceURL {
             try writeNote(
                 to: sourceURL,
                 title: title,
-                body: body,
+                body: relocation.markdown,
                 tags: tags,
                 preservingFrontMatterFrom: existingText
             )
@@ -135,12 +151,13 @@ extension NoteStore {
                 to: desiredURL,
                 content: storedNoteContent(
                     title: title,
-                    body: body,
+                    body: relocation.markdown,
                     tags: tags,
                     preservingFrontMatterFrom: existingText
                 )
             )
         }
+        didCommitRelocation = true
 
         rememberRecentFile(desiredURL, replacing: desiredURL == sourceURL ? nil : sourceURL)
         if desiredURL != sourceURL {
@@ -204,7 +221,20 @@ extension NoteStore {
             filenameStem: sourceURL.deletingPathExtension().lastPathComponent,
             pathExtension: sourceURL.pathExtension.isEmpty ? "md" : sourceURL.pathExtension
         )
-        try fileManager.moveItem(at: sourceURL, to: movedURL)
+        let existingText = try String(contentsOf: sourceURL, encoding: .utf8)
+        let relocation = try relocatingAttachmentsIfNeeded(
+            in: existingText,
+            from: sourceURL.deletingLastPathComponent(),
+            to: targetDirectory
+        )
+        var didCommitRelocation = false
+        defer {
+            if !didCommitRelocation {
+                removeRelocatedAttachments(relocation.copiedURLs, inside: targetDirectory)
+            }
+        }
+        try commitUpdatedNote(from: sourceURL, to: movedURL, content: relocation.markdown)
+        didCommitRelocation = true
         rememberRecentFile(movedURL, replacing: sourceURL)
         replaceLibraryPinnedNotePath(sourceURL, with: movedURL)
         return movedURL
@@ -536,6 +566,194 @@ extension NoteStore {
         } catch {
             try? fileManager.removeItem(at: destinationURL)
             throw error
+        }
+    }
+
+    private func relocatingAttachmentsIfNeeded(
+        in markdown: String,
+        from sourceDirectory: URL,
+        to destinationDirectory: URL
+    ) throws -> NoteAttachmentRelocation {
+        let sourceDirectory = sourceDirectory.standardizedFileURL
+        let destinationDirectory = destinationDirectory.standardizedFileURL
+        guard sourceDirectory != destinationDirectory else {
+            return NoteAttachmentRelocation(markdown: markdown, copiedURLs: [])
+        }
+
+        let pattern = #"!?\[[^\]\n]*\]\((<[^>\n]+>|[^)\n]+)\)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            return NoteAttachmentRelocation(markdown: markdown, copiedURLs: [])
+        }
+        let sourceAttachmentRoot = sourceDirectory
+            .appendingPathComponent(Self.attachmentDirectoryName, isDirectory: true)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let destinationAttachmentRoot = destinationDirectory
+            .appendingPathComponent(Self.attachmentDirectoryName, isDirectory: true)
+            .standardizedFileURL
+        let matches = expression.matches(
+            in: markdown,
+            range: NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        )
+        var replacements: [(range: Range<String.Index>, value: String)] = []
+        var destinationsBySourcePath: [String: URL] = [:]
+        var copiedURLs: [URL] = []
+
+        do {
+            for match in matches {
+                guard match.numberOfRanges > 1,
+                      let capturedRange = Range(match.range(at: 1), in: markdown),
+                      let target = markdownAttachmentTarget(in: String(markdown[capturedRange])),
+                      let sourceURL = localAttachmentURL(
+                        for: target.value,
+                        relativeTo: sourceDirectory,
+                        inside: sourceAttachmentRoot
+                      ) else {
+                    continue
+                }
+
+                let destinationURL: URL
+                if let existing = destinationsBySourcePath[sourceURL.path] {
+                    destinationURL = existing
+                } else {
+                    let relativePath = String(
+                        sourceURL.path.dropFirst(sourceAttachmentRoot.path.count + 1)
+                    )
+                    let preferredURL = destinationAttachmentRoot
+                        .appendingPathComponent(relativePath)
+                    try fileManager.createDirectory(
+                        at: preferredURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    destinationURL = uniqueAttachmentURL(preferredURL)
+                    try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                    destinationsBySourcePath[sourceURL.path] = destinationURL
+                    copiedURLs.append(destinationURL)
+                }
+
+                let relativePath = String(
+                    destinationURL.path.dropFirst(destinationDirectory.path.count + 1)
+                )
+                let encodedPath = markdownEncodedPath(relativePath)
+                let value = target.isAngleBracketed ? "<\(encodedPath)>" : encodedPath
+                let replacementStart = markdown.index(
+                    capturedRange.lowerBound,
+                    offsetBy: target.replacementOffset
+                )
+                let replacementEnd = markdown.index(
+                    replacementStart,
+                    offsetBy: target.replacementLength
+                )
+                replacements.append((replacementStart..<replacementEnd, value))
+            }
+        } catch {
+            removeRelocatedAttachments(copiedURLs, inside: destinationDirectory)
+            throw error
+        }
+
+        var relocatedMarkdown = markdown
+        for replacement in replacements.reversed() {
+            relocatedMarkdown.replaceSubrange(replacement.range, with: replacement.value)
+        }
+        return NoteAttachmentRelocation(markdown: relocatedMarkdown, copiedURLs: copiedURLs)
+    }
+
+    private func markdownAttachmentTarget(
+        in capturedValue: String
+    ) -> (value: String, replacementOffset: Int, replacementLength: Int, isAngleBracketed: Bool)? {
+        let leadingWhitespace = capturedValue.prefix { $0.isWhitespace }.count
+        let trimmedLeading = String(capturedValue.dropFirst(leadingWhitespace))
+        if trimmedLeading.hasPrefix("<"), let closing = trimmedLeading.firstIndex(of: ">") {
+            let value = String(trimmedLeading[trimmedLeading.index(after: trimmedLeading.startIndex)..<closing])
+            return (value, leadingWhitespace, value.count + 2, true)
+        }
+
+        let trimmed = trimmedLeading.trimmingCharacters(in: .whitespacesAndNewlines)
+        let titlePattern = #"\s+["'][^"']*["']\s*$"#
+        let target: String
+        if let titleRange = trimmed.range(of: titlePattern, options: .regularExpression) {
+            target = String(trimmed[..<titleRange.lowerBound])
+        } else {
+            target = trimmed
+        }
+        guard !target.isEmpty else { return nil }
+        return (target, leadingWhitespace, target.count, false)
+    }
+
+    private func localAttachmentURL(
+        for rawTarget: String,
+        relativeTo sourceDirectory: URL,
+        inside sourceAttachmentRoot: URL
+    ) -> URL? {
+        var target = rawTarget
+        if let fragment = target.firstIndex(of: "#") {
+            target = String(target[..<fragment])
+        }
+        if let query = target.firstIndex(of: "?") {
+            target = String(target[..<query])
+        }
+        target = target.removingPercentEncoding ?? target
+        guard !target.isEmpty,
+              !target.hasPrefix("/"),
+              !target.hasPrefix("~/"),
+              URL(string: target)?.scheme == nil else {
+            return nil
+        }
+
+        let resolved = sourceDirectory
+            .appendingPathComponent(target)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        guard resolved.path.hasPrefix(sourceAttachmentRoot.path + "/"),
+              fileManager.fileExists(atPath: resolved.path),
+              (try? resolved.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true else {
+            return nil
+        }
+        return resolved
+    }
+
+    private func uniqueAttachmentURL(_ preferredURL: URL) -> URL {
+        guard fileManager.fileExists(atPath: preferredURL.path) else { return preferredURL }
+        let pathExtension = preferredURL.pathExtension
+        let stem = preferredURL.deletingPathExtension().lastPathComponent
+        var index = 2
+        while true {
+            let filename = pathExtension.isEmpty
+                ? "\(stem)-\(index)"
+                : "\(stem)-\(index).\(pathExtension)"
+            let candidate = preferredURL.deletingLastPathComponent().appendingPathComponent(filename)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            index += 1
+        }
+    }
+
+    private func markdownEncodedPath(_ path: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~/")
+        return path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+    }
+
+    private func removeRelocatedAttachments(_ urls: [URL], inside destinationDirectory: URL) {
+        let attachmentRoot = destinationDirectory
+            .appendingPathComponent(Self.attachmentDirectoryName, isDirectory: true)
+            .standardizedFileURL
+        for url in urls.reversed() {
+            try? fileManager.removeItem(at: url)
+            var directory = url.deletingLastPathComponent()
+            while directory.path.hasPrefix(attachmentRoot.path),
+                  directory != destinationDirectory {
+                guard let contents = try? fileManager.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: nil
+                ), contents.isEmpty else {
+                    break
+                }
+                try? fileManager.removeItem(at: directory)
+                if directory == attachmentRoot { break }
+                directory.deleteLastPathComponent()
+            }
         }
     }
 
