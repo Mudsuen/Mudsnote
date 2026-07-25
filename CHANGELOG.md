@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 222. Reliable external Markdown opening and attachment management
+- Problem: Opening a Markdown file outside the configured library during initial library hydration could leave the editor showing an empty loading shell, while attachments were stored beside notes but had no library-wide view for finding missing links or unused files.
+- Fix: External Markdown opening now cancels stale initial loading and applies the requested document directly. A new attachment manager scans configured library folders, groups files as referenced, unreferenced, or missing, shows size and reference counts, supports Quick Look, Finder reveal, and opening a referencing note, and only allows confirmed deletion of existing unreferenced files by moving them to the Trash.
+- Lesson: Explicit file-open requests must outrank background hydration, and attachment cleanup needs reference-aware inventory plus recoverable deletion rather than implicit filesystem removal.
+
 ### 221. Conflict-safe macOS library saves
 - Problem: An external editor or synced device could change the open Markdown file after Mudsnote loaded it, while autosave, note switching, or window closing could still overwrite that disk version or leave the list selection out of sync with the editor.
 - Fix: The macOS library now records a content revision for the loaded file, refuses to overwrite a changed or unverifiable disk version, keeps local edits and the original selection on cancellation, blocks closing after unresolved save failures, and offers native choices to reload the disk version or preserve local work as a conflict copy.

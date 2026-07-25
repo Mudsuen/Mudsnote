@@ -7124,6 +7124,142 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func externalMarkdownReplacesDeferredInitialLoadingShell() async throws {
+        let suiteName = "mudsnote.external-deferred-open-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-external-deferred-open-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try store.ensureNotesDirectory()
+        _ = try store.saveNewNote(title: "Initial Note", body: "Initial body")
+        let externalURL = root.appendingPathComponent("Outside.md")
+        try "# Outside\n\nVisible external body".write(
+            to: externalURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindowAndFocus()
+        try controller.openMarkdownDocumentForLibrary(at: externalURL)
+        try await Task.sleep(for: .milliseconds(250))
+
+        #expect(controller.selectedMarkdownFileURLForLibrary() == externalURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Outside")
+        #expect(controller.editorTextView.string == "Visible external body")
+        #expect(controller.editorTextView.isEditable)
+    }
+
+    @MainActor
+    @Test
+    func attachmentInventoryClassifiesReferencedOrphanedAndMissingFiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-attachment-inventory-tests-\(UUID().uuidString)", isDirectory: true)
+        let attachments = root.appendingPathComponent("Attachments/2026/07", isDirectory: true)
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let referencedURL = attachments.appendingPathComponent("photo (1).png")
+        let orphanedURL = attachments.appendingPathComponent("unused.pdf")
+        try Data([0x01, 0x02, 0x03]).write(to: referencedURL)
+        try Data([0x04]).write(to: orphanedURL)
+        let noteURL = root.appendingPathComponent("Note.md")
+        try """
+        # Note
+
+        ![photo](Attachments/2026/07/photo%20(1).png)
+        [missing](<Attachments/2026/07/缺失 文件.pdf>)
+        [website](https://example.com/Attachments/remote.pdf)
+        """.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let items = LibraryAttachmentInventory.build(roots: [root])
+        let byName = Dictionary(uniqueKeysWithValues: items.map { ($0.filename, $0) })
+        let referenced = try #require(byName["photo (1).png"])
+        let orphaned = try #require(byName["unused.pdf"])
+        let missing = try #require(byName["缺失 文件.pdf"])
+
+        #expect(referenced.state == .referenced)
+        #expect(referenced.byteCount == 3)
+        #expect(referenced.referencingNotes == [noteURL.standardizedFileURL])
+        #expect(orphaned.state == .unreferenced)
+        #expect(orphaned.byteCount == 1)
+        #expect(missing.state == .missing)
+        #expect(missing.byteCount == nil)
+        #expect(missing.referencingNotes == [noteURL.standardizedFileURL])
+        #expect(items.count == 3)
+    }
+
+    @MainActor
+    @Test
+    func attachmentManagerOnlyEnablesDeletionForExistingUnreferencedFiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-attachment-manager-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let referencedURL = root.appendingPathComponent("referenced.png")
+        let orphanedURL = root.appendingPathComponent("orphaned.png")
+        let missingURL = root.appendingPathComponent("missing.png")
+        try Data([0x01]).write(to: referencedURL)
+        try Data([0x02]).write(to: orphanedURL)
+        let noteURL = root.appendingPathComponent("Note.md")
+        let items = [
+            LibraryAttachmentItem(
+                url: referencedURL,
+                state: .referenced,
+                byteCount: 1,
+                referencingNotes: [noteURL]
+            ),
+            LibraryAttachmentItem(
+                url: orphanedURL,
+                state: .unreferenced,
+                byteCount: 1,
+                referencingNotes: []
+            ),
+            LibraryAttachmentItem(
+                url: missingURL,
+                state: .missing,
+                byteCount: nil,
+                referencingNotes: [noteURL]
+            )
+        ]
+        let controller = LibraryAttachmentManagerWindowController(
+            rootsProvider: { [root] in [root] },
+            onOpenNote: { _ in }
+        )
+        defer { controller.close() }
+        controller.loadAttachmentItemsForTesting(items)
+
+        controller.selectAttachmentForTesting(at: 0)
+        #expect(!controller.canDeleteSelectedAttachmentForTesting)
+        controller.selectAttachmentForTesting(at: 1)
+        #expect(controller.canDeleteSelectedAttachmentForTesting)
+        controller.selectAttachmentForTesting(at: 2)
+        #expect(!controller.canDeleteSelectedAttachmentForTesting)
+
+        controller.setAttachmentFilterForTesting(.unreferenced)
+        #expect(controller.attachmentItemsForTesting.map(\.url) == [orphanedURL])
+    }
+
+    @MainActor
+    @Test
     func movingPreviewedExternalMarkdownIntoLibraryRemovesOldProjection() throws {
         let suiteName = "mudsnote.external-preview-move-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -7185,6 +7321,9 @@ struct MarkdownRichEditorTests {
         #expect(newFolderItem.action == #selector(AppController.newFolderFromMainMenu))
         #expect(newFolderItem.keyEquivalent == "n")
         #expect(newFolderItem.keyEquivalentModifierMask == [.command, .shift])
+        let manageAttachmentsItem = try #require(fileMenu.items.first { $0.title == "管理附件…" })
+        #expect(manageAttachmentsItem.target === controller)
+        #expect(manageAttachmentsItem.action == #selector(AppController.manageAttachmentsFromMainMenu))
         let openItem = try #require(fileMenu.items.first { $0.title == "打开..." })
         #expect(openItem.target === controller)
         #expect(openItem.action == #selector(AppController.openDocumentFromMainMenu))

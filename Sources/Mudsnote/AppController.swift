@@ -279,6 +279,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         )
         addLibraryFolderItem.target = self
         fileMenu.addItem(addLibraryFolderItem)
+
+        let manageAttachmentsItem = NSMenuItem(
+            title: "管理附件…",
+            action: #selector(manageAttachmentsFromMainMenu),
+            keyEquivalent: ""
+        )
+        manageAttachmentsItem.target = self
+        fileMenu.addItem(manageAttachmentsItem)
         fileMenu.addItem(.separator())
 
         let openItem = NSMenuItem(title: "打开...", action: #selector(openDocumentFromMainMenu), keyEquivalent: "o")
@@ -705,6 +713,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         DispatchQueue.main.async { [weak self] in
             self?.libraryWindowController?.presentAddExistingLibraryFolderPanelForLibrary()
         }
+    }
+
+    @objc
+    func manageAttachmentsFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.showAttachmentManagerForLibrary()
     }
 
     @objc
