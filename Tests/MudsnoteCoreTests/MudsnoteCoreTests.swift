@@ -50,6 +50,246 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func noteUpdatePreservesUnknownFrontMatterAndOnlyRewritesTags() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Front Matter.md")
+        let original = """
+        ---
+        layout: note
+        aliases:
+          - Alpha
+        # keep this comment
+        tags: [old, legacy]
+        published: false
+        nested:
+          owner: me
+        ---
+        # Original
+
+        Original body
+        """
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+        #expect(try store.loadNote(at: noteURL).tags == ["old", "legacy"])
+
+        _ = try store.updateNoteInPlace(
+            at: noteURL,
+            title: "Updated",
+            body: "Updated body",
+            tags: ["new", "second"]
+        )
+
+        let expected = """
+        ---
+        layout: note
+        aliases:
+          - Alpha
+        # keep this comment
+        tags:
+          - new
+          - second
+        published: false
+        nested:
+          owner: me
+        ---
+
+        # Updated
+
+        Updated body
+
+        """
+        #expect(try String(contentsOf: noteURL, encoding: .utf8) == expected)
+    }
+
+    @Test
+    func clearingTagsPreservesFrontMatterCommentsAndUnknownFields() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Clear Tags.md")
+        try """
+        ---
+        category: reference
+        tags:
+          # keep managed-field context
+          - old
+        custom: yes
+        ---
+        # Original
+        """.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        _ = try store.updateNoteInPlace(
+            at: noteURL,
+            title: "Original",
+            body: "",
+            tags: []
+        )
+
+        let updated = try String(contentsOf: noteURL, encoding: .utf8)
+        #expect(updated.contains("category: reference"))
+        #expect(updated.contains("# keep managed-field context"))
+        #expect(updated.contains("custom: yes"))
+        #expect(!updated.contains("tags:"))
+        #expect(!updated.contains("- old"))
+    }
+
+    @Test
+    func managedUpdatesPreserveMarkdownAndTextExtensions() throws {
+        for pathExtension in ["markdown", "txt"] {
+            let harness = try TestHarness()
+            let store = harness.store
+            let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+            try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+            let originalURL = notesDirectory
+                .appendingPathComponent("Original")
+                .appendingPathExtension(pathExtension)
+            try "# Original\n\nBody\n".write(to: originalURL, atomically: true, encoding: .utf8)
+
+            let updatedURL = try store.updateNote(
+                at: originalURL,
+                title: "Renamed",
+                body: "Updated body"
+            )
+
+            #expect(updatedURL.pathExtension == pathExtension)
+            #expect(updatedURL.deletingPathExtension().lastPathComponent.hasSuffix("-renamed"))
+            #expect(!FileManager.default.fileExists(atPath: originalURL.path))
+            #expect(try store.loadNote(at: updatedURL).body == "Updated body")
+        }
+    }
+
+    @Test
+    func failedManagedUpdateRollsBackDestinationAndPreservesSource() throws {
+        for checkpoint in [
+            NoteUpdateCommitCheckpoint.afterStaging,
+            NoteUpdateCommitCheckpoint.afterDestinationCommit
+        ] {
+            let harness = try TestHarness()
+            let store = harness.store
+            let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+            let archiveDirectory = harness.root.appendingPathComponent("Archive", isDirectory: true)
+            try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+            let originalURL = notesDirectory.appendingPathComponent("Original.markdown")
+            let originalContent = "# Original\n\nOriginal body\n"
+            try originalContent.write(to: originalURL, atomically: true, encoding: .utf8)
+            store.updateNoteCommitHook = { observedCheckpoint in
+                guard observedCheckpoint == checkpoint else { return }
+                throw CocoaError(.fileWriteUnknown)
+            }
+
+            #expect(throws: CocoaError.self) {
+                _ = try store.updateNote(
+                    at: originalURL,
+                    title: "Renamed",
+                    body: "Replacement body",
+                    in: archiveDirectory
+                )
+            }
+
+            #expect(FileManager.default.fileExists(atPath: originalURL.path))
+            #expect(try String(contentsOf: originalURL, encoding: .utf8) == originalContent)
+            #expect(!FileManager.default.fileExists(
+                atPath: archiveDirectory.appendingPathComponent("Renamed.markdown").path
+            ))
+            let stagedFiles = (try? FileManager.default.contentsOfDirectory(
+                at: archiveDirectory,
+                includingPropertiesForKeys: nil
+            )) ?? []
+            #expect(stagedFiles.isEmpty)
+        }
+    }
+
+    @Test
+    func movingNoteCopiesAndRewritesRelativeAttachmentsWithoutDeletingSources() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let sourceDirectory = harness.root.appendingPathComponent("Source", isDirectory: true)
+        let destinationDirectory = harness.root.appendingPathComponent("Destination", isDirectory: true)
+        let relativeDirectory = "Attachments/2026/07"
+        let sourceAttachments = sourceDirectory.appendingPathComponent(relativeDirectory, isDirectory: true)
+        let destinationAttachments = destinationDirectory.appendingPathComponent(relativeDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceAttachments, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationAttachments, withIntermediateDirectories: true)
+
+        let imageURL = sourceAttachments.appendingPathComponent("示例 图片.png")
+        let pdfURL = sourceAttachments.appendingPathComponent("spec sheet.pdf")
+        let imageData = Data([0x89, 0x50, 0x4E, 0x47])
+        let pdfData = Data("%PDF-test".utf8)
+        try imageData.write(to: imageURL)
+        try pdfData.write(to: pdfURL)
+        try Data("existing".utf8).write(
+            to: destinationAttachments.appendingPathComponent("示例 图片.png")
+        )
+
+        let noteURL = sourceDirectory.appendingPathComponent("Move Me.markdown")
+        let original = """
+        # Move Me
+
+        ![Preview](<Attachments/2026/07/示例 图片.png>)
+        [Specification](Attachments/2026/07/spec%20sheet.pdf)
+        [Shared preview](<Attachments/2026/07/示例 图片.png>)
+        [Remote](https://example.com/file.pdf)
+        [Absolute](/tmp/file.pdf)
+        """
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let movedURL = try store.moveNote(at: noteURL, to: destinationDirectory)
+        let movedText = try String(contentsOf: movedURL, encoding: .utf8)
+
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(try Data(contentsOf: imageURL) == imageData)
+        #expect(try Data(contentsOf: pdfURL) == pdfData)
+        #expect(try Data(contentsOf: destinationAttachments.appendingPathComponent("示例 图片-2.png")) == imageData)
+        #expect(try Data(contentsOf: destinationAttachments.appendingPathComponent("spec sheet.pdf")) == pdfData)
+        #expect(movedText.contains("Attachments/2026/07/%E7%A4%BA%E4%BE%8B%20%E5%9B%BE%E7%89%87-2.png"))
+        #expect(movedText.components(separatedBy: "%E7%A4%BA%E4%BE%8B%20%E5%9B%BE%E7%89%87-2.png").count == 3)
+        #expect(movedText.contains("Attachments/2026/07/spec%20sheet.pdf"))
+        #expect(movedText.contains("https://example.com/file.pdf"))
+        #expect(movedText.contains("](/tmp/file.pdf)"))
+    }
+
+    @Test
+    func failedCrossDirectoryUpdateRemovesCopiedAttachmentsAndPreservesSource() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let sourceDirectory = harness.root.appendingPathComponent("Source", isDirectory: true)
+        let destinationDirectory = harness.root.appendingPathComponent("Destination", isDirectory: true)
+        let attachmentURL = sourceDirectory
+            .appendingPathComponent("Attachments/2026/07", isDirectory: true)
+            .appendingPathComponent("asset.png")
+        try FileManager.default.createDirectory(
+            at: attachmentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([1, 2, 3]).write(to: attachmentURL)
+        let noteURL = sourceDirectory.appendingPathComponent("Original.md")
+        let original = "# Original\n\n![Asset](Attachments/2026/07/asset.png)\n"
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+        store.updateNoteCommitHook = { checkpoint in
+            guard checkpoint == .afterStaging else { return }
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        #expect(throws: CocoaError.self) {
+            _ = try store.updateNote(
+                at: noteURL,
+                title: "Moved",
+                body: "![Asset](Attachments/2026/07/asset.png)",
+                in: destinationDirectory
+            )
+        }
+
+        #expect(try String(contentsOf: noteURL, encoding: .utf8) == original)
+        #expect(try Data(contentsOf: attachmentURL) == Data([1, 2, 3]))
+        #expect(!FileManager.default.fileExists(
+            atPath: destinationDirectory.appendingPathComponent("Attachments").path
+        ))
+        #expect((try FileManager.default.contentsOfDirectory(
+            at: destinationDirectory,
+            includingPropertiesForKeys: nil
+        )).isEmpty)
+    }
+
+    @Test
     func registeredRootSearchSessionAndTagsExcludeRecentExternalDirectories() throws {
         let harness = try TestHarness()
         let store = harness.store
@@ -345,6 +585,7 @@ struct MudsnoteCoreTests {
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
         let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        let inboxDirectory = notesDirectory.appendingPathComponent("Inbox", isDirectory: true)
         store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
 
         for index in 0..<4 {
@@ -362,16 +603,16 @@ struct MudsnoteCoreTests {
             in: projectDirectory
         )
         let inboxMatch = try store.saveNewNote(
-            title: "Inbox Follow Up",
+            title: "Follow Up",
             body: "one needle",
             tags: ["inbox"],
-            in: projectDirectory
+            in: inboxDirectory
         )
 
         #expect(store.prewarmSearchIndex() == 6)
         let fullRoots = try #require(store.searchIndexSnapshot?.rootsKey)
 
-        #expect(store.searchNotes(query: "needle", limit: 1, in: projectDirectory).first?.url == inboxMatch)
+        #expect(store.searchNotes(query: "needle", limit: 1, in: projectDirectory).first?.url == folderMatch)
         #expect(store.searchNotes(query: "needle", limit: 1, tagged: "focus").first?.url == folderMatch)
         #expect(store.searchInboxNotes(query: "needle", limit: 1).first?.url == inboxMatch)
         #expect(store.searchIndexSnapshot?.rootsKey == fullRoots)
@@ -384,13 +625,14 @@ struct MudsnoteCoreTests {
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
         let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        let inboxDirectory = notesDirectory.appendingPathComponent("Inbox", isDirectory: true)
         store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
 
         let alphaURL = try store.saveNewNote(
-            title: "Alpha Inbox",
+            title: "Alpha",
             body: "shared phrase alpha",
             tags: ["focus"],
-            in: notesDirectory
+            in: inboxDirectory
         )
         let betaURL = try store.saveNewNote(
             title: "Beta",
@@ -436,6 +678,38 @@ struct MudsnoteCoreTests {
         #expect(store.searchNotes(query: "beta", limit: 10).first?.url.standardizedFileURL.path == noteURL.standardizedFileURL.path)
         #expect(!store.knownTags(limit: 10).contains("alpha"))
         #expect(store.knownTags(limit: 10).contains("beta"))
+    }
+
+    @Test
+    func dirtySearchPathRefreshesEqualSizeContentWithRestoredModificationDate() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(title: "Stable", body: "alpha")
+
+        #expect(store.searchNotes(query: "alpha", limit: 10).count == 1)
+        store.searchIndexEntryReadCountForTesting = 0
+        let originalModificationDate = try #require(
+            FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate] as? Date
+        )
+        let originalText = try String(contentsOf: noteURL, encoding: .utf8)
+        let rewrittenText = originalText.replacingOccurrences(of: "alpha", with: "bravo")
+        #expect(rewrittenText.utf8.count == originalText.utf8.count)
+        let handle = try FileHandle(forWritingTo: noteURL)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data(rewrittenText.utf8))
+        try handle.synchronize()
+        try handle.close()
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalModificationDate],
+            ofItemAtPath: noteURL.path
+        )
+
+        store.markSearchIndexDirty(at: [noteURL])
+        #expect(store.searchNotes(query: "alpha", limit: 10).isEmpty)
+        #expect(store.searchNotes(query: "bravo", limit: 10).first?.url == noteURL)
+        #expect(store.searchIndexEntryReadCountForTesting == 1)
     }
 
     @Test
@@ -787,6 +1061,23 @@ struct MudsnoteCoreTests {
         #expect(directories.contains(archiveDirectory.standardizedFileURL.path))
         #expect(directories.contains(projectsDirectory.standardizedFileURL.path))
         #expect(store.knownSearchRoots().contains { $0.standardizedFileURL.path == archiveDirectory.standardizedFileURL.path })
+    }
+
+    @Test
+    func preferredInboxDoesNotInferFromAnUnrelatedContainingFolderName() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let unrelatedDirectory = harness.root.appendingPathComponent("Inbox Zero Research", isDirectory: true)
+        store.configurePreferredDirectories(
+            [notesDirectory, unrelatedDirectory],
+            defaultDirectory: notesDirectory
+        )
+
+        #expect(
+            store.preferredInboxDirectory.standardizedFileURL.path
+                == notesDirectory.appendingPathComponent("Inbox").standardizedFileURL.path
+        )
     }
 
     @Test

@@ -16,17 +16,17 @@ private enum LibraryScope: Equatable, Sendable {
     var buttonTitle: String {
         switch self {
         case .all:
-            return "All iCloud"
+            return LibraryCopy.allICloudNotes
         case .recent:
             return "最近"
         case .inbox:
-            return "Inbox"
+            return LibraryCopy.inbox
         case .folder(let url):
-            return url.lastPathComponent.isEmpty ? "Notes" : url.lastPathComponent
+            return url.lastPathComponent.isEmpty ? LibraryCopy.notes : url.lastPathComponent
         case .tag(let tag):
             return libraryBareTag(tag)
         case .trash:
-            return "Recently Deleted"
+            return LibraryCopy.recentlyDeleted
         }
     }
 
@@ -102,13 +102,21 @@ private func libraryNote(
         || (includingDescendants && noteFolderPath.hasPrefix(folderPath + "/"))
 }
 
-private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
+func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
+    guard limit > 0 else { return [] }
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
 
-    return noteStore.listTrashedNotes(limit: limit).compactMap { note in
+    var results: [NoteSearchResult] = []
+    results.reserveCapacity(limit)
+    for note in noteStore.listTrashedNotes(limit: .max) {
+        guard !Task.isCancelled else { break }
         guard let loaded = try? noteStore.loadNote(at: note.url) else {
-            return note.title.localizedCaseInsensitiveContains(trimmedQuery) ? note : nil
+            if note.title.localizedCaseInsensitiveContains(trimmedQuery) {
+                results.append(note)
+            }
+            if results.count == limit { break }
+            continue
         }
 
         let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
@@ -117,9 +125,9 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
         let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        guard matchesTitle || matchingLine != nil || matchesTag else { return nil }
+        guard matchesTitle || matchingLine != nil || matchesTag else { continue }
 
-        return NoteSearchResult(
+        results.append(NoteSearchResult(
             url: note.url,
             title: loaded.title,
             snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
@@ -129,8 +137,10 @@ private func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, li
             tags: loaded.tags,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
-        )
+        ))
+        if results.count == limit { break }
     }
+    return results
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
@@ -173,6 +183,57 @@ enum LibraryDocumentSaveProtectionError: LocalizedError {
         case .transitionCancelled:
             return "已保留当前编辑。"
         }
+    }
+}
+
+private struct LibraryBackgroundSaveSnapshot: Sendable {
+    let generation: Int
+    let editorRevision: Int
+    let previousURL: URL?
+    let title: String
+    let body: String
+    let tags: [String]
+    let targetDirectory: URL
+    let updatesInPlace: Bool
+    let baselineRevision: LibraryDocumentRevision?
+    let baselinePath: String?
+}
+
+private struct LibraryBackgroundSaveSuccess: Sendable {
+    let snapshot: LibraryBackgroundSaveSnapshot
+    let savedURL: URL
+    let savedAt: Date
+    let savedRevision: LibraryDocumentRevision
+}
+
+private final class LibraryBackgroundSaveResultBox: @unchecked Sendable {
+    let result: Result<LibraryBackgroundSaveSuccess, Error>
+
+    init(_ result: Result<LibraryBackgroundSaveSuccess, Error>) {
+        self.result = result
+    }
+}
+
+private final class LibraryBackgroundSaveResultStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Int: LibraryBackgroundSaveResultBox] = [:]
+
+    func insert(_ result: LibraryBackgroundSaveResultBox, for generation: Int) {
+        lock.lock()
+        results[generation] = result
+        lock.unlock()
+    }
+
+    func remove(generation: Int) -> LibraryBackgroundSaveResultBox? {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.removeValue(forKey: generation)
+    }
+
+    func pendingGenerations() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.keys.sorted()
     }
 }
 
@@ -253,9 +314,9 @@ private enum LibrarySourceSection: Int {
     var title: String {
         switch self {
         case .folders:
-            return "Folders"
+            return LibraryCopy.folders
         case .tags:
-            return "Tags"
+            return LibraryCopy.tags
         }
     }
 
@@ -1132,18 +1193,31 @@ final class LibraryWindowController: NSWindowController,
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
+    private enum EditorStatusKind {
+        case normal
+        case saving
+        case success
+        case warning
+        case failure
+    }
+
     private let onOpenInSeparateWindow: (URL) -> Void
     private let onSave: (URL) -> Void
     private let onClose: () -> Void
     private let noteLoader: @Sendable (URL) throws -> LoadedLibraryNote
     private let fileModificationDateLoader: @Sendable (URL) -> Date?
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
+    private let backgroundAutosaveWillPersist: @Sendable () -> Void
     private let conflictResolutionHandler: (URL) -> LibrarySaveConflictResolution
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
-    private var listRows: [LibraryNoteListRow] = []
-    private var gallerySections: [LibraryGallerySection] = []
+    private var listRows: [LibraryNoteListRow] = [] {
+        didSet { rebuildThumbnailRowIndex() }
+    }
+    private var gallerySections: [LibraryGallerySection] = [] {
+        didSet { rebuildThumbnailItemIndex() }
+    }
     private var visualQASelectedURL: URL?
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
@@ -1157,6 +1231,14 @@ final class LibraryWindowController: NSWindowController,
     private var loadedDocumentRevision: LibraryDocumentRevision?
     private var loadedDocumentRevisionPath: String?
     private var autosaveTask: Task<Void, Never>?
+    private let autosavePersistenceQueue = DispatchQueue(
+        label: "local.codex.mudsnote.library-autosave",
+        qos: .utility
+    )
+    private let backgroundAutosaveResultStore = LibraryBackgroundSaveResultStore()
+    private var backgroundAutosaveGeneration = 0
+    private var backgroundAutosaveIsActive = false
+    private var backgroundAutosaveNeedsLatest = false
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
     private var notePrefetchTask: Task<Void, Never>?
@@ -1204,7 +1286,12 @@ final class LibraryWindowController: NSWindowController,
         return cache
     }()
     private var thumbnailImageLoadTasks: [String: Task<Void, Never>] = [:]
+    private var thumbnailRowsByPath: [String: IndexSet] = [:]
+    private var thumbnailItemsByPath: [String: Set<IndexPath>] = [:]
+    private var pendingThumbnailReloadPaths = Set<String>()
+    private var thumbnailReloadScheduled = false
     private(set) var thumbnailImageDecodeCountForLibrary = 0
+    private(set) var thumbnailReloadBatchCountForLibrary = 0
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceFolderLoadGeneration = 0
@@ -1235,7 +1322,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var sourceListView: NSView?
     private weak var editorStackView: NSStackView?
     private weak var galleryScrollView: NSScrollView?
-    private static let sourceCountSnapshotLimit = 10_000
+    static let sourceCountSnapshotLimit = Int.max
     private static let sourceSnapshotConfirmationDelay = Duration.milliseconds(240)
 
     let theme = MarkdownEditorTheme(
@@ -1261,6 +1348,7 @@ final class LibraryWindowController: NSWindowController,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
         fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
+        backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
         conflictResolutionHandler: ((URL) -> LibrarySaveConflictResolution)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
@@ -1277,6 +1365,7 @@ final class LibraryWindowController: NSWindowController,
         self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
+        self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
         self.conflictResolutionHandler = conflictResolutionHandler ?? Self.presentExternalModificationConflict
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
@@ -1411,7 +1500,7 @@ final class LibraryWindowController: NSWindowController,
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
-        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        updateEditorStatus(editorDateText(for: note.modifiedAt))
         updateToolbarActionState()
     }
 
@@ -1483,7 +1572,7 @@ final class LibraryWindowController: NSWindowController,
         suppressSelectionChanges = false
         synchronizeGallerySelectionFromTable()
         clearCurrentDocumentAfterRemoval()
-        statusLabel.stringValue = ""
+        updateEditorStatus("")
         updateNoteListHeader(query: "")
         updateNoteListEmptyState(query: "")
 
@@ -1512,6 +1601,7 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let previousSnapshot = sourceCountSnapshot
         Task.detached(priority: .userInitiated) { [weak self] in
             let allNotes = await Self.loadStableSourceSnapshot(
@@ -1521,7 +1611,11 @@ final class LibraryWindowController: NSWindowController,
                 previous: previousSnapshot
             )
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: sourceFolderPaths,
+                inboxDirectory: inboxDirectory
+            )
             await MainActor.run {
                 guard let self,
                       generation == self.fullLibrarySnapshotReloadGeneration else { return }
@@ -1608,6 +1702,8 @@ final class LibraryWindowController: NSWindowController,
         notePrefetchTask = nil
         thumbnailImageLoadTasks.values.forEach { $0.cancel() }
         thumbnailImageLoadTasks.removeAll()
+        pendingThumbnailReloadPaths.removeAll()
+        thumbnailReloadScheduled = false
         fileSystemMonitor?.stop()
         fileSystemMonitor = nil
         internallyMutatedPaths.removeAll()
@@ -1709,13 +1805,22 @@ final class LibraryWindowController: NSWindowController,
         requiresVisibleWindow: Bool = true
     ) {
         guard !requiresVisibleWindow || window?.isVisible == true else { return }
-        let externalChanges = changes.filter { !isSuppressedInternalChange($0) }
+        let externalChanges = changes.filter {
+            $0.requiresFullRescan || !isSuppressedInternalChange($0)
+        }
         guard !externalChanges.isEmpty else { return }
 
         let markdownPaths = Set(externalChanges.filter(\.isMarkdownFile).map {
             URL(fileURLWithPath: $0.path).standardizedFileURL.path
         })
         let hasFolderStructureChange = externalChanges.contains(where: \.changesDirectoryStructure)
+        if externalChanges.contains(where: \.requiresFullRescan) {
+            noteStore.invalidateSearchIndexContents()
+        } else {
+            noteStore.markSearchIndexDirty(at: markdownPaths.map {
+                URL(fileURLWithPath: $0)
+            })
+        }
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -2083,7 +2188,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.delegate = self
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
-        statusLabel.setAccessibilityLabel("修改时间")
+        statusLabel.setAccessibilityLabel("笔记状态")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
@@ -2223,9 +2328,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
-        searchField.placeholderString = "Search"
-        searchField.toolTip = "Search Notes"
-        searchField.setAccessibilityLabel("Search Notes")
+        searchField.placeholderString = LibraryCopy.search
+        searchField.toolTip = LibraryCopy.searchNotes
+        searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
         searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
         searchField.isBordered = true
@@ -2422,9 +2527,9 @@ final class LibraryWindowController: NSWindowController,
             )
         case Self.searchToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = "Search"
-            item.paletteLabel = "Search"
-            item.toolTip = "Search Notes"
+            item.label = LibraryCopy.search
+            item.paletteLabel = LibraryCopy.search
+            item.toolTip = LibraryCopy.searchNotes
             item.visibilityPriority = .high
             let wrapper = NSView(frame: NSRect(
                 x: 0,
@@ -2918,6 +3023,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.onImageDisplayWidthChanged = { [weak self] fileURL, width in
             self?.noteStore.setLibraryImageDisplayWidth(width, for: fileURL)
         }
+        editorTextView.imageDisplayWidthProvider = { [weak self] fileURL in
+            self?.noteStore.libraryImageDisplayWidth(for: fileURL)
+        }
         editorTextView.selectionMenuProvider = { [weak self] in
             self?.makeSelectionFormattingMenuForLibrary()
         }
@@ -2997,12 +3105,12 @@ final class LibraryWindowController: NSWindowController,
             if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
                 iCloudGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:loading",
-                    kind: .status("Loading Folders...")
+                    kind: .status(LibraryCopy.loadingFolders)
                 ))
             } else if sourceFolderTreeRows.isEmpty {
                 iCloudGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:empty",
-                    kind: .status("No Folders")
+                    kind: .status(LibraryCopy.noFolders)
                 ))
             }
         }
@@ -3011,7 +3119,7 @@ final class LibraryWindowController: NSWindowController,
 
         let tagsGroup = makeSourceOutlineItem(
             identifier: "group:tags",
-            kind: .group(title: "Tags", section: .tags)
+            kind: .group(title: LibraryCopy.tags, section: .tags)
         )
         for tag in sourceTagNames {
             tagsGroup.append(makeSourceOutlineScopeItem(.tag(tag)))
@@ -3483,7 +3591,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func folderTitle(for url: URL) -> String {
         let standardizedURL = url.standardizedFileURL
-        return standardizedURL.lastPathComponent.isEmpty ? "Notes" : standardizedURL.lastPathComponent
+        return standardizedURL.lastPathComponent.isEmpty ? LibraryCopy.notes : standardizedURL.lastPathComponent
     }
 
     private func refreshSourceSelection() {
@@ -3661,7 +3769,8 @@ final class LibraryWindowController: NSWindowController,
         let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
             notes: allNotes,
-            folderPaths: currentSourceFolderPaths()
+            folderPaths: currentSourceFolderPaths(),
+            inboxDirectory: noteStore.preferredInboxDirectory
         )
         applySourceCounts(
             allNotesCount: allNotes.count,
@@ -3676,11 +3785,16 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         let generation = sourceCountRefreshGeneration
         let folderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let trashCount = trashedNotesSnapshot.count
 
         sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: folderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: folderPaths,
+                inboxDirectory: inboxDirectory
+            )
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self,
@@ -3815,6 +3929,7 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let previousSnapshot = sourceCountSnapshot
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -3829,7 +3944,11 @@ final class LibraryWindowController: NSWindowController,
             guard !Task.isCancelled else { return }
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: sourceFolderPaths,
+                inboxDirectory: inboxDirectory
+            )
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
@@ -3882,7 +4001,7 @@ final class LibraryWindowController: NSWindowController,
         if query.isEmpty {
             noteListCountLabel.stringValue = notesCountText(notes.count)
         } else if hasPendingSearchReload || isSearchResultReloading {
-            noteListCountLabel.stringValue = "Searching..."
+            noteListCountLabel.stringValue = LibraryCopy.searching
         } else {
             noteListCountLabel.stringValue = resultsCountText(notes.count)
         }
@@ -3896,13 +4015,13 @@ final class LibraryWindowController: NSWindowController,
 
         let message: String
         if !query.isEmpty, hasPendingSearchReload || isSearchResultReloading {
-            message = "Searching..."
+            message = LibraryCopy.searching
         } else if !query.isEmpty {
-            message = "No Results"
+            message = LibraryCopy.noResults
         } else if selectedScope == .trash {
-            message = "Recently Deleted is empty"
+            message = LibraryCopy.recentlyDeletedIsEmpty
         } else {
-            message = "No Notes"
+            message = LibraryCopy.noNotes
         }
         noteListEmptyLabel.stringValue = message
         galleryEmptyLabel.stringValue = message
@@ -3924,10 +4043,8 @@ final class LibraryWindowController: NSWindowController,
             predicate = { _ in true }
         case .inbox:
             candidates = allNotes
-            predicate = { note in
-                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                    || note.title.localizedCaseInsensitiveContains("Inbox")
-            }
+            let inboxDirectory = noteStore.preferredInboxDirectory
+            predicate = { libraryIsInboxNote($0, inboxDirectory: inboxDirectory) }
         case .trash:
             candidates = trashedNotesSnapshot
             predicate = { _ in true }
@@ -3968,9 +4085,9 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .inbox:
+            let inboxDirectory = noteStore.preferredInboxDirectory
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
-                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                    || note.title.localizedCaseInsensitiveContains("Inbox")
+                libraryIsInboxNote(note, inboxDirectory: inboxDirectory)
             }
         case .trash:
             return Array(trashedNotesSnapshot.prefix(limit))
@@ -4026,7 +4143,10 @@ final class LibraryWindowController: NSWindowController,
             case .recent:
                 candidates = recentNoteResults(limit: 80, allNotes: sourceCountSnapshot)
             case .inbox:
-                candidates = sourceCountSnapshot.filter(libraryIsInboxNote)
+                let inboxDirectory = noteStore.preferredInboxDirectory
+                candidates = sourceCountSnapshot.filter {
+                    libraryIsInboxNote($0, inboxDirectory: inboxDirectory)
+                }
             case .trash:
                 candidates = trashedNotesSnapshot
             case .folder(let folderURL):
@@ -4872,7 +4992,7 @@ final class LibraryWindowController: NSWindowController,
         guard title.isEmpty else { return title }
         let fallback = note.url.deletingPathExtension().lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return fallback.isEmpty ? "New Note" : fallback
+        return fallback.isEmpty ? LibraryCopy.newNote : fallback
     }
 
     private func thumbnailImage(for note: NoteSearchResult) -> NSImage? {
@@ -4919,31 +5039,72 @@ final class LibraryWindowController: NSWindowController,
                 }
                 self.cacheThumbnailImage(image, key: key)
                 guard self.window?.isVisible == true else { return }
-
-                let matchingRows = IndexSet(self.listRows.indices.filter { row in
-                    self.listRows[row].note?.thumbnailURL?.standardizedFileURL.path == key
-                })
-                if !matchingRows.isEmpty {
-                    self.tableView.reloadData(
-                        forRowIndexes: matchingRows,
-                        columnIndexes: IndexSet(integer: 0)
-                    )
-                }
-                let matchingItems = Set(self.gallerySections.indices.flatMap { section in
-                    self.gallerySections[section].notes.indices.compactMap { item -> IndexPath? in
-                        self.gallerySections[section].notes[item].thumbnailURL?.standardizedFileURL.path == key
-                            ? IndexPath(item: item, section: section)
-                            : nil
-                    }
-                })
-                if self.noteListViewMode == .gallery,
-                   self.hasRequestedWindowPresentation,
-                   !matchingItems.isEmpty {
-                    self.galleryCollectionView.reloadItems(at: matchingItems)
-                }
+                self.scheduleThumbnailReload(for: key)
             }
         }
         thumbnailImageLoadTasks[key] = task
+    }
+
+    private func rebuildThumbnailRowIndex() {
+        var rowsByPath: [String: IndexSet] = [:]
+        for (row, listRow) in listRows.enumerated() {
+            guard let path = listRow.note?.thumbnailURL?.standardizedFileURL.path else { continue }
+            rowsByPath[path, default: []].insert(row)
+        }
+        thumbnailRowsByPath = rowsByPath
+    }
+
+    private func rebuildThumbnailItemIndex() {
+        var itemsByPath: [String: Set<IndexPath>] = [:]
+        for (section, gallerySection) in gallerySections.enumerated() {
+            for (item, note) in gallerySection.notes.enumerated() {
+                guard let path = note.thumbnailURL?.standardizedFileURL.path else { continue }
+                itemsByPath[path, default: []].insert(IndexPath(item: item, section: section))
+            }
+        }
+        thumbnailItemsByPath = itemsByPath
+    }
+
+    private func scheduleThumbnailReload(for path: String) {
+        pendingThumbnailReloadPaths.insert(path)
+        guard !thumbnailReloadScheduled else { return }
+        thumbnailReloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.flushPendingThumbnailReloads()
+        }
+    }
+
+    private func flushPendingThumbnailReloads() {
+        guard thumbnailReloadScheduled else { return }
+        thumbnailReloadScheduled = false
+        let paths = pendingThumbnailReloadPaths
+        pendingThumbnailReloadPaths.removeAll()
+        guard window?.isVisible == true else { return }
+
+        var matchingRows = IndexSet()
+        var matchingItems = Set<IndexPath>()
+        for path in paths {
+            if let rows = thumbnailRowsByPath[path] {
+                matchingRows.formUnion(rows)
+            }
+            if let items = thumbnailItemsByPath[path] {
+                matchingItems.formUnion(items)
+            }
+        }
+
+        guard !matchingRows.isEmpty || !matchingItems.isEmpty else { return }
+        thumbnailReloadBatchCountForLibrary += 1
+        if !matchingRows.isEmpty {
+            tableView.reloadData(
+                forRowIndexes: matchingRows,
+                columnIndexes: IndexSet(integer: 0)
+            )
+        }
+        if noteListViewMode == .gallery,
+           hasRequestedWindowPresentation,
+           !matchingItems.isEmpty {
+            galleryCollectionView.reloadItems(at: matchingItems)
+        }
     }
 
     private func cacheThumbnailImage(_ image: NSImage?, key: String) {
@@ -4971,6 +5132,7 @@ final class LibraryWindowController: NSWindowController,
         for task in tasks {
             await task.value
         }
+        flushPendingThumbnailReloads()
     }
 
     func highlightedSearchString(
@@ -5126,7 +5288,7 @@ final class LibraryWindowController: NSWindowController,
         let rawPreview = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
         galleryItem.configure(
             title: noteListDisplayTitle(for: note),
-            preview: rawPreview.isEmpty ? "No additional text" : rawPreview,
+            preview: rawPreview.isEmpty ? LibraryCopy.noAdditionalText : rawPreview,
             date: noteListDateText(for: noteListDisplayDateForLibrary(note)),
             metadata: noteListFolderText(for: note),
             thumbnail: thumbnailImage(for: note)
@@ -5525,7 +5687,7 @@ final class LibraryWindowController: NSWindowController,
             applyDocument(title: "", body: "", tags: [])
             isDirty = true
             _ = try saveCurrentNote(force: true)
-            statusLabel.stringValue = editorDateText(for: Date())
+            updateEditorStatus(editorDateText(for: Date()))
             refreshSourceSelection()
             updateToolbarActionState()
             window?.makeFirstResponder(titleField)
@@ -6243,7 +6405,7 @@ final class LibraryWindowController: NSWindowController,
            selectedTags == cached.loaded.tags,
            normalizedEditorMarkdownBody() == normalizedMarkdownBody(cached.loaded.body) {
             isDirty = false
-            statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+            updateEditorStatus(editorDateText(for: note.modifiedAt))
             updateToolbarActionState()
             return
         }
@@ -6272,7 +6434,7 @@ final class LibraryWindowController: NSWindowController,
             preservedSelection: preservedSelection
         )
         isDirty = false
-        statusLabel.stringValue = editorDateText(for: note.modifiedAt)
+        updateEditorStatus(editorDateText(for: note.modifiedAt))
         applyEditorSearchHighlightsForCurrentQuery()
         updateToolbarActionState()
         refreshNoteLinks(for: note.url, body: cached.loaded.body)
@@ -6590,14 +6752,207 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         guard isDirty, selectedScope != .trash else { return }
 
-        do {
-            _ = try saveCurrentNote(force: false)
-        } catch LibraryDocumentSaveProtectionError.externalModification {
-            statusLabel.stringValue = "磁盘版本已更改，未自动保存"
-            updateToolbarActionState()
-        } catch {
-            statusLabel.stringValue = "自动保存失败，编辑仍保留"
+        updateEditorStatus("正在保存…", kind: .saving)
+        enqueueBackgroundAutosave()
+    }
+
+    private func enqueueBackgroundAutosave() {
+        if backgroundAutosaveIsActive {
+            backgroundAutosaveNeedsLatest = true
+            return
+        }
+        let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = currentEditorMarkdownBody().trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = rawTitle.isEmpty ? "无标题" : rawTitle
+        guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return }
+
+        backgroundAutosaveGeneration &+= 1
+        backgroundAutosaveIsActive = true
+        let generation = backgroundAutosaveGeneration
+        let previousURL = selectedURL
+        let snapshot = LibraryBackgroundSaveSnapshot(
+            generation: generation,
+            editorRevision: editorContentRevision,
+            previousURL: previousURL,
+            title: title,
+            body: body,
+            tags: selectedTags,
+            targetDirectory: previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote(),
+            updatesInPlace: previousURL.map {
+                externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
+            } ?? false,
+            baselineRevision: loadedDocumentRevision,
+            baselinePath: loadedDocumentRevisionPath
+        )
+        cancelSourceSnapshotValidation()
+        let noteStore = noteStore
+        let resultStore = backgroundAutosaveResultStore
+        let willPersist = backgroundAutosaveWillPersist
+        autosavePersistenceQueue.async { [weak self] in
+            willPersist()
+            let result = Result {
+                try Self.performBackgroundSave(snapshot, noteStore: noteStore)
+            }
+            resultStore.insert(LibraryBackgroundSaveResultBox(result), for: generation)
+            DispatchQueue.main.async { [weak self] in
+                self?.finishBackgroundAutosave(generation: generation)
+            }
+        }
+    }
+
+    private nonisolated static func performBackgroundSave(
+        _ snapshot: LibraryBackgroundSaveSnapshot,
+        noteStore: NoteStore
+    ) throws -> LibraryBackgroundSaveSuccess {
+        let savedURL: URL
+        if let previousURL = snapshot.previousURL {
+            let standardizedURL = previousURL.standardizedFileURL
+            guard snapshot.baselinePath == standardizedURL.path,
+                  let baseline = snapshot.baselineRevision else {
+                throw LibraryDocumentSaveProtectionError.revisionUnavailable(
+                    standardizedURL,
+                    CocoaError(.fileReadUnknown)
+                )
+            }
+            let current: LibraryDocumentRevision
+            do {
+                current = try LibraryDocumentRevision.read(at: standardizedURL)
+            } catch {
+                throw LibraryDocumentSaveProtectionError.revisionUnavailable(standardizedURL, error)
+            }
+            guard current == baseline || current.hasSameContent(as: baseline) else {
+                throw LibraryDocumentSaveProtectionError.externalModification(standardizedURL)
+            }
+
+            if snapshot.updatesInPlace {
+                savedURL = try noteStore.updateNoteInPlace(
+                    at: standardizedURL,
+                    title: snapshot.title,
+                    body: snapshot.body,
+                    tags: snapshot.tags
+                )
+            } else {
+                savedURL = try noteStore.updateNote(
+                    at: standardizedURL,
+                    title: snapshot.title,
+                    body: snapshot.body,
+                    tags: snapshot.tags
+                )
+            }
+        } else {
+            savedURL = try noteStore.saveNewNote(
+                title: snapshot.title,
+                body: snapshot.body,
+                tags: snapshot.tags,
+                in: snapshot.targetDirectory
+            )
+        }
+
+        let savedRevision = try LibraryDocumentRevision.read(at: savedURL)
+        return LibraryBackgroundSaveSuccess(
+            snapshot: snapshot,
+            savedURL: savedURL,
+            savedAt: savedRevision.contentModificationDate ?? Date(),
+            savedRevision: savedRevision
+        )
+    }
+
+    private func finishBackgroundAutosave(generation: Int) {
+        let boxedResult = backgroundAutosaveResultStore.remove(generation: generation)
+        guard let boxedResult else { return }
+        backgroundAutosaveIsActive = false
+
+        switch boxedResult.result {
+        case .success(let success):
+            applyBackgroundSaveSuccess(success)
+            if backgroundAutosaveNeedsLatest, isDirty {
+                backgroundAutosaveNeedsLatest = false
+                enqueueBackgroundAutosave()
+            } else {
+                backgroundAutosaveNeedsLatest = false
+            }
+        case .failure(let error as LibraryDocumentSaveProtectionError):
+            backgroundAutosaveNeedsLatest = false
+            applyBackgroundSaveProtectionError(error)
+        case .failure:
+            backgroundAutosaveNeedsLatest = false
+            updateEditorStatus(
+                "自动保存失败，编辑仍保留",
+                kind: .failure,
+                toolTip: "按 Command-S 重试保存",
+                announcesChange: true
+            )
             NSSound.beep()
+        }
+    }
+
+    private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
+        let snapshot = success.snapshot
+        guard selectedURL?.standardizedFileURL == snapshot.previousURL?.standardizedFileURL,
+              selectedScope != .trash else {
+            return
+        }
+        recordInternalFileSystemChanges(for: [snapshot.previousURL, success.savedURL].compactMap { $0 })
+        selectedURL = success.savedURL
+        loadedDocumentRevisionPath = success.savedURL.standardizedFileURL.path
+        loadedDocumentRevision = success.savedRevision
+        activeSearchSession = nil
+        isCreatingNewNote = false
+        isDirty = editorContentRevision != snapshot.editorRevision
+        updateSourceCountSnapshotAfterSave(
+            previousURL: snapshot.previousURL,
+            savedURL: success.savedURL,
+            title: snapshot.title,
+            body: snapshot.body,
+            tags: snapshot.tags,
+            modifiedAt: success.savedAt
+        )
+        refreshVisibleNoteListAfterSave(
+            selecting: success.savedURL,
+            isNewNote: snapshot.previousURL == nil
+        )
+        if isDirty {
+            updateEditorStatus("已保存较早编辑，正在等待最新更改…", kind: .saving)
+        } else {
+            updateEditorStatus(
+                "已保存 · \(editorDateText(for: success.savedAt))",
+                kind: .success,
+                announcesChange: true
+            )
+        }
+        onSave(success.savedURL)
+        updateToolbarActionState()
+    }
+
+    private func applyBackgroundSaveProtectionError(_ error: LibraryDocumentSaveProtectionError) {
+        switch error {
+        case .externalModification:
+            updateEditorStatus(
+                "磁盘版本已更改，未自动保存",
+                kind: .warning,
+                toolTip: "按 Command-S 选择保留编辑、重新载入或另存副本",
+                announcesChange: true
+            )
+            updateToolbarActionState()
+        case .revisionUnavailable:
+            updateEditorStatus(
+                "自动保存失败，编辑仍保留",
+                kind: .failure,
+                toolTip: "按 Command-S 重试保存",
+                announcesChange: true
+            )
+            NSSound.beep()
+        case .transitionCancelled:
+            break
+        }
+    }
+
+    private func drainBackgroundAutosaves() {
+        while backgroundAutosaveIsActive {
+            autosavePersistenceQueue.sync {}
+            for generation in backgroundAutosaveResultStore.pendingGenerations() {
+                finishBackgroundAutosave(generation: generation)
+            }
         }
     }
 
@@ -6646,17 +7001,26 @@ final class LibraryWindowController: NSWindowController,
     private func resolveExternalModificationBeforeLeaving(at url: URL) throws {
         switch conflictResolutionHandler(url) {
         case .keepEditing:
-            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateEditorStatus(
+                "磁盘版本已更改，当前编辑已保留",
+                kind: .warning,
+                toolTip: "按 Command-S 再次选择恢复方式",
+                announcesChange: true
+            )
             updateToolbarActionState()
             throw LibraryDocumentSaveProtectionError.transitionCancelled
         case .reloadFromDisk:
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateEditorStatus("已重新载入磁盘版本", kind: .success, announcesChange: true)
             updateToolbarActionState()
         case .saveCopy:
             let copyURL = try saveConflictCopy(beside: url)
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateEditorStatus(
+                "已另存副本：\(copyURL.lastPathComponent)",
+                kind: .success,
+                announcesChange: true
+            )
             updateToolbarActionState()
         }
     }
@@ -6664,11 +7028,16 @@ final class LibraryWindowController: NSWindowController,
     private func resolveExternalModificationForExplicitSave(at url: URL) throws {
         switch conflictResolutionHandler(url) {
         case .keepEditing:
-            statusLabel.stringValue = "磁盘版本已更改，当前编辑已保留"
+            updateEditorStatus(
+                "磁盘版本已更改，当前编辑已保留",
+                kind: .warning,
+                toolTip: "按 Command-S 再次选择恢复方式",
+                announcesChange: true
+            )
             updateToolbarActionState()
         case .reloadFromDisk:
             try reloadDocumentFromDiskAfterConflict(at: url)
-            statusLabel.stringValue = "已重新载入磁盘版本"
+            updateEditorStatus("已重新载入磁盘版本", kind: .success, announcesChange: true)
             updateToolbarActionState()
         case .saveCopy:
             let copyURL = try saveConflictCopy(beside: url)
@@ -6676,7 +7045,11 @@ final class LibraryWindowController: NSWindowController,
             isDirty = false
             refreshDocumentRevisionBaseline(for: copyURL)
             reloadNotes(selecting: copyURL, loadFirstIfNeeded: true)
-            statusLabel.stringValue = "已另存副本：\(copyURL.lastPathComponent)"
+            updateEditorStatus(
+                "已另存副本：\(copyURL.lastPathComponent)",
+                kind: .success,
+                announcesChange: true
+            )
             updateToolbarActionState()
         }
     }
@@ -6753,8 +7126,34 @@ final class LibraryWindowController: NSWindowController,
         return MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
     }
 
+    private func updateEditorStatus(
+        _ text: String,
+        kind: EditorStatusKind = .normal,
+        toolTip: String? = nil,
+        announcesChange: Bool = false
+    ) {
+        statusLabel.stringValue = text
+        statusLabel.toolTip = toolTip
+        statusLabel.setAccessibilityValue(text)
+        switch kind {
+        case .normal, .success:
+            statusLabel.textColor = panelTertiaryTextColor()
+        case .saving:
+            statusLabel.textColor = panelSecondaryTextColor()
+        case .warning:
+            statusLabel.textColor = .systemOrange
+        case .failure:
+            statusLabel.textColor = .systemRed
+        }
+        if announcesChange {
+            NSAccessibility.post(element: statusLabel, notification: .valueChanged)
+        }
+        statusLabel.displayIfNeeded()
+    }
+
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
+        drainBackgroundAutosaves()
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
         autosaveTask?.cancel()
@@ -6811,7 +7210,11 @@ final class LibraryWindowController: NSWindowController,
             selecting: savedURL,
             isNewNote: previousURL == nil
         )
-        statusLabel.stringValue = editorDateText(for: savedAt)
+        updateEditorStatus(
+            "已保存 · \(editorDateText(for: savedAt))",
+            kind: .success,
+            announcesChange: true
+        )
         onSave(savedURL)
         updateToolbarActionState()
         return savedURL
@@ -6929,6 +7332,30 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     func flushPendingAutosaveForTesting() throws -> URL? {
         try saveCurrentNote(force: false)
+    }
+
+    func flushBackgroundAutosaveForTesting() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        autosaveCurrentNote()
+        drainBackgroundAutosaves()
+    }
+
+    func triggerBackgroundAutosaveForTesting() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        autosaveCurrentNote()
+    }
+
+    func waitForBackgroundAutosaveForTesting() async {
+        while backgroundAutosaveIsActive {
+            await withCheckedContinuation { continuation in
+                autosavePersistenceQueue.async {
+                    continuation.resume()
+                }
+            }
+            drainBackgroundAutosaves()
+        }
     }
 
     func deleteSelectedNoteForLibrary() throws {
@@ -8099,7 +8526,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func noteListSnippetText(for note: NoteSearchResult) -> String {
         let snippet = note.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
-        let preview = snippet.isEmpty ? "No additional text" : snippet
+        let preview = snippet.isEmpty ? LibraryCopy.noAdditionalText : snippet
         let dateText = noteListDateText(for: noteListDisplayDateForLibrary(note))
         let cleanedPreview = noteListPreviewText(preview, removingDuplicateDateText: dateText)
         guard !cleanedPreview.isEmpty else { return dateText }
@@ -8130,7 +8557,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func noteListFolderText(for note: NoteSearchResult) -> String {
         let folder = isTrashURL(note.url)
-            ? "Recently Deleted"
+            ? LibraryCopy.recentlyDeleted
             : folderTitle(for: note.url.deletingLastPathComponent())
         let tags = note.tags.prefix(3).map(libraryDisplayTag).joined(separator: " ")
         if tags.isEmpty {
@@ -8146,7 +8573,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if calendar.isDateInYesterday(date) {
-            return "Yesterday"
+            return LibraryCopy.yesterday
         }
 
         let startOfToday = calendar.startOfDay(for: now)
@@ -8164,11 +8591,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func notesCountText(_ count: Int) -> String {
-        "\(count) \(count == 1 ? "note" : "notes")"
+        LibraryCopy.noteCount(count)
     }
 
     private func resultsCountText(_ count: Int) -> String {
-        "\(count) \(count == 1 ? "result" : "results")"
+        LibraryCopy.resultCount(count)
     }
 
     private func isTrashURL(_ url: URL) -> Bool {
@@ -10944,29 +11371,29 @@ final class LibraryWindowController: NSWindowController,
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM d, yyyy 'at' HH:mm"
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.dateFormat = "yyyy年M月d日 HH:mm"
         return formatter
     }()
 
     private let noteListTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
 
     private let noteListWeekdayFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
         formatter.dateFormat = "EEEE"
         return formatter
     }()
 
     private let noteListShortDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "M/d/yy"
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.dateFormat = "yyyy/M/d"
         return formatter
     }()
 }

@@ -64,7 +64,12 @@ extension EditorWindowController {
 
     func loadFloatingNote(at url: URL) {
         guard isFloatingNoteMode else { return }
-        persistDraft(force: true)
+        do {
+            try persistDraft(force: true)
+        } catch {
+            handleDraftPersistenceFailureForTransition(error)
+            return
+        }
         suppressAutosave = true
         defer { suppressAutosave = false }
 
@@ -132,7 +137,24 @@ extension EditorWindowController {
         selectedDirectoryURL = directory
         isDirty = true
         refreshChrome()
-        persistDraft(force: true)
+        do {
+            try persistDraft(force: true)
+        } catch {
+            handleDraftPersistenceFailureForTransition(error)
+        }
+    }
+
+    private func handleDraftPersistenceFailureForTransition(_ error: Error) {
+        statusLabel.stringValue = "草稿保存失败，当前编辑仍保留"
+        NSSound.beep()
+        if let draftPersistenceErrorHandler {
+            draftPersistenceErrorHandler(error)
+        } else {
+            presentErrorAlert(
+                message: "无法保存草稿",
+                details: "当前编辑和窗口状态已保留。\n\n\(error.localizedDescription)"
+            )
+        }
     }
 
     func presentErrorAlert(message: String, details: String) {

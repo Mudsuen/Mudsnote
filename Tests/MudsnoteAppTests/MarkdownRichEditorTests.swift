@@ -46,6 +46,74 @@ private final class DelayedFileModificationDateProbe: @unchecked Sendable {
     }
 }
 
+private final class DraftPersistenceRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let beforeRecord: ((DraftSnapshot) -> Void)?
+    private var savedTitles: [String] = []
+    private var observedMainThread = false
+
+    init(beforeRecord: ((DraftSnapshot) -> Void)? = nil) {
+        self.beforeRecord = beforeRecord
+    }
+
+    func record(_ snapshot: DraftSnapshot) {
+        beforeRecord?(snapshot)
+        lock.lock()
+        savedTitles.append(snapshot.title)
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+    }
+
+    func snapshot() -> (savedTitles: [String], observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (savedTitles, observedMainThread)
+    }
+}
+
+private final class ThreadObservationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var observedMainThread = false
+
+    func recordCurrentThread() {
+        lock.lock()
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+    }
+
+    func didObserveMainThread() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return observedMainThread
+    }
+}
+
+private final class BlockingAutosaveRecorder: @unchecked Sendable {
+    let firstWriteStarted = DispatchSemaphore(value: 0)
+    let releaseFirstWrite = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var callCount = 0
+    private var observedMainThread = false
+
+    func record() {
+        lock.lock()
+        callCount += 1
+        let currentCall = callCount
+        observedMainThread = observedMainThread || Thread.isMainThread
+        lock.unlock()
+        if currentCall == 1 {
+            firstWriteStarted.signal()
+            releaseFirstWrite.wait()
+        }
+    }
+
+    func snapshot() -> (callCount: Int, observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (callCount, observedMainThread)
+    }
+}
+
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
@@ -135,6 +203,50 @@ struct MarkdownRichEditorTests {
         #expect(titleResults.first?.title == "Alpha Global")
         #expect(creationResults.count == 240)
         #expect(creationResults.first?.title == "Alpha Global")
+    }
+
+    @Test func fullLibrarySnapshotKeepsNotesBeyondTenThousandReachable() {
+        let root = URL(fileURLWithPath: "/tmp/mudsnote-full-snapshot", isDirectory: true)
+        var notes = (0..<10_001).map { index in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: String(format: "Zulu %05d", index),
+                snippet: "",
+                modifiedAt: Date(timeIntervalSince1970: Double(10_001 - index)),
+                tags: ["archive"],
+                hasAttachments: false,
+                thumbnailURL: nil
+            )
+        }
+        notes[10_000] = NoteSearchResult(
+            url: notes[10_000].url,
+            title: "Alpha Oldest",
+            snippet: "",
+            modifiedAt: notes[10_000].modifiedAt,
+            tags: ["archive"],
+            hasAttachments: false,
+            thumbnailURL: nil
+        )
+
+        let snapshot = Array(notes.prefix(LibraryWindowController.sourceCountSnapshotLimit))
+        let titleResults = LibraryNoteListProjection.rankedPrefix(
+            snapshot,
+            limit: 240,
+            sortOrder: .title,
+            groupsByDate: false,
+            includesPinnedGroup: false,
+            pinnedPaths: []
+        ) { _ in true }
+        let countIndex = LibrarySourceCountIndex(
+            notes: snapshot,
+            folderPaths: [root.path],
+            inboxDirectory: root.appendingPathComponent("Inbox", isDirectory: true)
+        )
+
+        #expect(snapshot.count == 10_001)
+        #expect(titleResults.first?.title == "Alpha Oldest")
+        #expect(countIndex.count(forFolder: root) == 10_001)
+        #expect(countIndex.count(forTag: "archive") == 10_001)
     }
 
     @Test func groupedTitleProjectionPrioritizesRecentDateGroupsAndPinnedNotes() throws {
@@ -371,17 +483,25 @@ struct MarkdownRichEditorTests {
                 snippet: "",
                 modifiedAt: now,
                 tags: ["Beta"]
+            ),
+            NoteSearchResult(
+                url: projectsFolder.appendingPathComponent("Inbox Rules.md"),
+                title: "Project Inbox Rules",
+                snippet: "",
+                modifiedAt: now,
+                tags: []
             )
         ]
         let index = LibrarySourceCountIndex(
             notes: notes,
-            folderPaths: Set([notesFolder.path, projectsFolder.path, clientFolder.path])
+            folderPaths: Set([notesFolder.path, projectsFolder.path, clientFolder.path]),
+            inboxDirectory: notesFolder.appendingPathComponent("Inbox", isDirectory: true)
         )
 
         #expect(index.inboxCount == 1)
         #expect(index.count(forFolder: notesFolder) == 1)
-        #expect(index.count(forFolder: projectsFolder) == 2)
-        #expect(index.count(forFolder: projectsFolder, includingDescendants: false) == 1)
+        #expect(index.count(forFolder: projectsFolder) == 3)
+        #expect(index.count(forFolder: projectsFolder, includingDescendants: false) == 2)
         #expect(index.count(forFolder: clientFolder) == 1)
         #expect(index.count(forTag: "alpha") == 2)
         #expect(index.count(forTag: "BETA") == 1)
@@ -470,6 +590,50 @@ struct MarkdownRichEditorTests {
         textView.insertText("Typed https://openai.com/docs", replacementRange: NSRange(location: 0, length: 0))
         let typedLocation = (textView.string as NSString).range(of: "https://openai.com/docs").location
         #expect(textView.linkReference(atCharacterIndex: typedLocation)?.url == "https://openai.com/docs")
+    }
+
+    @MainActor
+    @Test
+    func markdownLinksRoundTripBalancedAndEscapedParentheses() {
+        let markdown = #"Links [nested](https://host/a_(b)) and [escaped](https://host/a_\(b\))"#
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        let nestedLocation = (rendered.string as NSString).range(of: "nested").location
+        let escapedLocation = (rendered.string as NSString).range(of: "escaped").location
+
+        #expect(rendered.attribute(.qmLinkURL, at: nestedLocation, effectiveRange: nil) as? String == "https://host/a_(b)")
+        #expect(rendered.attribute(.qmLinkURL, at: escapedLocation, effectiveRange: nil) as? String == #"https://host/a_\(b\)"#)
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @MainActor
+    @Test
+    func markdownAttachmentsRoundTripPathsContainingParentheses() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-parenthesized-attachment-tests-\(UUID().uuidString)", isDirectory: true)
+        let attachments = root.appendingPathComponent("Attachments", isDirectory: true)
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let noteURL = root.appendingPathComponent("Note.md")
+        let fileURL = attachments.appendingPathComponent("spec_(v2).pdf")
+        let imageURL = attachments.appendingPathComponent("image_(v2).png")
+        try Data("PDF".utf8).write(to: fileURL)
+        let pngData = try #require(Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        ))
+        try pngData.write(to: imageURL)
+
+        let markdown = """
+        [Spec](Attachments/spec_(v2).pdf)
+        ![Diagram](Attachments/image_(v2).png)
+        """
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: theme,
+            baseURL: noteURL
+        )
+
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
     }
 
     @MainActor
@@ -759,11 +923,11 @@ struct MarkdownRichEditorTests {
         }
 
         #expect(descriptions == [
-            "group:Pinned",
+            "group:置顶",
             "note:Alpha",
-            "group:Today",
+            "group:今天",
             "note:Zulu",
-            "group:Previous 7 Days",
+            "group:过去 7 天",
             "note:Beta"
         ])
     }
@@ -941,6 +1105,80 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func richCodecDefersImagePixelDecodingUntilAttachmentDrawing() async throws {
+        await MarkdownImageDecodeService.shared.resetForTesting()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-async-image-tests-\(UUID().uuidString)", isDirectory: true)
+        let noteURL = root.appendingPathComponent("Note.md")
+        let imageURL = root.appendingPathComponent("preview.png")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pngData = try #require(Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        ))
+        try pngData.write(to: imageURL)
+
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let attachment = try #require(
+            rendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let cell = try #require(attachment.attachmentCell as? AsyncImageAttachmentCell)
+
+        #expect(!cell.hasDecodedImage)
+        #expect(cell.naturalSize == NSSize(width: 1, height: 1))
+
+        cell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !cell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(cell.hasDecodedImage)
+        let firstDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(firstDecodeCount == 1)
+
+        let secondRendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let secondAttachment = try #require(
+            secondRendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let secondCell = try #require(secondAttachment.attachmentCell as? AsyncImageAttachmentCell)
+        secondCell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !secondCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(secondCell.hasDecodedImage)
+        let cachedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(cachedDecodeCount == 1)
+
+        var revisedPNGData = pngData
+        revisedPNGData.append(0)
+        try revisedPNGData.write(to: imageURL, options: .atomic)
+        let revisedRendered = MarkdownRichTextCodec.render(
+            markdown: "![Preview](preview.png)",
+            theme: theme,
+            baseURL: noteURL
+        )
+        let revisedAttachment = try #require(
+            revisedRendered.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let revisedCell = try #require(revisedAttachment.attachmentCell as? AsyncImageAttachmentCell)
+        revisedCell.beginDecodingIfNeeded(in: nil)
+        for _ in 0..<100 where !revisedCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(revisedCell.hasDecodedImage)
+        let revisedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(revisedDecodeCount == 2)
+    }
+
+    @MainActor
+    @Test
     func libraryImageResizePersistsOutsideMarkdownWithoutRewritingImage() throws {
         let suiteName = "mudsnote.image-resize-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -987,6 +1225,28 @@ struct MarkdownRichEditorTests {
         })
         let initialReference = try #require(
             firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        let resizeMenu = try #require(
+            firstController.editorTextView.imageResizeMenu(atCharacterIndex: firstImageIndex)
+        )
+        #expect(resizeMenu.items.map(\.title) == [
+            "适合编辑器",
+            "25%",
+            "50%",
+            "75%",
+            "100%",
+            "原始大小",
+            "",
+            "重置自定义大小"
+        ])
+        firstController.editorTextView.setSelectedRange(NSRange(location: firstImageIndex, length: 0))
+        #expect(
+            firstController.editorTextView.accessibilityCustomActions()?.map(\.name)
+                .contains("图片适合编辑器") == true
+        )
+        #expect(
+            firstController.editorTextView.accessibilityCustomActions()?.map(\.name)
+                .contains("重置图片大小") == true
         )
         firstController.showWindow(nil)
         firstController.editorTextView.layoutManager?.ensureLayout(
@@ -1065,6 +1325,20 @@ struct MarkdownRichEditorTests {
             firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
         )
         #expect(resizedReference.displaySize.width > initialReference.displaySize.width)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == Double(resizedReference.displaySize.width))
+        #expect(firstController.editorTextView.undoManager?.canUndo == true)
+        firstController.editorTextView.undoManager?.undo()
+        let undoReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(undoReference.displaySize == initialReference.displaySize)
+        #expect(store.libraryImageDisplayWidth(for: imageURL) == nil)
+        #expect(firstController.editorTextView.undoManager?.canRedo == true)
+        firstController.editorTextView.undoManager?.redo()
+        let redoReference = try #require(
+            firstController.editorTextView.imageAttachmentReference(atCharacterIndex: firstImageIndex)
+        )
+        #expect(redoReference.displaySize == resizedReference.displaySize)
         #expect(store.libraryImageDisplayWidth(for: imageURL) == Double(resizedReference.displaySize.width))
         #expect(MarkdownRichTextCodec.serialize(
             firstController.editorTextView.attributedString(),
@@ -1741,8 +2015,8 @@ struct MarkdownRichEditorTests {
         let noteURL = try store.saveNewNote(title: "Library Seed", body: "Body line", tags: ["library"])
         let noteModifiedAt = try #require((try? FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate]) as? Date)
         let noteDateFormatter = DateFormatter()
-        noteDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        noteDateFormatter.dateFormat = "MMMM d, yyyy 'at' HH:mm"
+        noteDateFormatter.locale = Locale(identifier: "zh_Hans_CN")
+        noteDateFormatter.dateFormat = "yyyy年M月d日 HH:mm"
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -1941,9 +2215,9 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.frame.width == LibraryNotesLayout.toolbarSearchWidth)
         #expect(toolbarSearchField.frame.height == LibraryNotesLayout.toolbarSearchHeight)
         #expect(toolbarSearchField.font?.pointSize == 14)
-        #expect(toolbarSearchField.placeholderString == "Search")
-        #expect(toolbarSearchField.toolTip == "Search Notes")
-        #expect(toolbarSearchField.accessibilityLabel() == "Search Notes")
+        #expect(toolbarSearchField.placeholderString == "搜索")
+        #expect(toolbarSearchField.toolTip == "搜索笔记")
+        #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 19)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
@@ -2196,11 +2470,11 @@ struct MarkdownRichEditorTests {
         #expect(sourceScrollerInsets.right == 0)
         #expect(sourceOutline.enclosingScrollView is LibrarySourceScrollView)
         let sourceTitles = controller.sourceTitlesForLibrary()
-        #expect(!sourceTitles.contains("All iCloud"))
+        #expect(!sourceTitles.contains("所有 iCloud 笔记"))
         #expect(sourceTitles.contains("Notes"))
-        #expect(sourceTitles.contains("Recently Deleted"))
+        #expect(sourceTitles.contains("最近删除"))
         #expect(!sourceTitles.contains("最近"))
-        #expect(!sourceTitles.contains("Inbox"))
+        #expect(!sourceTitles.contains("收件箱"))
         #expect(!sourceTitles.contains("Call Recordings"))
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceFolderStatus"
@@ -2223,7 +2497,7 @@ struct MarkdownRichEditorTests {
         #expect(noteListTitle.stringValue == "Notes")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
-        #expect(noteListCount.stringValue == "1 note")
+        #expect(noteListCount.stringValue == "1 条笔记")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
         #expect(noteListEmpty.isHidden)
         #expect(controller.tableView.numberOfRows == 2)
@@ -2231,7 +2505,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.tableView(controller.tableView, shouldSelectRow: 0))
         #expect(controller.tableView(controller.tableView, pasteboardWriterForRow: 0) == nil)
         let groupCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(groupCell.titleLabel.stringValue == "Today")
+        #expect(groupCell.titleLabel.stringValue == "今天")
         #expect(LibraryGroupHeaderCellView.titleLeadingInset == 16)
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
         #expect(groupCell.isFirstGroup)
@@ -2359,6 +2633,7 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.attachmentImageView.isHidden)
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(controller.statusLabel.identifier?.rawValue == "LibraryEditorStatusLabel")
+        #expect(controller.statusLabel.accessibilityLabel() == "笔记状态")
         #expect(controller.statusLabel.alignment == .center)
         #expect(controller.statusLabel.stringValue == noteDateFormatter.string(from: noteModifiedAt))
         #expect(!controller.statusLabel.stringValue.contains("·"))
@@ -2368,7 +2643,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.accessibilityLabel() == "笔记标题")
         #expect(controller.editorTextView.accessibilityLabel() == "笔记正文")
-        #expect(controller.statusLabel.accessibilityLabel() == "修改时间")
+        #expect(controller.statusLabel.accessibilityLabel() == "笔记状态")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
         #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
@@ -2491,7 +2766,7 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceRow-3"
         })
         #expect(trashSourceCell.accessibilityPerformPress())
-        #expect(controller.selectedSourceTitleForLibrary == "Recently Deleted")
+        #expect(controller.selectedSourceTitleForLibrary == "最近删除")
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
@@ -2949,7 +3224,7 @@ struct MarkdownRichEditorTests {
         let pinnedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
         #expect(store.isLibraryNotePinned(at: pinnedURL))
         let pinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(pinnedHeader.titleLabel.stringValue == "Pinned")
+        #expect(pinnedHeader.titleLabel.stringValue == "置顶")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == pinnedURL.standardizedFileURL.path)
         #expect(controller.makeMoreActionsMenuForLibrary().items.contains { $0.title == "取消置顶" })
 
@@ -2958,7 +3233,7 @@ struct MarkdownRichEditorTests {
         #expect(!controller.groupsNoteListByDate)
         #expect(controller.tableView.numberOfRows == 3)
         let ungroupedPinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
-        #expect(ungroupedPinnedHeader.titleLabel.stringValue == "Pinned")
+        #expect(ungroupedPinnedHeader.titleLabel.stringValue == "置顶")
 
         let noteRows = (0..<controller.tableView.numberOfRows).filter { row in
             controller.tableView(controller.tableView, pasteboardWriterForRow: row) is NSURL
@@ -3004,7 +3279,7 @@ struct MarkdownRichEditorTests {
 
         let modifiedAt = try #require(Calendar.current.date(byAdding: .day, value: -3, to: Date()))
         let weekdayFormatter = DateFormatter()
-        weekdayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        weekdayFormatter.locale = Locale(identifier: "zh_Hans_CN")
         weekdayFormatter.dateFormat = "EEEE"
         let weekday = weekdayFormatter.string(from: modifiedAt)
         let noteURL = try store.saveNewNote(title: "Weekday Prefix", body: "\(weekday)  动机")
@@ -3090,7 +3365,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         controller.selectRecentScopeForLibrary()
         #expect(controller.noteListTitleLabel.stringValue == "最近")
-        #expect(controller.noteListCountLabel.stringValue == "0 notes")
+        #expect(controller.noteListCountLabel.stringValue == "0 条笔记")
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
     }
 
@@ -3141,7 +3416,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func libraryFileSystemMonitorReportsExternalMarkdownCreation() async throws {
+    func libraryFileSystemMonitorReportsEverySupportedNoteExtension() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-library-file-monitor-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -3161,29 +3436,63 @@ struct MarkdownRichEditorTests {
         defer { monitor.stop() }
         try await Task.sleep(for: .milliseconds(120))
 
-        let externalURL = root.appendingPathComponent("External Event.md")
-        try "# External Event\n\nWritten outside Mudsnote\n".write(
-            to: externalURL,
-            atomically: true,
-            encoding: .utf8
-        )
+        let externalURLs = ["md", "markdown", "txt"].map {
+            root.appendingPathComponent("External Event.\($0)")
+        }
+        for externalURL in externalURLs {
+            try "# External Event\n\nWritten outside Mudsnote\n".write(
+                to: externalURL,
+                atomically: true,
+                encoding: .utf8
+            )
+        }
 
         var observedChanges: Set<LibraryFileSystemChange> = []
         for _ in 0..<80 {
             observedChanges = await recorder.snapshot()
-            if observedChanges.contains(where: {
-                URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
-                    && $0.isMarkdownFile
-            }) {
+            let observedPaths = Set(observedChanges.filter(\.isMarkdownFile).map {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.path
+            })
+            if externalURLs.allSatisfy({ observedPaths.contains($0.standardizedFileURL.path) }) {
                 break
             }
             try await Task.sleep(for: .milliseconds(50))
         }
 
-        #expect(observedChanges.contains(where: {
-            URL(fileURLWithPath: $0.path).standardizedFileURL.path == externalURL.standardizedFileURL.path
-                && $0.isMarkdownFile
-        }))
+        let observedPaths = Set(observedChanges.filter(\.isMarkdownFile).map {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path
+        })
+        #expect(externalURLs.allSatisfy { observedPaths.contains($0.standardizedFileURL.path) })
+    }
+
+    @Test
+    func libraryFileSystemMonitorRequiresFullRescanForDroppedOrInvalidatedEvents() {
+        let flags = [
+            kFSEventStreamEventFlagMustScanSubDirs,
+            kFSEventStreamEventFlagUserDropped,
+            kFSEventStreamEventFlagKernelDropped,
+            kFSEventStreamEventFlagEventIdsWrapped,
+            kFSEventStreamEventFlagRootChanged
+        ]
+
+        for flag in flags {
+            let change = LibraryFileSystemChange(
+                path: "/tmp/Mudsnote Notes",
+                flags: FSEventStreamEventFlags(flag)
+            )
+            #expect(change.requiresFullRescan)
+            #expect(change.changesDirectoryStructure)
+            #expect(change.requiresLibraryRefresh)
+        }
+
+        #expect(LibraryFileSystemChange(
+            path: "/tmp/Note.MARKDOWN",
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        ).isMarkdownFile)
+        #expect(LibraryFileSystemChange(
+            path: "/tmp/Note.txt",
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        ).isMarkdownFile)
     }
 
     @Test
@@ -3657,7 +3966,7 @@ struct MarkdownRichEditorTests {
 
         let noteCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(noteCell.titleLabel.attributedStringValue.string == "New Note")
-        #expect(noteCell.snippetLabel.attributedStringValue.string.contains("No additional text"))
+        #expect(noteCell.snippetLabel.attributedStringValue.string.contains("无其他内容"))
         #expect(noteCell.metaLabel.stringValue == "Notes")
     }
 
@@ -3972,7 +4281,7 @@ struct MarkdownRichEditorTests {
         #expect(normalExportMenu.items.allSatisfy { $0.isEnabled })
 
         try selectedController.deleteSelectedNoteForLibrary()
-        #expect(selectedController.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(selectedController.selectSourceForLibrary(titled: "最近删除"))
 
         #expect(!selectedController.validateToolbarItem(formatItem))
         #expect(!selectedController.validateToolbarItem(checklistItem))
@@ -4860,6 +5169,21 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func markdownTablesPreserveEscapedPipesBackslashesEmptyCellsAndAlignment() {
+        let markdown = #"""
+        | Value | Path | Empty | Alignment |
+        | :--- | ---: | :---: | --- |
+        | A\|B | slash\\|pipe |  | Plain |
+        """#
+
+        let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: theme)
+        #expect(rendered.string.contains("A|B"))
+        #expect(rendered.string.contains(#"slash\|pipe"#))
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == markdown)
+    }
+
+    @MainActor
+    @Test
     func libraryTableButtonAddsRowsInsideExistingMarkdownTables() throws {
         let suiteName = "mudsnote.library-table-editing-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -5239,11 +5563,13 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Autosave Seed", body: "Original body")
+        let writeThreadRecorder = ThreadObservationRecorder()
         let oldModifiedAt = Date().addingTimeInterval(-86_400)
         try FileManager.default.setAttributes([.modificationDate: oldModifiedAt], ofItemAtPath: noteURL.path)
 
         let controller = LibraryWindowController(
             noteStore: store,
+            backgroundAutosaveWillPersist: writeThreadRecorder.recordCurrentThread,
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -5260,13 +5586,72 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.statusLabel.stringValue == displayedTimeBeforeEdit)
 
-        try controller.flushPendingAutosaveForTesting()
+        controller.flushBackgroundAutosaveForTesting()
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
-        #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
+        #expect(!writeThreadRecorder.didObserveMainThread())
+        #expect(controller.statusLabel.stringValue.hasPrefix("已保存 · "))
+        #expect(controller.statusLabel.accessibilityValue() == controller.statusLabel.stringValue)
+        #expect(controller.statusLabel.toolTip == nil)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
         await controller.waitForSourceCountRefreshForLibrary()
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
+    }
+
+    @MainActor
+    @Test
+    func libraryBackgroundAutosaveCoalescesToLatestEditorRevision() async throws {
+        let suiteName = "mudsnote.library-autosave-coalescing-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-autosave-coalescing-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Coalescing", body: "Original")
+        let recorder = BlockingAutosaveRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundAutosaveWillPersist: recorder.record,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.editorTextView.string = "First revision"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        let firstStarted = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(
+                    returning: recorder.firstWriteStarted.wait(timeout: .now() + 2)
+                )
+            }
+        }
+        #expect(firstStarted == .success)
+
+        controller.editorTextView.string = "Latest revision"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        recorder.releaseFirstWrite.signal()
+        await controller.waitForBackgroundAutosaveForTesting()
+
+        #expect(try store.loadNote(at: noteURL).body == "Latest revision")
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
+        let observation = recorder.snapshot()
+        #expect(observation.callCount == 2)
+        #expect(!observation.observedMainThread)
     }
 
     @MainActor
@@ -5281,9 +5666,115 @@ struct MarkdownRichEditorTests {
         controller.markDocumentDirty()
         #expect(controller.statusLabel.stringValue == statusBeforeEdit)
 
-        controller.persistDraft(force: true)
+        try controller.persistDraft(force: true)
         #expect(controller.statusLabel.stringValue == statusBeforeEdit)
         #expect(harness.store.loadDraft(id: "quiet-autosave-status")?.title == "Quiet draft")
+    }
+
+    @MainActor
+    @Test
+    func floatingDraftAutosaveWritesOffMainAndClearsMatchingRevision() async throws {
+        let recorder = DraftPersistenceRecorder()
+        let harness = try makeEditorControllerHarness(
+            draftID: "background-draft-autosave",
+            showsSaveButton: false,
+            saveDraftSnapshot: recorder.record
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        controller.editorTextView.string = "Background draft"
+        controller.markDocumentDirty()
+        await controller.flushPendingDraftAutosaveForTesting()
+
+        let recorded = recorder.snapshot()
+        #expect(recorded.savedTitles == ["Background draft"])
+        #expect(!recorded.observedMainThread)
+        #expect(!controller.isDirty)
+    }
+
+    @MainActor
+    @Test
+    func draftPersistenceCoalescesQueuedSnapshotsAndFlushesAfterActiveWrite() throws {
+        let activeWriteStarted = DispatchSemaphore(value: 0)
+        let releaseActiveWrite = DispatchSemaphore(value: 0)
+        let recorder = DraftPersistenceRecorder { snapshot in
+            guard snapshot.title == "First" else { return }
+            activeWriteStarted.signal()
+            releaseActiveWrite.wait()
+        }
+        let coordinator = DraftPersistenceCoordinator(
+            save: recorder.record,
+            delete: { _ in }
+        )
+        func snapshot(_ title: String) -> DraftSnapshot {
+            DraftSnapshot(
+                id: "coalesced-draft",
+                sourcePath: nil,
+                selectedDirectoryPath: "/tmp",
+                title: title,
+                body: "",
+                updatedAt: Date()
+            )
+        }
+
+        coordinator.enqueue(.save(snapshot("First"))) { _ in }
+        #expect(activeWriteStarted.wait(timeout: .now() + 1) == .success)
+        coordinator.enqueue(.save(snapshot("Stale"))) { _ in }
+        coordinator.enqueue(.save(snapshot("Latest"))) { _ in }
+        releaseActiveWrite.signal()
+        coordinator.waitUntilIdle()
+
+        #expect(recorder.snapshot().savedTitles == ["First", "Latest"])
+        try coordinator.flush(.save(snapshot("Closing")))
+        #expect(recorder.snapshot().savedTitles == ["First", "Latest", "Closing"])
+    }
+
+    @MainActor
+    @Test
+    func draftFailureBlocksWindowCloseAndApplicationTermination() throws {
+        var shouldFail = true
+        var reportedErrors = 0
+        let harness = try makeEditorControllerHarness(
+            draftID: "guarded-draft-close",
+            showsSaveButton: false,
+            saveDraftSnapshot: { _ in
+                if shouldFail {
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+            },
+            draftPersistenceErrorHandler: { _ in
+                reportedErrors += 1
+            }
+        )
+        defer {
+            shouldFail = false
+            harness.tearDown()
+        }
+        let controller = harness.controller
+        let window = try #require(controller.window)
+
+        controller.editorTextView.string = "Unsaved guarded draft"
+        controller.markDocumentDirty()
+
+        #expect(!controller.windowShouldClose(window))
+        #expect(controller.isDirty)
+        #expect(controller.statusLabel.stringValue == "草稿保存失败，当前编辑仍保留")
+        #expect(reportedErrors == 1)
+
+        #expect(AppController.terminationReply(
+            editorControllers: [controller],
+            libraryController: nil
+        ) == .terminateCancel)
+        #expect(controller.isDirty)
+        #expect(reportedErrors == 2)
+
+        shouldFail = false
+        #expect(AppController.terminationReply(
+            editorControllers: [controller],
+            libraryController: nil
+        ) == .terminateNow)
+        #expect(!controller.isDirty)
     }
 
     @MainActor
@@ -5429,6 +5920,7 @@ struct MarkdownRichEditorTests {
         #expect(!loadedCell.thumbnailImageView.isHidden)
         #expect(loadedCell.attachmentImageView.isHidden)
         #expect(controller.thumbnailImageDecodeCountForLibrary == 1)
+        #expect(controller.thumbnailReloadBatchCountForLibrary == 1)
     }
 
     @MainActor
@@ -5482,7 +5974,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Project"])
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "current folder alpha body")
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
-        #expect(controller.noteListCountLabel.stringValue == "1 result")
+        #expect(controller.noteListCountLabel.stringValue == "1 条结果")
 
         let cell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         let titleHighlight = cell.titleLabel.attributedStringValue.attribute(
@@ -5519,8 +6011,8 @@ struct MarkdownRichEditorTests {
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
-        #expect(controller.noteListTitleLabel.stringValue == "All iCloud")
-        #expect(controller.noteListCountLabel.stringValue == "2 results")
+        #expect(controller.noteListTitleLabel.stringValue == "所有 iCloud 笔记")
+        #expect(controller.noteListCountLabel.stringValue == "2 条结果")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)
         #expect(controller.activeSearchSessionForLibrary() === allNotesSearchSession)
@@ -5531,7 +6023,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
         #expect(!emptyLabel.isHidden)
-        #expect(emptyLabel.stringValue == "No Results")
+        #expect(emptyLabel.stringValue == "没有结果")
     }
 
     @MainActor
@@ -5635,16 +6127,16 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
         #expect(!controller.searchScopeControl.isHidden)
-        #expect(controller.noteListCountLabel.stringValue == "Searching...")
+        #expect(controller.noteListCountLabel.stringValue == "正在搜索…")
 
         let deadline = Date().addingTimeInterval(6)
         while Date() < deadline,
               controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"]
-                || controller.noteListCountLabel.stringValue != "1 result" {
+                || controller.noteListCountLabel.stringValue != "1 条结果" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
-        #expect(controller.noteListCountLabel.stringValue == "1 result")
+        #expect(controller.noteListCountLabel.stringValue == "1 条结果")
 
         controller.searchField.stringValue = "beta"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
@@ -5656,7 +6148,7 @@ struct MarkdownRichEditorTests {
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         #expect(controller.searchScopeControl.isHidden)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
-        #expect(controller.noteListCountLabel.stringValue == "2 notes")
+        #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
     }
 
     @MainActor
@@ -5734,7 +6226,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         try FileManager.default.removeItem(at: trashedURL)
 
         controller.searchField.stringValue = "cached"
@@ -5746,6 +6238,54 @@ struct MarkdownRichEditorTests {
             doCommandBy: #selector(NSResponder.moveDown(_:))
         ))
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Cached Trash Result"])
+    }
+
+    @Test
+    func recentlyDeletedSearchFiltersBeforeApplyingItsResultLimit() throws {
+        let suiteName = "mudsnote.trash-search-limit-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-trash-search-limit-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+
+        let decoyOne = try store.trashNote(at: store.saveNewNote(title: "Recent One", body: "No match"))
+        let decoyTwo = try store.trashNote(at: store.saveNewNote(title: "Recent Two", body: "No match"))
+        let bodyMatch = try store.trashNote(at: store.saveNewNote(
+            title: "Older Body",
+            body: "The recovery needle is here"
+        ))
+        let tagMatch = try store.trashNote(at: store.saveNewNote(
+            title: "Oldest Tag",
+            body: "No body match",
+            tags: ["needle-tag"]
+        ))
+        let dates: [(URL, Date)] = [
+            (decoyOne, Date(timeIntervalSince1970: 400)),
+            (decoyTwo, Date(timeIntervalSince1970: 300)),
+            (bodyMatch, Date(timeIntervalSince1970: 200)),
+            (tagMatch, Date(timeIntervalSince1970: 100))
+        ]
+        for (url, date) in dates {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+
+        let results = libraryFilteredTrashedNotes(noteStore: store, query: "needle", limit: 2)
+        #expect(Set(results.map(\.title)) == Set(["Older Body", "Oldest Tag"]))
+        let bodyResult = results.first { $0.title == "Older Body" }
+        #expect(bodyResult?.snippet.localizedCaseInsensitiveContains("needle") == true)
+        #expect(libraryFilteredTrashedNotes(noteStore: store, query: "needle", limit: 0).isEmpty)
     }
 
     @MainActor
@@ -5840,7 +6380,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "library") == 1)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == true)
         #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.contains {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
@@ -5848,7 +6388,7 @@ struct MarkdownRichEditorTests {
         controller.toggleSourceTagsSectionForLibrary()
         #expect(controller.sourceTitlesForLibrary().contains("library"))
         #expect(!controller.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == false)
         #expect(store.libraryTagsSectionCollapsed)
 
         let reopenedCollapsedTagsController = LibraryWindowController(
@@ -5861,12 +6401,12 @@ struct MarkdownRichEditorTests {
         reopenedCollapsedTagsController.loadSourceTagsForLibrary()
         #expect(reopenedCollapsedTagsController.sourceTitlesForLibrary().contains("library"))
         #expect(!reopenedCollapsedTagsController.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(reopenedCollapsedTagsController.isSourceGroupExpandedForLibrary(titled: "Tags") == false)
+        #expect(reopenedCollapsedTagsController.isSourceGroupExpandedForLibrary(titled: "标签") == false)
 
         controller.toggleSourceTagsSectionForLibrary()
         #expect(!store.libraryTagsSectionCollapsed)
         #expect(controller.visibleSourceTitlesForLibrary().contains("library"))
-        #expect(controller.isSourceGroupExpandedForLibrary(titled: "Tags") == true)
+        #expect(controller.isSourceGroupExpandedForLibrary(titled: "标签") == true)
 
         #expect(controller.selectSourceForLibrary(titled: "library"))
         #expect(controller.noteListTitleLabel.stringValue == "#library")
@@ -5925,7 +6465,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Notes") == 1)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Projects") == 2)
         #expect(controller.sourceOutlineLevelForLibrary(titled: "Client") == 3)
-        #expect(controller.sourceOutlineLevelForLibrary(titled: "Recently Deleted") == 1)
+        #expect(controller.sourceOutlineLevelForLibrary(titled: "最近删除") == 1)
         #expect(controller.isSourceGroupExpandedForLibrary(titled: "iCloud") == true)
 
         controller.toggleSourceFoldersSectionForLibrary()
@@ -6499,7 +7039,7 @@ struct MarkdownRichEditorTests {
 
         try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
         #expect(store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(controller.selectSourceForLibrary(titled: "External Library"))
         let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
@@ -6516,7 +7056,7 @@ struct MarkdownRichEditorTests {
         #expect(!store.preferredDirectories.map(\.standardizedFileURL.path).contains(externalDirectory.standardizedFileURL.path))
         #expect(FileManager.default.fileExists(atPath: externalDirectory.path))
         #expect(FileManager.default.fileExists(atPath: externalNote.path))
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(!controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(throws: (any Error).self) {
             try controller.removeRegisteredLibraryFolderForLibrary(at: notesDirectory)
@@ -6658,13 +7198,13 @@ struct MarkdownRichEditorTests {
         let trashedURL = try #require(store.listTrashedNotes(limit: 10).first?.url)
         #expect(FileManager.default.fileExists(atPath: trashedURL.path))
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(!controller.canDeleteSelectedNotesFromMenuForLibrary)
         #expect(controller.canRestoreSelectedNotesFromMenuForLibrary)
         #expect(controller.titleField.stringValue == "Trash Seed")
         #expect(!controller.titleField.isEditable)
         #expect(!controller.editorTextView.isEditable)
-        #expect(controller.sourceCountTextForLibrary(titled: "Recently Deleted") == "1")
+        #expect(controller.sourceCountTextForLibrary(titled: "最近删除") == "1")
 
         let trashMoreMenu = controller.makeMoreActionsMenuForLibrary()
         let trashMenuTitles = trashMoreMenu.items.map(\.title)
@@ -6694,12 +7234,12 @@ struct MarkdownRichEditorTests {
         #expect(controller.editorTextView.isEditable)
 
         try controller.deleteSelectedNoteForLibrary()
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.titleField.stringValue == "Trash Seed")
         try controller.deleteSelectedNoteForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
-        #expect(controller.noteListEmptyLabel.stringValue == "Recently Deleted is empty")
+        #expect(controller.noteListEmptyLabel.stringValue == "最近删除为空")
         #expect(!controller.noteListEmptyLabel.isHidden)
     }
 
@@ -6742,7 +7282,7 @@ struct MarkdownRichEditorTests {
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.titleField.stringValue == "Keyboard Seed")
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
@@ -7099,7 +7639,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().contains {
             $0.url.standardizedFileURL == externalURL.standardizedFileURL
         })
-        #expect(!controller.sourceTitlesForLibrary().contains("All iCloud"))
+        #expect(!controller.sourceTitlesForLibrary().contains("所有 iCloud 笔记"))
         #expect(controller.sourceTitlesForLibrary().contains(root.lastPathComponent))
         #expect(controller.selectedSourceTitleForLibrary == root.lastPathComponent)
         #expect(controller.noteListTitleLabel.stringValue == root.lastPathComponent)
@@ -7574,7 +8114,7 @@ struct MarkdownRichEditorTests {
         }
 
         controller.showWindowAndFocus()
-        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
@@ -7678,7 +8218,7 @@ struct MarkdownRichEditorTests {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
-        #expect(controller.noteListCountLabel.stringValue == "1 note")
+        #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
         #expect(controller.tableView.selectedRow >= 0)
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "External Deferred")
@@ -7758,7 +8298,7 @@ struct MarkdownRichEditorTests {
 
         let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
         _ = try store.trashNote(at: noteURL)
-        #expect(controller.selectSourceForLibrary(titled: "Recently Deleted"))
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
         #expect(controller.noteListSearchResultsForLibrary().isEmpty)
 
         let deadline = Date().addingTimeInterval(6)
@@ -7817,6 +8357,61 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func preferencesResetWindowPositionsCommitsOnlyOnSave() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-preferences-reset-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var resetCount = 0
+        func makeController() -> PreferencesWindowController {
+            PreferencesWindowController(
+                currentDirectory: root,
+                availableDirectories: [root],
+                currentOpacity: NoteStore.defaultPanelOpacity,
+                currentQuickCaptureHotKey: "option+shift+n",
+                currentFloatingHotKey: "option+r",
+                currentSaveShortcut: "command+return",
+                floatingNoteStaysOnTop: true,
+                spellCheckingEnabled: true,
+                aiEnabled: false,
+                aiCodexExecutablePath: "",
+                onPreviewOpacity: { _ in },
+                onResetWindowFrames: { resetCount += 1 },
+                onSave: { _ in }
+            )
+        }
+
+        let cancelledController = makeController()
+        let cancelledWindow = try #require(cancelledController.window)
+        let cancelledResetButton = cancelledController.resetWindowPositionsButton
+        cancelledResetButton.performClick(nil)
+        #expect(resetCount == 0)
+        #expect(cancelledResetButton.title == "保存后重置")
+        #expect(cancelledResetButton.isEnabled == false)
+        let cancelButton = try #require(
+            cancelledWindow.contentView?.allSubviews.compactMap { $0 as? NSButton }
+                .first { $0.title == "取消" }
+        )
+        cancelButton.performClick(nil)
+        #expect(resetCount == 0)
+
+        let savedController = makeController()
+        defer { savedController.close() }
+        let savedWindow = try #require(savedController.window)
+        let savedResetButton = savedController.resetWindowPositionsButton
+        savedResetButton.performClick(nil)
+        #expect(resetCount == 0)
+        let saveButton = try #require(
+            savedWindow.contentView?.allSubviews.compactMap { $0 as? NSButton }
+                .first { $0.title == "保存" }
+        )
+        saveButton.performClick(nil)
+        #expect(resetCount == 1)
     }
 
     @MainActor
@@ -8153,6 +8748,199 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func floatingWindowManagerSupportsKeyboardNavigationAndPreservesSelection() throws {
+        var openWindows: [FloatingNoteWindowDescriptor] = []
+        var activatedWindowID: UUID?
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false,
+            floatingNoteWindows: { openWindows },
+            onRequestActivateFloatingNote: { activatedWindowID = $0 }
+        )
+        defer { harness.tearDown() }
+
+        let firstID = UUID()
+        let secondID = UUID()
+        let thirdID = UUID()
+        openWindows = [
+            FloatingNoteWindowDescriptor(id: firstID, url: nil, title: "First", subtitle: "One"),
+            FloatingNoteWindowDescriptor(id: secondID, url: nil, title: "Second", subtitle: "Two"),
+            FloatingNoteWindowDescriptor(id: thirdID, url: nil, title: "Third", subtitle: "Three")
+        ]
+
+        harness.controller.showWindowAndFocus()
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        let browser = try #require(harness.controller.floatingNoteBrowserController)
+        let fieldEditor = NSTextView()
+
+        #expect(browser.selectedResultRow == 0)
+        browser.window?.contentView?.layoutSubtreeIfNeeded()
+        #expect(browser.resultCell(at: 0)?.isSelectedForPresentation == true)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.selectedResultRow == 1)
+        #expect(browser.resultCell(at: 1)?.isSelectedForPresentation == true)
+
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(browser.selectedResultRow == 2)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.moveUp(_:))
+        ))
+        #expect(browser.selectedResultRow == 1)
+
+        openWindows = [
+            FloatingNoteWindowDescriptor(id: thirdID, url: nil, title: "Third", subtitle: "Three"),
+            FloatingNoteWindowDescriptor(id: firstID, url: nil, title: "First", subtitle: "One"),
+            FloatingNoteWindowDescriptor(id: secondID, url: nil, title: "Second", subtitle: "Two")
+        ]
+        browser.refresh()
+        #expect(browser.selectedResultRow == 2)
+
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        #expect(activatedWindowID == secondID)
+        #expect(browser.window?.isVisible == false)
+
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        #expect(browser.window?.isVisible == true)
+        #expect(browser.control(
+            browser.searchField,
+            textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+        ))
+        #expect(browser.window?.isVisible == false)
+    }
+
+    @MainActor
+    @Test
+    func floatingWindowManagerBoundsSearchCandidates() async throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "floating-note",
+            showsSaveButton: false
+        )
+        defer { harness.tearDown() }
+
+        try harness.store.ensureNotesDirectory()
+        for index in 0..<(FloatingNoteBrowserController.maximumSearchResults + 5) {
+            _ = try harness.store.saveNewNote(
+                title: "Needle \(index)",
+                body: "Bounded floating search result",
+                in: harness.store.notesDirectory
+            )
+        }
+
+        harness.controller.showWindowAndFocus()
+        harness.controller.showFloatingNoteBrowser(relativeTo: harness.controller.floatingNoteBrowseButton)
+        let browser = try #require(harness.controller.floatingNoteBrowserController)
+        browser.searchField.stringValue = "Needle"
+        browser.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: browser.searchField
+        ))
+        await browser.waitForSearchForTesting()
+
+        #expect(browser.displayedURLs.count == FloatingNoteBrowserController.maximumSearchResults)
+        #expect(browser.selectedResultRow == 0)
+        browser.window?.close()
+    }
+
+    @MainActor
+    @Test
+    func debouncedNoteSearchPublishesOnlyTheLatestGeneration() async throws {
+        let suiteName = "mudsnote.debounced-search-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-debounced-search-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha", body: "First")
+        _ = try store.saveNewNote(title: "Beta", body: "Second")
+
+        let controller = DebouncedNoteSearchController(noteStore: store, limit: 10)
+        var deliveries: [DebouncedNoteSearchResults] = []
+        controller.submit(query: "Alpha") { deliveries.append($0) }
+        controller.submit(query: "Beta") { deliveries.append($0) }
+        #expect(deliveries.isEmpty)
+
+        await controller.waitForCurrentSearchForTesting()
+        #expect(deliveries.map(\.query) == ["Beta"])
+        #expect(deliveries.first?.results.map(\.title) == ["Beta"])
+
+        controller.submit(query: "Alpha") { deliveries.append($0) }
+        controller.cancel()
+        await controller.waitForCurrentSearchForTesting()
+        #expect(deliveries.map(\.query) == ["Beta"])
+    }
+
+    @MainActor
+    @Test
+    func searchWindowDebouncesTypingAndAppliesBackgroundResults() async throws {
+        let suiteName = "mudsnote.search-window-background-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-search-window-background-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha", body: "First")
+        _ = try store.saveNewNote(title: "Beta", body: "Second")
+
+        let controller = SearchWindowController(noteStore: store, onOpen: { _ in }, onClose: {})
+        defer { controller.close() }
+        await controller.waitForSearchForTesting()
+
+        controller.searchField.stringValue = "Beta"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        #expect(controller.searchInfoForTesting == "正在搜索…")
+        await controller.waitForSearchForTesting()
+
+        #expect(controller.resultTitlesForTesting == ["Beta"])
+        #expect(controller.searchInfoForTesting.contains("1 条匹配"))
+    }
+
+    @MainActor
+    @Test
     func floatingNotesDefaultToExistingInboxAndHighlightDirectly() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "floating-note",
@@ -8370,8 +9158,11 @@ struct MarkdownRichEditorTests {
         onSave: @escaping (URL) -> Void = { _ in },
         floatingNoteWindows: @escaping () -> [FloatingNoteWindowDescriptor] = { [] },
         onRequestOpenFloatingNote: @escaping (URL) -> Void = { _ in },
+        onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
-        onRequestCreateFloatingNote: @escaping () -> Void = {}
+        onRequestCreateFloatingNote: @escaping () -> Void = {},
+        saveDraftSnapshot: ((DraftSnapshot) throws -> Void)? = nil,
+        draftPersistenceErrorHandler: ((Error) -> Void)? = nil
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -8399,8 +9190,11 @@ struct MarkdownRichEditorTests {
             onRequestSearch: {},
             floatingNoteWindows: floatingNoteWindows,
             onRequestOpenFloatingNote: onRequestOpenFloatingNote,
+            onRequestActivateFloatingNote: onRequestActivateFloatingNote,
             onRequestCloseFloatingNote: onRequestCloseFloatingNote,
             onRequestCreateFloatingNote: onRequestCreateFloatingNote,
+            saveDraftSnapshot: saveDraftSnapshot,
+            draftPersistenceErrorHandler: draftPersistenceErrorHandler,
             onRequestPreferences: {}
         )
 

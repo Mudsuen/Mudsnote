@@ -99,6 +99,44 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Self.terminationReply(
+            editorControllers: activeEditorControllersForTermination(),
+            libraryController: libraryWindowController
+        )
+    }
+
+    static func terminationReply(
+        editorControllers: [EditorWindowController],
+        libraryController: LibraryWindowController?
+    ) -> NSApplication.TerminateReply {
+        for controller in editorControllers where !controller.prepareForApplicationTermination() {
+            controller.window?.makeKeyAndOrderFront(nil)
+            return .terminateCancel
+        }
+        if let libraryController,
+           let window = libraryController.window,
+           !libraryController.windowShouldClose(window) {
+            window.makeKeyAndOrderFront(nil)
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
+    private func activeEditorControllersForTermination() -> [EditorWindowController] {
+        var controllers: [EditorWindowController] = []
+        var seen = Set<ObjectIdentifier>()
+        for controller in [quickCaptureController, floatingNoteController] + Array(editorControllers.values) {
+            guard let controller,
+                  !controller.isWindowClosed,
+                  seen.insert(ObjectIdentifier(controller)).inserted else {
+                continue
+            }
+            controllers.append(controller)
+        }
+        return controllers
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showLibraryWindow()
         return true

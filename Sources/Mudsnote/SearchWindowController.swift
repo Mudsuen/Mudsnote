@@ -42,14 +42,18 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private let onOpen: (URL) -> Void
     private let onClose: () -> Void
 
-    private let searchField = NSSearchField(string: "")
+    let searchField = NSSearchField(string: "")
     private let infoLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView()
     private var results: [NoteSearchResult] = []
+    private lazy var searchController = DebouncedNoteSearchController(noteStore: noteStore, limit: 60)
     private var currentPanelOpacity: Double
     private weak var backdropView: GradientBackdropView?
     private weak var searchSurfaceView: NSView?
     private weak var resultSurfaceView: NSView?
+
+    var resultTitlesForTesting: [String] { results.map(\.title) }
+    var searchInfoForTesting: String { infoLabel.stringValue }
 
     init(noteStore: NoteStore, onOpen: @escaping (URL) -> Void, onClose: @escaping () -> Void) {
         self.noteStore = noteStore
@@ -66,7 +70,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
             self?.closePressed()
         }
         buildUI()
-        reloadResults()
+        scheduleSearch(delay: .zero)
     }
 
     @available(*, unavailable)
@@ -84,6 +88,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     func windowWillClose(_ notification: Notification) {
+        searchController.cancel(invalidateSession: true)
         onClose()
     }
 
@@ -196,7 +201,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        reloadResults()
+        scheduleSearch()
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -234,22 +239,51 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         window?.close()
     }
 
-    private func reloadResults() {
+    private func scheduleSearch(delay: Duration = DebouncedNoteSearchController.defaultDelay) {
         let query = searchField.stringValue
-        results = noteStore.searchNotes(query: query, limit: 60)
+        searchController.submit(
+            query: query,
+            delay: delay,
+            onStart: { [weak self] in
+                guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self?.infoLabel.stringValue = "正在搜索…"
+            },
+            completion: { [weak self] payload in
+                guard let self, self.searchField.stringValue == payload.query else { return }
+                self.applySearchResults(payload)
+            }
+        )
+    }
+
+    private func applySearchResults(_ payload: DebouncedNoteSearchResults) {
+        let selectedPath = results.indices.contains(tableView.selectedRow)
+            ? results[tableView.selectedRow].url.standardizedFileURL.path
+            : nil
+        results = payload.results
         tableView.reloadData()
 
-        if !results.isEmpty {
+        if let selectedPath,
+           let selectedRow = results.firstIndex(where: {
+               $0.url.standardizedFileURL.path == selectedPath
+           }) {
+            tableView.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
+        } else if !results.isEmpty {
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        } else {
+            tableView.deselectAll(nil)
         }
 
-        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if payload.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             infoLabel.stringValue = results.isEmpty ? "暂无最近笔记" : "\(results.count) 条最近笔记"
         } else {
             infoLabel.stringValue = results.isEmpty
-                ? "\(noteStore.knownSearchRoots().count) 个文件夹中无匹配"
-                : "\(results.count) 条匹配，来自 \(noteStore.knownSearchRoots().count) 个文件夹"
+                ? "\(payload.searchRootCount) 个文件夹中无匹配"
+                : "\(results.count) 条匹配，来自 \(payload.searchRootCount) 个文件夹"
         }
+    }
+
+    func waitForSearchForTesting() async {
+        await searchController.waitForCurrentSearchForTesting()
     }
 
     func updatePanelOpacity(_ opacity: Double) {

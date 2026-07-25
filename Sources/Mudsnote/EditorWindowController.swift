@@ -175,6 +175,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let onRequestActivateFloatingNote: (UUID) -> Void
     let onRequestCloseFloatingNote: (UUID) -> Void
     let onRequestCreateFloatingNote: () -> Void
+    let saveDraftSnapshot: (DraftSnapshot) throws -> Void
+    let deleteDraftSnapshot: (String) -> Void
+    let draftPersistenceErrorHandler: ((Error) -> Void)?
+    lazy var draftPersistenceCoordinator = DraftPersistenceCoordinator(
+        save: saveDraftSnapshot,
+        delete: deleteDraftSnapshot
+    )
 
     let toolbarButtonWidth: CGFloat = 30
     let toolbarButtonHeight: CGFloat = 26
@@ -209,6 +216,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var observers: [NSObjectProtocol] = []
     var autosaveTimer: Timer?
     var isDirty = false
+    var draftContentRevision = 0
+    var draftPersistenceGeneration = 0
     var suppressAutosave = false
     var suppressTextDidChange = false
     var currentPanelOpacity: Double
@@ -262,6 +271,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCreateFloatingNote: @escaping () -> Void = {},
         onRequestOpenMarkdownDocument: @escaping (URL) -> Void = { _ in },
+        saveDraftSnapshot: ((DraftSnapshot) throws -> Void)? = nil,
+        deleteDraftSnapshot: ((String) -> Void)? = nil,
+        draftPersistenceErrorHandler: ((Error) -> Void)? = nil,
         onRequestPreferences: @escaping () -> Void
     ) {
         self.noteStore = noteStore
@@ -286,6 +298,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onRequestCloseFloatingNote = onRequestCloseFloatingNote
         self.onRequestCreateFloatingNote = onRequestCreateFloatingNote
         self.onRequestOpenMarkdownDocument = onRequestOpenMarkdownDocument
+        self.saveDraftSnapshot = saveDraftSnapshot ?? { try noteStore.saveDraft($0) }
+        self.deleteDraftSnapshot = deleteDraftSnapshot ?? { noteStore.deleteDraft(id: $0) }
+        self.draftPersistenceErrorHandler = draftPersistenceErrorHandler
         self.onRequestPreferences = onRequestPreferences
 
         let window = QuickEntryPanel(size: NSSize(width: 412, height: 314))
@@ -405,11 +420,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     // MARK: - Window delegate
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        prepareForApplicationTermination()
+    }
+
     func windowWillClose(_ notification: Notification) {
         didCloseWindow = true
         attachmentQuickLookController.dismiss()
         rememberCurrentWindowFrame()
-        persistDraft(force: true)
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         autosaveTimer?.invalidate()

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import ImageIO
 import MudsnoteCore
 
 extension NSAttributedString.Key {
@@ -18,6 +19,7 @@ extension NSAttributedString.Key {
     static let qmTableRow = NSAttributedString.Key("MudsnoteTableRow")
     static let qmTableColumn = NSAttributedString.Key("MudsnoteTableColumn")
     static let qmTableColumnCount = NSAttributedString.Key("MudsnoteTableColumnCount")
+    static let qmTableColumnAlignment = NSAttributedString.Key("MudsnoteTableColumnAlignment")
     static let qmTablePlaceholder = NSAttributedString.Key("MudsnoteTablePlaceholder")
     static let qmTableTerminalNewline = NSAttributedString.Key("MudsnoteTableTerminalNewline")
     static let qmSearchHighlight = NSAttributedString.Key("MudsnoteSearchHighlight")
@@ -35,6 +37,16 @@ final class MarkdownImageAttachmentReference: NSObject {
         self.path = path
         self.naturalSize = naturalSize
         self.displaySize = displaySize
+    }
+}
+
+private final class MarkdownImageResizeMenuCommand: NSObject {
+    let fileURL: URL
+    let preferredWidth: Double?
+
+    init(fileURL: URL, preferredWidth: Double?) {
+        self.fileURL = fileURL
+        self.preferredWidth = preferredWidth
     }
 }
 
@@ -384,6 +396,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let initialWidth: CGFloat
         let horizontalDirection: CGFloat
         let fileURL: URL
+        let initialPersistedWidth: Double?
         var currentWidth: Double
     }
 
@@ -395,6 +408,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var contextMenuOptionsProvider: (() -> Set<EditorContextMenuOption>)?
     var selectionMenuProvider: (() -> NSMenu?)?
     var onImageDisplayWidthChanged: ((URL, Double?) -> Void)?
+    var imageDisplayWidthProvider: ((URL) -> Double?)?
     private var selectionFormattingPanel: NSPanel?
     private weak var selectionFormattingStack: NSStackView?
     private var imageResizeDragState: ImageResizeDragState?
@@ -672,6 +686,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
 
         let menu = conciseEditingMenu(from: nativeMenu)
+        appendImageResizeMenuIfNeeded(to: menu, for: event)
         configureContextMenu?(menu, event)
         sealContextMenu(menu)
         menu.delegate = self
@@ -681,7 +696,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     @discardableResult
     func resizeImage(
         atCharacterIndex characterIndex: Int,
-        preferredWidth: Double,
+        preferredWidth: Double?,
         persistsDisplayWidth: Bool = true
     ) -> Bool {
         guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex),
@@ -699,6 +714,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             preferredWidth: preferredWidth
         )
         attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
+        if let cell = attachment.attachmentCell as? NSCell {
+            cell.setAccessibilityLabel("图片")
+            cell.setAccessibilityValue("宽度 \(Int(displaySize.width.rounded())) 点")
+        }
         layoutManager?.invalidateLayout(
             forCharacterRange: reference.range,
             actualCharacterRange: nil
@@ -711,6 +730,129 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             onImageDisplayWidthChanged?(URL(fileURLWithPath: reference.path), preferredWidth)
         }
         return true
+    }
+
+    @discardableResult
+    func applyImageDisplayWidth(
+        for fileURL: URL,
+        preferredWidth: Double?,
+        registersUndo: Bool = true
+    ) -> Bool {
+        guard let characterIndex = characterIndexForImage(at: fileURL) else {
+            return false
+        }
+        let standardizedURL = fileURL.standardizedFileURL
+        let previousWidth = imageDisplayWidthProvider?(standardizedURL)
+        guard resizeImage(
+            atCharacterIndex: characterIndex,
+            preferredWidth: preferredWidth,
+            persistsDisplayWidth: false
+        ) else {
+            return false
+        }
+        onImageDisplayWidthChanged?(standardizedURL, preferredWidth)
+        if registersUndo, previousWidth != preferredWidth {
+            registerImageResizeUndo(fileURL: standardizedURL, restoring: previousWidth)
+        }
+        return true
+    }
+
+    func imageResizeMenu(atCharacterIndex characterIndex: Int) -> NSMenu? {
+        guard let reference = imageAttachmentReference(atCharacterIndex: characterIndex) else {
+            return nil
+        }
+        let fileURL = URL(fileURLWithPath: reference.path).standardizedFileURL
+        let availableWidth = MarkdownImageDisplaySizing.clampedWidth(
+            max(visibleRect.width - (textContainerInset.width * 2) - 8, 80)
+        )
+        let menu = NSMenu(title: "图片大小")
+        let commands: [(String, Double?)] = [
+            ("适合编辑器", availableWidth),
+            ("25%", availableWidth * 0.25),
+            ("50%", availableWidth * 0.5),
+            ("75%", availableWidth * 0.75),
+            ("100%", availableWidth),
+            ("原始大小", Double(reference.naturalSize.width))
+        ]
+        for (title, preferredWidth) in commands {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(imageResizeMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = MarkdownImageResizeMenuCommand(
+                fileURL: fileURL,
+                preferredWidth: preferredWidth.map {
+                    MarkdownImageDisplaySizing.clampedWidth(CGFloat($0))
+                }
+            )
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let reset = NSMenuItem(
+            title: "重置自定义大小",
+            action: #selector(imageResizeMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        reset.target = self
+        reset.representedObject = MarkdownImageResizeMenuCommand(fileURL: fileURL, preferredWidth: nil)
+        menu.addItem(reset)
+        return menu
+    }
+
+    private func appendImageResizeMenuIfNeeded(to menu: NSMenu, for event: NSEvent) {
+        guard let characterIndex = characterIndex(at: event),
+              let submenu = imageResizeMenu(atCharacterIndex: characterIndex) else {
+            return
+        }
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        let item = NSMenuItem(title: "图片大小", action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "photo", accessibilityDescription: "图片大小")
+        item.submenu = submenu
+        menu.addItem(item)
+    }
+
+    @objc
+    private func imageResizeMenuItemPressed(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? MarkdownImageResizeMenuCommand else {
+            return
+        }
+        _ = applyImageDisplayWidth(
+            for: command.fileURL,
+            preferredWidth: command.preferredWidth
+        )
+    }
+
+    private func characterIndexForImage(at fileURL: URL) -> Int? {
+        guard let textStorage else { return nil }
+        let path = fileURL.standardizedFileURL.path
+        var match: Int?
+        textStorage.enumerateAttribute(
+            .qmImageFilePath,
+            in: NSRange(location: 0, length: textStorage.length)
+        ) { value, range, stop in
+            guard let candidate = value as? String,
+                  URL(fileURLWithPath: candidate).standardizedFileURL.path == path else {
+                return
+            }
+            match = range.location
+            stop.pointee = true
+        }
+        return match
+    }
+
+    private func registerImageResizeUndo(fileURL: URL, restoring preferredWidth: Double?) {
+        undoManager?.registerUndo(withTarget: self) { target in
+            _ = target.applyImageDisplayWidth(
+                for: fileURL,
+                preferredWidth: preferredWidth,
+                registersUndo: true
+            )
+        }
+        undoManager?.setActionName("调整图片大小")
     }
 
     func imageAttachmentFrame(atCharacterIndex characterIndex: Int) -> NSRect? {
@@ -863,6 +1005,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
                 initialWidth: reference.displaySize.width,
                 horizontalDirection: resizeEdge.direction,
                 fileURL: URL(fileURLWithPath: reference.path),
+                initialPersistedWidth: imageDisplayWidthProvider?(
+                    URL(fileURLWithPath: reference.path).standardizedFileURL
+                ),
                 currentWidth: Double(reference.displaySize.width)
             )
             window?.invalidateCursorRects(for: self)
@@ -922,12 +1067,48 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     override func mouseUp(with event: NSEvent) {
         if let resize = imageResizeDragState {
             imageResizeDragState = nil
-            onImageDisplayWidthChanged?(resize.fileURL, resize.currentWidth)
+            if abs(resize.currentWidth - Double(resize.initialWidth)) > 0.5 {
+                onImageDisplayWidthChanged?(resize.fileURL, resize.currentWidth)
+                registerImageResizeUndo(
+                    fileURL: resize.fileURL.standardizedFileURL,
+                    restoring: resize.initialPersistedWidth
+                )
+            }
             window?.invalidateCursorRects(for: self)
             updateHoverCursor(with: event)
             return
         }
         super.mouseUp(with: event)
+    }
+
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        var actions = super.accessibilityCustomActions() ?? []
+        guard let fileURL = selectedImageFileURL() else { return actions }
+        let fitAction = NSAccessibilityCustomAction(name: "图片适合编辑器") { [weak self] in
+            guard let self else { return false }
+            let width = MarkdownImageDisplaySizing.clampedWidth(
+                max(self.visibleRect.width - (self.textContainerInset.width * 2) - 8, 80)
+            )
+            return self.applyImageDisplayWidth(for: fileURL, preferredWidth: width)
+        }
+        let resetAction = NSAccessibilityCustomAction(name: "重置图片大小") { [weak self] in
+            self?.applyImageDisplayWidth(for: fileURL, preferredWidth: nil) ?? false
+        }
+        actions.append(contentsOf: [fitAction, resetAction])
+        return actions
+    }
+
+    private func selectedImageFileURL() -> URL? {
+        guard let textStorage, textStorage.length > 0 else { return nil }
+        let location = min(selectedRange().location, textStorage.length - 1)
+        guard let path = textStorage.attribute(
+            .qmImageFilePath,
+            at: location,
+            effectiveRange: nil
+        ) as? String else {
+            return nil
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL
     }
 
     func showSelectionMenuIfNeeded() {
@@ -1074,7 +1255,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             at: characterIndex,
             effectiveRange: nil
         ) as? NSTextAttachment,
-        let naturalSize = attachment.image?.size,
+        let naturalSize = MarkdownRichTextCodec.naturalImageSize(for: attachment),
         naturalSize.width > 0,
         naturalSize.height > 0 else {
             return nil
@@ -1515,11 +1696,157 @@ private final class FileAttachmentPreviewCell: NSTextAttachmentCell {
     }
 }
 
+enum MarkdownImageDecoding {
+    static let maximumThumbnailPixelSize = 2_400
+
+    static func pixelSize(at imageURL: URL) -> NSSize? {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.doubleValue > 0,
+              height.doubleValue > 0 else {
+            return nil
+        }
+        return NSSize(width: width.doubleValue, height: height.doubleValue)
+    }
+
+    nonisolated static func thumbnail(
+        at imageURL: URL,
+        maximumPixelSize: Int = maximumThumbnailPixelSize
+    ) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary) else {
+            return nil
+        }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
+    }
+}
+
+private final class MarkdownDecodedImageCacheEntry: NSObject {
+    let image: CGImage
+
+    init(image: CGImage) {
+        self.image = image
+    }
+}
+
+actor MarkdownImageDecodeService {
+    static let shared = MarkdownImageDecodeService()
+
+    private let cache: NSCache<NSString, MarkdownDecodedImageCacheEntry>
+    private(set) var decodeCount = 0
+
+    init() {
+        cache = NSCache<NSString, MarkdownDecodedImageCacheEntry>()
+        cache.countLimit = 64
+        cache.totalCostLimit = 128 * 1_024 * 1_024
+    }
+
+    func thumbnail(
+        at imageURL: URL,
+        maximumPixelSize: Int = MarkdownImageDecoding.maximumThumbnailPixelSize
+    ) -> CGImage? {
+        let standardizedURL = imageURL.standardizedFileURL
+        let values = try? standardizedURL.resourceValues(forKeys: [
+            .contentModificationDateKey,
+            .fileSizeKey
+        ])
+        let modifiedAt = values?.contentModificationDate?.timeIntervalSinceReferenceDate ?? -1
+        let fileSize = values?.fileSize ?? -1
+        let key = [
+            standardizedURL.path,
+            String(modifiedAt),
+            String(fileSize),
+            String(maximumPixelSize)
+        ].joined(separator: "|") as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached.image
+        }
+        guard let image = MarkdownImageDecoding.thumbnail(
+            at: standardizedURL,
+            maximumPixelSize: maximumPixelSize
+        ) else {
+            return nil
+        }
+        decodeCount += 1
+        cache.setObject(
+            MarkdownDecodedImageCacheEntry(image: image),
+            forKey: key,
+            cost: image.bytesPerRow * image.height
+        )
+        return image
+    }
+
+    func resetForTesting() {
+        cache.removeAllObjects()
+        decodeCount = 0
+    }
+}
+
+@MainActor
+final class AsyncImageAttachmentCell: NSTextAttachmentCell {
+    private let imageURL: URL
+    let naturalSize: NSSize
+    private var decodeTask: Task<Void, Never>?
+    private(set) var hasDecodedImage = false
+
+    init(imageURL: URL, naturalSize: NSSize) {
+        self.imageURL = imageURL
+        self.naturalSize = naturalSize
+        super.init(imageCell: NSImage(size: naturalSize))
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        decodeTask?.cancel()
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        beginDecodingIfNeeded(in: controlView)
+        if hasDecodedImage {
+            super.draw(withFrame: cellFrame, in: controlView)
+        } else {
+            let placeholder = NSBezierPath(roundedRect: cellFrame, xRadius: 8, yRadius: 8)
+            panelSubtleFillColor().withAlphaComponent(0.18).setFill()
+            placeholder.fill()
+        }
+    }
+
+    func beginDecodingIfNeeded(in controlView: NSView?) {
+        guard decodeTask == nil, !hasDecodedImage else { return }
+        let imageURL = imageURL
+        let naturalSize = naturalSize
+        weak let textView = controlView as? NSTextView
+        decodeTask = Task { [weak self, weak textView] in
+            guard !Task.isCancelled,
+                  let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL),
+                  !Task.isCancelled,
+                  let self else {
+                return
+            }
+            self.image = NSImage(cgImage: thumbnail, size: naturalSize)
+            self.hasDecodedImage = true
+            textView?.needsDisplay = true
+        }
+    }
+}
+
 enum MarkdownRichTextCodec {
     private static let tablePlaceholder = "\u{200B}"
 
     private struct ParsedMarkdownTable {
         let rows: [[String]]
+        let alignments: [String]
         let consumedLineCount: Int
     }
 
@@ -1540,6 +1867,7 @@ enum MarkdownRichTextCodec {
                 let nextLineIndex = lineIndex + table.consumedLineCount
                 output.append(renderTable(
                     rows: table.rows,
+                    alignments: table.alignments,
                     representsFollowingMarkdownLine: nextLineIndex < lines.count,
                     theme: theme,
                     baseURL: baseURL
@@ -1595,7 +1923,7 @@ enum MarkdownRichTextCodec {
                     at: range.location,
                     effectiveRange: nil
                   ) as? NSTextAttachment,
-                  let naturalSize = attachment.image?.size else {
+                  let naturalSize = naturalImageSize(for: attachment) else {
                 return
             }
             let displaySize = MarkdownImageDisplaySizing.displaySize(
@@ -1609,6 +1937,13 @@ enum MarkdownRichTextCodec {
                 height: displaySize.height
             )
         }
+    }
+
+    static func naturalImageSize(for attachment: NSTextAttachment) -> NSSize? {
+        if let cell = attachment.attachmentCell as? AsyncImageAttachmentCell {
+            return cell.naturalSize
+        }
+        return attachment.image?.size
     }
 
     @MainActor
@@ -1690,6 +2025,7 @@ enum MarkdownRichTextCodec {
     @MainActor
     private static func renderTable(
         rows: [[String]],
+        alignments: [String],
         representsFollowingMarkdownLine: Bool,
         theme: MarkdownEditorTheme,
         baseURL: URL?
@@ -1749,7 +2085,10 @@ enum MarkdownRichTextCodec {
                     .qmTableID: tableID,
                     .qmTableRow: rowIndex,
                     .qmTableColumn: columnIndex,
-                    .qmTableColumnCount: columnCount
+                    .qmTableColumnCount: columnCount,
+                    .qmTableColumnAlignment: alignments.indices.contains(columnIndex)
+                        ? alignments[columnIndex]
+                        : "---"
                 ], range: cellRange)
                 if isPlaceholder {
                     cell.addAttribute(.qmTablePlaceholder, value: true, range: cellRange)
@@ -1780,6 +2119,8 @@ enum MarkdownRichTextCodec {
               separator.allSatisfy(isMarkdownTableSeparatorCell) else {
             return nil
         }
+        let alignments = separator.compactMap(markdownTableAlignment)
+        guard alignments.count == header.count else { return nil }
 
         var rows = [header]
         var nextIndex = index + 2
@@ -1790,23 +2131,67 @@ enum MarkdownRichTextCodec {
             rows.append(row)
             nextIndex += 1
         }
-        return ParsedMarkdownTable(rows: rows, consumedLineCount: nextIndex - index)
+        return ParsedMarkdownTable(
+            rows: rows,
+            alignments: alignments,
+            consumedLineCount: nextIndex - index
+        )
     }
 
     private static func markdownTableCells(in line: String) -> [String]? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
-        let cells = trimmed
-            .split(separator: "|", omittingEmptySubsequences: false)
-            .dropFirst()
-            .dropLast()
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let interior = trimmed.dropFirst().dropLast()
+        var cells: [String] = []
+        var cell = ""
+        var pendingBackslashes = 0
+
+        func appendPendingBackslashes(removingEscape: Bool = false) {
+            let count = max(pendingBackslashes - (removingEscape ? 1 : 0), 0)
+            if count > 0 {
+                cell.append(String(repeating: "\\", count: count))
+            }
+            pendingBackslashes = 0
+        }
+
+        for character in interior {
+            if character == "\\" {
+                pendingBackslashes += 1
+                continue
+            }
+            if character == "|" {
+                if pendingBackslashes > 0 {
+                    appendPendingBackslashes(removingEscape: true)
+                    cell.append("|")
+                } else {
+                    cells.append(cell.trimmingCharacters(in: .whitespacesAndNewlines))
+                    cell = ""
+                }
+                continue
+            }
+            appendPendingBackslashes()
+            cell.append(character)
+        }
+        appendPendingBackslashes()
+        cells.append(cell.trimmingCharacters(in: .whitespacesAndNewlines))
         return cells.count >= 2 ? cells : nil
     }
 
     private static func isMarkdownTableSeparatorCell(_ cell: String) -> Bool {
         let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
         return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
+    }
+
+    private static func markdownTableAlignment(_ cell: String) -> String? {
+        guard isMarkdownTableSeparatorCell(cell) else { return nil }
+        let hasLeadingColon = cell.hasPrefix(":")
+        let hasTrailingColon = cell.hasSuffix(":")
+        switch (hasLeadingColon, hasTrailingColon) {
+        case (true, true): return ":---:"
+        case (true, false): return ":---"
+        case (false, true): return "---:"
+        case (false, false): return "---"
+        }
     }
 
     private static func serializedTable(
@@ -1822,6 +2207,7 @@ enum MarkdownRichTextCodec {
 
         let nsString = attributedString.string as NSString
         var rows: [Int: [Int: String]] = [:]
+        var alignments: [Int: String] = [:]
         var columnCount = 0
         var cursor = location
 
@@ -1844,6 +2230,14 @@ enum MarkdownRichTextCodec {
                 columnCount,
                 attributedString.attribute(.qmTableColumnCount, at: metadataLocation, effectiveRange: nil) as? Int ?? 0
             )
+            if alignments[column] == nil,
+               let alignment = attributedString.attribute(
+                   .qmTableColumnAlignment,
+                   at: metadataLocation,
+                   effectiveRange: nil
+               ) as? String {
+                alignments[column] = alignment
+            }
             let markdown = serializeInline(
                 range: contentRange,
                 in: attributedString,
@@ -1864,7 +2258,8 @@ enum MarkdownRichTextCodec {
             let cells = (0..<columnCount).map { rows[row]?[$0] ?? "" }
             markdownLines.append("| " + cells.joined(separator: " | ") + " |")
             if row == 0 {
-                markdownLines.append("| " + Array(repeating: "---", count: columnCount).joined(separator: " | ") + " |")
+                let separatorCells = (0..<columnCount).map { alignments[$0] ?? "---" }
+                markdownLines.append("| " + separatorCells.joined(separator: " | ") + " |")
             }
         }
         return (markdownLines.joined(separator: "\n"), cursor)
@@ -2206,7 +2601,7 @@ enum MarkdownRichTextCodec {
         while index < source.endIndex {
             if source[index...].hasPrefix("!["),
                let closeBracket = source[source.index(index, offsetBy: 2)...].range(of: "]("),
-               let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
+               let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
                 let label = String(source[source.index(index, offsetBy: 2)..<closeBracket.lowerBound])
                 let path = String(source[closeBracket.upperBound..<closeParen])
                 let markdown = String(source[index...closeParen])
@@ -2297,7 +2692,7 @@ enum MarkdownRichTextCodec {
 
             if source[index...].hasPrefix("["),
                let closeBracket = source[index...].range(of: "]("),
-               let closeParen = source[closeBracket.upperBound...].firstIndex(of: ")") {
+               let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
                 let label = String(source[source.index(after: index)..<closeBracket.lowerBound])
                 let url = String(source[closeBracket.upperBound..<closeParen])
                 let markdown = String(source[index...closeParen])
@@ -2346,6 +2741,32 @@ enum MarkdownRichTextCodec {
         }
         applyAutomaticLinks(in: output, range: NSRange(location: 0, length: output.length), theme: theme)
         return output
+    }
+
+    private static func closingLinkParenthesis(
+        in source: String,
+        after destinationStart: String.Index
+    ) -> String.Index? {
+        var nestedDepth = 0
+        var isEscaped = false
+        var cursor = destinationStart
+        while cursor < source.endIndex {
+            let character = source[cursor]
+            if isEscaped {
+                isEscaped = false
+            } else if character == "\\" {
+                isEscaped = true
+            } else if character == "(" {
+                nestedDepth += 1
+            } else if character == ")" {
+                if nestedDepth == 0 {
+                    return cursor
+                }
+                nestedDepth -= 1
+            }
+            cursor = source.index(after: cursor)
+        }
+        return nil
     }
 
     @MainActor
@@ -2465,17 +2886,18 @@ enum MarkdownRichTextCodec {
         baseURL: URL?
     ) -> NSAttributedString? {
         guard let imageURL = localImageURL(path: path, baseURL: baseURL),
-              let image = NSImage(contentsOf: imageURL),
-              image.size.width > 0,
-              image.size.height > 0
+              let naturalSize = MarkdownImageDecoding.pixelSize(at: imageURL)
         else {
             return nil
         }
 
-        let displaySize = MarkdownImageDisplaySizing.fitSize(for: image.size)
+        let displaySize = MarkdownImageDisplaySizing.fitSize(for: naturalSize)
 
         let attachment = NSTextAttachment()
-        attachment.image = image
+        attachment.attachmentCell = AsyncImageAttachmentCell(
+            imageURL: imageURL,
+            naturalSize: naturalSize
+        )
         attachment.bounds = NSRect(x: 0, y: -4, width: displaySize.width, height: displaySize.height)
 
         let attributed = NSMutableAttributedString(attachment: attachment)

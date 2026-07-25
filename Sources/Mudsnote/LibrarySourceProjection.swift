@@ -1,9 +1,9 @@
 import Foundation
 import MudsnoteCore
 
-func libraryIsInboxNote(_ note: NoteSearchResult) -> Bool {
+func libraryIsInboxNote(_ note: NoteSearchResult, inboxDirectory: URL) -> Bool {
     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-        || note.title.localizedCaseInsensitiveContains("Inbox")
+        || note.url.deletingLastPathComponent().standardizedFileURL == inboxDirectory.standardizedFileURL
 }
 
 struct LibraryFolderRow: Equatable, Sendable {
@@ -132,14 +132,14 @@ struct LibrarySourceCountIndex: Sendable {
     private let directFolderCounts: [String: Int]
     private let tagCounts: [String: Int]
 
-    init(notes: [NoteSearchResult], folderPaths: Set<String>) {
+    init(notes: [NoteSearchResult], folderPaths: Set<String>, inboxDirectory: URL) {
         var inboxCount = 0
         var recursiveFolderCounts: [String: Int] = [:]
         var directFolderCounts: [String: Int] = [:]
         var tagCounts: [String: Int] = [:]
 
         for note in notes {
-            if libraryIsInboxNote(note) {
+            if libraryIsInboxNote(note, inboxDirectory: inboxDirectory) {
                 inboxCount += 1
             }
 

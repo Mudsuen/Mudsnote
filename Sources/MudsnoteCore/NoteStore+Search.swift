@@ -49,8 +49,7 @@ public final class NoteSearchSession: @unchecked Sendable {
 
     public func searchInboxNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
         scopedSearchResults(query: query, limit: limit) { entry in
-            entry.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                || entry.title.localizedCaseInsensitiveContains("Inbox")
+            noteStore.isInboxNote(at: entry.url)
         }
     }
 
@@ -166,9 +165,20 @@ extension NoteStore {
 
     public func searchInboxNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
         scopedSearchResults(query: query, limit: limit) { entry in
-            entry.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                || entry.title.localizedCaseInsensitiveContains("Inbox")
+            isInboxNote(at: entry.url)
         }
+    }
+
+    public func markSearchIndexDirty(at urls: some Sequence<URL>) {
+        searchIndexLock.lock()
+        dirtySearchIndexPaths.formUnion(urls.map { $0.standardizedFileURL.path })
+        searchIndexLock.unlock()
+    }
+
+    public func invalidateSearchIndexContents() {
+        searchIndexLock.lock()
+        searchIndexRequiresFullRefresh = true
+        searchIndexLock.unlock()
     }
 
     public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
@@ -244,7 +254,7 @@ extension NoteStore {
         }
 
         let titleScore = titleLower.contains(loweredQuery) ? 100 : 0
-        let occurrences = max(entry.bodyLower.components(separatedBy: loweredQuery).count - 1, 0)
+        let occurrences = occurrenceCount(of: loweredQuery, in: entry.bodyLower, stoppingAt: 6)
         let bodyScore = min(occurrences * 15, 90)
         let tagScore = entry.tagsLower.contains(where: { $0 == loweredQuery }) ? 80 : (entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) ? 40 : 0)
         let snippet = snippet(from: entry.body, query: loweredQuery)
@@ -264,12 +274,27 @@ extension NoteStore {
         )
     }
 
+    private func occurrenceCount(of needle: String, in haystack: String, stoppingAt limit: Int) -> Int {
+        guard !needle.isEmpty, limit > 0 else { return 0 }
+        var count = 0
+        var searchStart = haystack.startIndex
+        while searchStart < haystack.endIndex,
+              let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+            count += 1
+            if count == limit { break }
+            searchStart = range.upperBound
+        }
+        return count
+    }
+
     func indexedEntries(roots: [URL]? = nil) -> [NoteSearchIndexEntry] {
         searchIndexLock.lock()
         defer { searchIndexLock.unlock() }
 
         let searchRoots = roots ?? knownSearchRoots()
         let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+        let dirtyPaths = dirtySearchIndexPaths
+        let requiresFullRefresh = searchIndexRequiresFullRefresh
         var signatures: [String: NoteSearchFileSignature] = [:]
         var fileURLs: [URL] = []
         var seenPaths = Set<String>()
@@ -294,7 +319,10 @@ extension NoteStore {
             reusableSnapshot = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
         }
 
-        if let reusableSnapshot, reusableSnapshot.fileSignatures == signatures {
+        if !requiresFullRefresh,
+           dirtyPaths.isEmpty,
+           let reusableSnapshot,
+           reusableSnapshot.fileSignatures == signatures {
             searchIndexSnapshot = reusableSnapshot
             return reusableSnapshot.entries
         }
@@ -305,7 +333,10 @@ extension NoteStore {
         let reusableSignatures = reusableSnapshot?.fileSignatures ?? [:]
         let entries = fileURLs.compactMap { fileURL -> NoteSearchIndexEntry? in
             let path = fileURL.path
-            if reusableSignatures[path] == signatures[path], let entry = reusableEntriesByPath[path] {
+            if !requiresFullRefresh,
+               !dirtyPaths.contains(path),
+               reusableSignatures[path] == signatures[path],
+               let entry = reusableEntriesByPath[path] {
                 return entry
             }
             return indexedEntry(for: fileURL, signature: signatures[path])
@@ -316,6 +347,10 @@ extension NoteStore {
             entries: entries
         )
         searchIndexSnapshot = snapshot
+        dirtySearchIndexPaths.subtract(dirtyPaths)
+        if requiresFullRefresh {
+            searchIndexRequiresFullRefresh = false
+        }
         writeSearchIndexSnapshotToDisk(snapshot)
         return entries
     }

@@ -15,8 +15,11 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
+    var dirtySearchIndexPaths = Set<String>()
+    var searchIndexRequiresFullRefresh = false
     var searchIndexEntryReadCountForTesting = 0
     var searchIndexSignatureReadCountForTesting = 0
+    var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?
     var searchIndexCacheURL: URL {
         appSupportDirectory
             .appendingPathComponent("SearchIndex", isDirectory: true)
@@ -60,6 +63,11 @@ public final class NoteStore: @unchecked Sendable {
 
         return result
     }
+}
+
+enum NoteUpdateCommitCheckpoint {
+    case afterStaging
+    case afterDestinationCommit
 }
 
 struct NoteSearchIndexSnapshot: Codable {
