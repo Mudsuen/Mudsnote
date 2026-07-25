@@ -119,14 +119,26 @@ extension NoteStore {
         let targetDirectory = directory ?? currentDirectory
         try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
 
+        let existingText = try String(contentsOf: sourceURL, encoding: .utf8)
         let desiredURL = uniqueUpdatedFileURL(for: title, currentURL: sourceURL, in: targetDirectory)
         if desiredURL == sourceURL {
-            try writeNote(to: sourceURL, title: title, body: body, tags: tags)
+            try writeNote(
+                to: sourceURL,
+                title: title,
+                body: body,
+                tags: tags,
+                preservingFrontMatterFrom: existingText
+            )
         } else {
             try commitUpdatedNote(
                 from: sourceURL,
                 to: desiredURL,
-                content: storedNoteContent(title: title, body: body, tags: tags)
+                content: storedNoteContent(
+                    title: title,
+                    body: body,
+                    tags: tags,
+                    preservingFrontMatterFrom: existingText
+                )
             )
         }
 
@@ -139,7 +151,14 @@ extension NoteStore {
 
     public func updateNoteInPlace(at url: URL, title: String, body: String, tags: [String] = []) throws -> URL {
         let standardizedURL = url.standardizedFileURL
-        try writeNote(to: standardizedURL, title: title, body: body, tags: tags)
+        let existingText = try? String(contentsOf: standardizedURL, encoding: .utf8)
+        try writeNote(
+            to: standardizedURL,
+            title: title,
+            body: body,
+            tags: tags,
+            preservingFrontMatterFrom: existingText
+        )
         rememberRecentFile(standardizedURL)
         return standardizedURL
     }
@@ -379,35 +398,31 @@ extension NoteStore {
         let frontMatter = Array(lines[1..<closingIndex])
         let body = Array(lines[(closingIndex + 1)...]).joined(separator: "\n")
             .trimmingCharacters(in: .newlines)
-        var tags: [String] = []
-        var inTags = false
-
-        for line in frontMatter {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed == "tags:" {
-                inTags = true
-                continue
-            }
-
-            if inTags, trimmed.hasPrefix("- ") {
-                tags.append(String(trimmed.dropFirst(2)))
-                continue
-            }
-
-            if !trimmed.isEmpty {
-                inTags = false
-            }
-        }
-
-        return (body, MarkdownEditorDocument.normalizedTags(tags))
+        return (body, frontMatterTags(in: frontMatter))
     }
 
-    private func writeNote(to url: URL, title: String, body: String, tags: [String] = []) throws {
-        try storedNoteContent(title: title, body: body, tags: tags)
+    private func writeNote(
+        to url: URL,
+        title: String,
+        body: String,
+        tags: [String] = [],
+        preservingFrontMatterFrom existingText: String? = nil
+    ) throws {
+        try storedNoteContent(
+            title: title,
+            body: body,
+            tags: tags,
+            preservingFrontMatterFrom: existingText
+        )
             .write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private func storedNoteContent(title: String, body: String, tags: [String]) -> String {
+    private func storedNoteContent(
+        title: String,
+        body: String,
+        tags: [String],
+        preservingFrontMatterFrom existingText: String? = nil
+    ) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedTags = MarkdownEditorDocument.normalizedTags(tags)
@@ -421,12 +436,86 @@ extension NoteStore {
             content = "# \(trimmedTitle)\n\n\(trimmedBody)\n"
         }
 
-        if normalizedTags.isEmpty {
-            return content
+        if let existingText,
+           let frontMatter = frontMatterLines(in: existingText) {
+            let updatedLines = updatingFrontMatterTags(frontMatter, tags: normalizedTags)
+            return "---\n\(updatedLines.joined(separator: "\n"))\n---\n\n\(content)"
         }
 
+        guard !normalizedTags.isEmpty else { return content }
         let tagLines = normalizedTags.map { "- \($0)" }.joined(separator: "\n")
         return "---\ntags:\n\(tagLines)\n---\n\n\(content)"
+    }
+
+    private func frontMatterLines(in text: String) -> [String]? {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        guard normalized.hasPrefix("---\n") else { return nil }
+        let lines = normalized.components(separatedBy: "\n")
+        guard let closingIndex = lines.dropFirst().firstIndex(of: "---") else { return nil }
+        return Array(lines[1..<closingIndex])
+    }
+
+    private func frontMatterTags(in lines: [String]) -> [String] {
+        guard let range = frontMatterTagBlockRange(in: lines) else { return [] }
+        let firstLine = lines[range.lowerBound]
+        let colon = firstLine.firstIndex(of: ":")!
+        let inlineValue = String(firstLine[firstLine.index(after: colon)...])
+            .trimmingCharacters(in: .whitespaces)
+        if inlineValue.hasPrefix("["), inlineValue.hasSuffix("]") {
+            let values = inlineValue.dropFirst().dropLast().split(separator: ",").map {
+                String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            }
+            return MarkdownEditorDocument.normalizedTags(values)
+        }
+        let tags = lines[range].dropFirst().compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("- ") else { return nil }
+            return String(trimmed.dropFirst(2))
+        }
+        return MarkdownEditorDocument.normalizedTags(tags)
+    }
+
+    private func updatingFrontMatterTags(_ lines: [String], tags: [String]) -> [String] {
+        var updated = lines
+        let replacement = tags.isEmpty ? [] : ["tags:"] + tags.map { "  - \($0)" }
+        if let range = frontMatterTagBlockRange(in: lines) {
+            let preservedComments = lines[range].dropFirst().filter {
+                $0.trimmingCharacters(in: .whitespaces).hasPrefix("#")
+            }
+            updated.replaceSubrange(range, with: replacement + preservedComments)
+        } else if !replacement.isEmpty {
+            if updated.last?.isEmpty == false {
+                updated.append("")
+            }
+            updated.append(contentsOf: replacement)
+        }
+        return updated
+    }
+
+    private func frontMatterTagBlockRange(in lines: [String]) -> Range<Int>? {
+        guard let start = lines.firstIndex(where: { frontMatterKey(in: $0) == "tags" }) else {
+            return nil
+        }
+        let end = lines.indices.dropFirst(start + 1).first(where: {
+            frontMatterKey(in: lines[$0]) != nil
+        }) ?? lines.endIndex
+        return start..<end
+    }
+
+    private func frontMatterKey(in line: String) -> String? {
+        guard let first = line.first,
+              !first.isWhitespace,
+              let colon = line.firstIndex(of: ":") else {
+            return nil
+        }
+        let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, key.allSatisfy({
+            $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-"
+        }) else {
+            return nil
+        }
+        return key.lowercased()
     }
 
     private func commitUpdatedNote(from sourceURL: URL, to destinationURL: URL, content: String) throws {

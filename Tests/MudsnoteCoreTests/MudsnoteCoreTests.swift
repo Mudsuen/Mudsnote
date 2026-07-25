@@ -50,6 +50,89 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func noteUpdatePreservesUnknownFrontMatterAndOnlyRewritesTags() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Front Matter.md")
+        let original = """
+        ---
+        layout: note
+        aliases:
+          - Alpha
+        # keep this comment
+        tags: [old, legacy]
+        published: false
+        nested:
+          owner: me
+        ---
+        # Original
+
+        Original body
+        """
+        try original.write(to: noteURL, atomically: true, encoding: .utf8)
+        #expect(try store.loadNote(at: noteURL).tags == ["old", "legacy"])
+
+        _ = try store.updateNoteInPlace(
+            at: noteURL,
+            title: "Updated",
+            body: "Updated body",
+            tags: ["new", "second"]
+        )
+
+        let expected = """
+        ---
+        layout: note
+        aliases:
+          - Alpha
+        # keep this comment
+        tags:
+          - new
+          - second
+        published: false
+        nested:
+          owner: me
+        ---
+
+        # Updated
+
+        Updated body
+
+        """
+        #expect(try String(contentsOf: noteURL, encoding: .utf8) == expected)
+    }
+
+    @Test
+    func clearingTagsPreservesFrontMatterCommentsAndUnknownFields() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Clear Tags.md")
+        try """
+        ---
+        category: reference
+        tags:
+          # keep managed-field context
+          - old
+        custom: yes
+        ---
+        # Original
+        """.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        _ = try store.updateNoteInPlace(
+            at: noteURL,
+            title: "Original",
+            body: "",
+            tags: []
+        )
+
+        let updated = try String(contentsOf: noteURL, encoding: .utf8)
+        #expect(updated.contains("category: reference"))
+        #expect(updated.contains("# keep managed-field context"))
+        #expect(updated.contains("custom: yes"))
+        #expect(!updated.contains("tags:"))
+        #expect(!updated.contains("- old"))
+    }
+
+    @Test
     func managedUpdatesPreserveMarkdownAndTextExtensions() throws {
         for pathExtension in ["markdown", "txt"] {
             let harness = try TestHarness()
