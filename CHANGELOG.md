@@ -17,6 +17,111 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 243. Serialized background library autosave
+- Problem: Library autosave hashed the current disk revision and performed transactional note writes on the main thread, so large notes or slow volumes could pause editing.
+- Fix: The main thread now captures one stable Markdown snapshot, while revision validation and disk persistence run on a serial utility queue; explicit save, navigation, and close drain completed writes before continuing, and newer editor revisions remain dirty.
+- Lesson: Background autosave needs a completion barrier and revision-aware UI reconciliation, not only an asynchronous write call.
+
+### 242. Explicit Inbox semantics and event-driven search refresh
+- Problem: Notes whose titles merely contained “Inbox” polluted Inbox results and counts, while equal-size external rewrites with restored timestamps could reuse stale search entries.
+- Fix: Inbox membership now uses only the configured Inbox directory or an exact `Inbox.md` filename; filesystem events mark changed paths dirty (or force a full refresh after dropped events), and body occurrence scoring no longer allocates split arrays.
+- Lesson: Classification needs an explicit identity contract, and a cache must accept authoritative change events instead of trusting lossy metadata signatures.
+
+### 241. Safe cross-directory attachment relocation
+- Problem: Moving one note to another directory left its relative image and file references pointing at the old folder, so previews and attachment actions silently broke.
+- Fix: Cross-directory note updates and library moves now copy referenced files from the source `Attachments` tree, preserve its subdirectory structure, resolve filename collisions, rewrite Markdown paths, retain shared source files, and clean copied files if the note commit fails.
+- Lesson: A note and its relative attachments form one relocation transaction, but source attachments cannot be deleted until sharing is proven absent.
+
+### 240. Lossless managed Front Matter updates
+- Problem: Saving a note rebuilt YAML Front Matter from only `tags`, deleting unknown keys, nested values, comments, and ordering.
+- Fix: Existing Front Matter is now retained line-for-line outside the managed `tags` block; block and inline tag forms are read, while tag edits replace or remove only that field.
+- Lesson: A Markdown editor that owns one metadata key must treat every other Front Matter byte as user data, not as disposable serialization detail.
+
+### 239. Transactional extension-preserving note updates
+- Problem: Renaming or moving an existing note moved the source before writing new content, so a write failure could leave a partial commit; managed `.markdown` and `.txt` files also silently became `.md`.
+- Fix: Updates now preserve the source extension, fully stage content in the destination directory, commit the destination before removing the source, and remove the committed destination again if the final source removal fails.
+- Lesson: A filesystem rename plus content rewrite is one transaction: validate and stage all fallible content work before changing the source-of-truth path.
+
+### 238. Visible and recoverable library save status
+- Problem: Successful saves collapsed back to a bare modification date, while autosave failures relied on a short label and beep without a discoverable recovery path.
+- Fix: The editor status now distinguishes saving, saved, conflict, and failure states with semantic color, exposes the same value to accessibility, announces consequential transitions, and points conflict or failure states to Command-S recovery.
+- Lesson: Autosave is trustworthy only when users can distinguish progress from completion and can discover how to recover without leaving the editor.
+
+### 237. Coalesced background draft persistence
+- Problem: Quick Capture and floating-note autosave encoded JSON and performed atomic disk writes on the main thread after every debounce interval.
+- Fix: Draft autosave now serializes disk operations on a utility queue, replaces queued stale snapshots with the newest revision, and synchronously drains the queue before close or termination writes the latest editor state.
+- Lesson: Background autosave needs both latest-wins coalescing and a synchronous final barrier; moving writes alone can let an older task overwrite the close-time snapshot.
+
+### 236. Indexed and batched thumbnail refreshes
+- Problem: Every completed library thumbnail decode scanned all list rows and gallery items, then reloaded the UI once per image.
+- Fix: List and gallery projections now maintain thumbnail-path reverse indexes, and decode completions coalesce their indexed row and item refreshes into one main-queue batch.
+- Lesson: Background decoding still needs an indexed, frame-batched completion path or large libraries pay repeated main-thread traversal and layout costs.
+
+### 235. Centralized Simplified Chinese library vocabulary
+- Problem: The first copy pass left date groups such as Pinned, Today, and Previous 7 Days in English and kept related Chinese strings scattered across controllers.
+- Fix: A focused library vocabulary now supplies navigation, search, counts, empty states, date groups, and placeholders; list and editor dates use an explicit Simplified Chinese locale and format.
+- Lesson: A localization pass is complete only when generated grouping and formatter output use the same locale as static controls.
+
+### 234. Revision-aware rich-image thumbnail cache
+- Problem: Rich-editor images were decoded off the main thread but every attachment and reopened window still repeated the same ImageIO work.
+- Fix: The bounded background decoder now reuses downsampled images by standardized path, modification time, file size, and target pixel budget, while file revisions automatically select a fresh cache entry.
+- Lesson: Moving expensive work off the main thread fixes responsiveness; revision-aware bounded reuse is still required to fix repeated CPU and memory cost.
+
+### 233. Undoable and keyboard-accessible image sizing
+- Problem: Image-edge dragging persisted only at mouse-up but still could not be undone as one action, and image sizing had no discoverable keyboard or VoiceOver alternative.
+- Fix: Each completed drag now registers one Undo/Redo operation, image context menus expose fit, percentage, original-size, and reset commands, and focused images provide accessibility actions plus a spoken width value.
+- Lesson: A pointer gesture is incomplete until the same state change is reversible and available through the responder chain and accessibility APIs.
+
+### 232. Guarded draft close and application termination
+- Problem: Quick Capture and floating-note windows attempted a final draft write only after closing had already committed, swallowed failures with a beep, and application termination did not aggregate draft persistence results.
+- Fix: Draft persistence now reports errors, clears dirty state only after success, blocks window close and app termination when a draft cannot be saved, preserves the editor, shows an actionable error, and prevents floating-note transitions after a failed draft flush.
+- Lesson: Every editable window needs a preflight persistence boundary; cleanup callbacks are too late to protect in-memory work.
+
+### 231. Consistent Chinese library states
+- Problem: The macOS library mixed English source names, search controls, counters, empty states, date labels, and note placeholders into an otherwise Chinese interface.
+- Fix: User-visible library navigation and transient states now use one Chinese vocabulary across the sidebar, toolbar search, list and gallery projections, Recently Deleted, accessibility labels, and result counters.
+- Lesson: Localization consistency includes loading, empty, accessibility, and metadata text—not only primary buttons and menus.
+
+### 230. Non-blocking rich-editor image decoding
+- Problem: Rendering a note decoded every local image synchronously on the main thread, so opening a note with large or multiple images could stall editing and window interaction.
+- Fix: The rich editor now reads only lightweight image dimensions while building the document, displays a correctly sized placeholder, and decodes a bounded thumbnail off the main thread when the attachment is first drawn.
+- Lesson: Rich document construction should establish layout from metadata and defer expensive media decoding until display, with the decoded pixel budget capped to the UI's actual needs.
+
+### 229. Lossless Markdown tables and parenthesized links
+- Problem: Opening and saving a supported Markdown table could split escaped pipes into extra columns and discard column alignment, while links or local attachments with balanced parentheses were truncated at the first closing parenthesis.
+- Fix: Table parsing now tokenizes escaped pipes and backslashes, stores each separator alignment with the native table cells, and restores it during serialization. Inline links, images, and file attachments now locate their destination with escape-aware balanced-parenthesis parsing.
+- Lesson: A rich Markdown view must round-trip every syntax form it claims to support; parsing and serialization need the same escaping and delimiter model.
+
+### 228. Transactional window-position reset
+- Problem: “重置窗口位置” erased stored layouts immediately even though the settings window presented Save and Cancel, so cancelling still lost the user's window arrangement.
+- Fix: Reset is now staged as a pending preference, the button confirms “保存后重置”, Save applies it after validated settings, and Cancel clears the intent without touching stored frames.
+- Lesson: Every action inside a Save/Cancel settings window must share the same commit boundary unless it is explicitly presented and confirmed as an immediate operation.
+
+### 227. Debounced background macOS search
+- Problem: The global search window and floating-note browser rebuilt and ranked the full search set synchronously on the main thread after every keystroke, causing input stalls and repeated filesystem signature validation in large libraries.
+- Fix: Both search surfaces now share a 150 ms debounced, cancellable background search controller that reuses one search session, ignores stale generations, and publishes only the latest results on the main actor. Result limits remain bounded, selection is preserved, and the UI exposes an in-progress state.
+- Lesson: Search typing should schedule immutable query work rather than perform it; generation-checked background results keep interaction responsive without allowing an older query to overwrite newer input.
+
+### 226. Complete large-library snapshots
+- Problem: The macOS library discarded every note after the 10,000th indexed entry before building source counts and list projections, making older notes and their folder or tag counts silently unreachable.
+- Fix: The library snapshot now retains all already-indexed note results for accurate counts and global top-240 projections, while the rendered list remains bounded and virtualized. A 10,001-note regression covers oldest-note title reachability and exact folder and tag counts.
+- Lesson: A bounded visible projection must not be implemented by truncating its source of truth; retain the full lightweight index and bound only the rows prepared for presentation.
+
+### 225. Resilient macOS library file monitoring
+- Problem: The live library monitor recognized only `.md` files even though the store also loads `.markdown` and `.txt`, and dropped or invalidated FSEvents could be ignored unless they were also marked as directory events.
+- Fix: The monitor now recognizes every supported note extension, treats must-scan, user-dropped, kernel-dropped, wrapped-ID, and root-change flags as unconditional full-rescan signals, and never suppresses those recovery events as internal writes.
+- Lesson: Incremental filesystem monitoring needs an explicit loss-recovery path; overflow signals describe an invalid event history, not an ordinary item change that can be filtered by path.
+
+### 224. Complete Recently Deleted search
+- Problem: Recently Deleted applied its 240-result limit before checking titles, bodies, and tags, so an older matching note could appear to be missing even though it was still recoverable.
+- Fix: Trash search now scans candidates in their existing order until it collects the requested number of actual matches, preserves corrupt-file title fallback, and stops promptly when the result limit is reached or the background task is cancelled.
+- Lesson: Recovery search must limit matched results rather than the input prefix; correctness matters most when users are trying to locate data they may otherwise assume is lost.
+
+### 223. Keyboard-first floating note search
+- Problem: The floating note browser required pointer interaction to choose a result, lost its selection when refreshed, and requested an unbounded candidate list even though only a handful of rows are visible.
+- Fix: Search now selects and visibly identifies the first result, supports Up/Down navigation, Return to open, and Escape to close while focus stays in the search field, preserves the selected note across refreshes, exposes selection to accessibility, and bounds search candidates to 100 while retaining all already-open windows.
+- Lesson: Compact search panels need one stable selection model shared by keyboard, pointer, refresh, and accessibility; bounding invisible candidates reduces work without hiding active state.
+
 ### 222. Reliable external Markdown opening and attachment management
 - Problem: Opening a Markdown file outside the configured library during initial library hydration could leave the editor showing an empty loading shell, while attachments were stored beside notes but had no library-wide view for finding missing links or unused files.
 - Fix: External Markdown opening now cancels stale initial loading and applies the requested document directly. A new attachment manager scans configured library folders, groups files as referenced, unreferenced, or missing, shows size and reference counts, supports Quick Look, Finder reveal, and opening a referencing note, and only allows confirmed deletion of existing unreferenced files by moving them to the Trash.
