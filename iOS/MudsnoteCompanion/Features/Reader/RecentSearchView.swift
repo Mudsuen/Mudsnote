@@ -62,6 +62,49 @@ private struct HomeTimelineProjection {
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
+struct DirectoryDrawerMotion {
+    static func reveal(
+        isOpen: Bool,
+        translation: CGFloat,
+        width: CGFloat
+    ) -> CGFloat {
+        guard width > 0 else { return 0 }
+        let restingReveal = isOpen ? width : 0
+        return min(width, max(0, restingReveal + translation))
+    }
+
+    static func shouldOpen(
+        isOpen: Bool,
+        translation: CGFloat,
+        projectedTranslation: CGFloat,
+        width: CGFloat
+    ) -> Bool {
+        guard width > 0 else { return false }
+        let currentReveal = reveal(
+            isOpen: isOpen,
+            translation: translation,
+            width: width
+        )
+        let projectedReveal = reveal(
+            isOpen: isOpen,
+            translation: projectedTranslation,
+            width: width
+        )
+        let projectedTravel = projectedReveal - currentReveal
+
+        if abs(projectedTravel) >= width * 0.12 {
+            return projectedTravel > 0
+        }
+        return currentReveal >= width * 0.5
+    }
+}
+
+private enum DirectoryDragAxis {
+    case undecided
+    case horizontal
+    case vertical
+}
+
 private final class DirectoryHapticFeedback {
     private let generator = UIImpactFeedbackGenerator(style: .light)
     private var isPrepared = false
@@ -120,8 +163,8 @@ struct LibraryHomeView: View {
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
     @State private var isDirectoryPresented = false
-    @State private var isDirectoryMounted = false
     @State private var directoryDragOffset: CGFloat = 0
+    @State private var directoryDragAxis = DirectoryDragAxis.undecided
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
@@ -150,8 +193,7 @@ struct LibraryHomeView: View {
 
     var body: some View {
         NavigationStack {
-            homeContent
-                .allowsHitTesting(directoryReveal(width: directoryPanelWidth) == 0)
+            directoryStage(width: directoryPanelWidth)
                 .background {
                     GeometryReader { proxy in
                         Color.clear
@@ -161,9 +203,6 @@ struct LibraryHomeView: View {
                             }
                     }
                 }
-                .overlay(alignment: .leading) {
-                    directoryOverlay(width: directoryPanelWidth)
-            }
             .background(NotesCloneColors.background)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.large)
@@ -179,15 +218,14 @@ struct LibraryHomeView: View {
             .onDisappear {
                 isSearchFocused = false
                 isDirectoryPresented = false
-                isDirectoryMounted = false
                 directoryDragOffset = 0
+                directoryDragAxis = .undecided
                 finishSelectingHomeNotes()
             }
             .onAppear {
                 refreshHomeTimelineProjection()
                 presentRequestedSearchIfNeeded()
                 if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
-                    isDirectoryMounted = true
                     isDirectoryPresented = true
                 }
             }
@@ -493,38 +531,57 @@ struct LibraryHomeView: View {
         directoryPanelWidth = width
     }
 
-    private func directoryOverlay(width: CGFloat) -> some View {
+    private func directoryStage(width: CGFloat) -> some View {
         let reveal = directoryReveal(width: width)
+        let progress = reveal / max(width, 1)
         return ZStack(alignment: .leading) {
+            directoryPanel(width: width)
+                .offset(x: -width * 0.08 * (1 - progress))
+                .opacity(reveal > 0 ? 1 : 0)
+                .highPriorityGesture(directoryDragGesture(width: width))
+                .allowsHitTesting(reveal > 0)
+                .accessibilityHidden(reveal <= 0)
+
+            homeContent
+                .background(NotesCloneColors.background)
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: 28 * progress,
+                        style: .continuous
+                    )
+                )
+                .shadow(
+                    color: .black.opacity(0.18 * progress),
+                    radius: 14,
+                    x: -4
+                )
+                .offset(x: reveal)
+                .allowsHitTesting(reveal == 0)
+
+            if reveal > 0 {
+                Color.black
+                    .opacity(0.06 * progress)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .offset(x: reveal)
+                    .onTapGesture { closeDirectory() }
+                    .gesture(directoryDragGesture(width: width))
+                    .accessibilityElement()
+                    .accessibilityLabel("Close Folders")
+                    .accessibilityIdentifier("directory-backdrop")
+            }
+
             if !isDirectoryPresented {
                 Color.clear
                     .frame(width: 32)
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .highPriorityGesture(directoryDragGesture(width: width, minimumDistance: 0))
+                    .highPriorityGesture(
+                        directoryDragGesture(width: width, minimumDistance: 4)
+                    )
                     .accessibilityElement()
                     .accessibilityLabel("Swipe right for folders")
                     .accessibilityIdentifier("directory-swipe-edge")
-            }
-
-            if isDirectoryMounted {
-                Color.black
-                    .opacity(0.42 * reveal / max(width, 1))
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { closeDirectory() }
-                    .gesture(directoryDragGesture(width: width))
-                    .allowsHitTesting(reveal > 0)
-                    .accessibilityElement()
-                    .accessibilityLabel("Close Folders")
-                    .accessibilityIdentifier("directory-backdrop")
-                    .accessibilityHidden(reveal <= 0)
-
-                directoryPanel(width: width)
-                    .offset(x: -width + reveal)
-                    .highPriorityGesture(directoryDragGesture(width: width))
-                    .allowsHitTesting(reveal > 0)
-                    .accessibilityHidden(reveal <= 0)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -615,10 +672,11 @@ struct LibraryHomeView: View {
     }
 
     private func directoryReveal(width: CGFloat) -> CGFloat {
-        if isDirectoryPresented {
-            return min(width, max(0, width + directoryDragOffset))
-        }
-        return min(width, max(0, directoryDragOffset))
+        DirectoryDrawerMotion.reveal(
+            isOpen: isDirectoryPresented,
+            translation: directoryDragOffset,
+            width: width
+        )
     }
 
     private func directoryDragGesture(
@@ -627,56 +685,68 @@ struct LibraryHomeView: View {
     ) -> some Gesture {
         DragGesture(minimumDistance: minimumDistance, coordinateSpace: .local)
             .onChanged { value in
+                if directoryDragAxis == .undecided {
+                    let horizontal = abs(value.translation.width)
+                    let vertical = abs(value.translation.height)
+                    guard max(horizontal, vertical) >= 4 else { return }
+                    directoryDragAxis = horizontal > vertical ? .horizontal : .vertical
+                    if directoryDragAxis == .horizontal {
+                        directoryHapticFeedback.prepare()
+                    }
+                }
+                guard directoryDragAxis == .horizontal else { return }
+
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    if !isDirectoryPresented {
-                        isDirectoryMounted = true
-                    }
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
                     if isDirectoryPresented {
                         directoryDragOffset = min(0, value.translation.width)
                     } else {
                         directoryDragOffset = max(0, value.translation.width)
                     }
                 }
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                directoryHapticFeedback.prepare()
             }
             .onEnded { value in
+                guard directoryDragAxis == .horizontal else {
+                    directoryDragAxis = .undecided
+                    directoryDragOffset = 0
+                    directoryHapticFeedback.cancel()
+                    return
+                }
+                directoryDragAxis = .undecided
                 let horizontal = value.translation.width
                 let predicted = value.predictedEndTranslation.width
                 let wasPresented = isDirectoryPresented
-                let shouldOpen: Bool
-                if isDirectoryPresented {
-                    shouldOpen = horizontal > -width * 0.18 && predicted > -width * 0.45
-                } else {
-                    shouldOpen = horizontal > width * 0.18 || predicted > width * 0.45
-                }
+                let shouldOpen = DirectoryDrawerMotion.shouldOpen(
+                    isOpen: isDirectoryPresented,
+                    translation: horizontal,
+                    projectedTranslation: predicted,
+                    width: width
+                )
                 if shouldOpen != wasPresented {
                     withAnimation(
-                        .interactiveSpring(response: 0.28, dampingFraction: 0.92),
+                        .interactiveSpring(
+                            response: 0.34,
+                            dampingFraction: 0.88,
+                            blendDuration: 0.1
+                        ),
                         completionCriteria: .logicallyComplete
                     ) {
                         isDirectoryPresented = shouldOpen
                         directoryDragOffset = 0
                     } completion: {
                         directoryHapticFeedback.impact()
-                        if !shouldOpen {
-                            isDirectoryMounted = false
-                        }
                     }
                 } else {
                     directoryHapticFeedback.cancel()
                     withAnimation(
-                        .interactiveSpring(response: 0.28, dampingFraction: 0.92),
-                        completionCriteria: .logicallyComplete
+                        .interactiveSpring(
+                            response: 0.34,
+                            dampingFraction: 0.88,
+                            blendDuration: 0.1
+                        )
                     ) {
                         directoryDragOffset = 0
-                    } completion: {
-                        if !isDirectoryPresented {
-                            isDirectoryMounted = false
-                        }
                     }
                 }
             }
@@ -686,7 +756,11 @@ struct LibraryHomeView: View {
         guard isDirectoryPresented else { return }
         directoryHapticFeedback.prepare()
         withAnimation(
-            .interactiveSpring(response: 0.28, dampingFraction: 0.92),
+            .interactiveSpring(
+                response: 0.34,
+                dampingFraction: 0.88,
+                blendDuration: 0.1
+            ),
             completionCriteria: .logicallyComplete
         ) {
             isDirectoryPresented = false
@@ -694,7 +768,6 @@ struct LibraryHomeView: View {
             isManagingFolders = false
         } completion: {
             directoryHapticFeedback.impact()
-            isDirectoryMounted = false
         }
     }
 

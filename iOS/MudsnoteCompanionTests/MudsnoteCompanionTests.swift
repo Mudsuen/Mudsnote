@@ -4,6 +4,63 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testDirectoryDrawerMotionTracksAndClampsDragTranslation() {
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: false, translation: 84, width: 320),
+            84
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: true, translation: -96, width: 320),
+            224
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: false, translation: -40, width: 320),
+            0
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: true, translation: 40, width: 320),
+            320
+        )
+    }
+
+    func testDirectoryDrawerMotionUsesDistanceForSlowRelease() {
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 120,
+                projectedTranslation: 130,
+                width: 320
+            )
+        )
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 180,
+                projectedTranslation: 190,
+                width: 320
+            )
+        )
+    }
+
+    func testDirectoryDrawerMotionLetsMomentumReverseTheDistanceDecision() {
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 80,
+                projectedTranslation: 210,
+                width: 320
+            )
+        )
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: true,
+                translation: -80,
+                projectedTranslation: -210,
+                width: 320
+            )
+        )
+    }
+
     func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {
         let suiteName = "MudsnoteAttachmentPresentationPreferences-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

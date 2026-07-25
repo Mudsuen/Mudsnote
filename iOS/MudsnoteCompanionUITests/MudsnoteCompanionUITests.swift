@@ -1908,7 +1908,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(second.exists)
-        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertTrue(
+            first.frame.maxX < second.frame.minX
+                || second.frame.maxX < first.frame.minX
+        )
+        XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 2)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         options.tap()
@@ -1968,8 +1972,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(scrolledScreenshot)
         gallery.swipeDown()
 
-        let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
-        let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
+        let appWindow = app.windows.firstMatch
+        XCTAssertTrue(appWindow.exists)
+        let swipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.06, dy: 0.45)
+        )
+        let swipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45)
+        )
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
 
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
@@ -1995,15 +2005,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
-        let closeSwipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
-        let closeSwipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45))
+        let closeSwipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+        )
+        let closeSwipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
+        )
         closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
+        appWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }

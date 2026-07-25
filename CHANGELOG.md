@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 244. Reference-matched interactive iOS directory motion
+- Problem: The iOS directory drawer moved over the home page, mounted its content only after a drag began, and used distance-heavy settling, so the transition still felt detached from the finger.
+- Fix: The directory now stays as a stable background layer while the home surface tracks the drag with progressive continuous corners, shadow, and subtle parallax; axis locking and projected momentum choose a natural completion or rollback without blocking directory controls.
+- Lesson: A fluid interactive transition needs stable composited layers and explicit touch ownership before spring tuning can make a visible difference.
+
 ### 243. Serialized background library autosave
 - Problem: Library autosave hashed the current disk revision and performed transactional note writes on the main thread, so large notes or slow volumes could pause editing.
 - Fix: The main thread now captures one stable Markdown snapshot, while revision validation and disk persistence run on a serial utility queue; explicit save, navigation, and close drain completed writes before continuing, and newer editor revisions remain dirty.
