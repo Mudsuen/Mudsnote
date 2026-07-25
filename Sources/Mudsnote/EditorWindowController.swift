@@ -175,8 +175,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let onRequestActivateFloatingNote: (UUID) -> Void
     let onRequestCloseFloatingNote: (UUID) -> Void
     let onRequestCreateFloatingNote: () -> Void
-    let saveDraftSnapshot: (DraftSnapshot) throws -> Void
-    let deleteDraftSnapshot: (String) -> Void
+    let saveDraftSnapshot: @Sendable (DraftSnapshot) throws -> Void
+    let deleteDraftSnapshot: @Sendable (String) -> Void
     let draftPersistenceErrorHandler: ((Error) -> Void)?
     lazy var draftPersistenceCoordinator = DraftPersistenceCoordinator(
         save: saveDraftSnapshot,
@@ -271,8 +271,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCreateFloatingNote: @escaping () -> Void = {},
         onRequestOpenMarkdownDocument: @escaping (URL) -> Void = { _ in },
-        saveDraftSnapshot: ((DraftSnapshot) throws -> Void)? = nil,
-        deleteDraftSnapshot: ((String) -> Void)? = nil,
+        saveDraftSnapshot: (@Sendable (DraftSnapshot) throws -> Void)? = nil,
+        deleteDraftSnapshot: (@Sendable (String) -> Void)? = nil,
         draftPersistenceErrorHandler: ((Error) -> Void)? = nil,
         onRequestPreferences: @escaping () -> Void
     ) {
@@ -298,8 +298,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.onRequestCloseFloatingNote = onRequestCloseFloatingNote
         self.onRequestCreateFloatingNote = onRequestCreateFloatingNote
         self.onRequestOpenMarkdownDocument = onRequestOpenMarkdownDocument
-        self.saveDraftSnapshot = saveDraftSnapshot ?? { try noteStore.saveDraft($0) }
-        self.deleteDraftSnapshot = deleteDraftSnapshot ?? { noteStore.deleteDraft(id: $0) }
+        self.saveDraftSnapshot = saveDraftSnapshot ?? { @Sendable in try noteStore.saveDraft($0) }
+        self.deleteDraftSnapshot = deleteDraftSnapshot ?? { @Sendable in noteStore.deleteDraft(id: $0) }
         self.draftPersistenceErrorHandler = draftPersistenceErrorHandler
         self.onRequestPreferences = onRequestPreferences
 

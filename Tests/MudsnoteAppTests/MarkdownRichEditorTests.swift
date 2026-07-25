@@ -71,6 +71,25 @@ private final class DraftPersistenceRecorder: @unchecked Sendable {
     }
 }
 
+private final class MutableBoolFlag: @unchecked Sendable {
+    private var value: Bool
+    private let lock = NSLock()
+
+    init(_ initial: Bool) { self.value = initial }
+
+    func get() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ newValue: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        value = newValue
+    }
+}
+
 private final class ThreadObservationRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var observedMainThread = false
@@ -5733,13 +5752,13 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func draftFailureBlocksWindowCloseAndApplicationTermination() throws {
-        var shouldFail = true
+        let failLock = MutableBoolFlag(true)
         var reportedErrors = 0
         let harness = try makeEditorControllerHarness(
             draftID: "guarded-draft-close",
             showsSaveButton: false,
             saveDraftSnapshot: { _ in
-                if shouldFail {
+                if failLock.get() {
                     throw CocoaError(.fileWriteNoPermission)
                 }
             },
@@ -5748,7 +5767,7 @@ struct MarkdownRichEditorTests {
             }
         )
         defer {
-            shouldFail = false
+            failLock.set(false)
             harness.tearDown()
         }
         let controller = harness.controller
@@ -5769,7 +5788,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.isDirty)
         #expect(reportedErrors == 2)
 
-        shouldFail = false
+        failLock.set(false)
         #expect(AppController.terminationReply(
             editorControllers: [controller],
             libraryController: nil
@@ -9161,7 +9180,7 @@ struct MarkdownRichEditorTests {
         onRequestActivateFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCloseFloatingNote: @escaping (UUID) -> Void = { _ in },
         onRequestCreateFloatingNote: @escaping () -> Void = {},
-        saveDraftSnapshot: ((DraftSnapshot) throws -> Void)? = nil,
+        saveDraftSnapshot: (@Sendable (DraftSnapshot) throws -> Void)? = nil,
         draftPersistenceErrorHandler: ((Error) -> Void)? = nil
     ) throws -> EditorControllerHarness {
         let suiteName = "mudsnote.app-tests.\(UUID().uuidString)"
