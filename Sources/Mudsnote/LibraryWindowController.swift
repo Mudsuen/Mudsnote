@@ -1539,6 +1539,7 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let previousSnapshot = sourceCountSnapshot
         Task.detached(priority: .userInitiated) { [weak self] in
             let allNotes = await Self.loadStableSourceSnapshot(
@@ -1548,7 +1549,11 @@ final class LibraryWindowController: NSWindowController,
                 previous: previousSnapshot
             )
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: sourceFolderPaths,
+                inboxDirectory: inboxDirectory
+            )
             await MainActor.run {
                 guard let self,
                       generation == self.fullLibrarySnapshotReloadGeneration else { return }
@@ -1747,6 +1752,13 @@ final class LibraryWindowController: NSWindowController,
             URL(fileURLWithPath: $0.path).standardizedFileURL.path
         })
         let hasFolderStructureChange = externalChanges.contains(where: \.changesDirectoryStructure)
+        if externalChanges.contains(where: \.requiresFullRescan) {
+            noteStore.invalidateSearchIndexContents()
+        } else {
+            noteStore.markSearchIndexDirty(at: markdownPaths.map {
+                URL(fileURLWithPath: $0)
+            })
+        }
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -3695,7 +3707,8 @@ final class LibraryWindowController: NSWindowController,
         let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
             notes: allNotes,
-            folderPaths: currentSourceFolderPaths()
+            folderPaths: currentSourceFolderPaths(),
+            inboxDirectory: noteStore.preferredInboxDirectory
         )
         applySourceCounts(
             allNotesCount: allNotes.count,
@@ -3710,11 +3723,16 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         let generation = sourceCountRefreshGeneration
         let folderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let trashCount = trashedNotesSnapshot.count
 
         sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: folderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: folderPaths,
+                inboxDirectory: inboxDirectory
+            )
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self,
@@ -3849,6 +3867,7 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
+        let inboxDirectory = noteStore.preferredInboxDirectory
         let previousSnapshot = sourceCountSnapshot
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -3863,7 +3882,11 @@ final class LibraryWindowController: NSWindowController,
             guard !Task.isCancelled else { return }
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
-            let countIndex = LibrarySourceCountIndex(notes: allNotes, folderPaths: sourceFolderPaths)
+            let countIndex = LibrarySourceCountIndex(
+                notes: allNotes,
+                folderPaths: sourceFolderPaths,
+                inboxDirectory: inboxDirectory
+            )
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
@@ -3958,10 +3981,8 @@ final class LibraryWindowController: NSWindowController,
             predicate = { _ in true }
         case .inbox:
             candidates = allNotes
-            predicate = { note in
-                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                    || note.title.localizedCaseInsensitiveContains("Inbox")
-            }
+            let inboxDirectory = noteStore.preferredInboxDirectory
+            predicate = { libraryIsInboxNote($0, inboxDirectory: inboxDirectory) }
         case .trash:
             candidates = trashedNotesSnapshot
             predicate = { _ in true }
@@ -4002,9 +4023,9 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .inbox:
+            let inboxDirectory = noteStore.preferredInboxDirectory
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
-                note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-                    || note.title.localizedCaseInsensitiveContains("Inbox")
+                libraryIsInboxNote(note, inboxDirectory: inboxDirectory)
             }
         case .trash:
             return Array(trashedNotesSnapshot.prefix(limit))
@@ -4060,7 +4081,10 @@ final class LibraryWindowController: NSWindowController,
             case .recent:
                 candidates = recentNoteResults(limit: 80, allNotes: sourceCountSnapshot)
             case .inbox:
-                candidates = sourceCountSnapshot.filter(libraryIsInboxNote)
+                let inboxDirectory = noteStore.preferredInboxDirectory
+                candidates = sourceCountSnapshot.filter {
+                    libraryIsInboxNote($0, inboxDirectory: inboxDirectory)
+                }
             case .trash:
                 candidates = trashedNotesSnapshot
             case .folder(let folderURL):

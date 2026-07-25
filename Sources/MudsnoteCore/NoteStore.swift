@@ -15,6 +15,8 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
+    var dirtySearchIndexPaths = Set<String>()
+    var searchIndexRequiresFullRefresh = false
     var searchIndexEntryReadCountForTesting = 0
     var searchIndexSignatureReadCountForTesting = 0
     var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?

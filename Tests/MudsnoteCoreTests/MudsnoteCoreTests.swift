@@ -585,6 +585,7 @@ struct MudsnoteCoreTests {
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
         let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        let inboxDirectory = notesDirectory.appendingPathComponent("Inbox", isDirectory: true)
         store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
 
         for index in 0..<4 {
@@ -602,16 +603,16 @@ struct MudsnoteCoreTests {
             in: projectDirectory
         )
         let inboxMatch = try store.saveNewNote(
-            title: "Inbox Follow Up",
+            title: "Follow Up",
             body: "one needle",
             tags: ["inbox"],
-            in: projectDirectory
+            in: inboxDirectory
         )
 
         #expect(store.prewarmSearchIndex() == 6)
         let fullRoots = try #require(store.searchIndexSnapshot?.rootsKey)
 
-        #expect(store.searchNotes(query: "needle", limit: 1, in: projectDirectory).first?.url == inboxMatch)
+        #expect(store.searchNotes(query: "needle", limit: 1, in: projectDirectory).first?.url == folderMatch)
         #expect(store.searchNotes(query: "needle", limit: 1, tagged: "focus").first?.url == folderMatch)
         #expect(store.searchInboxNotes(query: "needle", limit: 1).first?.url == inboxMatch)
         #expect(store.searchIndexSnapshot?.rootsKey == fullRoots)
@@ -624,13 +625,14 @@ struct MudsnoteCoreTests {
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
         let projectDirectory = harness.root.appendingPathComponent("Projects", isDirectory: true)
+        let inboxDirectory = notesDirectory.appendingPathComponent("Inbox", isDirectory: true)
         store.configurePreferredDirectories([notesDirectory, projectDirectory], defaultDirectory: notesDirectory)
 
         let alphaURL = try store.saveNewNote(
-            title: "Alpha Inbox",
+            title: "Alpha",
             body: "shared phrase alpha",
             tags: ["focus"],
-            in: notesDirectory
+            in: inboxDirectory
         )
         let betaURL = try store.saveNewNote(
             title: "Beta",
@@ -676,6 +678,38 @@ struct MudsnoteCoreTests {
         #expect(store.searchNotes(query: "beta", limit: 10).first?.url.standardizedFileURL.path == noteURL.standardizedFileURL.path)
         #expect(!store.knownTags(limit: 10).contains("alpha"))
         #expect(store.knownTags(limit: 10).contains("beta"))
+    }
+
+    @Test
+    func dirtySearchPathRefreshesEqualSizeContentWithRestoredModificationDate() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(title: "Stable", body: "alpha")
+
+        #expect(store.searchNotes(query: "alpha", limit: 10).count == 1)
+        store.searchIndexEntryReadCountForTesting = 0
+        let originalModificationDate = try #require(
+            FileManager.default.attributesOfItem(atPath: noteURL.path)[.modificationDate] as? Date
+        )
+        let originalText = try String(contentsOf: noteURL, encoding: .utf8)
+        let rewrittenText = originalText.replacingOccurrences(of: "alpha", with: "bravo")
+        #expect(rewrittenText.utf8.count == originalText.utf8.count)
+        let handle = try FileHandle(forWritingTo: noteURL)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data(rewrittenText.utf8))
+        try handle.synchronize()
+        try handle.close()
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalModificationDate],
+            ofItemAtPath: noteURL.path
+        )
+
+        store.markSearchIndexDirty(at: [noteURL])
+        #expect(store.searchNotes(query: "alpha", limit: 10).isEmpty)
+        #expect(store.searchNotes(query: "bravo", limit: 10).first?.url == noteURL)
+        #expect(store.searchIndexEntryReadCountForTesting == 1)
     }
 
     @Test
@@ -1027,6 +1061,23 @@ struct MudsnoteCoreTests {
         #expect(directories.contains(archiveDirectory.standardizedFileURL.path))
         #expect(directories.contains(projectsDirectory.standardizedFileURL.path))
         #expect(store.knownSearchRoots().contains { $0.standardizedFileURL.path == archiveDirectory.standardizedFileURL.path })
+    }
+
+    @Test
+    func preferredInboxDoesNotInferFromAnUnrelatedContainingFolderName() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let unrelatedDirectory = harness.root.appendingPathComponent("Inbox Zero Research", isDirectory: true)
+        store.configurePreferredDirectories(
+            [notesDirectory, unrelatedDirectory],
+            defaultDirectory: notesDirectory
+        )
+
+        #expect(
+            store.preferredInboxDirectory.standardizedFileURL.path
+                == notesDirectory.appendingPathComponent("Inbox").standardizedFileURL.path
+        )
     }
 
     @Test

@@ -194,7 +194,11 @@ struct MarkdownRichEditorTests {
             includesPinnedGroup: false,
             pinnedPaths: []
         ) { _ in true }
-        let countIndex = LibrarySourceCountIndex(notes: snapshot, folderPaths: [root.path])
+        let countIndex = LibrarySourceCountIndex(
+            notes: snapshot,
+            folderPaths: [root.path],
+            inboxDirectory: root.appendingPathComponent("Inbox", isDirectory: true)
+        )
 
         #expect(snapshot.count == 10_001)
         #expect(titleResults.first?.title == "Alpha Oldest")
@@ -436,17 +440,25 @@ struct MarkdownRichEditorTests {
                 snippet: "",
                 modifiedAt: now,
                 tags: ["Beta"]
+            ),
+            NoteSearchResult(
+                url: projectsFolder.appendingPathComponent("Inbox Rules.md"),
+                title: "Project Inbox Rules",
+                snippet: "",
+                modifiedAt: now,
+                tags: []
             )
         ]
         let index = LibrarySourceCountIndex(
             notes: notes,
-            folderPaths: Set([notesFolder.path, projectsFolder.path, clientFolder.path])
+            folderPaths: Set([notesFolder.path, projectsFolder.path, clientFolder.path]),
+            inboxDirectory: notesFolder.appendingPathComponent("Inbox", isDirectory: true)
         )
 
         #expect(index.inboxCount == 1)
         #expect(index.count(forFolder: notesFolder) == 1)
-        #expect(index.count(forFolder: projectsFolder) == 2)
-        #expect(index.count(forFolder: projectsFolder, includingDescendants: false) == 1)
+        #expect(index.count(forFolder: projectsFolder) == 3)
+        #expect(index.count(forFolder: projectsFolder, includingDescendants: false) == 2)
         #expect(index.count(forFolder: clientFolder) == 1)
         #expect(index.count(forTag: "alpha") == 2)
         #expect(index.count(forTag: "BETA") == 1)

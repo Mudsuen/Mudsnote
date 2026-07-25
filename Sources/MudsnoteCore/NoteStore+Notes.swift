@@ -40,8 +40,13 @@ extension NoteStore {
         if normalized.hasSuffix("-inbox") || normalized.hasSuffix("_inbox") || normalized.hasSuffix(" inbox") {
             return 1
         }
-        if normalized.contains("inbox") { return 2 }
         return Int.max
+    }
+
+    public func isInboxNote(at url: URL) -> Bool {
+        let standardizedURL = url.standardizedFileURL
+        return standardizedURL.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
+            || standardizedURL.deletingLastPathComponent() == preferredInboxDirectory
     }
 
     public func listRecentFiles(limit: Int = 8) -> [NoteFile] {
