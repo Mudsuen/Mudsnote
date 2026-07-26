@@ -5609,7 +5609,8 @@ struct MarkdownRichEditorTests {
         let loaded = try store.loadNote(at: noteURL)
         #expect(loaded.body == "Autosaved body")
         #expect(!writeThreadRecorder.didObserveMainThread())
-        #expect(controller.statusLabel.stringValue.hasPrefix("已保存 · "))
+        #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)
+        #expect(!controller.statusLabel.stringValue.contains("保存"))
         #expect(controller.statusLabel.accessibilityValue() == controller.statusLabel.stringValue)
         #expect(controller.statusLabel.toolTip == nil)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
@@ -5671,6 +5672,79 @@ struct MarkdownRichEditorTests {
         let observation = recorder.snapshot()
         #expect(observation.callCount == 2)
         #expect(!observation.observedMainThread)
+    }
+
+    @MainActor
+    @Test
+    func libraryNavigationDoesNotWaitForMatchingBackgroundAutosave() async throws {
+        let suiteName = "mudsnote.library-autosave-navigation-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-autosave-navigation-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "First note", body: "First body")
+        _ = try store.saveNewNote(title: "Second note", body: "Second body")
+        let recorder = BlockingAutosaveRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundAutosaveWillPersist: recorder.record,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            recorder.releaseFirstWrite.signal()
+            controller.close()
+        }
+
+        let editedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        let displayedTimeBeforeEdit = controller.statusLabel.stringValue
+        controller.editorTextView.string = "Edited without blocking navigation"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        let firstStarted = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(
+                    returning: recorder.firstWriteStarted.wait(timeout: .now() + 2)
+                )
+            }
+        }
+        #expect(firstStarted == .success)
+        #expect(controller.statusLabel.stringValue == displayedTimeBeforeEdit)
+
+        let otherRow = try #require((0..<controller.tableView.numberOfRows).first { row in
+            guard let writer = controller.tableView(
+                controller.tableView,
+                pasteboardWriterForRow: row
+            ) as? NSURL else {
+                return false
+            }
+            return (writer as URL).standardizedFileURL != editedURL.standardizedFileURL
+        })
+        let selectionStartedAt = Date()
+        controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+        let selectionDuration = Date().timeIntervalSince(selectionStartedAt)
+
+        #expect(selectionDuration < 0.15)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL != editedURL.standardizedFileURL)
+        #expect(!controller.statusLabel.stringValue.contains("保存"))
+
+        recorder.releaseFirstWrite.signal()
+        await controller.waitForBackgroundAutosaveForTesting()
+        #expect(try store.loadNote(at: editedURL).body == "Edited without blocking navigation")
+        #expect(!controller.statusLabel.stringValue.contains("保存"))
     }
 
     @MainActor
