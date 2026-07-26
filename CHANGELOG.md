@@ -19,7 +19,7 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ### 244. Incremental macOS editor refresh
 - Problem: Recent search-link and background-save changes could hold an index lock across filesystem I/O, rescan the whole library after one edit, hash the full note around every save, rebuild the full note list, and repeatedly inspect an unbounded paragraph while typing.
-- Fix: Search-index state updates now use a short non-I/O lock, saved paths refresh incrementally, clean snapshots are reused, routine iCloud-backed saves skip redundant whole-file revision hashing, existing-note saves replace only affected list rows, and automatic-link and slash-command inspection use bounded text windows.
+- Fix: Search-index state updates now use a short non-I/O lock, clean readers bypass full validation, saved paths refresh incrementally, and routine iCloud-backed saves remove the obsolete revision/conflict layer. Existing-note saves replace only affected list rows, refresh only current outgoing links and structurally changed source counts, while automatic links run at token boundaries over bounded fragments and source navigation relies on file events instead of unconditional full-library rescans.
 - Lesson: Background work still causes visible stalls when its coordination lock, completion reconciliation, or per-keystroke preprocessing scales with the whole library or document.
 
 ### 243. Serialized background library autosave

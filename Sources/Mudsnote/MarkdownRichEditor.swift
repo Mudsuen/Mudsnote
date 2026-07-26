@@ -464,13 +464,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func didChangeText() {
         super.didChangeText()
-        if let textStorage, let theme = markdownPasteTheme {
-            MarkdownRichTextCodec.refreshAutomaticLinks(
-                in: textStorage,
-                around: selectedRange().location,
-                theme: theme
-            )
-        }
         window?.invalidateCursorRects(for: self)
     }
 
@@ -623,8 +616,28 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return
         }
 
+        let refreshesAutomaticLinks = Self.insertedTextCompletesAutomaticLinkToken(string)
         super.insertText(string, replacementRange: replacementRange)
+        if refreshesAutomaticLinks,
+           let textStorage,
+           let theme = markdownPasteTheme {
+            MarkdownRichTextCodec.refreshAutomaticLinks(
+                in: textStorage,
+                around: selectedRange().location,
+                theme: theme
+            )
+        }
         onTextInputStateChanged?()
+    }
+
+    private static func insertedTextCompletesAutomaticLinkToken(_ value: Any) -> Bool {
+        guard let text = value as? String else { return true }
+        if text.utf16.count != 1 {
+            return true
+        }
+        return text.unicodeScalars.contains {
+            CharacterSet.whitespacesAndNewlines.contains($0)
+        }
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
@@ -2781,7 +2794,7 @@ enum MarkdownRichTextCodec {
     ) {
         guard textStorage.length > 0,
               var refreshRange = automaticLinkRefreshRange(
-                in: textStorage.string as NSString,
+                in: textStorage.mutableString,
                 around: location
               ) else {
             return
@@ -2864,9 +2877,13 @@ enum MarkdownRichTextCodec {
             attributedString.addAttribute(.foregroundColor, value: theme.textColor, range: effectiveRange)
         }
 
-        let text = attributedString.string as NSString
-        for match in detector.matches(in: text as String, range: range) {
-            let matchRange = match.range
+        let fragment = attributedString.attributedSubstring(from: range).string
+        let fragmentRange = NSRange(location: 0, length: (fragment as NSString).length)
+        for match in detector.matches(in: fragment, range: fragmentRange) {
+            let matchRange = NSRange(
+                location: range.location + match.range.location,
+                length: match.range.length
+            )
             guard matchRange.length > 0,
                   matchRange.location >= 0,
                   NSMaxRange(matchRange) <= attributedString.length,

@@ -751,6 +751,42 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func cleanSearchSnapshotDoesNotWaitForFullValidation() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        _ = try store.saveNewNote(title: "Fast Read", body: "body")
+        #expect(store.prewarmSearchIndex() == 1)
+
+        let validationStarted = DispatchSemaphore(value: 0)
+        let allowValidationToContinue = DispatchSemaphore(value: 0)
+        let validationFinished = DispatchSemaphore(value: 0)
+        let cleanReadFinished = DispatchSemaphore(value: 0)
+        store.searchIndexBuildWillReadForTesting = {
+            validationStarted.signal()
+            allowValidationToContinue.wait()
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            _ = store.listNotesRefreshingIndex()
+            validationFinished.signal()
+        }
+        try #require(validationStarted.wait(timeout: .now() + 2) == .success)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = store.listNotes()
+            cleanReadFinished.signal()
+        }
+        let cleanReadCompletedWithoutWaiting = cleanReadFinished.wait(timeout: .now() + 1)
+        allowValidationToContinue.signal()
+        #expect(validationFinished.wait(timeout: .now() + 2) == .success)
+        store.searchIndexBuildWillReadForTesting = nil
+
+        #expect(cleanReadCompletedWithoutWaiting == .success)
+    }
+
+    @Test
     func prewarmSearchIndexBuildsReusableSnapshot() throws {
         let harness = try TestHarness()
         let store = harness.store
@@ -978,6 +1014,26 @@ struct MudsnoteCoreTests {
 
         #expect(relations.incoming == [NoteLinkItem(url: sourceURL.standardizedFileURL, title: "Source")])
         #expect(relations.outgoing == [NoteLinkItem(url: relatedURL.standardizedFileURL, title: "Related")])
+    }
+
+    @Test
+    func outgoingLinkRefreshDoesNotRebuildDirtySearchIndex() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let relatedURL = try store.saveNewNote(title: "Related", body: "Related body")
+        let targetURL = try store.saveNewNote(title: "Target", body: "Initial body")
+        #expect(store.prewarmSearchIndex() == 2)
+
+        store.searchIndexEntryReadCountForTesting = 0
+        let body = "[Related](\(relatedURL.lastPathComponent))"
+        _ = try store.updateNote(at: targetURL, title: "Target", body: body)
+        let outgoing = store.outgoingLinks(for: targetURL, currentBody: body)
+
+        #expect(outgoing == [NoteLinkItem(url: relatedURL.standardizedFileURL, title: "Related")])
+        #expect(store.searchIndexEntryReadCountForTesting == 0)
+        #expect(store.dirtySearchIndexPaths.contains(targetURL.standardizedFileURL.path))
     }
 
     @Test

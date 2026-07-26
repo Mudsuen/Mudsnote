@@ -29,6 +29,8 @@ final class NoteLinksView: NSView {
     }
 
     var onOpen: ((URL) -> Void)?
+    private(set) var relations = NoteLinkRelations.empty
+    private var hasRenderedRelations = false
 
     private let incomingContent = NSStackView()
     private let outgoingContent = NSStackView()
@@ -75,6 +77,9 @@ final class NoteLinksView: NSView {
     }
 
     func update(_ relations: NoteLinkRelations) {
+        guard !hasRenderedRelations || self.relations != relations else { return }
+        hasRenderedRelations = true
+        self.relations = relations
         populate(incomingContent, with: relations.incoming)
         populate(outgoingContent, with: relations.outgoing)
         let isEmpty = relations.incoming.isEmpty && relations.outgoing.isEmpty

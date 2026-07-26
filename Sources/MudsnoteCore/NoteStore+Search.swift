@@ -300,11 +300,24 @@ extension NoteStore {
         roots: [URL]? = nil,
         validatesMemorySnapshot: Bool = false
     ) -> [NoteSearchIndexEntry] {
-        searchIndexBuildLock.lock()
-        defer { searchIndexBuildLock.unlock() }
-
         let searchRoots = roots ?? knownSearchRoots()
         let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+
+        if !validatesMemorySnapshot {
+            searchIndexLock.lock()
+            let cleanSnapshot = !searchIndexRequiresFullRefresh
+                && dirtySearchIndexPaths.isEmpty
+                && searchIndexSnapshot?.rootsKey == rootsKey
+                ? searchIndexSnapshot
+                : nil
+            searchIndexLock.unlock()
+            if let cleanSnapshot {
+                return cleanSnapshot.entries
+            }
+        }
+
+        searchIndexBuildLock.lock()
+        defer { searchIndexBuildLock.unlock() }
 
         searchIndexLock.lock()
         let stateRevision = searchIndexRevision

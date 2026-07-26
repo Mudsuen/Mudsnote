@@ -110,6 +110,25 @@ extension NoteStore {
         )
     }
 
+    public func outgoingLinks(
+        for noteURL: URL,
+        currentBody: String
+    ) -> [NoteLinkItem] {
+        searchIndexLock.lock()
+        let entries = searchIndexSnapshot?.entries ?? []
+        searchIndexLock.unlock()
+        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.url.path, $0)
+        })
+        let currentURL = noteURL.standardizedFileURL
+        return linkedItems(
+            in: currentBody,
+            sourceURL: currentURL,
+            entriesByPath: entriesByPath,
+            excluding: currentURL
+        )
+    }
+
     private func linkedItems(
         in body: String,
         sourceURL: URL,
