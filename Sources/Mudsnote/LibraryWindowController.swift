@@ -96,8 +96,8 @@ private func libraryNote(
     isIn folderURL: URL,
     includingDescendants: Bool
 ) -> Bool {
-    let noteFolderPath = note.url.deletingLastPathComponent().standardizedFileURL.path
-    let folderPath = folderURL.standardizedFileURL.path
+    let noteFolderPath = note.url.deletingLastPathComponent().path
+    let folderPath = folderURL.path
     return noteFolderPath == folderPath
         || (includingDescendants && noteFolderPath.hasPrefix(folderPath + "/"))
 }
@@ -195,8 +195,6 @@ private struct LibraryBackgroundSaveSnapshot: Sendable {
     let tags: [String]
     let targetDirectory: URL
     let updatesInPlace: Bool
-    let baselineRevision: LibraryDocumentRevision?
-    let baselinePath: String?
 }
 
 private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
@@ -212,7 +210,7 @@ private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
 
     init(attributedMarkdown: NSAttributedString, theme: MarkdownEditorTheme) {
         self.sourceMarkdown = nil
-        self.attributedMarkdown = NSAttributedString(attributedString: attributedMarkdown)
+        self.attributedMarkdown = attributedMarkdown
         self.theme = theme
     }
 
@@ -229,7 +227,6 @@ private struct LibraryBackgroundSaveSuccess: Sendable {
     let snapshot: LibraryBackgroundSaveSnapshot
     let savedURL: URL
     let savedAt: Date
-    let savedRevision: LibraryDocumentRevision
     let snippet: String
     let hasAttachments: Bool
     let thumbnailURL: URL?
@@ -1347,6 +1344,8 @@ final class LibraryWindowController: NSWindowController,
     private var linkEditorSheetController: LinkEditorSheetController?
     private let editorSuggestionController = SuggestionPopoverController()
     private var editorSlashSuggestion: (replacementRange: NSRange, commands: [EditorWindowController.SlashCommand])?
+    private var editorSlashSuggestionLastInput: (caret: Int, prefixStart: Int, prefix: String)?
+    private(set) var editorSlashSuggestionInspectionLengthForLibrary = 0
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
@@ -1701,7 +1700,7 @@ final class LibraryWindowController: NSWindowController,
         roots: [URL],
         previous: [NoteSearchResult]
     ) async -> [NoteSearchResult] {
-        let firstCandidate = noteStore.listNotes(limit: limit, roots: roots)
+        let firstCandidate = noteStore.listNotesRefreshingIndex(limit: limit, roots: roots)
         guard LibrarySourceSnapshotStabilizer.needsConfirmation(
             previous: previous,
             candidate: firstCandidate
@@ -1711,7 +1710,7 @@ final class LibraryWindowController: NSWindowController,
 
         try? await Task.sleep(for: sourceSnapshotConfirmationDelay)
         guard !Task.isCancelled else { return firstCandidate }
-        let confirmedCandidate = noteStore.listNotes(limit: limit, roots: roots)
+        let confirmedCandidate = noteStore.listNotesRefreshingIndex(limit: limit, roots: roots)
         return LibrarySourceSnapshotStabilizer.stabilized(
             previous: previous,
             firstCandidate: firstCandidate,
@@ -4421,7 +4420,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func rebuildNoteListRowsForDisplayOptions(
-        mutationAnimation: LibraryNoteMutationAnimation? = nil
+        mutationAnimation: LibraryNoteMutationAnimation? = nil,
+        refreshedNotePaths: Set<String> = []
     ) {
         let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map { $0.standardizedFileURL.path })
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4432,7 +4432,11 @@ final class LibraryWindowController: NSWindowController,
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
 
         suppressSelectionChanges = true
-        reloadNoteBrowserData(animation: mutationAnimation, previousRows: previousRows)
+        reloadNoteBrowserData(
+            animation: mutationAnimation,
+            previousRows: previousRows,
+            refreshedNotePaths: refreshedNotePaths
+        )
         let selectedRows = IndexSet(listRows.indices.filter { row in
             guard let note = listRows[row].note else { return false }
             return selectedPaths.contains(note.url.standardizedFileURL.path)
@@ -5512,13 +5516,27 @@ final class LibraryWindowController: NSWindowController,
 
     private func reloadNoteBrowserData(
         animation: LibraryNoteMutationAnimation? = nil,
-        previousRows: [LibraryNoteListRow] = []
+        previousRows: [LibraryNoteListRow] = [],
+        refreshedNotePaths: Set<String> = []
     ) {
         let canAnimate = animation != nil
             && hasRequestedWindowPresentation
             && window?.isVisible == true
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if canAnimate,
+        if let refreshPlan = LibraryNoteListMutationPlan(
+            previousRows: previousRows,
+            currentRows: listRows,
+            refreshingNotePaths: refreshedNotePaths
+        ) {
+            tableView.beginUpdates()
+            if !refreshPlan.removedRows.isEmpty {
+                tableView.removeRows(at: refreshPlan.removedRows, withAnimation: [])
+            }
+            if !refreshPlan.insertedRows.isEmpty {
+                tableView.insertRows(at: refreshPlan.insertedRows, withAnimation: [])
+            }
+            tableView.endUpdates()
+        } else if canAnimate,
            let animation,
            let plan = LibraryNoteListMutationPlan(
                previousRows: previousRows,
@@ -6538,7 +6556,6 @@ final class LibraryWindowController: NSWindowController,
         preservingEditorSelection: Bool
     ) {
         selectedURL = note.url
-        refreshDocumentRevisionBaseline(for: note.url)
         setEditorEditable(selectedScope != .trash)
 
         let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
@@ -6875,8 +6892,11 @@ final class LibraryWindowController: NSWindowController,
     private func markDirty() {
         guard !suppressEditorChanges, selectedScope != .trash else { return }
         editorContentRevision &+= 1
+        let becameDirty = !isDirty
         isDirty = true
-        updateToolbarActionState()
+        if becameDirty {
+            updateToolbarActionState()
+        }
         scheduleAutosave()
     }
 
@@ -6929,8 +6949,6 @@ final class LibraryWindowController: NSWindowController,
         let updatesInPlace = previousURL.map {
             externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
         } ?? false
-        let baselineRevision = loadedDocumentRevision
-        let baselinePath = loadedDocumentRevisionPath
         backgroundAutosaveActiveEditorRevision = editorRevision
         backgroundAutosaveActivePreviousURL = previousURL
         cancelSourceSnapshotValidation()
@@ -6948,9 +6966,7 @@ final class LibraryWindowController: NSWindowController,
                     body: editorSnapshot.markdown().trimmingCharacters(in: .whitespacesAndNewlines),
                     tags: tags,
                     targetDirectory: targetDirectory,
-                    updatesInPlace: updatesInPlace,
-                    baselineRevision: baselineRevision,
-                    baselinePath: baselinePath
+                    updatesInPlace: updatesInPlace
                 )
                 return try Self.performBackgroundSave(snapshot, noteStore: noteStore)
             }
@@ -6968,23 +6984,6 @@ final class LibraryWindowController: NSWindowController,
         let savedURL: URL
         if let previousURL = snapshot.previousURL {
             let standardizedURL = previousURL.standardizedFileURL
-            guard snapshot.baselinePath == standardizedURL.path,
-                  let baseline = snapshot.baselineRevision else {
-                throw LibraryDocumentSaveProtectionError.revisionUnavailable(
-                    standardizedURL,
-                    CocoaError(.fileReadUnknown)
-                )
-            }
-            let current: LibraryDocumentRevision
-            do {
-                current = try LibraryDocumentRevision.read(at: standardizedURL)
-            } catch {
-                throw LibraryDocumentSaveProtectionError.revisionUnavailable(standardizedURL, error)
-            }
-            guard current == baseline || current.hasSameContent(as: baseline) else {
-                throw LibraryDocumentSaveProtectionError.externalModification(standardizedURL)
-            }
-
             if snapshot.updatesInPlace {
                 savedURL = try noteStore.updateNoteInPlace(
                     at: standardizedURL,
@@ -7009,12 +7008,12 @@ final class LibraryWindowController: NSWindowController,
             )
         }
 
-        let savedRevision = try LibraryDocumentRevision.read(at: savedURL)
+        let savedResourceValues = try? savedURL.resourceValues(forKeys: [.contentModificationDateKey])
+        let savedAt = savedResourceValues?.contentModificationDate ?? Date()
         return LibraryBackgroundSaveSuccess(
             snapshot: snapshot,
             savedURL: savedURL,
-            savedAt: savedRevision.contentModificationDate ?? Date(),
-            savedRevision: savedRevision,
+            savedAt: savedAt,
             snippet: libraryFirstMeaningfulLine(from: snapshot.body) ?? "",
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: snapshot.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
@@ -7058,7 +7057,8 @@ final class LibraryWindowController: NSWindowController,
 
     private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
         let snapshot = success.snapshot
-        recordInternalFileSystemChanges(for: [snapshot.previousURL, success.savedURL].compactMap { $0 })
+        let changedURLs = [snapshot.previousURL, success.savedURL].compactMap { $0 }
+        recordInternalFileSystemChanges(for: changedURLs)
         if let previousURL = snapshot.previousURL {
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
         }
@@ -7081,13 +7081,12 @@ final class LibraryWindowController: NSWindowController,
         }
 
         selectedURL = success.savedURL
-        loadedDocumentRevisionPath = success.savedURL.standardizedFileURL.path
-        loadedDocumentRevision = success.savedRevision
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = editorContentRevision != snapshot.editorRevision
         refreshVisibleNoteListAfterSave(
             selecting: success.savedURL,
+            replacing: snapshot.previousURL,
             isNewNote: snapshot.previousURL == nil
         )
         if !isDirty {
@@ -7150,12 +7149,6 @@ final class LibraryWindowController: NSWindowController,
             && backgroundAutosaveActiveEditorRevision == editorContentRevision
             && backgroundAutosaveActivePreviousURL?.standardizedFileURL
                 == selectedURL?.standardizedFileURL
-    }
-
-    private func refreshDocumentRevisionBaseline(for url: URL) {
-        let standardizedURL = url.standardizedFileURL
-        loadedDocumentRevisionPath = standardizedURL.path
-        loadedDocumentRevision = try? LibraryDocumentRevision.read(at: standardizedURL)
     }
 
     private func verifyDocumentRevisionBeforeSave(at url: URL) throws {
@@ -7230,7 +7223,6 @@ final class LibraryWindowController: NSWindowController,
             let copyURL = try saveConflictCopy(beside: url)
             selectedURL = copyURL
             isDirty = false
-            refreshDocumentRevisionBaseline(for: copyURL)
             reloadNotes(selecting: copyURL, loadFirstIfNeeded: true)
             updateEditorStatus(
                 "已另存副本：\(copyURL.lastPathComponent)",
@@ -7357,7 +7349,6 @@ final class LibraryWindowController: NSWindowController,
         let previousURL = selectedURL
         let savedURL: URL
         if let previousURL {
-            try verifyDocumentRevisionBeforeSave(at: previousURL)
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
             if externallyOpenedDocumentsByPath[previousURL.standardizedFileURL.path] != nil {
                 savedURL = try noteStore.updateNoteInPlace(
@@ -7378,9 +7369,9 @@ final class LibraryWindowController: NSWindowController,
             )
         }
 
-        recordInternalFileSystemChanges(for: [previousURL, savedURL].compactMap { $0 })
+        let changedURLs = [previousURL, savedURL].compactMap { $0 }
+        recordInternalFileSystemChanges(for: changedURLs)
         selectedURL = savedURL
-        refreshDocumentRevisionBaseline(for: savedURL)
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
@@ -7398,6 +7389,7 @@ final class LibraryWindowController: NSWindowController,
         )
         refreshVisibleNoteListAfterSave(
             selecting: savedURL,
+            replacing: previousURL,
             isNewNote: previousURL == nil
         )
         updateEditorStatus(editorDateText(for: savedAt))
@@ -7445,7 +7437,11 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private func refreshVisibleNoteListAfterSave(selecting savedURL: URL, isNewNote: Bool) {
+    private func refreshVisibleNoteListAfterSave(
+        selecting savedURL: URL,
+        replacing previousURL: URL?,
+        isNewNote: Bool
+    ) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty {
             scheduleSearchResultReload(query: query, selecting: savedURL)
@@ -7453,8 +7449,12 @@ final class LibraryWindowController: NSWindowController,
         }
 
         notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
+        let refreshedPaths = isNewNote
+            ? Set<String>()
+            : Set([previousURL, savedURL].compactMap { $0?.standardizedFileURL.path })
         rebuildNoteListRowsForDisplayOptions(
-            mutationAnimation: isNewNote ? .insertion : nil
+            mutationAnimation: isNewNote ? .insertion : nil,
+            refreshedNotePaths: refreshedPaths
         )
         if isNewNote,
            let row = rowIndex(for: savedURL.standardizedFileURL.path) {
@@ -11372,21 +11372,48 @@ final class LibraryWindowController: NSWindowController,
               selectedScope != .trash,
               editorTextView.selectedRange().length == 0,
               let host = window?.contentView else {
+            editorSlashSuggestionLastInput = nil
             dismissEditorSlashSuggestions()
             return
         }
         let string = editorTextView.string as NSString
         let caret = min(editorTextView.selectedRange().location, string.length)
-        let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
-        let prefixRange = NSRange(location: paragraphRange.location, length: max(caret - paragraphRange.location, 0))
+        let maximumLookback = 128
+        let lowerBound = max(caret - maximumLookback, 0)
+        let newlineRange = string.rangeOfCharacter(
+            from: .newlines,
+            options: .backwards,
+            range: NSRange(location: lowerBound, length: caret - lowerBound)
+        )
+        let prefixStart = newlineRange.location == NSNotFound
+            ? lowerBound
+            : NSMaxRange(newlineRange)
+        let startsAtParagraphBoundary = prefixStart == 0 || newlineRange.location != NSNotFound
+        let prefixRange = NSRange(location: prefixStart, length: caret - prefixStart)
         let prefix = string.substring(with: prefixRange)
-        guard let match = prefix.range(of: #"(^|\s)/([^\s/]*)$"#, options: .regularExpression) else {
+        editorSlashSuggestionInspectionLengthForLibrary = prefixRange.length
+        if let previousInput = editorSlashSuggestionLastInput,
+           previousInput.caret == caret,
+           previousInput.prefixStart == prefixStart,
+           previousInput.prefix == prefix {
+            return
+        }
+        editorSlashSuggestionLastInput = (caret, prefixStart, prefix)
+
+        let pattern = startsAtParagraphBoundary
+            ? #"(^|\s)/([^\s/]*)$"#
+            : #"\s/([^\s/]*)$"#
+        guard let match = prefix.range(of: pattern, options: .regularExpression) else {
             dismissEditorSlashSuggestions()
             return
         }
-        let token = String(prefix[match])
-        let trimmedToken = token.trimmingCharacters(in: .whitespaces)
-        let query = String(trimmedToken.dropFirst()).lowercased()
+        let matchedText = String(prefix[match])
+        guard let slashIndex = matchedText.firstIndex(of: "/") else {
+            dismissEditorSlashSuggestions()
+            return
+        }
+        let token = String(matchedText[slashIndex...])
+        let query = String(token.dropFirst()).lowercased()
         let commands = EditorWindowController.SlashCommand.allCases.filter { command in
             command.aiActionID == nil && (
                 query.isEmpty
@@ -11399,11 +11426,11 @@ final class LibraryWindowController: NSWindowController,
             dismissEditorSlashSuggestions()
             return
         }
+        let matchRange = NSRange(match, in: prefix)
+        let tokenOffset = matchedText[..<slashIndex].utf16.count
         let replacementRange = NSRange(
-            location: paragraphRange.location
-                + prefix.distance(from: prefix.startIndex, to: match.lowerBound)
-                + (token.hasPrefix(" ") ? 1 : 0),
-            length: trimmedToken.utf16.count
+            location: prefixStart + matchRange.location + tokenOffset,
+            length: token.utf16.count
         )
         editorSlashSuggestion = (replacementRange, commands)
         editorSuggestionController.updateItems(commands.map {

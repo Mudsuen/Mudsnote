@@ -2779,11 +2779,72 @@ enum MarkdownRichTextCodec {
         around location: Int,
         theme: MarkdownEditorTheme
     ) {
-        guard textStorage.length > 0 else { return }
-        let string = textStorage.string as NSString
-        let safeLocation = min(max(location, 0), max(string.length - 1, 0))
-        let paragraphRange = string.paragraphRange(for: NSRange(location: safeLocation, length: 0))
-        applyAutomaticLinks(in: textStorage, range: paragraphRange, theme: theme)
+        guard textStorage.length > 0,
+              var refreshRange = automaticLinkRefreshRange(
+                in: textStorage.string as NSString,
+                around: location
+              ) else {
+            return
+        }
+
+        let probeLocation = min(max(location - 1, 0), textStorage.length - 1)
+        var effectiveRange = NSRange()
+        if (textStorage.attribute(
+            .qmAutomaticLink,
+            at: probeLocation,
+            effectiveRange: &effectiveRange
+        ) as? Bool) == true {
+            refreshRange = NSUnionRange(refreshRange, effectiveRange)
+        }
+        applyAutomaticLinks(in: textStorage, range: refreshRange, theme: theme)
+    }
+
+    static func automaticLinkRefreshRange(
+        in string: NSString,
+        around location: Int
+    ) -> NSRange? {
+        guard string.length > 0 else { return nil }
+
+        let maximumLookaround = 4_096
+        let caret = min(max(location, 0), string.length)
+        var tokenBoundary = caret
+        if caret > 0 {
+            let previousCharacter = string.character(at: caret - 1)
+            if let scalar = UnicodeScalar(previousCharacter),
+               CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                tokenBoundary = caret - 1
+            }
+        }
+
+        let lowerBound = max(tokenBoundary - maximumLookaround, 0)
+        let precedingRange = NSRange(
+            location: lowerBound,
+            length: tokenBoundary - lowerBound
+        )
+        let precedingWhitespace = string.rangeOfCharacter(
+            from: .whitespacesAndNewlines,
+            options: .backwards,
+            range: precedingRange
+        )
+        let start = precedingWhitespace.location == NSNotFound
+            ? lowerBound
+            : NSMaxRange(precedingWhitespace)
+
+        let upperBound = min(tokenBoundary + maximumLookaround, string.length)
+        let followingRange = NSRange(
+            location: tokenBoundary,
+            length: upperBound - tokenBoundary
+        )
+        let followingWhitespace = string.rangeOfCharacter(
+            from: .whitespacesAndNewlines,
+            range: followingRange
+        )
+        let end = followingWhitespace.location == NSNotFound
+            ? upperBound
+            : followingWhitespace.location
+
+        guard end > start else { return nil }
+        return NSRange(location: start, length: end - start)
     }
 
     @MainActor

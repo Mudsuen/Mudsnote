@@ -120,6 +120,7 @@ extension NoteStore {
         let fileURL = uniqueFileURL(for: title, in: targetDirectory)
         try writeNote(to: fileURL, title: title, body: body, tags: tags)
         rememberRecentFile(fileURL)
+        markSearchIndexDirty(at: [fileURL])
         return fileURL
     }
 
@@ -168,6 +169,7 @@ extension NoteStore {
         if desiredURL != sourceURL {
             replaceLibraryPinnedNotePath(sourceURL, with: desiredURL)
         }
+        markSearchIndexDirty(at: [sourceURL, desiredURL])
         return desiredURL
     }
 
@@ -182,6 +184,7 @@ extension NoteStore {
             preservingFrontMatterFrom: existingText
         )
         rememberRecentFile(standardizedURL)
+        markSearchIndexDirty(at: [standardizedURL])
         return standardizedURL
     }
 
@@ -208,6 +211,7 @@ extension NoteStore {
             replaceRecentPathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryPinnedNotePathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryFolderDisclosurePathPrefix(oldDirectory, with: newDirectory)
+            invalidateSearchIndexContents()
         }
         replacePreferredDirectory(oldDirectory, with: newDirectory)
         return newDirectory
@@ -242,6 +246,7 @@ extension NoteStore {
         didCommitRelocation = true
         rememberRecentFile(movedURL, replacing: sourceURL)
         replaceLibraryPinnedNotePath(sourceURL, with: movedURL)
+        markSearchIndexDirty(at: [sourceURL, movedURL])
         return movedURL
     }
 
@@ -265,6 +270,7 @@ extension NoteStore {
         replaceLibraryFolderDisclosurePathPrefix(sourceURL, with: destinationURL)
         replaceLibraryFolderOrderPathPrefix(sourceURL, with: destinationURL)
         replacePreferredDirectory(sourceURL, with: destinationURL)
+        invalidateSearchIndexContents()
         return destinationURL
     }
 
@@ -298,6 +304,7 @@ extension NoteStore {
         forgetRecentPathPrefix(originalDirectory)
         removeLibraryPinnedNotePaths(in: originalDirectory)
         removeLibraryFolderDisclosurePaths(in: originalDirectory)
+        invalidateSearchIndexContents()
         return (trashedDirectory, originalFiles)
     }
 
@@ -354,6 +361,7 @@ extension NoteStore {
         )
         storeTrashedNotesMetadata(metadata)
         setLibraryNotePinned(false, at: standardizedURL)
+        markSearchIndexDirty(at: [standardizedURL])
         return trashedURL
     }
 
@@ -372,6 +380,7 @@ extension NoteStore {
         metadata.removeValue(forKey: metadataKey)
         storeTrashedNotesMetadata(metadata)
         rememberRecentFile(restoredURL, replacing: standardizedTrashURL)
+        markSearchIndexDirty(at: [restoredURL])
         return restoredURL
     }
 
@@ -385,6 +394,7 @@ extension NoteStore {
         storeTrashedNotesMetadata(metadata)
         forgetRecentFile(standardizedURL)
         setLibraryNotePinned(false, at: standardizedURL)
+        markSearchIndexDirty(at: [standardizedURL])
     }
 
     func markdownFiles(in root: URL) -> [URL] {
