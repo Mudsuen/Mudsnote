@@ -34,6 +34,7 @@ When working in this repo:
 - Concurrent worktrees share `/Applications/Mudsnote.app` and the connected iPhone, so never run another platform's live flow as incidental verification.
 - PR CI must not access iCloud, Keychain, real note folders, personal settings, credentials, or other user data.
 - Reversible product tasks use Devflow v2 Ready PRs and event-driven merge by default. Importance changes the final report, not the approval path.
+- During iteration, run only focused tests. Do not run `./scripts/verify <scope> pr` immediately before `devtask pr`; `devtask pr` owns the single final PR gate.
 - Use `devtask ... --json` for stage results. After `devtask pr` reports `remote_pending`, finish the local task without waiting or polling. Use `devtask wait` once only when the user explicitly asks for final cloud status, formal acceptance, cleanup, or release.
 - When the user requests immediate installation of a reversible task with no irreversible external side effects, use `devtask install ... --candidate --json` after exact-HEAD PR verification. Report the candidate commit and restore command; GitHub, CI, and merge status are not local prerequisites. Use unflagged `devtask install ... --json` only for formal merged-main installation.
 - For `--iteration-mode ui-tuning`, keep local adjustments in one task/branch and create one PR after the UI stabilizes. A verified reversible candidate may be installed locally before merge; formal installation remains post-merge from `main`.
