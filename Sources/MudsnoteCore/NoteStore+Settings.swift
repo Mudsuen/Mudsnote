@@ -137,6 +137,27 @@ extension NoteStore {
         }
     }
 
+    public func libraryFolderIconName(for directory: URL) -> String? {
+        let path = directory.standardizedFileURL.path
+        guard let iconName = libraryFolderIconNames[path]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !iconName.isEmpty else {
+            return nil
+        }
+        return iconName
+    }
+
+    public func setLibraryFolderIconName(_ iconName: String?, for directory: URL) {
+        let path = directory.standardizedFileURL.path
+        var iconNames = libraryFolderIconNames
+        if let iconName = iconName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !iconName.isEmpty {
+            iconNames[path] = iconName
+        } else {
+            iconNames.removeValue(forKey: path)
+        }
+        defaults.set(iconNames, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
+    }
+
     public func replaceLibraryFolderOrderPathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
         let oldPath = oldDirectory.standardizedFileURL.path
         let newPath = newDirectory.standardizedFileURL.path
@@ -144,6 +165,28 @@ extension NoteStore {
             guard path == oldPath || path.hasPrefix(oldPath + "/") else { return path }
             return newPath + String(path.dropFirst(oldPath.count))
         }
+    }
+
+    func replaceLibraryFolderIconPathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
+        let oldPath = oldDirectory.standardizedFileURL.path
+        let newPath = newDirectory.standardizedFileURL.path
+        var remapped: [String: String] = [:]
+        for (path, iconName) in libraryFolderIconNames {
+            if path == oldPath || path.hasPrefix(oldPath + "/") {
+                remapped[newPath + String(path.dropFirst(oldPath.count))] = iconName
+            } else {
+                remapped[path] = iconName
+            }
+        }
+        defaults.set(remapped, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
+    }
+
+    func removeLibraryFolderIconNames(in directory: URL) {
+        let directoryPath = directory.standardizedFileURL.path
+        let remaining = libraryFolderIconNames.filter { path, _ in
+            path != directoryPath && !path.hasPrefix(directoryPath + "/")
+        }
+        defaults.set(remaining, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
     }
 
     public var libraryFoldersSectionCollapsed: Bool {
@@ -395,6 +438,7 @@ extension NoteStore {
             return directory
         }
         configurePreferredDirectories(updatedDirectories, defaultDirectory: defaultDirectory)
+        replaceLibraryFolderIconPathPrefix(oldDirectory, with: normalizedNew)
     }
 
     public func removePreferredDirectory(_ directory: URL) {
@@ -423,6 +467,15 @@ extension NoteStore {
             URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL.path
         })
         defaults.set(standardized.sorted(), forKey: key)
+    }
+
+    private var libraryFolderIconNames: [String: String] {
+        (defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryFolderIconNames) ?? [:]).reduce(into: [:]) {
+            result, entry in
+            guard let iconName = entry.value as? String else { return }
+            let path = URL(fileURLWithPath: entry.key, isDirectory: true).standardizedFileURL.path
+            result[path] = iconName
+        }
     }
 
     private func replacingPathPrefix(_ oldPath: String, with newPath: String, in paths: Set<String>) -> Set<String> {

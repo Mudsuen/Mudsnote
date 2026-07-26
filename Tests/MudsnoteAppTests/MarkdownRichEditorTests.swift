@@ -4003,7 +4003,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func librarySourceRowsNavigateWithArrowKeys() throws {
+    func librarySourceRowsNavigateWithArrowKeys() async throws {
         let suiteName = "mudsnote.library-source-keyboard-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -4072,6 +4072,16 @@ struct MarkdownRichEditorTests {
         #expect(outline.selectedRow != projectsRow)
         #expect(controller.selectedSourceTitleForLibrary == "Notes")
         #expect(selectedTextColorAtSave == nil)
+        let pressedProjectsRow = try #require(outline.rowView(
+            atRow: projectsRow,
+            makeIfNecessary: true
+        ) as? LibrarySourceOutlineRowView)
+        let previousSelectedRow = try #require(outline.rowView(
+            atRow: outline.selectedRow,
+            makeIfNecessary: true
+        ) as? LibrarySourceOutlineRowView)
+        #expect(pressedProjectsRow.isVisuallySelected)
+        #expect(!previousSelectedRow.isVisuallySelected)
         let pressedProjectsCell = try #require(outline.view(
             atColumn: 0,
             row: projectsRow,
@@ -4090,7 +4100,16 @@ struct MarkdownRichEditorTests {
         outline.finishPrimaryMouseSelectionDeferral()
         #expect(!outline.isDeferringPrimaryMouseSelectionCommit)
         #expect(controller.selectedSourceTitleForLibrary == "Projects")
+        for _ in 0..<100 where selectedTextColorAtSave == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(selectedTextColorAtSave == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsRow.isVisuallySelected)
+        let selectionColor = try #require(
+            LibrarySourceSelectionPalette.foregroundColor.usingColorSpace(.deviceRGB)
+        )
+        #expect(selectionColor.blueComponent > selectionColor.redComponent)
+        #expect(selectionColor.blueComponent > selectionColor.greenComponent)
         #expect(controller.setSourceFolderExpandedForLibrary(projectsFolder, expanded: false))
         outline.keyDown(with: try keyEvent(keyCode: 124, modifiers: [], characters: "\u{F703}"))
         #expect(controller.sourceTitlesForLibrary().contains("Client"))
@@ -4104,6 +4123,63 @@ struct MarkdownRichEditorTests {
         outline.keyDown(with: try keyEvent(keyCode: 123, modifiers: [], characters: "\u{F702}"))
         #expect(!outline.isItemExpanded(outline.item(atRow: outline.selectedRow)))
         #expect(controller.noteListTitleLabel.stringValue == "Projects")
+    }
+
+    @MainActor
+    @Test
+    func libraryTopLevelFoldersUseEditablePersistentIcons() throws {
+        let suiteName = "mudsnote.library-folder-icon-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-folder-icon-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        try store.ensureNotesDirectory()
+        _ = try store.createFolder(named: "Projects")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        _ = try #require(controller.window)
+        controller.loadSourceFoldersForLibrary()
+
+        #expect(controller.sourceIconNameForLibrary(titled: "Notes") == "folder.fill")
+        #expect(controller.sourceIconNameForLibrary(titled: "Projects") == "folder")
+
+        let outline = controller.sourceOutlineView
+        let rootRow = try #require((0..<outline.numberOfRows).first { row in
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
+                as? LibrarySourceOutlineCellView)?.textField?.stringValue == "Notes"
+        })
+        let rootMenu = try #require(controller.sourceContextMenuForLibrary(row: rootRow))
+        let iconMenu = try #require(rootMenu.items.first { $0.title == "更改图标" }?.submenu)
+        let workIndex = try #require(iconMenu.items.firstIndex { $0.title == "工作" })
+        iconMenu.performActionForItem(at: workIndex)
+
+        #expect(store.libraryFolderIconName(for: notesDirectory) == "briefcase.fill")
+        #expect(controller.sourceIconNameForLibrary(titled: "Notes") == "briefcase.fill")
+
+        let childRow = try #require((0..<outline.numberOfRows).first { row in
+            (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
+                as? LibrarySourceOutlineCellView)?.textField?.stringValue == "Projects"
+        })
+        let childMenu = try #require(controller.sourceContextMenuForLibrary(row: childRow))
+        #expect(!childMenu.items.contains { $0.title == "更改图标" })
     }
 
     @MainActor

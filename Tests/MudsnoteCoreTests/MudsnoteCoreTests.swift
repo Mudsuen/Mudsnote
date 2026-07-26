@@ -1380,6 +1380,25 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func folderIconNamesPersistFollowRenamesAndClearWhenTrashed() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        store.notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let project = try store.createFolder(named: "Project")
+
+        #expect(store.libraryFolderIconName(for: project) == nil)
+        store.setLibraryFolderIconName("briefcase.fill", for: project)
+        #expect(store.libraryFolderIconName(for: project) == "briefcase.fill")
+
+        let renamed = try store.renamePreferredDirectory(project, to: "Renamed Project")
+        #expect(store.libraryFolderIconName(for: project) == nil)
+        #expect(store.libraryFolderIconName(for: renamed) == "briefcase.fill")
+
+        _ = try store.trashFolder(at: renamed)
+        #expect(store.libraryFolderIconName(for: renamed) == nil)
+    }
+
+    @Test
     func pinnedNotePathsPersistAndFollowFileLifecycle() throws {
         let harness = try TestHarness()
         let store = harness.store

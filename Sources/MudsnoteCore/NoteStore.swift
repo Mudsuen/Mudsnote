@@ -140,6 +140,7 @@ enum NoteStoreDefaultsKey {
     static let libraryCollapsedFolderPaths = "mudsnote.library.collapsedFolderPaths"
     static let libraryExpandedFolderPaths = "mudsnote.library.expandedFolderPaths"
     static let libraryFolderOrderPaths = "mudsnote.library.folderOrderPaths"
+    static let libraryFolderIconNames = "mudsnote.library.folderIconNames"
     static let libraryFoldersSectionCollapsed = "mudsnote.library.foldersSectionCollapsed"
     static let libraryTagsSectionCollapsed = "mudsnote.library.tagsSectionCollapsed"
     static let librarySourceColumnWidth = "mudsnote.library.sourceColumnWidth"
