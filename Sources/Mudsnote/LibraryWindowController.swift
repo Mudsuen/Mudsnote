@@ -526,6 +526,8 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     static let verticalInset: CGFloat = LibraryNotesLayout.sourceRowHighlightVerticalInset
     private var trackingAreaForHover: NSTrackingArea?
     private(set) var isPointerHovered = false
+    private(set) var isVisuallySelected = false
+    var selectionBackgroundColor = LibrarySourceSelectionPalette.backgroundColor
 
     override func updateTrackingAreas() {
         if let trackingAreaForHover {
@@ -560,10 +562,21 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
         needsDisplay = true
     }
 
+    func setVisuallySelected(_ selected: Bool) {
+        guard isVisuallySelected != selected else { return }
+        isVisuallySelected = selected
+        needsDisplay = true
+    }
+
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
-        guard isPointerHovered, !isSelected else { return }
-        Self.hoverColor.setFill()
+        if isVisuallySelected {
+            selectionBackgroundColor.setFill()
+        } else if isPointerHovered {
+            Self.hoverColor.setFill()
+        } else {
+            return
+        }
         NSBezierPath(
             roundedRect: highlightBounds,
             xRadius: LibraryNotesLayout.sourceRowCornerRadius,
@@ -572,13 +585,8 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     }
 
     override func drawSelection(in dirtyRect: NSRect) {
-        guard selectionHighlightStyle != .none else { return }
-        LibrarySourceSelectionPalette.backgroundColor.setFill()
-        NSBezierPath(
-            roundedRect: highlightBounds,
-            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
-            yRadius: LibraryNotesLayout.sourceRowCornerRadius
-        ).fill()
+        // The row background uses the immediate preview selection so its
+        // appearance stays in sync with the icon and title while clicking.
     }
 
     private var highlightBounds: NSRect {
@@ -617,11 +625,31 @@ private enum LibraryNotesPalette {
     static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
 }
 
+@MainActor
 enum LibrarySourceSelectionPalette {
-    static let backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.86)
-    static let foregroundColor = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.16, alpha: 1)
-    static let selectedCountColor = NSColor.labelColor.withAlphaComponent(0.42)
+    static let backgroundColor = MudsnoteThemeColor.ocean.sourceSelectionBackgroundColor
+    static let noteBackgroundColor = MudsnoteThemeColor.ocean.noteSelectionBackgroundColor
+    static let foregroundColor = MudsnoteThemeColor.ocean.foregroundColor
+    static let selectedCountColor = MudsnoteThemeColor.ocean.selectedCountColor
     static let unselectedForegroundColor = NSColor.labelColor.withAlphaComponent(0.92)
+}
+
+private struct LibraryFolderIconChoice {
+    let title: String
+    let symbolName: String
+
+    static let all: [Self] = [
+        Self(title: "文件夹", symbolName: "folder.fill"),
+        Self(title: "笔记", symbolName: "books.vertical.fill"),
+        Self(title: "工作", symbolName: "briefcase.fill"),
+        Self(title: "灵感", symbolName: "lightbulb.fill"),
+        Self(title: "学习", symbolName: "graduationcap.fill"),
+        Self(title: "收藏", symbolName: "bookmark.fill"),
+        Self(title: "归档", symbolName: "archivebox.fill"),
+        Self(title: "生活", symbolName: "house.fill"),
+        Self(title: "团队", symbolName: "person.2.fill"),
+        Self(title: "重点", symbolName: "star.fill")
+    ]
 }
 
 private func libraryDisplayTag(_ tag: String) -> String {
@@ -669,6 +697,16 @@ private final class LibraryFolderMoveRequest: NSObject {
     init(source: URL, destinationParent: URL) {
         self.source = source.standardizedFileURL
         self.destinationParent = destinationParent.standardizedFileURL
+    }
+}
+
+private final class LibraryFolderIconRequest: NSObject {
+    let folderURL: URL
+    let symbolName: String?
+
+    init(folderURL: URL, symbolName: String?) {
+        self.folderURL = folderURL.standardizedFileURL
+        self.symbolName = symbolName
     }
 }
 
@@ -895,7 +933,8 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionTopInset: CGFloat = 6
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
-    static let selectionFillColor = NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
+    static let selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
+    var currentSelectionFillColor = selectionFillColor
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
@@ -1001,7 +1040,7 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.selectionCornerRadius,
             yRadius: Self.selectionCornerRadius
         )
-        Self.selectionFillColor.setFill()
+        currentSelectionFillColor.setFill()
         path.fill()
     }
 
@@ -3630,6 +3669,15 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    func sourceIconNameForLibrary(titled title: String) -> String? {
+        guard let scope = sourceOutlineItemsByScopeIdentifier.values.compactMap(\.scope).first(where: {
+            sourceTitle(for: $0).localizedCaseInsensitiveCompare(title) == .orderedSame
+        }) else {
+            return nil
+        }
+        return sourceSymbolName(for: scope)
+    }
+
     var selectedSourceTitleForLibrary: String {
         sourceTitle(for: selectedScope)
     }
@@ -4493,13 +4541,10 @@ final class LibraryWindowController: NSWindowController,
         for item: LibrarySourceOutlineItem
     ) {
         guard let scope = item.scope else { return }
+        let themeColor = selectedThemeColor
         let title = sourceTitle(for: scope)
         let row = sourceOutlineView.row(forItem: item)
-        let visualSelectionRow = sourceOutlineView.primaryMouseVisualSelectionRow
-            ?? sourceOutlineView.selectedRow
-        let isSelected = row >= 0
-            ? row == visualSelectionRow
-            : selectedScope == scope
+        let isSelected = isSourceOutlineItemVisuallySelected(item)
         let legacyTag = sourceLegacyTag(for: scope)
         cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
         cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
@@ -4512,10 +4557,10 @@ final class LibraryWindowController: NSWindowController,
                 : LibraryNotesLayout.sourceUnselectedButtonFontWeight
         )
         cell.textField?.textColor = isSelected
-            ? LibrarySourceSelectionPalette.foregroundColor
+            ? themeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
         cell.imageView?.image = NSImage(
-            systemSymbolName: scope.symbolName,
+            systemSymbolName: sourceSymbolName(for: scope),
             accessibilityDescription: title
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(
             pointSize: LibraryNotesLayout.sourceSymbolPointSize,
@@ -4524,13 +4569,41 @@ final class LibraryWindowController: NSWindowController,
         cell.imageView?.contentTintColor = cell.textField?.textColor
         cell.countLabel.stringValue = sourceCountText(item.count, for: scope)
         cell.countLabel.textColor = isSelected
-            ? LibrarySourceSelectionPalette.selectedCountColor
+            ? themeColor.selectedCountColor
             : panelTertiaryTextColor()
+        let rowView = sourceOutlineView.rowView(
+            atRow: row,
+            makeIfNecessary: false
+        ) as? LibrarySourceOutlineRowView
+        rowView?.selectionBackgroundColor = themeColor.sourceSelectionBackgroundColor
+        rowView?.setVisuallySelected(isSelected)
         cell.accessibilityPressHandler = { [weak self] in
             self?.activateSourceScope(scope) ?? false
         }
         cell.setAccessibilityLabel(title)
         cell.setAccessibilityValue("\(item.count) 条笔记")
+    }
+
+    private func isSourceOutlineItemVisuallySelected(_ item: LibrarySourceOutlineItem) -> Bool {
+        guard let scope = item.scope else { return false }
+        let row = sourceOutlineView.row(forItem: item)
+        let visualSelectionRow = sourceOutlineView.primaryMouseVisualSelectionRow
+            ?? sourceOutlineView.selectedRow
+        return row >= 0 ? row == visualSelectionRow : selectedScope == scope
+    }
+
+    private var selectedThemeColor: MudsnoteThemeColor {
+        MudsnoteThemeColor(identifier: noteStore.themeColorIdentifier)
+    }
+
+    private func sourceSymbolName(for scope: LibraryScope) -> String {
+        guard case .folder(let folderURL) = scope,
+              sourceFolderTreeRows.first(where: {
+                  $0.url.standardizedFileURL.path == folderURL.standardizedFileURL.path
+              })?.depth == 0 else {
+            return scope.symbolName
+        }
+        return noteStore.libraryFolderIconName(for: folderURL) ?? "folder.fill"
     }
 
     private func sourceLegacyTag(for scope: LibraryScope) -> Int {
@@ -4649,7 +4722,10 @@ final class LibraryWindowController: NSWindowController,
         guard let item = item as? LibrarySourceOutlineItem else { return nil }
         switch item.kind {
         case .scope:
-            return LibrarySourceOutlineRowView()
+            let row = LibrarySourceOutlineRowView()
+            row.selectionBackgroundColor = selectedThemeColor.sourceSelectionBackgroundColor
+            row.setVisuallySelected(isSourceOutlineItemVisuallySelected(item))
+            return row
         case .group, .status, .inlineFolderEdit:
             let row = NSTableRowView()
             row.selectionHighlightStyle = .none
@@ -5300,6 +5376,7 @@ final class LibraryWindowController: NSWindowController,
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let rowView = LibraryNoteRowView()
         rowView.isGroupRow = note(at: row) == nil
+        rowView.currentSelectionFillColor = selectedThemeColor.noteSelectionBackgroundColor
         return rowView
     }
 
@@ -6269,6 +6346,14 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "无法移动文件夹", details: error.localizedDescription)
         }
+    }
+
+    @objc
+    private func changeFolderIconMenuItemPressed(_ sender: NSMenuItem) {
+        guard let request = sender.representedObject as? LibraryFolderIconRequest else { return }
+        noteStore.setLibraryFolderIconName(request.symbolName, for: request.folderURL)
+        refreshVisibleSourceOutlinePresentation()
+        sourceOutlineView.window?.displayIfNeeded()
     }
 
     @objc
@@ -7775,6 +7860,26 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    func refreshThemeColorForLibrary() {
+        let themeColor = selectedThemeColor
+        refreshVisibleSourceOutlinePresentation()
+        let visibleRows = tableView.rows(in: tableView.visibleRect)
+        if visibleRows.location != NSNotFound {
+            for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
+                guard let rowView = tableView.rowView(
+                    atRow: row,
+                    makeIfNecessary: false
+                ) as? LibraryNoteRowView else {
+                    continue
+                }
+                rowView.currentSelectionFillColor = themeColor.noteSelectionBackgroundColor
+                rowView.needsDisplay = true
+            }
+        }
+        galleryCollectionView.needsDisplay = true
+        window?.displayIfNeeded()
+    }
+
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {
         notes
     }
@@ -8871,7 +8976,13 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(revealItem)
 
         if isRoot {
+            menu.addItem(.separator())
+            let iconItem = NSMenuItem(title: "更改图标", action: nil, keyEquivalent: "")
+            iconItem.submenu = makeFolderIconMenu(for: standardizedFolder)
+            menu.addItem(iconItem)
+
             if !isDefaultRoot {
+                menu.addItem(.separator())
                 let removeItem = NSMenuItem(
                     title: "从资料库移除",
                     action: #selector(removeLibraryFolderMenuItemPressed(_:)),
@@ -8905,6 +9016,39 @@ final class LibraryWindowController: NSWindowController,
         deleteItem.representedObject = folderURL
         menu.addItem(deleteItem)
 
+        return menu
+    }
+
+    private func makeFolderIconMenu(for folderURL: URL) -> NSMenu {
+        let menu = NSMenu()
+        let currentSymbolName = noteStore.libraryFolderIconName(for: folderURL)
+        let defaultItem = NSMenuItem(
+            title: "默认",
+            action: #selector(changeFolderIconMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        defaultItem.target = self
+        defaultItem.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "默认图标")
+        defaultItem.state = currentSymbolName == nil ? .on : .off
+        defaultItem.representedObject = LibraryFolderIconRequest(folderURL: folderURL, symbolName: nil)
+        menu.addItem(defaultItem)
+        menu.addItem(.separator())
+
+        for choice in LibraryFolderIconChoice.all {
+            let item = NSMenuItem(
+                title: choice.title,
+                action: #selector(changeFolderIconMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.image = NSImage(systemSymbolName: choice.symbolName, accessibilityDescription: choice.title)
+            item.state = currentSymbolName == choice.symbolName ? .on : .off
+            item.representedObject = LibraryFolderIconRequest(
+                folderURL: folderURL,
+                symbolName: choice.symbolName
+            )
+            menu.addItem(item)
+        }
         return menu
     }
 

@@ -12,6 +12,7 @@ struct PreferencesSettings {
     let saveShortcut: HotKeySpec
     let floatingNoteStaysOnTop: Bool
     let spellCheckingEnabled: Bool
+    let themeColorIdentifier: String
     let libraryIncludesSubfolderNotes: Bool
     let editorContextMenuOptions: Set<EditorContextMenuOption>
     let selectionToolbarOptions: Set<SelectionToolbarOption>
@@ -24,6 +25,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private enum SettingsPane: String, CaseIterable {
         case general
         case editor
+        case theme
         case ai
         case shortcuts
         case appearance
@@ -33,6 +35,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             switch self {
             case .general: return "通用"
             case .editor: return "编辑"
+            case .theme: return "主题"
             case .ai: return "AI"
             case .shortcuts: return "快捷键"
             case .appearance: return "外观"
@@ -43,6 +46,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             switch self {
             case .general: return "folder"
             case .editor: return "text.cursor"
+            case .theme: return "paintpalette"
             case .ai: return "sparkles"
             case .shortcuts: return "keyboard"
             case .appearance: return "slider.horizontal.3"
@@ -62,6 +66,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
+    private(set) var themeColorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
     private let aiCodexPathLabel = NSTextField(labelWithString: "")
     private let aiChooseCodexButton = NSButton(title: "选择…", target: nil, action: nil)
@@ -104,6 +109,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
+        currentThemeColorIdentifier: String = "ocean",
         libraryIncludesSubfolderNotes: Bool = true,
         editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
         selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
@@ -156,6 +162,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             currentSaveShortcut: currentSaveShortcut,
             floatingNoteStaysOnTop: floatingNoteStaysOnTop,
             spellCheckingEnabled: spellCheckingEnabled,
+            currentThemeColorIdentifier: currentThemeColorIdentifier,
             editorContextMenuOptions: editorContextMenuOptions,
             selectionToolbarOptions: selectionToolbarOptions,
             aiEnabled: aiEnabled
@@ -228,6 +235,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentSaveShortcut: String,
         floatingNoteStaysOnTop: Bool,
         spellCheckingEnabled: Bool,
+        currentThemeColorIdentifier: String,
         editorContextMenuOptions: Set<EditorContextMenuOption>,
         selectionToolbarOptions: Set<SelectionToolbarOption>,
         aiEnabled: Bool
@@ -252,6 +260,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         revealDirectoryButton.action = #selector(revealFolderPressed)
         floatingNoteStaysOnTopButton.state = floatingNoteStaysOnTop ? .on : .off
         spellCheckingButton.state = spellCheckingEnabled ? .on : .off
+        configureThemeColorPopUp(selectedIdentifier: currentThemeColorIdentifier)
         contextMenuOptionButtons = optionButtons(
             options: EditorContextMenuOption.allCases,
             enabled: editorContextMenuOptions,
@@ -294,6 +303,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         tabView.tabViewType = .noTabsNoBorder
         tabView.addTabViewItem(tabItem(pane: .general, view: makeGeneralPane()))
         tabView.addTabViewItem(tabItem(pane: .editor, view: makeEditorPane()))
+        tabView.addTabViewItem(tabItem(pane: .theme, view: makeThemePane()))
         tabView.addTabViewItem(tabItem(pane: .ai, view: makeAIPane()))
         tabView.addTabViewItem(tabItem(pane: .shortcuts, view: makeShortcutsPane()))
         tabView.addTabViewItem(tabItem(pane: .appearance, view: makeAppearancePane()))
@@ -377,6 +387,41 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 help: "选择选中文字后浮动格式工具栏中显示的按钮。"
             )
         ])
+    }
+
+    private func makeThemePane() -> NSView {
+        return contentPane(views: [
+            sectionTitle("主题"),
+            preferenceRow(
+                label: "主题色:",
+                control: themeColorPopUp,
+                help: "用于资料库文件夹和笔记的选中状态。保存后立即应用到已打开的资料库。"
+            ),
+            sectionDivider(),
+            sectionTitle("编辑排版"),
+            preferenceRow(
+                label: "",
+                control: bodyText("后续的编辑字号、行距等阅读与排版选项会统一放在此页。")
+            )
+        ])
+    }
+
+    private func configureThemeColorPopUp(selectedIdentifier: String) {
+        themeColorPopUp.removeAllItems()
+        for themeColor in MudsnoteThemeColor.allCases {
+            themeColorPopUp.addItem(withTitle: themeColor.title)
+            guard let item = themeColorPopUp.lastItem else { continue }
+            item.representedObject = themeColor.rawValue
+            item.image = themeColor.swatchImage
+        }
+        let selectedTheme = MudsnoteThemeColor(identifier: selectedIdentifier)
+        themeColorPopUp.selectItem(withTitle: selectedTheme.title)
+        themeColorPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+    }
+
+    private var selectedThemeColorIdentifier: String {
+        themeColorPopUp.selectedItem?.representedObject as? String
+            ?? MudsnoteThemeColor.ocean.rawValue
     }
 
     private func optionButtons<Option: Hashable>(
@@ -714,6 +759,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             saveShortcut: saveShortcutSpec,
             floatingNoteStaysOnTop: floatingNoteStaysOnTopButton.state == .on,
             spellCheckingEnabled: spellCheckingButton.state == .on,
+            themeColorIdentifier: selectedThemeColorIdentifier,
             libraryIncludesSubfolderNotes: folderNoteVisibilityPopUp.indexOfSelectedItem == 0,
             editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),

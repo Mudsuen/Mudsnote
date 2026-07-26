@@ -304,6 +304,7 @@ extension NoteStore {
         forgetRecentPathPrefix(originalDirectory)
         removeLibraryPinnedNotePaths(in: originalDirectory)
         removeLibraryFolderDisclosurePaths(in: originalDirectory)
+        removeLibraryFolderIconNames(in: originalDirectory)
         invalidateSearchIndexContents()
         return (trashedDirectory, originalFiles)
     }
