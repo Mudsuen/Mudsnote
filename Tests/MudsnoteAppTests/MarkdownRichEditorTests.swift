@@ -5583,12 +5583,14 @@ struct MarkdownRichEditorTests {
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Autosave Seed", body: "Original body")
         let writeThreadRecorder = ThreadObservationRecorder()
+        let sourceCountThreadRecorder = ThreadObservationRecorder()
         let oldModifiedAt = Date().addingTimeInterval(-86_400)
         try FileManager.default.setAttributes([.modificationDate: oldModifiedAt], ofItemAtPath: noteURL.path)
 
         let controller = LibraryWindowController(
             noteStore: store,
             backgroundAutosaveWillPersist: writeThreadRecorder.recordCurrentThread,
+            backgroundSourceCountWillLoad: sourceCountThreadRecorder.recordCurrentThread,
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -5616,6 +5618,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
         await controller.waitForSourceCountRefreshForLibrary()
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
+        #expect(!sourceCountThreadRecorder.didObserveMainThread())
     }
 
     @MainActor
@@ -5745,6 +5748,71 @@ struct MarkdownRichEditorTests {
         await controller.waitForBackgroundAutosaveForTesting()
         #expect(try store.loadNote(at: editedURL).body == "Edited without blocking navigation")
         #expect(!controller.statusLabel.stringValue.contains("保存"))
+    }
+
+    @MainActor
+    @Test
+    func internalFileEventWaitsForActiveAutosaveAndDoesNotRestartSearch() async throws {
+        let suiteName = "mudsnote.library-autosave-file-event-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-autosave-file-event-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Existing", body: "Initial body")
+        let recorder = BlockingAutosaveRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundAutosaveWillPersist: recorder.record,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            recorder.releaseFirstWrite.signal()
+            controller.close()
+        }
+
+        controller.searchForLibrary(query: "Existing", allNotes: true)
+        let activeSession = try #require(controller.activeSearchSessionForLibrary())
+        controller.editorTextView.string = "Existing updated body"
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        let firstStarted = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(
+                    returning: recorder.firstWriteStarted.wait(timeout: .now() + 2)
+                )
+            }
+        }
+        #expect(firstStarted == .success)
+
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: noteURL.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile
+                )
+            )
+        ])
+        #expect(controller.activeSearchSessionForLibrary() === activeSession)
+
+        recorder.releaseFirstWrite.signal()
+        await controller.waitForBackgroundAutosaveForTesting()
+        await controller.waitForExternalLibraryRefreshForTesting()
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Existing"])
+        #expect(try store.loadNote(at: noteURL).body == "Existing updated body")
     }
 
     @MainActor
@@ -6098,6 +6166,14 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchField.stringValue.isEmpty)
         #expect(controller.activeSearchSessionForLibrary() == nil)
         #expect(controller.editorTextView.attributedString().attribute(.qmSearchHighlight, at: editorMatchRange.location, effectiveRange: nil) == nil)
+        let removalScanCount = controller.editorSearchHighlightRemovalScanCountForLibrary
+        controller.removeEditorSearchHighlights()
+        #expect(controller.editorSearchHighlightRemovalScanCountForLibrary == removalScanCount)
+        controller.textDidChange(Notification(
+            name: NSText.didChangeNotification,
+            object: controller.editorTextView
+        ))
+        #expect(controller.editorSearchHighlightRemovalScanCountForLibrary == removalScanCount)
 
         controller.searchForLibrary(query: "alpha", allNotes: true)
         let allNotesSearchSession = try #require(controller.activeSearchSessionForLibrary())

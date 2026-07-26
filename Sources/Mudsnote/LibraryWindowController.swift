@@ -230,6 +230,9 @@ private struct LibraryBackgroundSaveSuccess: Sendable {
     let savedURL: URL
     let savedAt: Date
     let savedRevision: LibraryDocumentRevision
+    let snippet: String
+    let hasAttachments: Bool
+    let thumbnailURL: URL?
 }
 
 private final class LibraryBackgroundSaveResultBox: @unchecked Sendable {
@@ -1234,6 +1237,7 @@ final class LibraryWindowController: NSWindowController,
     private let fileModificationDateLoader: @Sendable (URL) -> Date?
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let backgroundAutosaveWillPersist: @Sendable () -> Void
+    private let backgroundSourceCountWillLoad: @Sendable () -> Void
     private let conflictResolutionHandler: (URL) -> LibrarySaveConflictResolution
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
@@ -1267,6 +1271,7 @@ final class LibraryWindowController: NSWindowController,
     private var backgroundAutosaveNeedsLatest = false
     private var backgroundAutosaveActiveEditorRevision: Int?
     private var backgroundAutosaveActivePreviousURL: URL?
+    private var deferredFileSystemChangesDuringAutosave = Set<LibraryFileSystemChange>()
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
     private var notePrefetchTask: Task<Void, Never>?
@@ -1281,11 +1286,14 @@ final class LibraryWindowController: NSWindowController,
     private var sourceSnapshotValidationGeneration = 0
     private var sourceCountRefreshTask: Task<Void, Never>?
     private var sourceCountRefreshGeneration = 0
+    private var sourceInboxDirectory: URL?
     private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
     private var isSearchResultReloading = false
     private var isLoadingInitialNote = false
     private var suppressEditorChanges = false
+    private var hasEditorSearchHighlights = false
+    private var editorSearchHighlightRemovalScanCount = 0
     private var editorContentRevision = 0
     private var isEditorShowingMarkdownSource = false
     private var suppressSelectionChanges = false
@@ -1376,6 +1384,7 @@ final class LibraryWindowController: NSWindowController,
         fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
+        backgroundSourceCountWillLoad: @escaping @Sendable () -> Void = {},
         conflictResolutionHandler: ((URL) -> LibrarySaveConflictResolution)? = nil,
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
@@ -1393,6 +1402,7 @@ final class LibraryWindowController: NSWindowController,
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
+        self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad
         self.conflictResolutionHandler = conflictResolutionHandler ?? Self.presentExternalModificationConflict
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
@@ -1628,9 +1638,16 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
-        let inboxDirectory = noteStore.preferredInboxDirectory
+        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
         let previousSnapshot = sourceCountSnapshot
         Task.detached(priority: .userInitiated) { [weak self] in
+            let inboxDirectory = noteStore.preferredInboxDirectory
+            let recentCount = Self.recentFilesVisibleInLibrary(
+                noteStore: noteStore,
+                preferredDirectories: preferredDirectories,
+                externalDocumentPaths: externalDocumentPaths,
+                limit: 80
+            ).count
             let allNotes = await Self.loadStableSourceSnapshot(
                 noteStore: noteStore,
                 limit: snapshotLimit,
@@ -1649,6 +1666,7 @@ final class LibraryWindowController: NSWindowController,
                 self.fullLibrarySnapshotReloadScheduled = false
                 self.isFullLibrarySnapshotLoading = false
                 guard self.window?.isVisible == true else { return }
+                self.sourceInboxDirectory = inboxDirectory
                 self.trashedNotesSnapshot = trashedNotes
                 let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
@@ -1657,7 +1675,11 @@ final class LibraryWindowController: NSWindowController,
                 let currentQuery = self.searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !currentQuery.isEmpty {
                     self.sourceCountSnapshot = mergedAllNotes
-                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
+                    self.refreshSourceCounts(
+                        using: mergedAllNotes,
+                        countIndex: reusableCountIndex,
+                        recentCount: recentCount
+                    )
                     self.updateNoteListHeader(query: currentQuery)
                     return
                 }
@@ -1666,7 +1688,8 @@ final class LibraryWindowController: NSWindowController,
                     selecting: self.selectedURL,
                     loadFirstIfNeeded: shouldLoadFirstAfterSnapshot,
                     allNotesSnapshot: mergedAllNotes,
-                    sourceCountIndex: reusableCountIndex
+                    sourceCountIndex: reusableCountIndex,
+                    sourceRecentCount: recentCount
                 )
             }
         }
@@ -1832,6 +1855,10 @@ final class LibraryWindowController: NSWindowController,
         requiresVisibleWindow: Bool = true
     ) {
         guard !requiresVisibleWindow || window?.isVisible == true else { return }
+        if backgroundAutosaveIsActive {
+            deferredFileSystemChangesDuringAutosave.formUnion(changes)
+            return
+        }
         let externalChanges = changes.filter {
             $0.requiresFullRescan || !isSuppressedInternalChange($0)
         }
@@ -1875,6 +1902,16 @@ final class LibraryWindowController: NSWindowController,
         } else {
             performSearchReload()
         }
+    }
+
+    private func flushDeferredFileSystemChangesAfterAutosave() {
+        guard !backgroundAutosaveIsActive,
+              !deferredFileSystemChangesDuringAutosave.isEmpty else {
+            return
+        }
+        let changes = deferredFileSystemChangesDuringAutosave
+        deferredFileSystemChangesDuringAutosave.removeAll()
+        handleLibraryFileSystemChanges(changes, requiresVisibleWindow: false)
     }
 
     private func recordInternalFileSystemChanges(for urls: [URL]) {
@@ -3789,15 +3826,44 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
+    private func inboxDirectoryForCurrentSourceSnapshot() -> URL {
+        if let sourceInboxDirectory {
+            return sourceInboxDirectory
+        }
+        let candidates = noteStore.preferredDirectories + sourceFolderTreeRows.map(\.url)
+        if let inbox = candidates.enumerated().min(by: { lhs, rhs in
+            let lhsRank = Self.inboxDirectoryRank(lhs.element.lastPathComponent)
+            let rhsRank = Self.inboxDirectoryRank(rhs.element.lastPathComponent)
+            return lhsRank == rhsRank ? lhs.offset < rhs.offset : lhsRank < rhsRank
+        }), Self.inboxDirectoryRank(inbox.element.lastPathComponent) < Int.max {
+            return inbox.element.standardizedFileURL
+        }
+        return noteStore.notesDirectory
+            .appendingPathComponent("Inbox", isDirectory: true)
+            .standardizedFileURL
+    }
+
+    nonisolated private static func inboxDirectoryRank(_ name: String) -> Int {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "inbox" { return 0 }
+        if normalized.hasSuffix("-inbox")
+            || normalized.hasSuffix("_inbox")
+            || normalized.hasSuffix(" inbox") {
+            return 1
+        }
+        return Int.max
+    }
+
     private func refreshSourceCounts(
         using allNotes: [NoteSearchResult],
-        countIndex precomputedCountIndex: LibrarySourceCountIndex? = nil
+        countIndex precomputedCountIndex: LibrarySourceCountIndex? = nil,
+        recentCount precomputedRecentCount: Int? = nil
     ) {
-        let recentCount = recentFilesVisibleInLibrary(limit: 80).count
+        let recentCount = precomputedRecentCount ?? recentFilesVisibleInLibrary(limit: 80).count
         let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
             notes: allNotes,
             folderPaths: currentSourceFolderPaths(),
-            inboxDirectory: noteStore.preferredInboxDirectory
+            inboxDirectory: inboxDirectoryForCurrentSourceSnapshot()
         )
         applySourceCounts(
             allNotesCount: allNotes.count,
@@ -3812,11 +3878,21 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         let generation = sourceCountRefreshGeneration
         let folderPaths = currentSourceFolderPaths()
-        let inboxDirectory = noteStore.preferredInboxDirectory
-        let recentCount = recentFilesVisibleInLibrary(limit: 80).count
         let trashCount = trashedNotesSnapshot.count
+        let noteStore = noteStore
+        let preferredDirectories = noteStore.preferredDirectories
+        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
+        let willLoad = backgroundSourceCountWillLoad
 
         sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
+            willLoad()
+            let inboxDirectory = noteStore.preferredInboxDirectory
+            let recentCount = Self.recentFilesVisibleInLibrary(
+                noteStore: noteStore,
+                preferredDirectories: preferredDirectories,
+                externalDocumentPaths: externalDocumentPaths,
+                limit: 80
+            ).count
             let countIndex = LibrarySourceCountIndex(
                 notes: allNotes,
                 folderPaths: folderPaths,
@@ -3828,6 +3904,7 @@ final class LibraryWindowController: NSWindowController,
                       generation == self.sourceCountRefreshGeneration,
                       folderPaths == self.currentSourceFolderPaths() else { return }
                 self.sourceCountRefreshTask = nil
+                self.sourceInboxDirectory = inboxDirectory
                 self.applySourceCounts(
                     allNotesCount: allNotes.count,
                     recentCount: recentCount,
@@ -3884,6 +3961,7 @@ final class LibraryWindowController: NSWindowController,
         loadFirstIfNeeded: Bool,
         allNotesSnapshot: [NoteSearchResult]? = nil,
         sourceCountIndex: LibrarySourceCountIndex? = nil,
+        sourceRecentCount: Int? = nil,
         refreshCounts: Bool = true,
         mutationAnimation: LibraryNoteMutationAnimation? = nil
     ) {
@@ -3926,7 +4004,11 @@ final class LibraryWindowController: NSWindowController,
         }
         if refreshCounts {
             sourceCountSnapshot = allNotes
-            refreshSourceCounts(using: allNotes, countIndex: sourceCountIndex)
+            refreshSourceCounts(
+                using: allNotes,
+                countIndex: sourceCountIndex,
+                recentCount: sourceRecentCount
+            )
         }
         refreshSourceSelection()
         updateToolbarActionState()
@@ -3956,12 +4038,19 @@ final class LibraryWindowController: NSWindowController,
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
-        let inboxDirectory = noteStore.preferredInboxDirectory
+        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
         let previousSnapshot = sourceCountSnapshot
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
             await Task.yield()
             guard !Task.isCancelled else { return }
+            let inboxDirectory = noteStore.preferredInboxDirectory
+            let recentCount = Self.recentFilesVisibleInLibrary(
+                noteStore: noteStore,
+                preferredDirectories: preferredDirectories,
+                externalDocumentPaths: externalDocumentPaths,
+                limit: 80
+            ).count
             let allNotes = await Self.loadStableSourceSnapshot(
                 noteStore: noteStore,
                 limit: snapshotLimit,
@@ -3987,6 +4076,7 @@ final class LibraryWindowController: NSWindowController,
                 }
 
                 self.sourceSnapshotValidationTask = nil
+                self.sourceInboxDirectory = inboxDirectory
                 let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
@@ -3994,7 +4084,11 @@ final class LibraryWindowController: NSWindowController,
                 let trashChanged = trashedNotes != self.trashedNotesSnapshot
                 self.trashedNotesSnapshot = trashedNotes
                 guard mergedAllNotes != self.sourceCountSnapshot || trashChanged else {
-                    self.refreshSourceCounts(using: mergedAllNotes, countIndex: reusableCountIndex)
+                    self.refreshSourceCounts(
+                        using: mergedAllNotes,
+                        countIndex: reusableCountIndex,
+                        recentCount: recentCount
+                    )
                     return
                 }
 
@@ -4008,7 +4102,8 @@ final class LibraryWindowController: NSWindowController,
                     selecting: selectionStillExists ? selectedURL : nil,
                     loadFirstIfNeeded: loadFirstIfNeeded && !selectionStillExists,
                     allNotesSnapshot: mergedAllNotes,
-                    sourceCountIndex: reusableCountIndex
+                    sourceCountIndex: reusableCountIndex,
+                    sourceRecentCount: recentCount
                 )
             }
         }
@@ -4070,7 +4165,7 @@ final class LibraryWindowController: NSWindowController,
             predicate = { _ in true }
         case .inbox:
             candidates = allNotes
-            let inboxDirectory = noteStore.preferredInboxDirectory
+            let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
             predicate = { libraryIsInboxNote($0, inboxDirectory: inboxDirectory) }
         case .trash:
             candidates = trashedNotesSnapshot
@@ -4112,7 +4207,7 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .inbox:
-            let inboxDirectory = noteStore.preferredInboxDirectory
+            let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
                 libraryIsInboxNote(note, inboxDirectory: inboxDirectory)
             }
@@ -4170,7 +4265,7 @@ final class LibraryWindowController: NSWindowController,
             case .recent:
                 candidates = recentNoteResults(limit: 80, allNotes: sourceCountSnapshot)
             case .inbox:
-                let inboxDirectory = noteStore.preferredInboxDirectory
+                let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
                 candidates = sourceCountSnapshot.filter {
                     libraryIsInboxNote($0, inboxDirectory: inboxDirectory)
                 }
@@ -4255,10 +4350,31 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func recentFilesVisibleInLibrary(limit: Int) -> [NoteFile] {
+        Self.recentFilesVisibleInLibrary(
+            noteStore: noteStore,
+            preferredDirectories: noteStore.preferredDirectories,
+            externalDocumentPaths: Set(externallyOpenedDocumentsByPath.keys),
+            limit: limit
+        )
+    }
+
+    nonisolated private static func recentFilesVisibleInLibrary(
+        noteStore: NoteStore,
+        preferredDirectories: [URL],
+        externalDocumentPaths: Set<String>,
+        limit: Int
+    ) -> [NoteFile] {
         Array(noteStore.listRecentFiles(limit: .max).lazy.filter { note in
             let path = note.url.standardizedFileURL.path
-            return self.isInsideConfiguredLibraryRoot(note.url)
-                || self.externallyOpenedDocumentsByPath[path] != nil
+            let isInsideLibrary = preferredDirectories.contains { rootURL in
+                let rootPath = rootURL.standardizedFileURL.path
+                guard path.hasPrefix(rootPath + "/") else { return false }
+                let relativePath = String(path.dropFirst(rootPath.count + 1))
+                return !relativePath.split(separator: "/").contains {
+                    $0.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame
+                }
+            }
+            return isInsideLibrary || externalDocumentPaths.contains(path)
         }.prefix(limit))
     }
 
@@ -6687,6 +6803,7 @@ final class LibraryWindowController: NSWindowController,
 
         let nsText = storage.string as NSString
         var searchRange = NSRange(location: 0, length: nsText.length)
+        var foundMatch = false
         while searchRange.location < nsText.length {
             let match = nsText.range(
                 of: trimmedQuery,
@@ -6699,14 +6816,21 @@ final class LibraryWindowController: NSWindowController,
                 .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.30),
                 .qmSearchHighlight: true
             ], range: match)
+            foundMatch = true
 
             let nextLocation = NSMaxRange(match)
             searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
         }
+        hasEditorSearchHighlights = foundMatch
     }
 
     func removeEditorSearchHighlights() {
-        guard let storage = editorTextView.textStorage, storage.length > 0 else { return }
+        guard hasEditorSearchHighlights else { return }
+        guard let storage = editorTextView.textStorage, storage.length > 0 else {
+            hasEditorSearchHighlights = false
+            return
+        }
+        editorSearchHighlightRemovalScanCount += 1
         let wasSuppressingEditorChanges = suppressEditorChanges
         suppressEditorChanges = true
         defer { suppressEditorChanges = wasSuppressingEditorChanges }
@@ -6741,6 +6865,11 @@ final class LibraryWindowController: NSWindowController,
                 location = NSMaxRange(clippedRange)
             }
         }
+        hasEditorSearchHighlights = false
+    }
+
+    var editorSearchHighlightRemovalScanCountForLibrary: Int {
+        editorSearchHighlightRemovalScanCount
     }
 
     private func markDirty() {
@@ -6885,7 +7014,13 @@ final class LibraryWindowController: NSWindowController,
             snapshot: snapshot,
             savedURL: savedURL,
             savedAt: savedRevision.contentModificationDate ?? Date(),
-            savedRevision: savedRevision
+            savedRevision: savedRevision,
+            snippet: libraryFirstMeaningfulLine(from: snapshot.body) ?? "",
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: snapshot.body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
+                in: snapshot.body,
+                relativeTo: savedURL
+            )
         )
     }
 
@@ -6918,6 +7053,7 @@ final class LibraryWindowController: NSWindowController,
             )
             NSSound.beep()
         }
+        flushDeferredFileSystemChangesAfterAutosave()
     }
 
     private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
@@ -6931,9 +7067,11 @@ final class LibraryWindowController: NSWindowController,
             previousURL: snapshot.previousURL,
             savedURL: success.savedURL,
             title: snapshot.title,
-            body: snapshot.body,
             tags: snapshot.tags,
-            modifiedAt: success.savedAt
+            modifiedAt: success.savedAt,
+            snippet: success.snippet,
+            hasAttachments: success.hasAttachments,
+            thumbnailURL: success.thumbnailURL
         )
         let isCurrentDocument = selectedScope != .trash
             && selectedURL?.standardizedFileURL == snapshot.previousURL?.standardizedFileURL
@@ -7137,9 +7275,11 @@ final class LibraryWindowController: NSWindowController,
             previousURL: nil,
             savedURL: savedURL,
             title: title,
-            body: body,
             tags: selectedTags,
-            modifiedAt: savedAt
+            modifiedAt: savedAt,
+            snippet: libraryFirstMeaningfulLine(from: body) ?? "",
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
         )
         onSave(savedURL)
         return savedURL
@@ -7197,7 +7337,6 @@ final class LibraryWindowController: NSWindowController,
         if announcesChange {
             NSAccessibility.post(element: statusLabel, notification: .valueChanged)
         }
-        statusLabel.displayIfNeeded()
     }
 
     @discardableResult
@@ -7251,9 +7390,11 @@ final class LibraryWindowController: NSWindowController,
             previousURL: previousURL,
             savedURL: savedURL,
             title: title,
-            body: body,
             tags: selectedTags,
-            modifiedAt: savedAt
+            modifiedAt: savedAt,
+            snippet: libraryFirstMeaningfulLine(from: body) ?? "",
+            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
         )
         refreshVisibleNoteListAfterSave(
             selecting: savedURL,
@@ -7270,20 +7411,22 @@ final class LibraryWindowController: NSWindowController,
         previousURL: URL?,
         savedURL: URL,
         title: String,
-        body: String,
         tags: [String],
-        modifiedAt: Date
+        modifiedAt: Date,
+        snippet: String,
+        hasAttachments: Bool,
+        thumbnailURL: URL?
     ) {
         let previousPath = previousURL?.standardizedFileURL.path
         let savedPath = savedURL.standardizedFileURL.path
         let updatedNote = NoteSearchResult(
             url: savedURL,
             title: title,
-            snippet: libraryFirstMeaningfulLine(from: body) ?? "",
+            snippet: snippet,
             modifiedAt: modifiedAt,
             tags: tags,
-            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
-            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
+            hasAttachments: hasAttachments,
+            thumbnailURL: thumbnailURL
         )
         if let previousPath,
            externallyOpenedDocumentsByPath.removeValue(forKey: previousPath) != nil {
@@ -7472,9 +7615,14 @@ final class LibraryWindowController: NSWindowController,
                 previousURL: nil,
                 savedURL: url,
                 title: document.title,
-                body: document.body,
                 tags: document.tags,
-                modifiedAt: modifiedAt
+                modifiedAt: modifiedAt,
+                snippet: libraryFirstMeaningfulLine(from: document.body) ?? "",
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: document.body),
+                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
+                    in: document.body,
+                    relativeTo: url
+                )
             )
         }
         activeSearchSession = nil
@@ -9737,7 +9885,6 @@ final class LibraryWindowController: NSWindowController,
         let wasSuppressingEditorChanges = suppressEditorChanges
         suppressEditorChanges = true
         storage.beginEditing()
-        removeEditorSearchHighlights()
         applyEditorSearchHighlights(query: query)
         storage.endEditing()
         suppressEditorChanges = wasSuppressingEditorChanges
