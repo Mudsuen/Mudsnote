@@ -1292,6 +1292,7 @@ struct MudsnoteCoreTests {
         #expect(!store.revealSavedNoteInFinder)
         #expect(store.floatingNoteStaysOnTop)
         #expect(store.spellCheckingEnabled)
+        #expect(store.themeColorIdentifier == "ocean")
         #expect(store.libraryNoteSortOrderRawValue == 0)
         #expect(store.libraryNoteViewModeRawValue == 0)
         #expect(store.libraryGroupsNotesByDate)
@@ -1308,6 +1309,7 @@ struct MudsnoteCoreTests {
         store.revealSavedNoteInFinder = false
         store.floatingNoteStaysOnTop = false
         store.spellCheckingEnabled = false
+        store.themeColorIdentifier = "violet"
         store.libraryNoteSortOrderRawValue = 1
         store.libraryNoteViewModeRawValue = 1
         store.libraryGroupsNotesByDate = false
@@ -1324,6 +1326,7 @@ struct MudsnoteCoreTests {
         #expect(!store.revealSavedNoteInFinder)
         #expect(!store.floatingNoteStaysOnTop)
         #expect(!store.spellCheckingEnabled)
+        #expect(store.themeColorIdentifier == "violet")
         #expect(store.libraryNoteSortOrderRawValue == 1)
         #expect(store.libraryNoteViewModeRawValue == 1)
         #expect(!store.libraryGroupsNotesByDate)

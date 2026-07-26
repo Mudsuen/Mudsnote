@@ -129,6 +129,7 @@ enum NoteStoreDefaultsKey {
     static let revealSavedNoteInFinder = "mudsnote.revealSavedNoteInFinder"
     static let floatingNoteStaysOnTop = "mudsnote.floatingNoteStaysOnTop"
     static let spellCheckingEnabled = "mudsnote.spellCheckingEnabled"
+    static let themeColorIdentifier = "mudsnote.themeColorIdentifier"
     static let editorContextMenuItems = "mudsnote.editor.contextMenuItems"
     static let selectionToolbarItems = "mudsnote.editor.selectionToolbarItems"
     static let libraryNoteSortOrder = "mudsnote.library.noteSortOrder"

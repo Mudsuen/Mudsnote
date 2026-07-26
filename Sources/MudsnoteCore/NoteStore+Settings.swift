@@ -57,6 +57,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.spellCheckingEnabled) }
     }
 
+    public var themeColorIdentifier: String {
+        get { defaults.string(forKey: NoteStoreDefaultsKey.themeColorIdentifier) ?? "ocean" }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.themeColorIdentifier) }
+    }
+
     public var editorContextMenuItemIdentifiers: [String]? {
         get { defaults.array(forKey: NoteStoreDefaultsKey.editorContextMenuItems) as? [String] }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.editorContextMenuItems) }
