@@ -29,6 +29,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var fileMoveNoteMenu: NSMenu?
     private var pendingExternalMarkdownURLs: [URL] = []
     private var hasFinishedLaunching = false
+    private var statusMenuRefreshTask: Task<Void, Never>?
 
     override init() {
         let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
@@ -466,7 +467,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         menu.addItem(item)
     }
 
-    private func rebuildMenu() {
+    private func rebuildMenu(recentFiles: [NoteFile]? = nil) {
         let menu = NSMenu()
 
         let newNote = NSMenuItem(title: "快速笔记", action: #selector(showQuickCapture), keyEquivalent: "")
@@ -495,7 +496,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
         menu.addItem(.separator())
 
-        let recent = noteStore.listRecentFiles()
+        let recent = recentFiles ?? noteStore.listRecentFiles()
         if recent.isEmpty {
             let empty = NSMenuItem(title: "暂无最近笔记", action: nil, keyEquivalent: "")
             empty.isEnabled = false
@@ -988,8 +989,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     private func didSaveNote(at _: URL) {
-        rebuildMenu()
-        cleanupClosedWindows()
+        statusMenuRefreshTask?.cancel()
+        let noteStore = noteStore
+        statusMenuRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let recentFiles = await Task.detached(priority: .utility) {
+                noteStore.listRecentFiles()
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.statusMenuRefreshTask = nil
+            self.rebuildMenu(recentFiles: recentFiles)
+            self.cleanupClosedWindows()
+        }
     }
 
     private func updateOpenEditorPreferences() {
