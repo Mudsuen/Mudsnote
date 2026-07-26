@@ -14,11 +14,14 @@ public final class NoteStore: @unchecked Sendable {
     let fileManager: FileManager
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
+    let searchIndexBuildLock = NSLock()
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
     var dirtySearchIndexPaths = Set<String>()
     var searchIndexRequiresFullRefresh = false
+    var searchIndexRevision: UInt64 = 0
     var searchIndexEntryReadCountForTesting = 0
     var searchIndexSignatureReadCountForTesting = 0
+    var searchIndexBuildWillReadForTesting: (() -> Void)?
     var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?
     var searchIndexCacheURL: URL {
         appSupportDirectory

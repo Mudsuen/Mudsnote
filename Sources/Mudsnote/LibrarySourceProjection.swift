@@ -3,7 +3,7 @@ import MudsnoteCore
 
 func libraryIsInboxNote(_ note: NoteSearchResult, inboxDirectory: URL) -> Bool {
     note.url.lastPathComponent.localizedCaseInsensitiveCompare("Inbox.md") == .orderedSame
-        || note.url.deletingLastPathComponent().standardizedFileURL == inboxDirectory.standardizedFileURL
+        || note.url.deletingLastPathComponent().path == inboxDirectory.path
 }
 
 struct LibraryFolderRow: Equatable, Sendable {

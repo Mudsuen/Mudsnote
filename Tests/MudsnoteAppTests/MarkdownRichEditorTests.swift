@@ -564,6 +564,25 @@ struct MarkdownRichEditorTests {
             currentRows: inserted,
             animation: .deletion
         ) == nil)
+
+        let movedAfterSave: [LibraryNoteListRow] = [
+            .group(title: "今天"),
+            .note(first),
+            .group(title: "更早"),
+            .note(second)
+        ]
+        let beforeSave: [LibraryNoteListRow] = [
+            .group(title: "更早"),
+            .note(first),
+            .note(second)
+        ]
+        let refresh = LibraryNoteListMutationPlan(
+            previousRows: beforeSave,
+            currentRows: movedAfterSave,
+            refreshingNotePaths: [first.url.standardizedFileURL.path]
+        )
+        #expect(refresh?.removedRows == IndexSet(integer: 1))
+        #expect(refresh?.insertedRows == IndexSet([0, 1]))
     }
 
     @MainActor
@@ -609,6 +628,16 @@ struct MarkdownRichEditorTests {
         textView.insertText("Typed https://openai.com/docs", replacementRange: NSRange(location: 0, length: 0))
         let typedLocation = (textView.string as NSString).range(of: "https://openai.com/docs").location
         #expect(textView.linkReference(atCharacterIndex: typedLocation)?.url == "https://openai.com/docs")
+
+        let veryLongLine = NSString(
+            string: String(repeating: "prefix", count: 20_000) + " https://example.com/final"
+        )
+        let refreshRange = try #require(MarkdownRichTextCodec.automaticLinkRefreshRange(
+            in: veryLongLine,
+            around: veryLongLine.length
+        ))
+        #expect(refreshRange.length <= 8_192)
+        #expect(veryLongLine.substring(with: refreshRange) == "https://example.com/final")
     }
 
     @MainActor
@@ -847,6 +876,16 @@ struct MarkdownRichEditorTests {
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
+
+        let longPrefix = String(repeating: "a", count: 20_000) + " "
+        controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
+            string: longPrefix,
+            attributes: controller.theme.baseAttributes(for: .paragraph)
+        ))
+        controller.editorTextView.setSelectedRange(NSRange(location: longPrefix.utf16.count, length: 0))
+        controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
+        #expect(controller.editorSlashSuggestionInspectionLengthForLibrary <= 128)
+        #expect(!controller.editorSlashSuggestionTitlesForLibrary.isEmpty)
     }
 
     @MainActor
@@ -3622,7 +3661,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func staleExternalReloadCannotResetCaretAfterAutosavedEdit() async throws {
+    func localAutosaveDoesNotWaitForExternalRevisionValidation() async throws {
         let suiteName = "mudsnote.library-stale-external-reload-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3675,15 +3714,13 @@ struct MarkdownRichEditorTests {
         ))
         controller.editorTextView.setSelectedRange(NSRange(location: 8, length: 0))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
-        #expect(throws: LibraryDocumentSaveProtectionError.self) {
-            _ = try controller.flushPendingAutosaveForTesting()
-        }
+        _ = try controller.flushPendingAutosaveForTesting()
         await controller.waitForExternalLibraryRefreshForTesting()
 
         #expect(controller.editorTextView.string == "Local autosaved body")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
-        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
-        #expect(try String(contentsOf: selectedURL, encoding: .utf8) == "# Selected externally\n\nExternal body\n")
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(try store.loadNote(at: selectedURL).body == "Local autosaved body")
     }
 
     @Test
@@ -3713,7 +3750,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func libraryConflictKeepsEditorAndRestoresPreviousSelection() throws {
+    func librarySelectionChangeSavesLocalEditWithoutConflictPrompt() throws {
         let suiteName = "mudsnote.library-conflict-selection-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3767,18 +3804,19 @@ struct MarkdownRichEditorTests {
             }
             return (writer as URL).standardizedFileURL != originalURL.standardizedFileURL
         })
+        let targetURL = try #require(
+            controller.tableView(controller.tableView, pasteboardWriterForRow: otherRow) as? NSURL
+        ) as URL
         controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
 
-        #expect(conflictCount == 1)
-        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == originalURL.standardizedFileURL)
-        #expect(controller.editorTextView.string == "Local protected edit")
-        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
-        #expect(controller.statusLabel.stringValue == "磁盘版本已更改，当前编辑已保留")
-        #expect(try String(contentsOf: originalURL, encoding: .utf8) == "# Changed outside\n\nExternal body\n")
+        #expect(conflictCount == 0)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+        #expect(try store.loadNote(at: originalURL).body == "Local protected edit")
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }
 
     @Test
-    func libraryConflictPreventsWindowCloseUntilUserChoosesRecovery() throws {
+    func libraryCloseSavesLocalEditWithoutConflictPrompt() throws {
         let suiteName = "mudsnote.library-conflict-close-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3796,19 +3834,18 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Close Guard", body: "Initial body")
-        var resolution = LibrarySaveConflictResolution.keepEditing
-        var didClose = false
+        var conflictCount = 0
         let controller = LibraryWindowController(
             noteStore: store,
-            conflictResolutionHandler: { _ in resolution },
+            conflictResolutionHandler: { _ in
+                conflictCount += 1
+                return .keepEditing
+            },
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
-            onClose: { didClose = true }
+            onClose: {}
         )
-        defer {
-            resolution = .reloadFromDisk
-            controller.close()
-        }
+        defer { controller.close() }
 
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
             markdown: "Unsaved close edit",
@@ -3823,14 +3860,14 @@ struct MarkdownRichEditorTests {
         )
 
         let window = try #require(controller.window)
-        #expect(!controller.windowShouldClose(window))
-        #expect(!didClose)
-        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
-        #expect(controller.editorTextView.string == "Unsaved close edit")
+        #expect(controller.windowShouldClose(window))
+        #expect(conflictCount == 0)
+        #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(try store.loadNote(at: noteURL).body == "Unsaved close edit")
     }
 
     @Test
-    func libraryConflictSaveCopyPreservesBothVersionsBeforeSelectionChange() throws {
+    func librarySelectionChangeSavesLocalEditInPlaceWithoutConflictCopy() throws {
         let suiteName = "mudsnote.library-conflict-copy-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3849,9 +3886,13 @@ struct MarkdownRichEditorTests {
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         _ = try store.saveNewNote(title: "Other", body: "Other body")
         _ = try store.saveNewNote(title: "Current", body: "Initial body")
+        var conflictCount = 0
         let controller = LibraryWindowController(
             noteStore: store,
-            conflictResolutionHandler: { _ in .saveCopy },
+            conflictResolutionHandler: { _ in
+                conflictCount += 1
+                return .saveCopy
+            },
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -3889,13 +3930,9 @@ struct MarkdownRichEditorTests {
             at: store.notesDirectory,
             includingPropertiesForKeys: nil
         ).filter { $0.pathExtension == "md" }
-        let copyURL = try #require(noteURLs.first { url in
-            url.standardizedFileURL != originalURL.standardizedFileURL
-                && url.standardizedFileURL != targetURL.standardizedFileURL
-        })
-
-        #expect(try String(contentsOf: originalURL, encoding: .utf8) == "# Changed outside\n\nExternal original\n")
-        #expect(try store.loadNote(at: copyURL).body == "Local copy body")
+        #expect(conflictCount == 0)
+        #expect(noteURLs.count == 2)
+        #expect(try store.loadNote(at: originalURL).body == "Local copy body")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }
@@ -5597,6 +5634,8 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
+        await controller.waitForNoteLinksRefreshForLibrary()
+        await controller.waitForSourceCountRefreshForLibrary()
         let displayedTimeBeforeEdit = controller.statusLabel.stringValue
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
             markdown: "Autosaved body",
@@ -5616,6 +5655,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.statusLabel.accessibilityValue() == controller.statusLabel.stringValue)
         #expect(controller.statusLabel.toolTip == nil)
         #expect(controller.noteListSearchResultsForLibrary().first?.snippet == "Autosaved body")
+        await controller.waitForNoteLinksRefreshForLibrary()
         await controller.waitForSourceCountRefreshForLibrary()
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         #expect(!sourceCountThreadRecorder.didObserveMainThread())

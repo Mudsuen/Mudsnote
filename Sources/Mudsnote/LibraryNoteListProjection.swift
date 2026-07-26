@@ -66,6 +66,48 @@ struct LibraryNoteListMutationPlan: Equatable {
         self.insertedRows = insertedRows
     }
 
+    init?(
+        previousRows: [LibraryNoteListRow],
+        currentRows: [LibraryNoteListRow],
+        refreshingNotePaths: Set<String>
+    ) {
+        guard !refreshingNotePaths.isEmpty else { return nil }
+        let previousIdentifiers = Self.identifiers(for: previousRows)
+        let currentIdentifiers = Self.identifiers(for: currentRows)
+        guard Set(previousIdentifiers).count == previousIdentifiers.count,
+              Set(currentIdentifiers).count == currentIdentifiers.count else {
+            return nil
+        }
+
+        let isRefreshedNote: (RowIdentifier) -> Bool = { identifier in
+            guard case .note(let path) = identifier else { return false }
+            return refreshingNotePaths.contains(path)
+        }
+        let previousSet = Set(previousIdentifiers)
+        let currentSet = Set(currentIdentifiers)
+        let removedRows = IndexSet(previousIdentifiers.indices.filter {
+            isRefreshedNote(previousIdentifiers[$0])
+                || !currentSet.contains(previousIdentifiers[$0])
+        })
+        let insertedRows = IndexSet(currentIdentifiers.indices.filter {
+            isRefreshedNote(currentIdentifiers[$0])
+                || !previousSet.contains(currentIdentifiers[$0])
+        })
+        let retainedPrevious = previousIdentifiers.enumerated().compactMap {
+            removedRows.contains($0.offset) ? nil : $0.element
+        }
+        let retainedCurrent = currentIdentifiers.enumerated().compactMap {
+            insertedRows.contains($0.offset) ? nil : $0.element
+        }
+
+        guard retainedPrevious == retainedCurrent,
+              !removedRows.isEmpty || !insertedRows.isEmpty else {
+            return nil
+        }
+        self.removedRows = removedRows
+        self.insertedRows = insertedRows
+    }
+
     private enum RowIdentifier: Hashable {
         case group(title: String, occurrence: Int)
         case note(path: String)

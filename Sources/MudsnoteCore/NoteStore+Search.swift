@@ -130,6 +130,13 @@ extension NoteStore {
             .map(\.result)
     }
 
+    public func listNotesRefreshingIndex(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
+        indexedEntries(roots: roots, validatesMemorySnapshot: true)
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map(\.result)
+    }
+
     public func searchNotes(query: String, limit: Int = 30, roots: [URL]? = nil) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
@@ -172,12 +179,14 @@ extension NoteStore {
     public func markSearchIndexDirty(at urls: some Sequence<URL>) {
         searchIndexLock.lock()
         dirtySearchIndexPaths.formUnion(urls.map { $0.standardizedFileURL.path })
+        searchIndexRevision &+= 1
         searchIndexLock.unlock()
     }
 
     public func invalidateSearchIndexContents() {
         searchIndexLock.lock()
         searchIndexRequiresFullRefresh = true
+        searchIndexRevision &+= 1
         searchIndexLock.unlock()
     }
 
@@ -287,14 +296,51 @@ extension NoteStore {
         return count
     }
 
-    func indexedEntries(roots: [URL]? = nil) -> [NoteSearchIndexEntry] {
-        searchIndexLock.lock()
-        defer { searchIndexLock.unlock() }
+    func indexedEntries(
+        roots: [URL]? = nil,
+        validatesMemorySnapshot: Bool = false
+    ) -> [NoteSearchIndexEntry] {
+        searchIndexBuildLock.lock()
+        defer { searchIndexBuildLock.unlock() }
 
         let searchRoots = roots ?? knownSearchRoots()
         let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+
+        searchIndexLock.lock()
+        let stateRevision = searchIndexRevision
         let dirtyPaths = dirtySearchIndexPaths
         let requiresFullRefresh = searchIndexRequiresFullRefresh
+        let memorySnapshot = searchIndexSnapshot?.rootsKey == rootsKey ? searchIndexSnapshot : nil
+        let buildWillRead = searchIndexBuildWillReadForTesting
+        searchIndexLock.unlock()
+
+        if !validatesMemorySnapshot,
+           !requiresFullRefresh,
+           dirtyPaths.isEmpty,
+           let memorySnapshot {
+            return memorySnapshot.entries
+        }
+
+        buildWillRead?()
+
+        let reusableSnapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
+        if !requiresFullRefresh,
+           !dirtyPaths.isEmpty,
+           let reusableSnapshot {
+            let snapshot = incrementallyRefreshing(
+                reusableSnapshot,
+                dirtyPaths: dirtyPaths,
+                rootsKey: rootsKey
+            )
+            publishSearchIndexSnapshot(
+                snapshot,
+                consuming: dirtyPaths,
+                fullRefresh: false,
+                stateRevision: stateRevision
+            )
+            return snapshot.entries
+        }
+
         var signatures: [String: NoteSearchFileSignature] = [:]
         var fileURLs: [URL] = []
         var seenPaths = Set<String>()
@@ -312,18 +358,17 @@ extension NoteStore {
             }
         }
 
-        let reusableSnapshot: NoteSearchIndexSnapshot?
-        if let snapshot = searchIndexSnapshot, snapshot.rootsKey == rootsKey {
-            reusableSnapshot = snapshot
-        } else {
-            reusableSnapshot = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
-        }
-
         if !requiresFullRefresh,
            dirtyPaths.isEmpty,
            let reusableSnapshot,
            reusableSnapshot.fileSignatures == signatures {
-            searchIndexSnapshot = reusableSnapshot
+            publishSearchIndexSnapshot(
+                reusableSnapshot,
+                consuming: [],
+                fullRefresh: false,
+                stateRevision: stateRevision,
+                writesDiskCache: false
+            )
             return reusableSnapshot.entries
         }
 
@@ -346,13 +391,93 @@ extension NoteStore {
             fileSignatures: signatures,
             entries: entries
         )
-        searchIndexSnapshot = snapshot
-        dirtySearchIndexPaths.subtract(dirtyPaths)
-        if requiresFullRefresh {
-            searchIndexRequiresFullRefresh = false
-        }
-        writeSearchIndexSnapshotToDisk(snapshot)
+        publishSearchIndexSnapshot(
+            snapshot,
+            consuming: dirtyPaths,
+            fullRefresh: requiresFullRefresh,
+            stateRevision: stateRevision
+        )
         return entries
+    }
+
+    private func incrementallyRefreshing(
+        _ reusableSnapshot: NoteSearchIndexSnapshot,
+        dirtyPaths: Set<String>,
+        rootsKey: [String]
+    ) -> NoteSearchIndexSnapshot {
+        var signatures = reusableSnapshot.fileSignatures
+        var entriesByPath = reusableSnapshot.entries.reduce(into: [String: NoteSearchIndexEntry]()) {
+            $0[$1.url.standardizedFileURL.path] = $1
+        }
+
+        for path in dirtyPaths.sorted() {
+            signatures.removeValue(forKey: path)
+            entriesByPath.removeValue(forKey: path)
+
+            guard isSearchableMarkdownPath(path, rootsKey: rootsKey) else { continue }
+            let fileURL = URL(fileURLWithPath: path).standardizedFileURL
+            guard let signature = fileSignature(for: fileURL),
+                  let entry = indexedEntry(for: fileURL, signature: signature) else {
+                continue
+            }
+            signatures[path] = signature
+            entriesByPath[path] = entry
+        }
+
+        let existingPaths = reusableSnapshot.entries.map { $0.url.standardizedFileURL.path }
+        let existingPathSet = Set(existingPaths)
+        let orderedEntries = existingPaths.compactMap { entriesByPath[$0] }
+        let insertedEntries = entriesByPath
+            .filter { !existingPathSet.contains($0.key) }
+            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+            .map(\.value)
+
+        return NoteSearchIndexSnapshot(
+            rootsKey: rootsKey,
+            fileSignatures: signatures,
+            entries: orderedEntries + insertedEntries
+        )
+    }
+
+    private func isSearchableMarkdownPath(_ path: String, rootsKey: [String]) -> Bool {
+        let fileExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
+        guard ["md", "markdown", "txt"].contains(fileExtension) else { return false }
+
+        guard let rootPath = rootsKey.first(where: {
+            path == $0 || $0 == "/" || path.hasPrefix($0 + "/")
+        }) else {
+            return false
+        }
+
+        let relativePath = String(path.dropFirst(rootPath == "/" ? 1 : rootPath.count))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let parentComponents = relativePath.split(separator: "/").dropLast()
+        return !parentComponents.contains {
+            $0.caseInsensitiveCompare(Self.attachmentDirectoryName) == .orderedSame
+        }
+    }
+
+    private func publishSearchIndexSnapshot(
+        _ snapshot: NoteSearchIndexSnapshot,
+        consuming dirtyPaths: Set<String>,
+        fullRefresh: Bool,
+        stateRevision: UInt64,
+        writesDiskCache: Bool = true
+    ) {
+        searchIndexLock.lock()
+        let stateIsCurrent = searchIndexRevision == stateRevision
+        if stateIsCurrent {
+            searchIndexSnapshot = snapshot
+            dirtySearchIndexPaths.subtract(dirtyPaths)
+            if fullRefresh {
+                searchIndexRequiresFullRefresh = false
+            }
+        }
+        searchIndexLock.unlock()
+
+        if stateIsCurrent, writesDiskCache {
+            writeSearchIndexSnapshotToDisk(snapshot)
+        }
     }
 
     func readSearchIndexSnapshotFromDisk(rootsKey: [String]) -> NoteSearchIndexSnapshot? {

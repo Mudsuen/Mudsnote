@@ -620,7 +620,7 @@ struct MudsnoteCoreTests {
     }
 
     @Test
-    func searchSessionValidatesSignaturesOnceAcrossQueriesAndScopes() throws {
+    func searchSessionReusesValidatedSnapshotAcrossQueriesAndScopes() throws {
         let harness = try TestHarness()
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
@@ -644,14 +644,14 @@ struct MudsnoteCoreTests {
         #expect(store.prewarmSearchIndex() == 2)
         store.searchIndexSignatureReadCountForTesting = 0
         let session = store.makeSearchSession()
-        #expect(store.searchIndexSignatureReadCountForTesting == 2)
+        #expect(store.searchIndexSignatureReadCountForTesting == 0)
 
         #expect(session.searchNotes(query: "shared phrase", limit: 10).count == 2)
         #expect(session.searchNotes(query: "beta", limit: 10, in: projectDirectory).first?.url == betaURL)
         #expect(session.searchNotes(query: "alpha", limit: 10, tagged: "focus").first?.url == alphaURL)
         #expect(session.searchInboxNotes(query: "alpha", limit: 10).first?.url == alphaURL)
         #expect(session.searchRecentNotes(query: "shared phrase", limit: 10).count == 2)
-        #expect(store.searchIndexSignatureReadCountForTesting == 2)
+        #expect(store.searchIndexSignatureReadCountForTesting == 0)
     }
 
     @Test
@@ -710,6 +710,44 @@ struct MudsnoteCoreTests {
         #expect(store.searchNotes(query: "alpha", limit: 10).isEmpty)
         #expect(store.searchNotes(query: "bravo", limit: 10).first?.url == noteURL)
         #expect(store.searchIndexEntryReadCountForTesting == 1)
+    }
+
+    @Test
+    func markingSearchIndexDirtyDoesNotWaitForOngoingIndexIO() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(title: "Concurrent", body: "body")
+
+        let buildStarted = DispatchSemaphore(value: 0)
+        let allowBuildToContinue = DispatchSemaphore(value: 0)
+        let buildFinished = DispatchSemaphore(value: 0)
+        let dirtyMarkFinished = DispatchSemaphore(value: 0)
+        store.searchIndexBuildWillReadForTesting = {
+            buildStarted.signal()
+            allowBuildToContinue.wait()
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            _ = store.prewarmSearchIndex()
+            buildFinished.signal()
+        }
+        try #require(buildStarted.wait(timeout: .now() + 2) == .success)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            store.markSearchIndexDirty(at: [noteURL])
+            dirtyMarkFinished.signal()
+        }
+        let dirtyMarkCompletedWithoutWaiting = dirtyMarkFinished.wait(timeout: .now() + 1)
+        allowBuildToContinue.signal()
+        #expect(buildFinished.wait(timeout: .now() + 2) == .success)
+        if dirtyMarkCompletedWithoutWaiting != .success {
+            _ = dirtyMarkFinished.wait(timeout: .now() + 2)
+        }
+        store.searchIndexBuildWillReadForTesting = nil
+
+        #expect(dirtyMarkCompletedWithoutWaiting == .success)
     }
 
     @Test
@@ -802,6 +840,7 @@ struct MudsnoteCoreTests {
         #expect(harness.store.searchIndexEntryReadCountForTesting == 3)
 
         harness.store.searchIndexEntryReadCountForTesting = 0
+        harness.store.searchIndexSignatureReadCountForTesting = 0
         _ = try harness.store.updateNote(
             at: betaURL,
             title: "Beta",
@@ -810,6 +849,7 @@ struct MudsnoteCoreTests {
 
         #expect(harness.store.prewarmSearchIndex() == 3)
         #expect(harness.store.searchIndexEntryReadCountForTesting == 1)
+        #expect(harness.store.searchIndexSignatureReadCountForTesting == 1)
         #expect(harness.store.searchNotes(query: "different size", limit: 10).first?.url.standardizedFileURL.path == betaURL.path)
         #expect(harness.store.searchNotes(query: "alpha body", limit: 10).first?.url.standardizedFileURL.path == alphaURL.path)
 
