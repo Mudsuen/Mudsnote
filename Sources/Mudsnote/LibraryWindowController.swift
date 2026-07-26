@@ -199,6 +199,32 @@ private struct LibraryBackgroundSaveSnapshot: Sendable {
     let baselinePath: String?
 }
 
+private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
+    private let sourceMarkdown: String?
+    private let attributedMarkdown: NSAttributedString?
+    private let theme: MarkdownEditorTheme
+
+    init(sourceMarkdown: String, theme: MarkdownEditorTheme) {
+        self.sourceMarkdown = sourceMarkdown
+        self.attributedMarkdown = nil
+        self.theme = theme
+    }
+
+    init(attributedMarkdown: NSAttributedString, theme: MarkdownEditorTheme) {
+        self.sourceMarkdown = nil
+        self.attributedMarkdown = NSAttributedString(attributedString: attributedMarkdown)
+        self.theme = theme
+    }
+
+    func markdown() -> String {
+        if let sourceMarkdown {
+            return sourceMarkdown
+        }
+        guard let attributedMarkdown else { return "" }
+        return MarkdownRichTextCodec.serialize(attributedMarkdown, theme: theme)
+    }
+}
+
 private struct LibraryBackgroundSaveSuccess: Sendable {
     let snapshot: LibraryBackgroundSaveSnapshot
     let savedURL: URL
@@ -1239,6 +1265,8 @@ final class LibraryWindowController: NSWindowController,
     private var backgroundAutosaveGeneration = 0
     private var backgroundAutosaveIsActive = false
     private var backgroundAutosaveNeedsLatest = false
+    private var backgroundAutosaveActiveEditorRevision: Int?
+    private var backgroundAutosaveActivePreviousURL: URL?
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
     private var notePrefetchTask: Task<Void, Never>?
@@ -1246,7 +1274,6 @@ final class LibraryWindowController: NSWindowController,
     private var searchResultsTask: Task<Void, Never>?
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
-    private var noteLinksRefreshWorkItem: DispatchWorkItem?
     private var noteLinksRefreshGeneration = 0
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
@@ -4603,7 +4630,7 @@ final class LibraryWindowController: NSWindowController,
     @discardableResult
     private func activateSourceScope(_ scope: LibraryScope) -> Bool {
         do {
-            try saveCurrentNoteIfNeeded()
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             selectedScope = scope
             reloadNotesForNavigation(loadFirstIfNeeded: true)
             refreshVisibleSourceOutlinePresentation()
@@ -5236,7 +5263,7 @@ final class LibraryWindowController: NSWindowController,
     private func handleNoteBrowserSelectionChange() {
         let previousURL = selectedURL
         do {
-            try saveCurrentNoteIfNeeded()
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             if preservesCurrentLoadedNoteForMultiSelection() {
                 updateToolbarActionState()
             } else {
@@ -5551,7 +5578,6 @@ final class LibraryWindowController: NSWindowController,
         if let object = notification.object as AnyObject?, object === editorTextView {
             libraryUserDidEdit()
             updateEditorSlashSuggestions()
-            scheduleNoteLinksRefresh()
         } else {
             markDirty()
         }
@@ -5952,7 +5978,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         do {
-            try saveCurrentNoteIfNeeded()
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             suppressSelectionChanges = true
             tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
             suppressSelectionChanges = false
@@ -6441,17 +6467,6 @@ final class LibraryWindowController: NSWindowController,
         prefetchAdjacentNotes(around: note)
     }
 
-    private func scheduleNoteLinksRefresh() {
-        noteLinksRefreshWorkItem?.cancel()
-        guard let selectedURL else { return }
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.refreshNoteLinks(for: selectedURL, body: self.currentEditorMarkdownBody())
-        }
-        noteLinksRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
-    }
-
     private func refreshNoteLinks(for noteURL: URL, body: String) {
         noteLinksRefreshTask?.cancel()
         noteLinksRefreshGeneration += 1
@@ -6752,7 +6767,6 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         guard isDirty, selectedScope != .trash else { return }
 
-        updateEditorStatus("正在保存…", kind: .saving)
         enqueueBackgroundAutosave()
     }
 
@@ -6762,28 +6776,34 @@ final class LibraryWindowController: NSWindowController,
             return
         }
         let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = currentEditorMarkdownBody().trimmingCharacters(in: .whitespacesAndNewlines)
         let title = rawTitle.isEmpty ? "无标题" : rawTitle
-        guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return }
+        let editorSnapshot: LibraryBackgroundEditorSnapshot
+        if isEditorShowingMarkdownSource {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(
+                sourceMarkdown: editorTextView.string,
+                theme: theme
+            )
+        } else {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(
+                attributedMarkdown: editorTextView.attributedString(),
+                theme: theme
+            )
+        }
 
         backgroundAutosaveGeneration &+= 1
         backgroundAutosaveIsActive = true
         let generation = backgroundAutosaveGeneration
+        let editorRevision = editorContentRevision
         let previousURL = selectedURL
-        let snapshot = LibraryBackgroundSaveSnapshot(
-            generation: generation,
-            editorRevision: editorContentRevision,
-            previousURL: previousURL,
-            title: title,
-            body: body,
-            tags: selectedTags,
-            targetDirectory: previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote(),
-            updatesInPlace: previousURL.map {
-                externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
-            } ?? false,
-            baselineRevision: loadedDocumentRevision,
-            baselinePath: loadedDocumentRevisionPath
-        )
+        let tags = selectedTags
+        let targetDirectory = previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
+        let updatesInPlace = previousURL.map {
+            externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
+        } ?? false
+        let baselineRevision = loadedDocumentRevision
+        let baselinePath = loadedDocumentRevisionPath
+        backgroundAutosaveActiveEditorRevision = editorRevision
+        backgroundAutosaveActivePreviousURL = previousURL
         cancelSourceSnapshotValidation()
         let noteStore = noteStore
         let resultStore = backgroundAutosaveResultStore
@@ -6791,7 +6811,19 @@ final class LibraryWindowController: NSWindowController,
         autosavePersistenceQueue.async { [weak self] in
             willPersist()
             let result = Result {
-                try Self.performBackgroundSave(snapshot, noteStore: noteStore)
+                let snapshot = LibraryBackgroundSaveSnapshot(
+                    generation: generation,
+                    editorRevision: editorRevision,
+                    previousURL: previousURL,
+                    title: title,
+                    body: editorSnapshot.markdown().trimmingCharacters(in: .whitespacesAndNewlines),
+                    tags: tags,
+                    targetDirectory: targetDirectory,
+                    updatesInPlace: updatesInPlace,
+                    baselineRevision: baselineRevision,
+                    baselinePath: baselinePath
+                )
+                return try Self.performBackgroundSave(snapshot, noteStore: noteStore)
             }
             resultStore.insert(LibraryBackgroundSaveResultBox(result), for: generation)
             DispatchQueue.main.async { [weak self] in
@@ -6861,6 +6893,8 @@ final class LibraryWindowController: NSWindowController,
         let boxedResult = backgroundAutosaveResultStore.remove(generation: generation)
         guard let boxedResult else { return }
         backgroundAutosaveIsActive = false
+        backgroundAutosaveActiveEditorRevision = nil
+        backgroundAutosaveActivePreviousURL = nil
 
         switch boxedResult.result {
         case .success(let success):
@@ -6888,17 +6922,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
         let snapshot = success.snapshot
-        guard selectedURL?.standardizedFileURL == snapshot.previousURL?.standardizedFileURL,
-              selectedScope != .trash else {
-            return
-        }
         recordInternalFileSystemChanges(for: [snapshot.previousURL, success.savedURL].compactMap { $0 })
-        selectedURL = success.savedURL
-        loadedDocumentRevisionPath = success.savedURL.standardizedFileURL.path
-        loadedDocumentRevision = success.savedRevision
-        activeSearchSession = nil
-        isCreatingNewNote = false
-        isDirty = editorContentRevision != snapshot.editorRevision
+        if let previousURL = snapshot.previousURL {
+            loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
+        }
+        loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: success.savedURL))
         updateSourceCountSnapshotAfterSave(
             previousURL: snapshot.previousURL,
             savedURL: success.savedURL,
@@ -6907,19 +6935,27 @@ final class LibraryWindowController: NSWindowController,
             tags: snapshot.tags,
             modifiedAt: success.savedAt
         )
+        let isCurrentDocument = selectedScope != .trash
+            && selectedURL?.standardizedFileURL == snapshot.previousURL?.standardizedFileURL
+        guard isCurrentDocument else {
+            onSave(success.savedURL)
+            return
+        }
+
+        selectedURL = success.savedURL
+        loadedDocumentRevisionPath = success.savedURL.standardizedFileURL.path
+        loadedDocumentRevision = success.savedRevision
+        activeSearchSession = nil
+        isCreatingNewNote = false
+        isDirty = editorContentRevision != snapshot.editorRevision
         refreshVisibleNoteListAfterSave(
             selecting: success.savedURL,
             isNewNote: snapshot.previousURL == nil
         )
-        if isDirty {
-            updateEditorStatus("已保存较早编辑，正在等待最新更改…", kind: .saving)
-        } else {
-            updateEditorStatus(
-                "已保存 · \(editorDateText(for: success.savedAt))",
-                kind: .success,
-                announcesChange: true
-            )
+        if !isDirty {
+            updateEditorStatus(editorDateText(for: success.savedAt))
         }
+        refreshNoteLinks(for: success.savedURL, body: snapshot.body)
         onSave(success.savedURL)
         updateToolbarActionState()
     }
@@ -6956,13 +6992,26 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func saveCurrentNoteIfNeeded() throws {
+    private func saveCurrentNoteIfNeeded(allowBackgroundHandoff: Bool = false) throws {
         guard isDirty else { return }
+        if allowBackgroundHandoff, handOffCurrentEditorToBackgroundAutosave() {
+            return
+        }
         do {
             _ = try saveCurrentNote(force: false)
         } catch LibraryDocumentSaveProtectionError.externalModification(let url) {
             try resolveExternalModificationBeforeLeaving(at: url)
         }
+    }
+
+    private func handOffCurrentEditorToBackgroundAutosave() -> Bool {
+        if !backgroundAutosaveIsActive {
+            autosaveCurrentNote()
+        }
+        return backgroundAutosaveIsActive
+            && backgroundAutosaveActiveEditorRevision == editorContentRevision
+            && backgroundAutosaveActivePreviousURL?.standardizedFileURL
+                == selectedURL?.standardizedFileURL
     }
 
     private func refreshDocumentRevisionBaseline(for url: URL) {
@@ -7210,11 +7259,8 @@ final class LibraryWindowController: NSWindowController,
             selecting: savedURL,
             isNewNote: previousURL == nil
         )
-        updateEditorStatus(
-            "已保存 · \(editorDateText(for: savedAt))",
-            kind: .success,
-            announcesChange: true
-        )
+        updateEditorStatus(editorDateText(for: savedAt))
+        refreshNoteLinks(for: savedURL, body: body)
         onSave(savedURL)
         updateToolbarActionState()
         return savedURL
@@ -7461,7 +7507,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func openMarkdownDocumentForLibrary(at url: URL) throws {
-        try saveCurrentNoteIfNeeded()
+        try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
         isCreatingNewNote = false
@@ -8017,7 +8063,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         do {
-            try saveCurrentNoteIfNeeded()
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
         } catch LibraryDocumentSaveProtectionError.transitionCancelled {
             return
         } catch {
@@ -8959,7 +9005,7 @@ final class LibraryWindowController: NSWindowController,
 
         if !tableView.selectedRowIndexes.contains(row) {
             do {
-                try saveCurrentNoteIfNeeded()
+                try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
                 suppressSelectionChanges = true
                 tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 suppressSelectionChanges = false
