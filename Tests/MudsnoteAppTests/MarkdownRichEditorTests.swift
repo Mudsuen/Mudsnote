@@ -136,35 +136,6 @@ private final class BlockingAutosaveRecorder: @unchecked Sendable {
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
-    @Test
-    func sourceSnapshotStabilizerConfirmsDroppedNotesBeforePublishingThem() {
-        let note = NoteSearchResult(
-            url: URL(fileURLWithPath: "/tmp/Transient.md"),
-            title: "Transient",
-            snippet: "",
-            modifiedAt: Date()
-        )
-
-        #expect(LibrarySourceSnapshotStabilizer.needsConfirmation(
-            previous: [note],
-            candidate: []
-        ))
-        #expect(LibrarySourceSnapshotStabilizer.stabilized(
-            previous: [note],
-            firstCandidate: [],
-            confirmedCandidate: [note]
-        ) == [note])
-        #expect(LibrarySourceSnapshotStabilizer.stabilized(
-            previous: [note],
-            firstCandidate: [],
-            confirmedCandidate: []
-        ).isEmpty)
-        #expect(!LibrarySourceSnapshotStabilizer.needsConfirmation(
-            previous: [note],
-            candidate: [note]
-        ))
-    }
-
     @Test func boundedNoteProjectionStopsAfterReachingItsLimit() {
         var visited = 0
         let matches = LibraryNoteListProjection.prefix(0..<10_000, limit: 240) { value in
@@ -3724,33 +3695,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func documentRevisionDetectsEqualSizeRewriteWithRestoredModificationDate() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-document-revision-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let url = root.appendingPathComponent("Revision.md")
-        let originalDate = Date(timeIntervalSince1970: 1_700_000_000)
-        try "alpha".write(to: url, atomically: false, encoding: .utf8)
-        try FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
-        let original = try LibraryDocumentRevision.read(at: url)
-
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.truncate(atOffset: 0)
-        try handle.write(contentsOf: Data("bravo".utf8))
-        try handle.close()
-        try FileManager.default.setAttributes([.modificationDate: originalDate], ofItemAtPath: url.path)
-        let rewritten = try LibraryDocumentRevision.read(at: url)
-
-        #expect(original.fileSize == rewritten.fileSize)
-        #expect(original.contentModificationDate == rewritten.contentModificationDate)
-        #expect(!original.hasSameContent(as: rewritten))
-        #expect(original != rewritten)
-    }
-
-    @Test
-    func librarySelectionChangeSavesLocalEditWithoutConflictPrompt() throws {
+    func librarySelectionChangeSavesLocalEditOverExternalVersion() throws {
         let suiteName = "mudsnote.library-conflict-selection-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3769,13 +3714,8 @@ struct MarkdownRichEditorTests {
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         _ = try store.saveNewNote(title: "Older", body: "Older body")
         _ = try store.saveNewNote(title: "Newer", body: "Newer body")
-        var conflictCount = 0
         let controller = LibraryWindowController(
             noteStore: store,
-            conflictResolutionHandler: { _ in
-                conflictCount += 1
-                return .keepEditing
-            },
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -3809,14 +3749,13 @@ struct MarkdownRichEditorTests {
         ) as URL
         controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
 
-        #expect(conflictCount == 0)
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
         #expect(try store.loadNote(at: originalURL).body == "Local protected edit")
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }
 
     @Test
-    func libraryCloseSavesLocalEditWithoutConflictPrompt() throws {
+    func libraryCloseSavesLocalEditOverExternalVersion() async throws {
         let suiteName = "mudsnote.library-conflict-close-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3834,13 +3773,8 @@ struct MarkdownRichEditorTests {
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let noteURL = try store.saveNewNote(title: "Close Guard", body: "Initial body")
-        var conflictCount = 0
         let controller = LibraryWindowController(
             noteStore: store,
-            conflictResolutionHandler: { _ in
-                conflictCount += 1
-                return .keepEditing
-            },
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -3861,13 +3795,13 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         #expect(controller.windowShouldClose(window))
-        #expect(conflictCount == 0)
+        await controller.waitForBackgroundAutosaveForTesting()
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
         #expect(try store.loadNote(at: noteURL).body == "Unsaved close edit")
     }
 
     @Test
-    func librarySelectionChangeSavesLocalEditInPlaceWithoutConflictCopy() throws {
+    func librarySelectionChangeDoesNotCreateConflictCopy() throws {
         let suiteName = "mudsnote.library-conflict-copy-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3886,13 +3820,8 @@ struct MarkdownRichEditorTests {
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         _ = try store.saveNewNote(title: "Other", body: "Other body")
         _ = try store.saveNewNote(title: "Current", body: "Initial body")
-        var conflictCount = 0
         let controller = LibraryWindowController(
             noteStore: store,
-            conflictResolutionHandler: { _ in
-                conflictCount += 1
-                return .saveCopy
-            },
             onOpenInSeparateWindow: { _ in },
             onSave: { _ in },
             onClose: {}
@@ -3930,7 +3859,6 @@ struct MarkdownRichEditorTests {
             at: store.notesDirectory,
             includingPropertiesForKeys: nil
         ).filter { $0.pathExtension == "md" }
-        #expect(conflictCount == 0)
         #expect(noteURLs.count == 2)
         #expect(try store.loadNote(at: originalURL).body == "Local copy body")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
