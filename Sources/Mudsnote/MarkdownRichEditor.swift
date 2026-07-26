@@ -1843,6 +1843,10 @@ final class AsyncImageAttachmentCell: NSTextAttachmentCell {
 
 enum MarkdownRichTextCodec {
     private static let tablePlaceholder = "\u{200B}"
+    @MainActor
+    private static let automaticLinkDetector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue
+    )
 
     private struct ParsedMarkdownTable {
         let rows: [[String]]
@@ -2789,7 +2793,7 @@ enum MarkdownRichTextCodec {
         theme: MarkdownEditorTheme
     ) {
         guard range.length > 0,
-              let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return }
+              let detector = automaticLinkDetector else { return }
 
         attributedString.enumerateAttribute(.qmAutomaticLink, in: range) { value, effectiveRange, _ in
             guard (value as? Bool) == true else { return }
