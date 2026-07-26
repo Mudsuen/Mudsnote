@@ -395,7 +395,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             preferenceRow(
                 label: "主题色:",
                 control: themeColorPopUp,
-                help: "用于资料库文件夹和笔记的选中状态。保存后立即应用到已打开的资料库。"
+                help: "只用于资料库中选中文件夹的图标和名称。保存后立即应用到已打开的资料库。"
             ),
             sectionDivider(),
             sectionTitle("编辑排版"),

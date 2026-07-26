@@ -527,7 +527,6 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     private var trackingAreaForHover: NSTrackingArea?
     private(set) var isPointerHovered = false
     private(set) var isVisuallySelected = false
-    var selectionBackgroundColor = LibrarySourceSelectionPalette.backgroundColor
 
     override func updateTrackingAreas() {
         if let trackingAreaForHover {
@@ -571,7 +570,7 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         if isVisuallySelected {
-            selectionBackgroundColor.setFill()
+            LibrarySourceSelectionPalette.backgroundColor.setFill()
         } else if isPointerHovered {
             Self.hoverColor.setFill()
         } else {
@@ -627,10 +626,15 @@ private enum LibraryNotesPalette {
 
 @MainActor
 enum LibrarySourceSelectionPalette {
-    static let backgroundColor = MudsnoteThemeColor.ocean.sourceSelectionBackgroundColor
-    static let noteBackgroundColor = MudsnoteThemeColor.ocean.noteSelectionBackgroundColor
+    static let backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 0.86)
+    static let noteBackgroundColor = NSColor(
+        calibratedRed: 0.492,
+        green: 0.377,
+        blue: 0.09,
+        alpha: 0.96
+    )
     static let foregroundColor = MudsnoteThemeColor.ocean.foregroundColor
-    static let selectedCountColor = MudsnoteThemeColor.ocean.selectedCountColor
+    static let selectedCountColor = NSColor.labelColor.withAlphaComponent(0.42)
     static let unselectedForegroundColor = NSColor.labelColor.withAlphaComponent(0.92)
 }
 
@@ -934,7 +938,6 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
     static let selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
-    var currentSelectionFillColor = selectionFillColor
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
@@ -1040,7 +1043,7 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.selectionCornerRadius,
             yRadius: Self.selectionCornerRadius
         )
-        currentSelectionFillColor.setFill()
+        Self.selectionFillColor.setFill()
         path.fill()
     }
 
@@ -4569,14 +4572,12 @@ final class LibraryWindowController: NSWindowController,
         cell.imageView?.contentTintColor = cell.textField?.textColor
         cell.countLabel.stringValue = sourceCountText(item.count, for: scope)
         cell.countLabel.textColor = isSelected
-            ? themeColor.selectedCountColor
+            ? LibrarySourceSelectionPalette.selectedCountColor
             : panelTertiaryTextColor()
-        let rowView = sourceOutlineView.rowView(
+        (sourceOutlineView.rowView(
             atRow: row,
             makeIfNecessary: false
-        ) as? LibrarySourceOutlineRowView
-        rowView?.selectionBackgroundColor = themeColor.sourceSelectionBackgroundColor
-        rowView?.setVisuallySelected(isSelected)
+        ) as? LibrarySourceOutlineRowView)?.setVisuallySelected(isSelected)
         cell.accessibilityPressHandler = { [weak self] in
             self?.activateSourceScope(scope) ?? false
         }
@@ -4723,7 +4724,6 @@ final class LibraryWindowController: NSWindowController,
         switch item.kind {
         case .scope:
             let row = LibrarySourceOutlineRowView()
-            row.selectionBackgroundColor = selectedThemeColor.sourceSelectionBackgroundColor
             row.setVisuallySelected(isSourceOutlineItemVisuallySelected(item))
             return row
         case .group, .status, .inlineFolderEdit:
@@ -5376,7 +5376,6 @@ final class LibraryWindowController: NSWindowController,
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let rowView = LibraryNoteRowView()
         rowView.isGroupRow = note(at: row) == nil
-        rowView.currentSelectionFillColor = selectedThemeColor.noteSelectionBackgroundColor
         return rowView
     }
 
@@ -7861,22 +7860,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func refreshThemeColorForLibrary() {
-        let themeColor = selectedThemeColor
         refreshVisibleSourceOutlinePresentation()
-        let visibleRows = tableView.rows(in: tableView.visibleRect)
-        if visibleRows.location != NSNotFound {
-            for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
-                guard let rowView = tableView.rowView(
-                    atRow: row,
-                    makeIfNecessary: false
-                ) as? LibraryNoteRowView else {
-                    continue
-                }
-                rowView.currentSelectionFillColor = themeColor.noteSelectionBackgroundColor
-                rowView.needsDisplay = true
-            }
-        }
-        galleryCollectionView.needsDisplay = true
         window?.displayIfNeeded()
     }
 

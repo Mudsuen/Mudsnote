@@ -4173,14 +4173,31 @@ struct MarkdownRichEditorTests {
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
+        let originalSourceBackground = NSColor(calibratedWhite: 0.16, alpha: 0.86)
+        let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
+        let originalNoteBackground = NSColor(
+            calibratedRed: 0.492,
+            green: 0.377,
+            blue: 0.09,
+            alpha: 0.96
+        )
         store.themeColorIdentifier = MudsnoteThemeColor.teal.rawValue
         controller.refreshThemeColorForLibrary()
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.teal.foregroundColor)
-        let rootRowView = try #require(outline.rowView(
-            atRow: rootRow,
-            makeIfNecessary: true
-        ) as? LibrarySourceOutlineRowView)
-        #expect(rootRowView.selectionBackgroundColor == MudsnoteThemeColor.teal.sourceSelectionBackgroundColor)
+        #expect(rootCell.countLabel.textColor == originalCountColor)
+        #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
+        #expect(LibraryNoteRowView.selectionFillColor == originalNoteBackground)
+
+        store.themeColorIdentifier = MudsnoteThemeColor.classicYellow.rawValue
+        controller.refreshThemeColorForLibrary()
+        #expect(rootCell.textField?.textColor == NSColor(
+            calibratedRed: 1.0,
+            green: 0.72,
+            blue: 0.16,
+            alpha: 1
+        ))
+        #expect(rootCell.countLabel.textColor == originalCountColor)
+        #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
 
         let rootMenu = try #require(controller.sourceContextMenuForLibrary(row: rootRow))
         let iconMenu = try #require(rootMenu.items.first { $0.title == "更改图标" }?.submenu)
@@ -8580,6 +8597,7 @@ struct MarkdownRichEditorTests {
         } == false)
         #expect(controller.contextMenuOptionButtons.count == EditorContextMenuOption.allCases.count)
         #expect(controller.selectionToolbarOptionButtons.count == SelectionToolbarOption.allCases.count)
+        #expect(controller.themeColorPopUp.itemTitles.contains("经典黄"))
         controller.contextMenuOptionButtons[.paste]?.state = .off
         controller.selectionToolbarOptionButtons[.highlight]?.state = .off
         controller.themeColorPopUp.selectItem(withTitle: "松石")
