@@ -2005,6 +2005,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
+        let editFolders = app.buttons["edit-folders-button"]
+        XCTAssertTrue(editFolders.isHittable)
+        editFolders.tap()
+        XCTAssertEqual(editFolders.label, "Done")
+
         let closeSwipeStart = appWindow.coordinate(
             withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
         )
@@ -2017,6 +2022,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            app.buttons["edit-folders-button"].label,
+            "Edit",
+            "Closing by drag should leave folder editing mode"
+        )
         appWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)

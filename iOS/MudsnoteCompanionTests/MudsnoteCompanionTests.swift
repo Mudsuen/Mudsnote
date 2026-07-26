@@ -23,6 +23,40 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testDirectoryDrawerMotionDerivesOneContinuousPresentation() {
+        let presentation = DirectoryDrawerMotion.presentation(
+            isOpen: false,
+            translation: 160,
+            width: 320
+        )
+
+        XCTAssertEqual(presentation.reveal, 160)
+        XCTAssertEqual(presentation.progress, 0.5)
+        XCTAssertEqual(presentation.drawerOffset, -12.8, accuracy: 0.001)
+        XCTAssertEqual(presentation.cornerRadius, 14)
+        XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
+        XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
+    }
+
+    func testDirectoryDrawerMotionWaitsForClearDragIntent() {
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 3, height: 1)),
+            .undecided
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 7, height: 6.5)),
+            .horizontal
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 5, height: 9)),
+            .vertical
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 8, height: 8)),
+            .horizontal
+        )
+    }
+
     func testDirectoryDrawerMotionUsesDistanceForSlowRelease() {
         XCTAssertFalse(
             DirectoryDrawerMotion.shouldOpen(
