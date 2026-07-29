@@ -169,8 +169,8 @@ enum LibraryNoteListProjection {
                 return lhs.isPinned
             }
 
-            if let lhsGroup = lhs.dateGroupTitle,
-               let rhsGroup = rhs.dateGroupTitle,
+            if let lhsGroup = lhs.dateGroup,
+               let rhsGroup = rhs.dateGroup,
                lhsGroup != rhsGroup {
                 if lhs.prepared.note.modifiedAt != rhs.prepared.note.modifiedAt {
                     return lhs.prepared.note.modifiedAt > rhs.prepared.note.modifiedAt
@@ -181,16 +181,19 @@ enum LibraryNoteListProjection {
             return isOrderedBefore(lhs.prepared, rhs.prepared, by: sortOrder)
         }
 
+        let dateGrouping = groupsByDate && sortOrder == .title
+            ? DateGrouping(now: now, calendar: calendar)
+            : nil
         for note in notes where predicate(note) {
             let prepared = PreparedNote(note)
             let isPinned = includesPinnedGroup && pinnedPaths.contains(prepared.standardizedPath)
-            let dateGroupTitle = groupsByDate && sortOrder == .title && !isPinned
-                ? groupTitle(for: note.modifiedAt, now: now, calendar: calendar)
+            let dateGroup = !isPinned
+                ? dateGrouping?.group(for: note.modifiedAt)
                 : nil
             candidates.append(RankedNote(
                 prepared: prepared,
                 isPinned: isPinned,
-                dateGroupTitle: dateGroupTitle
+                dateGroup: dateGroup
             ))
             if candidates.count == batchLimit {
                 candidates.sort(by: orderedBefore)
@@ -324,7 +327,50 @@ enum LibraryNoteListProjection {
     private struct RankedNote {
         let prepared: PreparedNote
         let isPinned: Bool
-        let dateGroupTitle: String?
+        let dateGroup: DateGroup?
+    }
+
+    private enum DateGroup: Equatable {
+        case today
+        case yesterday
+        case previousSevenDays
+        case previousThirtyDays
+        case year(Int)
+    }
+
+    private struct DateGrouping {
+        let startOfTomorrow: Date
+        let startOfToday: Date
+        let startOfYesterday: Date
+        let startOfPreviousSevenDays: Date
+        let startOfPreviousThirtyDays: Date
+        let calendar: Calendar
+
+        init(now: Date, calendar: Calendar) {
+            let startOfToday = calendar.startOfDay(for: now)
+            self.startOfToday = startOfToday
+            self.startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
+            self.startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday
+            self.startOfPreviousSevenDays = calendar.date(byAdding: .day, value: -7, to: startOfToday) ?? startOfToday
+            self.startOfPreviousThirtyDays = calendar.date(byAdding: .day, value: -30, to: startOfToday) ?? startOfToday
+            self.calendar = calendar
+        }
+
+        func group(for date: Date) -> DateGroup {
+            if date >= startOfToday, date < startOfTomorrow {
+                return .today
+            }
+            if date >= startOfYesterday, date < startOfToday {
+                return .yesterday
+            }
+            if date >= startOfPreviousSevenDays, date < startOfYesterday {
+                return .previousSevenDays
+            }
+            if date >= startOfPreviousThirtyDays, date < startOfPreviousSevenDays {
+                return .previousThirtyDays
+            }
+            return .year(calendar.component(.year, from: date))
+        }
     }
 
     private static func sorted(

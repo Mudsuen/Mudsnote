@@ -187,7 +187,7 @@ private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
 
     init(attributedMarkdown: NSAttributedString, theme: MarkdownEditorTheme) {
         self.sourceMarkdown = nil
-        self.attributedMarkdown = attributedMarkdown
+        self.attributedMarkdown = NSAttributedString(attributedString: attributedMarkdown)
         self.theme = theme
     }
 
@@ -1177,6 +1177,39 @@ final class LibraryNoteScrollView: NSScrollView {
 }
 
 @MainActor
+final class LibraryNoteClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var constrainedBounds = super.constrainBoundsRect(proposedBounds)
+        constrainedBounds.origin.x = 0
+        return constrainedBounds
+    }
+}
+
+@MainActor
+final class LibraryEditorScrollView: NSScrollView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if let textView = documentView as? NSTextView {
+            window?.makeFirstResponder(textView)
+            textView.mouseDown(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func tile() {
+        super.tile()
+        guard let verticalScroller else { return }
+        var scrollerFrame = verticalScroller.frame
+        scrollerFrame.origin.x = bounds.maxX - scrollerFrame.width
+        verticalScroller.frame = scrollerFrame
+    }
+}
+
+@MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
     NSSplitViewDelegate,
@@ -2111,13 +2144,17 @@ final class LibraryWindowController: NSWindowController,
         }
 
         let scrollView = LibraryNoteScrollView()
+        let clipView = LibraryNoteClipView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
+        scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
-        scrollView.contentView.drawsBackground = false
-        scrollView.contentView.backgroundColor = .clear
+        scrollView.automaticallyAdjustsContentInsets = false
+        clipView.drawsBackground = false
+        clipView.backgroundColor = .clear
+        scrollView.contentView = clipView
         scrollView.documentView = tableView
 
         noteListEmptyLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListEmptyLabel")
@@ -2253,15 +2290,25 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureEditorTextView()
-        let scrollView = EditorScrollView()
+        let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
+        scrollView.automaticallyAdjustsContentInsets = false
         clipView.drawsBackground = false
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
+        scrollView.contentInsets = NSEdgeInsets(
+            top: 0,
+            left: 0,
+            bottom: 0,
+            right: LibraryNotesLayout.editorHorizontalInset
+        )
+        scrollView.scrollerInsets = NSEdgeInsets()
 
         let bodyContainer = NSView()
         bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
@@ -2362,7 +2409,10 @@ final class LibraryWindowController: NSWindowController,
         NSLayoutConstraint.activate([
             dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
             titleField.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
-            bodyContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
+            bodyContainer.widthAnchor.constraint(
+                equalTo: stack.widthAnchor,
+                constant: -LibraryNotesLayout.editorHorizontalInset
+            ),
             noteLinksView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true

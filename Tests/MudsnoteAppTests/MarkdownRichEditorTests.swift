@@ -2718,9 +2718,25 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorParagraphSpacing == 6)
         #expect(controller.editorTextView.textContainerInset.width == LibraryNotesLayout.editorTextContainerHorizontalInset)
         #expect(controller.editorTextView.textContainerInset.height == 4)
+        let editorScrollView = try #require(controller.editorTextView.enclosingScrollView)
+        #expect(editorScrollView.hasHorizontalScroller == false)
+        #expect(editorScrollView.horizontalScrollElasticity == .none)
+        #expect(editorScrollView.contentInsets.right == LibraryNotesLayout.editorHorizontalInset)
+        #expect(editorScrollView.scrollerInsets.right == 0)
+        #expect(editorScrollView is LibraryEditorScrollView)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
         })
+        let editorBodyContainer = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorBodyContainer"
+        })
+        let editorContentPane = try #require(editorStack.superview)
+        editorContentPane.layoutSubtreeIfNeeded()
+        let editorBodyFrame = editorBodyContainer.convert(editorBodyContainer.bounds, to: editorContentPane)
+        #expect(abs(editorBodyFrame.maxX - editorContentPane.bounds.maxX) < 0.5)
+        editorScrollView.tile()
+        let editorVerticalScroller = try #require(editorScrollView.verticalScroller)
+        #expect(abs(editorVerticalScroller.frame.maxX - editorScrollView.bounds.maxX) < 0.5)
         let editorDateRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibraryEditorDateRow"
         })
@@ -3374,6 +3390,10 @@ struct MarkdownRichEditorTests {
         tableView.addTableColumn(column)
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         let scrollView = LibraryNoteScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 300))
+        let clipView = LibraryNoteClipView(frame: scrollView.bounds)
+        scrollView.contentView = clipView
+        scrollView.hasHorizontalScroller = false
+        scrollView.horizontalScrollElasticity = .none
         scrollView.documentView = tableView
         scrollView.contentView.bounds = NSRect(x: 0, y: 0, width: 340, height: 300)
         tableView.frame = NSRect(x: 92, y: 0, width: LibraryNotesLayout.noteTableInitialWidth, height: 300)
@@ -3384,6 +3404,11 @@ struct MarkdownRichEditorTests {
         #expect(tableView.frame.origin.x == 0)
         #expect(tableView.frame.width >= visibleWidth)
         #expect(column.width == visibleWidth)
+        #expect(scrollView.hasHorizontalScroller == false)
+        #expect(scrollView.horizontalScrollElasticity == .none)
+        #expect(clipView.constrainBoundsRect(
+            NSRect(x: 48, y: 20, width: 340, height: 300)
+        ).origin.x == 0)
     }
 
     @MainActor
