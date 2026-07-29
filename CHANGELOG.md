@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 245. Scan-free macOS folder deletion
+- Problem: Deleting a folder synchronously enumerated every Markdown file after moving it to trash, then descendant and root-change file events could repeat folder and library refresh work.
+- Fix: Folder deletion now records one directory-level restore mapping, projects known notes from the in-memory snapshot, and suppresses expected descendant and root-change events while preserving unconditional rescans for dropped or invalid event streams.
+- Lesson: A whole-directory move should preserve recovery at directory granularity and reconcile from existing projections instead of replaying the same mutation through filesystem monitoring.
+
 ### 244. Incremental macOS editor refresh
 - Problem: Recent search-link and background-save changes could hold an index lock across filesystem I/O, rescan the whole library after one edit, hash the full note around every save, rebuild the full note list, and repeatedly inspect an unbounded paragraph while typing.
 - Fix: Search-index state updates now use a short non-I/O lock, clean readers bypass full validation, saved paths refresh incrementally, and routine iCloud-backed saves remove the obsolete revision/conflict layer. Existing-note saves replace only affected list rows, refresh only current outgoing links and structurally changed source counts, while automatic links run at token boundaries over bounded fragments and source navigation relies on file events instead of unconditional full-library rescans.

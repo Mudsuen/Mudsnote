@@ -1444,7 +1444,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func deletingChecklistPrefixResetsLineToParagraph() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let rendered = MarkdownRichTextCodec.renderLine("- [ ] task", theme: controller.theme)
@@ -1586,6 +1586,36 @@ struct MarkdownRichEditorTests {
         #expect(QuickCaptureDocumentState.containsTag("beta", in: removed))
         #expect(QuickCaptureDocumentState.containsTag("gamma", in: added))
         #expect(added.contains("#gamma"))
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureTagSuggestionsLoadWithoutBlockingEditorInput() async throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+            }
+        )
+        defer { harness.tearDown() }
+        _ = try harness.store.saveNewNote(title: "Tagged", body: "Saved note", tags: ["alpha"])
+
+        let controller = harness.controller
+        controller.editorTextView.string = "#al"
+        controller.editorTextView.setSelectedRange(NSRange(location: 3, length: 0))
+        controller.updateInlineSuggestions()
+
+        #expect(controller.knownTagsForSuggestions == nil || controller.knownTagsForSuggestions?.contains("alpha") == true)
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(controller.knownTagsForSuggestions?.contains("alpha") == true)
+        guard case .tags(let query, _, let items) = controller.inlineSuggestionContext else {
+            Issue.record("Expected tag suggestions after the background tag index load")
+            return
+        }
+        #expect(query == "al")
+        #expect(items == ["alpha"])
     }
 
     @MainActor
@@ -1794,7 +1824,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func floatingToolbarButtonAppliesInlineTypingFormat() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
@@ -1810,7 +1840,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func floatingToolbarMouseDownImmediatelyAppliesFormatting() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
@@ -1835,7 +1865,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func toolbarMouseDownFormatsPreviouslySelectedTextAfterSelectionCollapse() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
@@ -1867,7 +1897,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func panelPreflightPreservesSelectionBeforeToolbarClickCollapsesIt() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let panel = try #require(controller.window as? QuickEntryPanel)
@@ -1898,7 +1928,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func toolbarMouseDownTogglesSelectedTextAcrossRepeatedClicks() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
@@ -1929,7 +1959,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func toolbarMouseDownAppliesDifferentFormatsToCachedSelection() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
@@ -1963,7 +1993,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func toolbarKeepsSingleHeadingButtonForHeadingOne() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let headingButton = try #require(controller.toolbarButtonsByAction[.heading])
@@ -1993,7 +2023,7 @@ struct MarkdownRichEditorTests {
     @MainActor
     @Test
     func toolbarInlineFormattingCanBeUndone() throws {
-        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        let harness = try makeEditorControllerHarness(draftID: "standard-editor", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
         let boldButton = try #require(controller.toolbarButtonsByAction[.bold])
@@ -2752,7 +2782,8 @@ struct MarkdownRichEditorTests {
         #expect(allSourceCell.textField?.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
         #expect(allSourceCell.accessibilityLabel() == "Notes")
         #expect(allSourceCell.accessibilityValue() as? String == "1 条笔记")
-        #expect(allSourceCell.imageView?.contentTintColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(allSourceCell.imageView?.contentTintColor == nil)
+        #expect(allSourceCell.imageView?.image?.isTemplate == false)
         let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceCell.textField?.font))
         let expectedSelectedSourceWeight = NSFontManager.shared.weight(of: .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
@@ -3510,6 +3541,10 @@ struct MarkdownRichEditorTests {
                 flags: FSEventStreamEventFlags(flag)
             )
             #expect(change.requiresFullRescan)
+            #expect(
+                change.requiresUnconditionalFullRescan
+                    == (flag != kFSEventStreamEventFlagRootChanged)
+            )
             #expect(change.changesDirectoryStructure)
             #expect(change.requiresLibraryRefresh)
         }
@@ -4088,6 +4123,8 @@ struct MarkdownRichEditorTests {
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
         #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.imageView?.contentTintColor == nil)
+        #expect(pressedProjectsCell.imageView?.image?.isTemplate == false)
         #expect(pressedProjectsCell.textField?.needsDisplay == false)
 
         outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
@@ -4096,6 +4133,8 @@ struct MarkdownRichEditorTests {
         #expect(outline.selectedRow == projectsRow)
         #expect(!outline.needsDisplay)
         #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.imageView?.contentTintColor == nil)
+        #expect(pressedProjectsCell.imageView?.image?.isTemplate == false)
         #expect(pressedProjectsCell.textField?.needsDisplay == false)
         outline.finishPrimaryMouseSelectionDeferral()
         #expect(!outline.isDeferringPrimaryMouseSelectionCommit)
@@ -5933,6 +5972,28 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func floatingReturnInsertsNewlineAndAutosavesWithoutCrashing() async throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.string = "Before"
+        controller.editorTextView.setSelectedRange(NSRange(location: 6, length: 0))
+
+        controller.editorTextView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [],
+            characters: "\r",
+            windowNumber: controller.window?.windowNumber ?? 0
+        ))
+        await Task.yield()
+        await controller.flushPendingDraftAutosaveForTesting()
+
+        #expect(controller.editorTextView.string == "Before\n")
+        #expect(harness.store.loadDraft(id: controller.currentDraftID)?.title == "Before")
+    }
+
+    @MainActor
+    @Test
     func draftPersistenceCoalescesQueuedSnapshotsAndFlushesAfterActiveWrite() throws {
         let activeWriteStarted = DispatchSemaphore(value: 0)
         let releaseActiveWrite = DispatchSemaphore(value: 0)
@@ -6931,7 +6992,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func folderLifecycleProjectsLoadedSnapshotWithoutSynchronousRescan() throws {
+    func folderLifecycleProjectsLoadedSnapshotWithoutSynchronousRescan() async throws {
         let suiteName = "mudsnote.folder-lifecycle-snapshot-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -6977,6 +7038,29 @@ struct MarkdownRichEditorTests {
         try controller.deleteSelectedFolderForLibrary()
         #expect(!controller.sourceTitlesForLibrary().contains("Renamed"))
         #expect(!controller.sourceTitlesForLibrary().contains("External Drift"))
+
+        let externalNote = store.notesDirectory.appendingPathComponent("External Note.md")
+        try "# External Note\n\nAdded after the internal deletion".write(
+            to: externalNote,
+            atomically: true,
+            encoding: .utf8
+        )
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(
+                path: renamed.appendingPathComponent("Nested.md").path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemIsFile
+                )
+            ),
+            LibraryFileSystemChange(
+                path: renamed.path,
+                flags: FSEventStreamEventFlags(
+                    kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagItemIsDir
+                )
+            )
+        ])
+        await controller.waitForExternalLibraryRefreshForTesting()
+        #expect(!controller.noteListSearchResultsForLibrary().contains { $0.title == "External Note" })
     }
 
     @MainActor
@@ -8758,13 +8842,50 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func ghostButtonRefreshesTintWhenHighlightChanges() {
+        let button = FocusAwareGhostButton(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
+
+        button.highlight(true)
+        #expect(button.contentTintColor == panelPrimaryTextColor())
+
+        button.highlight(false)
+        #expect(button.contentTintColor == panelPrimaryTextColor())
+    }
+
+    @MainActor
+    @Test
     func quickCaptureUsesQuietIconOnlyFooterActions() throws {
-        let harness = try makeEditorControllerHarness(draftID: "quick-capture", showsSaveButton: true)
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                let inbox = store.notesDirectory.appendingPathComponent("000-Inbox", isDirectory: true)
+                let projects = store.notesDirectory.appendingPathComponent("100_Projects", isDirectory: true)
+                let areas = store.notesDirectory.appendingPathComponent("200_Areas", isDirectory: true)
+                try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(at: areas, withIntermediateDirectories: true)
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+            }
+        )
         defer { harness.tearDown() }
 
+        let directoryButton = try #require(harness.controller.quickCaptureDirectoryButton)
+        let tagButton = try #require(harness.controller.quickCaptureTagButton)
         let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
         let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
 
+        #expect(harness.controller.selectedDirectoryURL == harness.store.preferredInboxDirectory)
+        #expect(harness.controller.quickCaptureDestinationTitle() == "Inbox")
+        #expect(harness.controller.quickCaptureButtonsByAction.isEmpty)
+        #expect(tagButton.superview?.superview === directoryButton.superview)
+        let directoryMenu = harness.controller.makeQuickCaptureDirectoryMenu()
+        #expect(directoryMenu.items.compactMap { ($0.representedObject as? URL)?.lastPathComponent } == [
+            "000-Inbox",
+            "200_Areas",
+            "100_Projects"
+        ])
+        #expect(directoryMenu.items.map(\.title) == ["Inbox", "Areas", "Projects"])
         #expect(saveButton.title.isEmpty)
         #expect(saveButton.toolTip == "保存")
         #expect(saveButton.preferredSize == NSSize(width: 26, height: 26))
@@ -8783,14 +8904,14 @@ struct MarkdownRichEditorTests {
         let controller = harness.controller
 
         #expect(controller.floatingNotePlaceholderLabel?.isHidden == false)
-        #expect(controller.toolbarButtonsByAction.values.allSatisfy {
-            $0.preferredSize?.height == controller.toolbarButtonVisualHeight
-        })
+        #expect(controller.toolbarButtonsByAction.isEmpty)
+        #expect(controller.toolbarButtons.isEmpty)
         #expect(controller.toolbarButtonVisualHeight < controller.toolbarButtonHeight)
         #expect(controller.window?.contentView?.allSubviews.contains { $0 is DragHandleView } == false)
         #expect(controller.floatingNoteTitlebarChromeViews.count == 1)
         #expect(controller.floatingNoteTitlebarChromeViews.allSatisfy { $0.alphaValue == 1 })
         #expect(controller.floatingNoteBrowseButton?.toolTip == "管理悬浮笔记")
+        #expect(controller.shellContentView?.subviews.contains { $0 is NSBox } == false)
         let managerButton = try #require(controller.floatingNoteBrowseButton as? HoverToolbarButton)
         #expect(managerButton.target === controller)
         #expect(managerButton.action == #selector(EditorWindowController.floatingBrowseNotesPressed(_:)))

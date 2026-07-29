@@ -398,7 +398,7 @@ final class FocusAwareGhostButton: NSButton {
             foreground = panelPrimaryTextColor()
             background = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.54 : 0.40)
         } else {
-            foreground = isWindowFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
+            foreground = isWindowFocused ? panelPrimaryTextColor() : panelSecondaryTextColor()
             background = .clear
         }
 

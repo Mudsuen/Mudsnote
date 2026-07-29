@@ -126,6 +126,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     enum QuickCaptureAction: Int, CaseIterable {
         case tag, checklist, orderedList, bulletList
 
+        static let footerActions: [QuickCaptureAction] = [.tag]
+
         var buttonTitle: String {
             switch self {
             case .tag: return "标签"
@@ -226,6 +228,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var activeToolbarActionSelection: NSRange?
     let suggestionController = SuggestionPopoverController()
     var inlineSuggestionContext: InlineSuggestionContext?
+    var knownTagsForSuggestions: [String]?
+    var tagSuggestionTask: Task<Void, Never>?
     var linkEditorSheetController: LinkEditorSheetController?
     weak var backdropView: GradientBackdropView?
     weak var shellContentView: NSView?
@@ -288,7 +292,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.showsSaveButton = showsSaveButton
         self.remembersWindowFrame = remembersWindowFrame
         self.selectedDirectoryURL = fileURL?.deletingLastPathComponent()
-            ?? (draftIDOverride == "floating-note" ? noteStore.preferredInboxDirectory : noteStore.notesDirectory)
+            ?? ((draftIDOverride == "floating-note" || draftIDOverride == "quick-capture")
+                ? noteStore.preferredInboxDirectory
+                : noteStore.notesDirectory)
         self.onSave = onSave
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch
@@ -426,6 +432,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func windowWillClose(_ notification: Notification) {
         didCloseWindow = true
+        tagSuggestionTask?.cancel()
+        tagSuggestionTask = nil
         attachmentQuickLookController.dismiss()
         rememberCurrentWindowFrame()
         observers.forEach(NotificationCenter.default.removeObserver)

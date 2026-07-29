@@ -133,7 +133,74 @@ extension EditorWindowController {
     }
 
     @objc func quickCaptureDirectoryPressed() {
-        guard let directory = chooseDirectory(startingAt: selectedDirectoryURL)?.standardizedFileURL else { return }
+        guard let directoryButton = quickCaptureDirectoryButton as? FocusAwareGhostButton else { return }
+        let menu = makeQuickCaptureDirectoryMenu()
+        defer {
+            directoryButton.highlight(false)
+            directoryButton.updateAppearance()
+        }
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: directoryButton.bounds.height + 6),
+            in: directoryButton
+        )
+    }
+
+    func makeQuickCaptureDirectoryMenu() -> NSMenu {
+        let menu = NSMenu(title: "笔记文件夹")
+        menu.autoenablesItems = false
+
+        for directory in quickCaptureMainDirectories() {
+            let normalizedDirectory = directory.standardizedFileURL
+            let item = NSMenuItem(
+                title: quickCaptureFolderDisplayName(for: normalizedDirectory),
+                action: #selector(quickCaptureDirectoryMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = normalizedDirectory
+            item.toolTip = displayPath(normalizedDirectory)
+            item.state = normalizedDirectory.path == selectedDirectoryURL.standardizedFileURL.path ? .on : .off
+            menu.addItem(item)
+        }
+
+        if menu.items.isEmpty {
+            let item = NSMenuItem(title: displayPath(noteStore.notesDirectory), action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    func quickCaptureMainDirectories() -> [URL] {
+        let fileManager = FileManager.default
+        let childDirectories = noteStore.preferredDirectories.flatMap { root in
+            ((try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []).filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            }
+        }
+
+        let candidates = childDirectories.isEmpty ? noteStore.preferredDirectories : childDirectories
+        var seenPaths = Set<String>()
+        let inboxPath = noteStore.preferredInboxDirectory.standardizedFileURL.path
+        return candidates
+            .map(\.standardizedFileURL)
+            .filter { seenPaths.insert($0.path).inserted }
+            .sorted { lhs, rhs in
+                let lhsIsInbox = lhs.path == inboxPath
+                let rhsIsInbox = rhs.path == inboxPath
+                if lhsIsInbox != rhsIsInbox { return lhsIsInbox }
+                return quickCaptureFolderDisplayName(for: lhs)
+                    .localizedCaseInsensitiveCompare(quickCaptureFolderDisplayName(for: rhs)) == .orderedAscending
+            }
+    }
+
+    @objc private func quickCaptureDirectoryMenuItemPressed(_ sender: NSMenuItem) {
+        guard let directory = (sender.representedObject as? URL)?.standardizedFileURL else { return }
         selectedDirectoryURL = directory
         isDirty = true
         refreshChrome()

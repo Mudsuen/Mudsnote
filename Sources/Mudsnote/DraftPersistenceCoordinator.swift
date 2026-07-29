@@ -8,14 +8,16 @@ enum DraftPersistenceAction: Sendable {
 
 final class DraftPersistenceCoordinator: @unchecked Sendable {
     typealias Completion = @MainActor @Sendable (Result<Void, Error>) -> Void
+    typealias Save = @Sendable (DraftSnapshot) throws -> Void
+    typealias Delete = @Sendable (String) -> Void
 
     private struct Request {
         let action: DraftPersistenceAction
         let completion: Completion
     }
 
-    private let save: @Sendable (DraftSnapshot) throws -> Void
-    private let delete: @Sendable (String) -> Void
+    private let save: Save
+    private let delete: Delete
     private let queue = DispatchQueue(
         label: "top.muds.mudsnote.draft-persistence",
         qos: .utility
@@ -25,8 +27,8 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
     private var isWorkerScheduled = false
 
     init(
-        save: @escaping @Sendable (DraftSnapshot) throws -> Void,
-        delete: @escaping @Sendable (String) -> Void
+        save: @escaping Save,
+        delete: @escaping Delete
     ) {
         self.save = save
         self.delete = delete
