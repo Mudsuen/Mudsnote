@@ -187,7 +187,7 @@ private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
 
     init(attributedMarkdown: NSAttributedString, theme: MarkdownEditorTheme) {
         self.sourceMarkdown = nil
-        self.attributedMarkdown = attributedMarkdown
+        self.attributedMarkdown = NSAttributedString(attributedString: attributedMarkdown)
         self.theme = theme
     }
 
