@@ -265,6 +265,10 @@ check_context_contract() {
     echo "ERROR: minimal task capsule routing is missing from AGENTS.md or .devflow.yaml." >&2
     failures=1
   fi
+  if ! grep -q '^local_delivery:' .devflow.yaml || ! grep -q '  mode: local-first-main' .devflow.yaml || ! grep -q 'devtask commit' AGENTS.md || ! grep -q 'devtask reconcile' AGENTS.md; then
+    echo "ERROR: local-first main integration contract is incomplete." >&2
+    failures=1
+  fi
   if ! grep -q 'devflow_full_reason:' .github/workflows/ci.yml || ! grep -q 'devflow_full_reason=none' .github/workflows/auto-merge.yml || ! grep -q 'devflow_full_reason=base-changed-after-candidate' .github/workflows/auto-merge.yml; then
     echo "ERROR: post-merge full-verification exception contract is incomplete." >&2
     failures=1

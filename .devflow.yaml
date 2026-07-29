@@ -2,16 +2,25 @@ schema_version: 2
 workflow_version: 2
 automation:
   pull_request: ready
-  merge: event-driven
-  merge_method: squash
+  merge: manual-promotion
+  merge_method: commit-preserving
   legacy_pull_requests: manual
   control_plane: hold
   full_verification: merge-candidate-once
   post_merge_verification: platform-pr-smoke
+local_delivery:
+  mode: local-first-main
+  commit: devtask commit
+  integration: locked-fast-forward
+  conflict_policy: resolve-and-reverify
+  cloud_feedback: devtask reconcile-all
+  cloud_promotion: manual
+  candidate_source: latest-local-main
 agent_interface:
   context: ./scripts/agent_context.sh --task
   results: json
-  delivery_wait: explicit-reconciliation-only
+  delivery_wait: periodic-reconcile
+  local_commit: devtask commit
   local_candidate_install: devtask install --candidate
   local_candidate_restore: devtask install --restore-main
   remote_completion: asynchronous
