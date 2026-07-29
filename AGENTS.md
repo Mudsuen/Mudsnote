@@ -9,7 +9,7 @@ When working in this repo:
 5. Quick-capture UI may span `EditorWindowController.swift`, `Chrome/`, and `MarkdownRichEditor.swift`.
 6. Declare `macos`, `ios`, or explicit `both`, then use `./scripts/verify <scope> pr|full|live`.
 7. `both` requires an explicitly dual-platform request. iOS-only work must not package or install macOS.
-8. Start product work from current `origin/main`; do not treat an unmerged PR or moving platform SHA as the default product baseline.
+8. Start product work from the latest clean local `main`. `devtask start` fetches `origin/main`, fast-forwards a remote-only local main, accepts a reviewed local-only lead, and stops on true divergence.
 9. Local AppKit/UI fixes use the project route and real-window verification; do not invoke Product Design unless the user requests it or the task requires visual reproduction from a reference.
 
 ## Token-efficient repository workflow
@@ -29,14 +29,15 @@ When working in this repo:
 ## Delivery
 
 - Follow `/Users/Donald/Code/Devflow/README.md` and use `/Users/Donald/Code/Devflow/bin/devtask`.
+- After editing, use `devtask commit <repo> <task> --message "<behavior>" --json`; do not call `git commit` directly. It serializes integration, rebases onto the locked latest local `main`, verifies, and advances `main` only by fast-forward. Resolve reported conflicts in the task worktree and continue with `--continue-rebase`.
 - Devflow may call `./scripts/verify pr|full`; the dispatcher detects a single-platform diff and delegates only to that platform. Documentation-only changes run policy checks without building either app.
 - `live` always requires an explicit platform argument or `MUDSNOTE_PLATFORM_SCOPE`; it never infers an installation target.
 - Concurrent worktrees share `/Applications/Mudsnote.app` and the connected iPhone, so never run another platform's live flow as incidental verification.
 - PR CI must not access iCloud, Keychain, real note folders, personal settings, credentials, or other user data.
-- Reversible product tasks use Devflow v2 Ready PRs and event-driven merge by default. Importance changes the final report, not the approval path.
-- Use `devtask ... --json` for stage results. After `devtask pr` reports `remote_pending`, finish the local task without waiting or polling. Use `devtask wait` once only when the user explicitly asks for final cloud status, formal acceptance, cleanup, or release.
-- When the user requests immediate installation of a reversible task with no irreversible external side effects, use `devtask install ... --candidate --json` after exact-HEAD PR verification. Report the candidate commit and restore command; GitHub, CI, and merge status are not local prerequisites. Use unflagged `devtask install ... --json` only for formal merged-main installation.
+- Reversible product tasks publish Ready validation PRs from the latest integrated local `main`; their manifests remain held from automatic Squash Merge until commit-preserving cloud promotion is independently approved.
+- Use `devtask ... --json` for stage results. A background lifecycle pass calls `devtask reconcile-all <repo> --json` once per interval; `needs_local_fix` resumes that task locally, while `needs_republish` republishes the latest local `main`. Interactive agents do not loop on `gh`.
+- When the user requests immediate installation of a reversible task with no irreversible external side effects, use `devtask install ... --candidate --json` after `devtask commit`. It locks, revalidates, and installs the latest local `main`, not an isolated task HEAD. Report both the installed main SHA, task integration SHA, and restore command.
 - For `--iteration-mode ui-tuning`, keep local adjustments in one task/branch and create one PR after the UI stabilizes. A verified reversible candidate may be installed locally before merge; formal installation remains post-merge from `main`.
-- Merge-candidate CI runs `full` once. Post-merge uses platform `pr` smoke unless the base/candidate changed, merge queue created a new candidate, or migration/signing/release/explicit high-risk review requires another full run.
+- Cloud CI validates the published local-main candidate once. Post-promotion uses platform `pr` smoke unless the base/candidate changed, a promotion controller created a new candidate, or migration/signing/release/explicit high-risk review requires another full run.
 - Irreversible data, production/App Store release, signing/secrets, guardrail weakening, and workflow/verification/package/entitlement changes remain held from automatic merge.
 - Existing legacy PRs without a Devflow v2 manifest remain manual and must never be merged retroactively by the automation.
