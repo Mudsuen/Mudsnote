@@ -2723,6 +2723,7 @@ struct MarkdownRichEditorTests {
         #expect(editorScrollView.horizontalScrollElasticity == .none)
         #expect(editorScrollView.contentInsets.right == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorScrollView.scrollerInsets.right == 0)
+        #expect(editorScrollView is LibraryEditorScrollView)
         let editorStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
         })
@@ -2733,6 +2734,9 @@ struct MarkdownRichEditorTests {
         editorContentPane.layoutSubtreeIfNeeded()
         let editorBodyFrame = editorBodyContainer.convert(editorBodyContainer.bounds, to: editorContentPane)
         #expect(abs(editorBodyFrame.maxX - editorContentPane.bounds.maxX) < 0.5)
+        editorScrollView.tile()
+        let editorVerticalScroller = try #require(editorScrollView.verticalScroller)
+        #expect(abs(editorVerticalScroller.frame.maxX - editorScrollView.bounds.maxX) < 0.5)
         let editorDateRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibraryEditorDateRow"
         })

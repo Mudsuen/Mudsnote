@@ -1186,6 +1186,30 @@ final class LibraryNoteClipView: NSClipView {
 }
 
 @MainActor
+final class LibraryEditorScrollView: NSScrollView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if let textView = documentView as? NSTextView {
+            window?.makeFirstResponder(textView)
+            textView.mouseDown(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func tile() {
+        super.tile()
+        guard let verticalScroller else { return }
+        var scrollerFrame = verticalScroller.frame
+        scrollerFrame.origin.x = bounds.maxX - scrollerFrame.width
+        verticalScroller.frame = scrollerFrame
+    }
+}
+
+@MainActor
 final class LibraryWindowController: NSWindowController,
     NSWindowDelegate,
     NSSplitViewDelegate,
@@ -2266,7 +2290,7 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureEditorTextView()
-        let scrollView = EditorScrollView()
+        let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
