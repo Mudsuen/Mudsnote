@@ -151,20 +151,28 @@ extension EditorWindowController {
         topDivider.translatesAutoresizingMaskIntoConstraints = false
         topDivider.alphaValue = 0.72
 
-        ToolbarAction.allCases.forEach { action in
-            let button = makeToolbarButton(for: action)
-            toolbarButtons.append(button)
-            toolbarButtonsByAction[action] = button
-            toolbarStack.addArrangedSubview(button)
+        if !isFloatingNoteMode {
+            ToolbarAction.allCases.forEach { action in
+                let button = makeToolbarButton(for: action)
+                toolbarButtons.append(button)
+                toolbarButtonsByAction[action] = button
+                toolbarStack.addArrangedSubview(button)
+            }
         }
 
         let toolbarWidth = (CGFloat(ToolbarAction.allCases.count) * toolbarButtonWidth)
             + (CGFloat(max(ToolbarAction.allCases.count - 1, 0)) * toolbarButtonSpacing)
         toolbarStack.widthAnchor.constraint(equalToConstant: toolbarWidth).isActive = true
 
-        let footerBar = NSView()
-        footerBar.translatesAutoresizingMaskIntoConstraints = false
-        shellContent.addSubview(footerBar)
+        let footerBar: NSView?
+        if isFloatingNoteMode {
+            footerBar = nil
+        } else {
+            let view = NSView()
+            view.translatesAutoresizingMaskIntoConstraints = false
+            shellContent.addSubview(view)
+            footerBar = view
+        }
 
         if isFloatingNoteMode {
             let browseButton = makeFloatingHeaderButton(
@@ -183,28 +191,30 @@ extension EditorWindowController {
             setFloatingNoteTitlebarChromeVisible(true)
         }
 
-        if showsSaveButton {
-            let saveButton = makePrimarySaveButton()
-            let saveButtonWidth = ceil(saveButton.intrinsicContentSize.width) + 6
-            saveButton.widthAnchor.constraint(equalToConstant: saveButtonWidth).isActive = true
-            saveButton.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
-            self.saveButton = saveButton
-            footerBar.addSubview(toolbarStack)
-            footerBar.addSubview(saveButton)
-            NSLayoutConstraint.activate([
-                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: footerEdgeInset),
-                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -footerEdgeInset),
-                saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                saveButton.leadingAnchor.constraint(greaterThanOrEqualTo: toolbarStack.trailingAnchor, constant: footerGapToSave)
-            ])
-        } else {
-            footerBar.addSubview(toolbarStack)
-            NSLayoutConstraint.activate([
-                toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: footerEdgeInset),
-                toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                toolbarStack.trailingAnchor.constraint(lessThanOrEqualTo: footerBar.trailingAnchor, constant: -footerEdgeInset)
-            ])
+        if let footerBar {
+            if showsSaveButton {
+                let saveButton = makePrimarySaveButton()
+                let saveButtonWidth = ceil(saveButton.intrinsicContentSize.width) + 6
+                saveButton.widthAnchor.constraint(equalToConstant: saveButtonWidth).isActive = true
+                saveButton.heightAnchor.constraint(equalToConstant: toolbarButtonHeight).isActive = true
+                self.saveButton = saveButton
+                footerBar.addSubview(toolbarStack)
+                footerBar.addSubview(saveButton)
+                NSLayoutConstraint.activate([
+                    toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: footerEdgeInset),
+                    toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                    saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -footerEdgeInset),
+                    saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                    saveButton.leadingAnchor.constraint(greaterThanOrEqualTo: toolbarStack.trailingAnchor, constant: footerGapToSave)
+                ])
+            } else {
+                footerBar.addSubview(toolbarStack)
+                NSLayoutConstraint.activate([
+                    toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: footerEdgeInset),
+                    toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
+                    toolbarStack.trailingAnchor.constraint(lessThanOrEqualTo: footerBar.trailingAnchor, constant: -footerEdgeInset)
+                ])
+            }
         }
 
         let floatingPlaceholderOverlay = PassthroughOverlayView()
@@ -226,11 +236,12 @@ extension EditorWindowController {
             shellContent.addSubview(floatingPlaceholderOverlay)
         }
         backdrop.addSubview(overlayScrollIndicator)
-        shellContent.addSubview(divider)
+        if footerBar != nil {
+            shellContent.addSubview(divider)
+        }
 
         var constraints: [NSLayoutConstraint] = [
             scrollView.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
 
             overlayScrollIndicator.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -2),
             overlayScrollIndicator.topAnchor.constraint(equalTo: scrollView.topAnchor),
@@ -243,17 +254,25 @@ extension EditorWindowController {
             topDragBar.topAnchor.constraint(equalTo: shellContent.topAnchor),
             topDragBar.heightAnchor.constraint(equalToConstant: isFloatingNoteMode ? 22 : 15),
 
-            divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
-            divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
-
-            footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
-            footerBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
-            footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
-            footerBar.heightAnchor.constraint(equalToConstant: toolbarButtonHeight),
-
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: showsSaveButton ? 214 : 216)
         ]
+
+        if let footerBar {
+            constraints.append(contentsOf: [
+                scrollView.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: showsSaveButton ? -4 : -2),
+                divider.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor),
+                divider.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor),
+                divider.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
+                footerBar.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
+                footerBar.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
+                footerBar.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor),
+                footerBar.heightAnchor.constraint(equalToConstant: toolbarButtonHeight)
+            ])
+        } else {
+            constraints.append(
+                scrollView.bottomAnchor.constraint(equalTo: shellContent.bottomAnchor)
+            )
+        }
 
         if isFloatingNoteMode {
             constraints.append(contentsOf: [
@@ -378,9 +397,8 @@ extension EditorWindowController {
         actionStack.alignment = .centerY
         actionStack.spacing = 10
         actionStack.translatesAutoresizingMaskIntoConstraints = false
-        bodyContainer.addSubview(actionStack)
 
-        QuickCaptureAction.allCases.forEach { action in
+        QuickCaptureAction.footerActions.forEach { action in
             let button = makeQuickCaptureActionButton(for: action)
             toolbarButtons.append(button)
             if action == .tag { quickCaptureTagButton = button }
@@ -399,6 +417,7 @@ extension EditorWindowController {
         footerShelf.layer?.masksToBounds = true
         footerShelf.layer?.cornerRadius = 0
         shellContent.addSubview(footerShelf)
+        footerShelf.addSubview(actionStack)
 
         let footerDivider = NSBox()
         footerDivider.boxType = .separator
@@ -475,7 +494,7 @@ extension EditorWindowController {
 
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 18),
             scrollView.topAnchor.constraint(equalTo: titleHost.bottomAnchor, constant: titleBodyGap),
-            scrollView.bottomAnchor.constraint(equalTo: actionStack.topAnchor, constant: -12),
+            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -12),
 
             overlayScrollIndicator.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -10),
             overlayScrollIndicator.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 6),
@@ -491,8 +510,6 @@ extension EditorWindowController {
             bodyLabel.leadingAnchor.constraint(equalTo: bodyPlaceholderOverlay.leadingAnchor, constant: 20),
             bodyLabel.topAnchor.constraint(equalTo: bodyPlaceholderOverlay.topAnchor, constant: titleBodyGap),
 
-            actionStack.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -16),
-            actionStack.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -11),
             actionStack.heightAnchor.constraint(equalToConstant: 28),
 
             footerShelf.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
@@ -507,7 +524,10 @@ extension EditorWindowController {
             directoryButton.leadingAnchor.constraint(equalTo: footerShelf.leadingAnchor, constant: 10),
             directoryButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
             directoryButton.heightAnchor.constraint(equalToConstant: 22),
-            directoryButton.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -10),
+            actionStack.leadingAnchor.constraint(greaterThanOrEqualTo: directoryButton.trailingAnchor, constant: 10),
+            actionStack.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
+            actionStack.centerXAnchor.constraint(equalTo: footerShelf.centerXAnchor),
+            actionStack.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -10),
 
             saveButton.trailingAnchor.constraint(equalTo: footerShelf.trailingAnchor, constant: -10),
             saveButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
@@ -789,10 +809,13 @@ extension EditorWindowController {
     }
 
     func quickCaptureDestinationTitle() -> String {
-        let standardizedSelected = selectedDirectoryURL.standardizedFileURL
-        let standardizedRoot = noteStore.notesDirectory.standardizedFileURL
-        if standardizedSelected == standardizedRoot { return "收件箱" }
-        return standardizedSelected.lastPathComponent
+        quickCaptureFolderDisplayName(for: selectedDirectoryURL)
+    }
+
+    func quickCaptureFolderDisplayName(for directory: URL) -> String {
+        let name = directory.standardizedFileURL.lastPathComponent
+        let withoutPrefix = name.replacingOccurrences(of: #"^\d+[_-]+"#, with: "", options: .regularExpression)
+        return withoutPrefix.isEmpty ? displayPath(directory) : withoutPrefix
     }
 
     func updateWindowFocusAppearance(isFocused: Bool) {

@@ -1348,6 +1348,7 @@ final class LibraryWindowController: NSWindowController,
     private var fullLibrarySnapshotReloadGeneration = 0
     private var fileSystemMonitor: LibraryFileSystemMonitor?
     private var internallyMutatedPaths: [String: Date] = [:]
+    private var internallyMutatedDirectoryPaths: [String: Date] = [:]
     private var sourceFoldersSectionCollapsed = false
     private var sourceTagsSectionCollapsed = false
     private var inlineFolderEditOperation: InlineFolderEditOperation?
@@ -1838,7 +1839,7 @@ final class LibraryWindowController: NSWindowController,
             return
         }
         let externalChanges = changes.filter {
-            $0.requiresFullRescan || !isSuppressedInternalChange($0)
+            $0.requiresUnconditionalFullRescan || !isSuppressedInternalChange($0)
         }
         guard !externalChanges.isEmpty else { return }
 
@@ -1893,18 +1894,31 @@ final class LibraryWindowController: NSWindowController,
         handleLibraryFileSystemChanges(changes, requiresVisibleWindow: false)
     }
 
-    private func recordInternalFileSystemChanges(for urls: [URL]) {
+    private func recordInternalFileSystemChanges(
+        for urls: [URL],
+        includingDescendants: Bool = false
+    ) {
         let expiration = Date().addingTimeInterval(2)
         for url in urls {
-            internallyMutatedPaths[url.path] = expiration
+            let path = url.standardizedFileURL.path
+            internallyMutatedPaths[path] = expiration
+            if includingDescendants {
+                internallyMutatedDirectoryPaths[path] = expiration
+            }
         }
     }
 
     private func isSuppressedInternalChange(_ change: LibraryFileSystemChange) -> Bool {
         let now = Date()
         internallyMutatedPaths = internallyMutatedPaths.filter { $0.value > now }
-        let path = URL(fileURLWithPath: change.path).path
-        return internallyMutatedPaths[path].map { $0 > now } ?? false
+        internallyMutatedDirectoryPaths = internallyMutatedDirectoryPaths.filter { $0.value > now }
+        let path = URL(fileURLWithPath: change.path).standardizedFileURL.path
+        if internallyMutatedPaths[path].map({ $0 > now }) ?? false {
+            return true
+        }
+        return internallyMutatedDirectoryPaths.contains { directoryPath, expiration in
+            expiration > now && path.hasPrefix(directoryPath + "/")
+        }
     }
 
     func handleLibraryFileSystemChangesForTesting(_ changes: Set<LibraryFileSystemChange>) {
@@ -4562,14 +4576,22 @@ final class LibraryWindowController: NSWindowController,
         cell.textField?.textColor = isSelected
             ? themeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
-        cell.imageView?.image = NSImage(
-            systemSymbolName: sourceSymbolName(for: scope),
-            accessibilityDescription: title
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+        let foregroundColor = isSelected
+            ? themeColor.foregroundColor
+            : LibrarySourceSelectionPalette.unselectedForegroundColor
+        let sourceImageConfiguration = NSImage.SymbolConfiguration(
             pointSize: LibraryNotesLayout.sourceSymbolPointSize,
             weight: LibraryNotesLayout.sourceSymbolWeight
-        ))
-        cell.imageView?.contentTintColor = cell.textField?.textColor
+        ).applying(NSImage.SymbolConfiguration(paletteColors: [foregroundColor]))
+        let sourceImage = NSImage(
+            systemSymbolName: sourceSymbolName(for: scope),
+            accessibilityDescription: title
+        )?.withSymbolConfiguration(sourceImageConfiguration)
+        sourceImage?.isTemplate = false
+        cell.imageView?.image = sourceImage
+        cell.imageView?.contentTintColor = nil
+        cell.imageView?.needsDisplay = true
+        cell.needsDisplay = true
         cell.countLabel.stringValue = sourceCountText(item.count, for: scope)
         cell.countLabel.textColor = isSelected
             ? LibrarySourceSelectionPalette.selectedCountColor
@@ -8426,7 +8448,11 @@ final class LibraryWindowController: NSWindowController,
             guard notePath.hasPrefix(folderPath + "/") else { return nil }
             return (notePath, note)
         })
-        let trashResult = try noteStore.trashFolderWithNoteURLs(at: folderURL)
+        recordInternalFileSystemChanges(for: [folderURL], includingDescendants: true)
+        let trashResult = try noteStore.trashFolderWithNoteURLs(
+            at: folderURL,
+            knownNoteURLs: notesInFolderByPath.values.map(\.url)
+        )
         let trashedFolderURL = trashResult.directory
         let deletedAt = Date()
         trashedNotesSnapshot.append(contentsOf: trashResult.noteURLs.map { trashedURL in

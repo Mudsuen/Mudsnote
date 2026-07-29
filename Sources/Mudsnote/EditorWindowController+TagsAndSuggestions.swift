@@ -49,7 +49,7 @@ extension EditorWindowController {
     }
 
     func rankedMatchingTags(for query: String) -> [String] {
-        let known = noteStore.knownTags()
+        let known = (knownTagsForSuggestions ?? [])
             .filter { candidate in
                 !activeTags.contains { $0.caseInsensitiveCompare(candidate) == .orderedSame }
             }
@@ -81,6 +81,11 @@ extension EditorWindowController {
 
     func updateInlineSuggestions() {
         guard editorTextView.window != nil else { return }
+        if currentTagToken() != nil, knownTagsForSuggestions == nil {
+            scheduleKnownTagsSuggestionLoad()
+            dismissInlineSuggestions()
+            return
+        }
         guard let context = currentInlineSuggestionContext() else {
             dismissInlineSuggestions()
             return
@@ -182,6 +187,23 @@ extension EditorWindowController {
 
         suggestionView.frame = NSRect(origin: origin, size: size)
         suggestionView.isHidden = false
+    }
+
+    private func scheduleKnownTagsSuggestionLoad() {
+        guard tagSuggestionTask == nil else { return }
+
+        let noteStore = self.noteStore
+        tagSuggestionTask = Task { [weak self] in
+            let tags = await Task.detached(priority: .utility) {
+                noteStore.knownTags()
+            }.value
+
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            self.knownTagsForSuggestions = tags
+            self.tagSuggestionTask = nil
+            self.updateInlineSuggestions()
+        }
     }
 
     // MARK: - Tag / slash application

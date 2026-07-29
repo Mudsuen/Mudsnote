@@ -1221,6 +1221,34 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func folderTrashUsesKnownNotesWithoutLosingRestorePathsForUncachedNotes() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        store.notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+
+        let folder = try store.createFolder(named: "Project")
+        let knownNote = try store.saveNewNote(title: "Known", body: "cached", in: folder)
+        let nestedFolder = folder.appendingPathComponent("Nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedFolder, withIntermediateDirectories: true)
+        let uncachedNote = nestedFolder.appendingPathComponent("Uncached.md")
+        try "# Uncached\n\nexternal".write(to: uncachedNote, atomically: true, encoding: .utf8)
+
+        let trashResult = try store.trashFolderWithNoteURLs(
+            at: folder,
+            knownNoteURLs: [knownNote]
+        )
+        #expect(trashResult.noteURLs.count == 1)
+        #expect(trashResult.noteURLs.first?.lastPathComponent == knownNote.lastPathComponent)
+
+        let trashedNotes = store.listTrashedNotes(limit: 10)
+        #expect(Set(trashedNotes.map(\.title)) == ["Known", "Uncached"])
+        let trashedUncached = try #require(trashedNotes.first { $0.title == "Uncached" })
+        let restoredURL = try store.restoreTrashedNote(at: trashedUncached.url)
+        #expect(restoredURL.standardizedFileURL.path == uncachedNote.standardizedFileURL.path)
+        #expect(FileManager.default.fileExists(atPath: uncachedNote.path))
+    }
+
+    @Test
     func panelOpacityPersistsWithinBounds() throws {
         let harness = try TestHarness()
         let store = harness.store

@@ -278,7 +278,10 @@ extension NoteStore {
         try trashFolderWithNoteURLs(at: directory).directory
     }
 
-    public func trashFolderWithNoteURLs(at directory: URL) throws -> (directory: URL, noteURLs: [URL]) {
+    public func trashFolderWithNoteURLs(
+        at directory: URL,
+        knownNoteURLs: [URL]? = nil
+    ) throws -> (directory: URL, noteURLs: [URL]) {
         let originalDirectory = directory.standardizedFileURL
         let folderTrashRoot = trashDirectory().appendingPathComponent("Folders", isDirectory: true)
         try fileManager.createDirectory(at: folderTrashRoot, withIntermediateDirectories: true)
@@ -290,23 +293,35 @@ extension NoteStore {
 
         let deletionDate = Date()
         var metadata = storedTrashedNotesMetadata()
-        let originalFiles = markdownFiles(in: trashedDirectory)
-        for trashedFile in originalFiles {
-            let relativePath = relativePath(from: trashedDirectory, to: trashedFile)
-            let originalFile = originalDirectory.appendingPathComponent(relativePath)
-            metadata[metadataKey(for: trashedFile)] = TrashedNoteMetadata(
-                originalPath: originalFile.standardizedFileURL.path,
-                deletedAt: deletionDate
-            )
-        }
+        metadata[metadataKey(for: trashedDirectory)] = TrashedNoteMetadata(
+            originalPath: originalDirectory.path,
+            deletedAt: deletionDate
+        )
         storeTrashedNotesMetadata(metadata)
+        let trashedFiles: [URL]
+        if let knownNoteURLs {
+            let originalPathPrefix = originalDirectory.path + "/"
+            var seenPaths = Set<String>()
+            trashedFiles = knownNoteURLs.compactMap { noteURL in
+                let notePath = noteURL.standardizedFileURL.path
+                guard notePath.hasPrefix(originalPathPrefix) else { return nil }
+                let relativePath = String(notePath.dropFirst(originalPathPrefix.count))
+                let trashedURL = trashedDirectory
+                    .appendingPathComponent(relativePath)
+                    .standardizedFileURL
+                guard seenPaths.insert(trashedURL.path).inserted else { return nil }
+                return trashedURL
+            }
+        } else {
+            trashedFiles = markdownFiles(in: trashedDirectory)
+        }
         removePreferredDirectory(originalDirectory)
         forgetRecentPathPrefix(originalDirectory)
         removeLibraryPinnedNotePaths(in: originalDirectory)
         removeLibraryFolderDisclosurePaths(in: originalDirectory)
         removeLibraryFolderIconNames(in: originalDirectory)
         invalidateSearchIndexContents()
-        return (trashedDirectory, originalFiles)
+        return (trashedDirectory, trashedFiles)
     }
 
     public func trashDirectory() -> URL {
@@ -318,13 +333,14 @@ extension NoteStore {
         var notes: [NoteSearchResult] = []
 
         for fileURL in markdownFiles(in: trashDirectory()) {
-            let key = metadataKey(for: fileURL)
             let note = (try? loadNote(at: fileURL)) ?? (
                 title: fileURL.deletingPathExtension().lastPathComponent,
                 body: "",
                 tags: []
             )
-            let modifiedAt = metadata[key]?.deletedAt ?? fileModificationDate(for: fileURL) ?? Date()
+            let modifiedAt = resolvedTrashedNoteMetadata(for: fileURL, in: metadata)?.metadata.deletedAt
+                ?? fileModificationDate(for: fileURL)
+                ?? Date()
             notes.append(NoteSearchResult(
                 url: fileURL,
                 title: note.title,
@@ -370,7 +386,11 @@ extension NoteStore {
         let standardizedTrashURL = url.standardizedFileURL
         var metadata = storedTrashedNotesMetadata()
         let metadataKey = metadataKey(for: standardizedTrashURL)
-        let originalURL = metadata[metadataKey]
+        let resolvedMetadata = resolvedTrashedNoteMetadata(
+            for: standardizedTrashURL,
+            in: metadata
+        )
+        let originalURL = resolvedMetadata
             .map { URL(fileURLWithPath: $0.originalPath) }
             ?? notesDirectory.appendingPathComponent(standardizedTrashURL.lastPathComponent)
         let restoreDirectory = originalURL.deletingLastPathComponent()
@@ -378,7 +398,9 @@ extension NoteStore {
 
         let restoredURL = uniqueRestoredURL(for: originalURL)
         try fileManager.moveItem(at: standardizedTrashURL, to: restoredURL)
-        metadata.removeValue(forKey: metadataKey)
+        if resolvedMetadata?.key == metadataKey {
+            metadata.removeValue(forKey: metadataKey)
+        }
         storeTrashedNotesMetadata(metadata)
         rememberRecentFile(restoredURL, replacing: standardizedTrashURL)
         markSearchIndexDirty(at: [restoredURL])
@@ -999,6 +1021,33 @@ extension NoteStore {
 
     private func metadataKey(for url: URL) -> String {
         url.standardizedFileURL.path
+    }
+
+    private func resolvedTrashedNoteMetadata(
+        for url: URL,
+        in metadata: [String: TrashedNoteMetadata]
+    ) -> (key: String, originalPath: String, metadata: TrashedNoteMetadata)? {
+        let standardizedURL = url.standardizedFileURL
+        let directKey = metadataKey(for: standardizedURL)
+        if let directMetadata = metadata[directKey] {
+            return (directKey, directMetadata.originalPath, directMetadata)
+        }
+
+        let trashRootPath = trashDirectory().standardizedFileURL.path
+        var ancestor = standardizedURL.deletingLastPathComponent()
+        while ancestor.path.hasPrefix(trashRootPath + "/") {
+            let ancestorKey = metadataKey(for: ancestor)
+            if let folderMetadata = metadata[ancestorKey] {
+                let relativePath = relativePath(from: ancestor, to: standardizedURL)
+                let originalURL = URL(
+                    fileURLWithPath: folderMetadata.originalPath,
+                    isDirectory: true
+                ).appendingPathComponent(relativePath)
+                return (ancestorKey, originalURL.standardizedFileURL.path, folderMetadata)
+            }
+            ancestor.deleteLastPathComponent()
+        }
+        return nil
     }
 
     private func relativePath(from root: URL, to fileURL: URL) -> String {

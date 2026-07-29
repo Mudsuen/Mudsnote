@@ -3,12 +3,15 @@ import Foundation
 
 struct LibraryFileSystemChange: Hashable, Sendable {
     private static let supportedNoteFileExtensions = Set(["md", "markdown", "txt"])
-    private static let fullRescanFlags = FSEventStreamEventFlags(
+    private static let unconditionalFullRescanFlags = FSEventStreamEventFlags(
         kFSEventStreamEventFlagMustScanSubDirs
             | kFSEventStreamEventFlagUserDropped
             | kFSEventStreamEventFlagKernelDropped
             | kFSEventStreamEventFlagEventIdsWrapped
-            | kFSEventStreamEventFlagRootChanged
+    )
+    private static let fullRescanFlags = FSEventStreamEventFlags(
+        unconditionalFullRescanFlags
+            | FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged)
     )
 
     let path: String
@@ -22,6 +25,10 @@ struct LibraryFileSystemChange: Hashable, Sendable {
 
     var requiresFullRescan: Bool {
         flags & Self.fullRescanFlags != 0
+    }
+
+    var requiresUnconditionalFullRescan: Bool {
+        flags & Self.unconditionalFullRescanFlags != 0
     }
 
     var changesDirectoryStructure: Bool {
