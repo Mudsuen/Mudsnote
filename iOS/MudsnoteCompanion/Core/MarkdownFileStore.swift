@@ -1174,7 +1174,7 @@ actor MarkdownFileStore {
         now: Date = Date()
     ) throws -> TrashedMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
-        guard Self.isMutableNotePath(relativePath),
+        guard Self.isTrashableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md" else {
             throw MarkdownLifecycleError.protectedNote
@@ -1226,7 +1226,7 @@ actor MarkdownFileStore {
         let paths = Array(Set(relativePaths)).sorted()
         guard !paths.isEmpty else { return [] }
         for relativePath in paths {
-            guard Self.isMutableNotePath(relativePath),
+            guard Self.isTrashableNotePath(relativePath),
                   let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
                   source.pathExtension.lowercased() == "md",
                   fileManager.fileExists(atPath: source.path) else {
@@ -1533,7 +1533,7 @@ actor MarkdownFileStore {
         let accessed = root.startAccessingSecurityScopedResource()
         defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         let item = try trashItem(id: id, root: root)
-        guard Self.isMutableNotePath(item.originalRelativePath),
+        guard Self.isTrashableNotePath(item.originalRelativePath),
               let requestedDestination = AuthorizedLibraryPath.resolve(item.originalRelativePath, within: root) else {
             throw MarkdownLifecycleError.invalidTrashMetadata
         }
@@ -1577,7 +1577,7 @@ actor MarkdownFileStore {
 
         let items = try normalizedIDs.map { id in
             let item = try trashItem(id: id, root: root)
-            guard Self.isMutableNotePath(item.originalRelativePath),
+            guard Self.isTrashableNotePath(item.originalRelativePath),
                   let requestedDestination = AuthorizedLibraryPath.resolve(
                     item.originalRelativePath,
                     within: root
@@ -2263,6 +2263,13 @@ actor MarkdownFileStore {
         return true
     }
 
+    private static func isTrashableNotePath(_ relativePath: String) -> Bool {
+        relativePath != "Inbox.md"
+            && !relativePath.hasPrefix("Attachments/")
+            && !relativePath.hasPrefix(".mudsnote/")
+            && relativePath.hasSuffix(".md")
+    }
+
     static func isConflictCopyPath(_ relativePath: String) -> Bool {
         guard relativePath.lowercased().hasSuffix(".md") else { return false }
         let stem = ((relativePath as NSString).lastPathComponent as NSString)
@@ -2900,7 +2907,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .protectedNote:
-            String(localized: "Inbox and Daily notes cannot be deleted.")
+            String(localized: "Inbox cannot be deleted.")
         case .noteNotFound:
             String(localized: "This note is no longer available.")
         case .invalidTrashMetadata:

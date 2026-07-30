@@ -1172,7 +1172,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 
-    func testReaderScrollsAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
+    func testReaderScrollsTimestampAwayAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
         let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
@@ -1195,11 +1195,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let initialMetadataY = metadata.frame.midY
         rendered.swipeUp()
         XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
-        XCTAssertEqual(
-            metadata.frame.midY,
-            initialMetadataY,
-            accuracy: 2,
-            "The reader timestamp must remain fixed while note content scrolls"
+        XCTAssertTrue(
+            !metadata.exists || metadata.frame.midY < initialMetadataY - 10,
+            "The reader timestamp must leave the top edge with note content"
         )
 
         rendered.swipeDown()

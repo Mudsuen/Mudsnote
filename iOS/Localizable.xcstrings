@@ -2276,8 +2276,8 @@
     "This action cannot be undone.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此操作无法撤销。" } } }
     },
-    "Inbox and Daily notes cannot be moved to Recently Deleted.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 和 Daily 系统笔记不能移到最近删除。" } } }
+    "Inbox cannot be deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 不能删除。" } } }
     },
     "This note is no longer available.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此笔记已不可用。" } } }

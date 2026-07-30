@@ -130,14 +130,14 @@ struct MarkdownPreviewView: View {
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
-                    VStack(alignment: .leading, spacing: 0) {
-                        metadataLabel
-                            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
-                            .padding(.top, MudsnoteSpacing.safeHorizontal)
-                            .padding(.bottom, 18)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                metadataLabel
+                                    .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                                    .padding(.top, MudsnoteSpacing.safeHorizontal)
+                                    .padding(.bottom, 18)
 
-                        ScrollViewReader { proxy in
-                            ScrollView {
                                 markdownBody
                                     .environment(\.openURL, OpenURLAction { url in
                                         handleMarkdownURL(url)
@@ -148,20 +148,20 @@ struct MarkdownPreviewView: View {
                                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
                                     .padding(.bottom, MudsnoteSpacing.safeHorizontal)
                             }
-                            .onChange(of: findQuery) { _, _ in
-                                activeFindIndex = 0
-                                scrollToActiveFindMatch(using: proxy)
-                            }
-                            .onChange(of: activeFindIndex) { _, _ in
-                                scrollToActiveFindMatch(using: proxy)
-                            }
-                            .onChange(of: findResults.map(\.id)) { _, _ in
-                                activeFindIndex = min(
-                                    activeFindIndex,
-                                    max(0, findResults.count - 1)
-                                )
-                                scrollToActiveFindMatch(using: proxy)
-                            }
+                        }
+                        .onChange(of: findQuery) { _, _ in
+                            activeFindIndex = 0
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: activeFindIndex) { _, _ in
+                            scrollToActiveFindMatch(using: proxy)
+                        }
+                        .onChange(of: findResults.map(\.id)) { _, _ in
+                            activeFindIndex = min(
+                                activeFindIndex,
+                                max(0, findResults.count - 1)
+                            )
+                            scrollToActiveFindMatch(using: proxy)
                         }
                     }
                 }
@@ -858,51 +858,54 @@ struct MarkdownPreviewView: View {
         }
 
         if case .document(let document) = source,
-           let file = currentFile,
-           canManage(document) {
+           let file = currentFile {
             Divider()
-            Button {
-                appModel.togglePinned(file)
-            } label: {
-                Label(
-                    file.isPinned ? "Unpin" : "Pin",
-                    systemImage: file.isPinned ? "pin.slash" : "pin"
-                )
-            }
-            if canMoveToTopLevel || !moveDestinations.isEmpty {
-                Menu {
-                    if canMoveToTopLevel {
-                        Button {
-                            Task { await moveCurrentDocument(toFolder: nil) }
-                        } label: {
-                            Label("Top Level", systemImage: "tray")
-                        }
-                    }
-                    ForEach(moveDestinations) { folder in
-                        Button(folder.relativePath) {
-                            Task { await moveCurrentDocument(toFolder: folder.relativePath) }
-                        }
-                    }
+            if canManage(document) {
+                Button {
+                    appModel.togglePinned(file)
                 } label: {
-                    Label("Move Note", systemImage: "folder")
+                    Label(
+                        file.isPinned ? "Unpin" : "Pin",
+                        systemImage: file.isPinned ? "pin.slash" : "pin"
+                    )
+                }
+                if canMoveToTopLevel || !moveDestinations.isEmpty {
+                    Menu {
+                        if canMoveToTopLevel {
+                            Button {
+                                Task { await moveCurrentDocument(toFolder: nil) }
+                            } label: {
+                                Label("Top Level", systemImage: "tray")
+                            }
+                        }
+                        ForEach(moveDestinations) { folder in
+                            Button(folder.relativePath) {
+                                Task { await moveCurrentDocument(toFolder: folder.relativePath) }
+                            }
+                        }
+                    } label: {
+                        Label("Move Note", systemImage: "folder")
+                    }
+                }
+                Button {
+                    appModel.duplicate(file)
+                } label: {
+                    Label("Duplicate Note", systemImage: "plus.square.on.square")
+                }
+                Button {
+                    noteName = document.title
+                    isRenamingNote = true
+                } label: {
+                    Label("Rename Note", systemImage: "pencil")
                 }
             }
-            Button {
-                appModel.duplicate(file)
-            } label: {
-                Label("Duplicate Note", systemImage: "plus.square.on.square")
-            }
-            Button {
-                noteName = document.title
-                isRenamingNote = true
-            } label: {
-                Label("Rename Note", systemImage: "pencil")
-            }
-            Divider()
-            Button(role: .destructive) {
-                isConfirmingNoteDeletion = true
-            } label: {
-                Label("Delete", systemImage: "trash")
+            if appModel.canMoveToRecentlyDeleted(file) {
+                Divider()
+                Button(role: .destructive) {
+                    isConfirmingNoteDeletion = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
     }

@@ -101,7 +101,7 @@ final class FolderAccessService {
 }
 
 enum FolderInitializer {
-    static func initialize(_ root: URL, calendar: Calendar = .current, now: Date = Date()) throws {
+    static func initialize(_ root: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try ensureDirectory(root.appendingPathComponent("Daily"))
@@ -125,11 +125,6 @@ enum FolderInitializer {
             root.appendingPathComponent(".mudsnote/smart-folders.json"),
             contents: "{\"version\":1,\"folders\":[]}\n"
         )
-        let day = dayFormatter.string(from: now)
-        try ensureFile(
-            root.appendingPathComponent("Daily/\(day).md"),
-            contents: "# \(day)\n\n"
-        )
     }
 
     private static func ensureDirectory(_ url: URL) throws {
@@ -140,11 +135,4 @@ enum FolderInitializer {
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         try contents.write(to: url, atomically: true, encoding: .utf8)
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }

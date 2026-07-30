@@ -782,6 +782,10 @@ final class AppModel: ObservableObject {
     }
 
     func canMoveToRecentlyDeleted(_ file: RecentMarkdownFile) -> Bool {
+        file.relativePath != "Inbox.md"
+    }
+
+    func canReorganize(_ file: RecentMarkdownFile) -> Bool {
         file.relativePath != "Inbox.md" && !file.relativePath.hasPrefix("Daily/")
     }
 
@@ -794,7 +798,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     func trashNote(_ file: RecentMarkdownFile) async -> Bool {
         guard canMoveToRecentlyDeleted(file) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
+            statusToast = .error(String(localized: "Inbox cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -823,7 +827,7 @@ final class AppModel: ObservableObject {
     func moveToRecentlyDeleted(_ files: [RecentMarkdownFile]) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be deleted."))
+            statusToast = .error(String(localized: "Inbox cannot be deleted."))
             return false
         }
         guard syncStatus != .pending else {
@@ -888,7 +892,7 @@ final class AppModel: ObservableObject {
     }
 
     func duplicate(_ file: RecentMarkdownFile) {
-        guard canMoveToRecentlyDeleted(file) else {
+        guard canReorganize(file) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be duplicated."))
             return
         }
@@ -1176,7 +1180,7 @@ final class AppModel: ObservableObject {
         toFolder targetFolder: String?
     ) async -> Bool {
         guard !files.isEmpty else { return false }
-        guard files.allSatisfy(canMoveToRecentlyDeleted) else {
+        guard files.allSatisfy(canReorganize) else {
             statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
             return false
         }
