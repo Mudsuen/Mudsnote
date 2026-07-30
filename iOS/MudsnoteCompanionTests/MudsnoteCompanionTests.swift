@@ -1256,6 +1256,26 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(pendingCount, 1)
     }
 
+    func testPendingQueueTransientReadFailureIsNotQuarantined() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let queueURL = root.appendingPathComponent(".mudsnote/queue.json", isDirectory: true)
+        try FileManager.default.removeItem(at: queueURL)
+        try FileManager.default.createDirectory(at: queueURL, withIntermediateDirectories: false)
+        let sentinelURL = queueURL.appendingPathComponent("sentinel")
+        try Data("keep me".utf8).write(to: sentinelURL)
+        let queue = PendingWriteQueue(root: root)
+
+        await XCTAssertThrowsErrorAsync(try await queue.load()) { _ in }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: queueURL.path))
+        XCTAssertEqual(try Data(contentsOf: sentinelURL), Data("keep me".utf8))
+        let mudsnoteFiles = try FileManager.default.contentsOfDirectory(
+            atPath: root.appendingPathComponent(".mudsnote").path
+        )
+        XCTAssertFalse(mudsnoteFiles.contains { $0.hasPrefix("queue-damaged-") })
+    }
+
     func testCorruptFolderBookmarkRequiresReselectionAndCanBeForgotten() throws {
         let suiteName = "MudsnoteCompanionTests.folder.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -1773,6 +1793,37 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: trashRoot.appendingPathComponent("\(trashed.id.lowercased()).md").path
         ))
+    }
+
+    func testInterruptedPermanentDeleteDoesNotOverwriteDifferentDestination() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try "# Recover me\n".write(
+            to: root.appendingPathComponent("Recover.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let trashed = try await store.trashMarkdownDocument(relativePath: "Recover.md")
+        let trashRoot = root.appendingPathComponent(".mudsnote/Trash", isDirectory: true)
+        let staging = trashRoot.appendingPathComponent(".delete-interrupted", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
+        let name = "\(trashed.id.lowercased()).md"
+        let destination = trashRoot.appendingPathComponent(name)
+        let staged = staging.appendingPathComponent(name)
+        try FileManager.default.moveItem(at: destination, to: staged)
+        let conflictingData = Data("# Different destination\n".utf8)
+        try conflictingData.write(to: destination)
+        let stagedData = try Data(contentsOf: staged)
+
+        await XCTAssertThrowsErrorAsync(try await store.loadLibrarySnapshot()) { error in
+            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidTrashMetadata)
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), conflictingData)
+        XCTAssertEqual(try Data(contentsOf: staged), stagedData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staging.path))
     }
 
     func testFolderCreateRenameAndMoveNoteAvoidCollisions() async throws {

@@ -80,9 +80,20 @@ extension NoteStore {
         return title.isEmpty ? url.deletingPathExtension().lastPathComponent : title
     }
 
-    public func loadNote(at url: URL) throws -> (title: String, body: String, tags: [String]) {
+    public func loadNoteDocument(at url: URL) throws -> LoadedNoteDocument {
         let text = try String(contentsOf: url, encoding: .utf8)
-        return loadedNote(from: text, at: url)
+        let loaded = loadedNote(from: text, at: url)
+        return LoadedNoteDocument(
+            title: loaded.title,
+            body: loaded.body,
+            tags: loaded.tags,
+            sourceContents: text
+        )
+    }
+
+    public func loadNote(at url: URL) throws -> (title: String, body: String, tags: [String]) {
+        let document = try loadNoteDocument(at: url)
+        return (document.title, document.body, document.tags)
     }
 
     func loadedNote(from text: String, at url: URL) -> (title: String, body: String, tags: [String]) {
@@ -175,7 +186,7 @@ extension NoteStore {
 
     public func updateNoteInPlace(at url: URL, title: String, body: String, tags: [String] = []) throws -> URL {
         let standardizedURL = url.standardizedFileURL
-        let existingText = try? String(contentsOf: standardizedURL, encoding: .utf8)
+        let existingText = try String(contentsOf: standardizedURL, encoding: .utf8)
         try writeNote(
             to: standardizedURL,
             title: title,
@@ -186,6 +197,66 @@ extension NoteStore {
         rememberRecentFile(standardizedURL)
         markSearchIndexDirty(at: [standardizedURL])
         return standardizedURL
+    }
+
+    public func updateNote(
+        at url: URL,
+        title: String,
+        body: String,
+        tags: [String] = [],
+        expectedContents: String,
+        updatesInPlace: Bool
+    ) throws -> NoteUpdateResult {
+        let standardizedURL = url.standardizedFileURL
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var operationResult: Result<NoteUpdateResult, Error>?
+
+        coordinator.coordinate(
+            writingItemAt: standardizedURL,
+            options: .forMerging,
+            error: &coordinationError
+        ) { coordinatedURL in
+            operationResult = Result {
+                let currentContents = try String(contentsOf: coordinatedURL, encoding: .utf8)
+                guard currentContents == expectedContents else {
+                    return try preserveConflictingUpdate(
+                        originalURL: standardizedURL,
+                        title: title,
+                        body: body,
+                        tags: tags,
+                        expectedContents: expectedContents
+                    )
+                }
+
+                let savedURL: URL
+                if updatesInPlace {
+                    savedURL = try updateNoteInPlace(
+                        at: coordinatedURL,
+                        title: title,
+                        body: body,
+                        tags: tags
+                    )
+                } else {
+                    savedURL = try updateNote(
+                        at: coordinatedURL,
+                        title: title,
+                        body: body,
+                        tags: tags
+                    )
+                }
+                return NoteUpdateResult(
+                    url: savedURL,
+                    sourceContents: try String(contentsOf: savedURL, encoding: .utf8)
+                )
+            }
+        }
+
+        if let coordinationError { throw coordinationError }
+        guard let operationResult else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return try operationResult.get()
     }
 
     public func createFolder(named name: String, in parentDirectory: URL? = nil) throws -> URL {
@@ -605,6 +676,35 @@ extension NoteStore {
             try? fileManager.removeItem(at: destinationURL)
             throw error
         }
+    }
+
+    private func preserveConflictingUpdate(
+        originalURL: URL,
+        title: String,
+        body: String,
+        tags: [String],
+        expectedContents: String
+    ) throws -> NoteUpdateResult {
+        let pathExtension = originalURL.pathExtension.isEmpty ? "md" : originalURL.pathExtension
+        let recoveryURL = uniqueURLPreservingExtension(
+            directory: originalURL.deletingLastPathComponent(),
+            filenameStem: "\(originalURL.deletingPathExtension().lastPathComponent) (Mudsnote Conflict)",
+            pathExtension: pathExtension
+        )
+        let recoveryContents = storedNoteContent(
+            title: title,
+            body: body,
+            tags: tags,
+            preservingFrontMatterFrom: expectedContents
+        )
+        try recoveryContents.write(to: recoveryURL, atomically: true, encoding: .utf8)
+        rememberRecentFile(recoveryURL)
+        markSearchIndexDirty(at: [originalURL, recoveryURL])
+        return NoteUpdateResult(
+            url: recoveryURL,
+            sourceContents: recoveryContents,
+            conflictedOriginalURL: originalURL
+        )
     }
 
     private func relocatingAttachmentsIfNeeded(

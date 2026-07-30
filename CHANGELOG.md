@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 247. Conflict-safe note and recovery writes
+- Problem: A macOS autosave could replace an externally edited note, unreadable files could be rewritten from an empty fallback, and iOS recovery could discard staged data or quarantine a healthy queue after transient I/O failures.
+- Fix: macOS saves now compare the exact loaded source inside file coordination and preserve local edits as a named conflict copy; in-place updates fail closed on unreadable or missing sources. iOS queue loading now shares the coordinated mutation path and quarantines only validated corruption, while interrupted permanent-delete recovery refuses different-content collisions.
+- Lesson: Recovery code must distinguish confirmed corruption from temporary access failure, and concurrent writers must preserve both versions whenever source identity changes.
+
 ### 246. Stable iOS Notes interactions
 - Problem: The directory drawer hitched at the end of its spring, library setup created an undeletable Daily note without user input, and the reader timestamp stayed pinned while note content scrolled.
 - Fix: Drawer presentation now follows one continuous reveal model and emits haptics only after the visual animation is removed; the Daily product feature, automatic folder/file creation, capture destination, shortcut, special presentation, and protection rules are removed while any existing `Daily/` content remains untouched as ordinary user files; reader metadata now scrolls with the note.
