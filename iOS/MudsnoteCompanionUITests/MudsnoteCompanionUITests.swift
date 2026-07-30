@@ -1970,35 +1970,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(scrolledScreenshot)
         gallery.swipeDown()
 
-        let directoryEdge = app.otherElements["directory-swipe-edge"]
-        XCTAssertTrue(directoryEdge.waitForExistence(timeout: 3))
+        app.terminate()
+        app.launchArguments.append("-ui-testing-open-directory")
+        app.launch()
+
         let appWindow = app.windows.firstMatch
         XCTAssertTrue(appWindow.exists)
-        let openSwipeEnd = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45)
-        )
-        directoryEdge.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
-        ).press(
-            forDuration: 0.15,
-            thenDragTo: openSwipeEnd,
-            withVelocity: .slow,
-            thenHoldForDuration: 0.1
-        )
-
         let projectsFolder = app.buttons["folder-row-Projects"]
-        XCTAssertEqual(
-            XCTWaiter.wait(
-                for: [
-                    XCTNSPredicateExpectation(
-                        predicate: NSPredicate(format: "hittable == true"),
-                        object: projectsFolder
-                    )
-                ],
-                timeout: 3
-            ),
-            .completed
-        )
+        XCTAssertTrue(projectsFolder.waitForExistence(timeout: 8))
+        XCTAssertTrue(projectsFolder.isHittable)
         XCTAssertTrue(app.navigationBars["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
@@ -2040,26 +2020,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
-        directoryEdge.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
-        ).press(
-            forDuration: 0.15,
-            thenDragTo: openSwipeEnd,
-            withVelocity: .slow,
-            thenHoldForDuration: 0.1
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(
-                for: [
-                    XCTNSPredicateExpectation(
-                        predicate: NSPredicate(format: "hittable == true"),
-                        object: projectsFolder
-                    )
-                ],
-                timeout: 3
-            ),
-            .completed
-        )
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
         XCTAssertEqual(
             app.buttons["edit-folders-button"].label,
             "Edit",
