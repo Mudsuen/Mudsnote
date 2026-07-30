@@ -27,30 +27,78 @@ actor PendingWriteQueue {
     @discardableResult
     func load(now: Date = Date()) throws -> PendingWriteQueueLoadResult {
         try withRootAccess {
-            guard FileManager.default.fileExists(atPath: queueURL.path) else {
-                items = []
-                try persistUnlocked(items, to: queueURL)
-                return .ready
-            }
-            do {
-                let byteCount = try queueURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                guard byteCount <= Self.maximumQueueFileBytes else {
-                    throw PendingWriteQueueLoadError.fileTooLarge
-                }
-                items = try loadItemsUnlocked(from: queueURL)
-                return .ready
-            } catch {
-                let quarantineURL = uniqueQuarantineURL(now: now)
-                try FileManager.default.moveItem(at: queueURL, to: quarantineURL)
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            var operationError: Error?
+            var loadedItems: [PendingWrite]?
+            var loadResult: PendingWriteQueueLoadResult?
+
+            coordinator.coordinate(
+                writingItemAt: queueURL,
+                options: .forMerging,
+                error: &coordinationError
+            ) { coordinatedURL in
                 do {
-                    items = []
-                    try persistUnlocked(items, to: queueURL)
-                    return .quarantined(filename: quarantineURL.lastPathComponent)
+                    guard FileManager.default.fileExists(atPath: coordinatedURL.path) else {
+                        let emptyItems: [PendingWrite] = []
+                        try persistUnlocked(emptyItems, to: coordinatedURL)
+                        loadedItems = emptyItems
+                        loadResult = .ready
+                        return
+                    }
+
+                    do {
+                        let byteCount = try coordinatedURL.resourceValues(
+                            forKeys: [.fileSizeKey]
+                        ).fileSize ?? 0
+                        guard byteCount <= Self.maximumQueueFileBytes else {
+                            throw PendingWriteQueueLoadError.fileTooLarge
+                        }
+                        let persisted = try loadItemsUnlocked(from: coordinatedURL)
+                        loadedItems = persisted
+                        loadResult = .ready
+                    } catch {
+                        guard error is DecodingError
+                                || (error as? PendingWriteQueueLoadError) == .fileTooLarge
+                        else {
+                            throw error
+                        }
+
+                        let quarantineURL = uniqueQuarantineURL(now: now)
+                        try FileManager.default.moveItem(at: coordinatedURL, to: quarantineURL)
+                        do {
+                            let emptyItems: [PendingWrite] = []
+                            try persistUnlocked(emptyItems, to: coordinatedURL)
+                            loadedItems = emptyItems
+                            loadResult = .quarantined(filename: quarantineURL.lastPathComponent)
+                        } catch {
+                            let replacementError = error
+                            do {
+                                try FileManager.default.moveItem(
+                                    at: quarantineURL,
+                                    to: coordinatedURL
+                                )
+                            } catch {
+                                throw PendingWriteQueueLoadError.recoveryFailed(
+                                    replacement: replacementError.localizedDescription,
+                                    rollback: error.localizedDescription
+                                )
+                            }
+                            throw replacementError
+                        }
+                    }
                 } catch {
-                    try? FileManager.default.moveItem(at: quarantineURL, to: queueURL)
-                    throw error
+                    operationError = error
                 }
             }
+
+            if let coordinationError { throw coordinationError }
+            if let operationError { throw operationError }
+            guard let loadedItems, let loadResult else {
+                throw PendingWriteQueueLoadError.missingResult
+            }
+            items = loadedItems
+            return loadResult
         }
     }
 
@@ -148,8 +196,10 @@ enum PendingWriteQueueLoadResult: Equatable {
     case quarantined(filename: String)
 }
 
-private enum PendingWriteQueueLoadError: Error {
+private enum PendingWriteQueueLoadError: Error, Equatable {
     case fileTooLarge
+    case recoveryFailed(replacement: String, rollback: String)
+    case missingResult
 }
 
 enum PendingWriteQueuePolicy {

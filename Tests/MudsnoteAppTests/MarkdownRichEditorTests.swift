@@ -3704,7 +3704,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func localAutosaveDoesNotWaitForExternalRevisionValidation() async throws {
+    func localAutosavePreservesExternalRevisionWithoutWaitingForValidation() async throws {
         let suiteName = "mudsnote.library-stale-external-reload-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3763,11 +3763,18 @@ struct MarkdownRichEditorTests {
         #expect(controller.editorTextView.string == "Local autosaved body")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
-        #expect(try store.loadNote(at: selectedURL).body == "Local autosaved body")
+        #expect(try store.loadNote(at: selectedURL).body == "External body")
+        let conflictURL = try #require(
+            FileManager.default.contentsOfDirectory(
+                at: notesDirectory,
+                includingPropertiesForKeys: nil
+            ).first { $0.lastPathComponent.contains("(Mudsnote Conflict)") }
+        )
+        #expect(try store.loadNote(at: conflictURL).body == "Local autosaved body")
     }
 
     @Test
-    func librarySelectionChangeSavesLocalEditOverExternalVersion() throws {
+    func librarySelectionChangePreservesExternalVersionAndLocalConflictCopy() async throws {
         let suiteName = "mudsnote.library-conflict-selection-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3820,14 +3827,22 @@ struct MarkdownRichEditorTests {
             controller.tableView(controller.tableView, pasteboardWriterForRow: otherRow) as? NSURL
         ) as URL
         controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+        await controller.waitForBackgroundAutosaveForTesting()
 
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
-        #expect(try store.loadNote(at: originalURL).body == "Local protected edit")
+        #expect(try store.loadNote(at: originalURL).body == "External body")
+        let conflictURL = try #require(
+            FileManager.default.contentsOfDirectory(
+                at: store.notesDirectory,
+                includingPropertiesForKeys: nil
+            ).first { $0.lastPathComponent.contains("(Mudsnote Conflict)") }
+        )
+        #expect(try store.loadNote(at: conflictURL).body == "Local protected edit")
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }
 
     @Test
-    func libraryCloseSavesLocalEditOverExternalVersion() async throws {
+    func libraryClosePreservesExternalVersionAndLocalConflictCopy() async throws {
         let suiteName = "mudsnote.library-conflict-close-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3869,11 +3884,18 @@ struct MarkdownRichEditorTests {
         #expect(controller.windowShouldClose(window))
         await controller.waitForBackgroundAutosaveForTesting()
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
-        #expect(try store.loadNote(at: noteURL).body == "Unsaved close edit")
+        #expect(try store.loadNote(at: noteURL).body == "Changed outside")
+        let conflictURL = try #require(
+            FileManager.default.contentsOfDirectory(
+                at: store.notesDirectory,
+                includingPropertiesForKeys: nil
+            ).first { $0.lastPathComponent.contains("(Mudsnote Conflict)") }
+        )
+        #expect(try store.loadNote(at: conflictURL).body == "Unsaved close edit")
     }
 
     @Test
-    func librarySelectionChangeDoesNotCreateConflictCopy() throws {
+    func librarySelectionChangeCreatesOneConflictCopy() async throws {
         let suiteName = "mudsnote.library-conflict-copy-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3926,13 +3948,18 @@ struct MarkdownRichEditorTests {
             controller.tableView(controller.tableView, pasteboardWriterForRow: otherRow) as? NSURL
         ) as URL
         controller.tableView.selectRowIndexes(IndexSet(integer: otherRow), byExtendingSelection: false)
+        await controller.waitForBackgroundAutosaveForTesting()
 
         let noteURLs = try FileManager.default.contentsOfDirectory(
             at: store.notesDirectory,
             includingPropertiesForKeys: nil
         ).filter { $0.pathExtension == "md" }
-        #expect(noteURLs.count == 2)
-        #expect(try store.loadNote(at: originalURL).body == "Local copy body")
+        #expect(noteURLs.count == 3)
+        #expect(try store.loadNote(at: originalURL).body == "External original")
+        let conflictURL = try #require(
+            noteURLs.first { $0.lastPathComponent.contains("(Mudsnote Conflict)") }
+        )
+        #expect(try store.loadNote(at: conflictURL).body == "Local copy body")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
     }

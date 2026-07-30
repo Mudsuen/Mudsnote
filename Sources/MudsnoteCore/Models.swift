@@ -1,5 +1,35 @@
 import Foundation
 
+public struct LoadedNoteDocument: Equatable, Sendable {
+    public let title: String
+    public let body: String
+    public let tags: [String]
+    public let sourceContents: String
+
+    public init(title: String, body: String, tags: [String], sourceContents: String) {
+        self.title = title
+        self.body = body
+        self.tags = tags
+        self.sourceContents = sourceContents
+    }
+}
+
+public struct NoteUpdateResult: Equatable, Sendable {
+    public let url: URL
+    public let sourceContents: String
+    public let conflictedOriginalURL: URL?
+
+    public init(url: URL, sourceContents: String, conflictedOriginalURL: URL? = nil) {
+        self.url = url
+        self.sourceContents = sourceContents
+        self.conflictedOriginalURL = conflictedOriginalURL
+    }
+
+    public var preservedConflict: Bool {
+        conflictedOriginalURL != nil
+    }
+}
+
 public struct NoteFile: Equatable, Sendable {
     public let url: URL
     public let title: String

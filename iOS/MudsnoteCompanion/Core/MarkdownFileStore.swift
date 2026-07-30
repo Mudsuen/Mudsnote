@@ -1755,8 +1755,19 @@ actor MarkdownFileStore {
             )
             for source in stagedFiles {
                 let destination = trashRoot.appendingPathComponent(source.lastPathComponent)
-                guard !fileManager.fileExists(atPath: destination.path) else { continue }
+                if fileManager.fileExists(atPath: destination.path) {
+                    let stagedData = try Data(contentsOf: source)
+                    let destinationData = try Data(contentsOf: destination)
+                    guard stagedData == destinationData else {
+                        throw MarkdownLifecycleError.invalidTrashMetadata
+                    }
+                    try fileManager.removeItem(at: source)
+                    continue
+                }
                 try coordinatedMove(from: source, to: destination)
+            }
+            guard try fileManager.contentsOfDirectory(atPath: staging.path).isEmpty else {
+                throw MarkdownLifecycleError.invalidTrashMetadata
             }
             try fileManager.removeItem(at: staging)
         }

@@ -50,6 +50,42 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func inPlaceUpdateDoesNotReplaceUnreadableDocument() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Unreadable.md")
+        let invalidUTF8 = Data([0xFF, 0xFE, 0xFD])
+        try invalidUTF8.write(to: noteURL)
+
+        #expect(throws: Error.self) {
+            _ = try store.updateNoteInPlace(
+                at: noteURL,
+                title: "Replacement",
+                body: "Must not replace the original"
+            )
+        }
+        #expect(try Data(contentsOf: noteURL) == invalidUTF8)
+    }
+
+    @Test
+    func inPlaceUpdateDoesNotRecreateMissingDocument() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Deleted.md")
+        try "# Deleted\n\nOriginal\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        try FileManager.default.removeItem(at: noteURL)
+
+        #expect(throws: Error.self) {
+            _ = try store.updateNoteInPlace(
+                at: noteURL,
+                title: "Replacement",
+                body: "Must not recreate the deleted note"
+            )
+        }
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+    }
+
+    @Test
     func noteUpdatePreservesUnknownFrontMatterAndOnlyRewritesTags() throws {
         let harness = try TestHarness()
         let store = harness.store
@@ -299,6 +335,7 @@ struct MudsnoteCoreTests {
         store.notesDirectory = notesDirectory
         _ = try store.saveNewNote(title: "Managed", body: "Library body", tags: ["library"])
         try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        try Data().write(to: externalURL)
         _ = try store.updateNoteInPlace(
             at: externalURL,
             title: "SOUL",

@@ -161,7 +161,7 @@ private enum InlineFolderEditOperation: Equatable {
     }
 }
 
-private typealias LoadedLibraryNote = (title: String, body: String, tags: [String])
+private typealias LoadedLibraryNote = LoadedNoteDocument
 
 private struct LibraryBackgroundSaveSnapshot: Sendable {
     let generation: Int
@@ -172,6 +172,7 @@ private struct LibraryBackgroundSaveSnapshot: Sendable {
     let tags: [String]
     let targetDirectory: URL
     let updatesInPlace: Bool
+    let expectedContents: String?
 }
 
 private final class LibraryBackgroundEditorSnapshot: @unchecked Sendable {
@@ -207,6 +208,8 @@ private struct LibraryBackgroundSaveSuccess: Sendable {
     let snippet: String
     let hasAttachments: Bool
     let thumbnailURL: URL?
+    let sourceContents: String
+    let conflictedOriginalURL: URL?
 }
 
 private final class LibraryBackgroundSaveResultBox: @unchecked Sendable {
@@ -1318,6 +1321,7 @@ final class LibraryWindowController: NSWindowController,
     private var trashedNotesSnapshot: [NoteSearchResult] = []
     private var externallyOpenedDocumentsByPath: [String: NoteSearchResult] = [:]
     private var selectedURL: URL?
+    private var selectedSourceContents: String?
     private var selectedTags: [String] = []
     private var isDirty = false
     private var autosaveTask: Task<Void, Never>?
@@ -1459,7 +1463,19 @@ final class LibraryWindowController: NSWindowController,
         if migratedLayout {
             noteStore.libraryWindowFrame = LibraryNotesLayout.migratedDefaultWindowFrame(noteStore.libraryWindowFrame)
         }
-        self.noteLoader = noteLoader ?? { try noteStore.loadNote(at: $0) }
+        if let noteLoader {
+            self.noteLoader = { url in
+                let loaded = try noteLoader(url)
+                return LoadedNoteDocument(
+                    title: loaded.title,
+                    body: loaded.body,
+                    tags: loaded.tags,
+                    sourceContents: try String(contentsOf: url, encoding: .utf8)
+                )
+            }
+        } else {
+            self.noteLoader = { try noteStore.loadNoteDocument(at: $0) }
+        }
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
@@ -1591,6 +1607,7 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = true
         isCreatingNewNote = false
         selectedURL = note.url
+        selectedSourceContents = nil
         noteLinksView.update(.empty)
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
@@ -1603,7 +1620,7 @@ final class LibraryWindowController: NSWindowController,
         let noteStore = noteStore
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result<LoadedLibraryNote, Error> {
-                try noteStore.loadNote(at: note.url)
+                try noteStore.loadNoteDocument(at: note.url)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -5939,6 +5956,7 @@ final class LibraryWindowController: NSWindowController,
             isLoadingInitialNote = false
             isCreatingNewNote = true
             selectedURL = nil
+            selectedSourceContents = nil
             noteLinksView.update(.empty)
             selectedTags = []
             suppressSelectionChanges = true
@@ -6658,6 +6676,7 @@ final class LibraryWindowController: NSWindowController,
         preservingEditorSelection: Bool
     ) {
         selectedURL = note.url
+        selectedSourceContents = cached.loaded.sourceContents
         setEditorEditable(selectedScope != .trash)
 
         let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
@@ -6899,7 +6918,7 @@ final class LibraryWindowController: NSWindowController,
                 guard !Task.isCancelled else { return }
                 let key = candidate.url.standardizedFileURL.path as NSString
                 guard cache.entry(forKey: key) == nil,
-                      let loaded = try? noteStore.loadNote(at: candidate.url) else {
+                      let loaded = try? noteStore.loadNoteDocument(at: candidate.url) else {
                     continue
                 }
                 guard !Task.isCancelled else { return }
@@ -7085,6 +7104,7 @@ final class LibraryWindowController: NSWindowController,
         let updatesInPlace = previousURL.map {
             externallyOpenedDocumentsByPath[$0.path] != nil
         } ?? false
+        let expectedContents = selectedSourceContents
         backgroundAutosaveActiveEditorRevision = editorRevision
         backgroundAutosaveActivePreviousURL = previousURL
         cancelSourceSnapshotValidation()
@@ -7102,7 +7122,8 @@ final class LibraryWindowController: NSWindowController,
                     body: editorSnapshot.markdown().trimmingCharacters(in: .whitespacesAndNewlines),
                     tags: tags,
                     targetDirectory: targetDirectory,
-                    updatesInPlace: updatesInPlace
+                    updatesInPlace: updatesInPlace,
+                    expectedContents: expectedContents
                 )
                 return try Self.performBackgroundSave(snapshot, noteStore: noteStore)
             }
@@ -7118,23 +7139,23 @@ final class LibraryWindowController: NSWindowController,
         noteStore: NoteStore
     ) throws -> LibraryBackgroundSaveSuccess {
         let savedURL: URL
+        let sourceContents: String
+        let conflictedOriginalURL: URL?
         if let previousURL = snapshot.previousURL {
-            let standardizedURL = previousURL.standardizedFileURL
-            if snapshot.updatesInPlace {
-                savedURL = try noteStore.updateNoteInPlace(
-                    at: standardizedURL,
-                    title: snapshot.title,
-                    body: snapshot.body,
-                    tags: snapshot.tags
-                )
-            } else {
-                savedURL = try noteStore.updateNote(
-                    at: standardizedURL,
-                    title: snapshot.title,
-                    body: snapshot.body,
-                    tags: snapshot.tags
-                )
+            guard let expectedContents = snapshot.expectedContents else {
+                throw CocoaError(.fileReadUnknown)
             }
+            let result = try noteStore.updateNote(
+                at: previousURL.standardizedFileURL,
+                title: snapshot.title,
+                body: snapshot.body,
+                tags: snapshot.tags,
+                expectedContents: expectedContents,
+                updatesInPlace: snapshot.updatesInPlace
+            )
+            savedURL = result.url
+            sourceContents = result.sourceContents
+            conflictedOriginalURL = result.conflictedOriginalURL
         } else {
             savedURL = try noteStore.saveNewNote(
                 title: snapshot.title,
@@ -7142,6 +7163,8 @@ final class LibraryWindowController: NSWindowController,
                 tags: snapshot.tags,
                 in: snapshot.targetDirectory
             )
+            sourceContents = try String(contentsOf: savedURL, encoding: .utf8)
+            conflictedOriginalURL = nil
         }
 
         let savedResourceValues = try? savedURL.resourceValues(forKeys: [.contentModificationDateKey])
@@ -7155,7 +7178,9 @@ final class LibraryWindowController: NSWindowController,
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
                 in: snapshot.body,
                 relativeTo: savedURL
-            )
+            ),
+            sourceContents: sourceContents,
+            conflictedOriginalURL: conflictedOriginalURL
         )
     }
 
@@ -7197,7 +7222,7 @@ final class LibraryWindowController: NSWindowController,
         }
         loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: success.savedURL))
         let sourceCountsChanged = updateSourceCountSnapshotAfterSave(
-            previousURL: snapshot.previousURL,
+            previousURL: success.conflictedOriginalURL == nil ? snapshot.previousURL : nil,
             savedURL: success.savedURL,
             title: snapshot.title,
             tags: snapshot.tags,
@@ -7206,6 +7231,13 @@ final class LibraryWindowController: NSWindowController,
             hasAttachments: success.hasAttachments,
             thumbnailURL: success.thumbnailURL
         )
+        if let conflictedOriginalURL = success.conflictedOriginalURL,
+           externallyOpenedDocumentsByPath[conflictedOriginalURL.standardizedFileURL.path] != nil,
+           let recoveryNote = sourceCountSnapshot.first(where: {
+               $0.url.standardizedFileURL == success.savedURL.standardizedFileURL
+           }) {
+            externallyOpenedDocumentsByPath[success.savedURL.standardizedFileURL.path] = recoveryNote
+        }
         let isCurrentDocument = selectedScope != .trash
             && selectedURL?.path == snapshot.previousURL?.path
         guard isCurrentDocument else {
@@ -7214,6 +7246,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         selectedURL = success.savedURL
+        selectedSourceContents = success.sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = editorContentRevision != snapshot.editorRevision
@@ -7223,12 +7256,19 @@ final class LibraryWindowController: NSWindowController,
             isNewNote: snapshot.previousURL == nil,
             refreshesSourceCounts: sourceCountsChanged
         )
-        if !isDirty {
+        if success.conflictedOriginalURL != nil {
+            updateEditorStatus(
+                "检测到外部修改，本地编辑已保存为冲突副本",
+                kind: .failure,
+                toolTip: "原文件保持不变；当前编辑已切换到冲突副本",
+                announcesChange: true
+            )
+        } else if !isDirty {
             updateEditorStatus(editorDateText(for: success.savedAt))
         }
         refreshNoteLinksAfterSave(
             for: success.savedURL,
-            replacing: snapshot.previousURL,
+            replacing: success.conflictedOriginalURL == nil ? snapshot.previousURL : nil,
             body: snapshot.body
         )
         onSave(success.savedURL)
@@ -7305,18 +7345,26 @@ final class LibraryWindowController: NSWindowController,
 
         let previousURL = selectedURL
         let savedURL: URL
+        let sourceContents: String
+        let conflictedOriginalURL: URL?
         if let previousURL {
             loadedNoteCache.removeEntry(forKey: loadedNoteCacheKey(for: previousURL))
-            if externallyOpenedDocumentsByPath[previousURL.standardizedFileURL.path] != nil {
-                savedURL = try noteStore.updateNoteInPlace(
-                    at: previousURL,
-                    title: title,
-                    body: body,
-                    tags: selectedTags
-                )
-            } else {
-                savedURL = try noteStore.updateNote(at: previousURL, title: title, body: body, tags: selectedTags)
+            guard let expectedContents = selectedSourceContents else {
+                throw CocoaError(.fileReadUnknown)
             }
+            let result = try noteStore.updateNote(
+                at: previousURL,
+                title: title,
+                body: body,
+                tags: selectedTags,
+                expectedContents: expectedContents,
+                updatesInPlace: externallyOpenedDocumentsByPath[
+                    previousURL.standardizedFileURL.path
+                ] != nil
+            )
+            savedURL = result.url
+            sourceContents = result.sourceContents
+            conflictedOriginalURL = result.conflictedOriginalURL
         } else {
             savedURL = try noteStore.saveNewNote(
                 title: title,
@@ -7324,18 +7372,21 @@ final class LibraryWindowController: NSWindowController,
                 tags: selectedTags,
                 in: targetDirectoryForNewNote()
             )
+            sourceContents = try String(contentsOf: savedURL, encoding: .utf8)
+            conflictedOriginalURL = nil
         }
 
         let changedURLs = [previousURL, savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
         selectedURL = savedURL
+        selectedSourceContents = sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
         let savedAt = (try? FileManager.default.attributesOfItem(atPath: savedURL.path)[.modificationDate])
             as? Date ?? Date()
         let sourceCountsChanged = updateSourceCountSnapshotAfterSave(
-            previousURL: previousURL,
+            previousURL: conflictedOriginalURL == nil ? previousURL : nil,
             savedURL: savedURL,
             title: title,
             tags: selectedTags,
@@ -7344,16 +7395,32 @@ final class LibraryWindowController: NSWindowController,
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: savedURL)
         )
+        if let conflictedOriginalURL,
+           externallyOpenedDocumentsByPath[conflictedOriginalURL.standardizedFileURL.path] != nil,
+           let recoveryNote = sourceCountSnapshot.first(where: {
+               $0.url.standardizedFileURL == savedURL.standardizedFileURL
+           }) {
+            externallyOpenedDocumentsByPath[savedURL.standardizedFileURL.path] = recoveryNote
+        }
         refreshVisibleNoteListAfterSave(
             selecting: savedURL,
-            replacing: previousURL,
+            replacing: conflictedOriginalURL == nil ? previousURL : nil,
             isNewNote: previousURL == nil,
             refreshesSourceCounts: sourceCountsChanged
         )
-        updateEditorStatus(editorDateText(for: savedAt))
+        if conflictedOriginalURL != nil {
+            updateEditorStatus(
+                "检测到外部修改，本地编辑已保存为冲突副本",
+                kind: .failure,
+                toolTip: "原文件保持不变；当前编辑已切换到冲突副本",
+                announcesChange: true
+            )
+        } else {
+            updateEditorStatus(editorDateText(for: savedAt))
+        }
         refreshNoteLinksAfterSave(
             for: savedURL,
-            replacing: previousURL,
+            replacing: conflictedOriginalURL == nil ? previousURL : nil,
             body: body
         )
         onSave(savedURL)
