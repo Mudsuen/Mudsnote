@@ -1970,8 +1970,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(scrolledScreenshot)
         gallery.swipeDown()
 
-        let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
-        let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
+        let appWindow = app.windows.firstMatch
+        XCTAssertTrue(appWindow.exists)
+        let swipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.06, dy: 0.45)
+        )
+        let swipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45)
+        )
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
 
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
@@ -1997,15 +2003,29 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
-        let closeSwipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
-        let closeSwipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45))
+        let editFolders = app.buttons["edit-folders-button"]
+        XCTAssertTrue(editFolders.isHittable)
+        editFolders.tap()
+        XCTAssertEqual(editFolders.label, "Done")
+
+        let closeSwipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+        )
+        let closeSwipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
+        )
         closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
         XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
+        XCTAssertEqual(
+            app.buttons["edit-folders-button"].label,
+            "Edit",
+            "Closing by drag should leave folder editing mode"
+        )
+        appWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
