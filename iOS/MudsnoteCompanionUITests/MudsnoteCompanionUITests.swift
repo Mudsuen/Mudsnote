@@ -1906,7 +1906,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(second.exists)
-        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertTrue(
+            first.frame.maxX < second.frame.minX
+                || second.frame.maxX < first.frame.minX
+        )
+        XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 2)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         options.tap()
