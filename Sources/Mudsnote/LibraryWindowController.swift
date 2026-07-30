@@ -1153,6 +1153,23 @@ final class LibraryNoteTableView: NSTableView {
 
 @MainActor
 final class LibraryNoteScrollView: NSScrollView {
+    static func suppressesHorizontalScroll(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        let horizontalMagnitude = abs(deltaX)
+        return horizontalMagnitude > 0 && horizontalMagnitude >= abs(deltaY)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !Self.suppressesHorizontalScroll(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY
+        ) else {
+            contentView.scroll(to: NSPoint(x: 0, y: contentView.bounds.origin.y))
+            reflectScrolledClipView(contentView)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
     override func reflectScrolledClipView(_ clipView: NSClipView) {
         super.reflectScrolledClipView(clipView)
         (documentView as? LibraryNoteTableView)?.reconcilePointerHover()
@@ -2151,6 +2168,7 @@ final class LibraryWindowController: NSWindowController,
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
+        scrollView.usesPredominantAxisScrolling = true
         scrollView.autohidesScrollers = true
         scrollView.automaticallyAdjustsContentInsets = false
         clipView.drawsBackground = false
