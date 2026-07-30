@@ -11,12 +11,6 @@ struct TargetMenuView: View {
                 Label("Inbox.md", systemImage: "tray.fill")
             }
 
-            Button {
-                appModel.draft.target = .daily(Date())
-            } label: {
-                Label("Daily", systemImage: "calendar")
-            }
-
             if !appModel.recentFiles.isEmpty {
                 Section("Recent") {
                     ForEach(appModel.recentFiles.prefix(6)) { file in
@@ -58,8 +52,6 @@ private extension CaptureTarget {
         switch self {
         case .inbox:
             return String(localized: "Inbox")
-        case .daily:
-            return String(localized: "Daily")
         case .recent(let path):
             return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         }

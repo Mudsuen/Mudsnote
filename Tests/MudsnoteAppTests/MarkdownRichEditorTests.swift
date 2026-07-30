@@ -832,6 +832,12 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        let contentView = try #require(controller.window?.contentView)
+        let suggestionView = try #require(contentView.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorSlashSuggestionPopover"
+        })
+        #expect(suggestionView.superview === contentView)
+        #expect(suggestionView.isHidden)
 
         let previousCount = store.listNotes(limit: 20).count
         controller.createNewNoteForLibrary()
@@ -844,6 +850,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
         controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         let titles = controller.editorSlashSuggestionTitlesForLibrary
+        #expect(!suggestionView.isHidden)
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
@@ -3394,6 +3401,7 @@ struct MarkdownRichEditorTests {
         scrollView.contentView = clipView
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
+        scrollView.usesPredominantAxisScrolling = true
         scrollView.documentView = tableView
         scrollView.contentView.bounds = NSRect(x: 0, y: 0, width: 340, height: 300)
         tableView.frame = NSRect(x: 92, y: 0, width: LibraryNotesLayout.noteTableInitialWidth, height: 300)
@@ -3406,6 +3414,10 @@ struct MarkdownRichEditorTests {
         #expect(column.width == visibleWidth)
         #expect(scrollView.hasHorizontalScroller == false)
         #expect(scrollView.horizontalScrollElasticity == .none)
+        #expect(scrollView.usesPredominantAxisScrolling)
+        #expect(LibraryNoteScrollView.suppressesHorizontalScroll(deltaX: 20, deltaY: 0))
+        #expect(LibraryNoteScrollView.suppressesHorizontalScroll(deltaX: -20, deltaY: 4))
+        #expect(!LibraryNoteScrollView.suppressesHorizontalScroll(deltaX: 4, deltaY: 20))
         #expect(clipView.constrainBoundsRect(
             NSRect(x: 48, y: 20, width: 340, height: 300)
         ).origin.x == 0)

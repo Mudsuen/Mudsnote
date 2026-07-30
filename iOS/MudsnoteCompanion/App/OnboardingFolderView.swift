@@ -52,7 +52,7 @@ struct OnboardingFolderView: View {
 
             VStack(spacing: 8) {
                 RequirementRow(icon: "tray.fill", text: String(localized: "Initialize Inbox.md"))
-                RequirementRow(icon: "calendar", text: String(localized: "Create Daily and Attachments"))
+                RequirementRow(icon: "paperclip", text: String(localized: "Create Attachments folder"))
                 RequirementRow(icon: "arrow.triangle.2.circlepath", text: String(localized: "Enable the durable pending queue"))
             }
         }

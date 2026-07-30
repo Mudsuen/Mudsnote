@@ -4,6 +4,63 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testDirectoryDrawerMotionTracksOneContinuousPresentation() {
+        let presentation = DirectoryDrawerMotion.presentation(
+            isOpen: false,
+            translation: 160,
+            width: 320
+        )
+
+        XCTAssertEqual(presentation.reveal, 160)
+        XCTAssertEqual(presentation.progress, 0.5)
+        XCTAssertEqual(presentation.drawerOffset, -12.8, accuracy: 0.001)
+        XCTAssertEqual(presentation.cornerRadius, 14)
+        XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
+        XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
+    }
+
+    func testDirectoryDrawerMotionSeparatesHorizontalIntentFromVerticalScrolling() {
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 3, height: 1)),
+            .undecided
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 7, height: 6.5)),
+            .horizontal
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 5, height: 9)),
+            .vertical
+        )
+    }
+
+    func testDirectoryDrawerMotionUsesDistanceAndProjectedMomentum() {
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 120,
+                projectedTranslation: 130,
+                width: 320
+            )
+        )
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 80,
+                projectedTranslation: 210,
+                width: 320
+            )
+        )
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: true,
+                translation: -80,
+                projectedTranslation: -210,
+                width: 320
+            )
+        )
+    }
+
     func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {
         let suiteName = "MudsnoteAttachmentPresentationPreferences-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -626,7 +683,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(selectedRoot, secondRoot)
         XCTAssertEqual(access.currentRoot, secondRoot)
         XCTAssertEqual(model.draft.target, .inbox)
-        XCTAssertEqual(model.libraryFiles.count, 2)
+        XCTAssertEqual(model.libraryFiles.count, 1)
         XCTAssertEqual(model.libraryRevision, 1)
     }
 
@@ -670,7 +727,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertFalse(model.isInitialLibraryLoading)
         XCTAssertEqual(model.libraryRevision, 1)
-        XCTAssertEqual(model.libraryFiles.count, 2)
+        XCTAssertEqual(model.libraryFiles.count, 1)
     }
 
     @MainActor
@@ -757,8 +814,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         let file = try XCTUnwrap(
-            model.libraryFiles.first { $0.relativePath.hasPrefix("Daily/") == false
-                && $0.relativePath != "Inbox.md" }
+            model.libraryFiles.first { $0.relativePath != "Inbox.md" }
         )
         let originalCount = model.libraryFiles.count
         let trashTask = Task { await model.trashNote(file) }
@@ -894,11 +950,8 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testCaptureTargetRelativePaths() {
-        let date = Date(timeIntervalSince1970: 1_717_747_920)
-
-        XCTAssertEqual(CaptureTarget.inbox.relativePath(now: date), "Inbox.md")
-        XCTAssertEqual(CaptureTarget.daily(date).relativePath(now: date), "Daily/2024-06-07.md")
-        XCTAssertEqual(CaptureTarget.recent("Projects/Launch.md").relativePath(now: date), "Projects/Launch.md")
+        XCTAssertEqual(CaptureTarget.inbox.relativePath(), "Inbox.md")
+        XCTAssertEqual(CaptureTarget.recent("Projects/Launch.md").relativePath(), "Projects/Launch.md")
     }
 
     func testAttachmentOnlyDraftCanSend() {
@@ -930,7 +983,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         var draft = CaptureDraft(
             body: "Recovered thought",
             tags: "#launch",
-            target: .daily(date),
+            target: .recent("Projects/Launch.md"),
             attachments: [image, video, audio, file],
             createdAt: date
         )
@@ -956,6 +1009,37 @@ final class MudsnoteCompanionTests: XCTestCase {
         let cleared = try await relaunchedStore.load()
         XCTAssertNil(cleared)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    func testLegacyDailyRecoveryRedirectsToInboxWithoutCreatingDailyArtifacts() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("CaptureDraft", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let legacyMetadata = """
+        {
+          "version": 1,
+          "body": "Legacy thought",
+          "tags": "",
+          "target": { "daily": { "_0": "2025-07-13T05:20:00Z" } },
+          "createdAt": "2025-07-13T05:20:00Z",
+          "attachments": []
+        }
+        """
+        try Data(legacyMetadata.utf8).write(
+            to: directory.appendingPathComponent("draft.json"),
+            options: .atomic
+        )
+
+        let recovered = try await CaptureDraftRecoveryStore(directory: directory).load()
+
+        XCTAssertEqual(recovered?.body, "Legacy thought")
+        XCTAssertEqual(recovered?.target, .inbox)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Daily", isDirectory: true).path
+            )
+        )
     }
 
     func testDamagedQuickCaptureRecoveryHasStableErrorAndCanBeCleared() async throws {
@@ -1352,13 +1436,12 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
 
-        XCTAssertEqual(snapshot.summary.allNotesCount, 33)
-        XCTAssertEqual(snapshot.summary.dailyCount, 1)
+        XCTAssertEqual(snapshot.summary.allNotesCount, 32)
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
         XCTAssertEqual(snapshot.attachments.count, 1)
         XCTAssertEqual(snapshot.attachments.first?.relativePath, "Attachments/image.png")
         XCTAssertEqual(snapshot.attachments.first?.kind, .image)
-        XCTAssertEqual(snapshot.allFiles.count, 33)
+        XCTAssertEqual(snapshot.allFiles.count, 32)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
@@ -1477,9 +1560,10 @@ final class MudsnoteCompanionTests: XCTestCase {
             files: files
         )
 
-        XCTAssertEqual(folders.map(\.relativePath), ["Work"])
-        XCTAssertEqual(folders.first?.children.map(\.relativePath), ["Work/Deep"])
-        XCTAssertEqual(folders.first?.totalNoteCount, 1)
+        XCTAssertEqual(folders.map(\.relativePath), ["Daily", "Work"])
+        XCTAssertEqual(folders.first?.children.map(\.relativePath), ["Daily/2026"])
+        XCTAssertEqual(folders.last?.children.map(\.relativePath), ["Work/Deep"])
+        XCTAssertEqual(folders.last?.totalNoteCount, 1)
     }
 
     func testInboxFolderRecognitionSupportsExistingAndNumberedNames() {
@@ -1545,12 +1629,19 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(snapshot.summary.recentlyDeletedCount, 0)
     }
 
-    func testMarkdownTrashPermanentDeleteAndProtectedPaths() async throws {
+    func testMarkdownTrashPreservesExistingDailyFolderContentAsOrdinaryNotes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
         let note = root.appendingPathComponent("Disposable.md")
         try "# Disposable\n".write(to: note, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Daily", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let daily = root.appendingPathComponent("Daily/2026-07-30.md")
+        let dailyMarkdown = "# 2026-07-30\n\nReal user content.\n"
+        try dailyMarkdown.write(to: daily, atomically: true, encoding: .utf8)
 
         let store = MarkdownFileStore()
         await store.configure(root: root)
@@ -1567,12 +1658,23 @@ final class MudsnoteCompanionTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
         }
-        let daily = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath.hasPrefix("Daily/") })
-        await XCTAssertThrowsErrorAsync(
-            try await store.trashMarkdownDocument(relativePath: daily.relativePath)
-        ) { error in
-            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
-        }
+        let trashedDaily = try await store.trashMarkdownDocument(
+            relativePath: "Daily/2026-07-30.md"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: daily.path))
+        let restoredDaily = try await store.restoreTrashedMarkdownDocument(id: trashedDaily.id)
+        XCTAssertEqual(restoredDaily.relativePath, "Daily/2026-07-30.md")
+        XCTAssertEqual(try String(contentsOf: daily, encoding: .utf8), dailyMarkdown)
+    }
+
+    func testFolderInitializationDoesNotCreateDailyArtifacts() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FolderInitializer.initialize(root)
+
+        let dailyDirectory = root.appendingPathComponent("Daily", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dailyDirectory.path))
     }
 
     func testBatchRecentlyDeletedLifecyclePrevalidatesRestoresPinsAndDeletes() async throws {
@@ -1831,11 +1933,17 @@ final class MudsnoteCompanionTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
         }
-        await XCTAssertThrowsErrorAsync(
-            try await store.renameFolder(relativePath: "Daily", to: "Renamed")
-        ) { error in
-            XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
-        }
+        try await store.createFolder(named: "Daily")
+        try "# Existing content\n".write(
+            to: root.appendingPathComponent("Daily/Existing.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try await store.renameFolder(relativePath: "Daily", to: "Renamed")
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent("Renamed/Existing.md"), encoding: .utf8),
+            "# Existing content\n"
+        )
     }
 
     func testPinnedNoteSurvivesMoveFolderRenameTrashAndRestore() async throws {
@@ -2082,12 +2190,6 @@ final class MudsnoteCompanionTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
-        try "# Protected\n".write(
-            to: root.appendingPathComponent("Daily/Protected.md"),
-            atomically: true,
-            encoding: .utf8
-        )
-
         let store = MarkdownFileStore()
         await store.configure(root: root)
         let originalPaths = ["A/Same.md", "B/Same.md"]
@@ -2106,7 +2208,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         await XCTAssertThrowsErrorAsync(
             try await store.trashMarkdownDocuments(
-                relativePaths: [movedPaths[0], "Daily/Protected.md"]
+                relativePaths: [movedPaths[0], "Inbox.md"]
             )
         ) { error in
             XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
@@ -2127,6 +2229,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Project\n".write(
+            to: root.appendingPathComponent("Projects/Launch.md"),
+            atomically: true,
+            encoding: .utf8
+        )
         try Data("not-json".utf8).write(to: root.appendingPathComponent(".mudsnote/pins.json"))
 
         let store = MarkdownFileStore()
@@ -2134,8 +2245,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         let snapshot = try await store.loadLibrarySnapshot()
 
         XCTAssertFalse(snapshot.allFiles.contains { $0.isPinned })
-        let daily = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath.hasPrefix("Daily/") })
-        try await store.setPinned(true, relativePath: daily.relativePath)
+        let project = try XCTUnwrap(snapshot.allFiles.first { $0.relativePath == "Projects/Launch.md" })
+        try await store.setPinned(true, relativePath: project.relativePath)
         XCTAssertNoThrow(
             try JSONDecoder().decode(
                 [String].self,
@@ -2524,11 +2635,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
-        let documentURL = root.appendingPathComponent("Daily/editable.md")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let documentURL = root.appendingPathComponent("Projects/editable.md")
         try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
         let store = MarkdownFileStore()
         await store.configure(root: root)
-        let original = try await store.loadMarkdownDocument(relativePath: "Daily/editable.md")
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/editable.md")
 
         let saved = try await store.saveMarkdownDocument(
             relativePath: original.relativePath,
@@ -2973,7 +3088,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         measureAsync {
             let snapshot = try await store.loadLibrarySnapshot()
-            XCTAssertEqual(snapshot.summary.allNotesCount, 1_002)
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_001)
             XCTAssertEqual(snapshot.recentFiles.count, 24)
         }
     }
@@ -3006,7 +3121,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         measureAsync {
             let snapshot = try await store.loadInboxDeltaSnapshot()
-            XCTAssertEqual(snapshot.summary.allNotesCount, 1_002)
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_001)
             XCTAssertEqual(snapshot.recentFiles.first?.relativePath, "Inbox.md")
         }
     }

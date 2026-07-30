@@ -782,32 +782,12 @@
         }
       }
     },
-    "Create Daily and Attachments": {
+    "Create Attachments folder": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "创建 Daily 和 Attachments"
-          }
-        }
-      }
-    },
-    "Daily": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日"
-          }
-        }
-      }
-    },
-    "Daily path": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日路径"
+            "value": "创建 Attachments 文件夹"
           }
         }
       }
@@ -1012,12 +992,12 @@
         }
       }
     },
-    "Inbox and Daily files appear here after the folder is initialized.": {
+    "Inbox and recent files appear here after the folder is initialized.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "初始化文件夹后，Inbox 和 Daily 文件会显示在这里。"
+            "value": "初始化文件夹后，Inbox 和最近文件会显示在这里。"
           }
         }
       }
@@ -1862,16 +1842,6 @@
         }
       }
     },
-    "Append to Daily": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "追加到 Daily"
-          }
-        }
-      }
-    },
     "Text": {
       "localizations": {
         "zh-Hans": {
@@ -1898,16 +1868,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "追加 Inbox"
-          }
-        }
-      }
-    },
-    "Append Daily": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "追加 Daily"
           }
         }
       }
@@ -1958,16 +1918,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在 Mudsnote 已授权文件夹时向 Inbox.md 追加文本。"
-          }
-        }
-      }
-    },
-    "Append text to today's Daily Markdown file.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "向今天的 Daily Markdown 文件追加文本。"
           }
         }
       }
@@ -2168,22 +2118,6 @@
         }
       }
     },
-    "daily.with_date.format": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Daily %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日 %@"
-          }
-        }
-      }
-    },
     "capture.destination.format": {
       "localizations": {
         "en": {
@@ -2276,8 +2210,8 @@
     "This action cannot be undone.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此操作无法撤销。" } } }
     },
-    "Inbox and Daily notes cannot be moved to Recently Deleted.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 和 Daily 系统笔记不能移到最近删除。" } } }
+    "Inbox cannot be deleted.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 不能删除。" } } }
     },
     "This note is no longer available.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "此笔记已不可用。" } } }
@@ -2348,8 +2282,8 @@
     "Note Duplicated": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已复制" } } }
     },
-    "Inbox and Daily notes cannot be duplicated.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 和 Daily 系统笔记不能复制。" } } }
+    "Inbox cannot be duplicated.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 不能复制。" } } }
     },
     "Finish pending captures before changing folders.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "请先完成待处理的快速笔记，再更改文件夹。" } } }
@@ -2573,8 +2507,8 @@
     "You can restore these notes later from Recently Deleted.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "你稍后可以从最近删除中恢复这些笔记。" } } }
     },
-    "Inbox and Daily notes cannot be moved between folders.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "收件箱和每日笔记不能在文件夹之间移动。" } } }
+    "Inbox cannot be moved between folders.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Inbox 不能在文件夹之间移动。" } } }
     },
     "Some selected notes could not be restored after the operation failed.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "操作失败后，部分所选笔记无法恢复。" } } }

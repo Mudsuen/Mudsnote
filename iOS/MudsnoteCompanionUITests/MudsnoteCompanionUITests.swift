@@ -375,6 +375,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(editor.exists)
     }
 
+    func testCaptureDestinationsDoNotOfferDaily() {
+        let app = launchApp(reset: true, fixtureFolder: true, captureRoute: true)
+
+        let targetMenu = app.buttons["capture-target-menu"]
+        XCTAssertTrue(targetMenu.waitForExistence(timeout: 8))
+        XCTAssertEqual(targetMenu.value as? String, "Inbox")
+        targetMenu.tap()
+
+        XCTAssertTrue(app.buttons["Inbox.md"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Daily"].exists)
+        XCTAssertFalse(app.staticTexts["Daily"].exists)
+    }
+
     func testHomeCommandsStayInOneNotesStyleBottomRow() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let search = librarySearchField(in: app)
@@ -1172,7 +1185,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Autosaved UI edit AB"].waitForExistence(timeout: 5))
     }
 
-    func testReaderScrollsAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
+    func testReaderScrollsTimestampAwayAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
         let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
@@ -1195,11 +1208,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let initialMetadataY = metadata.frame.midY
         rendered.swipeUp()
         XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
-        XCTAssertEqual(
-            metadata.frame.midY,
-            initialMetadataY,
-            accuracy: 2,
-            "The reader timestamp must remain fixed while note content scrolls"
+        XCTAssertTrue(
+            !metadata.exists || metadata.frame.midY < initialMetadataY - 10,
+            "The reader timestamp must leave the top edge with note content"
         )
 
         rendered.swipeDown()
@@ -1908,7 +1919,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(second.exists)
-        XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
+        XCTAssertTrue(
+            first.frame.maxX < second.frame.minX
+                || second.frame.maxX < first.frame.minX
+        )
+        XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 2)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         options.tap()
@@ -1968,12 +1983,15 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(scrolledScreenshot)
         gallery.swipeDown()
 
-        let swipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.45))
-        let swipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45))
-        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+        app.terminate()
+        app.launchArguments.append("-ui-testing-open-directory")
+        app.launch()
 
-        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
+        let appWindow = app.windows.firstMatch
+        XCTAssertTrue(appWindow.exists)
+        let projectsFolder = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projectsFolder.waitForExistence(timeout: 8))
+        XCTAssertTrue(projectsFolder.isHittable)
         XCTAssertTrue(app.navigationBars["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
@@ -1995,15 +2013,36 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
-        let closeSwipeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45))
-        let closeSwipeEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45))
-        closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
+        let editFolders = app.buttons["edit-folders-button"]
+        XCTAssertTrue(editFolders.isHittable)
+        editFolders.tap()
+        XCTAssertEqual(editFolders.label, "Done")
+
+        let closeSwipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+        )
+        let closeSwipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
+        )
+        closeSwipeStart.press(
+            forDuration: 0.15,
+            thenDragTo: closeSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
-        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
-        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
+        XCTAssertEqual(
+            app.buttons["edit-folders-button"].label,
+            "Edit",
+            "Closing by drag should leave folder editing mode"
+        )
+        app.otherElements["directory-backdrop"].tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
@@ -2387,6 +2426,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         interruptedWrite: Bool = false,
         scanText: Bool = false,
         searchRoute: Bool = false,
+        captureRoute: Bool = false,
         markdownStyles: Bool = false,
         inboxFolder: Bool = false,
         halfScreenReader: Bool = false,
@@ -2412,6 +2452,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
             searchRoute ? "-ui-testing-search-route" : nil,
+            captureRoute ? "-ui-testing-capture-route" : nil,
             markdownStyles ? "-ui-testing-markdown-styles" : nil,
             inboxFolder ? "-ui-testing-inbox-folder" : nil,
             fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil

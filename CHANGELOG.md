@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 246. Stable iOS Notes interactions
+- Problem: The directory drawer hitched at the end of its spring, library setup created an undeletable Daily note without user input, and the reader timestamp stayed pinned while note content scrolled.
+- Fix: Drawer presentation now follows one continuous reveal model and emits haptics only after the visual animation is removed; the Daily product feature, automatic folder/file creation, capture destination, shortcut, special presentation, and protection rules are removed while any existing `Daily/` content remains untouched as ordinary user files; reader metadata now scrolls with the note.
+- Lesson: Optional capture concepts must not enter the library contract without explicit product intent, and animation completion feedback must follow the rendered transition rather than its logical state change.
+
 ### 245. Scan-free macOS folder deletion
 - Problem: Deleting a folder synchronously enumerated every Markdown file after moving it to trash, then descendant and root-change file events could repeat folder and library refresh work.
 - Fix: Folder deletion now records one directory-level restore mapping, projects known notes from the in-memory snapshot, and suppresses expected descendant and root-change events while preserving unconditional rescans for dropped or invalid event streams.

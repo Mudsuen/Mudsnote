@@ -72,7 +72,6 @@ actor MarkdownFileStore {
         var folderPaths = Set<String>()
         var attachments: [LibraryAttachment] = []
         var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
-        var dailyCount = 0
         var attachmentCount = 0
         var conflictWarnings: [String] = []
 
@@ -110,9 +109,6 @@ actor MarkdownFileStore {
                 guard url.pathExtension.lowercased() == "md" else { continue }
                 if Self.isConflictCopyPath(relativePath) {
                     conflictWarnings.append(relativePath)
-                }
-                if relativePath.hasPrefix("Daily/") {
-                    dailyCount += 1
                 }
                 let modifiedAt = values.contentModificationDate ?? .distantPast
                 let byteCount = values.fileSize ?? 0
@@ -187,7 +183,6 @@ actor MarkdownFileStore {
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
-                dailyCount: dailyCount,
                 attachmentCount: attachmentCount,
                 recentlyDeletedCount: trashedFiles.count
             ),
@@ -1174,7 +1169,7 @@ actor MarkdownFileStore {
         now: Date = Date()
     ) throws -> TrashedMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
-        guard Self.isMutableNotePath(relativePath),
+        guard Self.isTrashableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md" else {
             throw MarkdownLifecycleError.protectedNote
@@ -1226,7 +1221,7 @@ actor MarkdownFileStore {
         let paths = Array(Set(relativePaths)).sorted()
         guard !paths.isEmpty else { return [] }
         for relativePath in paths {
-            guard Self.isMutableNotePath(relativePath),
+            guard Self.isTrashableNotePath(relativePath),
                   let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
                   source.pathExtension.lowercased() == "md",
                   fileManager.fileExists(atPath: source.path) else {
@@ -1533,7 +1528,7 @@ actor MarkdownFileStore {
         let accessed = root.startAccessingSecurityScopedResource()
         defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         let item = try trashItem(id: id, root: root)
-        guard Self.isMutableNotePath(item.originalRelativePath),
+        guard Self.isTrashableNotePath(item.originalRelativePath),
               let requestedDestination = AuthorizedLibraryPath.resolve(item.originalRelativePath, within: root) else {
             throw MarkdownLifecycleError.invalidTrashMetadata
         }
@@ -1577,7 +1572,7 @@ actor MarkdownFileStore {
 
         let items = try normalizedIDs.map { id in
             let item = try trashItem(id: id, root: root)
-            guard Self.isMutableNotePath(item.originalRelativePath),
+            guard Self.isTrashableNotePath(item.originalRelativePath),
                   let requestedDestination = AuthorizedLibraryPath.resolve(
                     item.originalRelativePath,
                     within: root
@@ -1935,7 +1930,6 @@ actor MarkdownFileStore {
         let components = relativePath.split(separator: "/")
         guard let first = components.first,
               first != "Attachments",
-              first != "Daily",
               !components.contains(where: { $0.hasPrefix(".") }) else { return false }
         return true
     }
@@ -2257,10 +2251,16 @@ actor MarkdownFileStore {
 
     private static func isMutableNotePath(_ relativePath: String) -> Bool {
         guard relativePath != "Inbox.md",
-              !relativePath.hasPrefix("Daily/"),
               !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return false }
         return true
+    }
+
+    private static func isTrashableNotePath(_ relativePath: String) -> Bool {
+        relativePath != "Inbox.md"
+            && !relativePath.hasPrefix("Attachments/")
+            && !relativePath.hasPrefix(".mudsnote/")
+            && relativePath.hasSuffix(".md")
     }
 
     static func isConflictCopyPath(_ relativePath: String) -> Bool {
@@ -2663,7 +2663,7 @@ struct LibraryFolderNode: Identifiable, Equatable {
         directoryPaths: some Sequence<String>,
         files: [RecentMarkdownFile]
     ) -> [LibraryFolderNode] {
-        let excludedRoots: Set<String> = ["Attachments", "Daily"]
+        let excludedRoots: Set<String> = ["Attachments"]
         var paths = Set<String>()
 
         func includeAncestors(of rawPath: String) {
@@ -2854,7 +2854,6 @@ enum AttachmentPreviewError: LocalizedError, Equatable {
 struct LibrarySummary: Equatable {
     var allNotesCount = 0
     var inboxCount = 0
-    var dailyCount = 0
     var attachmentCount = 0
     var recentlyDeletedCount = 0
 }
@@ -2900,7 +2899,7 @@ enum MarkdownLifecycleError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .protectedNote:
-            String(localized: "Inbox and Daily notes cannot be deleted.")
+            String(localized: "Inbox cannot be deleted.")
         case .noteNotFound:
             String(localized: "This note is no longer available.")
         case .invalidTrashMetadata:

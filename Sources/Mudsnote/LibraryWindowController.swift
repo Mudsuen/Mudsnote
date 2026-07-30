@@ -1153,6 +1153,23 @@ final class LibraryNoteTableView: NSTableView {
 
 @MainActor
 final class LibraryNoteScrollView: NSScrollView {
+    static func suppressesHorizontalScroll(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        let horizontalMagnitude = abs(deltaX)
+        return horizontalMagnitude > 0 && horizontalMagnitude >= abs(deltaY)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !Self.suppressesHorizontalScroll(
+            deltaX: event.scrollingDeltaX,
+            deltaY: event.scrollingDeltaY
+        ) else {
+            contentView.scroll(to: NSPoint(x: 0, y: contentView.bounds.origin.y))
+            reflectScrolledClipView(contentView)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
     override func reflectScrolledClipView(_ clipView: NSClipView) {
         super.reflectScrolledClipView(clipView)
         (documentView as? LibraryNoteTableView)?.reconcilePointerHover()
@@ -2008,6 +2025,7 @@ final class LibraryWindowController: NSWindowController,
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         window?.contentViewController = splitController
+        hostEditorSuggestionView(in: splitController.view)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(librarySplitViewDidResize(_:)),
@@ -2150,6 +2168,7 @@ final class LibraryWindowController: NSWindowController,
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
+        scrollView.usesPredominantAxisScrolling = true
         scrollView.autohidesScrollers = true
         scrollView.automaticallyAdjustsContentInsets = false
         clipView.drawsBackground = false
@@ -3161,12 +3180,21 @@ final class LibraryWindowController: NSWindowController,
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+        editorSuggestionController.view.identifier = NSUserInterfaceItemIdentifier(
+            "LibraryEditorSlashSuggestionPopover"
+        )
         editorSuggestionController.view.isHidden = true
         editorSuggestionController.view.translatesAutoresizingMaskIntoConstraints = true
         editorSuggestionController.onSelect = { [weak self] index in
             self?.acceptEditorSlashSuggestion(at: index)
         }
-        window?.contentView?.addSubview(editorSuggestionController.view, positioned: .above, relativeTo: nil)
+    }
+
+    private func hostEditorSuggestionView(in host: NSView) {
+        let suggestionView = editorSuggestionController.view
+        guard suggestionView.superview !== host else { return }
+        suggestionView.removeFromSuperview()
+        host.addSubview(suggestionView, positioned: .above, relativeTo: nil)
     }
 
     private func rebuildSourceRows(includeTags: Bool) {
@@ -11424,6 +11452,7 @@ final class LibraryWindowController: NSWindowController,
             dismissEditorSlashSuggestions()
             return
         }
+        hostEditorSuggestionView(in: host)
         let matchRange = NSRange(match, in: prefix)
         let tokenOffset = matchedText[..<slashIndex].utf16.count
         let replacementRange = NSRange(
