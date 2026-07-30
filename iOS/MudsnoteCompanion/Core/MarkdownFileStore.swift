@@ -72,7 +72,6 @@ actor MarkdownFileStore {
         var folderPaths = Set<String>()
         var attachments: [LibraryAttachment] = []
         var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
-        var dailyCount = 0
         var attachmentCount = 0
         var conflictWarnings: [String] = []
 
@@ -110,9 +109,6 @@ actor MarkdownFileStore {
                 guard url.pathExtension.lowercased() == "md" else { continue }
                 if Self.isConflictCopyPath(relativePath) {
                     conflictWarnings.append(relativePath)
-                }
-                if relativePath.hasPrefix("Daily/") {
-                    dailyCount += 1
                 }
                 let modifiedAt = values.contentModificationDate ?? .distantPast
                 let byteCount = values.fileSize ?? 0
@@ -187,7 +183,6 @@ actor MarkdownFileStore {
             summary: LibrarySummary(
                 allNotesCount: markdownFiles.count,
                 inboxCount: inboxItems.count,
-                dailyCount: dailyCount,
                 attachmentCount: attachmentCount,
                 recentlyDeletedCount: trashedFiles.count
             ),
@@ -1935,7 +1930,6 @@ actor MarkdownFileStore {
         let components = relativePath.split(separator: "/")
         guard let first = components.first,
               first != "Attachments",
-              first != "Daily",
               !components.contains(where: { $0.hasPrefix(".") }) else { return false }
         return true
     }
@@ -2257,7 +2251,6 @@ actor MarkdownFileStore {
 
     private static func isMutableNotePath(_ relativePath: String) -> Bool {
         guard relativePath != "Inbox.md",
-              !relativePath.hasPrefix("Daily/"),
               !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return false }
         return true
@@ -2670,7 +2663,7 @@ struct LibraryFolderNode: Identifiable, Equatable {
         directoryPaths: some Sequence<String>,
         files: [RecentMarkdownFile]
     ) -> [LibraryFolderNode] {
-        let excludedRoots: Set<String> = ["Attachments", "Daily"]
+        let excludedRoots: Set<String> = ["Attachments"]
         var paths = Set<String>()
 
         func includeAncestors(of rawPath: String) {
@@ -2861,7 +2854,6 @@ enum AttachmentPreviewError: LocalizedError, Equatable {
 struct LibrarySummary: Equatable {
     var allNotesCount = 0
     var inboxCount = 0
-    var dailyCount = 0
     var attachmentCount = 0
     var recentlyDeletedCount = 0
 }

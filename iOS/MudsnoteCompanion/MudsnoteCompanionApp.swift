@@ -56,6 +56,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
     private static let interruptedWriteArgument = "-ui-testing-interrupted-write"
     private static let searchRouteArgument = "-ui-testing-search-route"
+    private static let captureRouteArgument = "-ui-testing-capture-route"
     private static let inboxFolderArgument = "-ui-testing-inbox-folder"
     private static let fixtureFolderName = "MudsnoteUITestLibrary"
 
@@ -77,6 +78,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(attachmentErrorArgument)
                 || arguments.contains(interruptedWriteArgument)
                 || arguments.contains(searchRouteArgument)
+                || arguments.contains(captureRouteArgument)
                 || arguments.contains(inboxFolderArgument)
         else { return }
 
@@ -105,6 +107,12 @@ private enum MudsnoteUITestLaunchConfiguration {
 
         if arguments.contains(searchRouteArgument) {
             UserDefaults.standard.set(true, forKey: SystemEntryRequest.pendingSearchKey)
+        }
+        if arguments.contains(captureRouteArgument) {
+            UserDefaults.standard.set(
+                CaptureRoute.text.rawValue,
+                forKey: SystemEntryRequest.pendingRouteKey
+            )
         }
 
         if arguments.contains(fixtureFolderArgument) {

@@ -375,6 +375,19 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(editor.exists)
     }
 
+    func testCaptureDestinationsDoNotOfferDaily() {
+        let app = launchApp(reset: true, fixtureFolder: true, captureRoute: true)
+
+        let targetMenu = app.buttons["capture-target-menu"]
+        XCTAssertTrue(targetMenu.waitForExistence(timeout: 8))
+        XCTAssertEqual(targetMenu.value as? String, "Inbox")
+        targetMenu.tap()
+
+        XCTAssertTrue(app.buttons["Inbox.md"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Daily"].exists)
+        XCTAssertFalse(app.staticTexts["Daily"].exists)
+    }
+
     func testHomeCommandsStayInOneNotesStyleBottomRow() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let search = librarySearchField(in: app)
@@ -2413,6 +2426,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         interruptedWrite: Bool = false,
         scanText: Bool = false,
         searchRoute: Bool = false,
+        captureRoute: Bool = false,
         markdownStyles: Bool = false,
         inboxFolder: Bool = false,
         halfScreenReader: Bool = false,
@@ -2438,6 +2452,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             interruptedWrite ? "-ui-testing-interrupted-write" : nil,
             scanText ? "-ui-testing-scan-text" : nil,
             searchRoute ? "-ui-testing-search-route" : nil,
+            captureRoute ? "-ui-testing-capture-route" : nil,
             markdownStyles ? "-ui-testing-markdown-styles" : nil,
             inboxFolder ? "-ui-testing-inbox-folder" : nil,
             fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil

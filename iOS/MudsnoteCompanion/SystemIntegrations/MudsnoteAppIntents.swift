@@ -82,15 +82,6 @@ struct AppShortcuts: AppShortcutsProvider {
             systemImageName: "tray.and.arrow.down"
         )
 
-        AppShortcut(
-            intent: AppendToDailyIntent(),
-            phrases: [
-                "Append to Daily in \(.applicationName)",
-                "Add daily note to \(.applicationName)"
-            ],
-            shortTitle: "Append Daily",
-            systemImageName: "calendar.badge.plus"
-        )
     }
 }
 
@@ -114,32 +105,6 @@ struct AppendToInboxIntent: AppIntent {
         }
         try await IntentCaptureWriter.write(
             CaptureDraft(body: text, target: .inbox),
-            root: root
-        )
-        return .result()
-    }
-}
-
-struct AppendToDailyIntent: AppIntent {
-    static var title: LocalizedStringResource = "Append to Daily"
-    static var description = IntentDescription("Append text to today's Daily Markdown file.")
-
-    @Parameter(title: "Text")
-    var text: String
-
-    init() {}
-
-    init(text: String) {
-        self.text = text
-    }
-
-    func perform() async throws -> some IntentResult {
-        let access = FolderAccessService()
-        guard let root = try access.resolvePersistedFolder() else {
-            throw FolderAccessError.missingFolder
-        }
-        try await IntentCaptureWriter.write(
-            CaptureDraft(body: text, target: .daily(Date())),
             root: root
         )
         return .result()

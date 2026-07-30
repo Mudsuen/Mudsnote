@@ -5512,7 +5512,7 @@ struct RecentSearchView: View {
                 if filteredFiles.isEmpty {
                     EmptyReaderStateView(
                         title: String(localized: "No Recent Files"),
-                        message: String(localized: "Inbox and Daily files appear here after the folder is initialized.")
+                        message: String(localized: "Inbox and recent files appear here after the folder is initialized.")
                     )
                 } else {
                     List(filteredFiles) { file in

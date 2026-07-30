@@ -17,15 +17,12 @@ struct CaptureDraft: Equatable {
 
 enum CaptureTarget: Equatable, Identifiable {
     case inbox
-    case daily(Date)
     case recent(String)
 
     var id: String {
         switch self {
         case .inbox:
             return "inbox"
-        case .daily(let date):
-            return "daily-\(Self.dayFormatter.string(from: date))"
         case .recent(let path):
             return "recent-\(path)"
         }
@@ -35,12 +32,6 @@ enum CaptureTarget: Equatable, Identifiable {
         switch self {
         case .inbox:
             return String(localized: "Inbox")
-        case .daily(let date):
-            return String(
-                format: String(localized: "daily.with_date.format"),
-                locale: .current,
-                Self.dayFormatter.string(from: date)
-            )
         case .recent(let path):
             return URL(fileURLWithPath: path).lastPathComponent
         }
@@ -50,19 +41,10 @@ enum CaptureTarget: Equatable, Identifiable {
         switch self {
         case .inbox:
             return "Inbox.md"
-        case .daily(let date):
-            return "Daily/\(Self.dayFormatter.string(from: date)).md"
         case .recent(let path):
             return path
         }
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
 }
 
 enum CaptureAttachment: Equatable {
@@ -303,6 +285,7 @@ actor CaptureDraftRecoveryStore {
 
     private enum Target: Codable {
         case inbox
+        // Decode legacy recovered drafts without recreating the removed Daily feature.
         case daily(Date)
         case recent(String)
     }
@@ -477,7 +460,6 @@ actor CaptureDraftRecoveryStore {
     private func storedTarget(_ target: CaptureTarget) -> Target {
         switch target {
         case .inbox: .inbox
-        case .daily(let date): .daily(date)
         case .recent(let path): .recent(path)
         }
     }
@@ -485,7 +467,7 @@ actor CaptureDraftRecoveryStore {
     private func captureTarget(_ target: Target) -> CaptureTarget {
         switch target {
         case .inbox: .inbox
-        case .daily(let date): .daily(date)
+        case .daily: .inbox
         case .recent(let path): .recent(path)
         }
     }

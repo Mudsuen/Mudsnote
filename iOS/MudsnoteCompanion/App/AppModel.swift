@@ -786,7 +786,7 @@ final class AppModel: ObservableObject {
     }
 
     func canReorganize(_ file: RecentMarkdownFile) -> Bool {
-        file.relativePath != "Inbox.md" && !file.relativePath.hasPrefix("Daily/")
+        file.relativePath != "Inbox.md"
     }
 
     func moveToRecentlyDeleted(_ file: RecentMarkdownFile) {
@@ -893,7 +893,7 @@ final class AppModel: ObservableObject {
 
     func duplicate(_ file: RecentMarkdownFile) {
         guard canReorganize(file) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be duplicated."))
+            statusToast = .error(String(localized: "Inbox cannot be duplicated."))
             return
         }
         Task {
@@ -1135,8 +1135,8 @@ final class AppModel: ObservableObject {
         relativePath: String,
         toFolder targetFolder: String?
     ) async -> MarkdownDocument? {
-        guard relativePath != "Inbox.md", !relativePath.hasPrefix("Daily/") else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
+        guard relativePath != "Inbox.md" else {
+            statusToast = .error(String(localized: "Inbox cannot be moved between folders."))
             return nil
         }
         guard syncStatus != .pending else {
@@ -1181,7 +1181,7 @@ final class AppModel: ObservableObject {
     ) async -> Bool {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canReorganize) else {
-            statusToast = .error(String(localized: "Inbox and Daily notes cannot be moved between folders."))
+            statusToast = .error(String(localized: "Inbox cannot be moved between folders."))
             return false
         }
         guard syncStatus != .pending else {
