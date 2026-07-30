@@ -1970,18 +1970,30 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(scrolledScreenshot)
         gallery.swipeDown()
 
+        let directoryEdge = app.otherElements["directory-swipe-edge"]
+        XCTAssertTrue(directoryEdge.waitForExistence(timeout: 3))
         let appWindow = app.windows.firstMatch
         XCTAssertTrue(appWindow.exists)
-        let swipeStart = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.06, dy: 0.45)
-        )
-        let swipeEnd = appWindow.coordinate(
+        let openSwipeEnd = appWindow.coordinate(
             withNormalizedOffset: CGVector(dx: 0.72, dy: 0.45)
         )
-        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
+        directoryEdge.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
+        ).press(forDuration: 0.05, thenDragTo: openSwipeEnd)
 
-        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
+        let projectsFolder = app.buttons["folder-row-Projects"]
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "hittable == true"),
+                        object: projectsFolder
+                    )
+                ],
+                timeout: 3
+            ),
+            .completed
+        )
         XCTAssertTrue(app.navigationBars["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
@@ -2018,14 +2030,27 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
-        swipeStart.press(forDuration: 0.05, thenDragTo: swipeEnd)
-        XCTAssertTrue(app.scrollViews["directory-drawer"].waitForExistence(timeout: 3))
+        directoryEdge.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
+        ).press(forDuration: 0.05, thenDragTo: openSwipeEnd)
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "hittable == true"),
+                        object: projectsFolder
+                    )
+                ],
+                timeout: 3
+            ),
+            .completed
+        )
         XCTAssertEqual(
             app.buttons["edit-folders-button"].label,
             "Edit",
             "Closing by drag should leave folder editing mode"
         )
-        appWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.45)).tap()
+        app.otherElements["directory-backdrop"].tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
