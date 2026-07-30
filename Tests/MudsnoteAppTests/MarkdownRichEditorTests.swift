@@ -832,6 +832,12 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        let contentView = try #require(controller.window?.contentView)
+        let suggestionView = try #require(contentView.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorSlashSuggestionPopover"
+        })
+        #expect(suggestionView.superview === contentView)
+        #expect(suggestionView.isHidden)
 
         let previousCount = store.listNotes(limit: 20).count
         controller.createNewNoteForLibrary()
@@ -844,6 +850,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
         controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         let titles = controller.editorSlashSuggestionTitlesForLibrary
+        #expect(!suggestionView.isHidden)
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")

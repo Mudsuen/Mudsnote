@@ -2008,6 +2008,7 @@ final class LibraryWindowController: NSWindowController,
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         window?.contentViewController = splitController
+        hostEditorSuggestionView(in: splitController.view)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(librarySplitViewDidResize(_:)),
@@ -3161,12 +3162,21 @@ final class LibraryWindowController: NSWindowController,
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+        editorSuggestionController.view.identifier = NSUserInterfaceItemIdentifier(
+            "LibraryEditorSlashSuggestionPopover"
+        )
         editorSuggestionController.view.isHidden = true
         editorSuggestionController.view.translatesAutoresizingMaskIntoConstraints = true
         editorSuggestionController.onSelect = { [weak self] index in
             self?.acceptEditorSlashSuggestion(at: index)
         }
-        window?.contentView?.addSubview(editorSuggestionController.view, positioned: .above, relativeTo: nil)
+    }
+
+    private func hostEditorSuggestionView(in host: NSView) {
+        let suggestionView = editorSuggestionController.view
+        guard suggestionView.superview !== host else { return }
+        suggestionView.removeFromSuperview()
+        host.addSubview(suggestionView, positioned: .above, relativeTo: nil)
     }
 
     private func rebuildSourceRows(includeTags: Bool) {
@@ -11424,6 +11434,7 @@ final class LibraryWindowController: NSWindowController,
             dismissEditorSlashSuggestions()
             return
         }
+        hostEditorSuggestionView(in: host)
         let matchRange = NSRange(match, in: prefix)
         let tokenOffset = matchedText[..<slashIndex].utf16.count
         let replacementRange = NSRange(
