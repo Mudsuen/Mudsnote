@@ -50,6 +50,15 @@ actor MarkdownFileStore {
         listMetadataCache = [:]
     }
 
+    func configureAndInitialize(root: URL) throws {
+        configure(root: root)
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        try FolderInitializer.initialize(root)
+    }
+
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()

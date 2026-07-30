@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 import Speech
 
-struct RecordedAudio {
+struct RecordedAudio: Sendable {
     var data: Data
     var temporaryURL: URL
 }
@@ -12,45 +12,102 @@ final class AudioCaptureService: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
+    private var startID: UUID?
 
     func start() async throws {
+        let operationID = UUID()
+        startID = operationID
         guard await Self.requestMicrophonePermission() else {
+            if startID == operationID { startID = nil }
             throw AudioCaptureError.microphonePermissionDenied
         }
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
-        try session.setActive(true)
+        try Task.checkCancellation()
+        guard startID == operationID else { throw CancellationError() }
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-recording-\(UUID().uuidString).m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44_100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        let recorder = try AVAudioRecorder(url: url, settings: settings)
-        guard recorder.prepareToRecord(), recorder.record() else {
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
-            try? FileManager.default.removeItem(at: url)
-            throw AudioCaptureError.couldNotStart
+        let session = AVAudioSession.sharedInstance()
+        var pendingRecorder: AVAudioRecorder?
+        var pendingURL: URL?
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .spokenAudio,
+                options: [.defaultToSpeaker]
+            )
+            try session.setActive(true)
+            try Task.checkCancellation()
+            guard startID == operationID else { throw CancellationError() }
+
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mudsnote-recording-\(UUID().uuidString).m4a")
+            pendingURL = url
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: 44_100,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            ]
+            let recorder = try AVAudioRecorder(url: url, settings: settings)
+            pendingRecorder = recorder
+            guard recorder.prepareToRecord(), recorder.record() else {
+                try? FileManager.default.removeItem(at: url)
+                throw AudioCaptureError.couldNotStart
+            }
+            try Task.checkCancellation()
+            guard startID == operationID else { throw CancellationError() }
+            self.recorder = recorder
+            self.fileURL = url
+            self.isRecording = true
+            startID = nil
+            pendingRecorder = nil
+            pendingURL = nil
+        } catch {
+            pendingRecorder?.stop()
+            if let pendingURL {
+                try? FileManager.default.removeItem(at: pendingURL)
+            }
+            if startID == operationID {
+                self.recorder?.stop()
+                self.recorder = nil
+                isRecording = false
+                if let fileURL {
+                    try? FileManager.default.removeItem(at: fileURL)
+                }
+                fileURL = nil
+                startID = nil
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+            throw error
         }
-        self.recorder = recorder
-        self.fileURL = url
-        self.isRecording = true
     }
 
-    func stop() throws -> RecordedAudio? {
+    func stop() async throws -> RecordedAudio? {
+        startID = nil
         recorder?.stop()
         recorder = nil
         isRecording = false
         guard let fileURL else { return nil }
         self.fileURL = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        return try RecordedAudio(data: Data(contentsOf: fileURL), temporaryURL: fileURL)
+        do {
+            let data = try await Task.detached(priority: .userInitiated) {
+                let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+                if let fileSize = values.fileSize,
+                   fileSize > CaptureAttachmentPolicy.maximumAudioBytes {
+                    throw CaptureAttachmentError.tooLarge(
+                        maximumBytes: CaptureAttachmentPolicy.maximumAudioBytes
+                    )
+                }
+                return try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            }.value
+            return RecordedAudio(data: data, temporaryURL: fileURL)
+        } catch {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw error
+        }
     }
 
     func cancel() {
+        startID = nil
         recorder?.stop()
         recorder = nil
         isRecording = false

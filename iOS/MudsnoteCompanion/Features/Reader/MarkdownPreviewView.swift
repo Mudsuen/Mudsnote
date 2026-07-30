@@ -1971,7 +1971,7 @@ struct MarkdownPreviewView: View {
             guard draftMarkdown == originalMarkdown else { return }
 
             if noteAudioRecorder.isRecording {
-                guard let recording = try noteAudioRecorder.stop() else { return }
+                guard let recording = try await noteAudioRecorder.stop() else { return }
                 pendingAudioRecording = recording
                 await attachPendingAudioRecording()
             } else {

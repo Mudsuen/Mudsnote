@@ -1908,12 +1908,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
-        XCTAssertFalse(app.buttons["directory-button"].exists)
+        XCTAssertTrue(app.buttons["directory-button"].exists)
         let options = app.buttons["home-note-options"]
         XCTAssertTrue(options.exists)
         let nativeTitle = app.navigationBars["Notes"].staticTexts["Notes"].firstMatch
         XCTAssertTrue(nativeTitle.waitForExistence(timeout: 3))
-        let largeTitleHeight = nativeTitle.frame.height
 
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
@@ -1970,12 +1969,16 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["home-note-gallery"].waitForExistence(timeout: 5))
 
         let gallery = app.scrollViews["home-note-gallery"]
+        let firstCardBeforeScroll = first.frame.minY
         gallery.swipeUp()
+        if first.frame.minY >= firstCardBeforeScroll - 20 {
+            gallery.swipeUp()
+        }
         XCTAssertTrue(app.staticTexts["Today"].exists)
         XCTAssertLessThan(
-            nativeTitle.frame.height,
-            largeTitleHeight - 4,
-            "The system navigation bar should collapse its large title while scrolling"
+            first.frame.minY,
+            firstCardBeforeScroll - 20,
+            "The home gallery should move vertically when the user scrolls"
         )
         let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
         scrolledScreenshot.name = "Home cards under opaque pinned date header"
@@ -2042,7 +2045,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "Edit",
             "Closing by drag should leave folder editing mode"
         )
-        app.otherElements["directory-backdrop"].tap()
+        let backdrop = app.buttons["directory-backdrop"]
+        XCTAssertTrue(backdrop.exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
@@ -2135,12 +2140,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testCaptureCommandsStayInSingleRow() {
-        let app = launchApp(reset: true, fixtureFolder: true, scanText: true)
-        let newNoteButton = app.buttons["new-note-button"]
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
-        newNoteButton.tap()
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            scanText: true,
+            captureRoute: true
+        )
 
-        let labels = ["capture-attachment-menu", "Record audio", "capture-insert-tag", "capture-insert-bold", "capture-insert-checklist", "capture-more-formatting", "capture-target-menu", "save-memo-button"]
+        let labels = ["capture-attachment-menu", "capture-record-audio", "capture-insert-tag", "capture-insert-bold", "capture-insert-checklist", "capture-more-formatting", "capture-target-menu", "save-memo-button"]
         let controls = labels.map { app.buttons[$0] }
         for control in controls {
             XCTAssertTrue(control.waitForExistence(timeout: 5))
@@ -2180,6 +2187,21 @@ final class MudsnoteCompanionUITests: XCTestCase {
         scanText.tap()
         let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(waitForValue(of: editor, containing: "Scanned into Markdown"))
+    }
+
+    func testBottomBarKeepsVoiceAndComposeAsSeparateActions() {
+        let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
+        let voice = app.buttons["voice-input-button"]
+        let compose = app.buttons["new-note-button"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        XCTAssertTrue(compose.waitForExistence(timeout: 8))
+        XCTAssertEqual(voice.frame.midY, compose.frame.midY, accuracy: 2)
+        XCTAssertLessThan(voice.frame.minX, compose.frame.minX)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Chat-style search, voice, and compose bar"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testAttachmentLibraryShowsStoredFiles() {

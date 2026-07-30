@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 248. Direct iOS voice capture and responsive library shell
+- Problem: Quick Capture had no direct voice entry, recording and transcription could outlive a dismissed sheet, the folder drawer displaced the note timeline, and cold folder preparation plus duplicate scene refreshes delayed interaction.
+- Fix: The Notes-style bottom bar now keeps Search, Voice, and New Note as separate actions; voice entry opens an explicit recording state machine that preserves audio before optional transcription and invalidates stale sessions. The folder directory is now an overlay drawer with deliberate axis locking, immediate commit haptics, RTL and Reduce Motion behavior, while folder preparation runs on the file-store actor and scene refreshes coalesce behind the initial index.
+- Lesson: Capture must make the durable attachment independent from best-effort transcription, and navigation or launch work should preserve one responsive visual surface while asynchronous state catches up.
+
 ### 247. Conflict-safe note and recovery writes
 - Problem: A macOS autosave could replace an externally edited note, unreadable files could be rewritten from an empty fallback, and iOS recovery could discard staged data or quarantine a healthy queue after transient I/O failures.
 - Fix: macOS saves now compare the exact loaded source inside file coordination and preserve local edits as a named conflict copy; in-place updates fail closed on unreadable or missing sources. iOS queue loading now shares the coordinated mutation path and quarantines only validated corruption, while interrupted permanent-delete recovery refuses different-content collisions.

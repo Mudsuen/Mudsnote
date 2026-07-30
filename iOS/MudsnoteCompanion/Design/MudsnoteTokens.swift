@@ -8,6 +8,7 @@ enum MudsnoteColors {
     static let text = Color(hex: 0xECEDEF)
     static let muted = Color(hex: 0xA4A7AD)
     static let primary = Color(hex: 0xF2F3F5)
+    static let captureAccent = Color(hex: 0x0A84FF)
 }
 
 enum MudsnoteRadius {

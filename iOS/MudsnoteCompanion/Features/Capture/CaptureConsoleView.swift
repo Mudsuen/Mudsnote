@@ -14,6 +14,7 @@ struct CaptureConsoleView: View {
     @State private var isScannerPresented = false
     @State private var refocusAfterCamera = false
     @State private var refocusAfterScanner = false
+    @State private var didStartInitialAudioRoute = false
 
     init(initialRoute: CaptureRoute) {
         _selectedRoute = State(initialValue: initialRoute)
@@ -22,6 +23,8 @@ struct CaptureConsoleView: View {
     var body: some View {
         VStack(spacing: 12) {
             editor
+
+            audioStatus
 
             if !appModel.draft.attachments.isEmpty {
                 attachmentStrip
@@ -40,20 +43,11 @@ struct CaptureConsoleView: View {
         .background(MudsnoteColors.panel)
         .animation(.snappy(duration: 0.24), value: appModel.captureSubmissionIssue != nil)
         .onAppear {
-            if selectedRoute == .image {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    isPhotoPickerPresented = true
-                }
-            } else {
-                isBodyFocused = true
-            }
+            activateInitialRoute(selectedRoute)
         }
         .onChange(of: appModel.captureRoute) { _, route in
             selectedRoute = route
-            isBodyFocused = route != .image
-            if route == .image {
-                isPhotoPickerPresented = true
-            }
+            activateInitialRoute(route)
         }
         .onChange(of: selectedPhotoItem) { _, item in
             selectedRoute = .image
@@ -147,8 +141,85 @@ struct CaptureConsoleView: View {
             if issue != nil { isBodyFocused = true }
         }
         .onDisappear {
-            appModel.cancelAudioRecording()
+            appModel.endCaptureSession()
         }
+    }
+
+    @ViewBuilder
+    private var audioStatus: some View {
+        switch appModel.audioCapturePhase {
+        case .idle:
+            EmptyView()
+        case .requestingPermission:
+            audioStatusRow(
+                systemImage: "mic.badge.plus",
+                title: String(localized: "Preparing microphone…"),
+                showsProgress: true
+            )
+        case .recording:
+            audioStatusRow(
+                systemImage: "record.circle.fill",
+                title: String(localized: "Recording"),
+                tint: .red,
+                actionTitle: String(localized: "Cancel"),
+                action: appModel.cancelAudioRecording
+            )
+        case .stopping:
+            audioStatusRow(
+                systemImage: "waveform",
+                title: String(localized: "Saving audio…"),
+                showsProgress: true
+            )
+        case .transcribing:
+            audioStatusRow(
+                systemImage: "waveform.badge.magnifyingglass",
+                title: String(localized: "Audio saved · Transcribing…"),
+                actionTitle: String(localized: "Skip"),
+                action: appModel.skipAudioTranscription
+            )
+        case .failed(let message):
+            audioStatusRow(
+                systemImage: "exclamationmark.circle.fill",
+                title: message,
+                tint: .red
+            )
+        }
+    }
+
+    private func audioStatusRow(
+        systemImage: String,
+        title: String,
+        tint: Color = MudsnoteColors.primary,
+        showsProgress: Bool = false,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 9) {
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: systemImage)
+                    .foregroundStyle(tint)
+            }
+
+            Text(verbatim: title)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(MudsnoteColors.text)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(.footnote.weight(.semibold))
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(MudsnoteColors.card, in: Capsule())
+        .accessibilityIdentifier("capture-audio-status")
     }
 
     private var commandBar: some View {
@@ -222,6 +293,7 @@ struct CaptureConsoleView: View {
             .accessibilityLabel(
                 Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
             )
+            .accessibilityIdentifier("capture-record-audio")
 
             Button("#") { appendToken(" #tag") }
                 .buttonStyle(CompactCaptureButtonStyle())
@@ -281,7 +353,6 @@ struct CaptureConsoleView: View {
                     || appModel.isPreparingAttachment
                     || appModel.audioRecorder.isRecording
                     || appModel.isAudioTransitioning
-                    || appModel.isTranscribingAudio
             )
             .accessibilityLabel("Save memo")
             .accessibilityIdentifier("save-memo-button")
@@ -437,6 +508,24 @@ struct CaptureConsoleView: View {
         Task { @MainActor in
             await Task.yield()
             isBodyFocused = true
+        }
+    }
+
+    private func activateInitialRoute(_ route: CaptureRoute) {
+        switch route {
+        case .text:
+            isBodyFocused = true
+        case .image:
+            isBodyFocused = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                guard selectedRoute == .image else { return }
+                isPhotoPickerPresented = true
+            }
+        case .audio:
+            isBodyFocused = false
+            guard !didStartInitialAudioRoute else { return }
+            didStartInitialAudioRoute = true
+            appModel.startAudioRecording()
         }
     }
 }
