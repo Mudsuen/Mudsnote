@@ -1979,7 +1979,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
         directoryEdge.coordinate(
             withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
-        ).press(forDuration: 0.05, thenDragTo: openSwipeEnd)
+        ).press(
+            forDuration: 0.15,
+            thenDragTo: openSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
 
         let projectsFolder = app.buttons["folder-row-Projects"]
         XCTAssertEqual(
@@ -2026,13 +2031,23 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let closeSwipeEnd = appWindow.coordinate(
             withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
         )
-        closeSwipeStart.press(forDuration: 0.05, thenDragTo: closeSwipeEnd)
+        closeSwipeStart.press(
+            forDuration: 0.15,
+            thenDragTo: closeSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
         XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         directoryEdge.coordinate(
             withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)
-        ).press(forDuration: 0.05, thenDragTo: openSwipeEnd)
+        ).press(
+            forDuration: 0.15,
+            thenDragTo: openSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
         XCTAssertEqual(
             XCTWaiter.wait(
                 for: [
