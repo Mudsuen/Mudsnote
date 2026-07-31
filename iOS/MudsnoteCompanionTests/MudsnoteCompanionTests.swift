@@ -903,9 +903,9 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         model.selectFolder(root)
 
-        let readyDeadline = ContinuousClock.now + .seconds(5)
-        while ContinuousClock.now < readyDeadline {
-            if case .ready = model.folderStatus { break }
+        let inventoryDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < inventoryDeadline,
+              model.libraryFiles.contains(where: { $0.relativePath != "Inbox.md" }) == false {
             try await Task.sleep(for: .milliseconds(10))
         }
         let file = try XCTUnwrap(
