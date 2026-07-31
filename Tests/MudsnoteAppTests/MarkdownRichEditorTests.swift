@@ -8913,7 +8913,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func floatingSlashSuggestionsUseSharedIconsAndKeepAnEmptyStateVisible() throws {
+    func floatingSlashSuggestionsUseSharedIconsAndKeepAnEmptyStateVisible() async throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
@@ -8924,6 +8924,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.string = "/"
         controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
         controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
 
         let scrollView = try #require(
             controller.suggestionController.view.subviews.compactMap { $0 as? NSScrollView }.first
@@ -8936,6 +8937,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.string = "/does-not-exist"
         controller.editorTextView.setSelectedRange(NSRange(location: 15, length: 0))
         controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
 
         guard case .slash(_, _, let commands) = controller.inlineSuggestionContext else {
             Issue.record("Expected a slash context with no command matches")
@@ -8950,7 +8952,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func slashSuggestionCompositionAndCancelPreserveEditorState() throws {
+    func slashSuggestionCompositionAndCancelPreserveEditorState() async throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
@@ -8961,6 +8963,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.string = "/"
         controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
         controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
         let beforeCancel = controller.editorTextView.attributedString()
         let escape = try #require(NSEvent.keyEvent(
             with: .keyDown,
@@ -8989,6 +8992,7 @@ struct MarkdownRichEditorTests {
         let markedTextSnapshot = controller.editorTextView.attributedString()
         #expect(controller.editorTextView.hasMarkedText())
         controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
         #expect(recorder.beginCalls.isEmpty)
         #expect(controller.editorTextView.attributedString().isEqual(to: markedTextSnapshot))
         #expect(controller.window?.firstResponder === controller.editorTextView)

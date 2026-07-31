@@ -11534,10 +11534,19 @@ final class LibraryWindowController: NSWindowController,
         origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
         editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
         editorSuggestionController.view.isHidden = false
-        slashCommandInputSourceSession.beginIfAllowed(
-            hasMarkedText: editorTextView.hasMarkedText(),
-            editorIsFirstResponder: window?.firstResponder === editorTextView
-        )
+        scheduleEditorSlashInputSourceSwitch()
+    }
+
+    private func scheduleEditorSlashInputSourceSwitch() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  !editorSuggestionController.view.isHidden,
+                  editorSlashSuggestion != nil else { return }
+            slashCommandInputSourceSession.beginIfAllowed(
+                hasMarkedText: editorTextView.hasMarkedText(),
+                editorIsFirstResponder: window?.firstResponder === editorTextView
+            )
+        }
     }
 
     private func dismissEditorSlashSuggestions() {

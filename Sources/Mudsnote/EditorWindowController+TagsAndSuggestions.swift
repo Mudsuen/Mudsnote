@@ -114,12 +114,22 @@ extension EditorWindowController {
         suggestionController.updateItems(items)
         positionSuggestionView(for: context)
         if case .slash = context {
+            scheduleSlashCommandInputSourceSwitch()
+        } else {
+            slashCommandInputSourceSession.end()
+        }
+    }
+
+    private func scheduleSlashCommandInputSourceSwitch() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  isSuggestionVisible,
+                  let context = inlineSuggestionContext,
+                  case .slash = context else { return }
             slashCommandInputSourceSession.beginIfAllowed(
                 hasMarkedText: editorTextView.hasMarkedText(),
                 editorIsFirstResponder: window?.firstResponder === editorTextView
             )
-        } else {
-            slashCommandInputSourceSession.end()
         }
     }
 
