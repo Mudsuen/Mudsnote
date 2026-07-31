@@ -65,21 +65,6 @@ enum SlashCommand: CaseIterable {
         }
     }
 
-    var symbolName: String {
-        switch self {
-        case .heading1: return "1.square"
-        case .heading2: return "2.square"
-        case .heading3: return "3.square"
-        case .checklist: return "checkmark.square"
-        case .bulletList: return "list.bullet"
-        case .orderedList: return "list.number"
-        case .divider: return "minus"
-        case .aiSummarize: return "text.quote"
-        case .aiFix: return "wand.and.stars"
-        case .aiTodos: return "checklist"
-        }
-    }
-
     var aiActionID: AIActionID? {
         switch self {
         case .aiSummarize: return .summarize

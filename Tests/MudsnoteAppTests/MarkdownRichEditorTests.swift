@@ -881,7 +881,8 @@ struct MarkdownRichEditorTests {
             suggestionView.allSubviews.compactMap { $0 as? SuggestionListView }.first
         )
         let libraryCommands = SlashCommand.matching("", includesAI: false)
-        #expect(suggestionList.items.map(\.symbolName) == libraryCommands.map(\.symbolName))
+        #expect(suggestionList.items.map(\.title) == libraryCommands.map(\.title))
+        #expect(suggestionList.items.allSatisfy { $0.symbolName == nil })
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
@@ -8891,12 +8892,9 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func slashCommandsShareValidDistinctIconsAndStableMatching() throws {
+    func slashCommandsShareStableIdentifiersAndMatching() {
         let identifiers = SlashCommand.allCases.map(\.identifier)
         #expect(Set(identifiers).count == identifiers.count)
-        for command in SlashCommand.allCases {
-            #expect(NSImage(systemSymbolName: command.symbolName, accessibilityDescription: nil) != nil)
-        }
 
         #expect(SlashCommand.matching("h", includesAI: false).map(\.identifier) == [
             "heading1", "heading2", "heading3"
@@ -8913,7 +8911,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func floatingSlashSuggestionsUseSharedIconsAndKeepAnEmptyStateVisible() async throws {
+    func floatingSlashSuggestionsStayTextOnlyAndKeepAnEmptyStateVisible() async throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
         let controller = harness.controller
@@ -8930,7 +8928,8 @@ struct MarkdownRichEditorTests {
             controller.suggestionController.view.subviews.compactMap { $0 as? NSScrollView }.first
         )
         let listView = try #require(scrollView.documentView as? SuggestionListView)
-        #expect(listView.items.map(\.symbolName) == SlashCommand.allCases.map(\.symbolName))
+        #expect(listView.items.map(\.title) == SlashCommand.allCases.map(\.title))
+        #expect(listView.items.allSatisfy { $0.symbolName == nil })
         #expect(recorder.beginCalls.last?.hasMarkedText == false)
         #expect(recorder.beginCalls.last?.editorIsFirstResponder == true)
 
@@ -8946,7 +8945,7 @@ struct MarkdownRichEditorTests {
         #expect(commands.isEmpty)
         #expect(!controller.suggestionController.view.isHidden)
         #expect(listView.items == [
-            SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: "magnifyingglass")
+            SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)
         ])
     }
 

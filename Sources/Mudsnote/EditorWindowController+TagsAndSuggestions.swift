@@ -102,8 +102,8 @@ extension EditorWindowController {
             items = tags.map { SuggestionItem(title: "#\($0)", subtitle: nil, symbolName: nil) }
         case .slash(_, _, let commands):
             items = commands.isEmpty
-                ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: "magnifyingglass")]
-                : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName) }
+                ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
+                : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
         }
 
         guard !items.isEmpty else {
