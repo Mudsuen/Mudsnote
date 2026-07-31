@@ -3,6 +3,35 @@ import SwiftUI
 import UniformTypeIdentifiers
 import VisionKit
 
+struct QuickCaptureLaunchPlan: Equatable {
+    var focusesEditor: Bool
+    var presentsPhotoPicker: Bool
+    var startsAudioRecording: Bool
+
+    static func make(for route: CaptureRoute) -> QuickCaptureLaunchPlan {
+        switch route {
+        case .text:
+            QuickCaptureLaunchPlan(
+                focusesEditor: true,
+                presentsPhotoPicker: false,
+                startsAudioRecording: false
+            )
+        case .image:
+            QuickCaptureLaunchPlan(
+                focusesEditor: false,
+                presentsPhotoPicker: true,
+                startsAudioRecording: false
+            )
+        case .audio:
+            QuickCaptureLaunchPlan(
+                focusesEditor: false,
+                presentsPhotoPicker: false,
+                startsAudioRecording: true
+            )
+        }
+    }
+}
+
 struct CaptureConsoleView: View {
     @EnvironmentObject private var appModel: AppModel
     @FocusState private var isBodyFocused: Bool
@@ -218,7 +247,11 @@ struct CaptureConsoleView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(MudsnoteColors.card, in: Capsule())
+        .background(Color.clear, in: Capsule())
+        .overlay {
+            Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("capture-audio-status")
     }
 
@@ -283,7 +316,12 @@ struct CaptureConsoleView: View {
             } label: {
                 Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
             }
-            .buttonStyle(CompactCaptureButtonStyle(isActive: appModel.audioRecorder.isRecording || selectedRoute == .audio))
+            .buttonStyle(
+                CompactCaptureButtonStyle(
+                    isActive: appModel.audioRecorder.isRecording,
+                    fillsActiveBackground: false
+                )
+            )
             .disabled(
                 appModel.isSendingDraft
                     || appModel.isPreparingAttachment
@@ -293,6 +331,7 @@ struct CaptureConsoleView: View {
             .accessibilityLabel(
                 Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
             )
+            .accessibilityValue(Text(verbatim: audioAccessibilityValue))
             .accessibilityIdentifier("capture-record-audio")
 
             Button("#") { appendToken(" #tag") }
@@ -511,18 +550,35 @@ struct CaptureConsoleView: View {
         }
     }
 
+    private var audioAccessibilityValue: String {
+        switch appModel.audioCapturePhase {
+        case .idle:
+            String(localized: "Not recording")
+        case .requestingPermission:
+            String(localized: "Preparing microphone…")
+        case .recording:
+            String(localized: "Recording")
+        case .stopping:
+            String(localized: "Saving audio…")
+        case .transcribing:
+            String(localized: "Audio saved · Transcribing…")
+        case .failed(let message):
+            message
+        }
+    }
+
     private func activateInitialRoute(_ route: CaptureRoute) {
-        switch route {
-        case .text:
-            isBodyFocused = true
-        case .image:
-            isBodyFocused = false
+        let plan = QuickCaptureLaunchPlan.make(for: route)
+        isBodyFocused = plan.focusesEditor
+
+        if plan.presentsPhotoPicker {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                guard selectedRoute == .image else { return }
+                guard selectedRoute == route else { return }
                 isPhotoPickerPresented = true
             }
-        case .audio:
-            isBodyFocused = false
+        }
+
+        if plan.startsAudioRecording {
             guard !didStartInitialAudioRoute else { return }
             didStartInitialAudioRoute = true
             appModel.startAudioRecording()

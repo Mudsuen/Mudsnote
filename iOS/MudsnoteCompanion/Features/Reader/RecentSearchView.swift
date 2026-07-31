@@ -72,10 +72,15 @@ struct DirectoryDrawerMotion {
     struct Presentation: Equatable {
         var reveal: CGFloat
         var progress: CGFloat
+        var contentOffset: CGFloat
         var drawerOffset: CGFloat
         var cornerRadius: CGFloat
         var scrimOpacity: CGFloat
         var shadowOpacity: CGFloat
+    }
+
+    enum HapticTiming: Equatable {
+        case afterAnimation
     }
 
     static func settlingAnimation(reduceMotion: Bool) -> Animation {
@@ -83,9 +88,9 @@ struct DirectoryDrawerMotion {
             return .easeOut(duration: 0.16)
         }
         return .interactiveSpring(
-            response: 0.31,
-            dampingFraction: 0.9,
-            blendDuration: 0.08
+            response: 0.34,
+            dampingFraction: 0.88,
+            blendDuration: 0.1
         )
     }
 
@@ -113,9 +118,10 @@ struct DirectoryDrawerMotion {
         return Presentation(
             reveal: reveal,
             progress: progress,
-            drawerOffset: reveal - width,
-            cornerRadius: 0,
-            scrimOpacity: 0.22 * progress,
+            contentOffset: reveal,
+            drawerOffset: -width * 0.08 * (1 - progress),
+            cornerRadius: 28 * progress,
+            scrimOpacity: 0.06 * progress,
             shadowOpacity: 0.18 * progress
         )
     }
@@ -129,13 +135,7 @@ struct DirectoryDrawerMotion {
         guard max(horizontal, vertical) >= activationDistance else {
             return .undecided
         }
-        if horizontal >= vertical * 1.25 {
-            return .horizontal
-        }
-        if vertical >= horizontal * 1.15 {
-            return .vertical
-        }
-        return .undecided
+        return horizontal >= vertical ? .horizontal : .vertical
     }
 
     static func shouldOpen(
@@ -162,10 +162,22 @@ struct DirectoryDrawerMotion {
         }
         return currentReveal >= width * 0.5
     }
+
+    static func hapticTiming(wasOpen: Bool, willOpen: Bool) -> HapticTiming? {
+        wasOpen == willOpen ? nil : .afterAnimation
+    }
+
+    static func shouldEmitCompletionHaptic(
+        scheduledGeneration: Int,
+        currentGeneration: Int,
+        timing: HapticTiming?
+    ) -> Bool {
+        timing == .afterAnimation && scheduledGeneration == currentGeneration
+    }
 }
 
 private final class DirectoryHapticFeedback {
-    private let generator = UISelectionFeedbackGenerator()
+    private let generator = UIImpactFeedbackGenerator(style: .light)
     private var isPrepared = false
 
     func prepare() {
@@ -175,7 +187,7 @@ private final class DirectoryHapticFeedback {
     }
 
     func impact() {
-        generator.selectionChanged()
+        generator.impactOccurred()
         isPrepared = false
     }
 
@@ -227,6 +239,7 @@ struct LibraryHomeView: View {
     @State private var directoryDragOffset: CGFloat = 0
     @State private var directoryDragAxis = DirectoryDrawerMotion.DragAxis.undecided
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
+    @State private var directorySettlementGeneration = 0
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
@@ -449,7 +462,7 @@ struct LibraryHomeView: View {
                         },
                         newNote: {
                             isSearchFocused = false
-                            appModel.createNote()
+                            appModel.showCapture(.text)
                         }
                     )
                 }
@@ -618,46 +631,57 @@ struct LibraryHomeView: View {
         let presentation = directoryPresentation(width: width)
         let alignment: Alignment = layoutDirection == .leftToRight ? .leading : .trailing
         let physicalDirection: CGFloat = layoutDirection == .leftToRight ? 1 : -1
-        return homeContent
-            .background(NotesCloneColors.background)
-            .allowsHitTesting(presentation.reveal <= 0)
-            .overlay {
-                Button(action: closeDirectory) {
-                    Color.black
-                        .opacity(presentation.scrimOpacity)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                }
+        return ZStack(alignment: alignment) {
+            directoryPanel(width: width)
+                .offset(x: presentation.drawerOffset * physicalDirection)
+                .highPriorityGesture(directoryDragGesture(width: width))
+                .allowsHitTesting(presentation.reveal > 0)
+                .accessibilityHidden(presentation.reveal <= 0)
+
+            homeContent
+                .background(NotesCloneColors.background)
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: presentation.cornerRadius,
+                        style: .continuous
+                    )
+                )
+                .shadow(
+                    color: .black.opacity(presentation.shadowOpacity),
+                    radius: 14,
+                    x: -4 * physicalDirection
+                )
+                .offset(x: presentation.contentOffset * physicalDirection)
+                .allowsHitTesting(presentation.reveal <= 0)
+
+            Button(action: closeDirectory) {
+                Color.black
+                    .opacity(presentation.scrimOpacity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
                 .buttonStyle(.plain)
+                .offset(x: presentation.contentOffset * physicalDirection)
                 .gesture(directoryDragGesture(width: width))
                 .allowsHitTesting(presentation.reveal > 0)
                 .accessibilityLabel("Close Folders")
                 .accessibilityIdentifier("directory-backdrop")
                 .accessibilityHidden(presentation.reveal <= 0)
+
+            if !isDirectoryPresented {
+                Color.clear
+                    .frame(width: 32)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        directoryDragGesture(width: width, minimumDistance: 4)
+                    )
+                    .accessibilityElement()
+                    .accessibilityLabel("Swipe right for folders")
+                    .accessibilityIdentifier("directory-swipe-edge")
             }
-            .overlay(alignment: alignment) {
-                directoryPanel(width: width)
-                    .offset(x: presentation.drawerOffset * physicalDirection)
-                    .opacity(presentation.progress > 0 ? 1 : 0)
-                    .highPriorityGesture(directoryDragGesture(width: width))
-                    .allowsHitTesting(presentation.reveal > 0)
-                    .accessibilityHidden(presentation.reveal <= 0)
-            }
-            .overlay(alignment: alignment) {
-                if !isDirectoryPresented {
-                    Color.clear
-                        .frame(width: 32)
-                        .frame(maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(
-                            directoryDragGesture(width: width, minimumDistance: 4)
-                        )
-                        .accessibilityElement()
-                        .accessibilityLabel("Swipe right for folders")
-                        .accessibilityIdentifier("directory-swipe-edge")
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
     private var navigationTitle: String {
@@ -765,6 +789,8 @@ struct LibraryHomeView: View {
                     guard resolvedAxis != .undecided else { return }
                     directoryDragAxis = resolvedAxis
                     if resolvedAxis == .horizontal {
+                        directorySettlementGeneration += 1
+                        directoryHapticFeedback.cancel()
                         directoryHapticFeedback.prepare()
                     }
                 }
@@ -818,16 +844,34 @@ struct LibraryHomeView: View {
             isManagingFolders = false
         }
 
-        if emitsHaptic {
+        directorySettlementGeneration += 1
+        let settlementGeneration = directorySettlementGeneration
+        let hapticTiming = emitsHaptic
+            ? DirectoryDrawerMotion.hapticTiming(
+                wasOpen: isDirectoryPresented,
+                willOpen: open
+            )
+            : nil
+
+        if hapticTiming != nil {
             directoryHapticFeedback.prepare()
-            directoryHapticFeedback.impact()
         } else {
             directoryHapticFeedback.cancel()
         }
 
-        withAnimation(DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion)) {
+        withAnimation(
+            DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion),
+            completionCriteria: .removed
+        ) {
             isDirectoryPresented = open
             directoryDragOffset = 0
+        } completion: {
+            guard DirectoryDrawerMotion.shouldEmitCompletionHaptic(
+                scheduledGeneration: settlementGeneration,
+                currentGeneration: directorySettlementGeneration,
+                timing: hapticTiming
+            ) else { return }
+            directoryHapticFeedback.impact()
         }
     }
 
@@ -836,6 +880,7 @@ struct LibraryHomeView: View {
     }
 
     private func resetDirectoryState() {
+        directorySettlementGeneration += 1
         isDirectoryPresented = false
         directoryDragOffset = 0
         directoryDragAxis = .undecided
@@ -2089,7 +2134,7 @@ struct FolderNotesListView: View {
                 },
                 newNote: {
                     isSearchFocused = false
-                    appModel.createNote(inFolder: scope.newNoteFolder)
+                    appModel.showCapture(.text)
                 }
             )
         }
@@ -2547,7 +2592,7 @@ struct LibraryFolderView: View {
                 },
                 newNote: {
                     isSearchFocused = false
-                    appModel.createNote(inFolder: currentFolder.relativePath)
+                    appModel.showCapture(.text)
                 }
             )
         }
@@ -4289,7 +4334,7 @@ struct NotesBottomCommandBar: ToolbarContent {
                         .background(MudsnoteColors.captureAccent, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("New note")
+                .accessibilityLabel("Quick note")
                 .accessibilityIdentifier("new-note-button")
             }
         } else {
@@ -4315,7 +4360,7 @@ struct NotesBottomCommandBar: ToolbarContent {
                         .background(MudsnoteColors.captureAccent, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("New note")
+                .accessibilityLabel("Quick note")
                 .accessibilityIdentifier("new-note-button")
             }
         }
@@ -4330,13 +4375,14 @@ private struct NotesVoiceInputButton: View {
             Image(systemName: "waveform")
                 .font(.system(size: 18, weight: .semibold))
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(Color.black)
+                .foregroundStyle(MudsnoteColors.text)
                 .frame(width: 46, height: 46)
-                .background(MudsnoteColors.primary, in: Circle())
+                .background(Color.clear, in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Voice input")
-        .accessibilityHint("Starts an audio quick note")
+        .accessibilityLabel("Quick recording")
+        .accessibilityHint("Opens quick capture and starts recording")
         .accessibilityIdentifier("voice-input-button")
     }
 }

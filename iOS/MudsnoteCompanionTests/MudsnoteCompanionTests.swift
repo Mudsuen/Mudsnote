@@ -13,10 +13,34 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertEqual(presentation.reveal, 160)
         XCTAssertEqual(presentation.progress, 0.5)
-        XCTAssertEqual(presentation.drawerOffset, -160, accuracy: 0.001)
-        XCTAssertEqual(presentation.cornerRadius, 0)
-        XCTAssertEqual(presentation.scrimOpacity, 0.11, accuracy: 0.001)
+        XCTAssertEqual(presentation.contentOffset, 160, accuracy: 0.001)
+        XCTAssertEqual(presentation.drawerOffset, -12.8, accuracy: 0.001)
+        XCTAssertEqual(presentation.cornerRadius, 14, accuracy: 0.001)
+        XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
         XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
+    }
+
+    func testDirectoryDrawerMotionUsesSymmetricOpenAndClosePresentations() {
+        let opening = DirectoryDrawerMotion.presentation(
+            isOpen: false,
+            translation: 160,
+            width: 320
+        )
+        let closing = DirectoryDrawerMotion.presentation(
+            isOpen: true,
+            translation: -160,
+            width: 320
+        )
+
+        XCTAssertEqual(opening, closing)
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: false, translation: -80, width: 320),
+            0
+        )
+        XCTAssertEqual(
+            DirectoryDrawerMotion.reveal(isOpen: true, translation: 80, width: 320),
+            320
+        )
     }
 
     func testDirectoryDrawerMotionSeparatesHorizontalIntentFromVerticalScrolling() {
@@ -26,7 +50,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(
             DirectoryDrawerMotion.dragAxis(for: CGSize(width: 7, height: 6.5)),
-            .undecided
+            .horizontal
         )
         XCTAssertEqual(
             DirectoryDrawerMotion.dragAxis(for: CGSize(width: 9, height: 6)),
@@ -63,6 +87,73 @@ final class MudsnoteCompanionTests: XCTestCase {
                 width: 320
             )
         )
+    }
+
+    func testDirectoryDrawerHapticWaitsForCurrentSettlementCompletion() {
+        XCTAssertEqual(
+            DirectoryDrawerMotion.hapticTiming(wasOpen: false, willOpen: true),
+            .afterAnimation
+        )
+        XCTAssertNil(DirectoryDrawerMotion.hapticTiming(wasOpen: true, willOpen: true))
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldEmitCompletionHaptic(
+                scheduledGeneration: 4,
+                currentGeneration: 4,
+                timing: .afterAnimation
+            )
+        )
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldEmitCompletionHaptic(
+                scheduledGeneration: 4,
+                currentGeneration: 5,
+                timing: .afterAnimation
+            )
+        )
+    }
+
+    func testQuickCaptureLaunchPlanSharesComposerWhilePreservingEntryBehavior() {
+        XCTAssertEqual(
+            QuickCaptureLaunchPlan.make(for: .text),
+            QuickCaptureLaunchPlan(
+                focusesEditor: true,
+                presentsPhotoPicker: false,
+                startsAudioRecording: false
+            )
+        )
+        XCTAssertEqual(
+            QuickCaptureLaunchPlan.make(for: .audio),
+            QuickCaptureLaunchPlan(
+                focusesEditor: false,
+                presentsPhotoPicker: false,
+                startsAudioRecording: true
+            )
+        )
+        XCTAssertTrue(QuickCaptureLaunchPlan.make(for: .image).presentsPhotoPicker)
+    }
+
+    func testNoteMetadataUsesDocumentTimestampAndInjectedFallback() {
+        let locale = Locale(identifier: "en_US")
+        let timeZone = TimeZone(secondsFromGMT: 0)!
+        let documentDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let fallbackDate = Date(timeIntervalSince1970: 1_600_000_000)
+
+        let documentText = NoteMetadataPresentation.documentText(
+            modifiedAt: documentDate,
+            fallbackDate: fallbackDate,
+            locale: locale,
+            timeZone: timeZone
+        )
+        let fallbackText = NoteMetadataPresentation.documentText(
+            modifiedAt: nil,
+            fallbackDate: fallbackDate,
+            locale: locale,
+            timeZone: timeZone
+        )
+
+        XCTAssertTrue(documentText.contains("Nov 14, 2023"))
+        XCTAssertTrue(documentText.contains("10:13"))
+        XCTAssertTrue(fallbackText.contains("Sep 13, 2020"))
+        XCTAssertNotEqual(documentText, fallbackText)
     }
 
     func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {

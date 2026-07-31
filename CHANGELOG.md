@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 249. Unified iOS quick capture and reversible folder gestures
+- Problem: Quick Note had regressed to a second editor while Quick Recording used the capture composer, the latest drawer changes weakened diagonal swipe recognition and made closing look like an overlay fade, and recording controls retained opaque emphasis without complete state feedback.
+- Fix: Both bottom-bar entries now open the same capture composer and record button; Quick Recording alone auto-starts audio. The verified document date-and-time presentation remains tied to the file timestamp and scrolls with the body. Folder gestures once again move the home surface in opposite finger-tracked directions, settle with the validated spring, and emit a light haptic only after a current completed transition. Voice emphasis and audio status surfaces are transparent, with 44-point entry targets and explicit recording or permission-failure accessibility values.
+- Lesson: Entry points may select different initial state without owning different UI, and gesture feedback must be derived from the rendered transition rather than pre-empting it.
+
 ### 248. Direct iOS voice capture and responsive library shell
 - Problem: Quick Capture had no direct voice entry, recording and transcription could outlive a dismissed sheet, the folder drawer displaced the note timeline, and cold folder preparation plus duplicate scene refreshes delayed interaction.
 - Fix: The Notes-style bottom bar now keeps Search, Voice, and New Note as separate actions; voice entry opens an explicit recording state machine that preserves audio before optional transcription and invalidates stale sessions. The folder directory is now an overlay drawer with deliberate axis locking, immediate commit haptics, RTL and Reduce Motion behavior, while folder preparation runs on the file-store actor and scene refreshes coalesce behind the initial index.

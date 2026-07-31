@@ -70,14 +70,19 @@ struct IconCircleButtonStyle: ButtonStyle {
 
 struct CompactCaptureButtonStyle: ButtonStyle {
     var isActive = false
+    var fillsActiveBackground = true
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(isActive ? Color.black : MudsnoteColors.text)
+            .foregroundStyle(
+                isActive
+                    ? (fillsActiveBackground ? Color.black : Color.red)
+                    : MudsnoteColors.text
+            )
             .frame(width: 36, height: 40)
             .background(
-                isActive ? MudsnoteColors.primary : Color.clear,
+                isActive && fillsActiveBackground ? MudsnoteColors.primary : Color.clear,
                 in: Capsule()
             )
             .contentShape(Rectangle())

@@ -7,6 +7,22 @@ import UIKit
 import UniformTypeIdentifiers
 import VisionKit
 
+enum NoteMetadataPresentation {
+    static func documentText(
+        modifiedAt: Date?,
+        fallbackDate: Date = Date(),
+        locale: Locale = .autoupdatingCurrent,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: modifiedAt ?? fallbackDate)
+    }
+}
+
 struct MarkdownPreviewView: View {
     private enum Source {
         case memo(MemoBlock)
@@ -1206,7 +1222,7 @@ struct MarkdownPreviewView: View {
         switch source {
         case .memo(let memo): memo.dateText
         case .document(let document):
-            (document.modifiedAt ?? Date()).formatted(date: .abbreviated, time: .shortened)
+            NoteMetadataPresentation.documentText(modifiedAt: document.modifiedAt)
         }
     }
 

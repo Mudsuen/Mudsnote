@@ -722,43 +722,65 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
-    func testNewNoteCreatesDocumentInCurrentFolder() {
+    func testNewNoteUsesUnifiedCaptureComposerWithoutStartingAudio() {
         let app = launchApp(reset: true, fixtureFolder: true)
-        let projects = app.buttons["folder-row-Projects"]
-        XCTAssertTrue(projects.waitForExistence(timeout: 8))
-        projects.tap()
         let newNoteButton = app.buttons["new-note-button"]
-        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
         newNoteButton.tap()
 
-        let editor = app.textViews["markdown-editor"]
+        let editor = app.textViews["capture-body-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["capture-target-menu"].exists)
+        let record = app.buttons["capture-record-audio"]
+        XCTAssertTrue(record.exists)
+        XCTAssertEqual(record.value as? String, "Not recording")
+        XCTAssertTrue(app.buttons["capture-target-menu"].exists)
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+        let composerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        composerScreenshot.name = "Unified quick note composer with transparent audio control"
+        composerScreenshot.lifetime = .keepAlways
+        add(composerScreenshot)
         editor.tap()
-        editor.typeText("Folder note")
-        let saveStatus = app.staticTexts["markdown-save-status"]
-        XCTAssertTrue(saveStatus.waitForExistence(timeout: 3))
-        XCTAssertEqual(
-            XCTWaiter.wait(
-                for: [XCTNSPredicateExpectation(
-                    predicate: NSPredicate(format: "label == %@", "Saved"),
-                    object: saveStatus
-                )],
-                timeout: 5
-            ),
-            .completed
-        )
-        XCTAssertTrue(editor.exists, "The first autosave must not recreate the note sheet")
-        editor.typeText(" location")
-        app.buttons["save-markdown-button"].tap()
-        XCTAssertFalse(app.alerts["Couldn’t Save Note"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].waitForExistence(timeout: 5))
-        app.swipeDown(velocity: .fast)
-        app.swipeDown(velocity: .fast)
+        editor.typeText("Unified capture note")
+        app.buttons["save-memo-button"].tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(editor.exists)
+    }
+
+    func testQuickRecordingUsesUnifiedComposerAndReportsMicrophoneDenial() {
+        addUIInterruptionMonitor(withDescription: "Microphone permission") { alert in
+            for label in ["Don’t Allow", "Don't Allow"] {
+                let button = alert.buttons[label]
+                if button.exists {
+                    button.tap()
+                    return true
+                }
+            }
+            return false
+        }
+
+        let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
+        let voice = app.buttons["voice-input-button"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 8))
+        voice.tap()
+        app.tap()
+
+        let editor = app.textViews["capture-body-editor"]
+        let record = app.buttons["capture-record-audio"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(record.exists)
         XCTAssertTrue(
-            app.buttons["markdown-file-row-Projects/Folder note location.md"]
-                .waitForExistence(timeout: 5)
+            waitForValue(
+                of: record,
+                containing: "Microphone access is required to record audio."
+            )
         )
+        XCTAssertTrue(app.buttons["capture-target-menu"].exists)
+        XCTAssertFalse(app.textViews["markdown-editor"].exists)
+        let denialScreenshot = XCTAttachment(screenshot: app.screenshot())
+        denialScreenshot.name = "Unified quick recording microphone denial"
+        denialScreenshot.lifetime = .keepAlways
+        add(denialScreenshot)
     }
 
     func testEmptyUnifiedCaptureClosesWithoutCreatingNote() {
@@ -1206,6 +1228,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let metadata = app.staticTexts["note-modified-date"]
         XCTAssertTrue(metadata.waitForExistence(timeout: 3))
         let initialMetadataY = metadata.frame.midY
+        let metadataScreenshot = XCTAttachment(screenshot: app.screenshot())
+        metadataScreenshot.name = "Reader document date and time scrolls with body"
+        metadataScreenshot.lifetime = .keepAlways
+        add(metadataScreenshot)
         rendered.swipeUp()
         XCTAssertTrue(background.exists, "Swiping note content must not resize the sheet")
         XCTAssertTrue(
@@ -2052,6 +2078,59 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 
+    func testDirectoryDrawerRespondsToOppositeFingerTrackedGestures() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
+        let appWindow = app.windows.firstMatch
+        XCTAssertTrue(appWindow.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Notes"].exists)
+
+        let openSwipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.01, dy: 0.45)
+        )
+        let openSwipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+        )
+        openSwipeStart.press(
+            forDuration: 0.15,
+            thenDragTo: openSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
+
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        XCTAssertTrue(projects.isHittable)
+        XCTAssertTrue(app.navigationBars["Folders"].exists)
+        let openScreenshot = XCTAttachment(screenshot: app.screenshot())
+        openScreenshot.name = "Finger-tracked directory drawer open"
+        openScreenshot.lifetime = .keepAlways
+        add(openScreenshot)
+
+        let closeSwipeStart = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+        )
+        let closeSwipeEnd = appWindow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
+        )
+        closeSwipeStart.press(
+            forDuration: 0.15,
+            thenDragTo: closeSwipeEnd,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.1
+        )
+
+        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5))
+        XCTAssertFalse(projects.isHittable)
+        let closedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        closedScreenshot.name = "Reverse directory gesture returns home"
+        closedScreenshot.lifetime = .keepAlways
+        add(closedScreenshot)
+    }
+
     func testNoteListKeepsCaptureBarAndScopesFullTextSearch() {
         let app = launchApp(reset: true, fixtureFolder: true)
         XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
@@ -2189,7 +2268,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForValue(of: editor, containing: "Scanned into Markdown"))
     }
 
-    func testBottomBarKeepsVoiceAndComposeAsSeparateActions() {
+    func testBottomBarKeepsQuickRecordingAndQuickNoteAccessible() {
         let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
         let voice = app.buttons["voice-input-button"]
         let compose = app.buttons["new-note-button"]
@@ -2197,6 +2276,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(compose.waitForExistence(timeout: 8))
         XCTAssertEqual(voice.frame.midY, compose.frame.midY, accuracy: 2)
         XCTAssertLessThan(voice.frame.minX, compose.frame.minX)
+        XCTAssertGreaterThanOrEqual(voice.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(voice.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(compose.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(compose.frame.height, 44)
+        XCTAssertEqual(voice.label, "Quick recording")
+        XCTAssertEqual(compose.label, "Quick note")
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Chat-style search, voice, and compose bar"
