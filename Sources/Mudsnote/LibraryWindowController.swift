@@ -1411,8 +1411,9 @@ final class LibraryWindowController: NSWindowController,
     private var inlineFolderEditHasReceivedFocus = false
     private var linkEditorSheetController: LinkEditorSheetController?
     private let editorSuggestionController = SuggestionPopoverController()
-    private var editorSlashSuggestion: (replacementRange: NSRange, commands: [EditorWindowController.SlashCommand])?
+    private var editorSlashSuggestion: (replacementRange: NSRange, commands: [SlashCommand])?
     private var editorSlashSuggestionLastInput: (caret: Int, prefixStart: Int, prefix: String)?
+    var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
     private(set) var editorSlashSuggestionInspectionLengthForLibrary = 0
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
@@ -11458,6 +11459,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateEditorSlashSuggestions() {
+        if editorTextView.hasMarkedText() {
+            return
+        }
         guard !isEditorShowingMarkdownSource,
               selectedScope != .trash,
               editorTextView.selectedRange().length == 0,
@@ -11507,18 +11511,7 @@ final class LibraryWindowController: NSWindowController,
         }
         let token = String(matchedText[slashIndex...])
         let query = String(token.dropFirst()).lowercased()
-        let commands = EditorWindowController.SlashCommand.allCases.filter { command in
-            command.aiActionID == nil && (
-                query.isEmpty
-                    || command.title.lowercased().contains(query)
-                    || command.subtitle.lowercased().contains(query)
-                    || command.searchAliases.contains { $0.lowercased().contains(query) }
-            )
-        }
-        guard !commands.isEmpty else {
-            dismissEditorSlashSuggestions()
-            return
-        }
+        let commands = SlashCommand.matching(query, includesAI: false)
         hostEditorSuggestionView(in: host)
         let matchRange = NSRange(match, in: prefix)
         let tokenOffset = matchedText[..<slashIndex].utf16.count
@@ -11527,9 +11520,10 @@ final class LibraryWindowController: NSWindowController,
             length: token.utf16.count
         )
         editorSlashSuggestion = (replacementRange, commands)
-        editorSuggestionController.updateItems(commands.map {
-            SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName)
-        })
+        let items = commands.isEmpty
+            ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: "magnifyingglass")]
+            : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName) }
+        editorSuggestionController.updateItems(items)
         let size = editorSuggestionController.preferredContentSize
         let tokenRect = editorTextView.convert(
             caretRectInWindow(for: editorTextView, at: replacementRange.location),
@@ -11540,11 +11534,16 @@ final class LibraryWindowController: NSWindowController,
         origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
         editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
         editorSuggestionController.view.isHidden = false
+        slashCommandInputSourceSession.beginIfAllowed(
+            hasMarkedText: editorTextView.hasMarkedText(),
+            editorIsFirstResponder: window?.firstResponder === editorTextView
+        )
     }
 
     private func dismissEditorSlashSuggestions() {
         editorSlashSuggestion = nil
         editorSuggestionController.view.isHidden = true
+        slashCommandInputSourceSession.end()
     }
 
     private func acceptEditorSlashSuggestion(at index: Int) {

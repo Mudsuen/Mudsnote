@@ -24,6 +24,32 @@ private actor LibraryFileSystemChangeRecorder {
     }
 }
 
+@MainActor
+private final class SlashCommandInputSourceSessionRecorder: SlashCommandInputSourceSessioning {
+    private(set) var beginCalls: [(hasMarkedText: Bool, editorIsFirstResponder: Bool)] = []
+    private(set) var endCallCount = 0
+    private(set) var isActive = false
+
+    @discardableResult
+    func beginIfAllowed(hasMarkedText: Bool, editorIsFirstResponder: Bool) -> Bool {
+        beginCalls.append((hasMarkedText, editorIsFirstResponder))
+        guard !hasMarkedText, editorIsFirstResponder else { return false }
+        isActive = true
+        return true
+    }
+
+    func end() {
+        endCallCount += 1
+        isActive = false
+    }
+
+    func reset() {
+        beginCalls = []
+        endCallCount = 0
+        isActive = false
+    }
+}
+
 private final class DelayedFileModificationDateProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var readCount = 0
@@ -851,6 +877,11 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         let titles = controller.editorSlashSuggestionTitlesForLibrary
         #expect(!suggestionView.isHidden)
+        let suggestionList = try #require(
+            suggestionView.allSubviews.compactMap { $0 as? SuggestionListView }.first
+        )
+        let libraryCommands = SlashCommand.matching("", includesAI: false)
+        #expect(suggestionList.items.map(\.symbolName) == libraryCommands.map(\.symbolName))
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
@@ -8856,6 +8887,123 @@ struct MarkdownRichEditorTests {
         #expect(listView.frame.width == controller.contentWidth)
         #expect(controller.preferredContentSize.width == controller.contentWidth)
         #expect(!scrollView.hasVerticalScroller)
+    }
+
+    @MainActor
+    @Test
+    func slashCommandsShareValidDistinctIconsAndStableMatching() throws {
+        let identifiers = SlashCommand.allCases.map(\.identifier)
+        #expect(Set(identifiers).count == identifiers.count)
+        for command in SlashCommand.allCases {
+            #expect(NSImage(systemSymbolName: command.symbolName, accessibilityDescription: nil) != nil)
+        }
+
+        #expect(SlashCommand.matching("h", includesAI: false).map(\.identifier) == [
+            "heading1", "heading2", "heading3"
+        ])
+        #expect(SlashCommand.matching("H", includesAI: false).map(\.identifier) == [
+            "heading1", "heading2", "heading3"
+        ])
+        #expect(SlashCommand.matching("t", includesAI: false).map(\.identifier) == ["checklist"])
+        #expect(SlashCommand.matching("编号", includesAI: false).map(\.identifier) == ["orderedList"])
+        #expect(SlashCommand.matching("sum", includesAI: true).map(\.identifier) == ["aiSummarize"])
+        #expect(SlashCommand.matching("sum", includesAI: false).isEmpty)
+        #expect(SlashCommand.matching("not-a-command", includesAI: true).isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func floatingSlashSuggestionsUseSharedIconsAndKeepAnEmptyStateVisible() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let recorder = SlashCommandInputSourceSessionRecorder()
+        controller.slashCommandInputSourceSession = recorder
+        controller.window?.makeFirstResponder(controller.editorTextView)
+
+        controller.editorTextView.string = "/"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.updateInlineSuggestions()
+
+        let scrollView = try #require(
+            controller.suggestionController.view.subviews.compactMap { $0 as? NSScrollView }.first
+        )
+        let listView = try #require(scrollView.documentView as? SuggestionListView)
+        #expect(listView.items.map(\.symbolName) == SlashCommand.allCases.map(\.symbolName))
+        #expect(recorder.beginCalls.last?.hasMarkedText == false)
+        #expect(recorder.beginCalls.last?.editorIsFirstResponder == true)
+
+        controller.editorTextView.string = "/does-not-exist"
+        controller.editorTextView.setSelectedRange(NSRange(location: 15, length: 0))
+        controller.updateInlineSuggestions()
+
+        guard case .slash(_, _, let commands) = controller.inlineSuggestionContext else {
+            Issue.record("Expected a slash context with no command matches")
+            return
+        }
+        #expect(commands.isEmpty)
+        #expect(!controller.suggestionController.view.isHidden)
+        #expect(listView.items == [
+            SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: "magnifyingglass")
+        ])
+    }
+
+    @MainActor
+    @Test
+    func slashSuggestionCompositionAndCancelPreserveEditorState() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let recorder = SlashCommandInputSourceSessionRecorder()
+        controller.slashCommandInputSourceSession = recorder
+        controller.window?.makeFirstResponder(controller.editorTextView)
+
+        controller.editorTextView.string = "/"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.updateInlineSuggestions()
+        let beforeCancel = controller.editorTextView.attributedString()
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Escape)
+        ))
+        #expect(controller.handleShortcutEvent(escape))
+        #expect(controller.editorTextView.attributedString().isEqual(to: beforeCancel))
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+        #expect(recorder.endCallCount > 0)
+
+        recorder.reset()
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.editorTextView.setMarkedText(
+            "拼",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 1, length: 0)
+        )
+        let markedTextSnapshot = controller.editorTextView.attributedString()
+        #expect(controller.editorTextView.hasMarkedText())
+        controller.updateInlineSuggestions()
+        #expect(recorder.beginCalls.isEmpty)
+        #expect(controller.editorTextView.attributedString().isEqual(to: markedTextSnapshot))
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+        controller.editorTextView.unmarkText()
+    }
+
+    @MainActor
+    @Test
+    func systemSlashInputSourceSessionRefusesUnsafeSwitchBoundaries() {
+        let session = SlashCommandInputSourceSession()
+
+        #expect(!session.beginIfAllowed(hasMarkedText: true, editorIsFirstResponder: true))
+        #expect(!session.isActive)
+        #expect(!session.beginIfAllowed(hasMarkedText: false, editorIsFirstResponder: false))
+        #expect(!session.isActive)
     }
 
     @MainActor

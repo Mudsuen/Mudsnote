@@ -8,74 +8,6 @@ import MudsnoteCore
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate, WindowOpacityAdjusting, MarkdownTextViewCommands, NSTextViewDelegate {
 
-    enum SlashCommand: CaseIterable {
-        case heading1, heading2, heading3, checklist, bulletList, orderedList, divider
-        case aiSummarize, aiFix, aiTodos
-
-        var title: String {
-            switch self {
-            case .heading1: return "一级标题"
-            case .heading2: return "二级标题"
-            case .heading3: return "三级标题"
-            case .checklist: return "待办列表"
-            case .bulletList: return "项目符号列表"
-            case .orderedList: return "编号列表"
-            case .divider: return "分割线"
-            case .aiSummarize: return "AI 总结"
-            case .aiFix: return "AI 修正"
-            case .aiTodos: return "AI 提取待办"
-            }
-        }
-
-        var subtitle: String {
-            switch self {
-            case .heading1, .heading2, .heading3: return "将当前行改为标题"
-            case .checklist: return "开始一个待办项"
-            case .bulletList: return "开始一个项目符号项"
-            case .orderedList: return "开始一个编号项"
-            case .divider: return "插入分割线"
-            case .aiSummarize: return "总结选中内容或当前笔记"
-            case .aiFix: return "修正选中内容或当前段落"
-            case .aiTodos: return "提取 Markdown 待办项"
-            }
-        }
-
-        var searchAliases: [String] {
-            switch self {
-            case .heading1: return ["heading 1", "h1", "一级标题"]
-            case .heading2: return ["heading 2", "h2", "二级标题"]
-            case .heading3: return ["heading 3", "h3", "三级标题"]
-            case .checklist: return ["todo", "to-do", "checklist", "待办", "清单"]
-            case .bulletList: return ["bullet", "bulleted", "list", "项目符号"]
-            case .orderedList: return ["numbered", "ordered", "number", "编号"]
-            case .divider: return ["divider", "line", "分割线"]
-            case .aiSummarize: return ["summarize", "summary", "sum", "tldr", "总结", "摘要"]
-            case .aiFix: return ["fix", "proofread", "grammar", "ai fix", "修正", "润色"]
-            case .aiTodos: return ["todos", "actions", "tasks", "待办", "行动项"]
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .heading1, .heading2, .heading3: return "textformat.size"
-            case .checklist: return "checklist"
-            case .bulletList: return "list.bullet"
-            case .orderedList: return "list.number"
-            case .divider: return "minus"
-            case .aiSummarize, .aiFix, .aiTodos: return "sparkles"
-            }
-        }
-
-        var aiActionID: AIActionID? {
-            switch self {
-            case .aiSummarize: return .summarize
-            case .aiFix: return .fix
-            case .aiTodos: return .todos
-            default: return nil
-            }
-        }
-    }
-
     enum InlineSuggestionContext {
         case tags(query: String, replacementRange: NSRange, items: [String])
         case slash(query: String, replacementRange: NSRange, items: [SlashCommand])
@@ -227,6 +159,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var lastEditorSelectionForToolbarAction: NSRange?
     var activeToolbarActionSelection: NSRange?
     let suggestionController = SuggestionPopoverController()
+    var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
     var inlineSuggestionContext: InlineSuggestionContext?
     var knownTagsForSuggestions: [String]?
     var tagSuggestionTask: Task<Void, Never>?

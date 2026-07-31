@@ -22,6 +22,7 @@ extension EditorWindowController {
     func dismissInlineSuggestions() {
         inlineSuggestionContext = nil
         suggestionController.view.isHidden = true
+        slashCommandInputSourceSession.end()
     }
 
     // MARK: - Tag token matching
@@ -81,6 +82,9 @@ extension EditorWindowController {
 
     func updateInlineSuggestions() {
         guard editorTextView.window != nil else { return }
+        if editorTextView.hasMarkedText() {
+            return
+        }
         if currentTagToken() != nil, knownTagsForSuggestions == nil {
             scheduleKnownTagsSuggestionLoad()
             dismissInlineSuggestions()
@@ -97,7 +101,9 @@ extension EditorWindowController {
         case .tags(_, _, let tags):
             items = tags.map { SuggestionItem(title: "#\($0)", subtitle: nil, symbolName: nil) }
         case .slash(_, _, let commands):
-            items = commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
+            items = commands.isEmpty
+                ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: "magnifyingglass")]
+                : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName) }
         }
 
         guard !items.isEmpty else {
@@ -107,6 +113,14 @@ extension EditorWindowController {
 
         suggestionController.updateItems(items)
         positionSuggestionView(for: context)
+        if case .slash = context {
+            slashCommandInputSourceSession.beginIfAllowed(
+                hasMarkedText: editorTextView.hasMarkedText(),
+                editorIsFirstResponder: window?.firstResponder === editorTextView
+            )
+        } else {
+            slashCommandInputSourceSession.end()
+        }
     }
 
     func currentInlineSuggestionContext() -> InlineSuggestionContext? {
@@ -132,13 +146,8 @@ extension EditorWindowController {
                 location: paragraphRange.location + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound) + (token.hasPrefix(" ") ? 1 : 0),
                 length: token.trimmingCharacters(in: .whitespaces).utf16.count
             )
-            let commands = SlashCommand.allCases.filter {
-                query.isEmpty ||
-                    $0.title.lowercased().contains(query) ||
-                    $0.subtitle.lowercased().contains(query) ||
-                    $0.searchAliases.contains { $0.lowercased().contains(query) }
-            }
-            return commands.isEmpty ? nil : .slash(query: String(query), replacementRange: replacementRange, items: commands)
+            let commands = SlashCommand.matching(String(query), includesAI: true)
+            return .slash(query: String(query), replacementRange: replacementRange, items: commands)
         }
 
         return nil
