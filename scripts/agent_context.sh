@@ -195,9 +195,10 @@ load_topic() {
         scripts/verify_ios.sh
         scripts/package_app.sh
         scripts/device_smoke.sh
+        scripts/ios_signing_refresh.sh
       )
       DOCS=(docs/delivery-workflow.md AGENTS.md)
-      SEARCH_HINT='PLATFORM_SCOPE|pr|full|live|package|install'
+      SEARCH_HINT='PLATFORM_SCOPE|pr|full|live|package|install|sign|provision|LaunchAgent'
       ;;
     *)
       echo "ERROR: unknown context topic: $topic" >&2
