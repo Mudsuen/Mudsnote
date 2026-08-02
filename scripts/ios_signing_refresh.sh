@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Refresh Xcode-managed iOS development signing on a logged-in Mac. The
-# LaunchAgent installed by --install-agent runs this script from the user's
-# GUI session; it never stores an Apple credential in the repository.
+# Refresh Xcode-managed iOS development signing on a logged-in Mac. This is an
+# on-demand reinstall helper; it never stores an Apple credential in the
+# repository or creates a periodic background job.
 
 LABEL="com.mudsnote.ios-signing-refresh"
 PROJECT_RELATIVE_PATH="iOS/MudsnoteCompanion.xcodeproj"
@@ -27,7 +27,6 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   ./scripts/ios_signing_refresh.sh --run [--auto-install] [--auto-launch]
-  ./scripts/ios_signing_refresh.sh --install-agent
   ./scripts/ios_signing_refresh.sh --uninstall-agent
   ./scripts/ios_signing_refresh.sh --status
   ./scripts/ios_signing_refresh.sh --dry-run
@@ -37,6 +36,10 @@ Options:
   --auto-launch                  Launch Mudsnote after an automatic install.
   --allow-device-registration   Let Xcode register a connected device if needed.
   --dry-run                     Print resolved paths and actions without building or changing launchd.
+
+Legacy cleanup:
+  --uninstall-agent               Remove a previously installed periodic agent.
+  --status                        Report whether the legacy agent is still loaded.
 EOF
 }
 
@@ -119,7 +122,7 @@ print_configuration() {
   log "Project: $PROJECT"
   log "Scheme/configuration: $SCHEME / $CONFIGURATION"
   log "Derived data: $DERIVED_DATA_PATH"
-  log "LaunchAgent: $PLIST_PATH"
+  log "Mode: on-demand; no periodic LaunchAgent will be created."
   log "Automatic device registration: $ALLOW_DEVICE_REGISTRATION"
   log "Automatic install: $AUTO_INSTALL"
   log "Automatic launch: $AUTO_LAUNCH"
@@ -129,14 +132,14 @@ available_iphone_id() {
   local device_list
   device_list="$(xcrun devicectl list devices 2>&1 || true)"
   printf '%s\n' "$device_list" \
-    | awk 'NR > 2 && $5 ~ /^iPhone/ && ($4 == "connected" || $4 == "available") { print $3; exit }'
+    | awk 'NR > 2 && /iPhone/ && ($4 == "connected" || $4 == "available") { print $3; exit }'
 }
 
 iphone_state_summary() {
   local device_list
   device_list="$(xcrun devicectl list devices 2>&1 || true)"
   printf '%s\n' "$device_list" \
-    | awk 'NR > 2 && $5 ~ /^iPhone/ { print $1 " " $4 " " $3 " " $5; }'
+    | awk 'NR > 2 && /iPhone/ { print; }'
 }
 
 refresh_signing() {
@@ -232,47 +235,9 @@ run_refresh() {
   fi
 }
 
-write_agent_plist() {
-  local plist_dir temp_plist
-  plist_dir="$(dirname "$PLIST_PATH")"
-  mkdir -p "$plist_dir"
-  mkdir -p "$LOG_DIR"
-  temp_plist="$(mktemp "${TMPDIR:-/tmp}/mudsnote-ios-signing-refresh.plist.XXXXXX")"
-  trap 'rm -f "$temp_plist"' RETURN
-
-  plutil -create xml1 "$temp_plist"
-  plutil -insert Label -string "$LABEL" "$temp_plist"
-  plutil -insert ProgramArguments -xml '<array/>' "$temp_plist"
-  plutil -insert ProgramArguments.0 -string "$ROOT_DIR/scripts/ios_signing_refresh.sh" "$temp_plist"
-  plutil -insert ProgramArguments.1 -string '--run' "$temp_plist"
-  plutil -insert ProgramArguments.2 -string '--auto-install' "$temp_plist"
-  plutil -insert ProgramArguments.3 -string '--auto-launch' "$temp_plist"
-  plutil -insert StartInterval -integer 86400 "$temp_plist"
-  plutil -insert RunAtLoad -bool true "$temp_plist"
-  plutil -insert ThrottleInterval -integer 300 "$temp_plist"
-  plutil -insert WorkingDirectory -string "$ROOT_DIR" "$temp_plist"
-  plutil -insert StandardOutPath -string "$LOG_FILE" "$temp_plist"
-  plutil -insert StandardErrorPath -string "$LOG_FILE" "$temp_plist"
-  plutil -insert EnvironmentVariables -xml '<dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string></dict>' "$temp_plist"
-  plutil -lint "$temp_plist"
-  mv "$temp_plist" "$PLIST_PATH"
-  trap - RETURN
-}
-
 install_agent() {
-  if [[ "$(id -u)" == "0" ]]; then
-    log "Run --install-agent as the signed-in desktop user, not root."
-    exit 2
-  fi
-  if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
-    log "The current GUI launchd domain is unavailable; sign in to macOS and retry."
-    exit 2
-  fi
-  write_agent_plist
-  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
-  log "Installed and loaded $PLIST_PATH. It will refresh signing at login and every 24 hours."
-  log "The agent installs only when CoreDevice reports an available iPhone."
+  log "Periodic LaunchAgent installation is disabled. Run --run --auto-install when reinstalling the iPhone app."
+  exit 2
 }
 
 uninstall_agent() {
