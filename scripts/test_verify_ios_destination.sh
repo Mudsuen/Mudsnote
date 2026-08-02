@@ -10,15 +10,19 @@ destinations='Available destinations:
   { platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
   { platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }
   { platform:visionOS Simulator, id:VISION-DEVICE, name:Apple Vision Pro }
-  { platform:iOS Simulator, arch:arm64, id:REAL-IOS-SIMULATOR, OS:26.5, name:iPhone 17 Pro }
-  { platform:iOS Simulator, arch:arm64, id:SECOND-IOS-SIMULATOR, OS:26.5, name:iPad (A16) }'
+  { platform:iOS Simulator, arch:arm64, id:IPAD-SIMULATOR, OS:26.5, name:iPad (A16) }
+  { platform:iOS Simulator, arch:arm64, id:IPHONE-SIMULATOR, OS:26.5, name:iPhone 17 Pro }'
 
 actual="$(printf '%s\n' "$destinations" | simulator_id_from_destinations)"
-test "$actual" = "REAL-IOS-SIMULATOR"
+test "$actual" = "IPHONE-SIMULATOR"
 
 placeholder_only='{ platform:iOS Simulator, id:dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder, name:Any iOS Simulator Device }'
 actual="$(printf '%s\n' "$placeholder_only" | simulator_id_from_destinations)"
 test -z "$actual"
+
+ipad_only='{ platform:iOS Simulator, arch:arm64, id:IPAD-ONLY-SIMULATOR, OS:26.5, name:iPad (A16) }'
+actual="$(printf '%s\n' "$ipad_only" | simulator_id_from_destinations)"
+test "$actual" = "IPAD-ONLY-SIMULATOR"
 
 simctl_devices='{
   "devices": {
@@ -29,16 +33,32 @@ simctl_devices='{
       {"isAvailable": false, "udid": "UNAVAILABLE-IOS-SIMULATOR"}
     ],
     "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
-      {"isAvailable": true, "udid": "SIMCTL-IOS-SIMULATOR"},
-      {"isAvailable": true, "udid": "SECOND-SIMCTL-IOS-SIMULATOR"}
+      {"isAvailable": true, "name": "iPad (A16)", "udid": "IPAD-SIMCTL-SIMULATOR"},
+      {"isAvailable": true, "name": "iPhone 17 Pro", "udid": "IPHONE-SIMCTL-SIMULATOR"}
     ]
   }
 }'
 actual="$(printf '%s\n' "$simctl_devices" | simulator_id_from_simctl)"
-test "$actual" = "SIMCTL-IOS-SIMULATOR"
+test "$actual" = "IPHONE-SIMCTL-SIMULATOR"
 
 actual="$(printf '%s\n' '{}' | simulator_id_from_simctl)"
 test -z "$actual"
+
+ipad_only_simctl='{
+  "devices": {
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
+      {"isAvailable": true, "name": "iPad (A16)", "udid": "IPAD-ONLY-SIMCTL"}
+    ]
+  }
+}'
+actual="$(printf '%s\n' "$ipad_only_simctl" | simulator_id_from_simctl)"
+test "$actual" = "IPAD-ONLY-SIMCTL"
+
+actual="$(
+  IOS_SIMULATOR_DESTINATION='platform=iOS Simulator,id=EXPLICIT-SIMULATOR' \
+    simulator_destination
+)"
+test "$actual" = "platform=iOS Simulator,id=EXPLICIT-SIMULATOR"
 
 focused_ui_tests="$(
   printf '%s\n' \

@@ -18,8 +18,19 @@ simulator_id_from_destinations() {
       destination = $0
       sub(/^.*id:/, "", destination)
       sub(/[,}].*$/, "", destination)
-      print destination
-      exit
+      if ($0 ~ /name:iPhone/) {
+        print destination
+        found_iphone = 1
+        exit
+      }
+      if (fallback == "") {
+        fallback = destination
+      }
+    }
+    END {
+      if (!found_iphone && fallback != "") {
+        print fallback
+      }
     }
   '
 }
@@ -34,14 +45,21 @@ try:
 except (json.JSONDecodeError, UnicodeDecodeError):
     raise SystemExit(0)
 
+fallback = None
 for runtime, devices in payload.get("devices", {}).items():
     if ".iOS-" not in runtime:
         continue
     for device in devices:
         identifier = device.get("udid")
         if device.get("isAvailable") and identifier:
-            print(identifier)
-            raise SystemExit(0)
+            if str(device.get("name", "")).startswith("iPhone"):
+                print(identifier)
+                raise SystemExit(0)
+            if fallback is None:
+                fallback = identifier
+
+if fallback is not None:
+    print(fallback)
 '
 }
 
