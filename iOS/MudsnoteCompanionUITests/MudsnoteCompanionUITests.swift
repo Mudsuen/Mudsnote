@@ -1285,6 +1285,26 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(note))
     }
 
+    func testHalfScreenReaderDoubleTapExpandsAndStartsEditing() {
+        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+
+        let rendered = app.descendants(matching: .any)["rendered-markdown"]
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        let background = app.otherElements["note-reader-background-dismiss"]
+        XCTAssertTrue(background.waitForExistence(timeout: 3))
+
+        rendered.doubleTap()
+
+        XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForNonexistence(background))
+    }
+
     func testLongPressNoteCanOpenDirectlyInEditMode() {
         let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
         let projects = app.buttons["folder-row-Projects"]
@@ -2159,9 +2179,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testNotesGalleryViewPersistsAndKeepsSelectionActions() {
         let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true)
-        let allNotes = app.buttons["all-notes-link"]
-        XCTAssertTrue(allNotes.waitForExistence(timeout: 8))
-        allNotes.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
 
         let options = app.buttons["note-list-options"]
         XCTAssertTrue(options.waitForExistence(timeout: 5))
@@ -2180,6 +2200,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(second.label.contains("Refine the draft"))
         XCTAssertLessThan(first.frame.width, app.frame.width * 0.48)
         XCTAssertEqual(first.frame.midY, second.frame.midY, accuracy: 3)
+        let folderName = app.staticTexts["gallery-folder-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(folderName.waitForExistence(timeout: 3))
+        XCTAssertLessThan(
+            folderName.frame.midY,
+            first.staticTexts["UI Lifecycle"].frame.midY,
+            "Gallery cards must show their folder above the note title"
+        )
         let gallerySearch = librarySearchField(in: app)
         let galleryNewNote = app.buttons["new-note-button"]
         XCTAssertTrue(waitForHittable(gallerySearch))
@@ -2206,8 +2233,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["1 Selected"].exists)
         app.buttons["finish-note-selection"].tap()
 
-        app.navigationBars["All Notes"].buttons.firstMatch.tap()
-        allNotes.tap()
+        app.navigationBars["Projects"].buttons.firstMatch.tap()
+        projects.tap()
         XCTAssertTrue(galleryContainer.waitForExistence(timeout: 5))
 
         options.tap()

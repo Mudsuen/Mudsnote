@@ -3318,15 +3318,6 @@ private struct HomeMemoCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 7) {
-                Text(title)
-                    .font(.system(.body, design: .rounded, weight: .bold))
-                    .foregroundStyle(MudsnoteColors.text)
-                    .lineLimit(2)
-                Text(preview.isEmpty ? String(localized: "No additional text") : preview)
-                    .font(.subheadline)
-                    .foregroundStyle(MudsnoteColors.muted)
-                    .lineLimit(5)
-                Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     Image(systemName: "tray")
                     Text("000-inbox").lineLimit(1)
@@ -3336,10 +3327,19 @@ private struct HomeMemoCard: View {
                 }
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.muted)
+                Text(title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(2)
+                Text(preview.isEmpty ? String(localized: "No additional text") : preview)
+                    .font(.subheadline)
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .lineLimit(5)
+                Spacer(minLength: 0)
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+            .mudsnoteGlassSurface(in: RoundedRectangle(cornerRadius: 14))
             .overlay {
                 RoundedRectangle(cornerRadius: 14).stroke(MudsnoteColors.line, lineWidth: 1)
             }
@@ -3478,16 +3478,11 @@ private struct NoteGalleryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 7) {
-                Text(file.title)
-                    .font(.system(.body, design: .rounded, weight: .bold))
-                    .foregroundStyle(MudsnoteColors.text)
-                    .lineLimit(2)
-                galleryPreview
-                Spacer(minLength: 0)
                 HStack(spacing: 5) {
                     Image(systemName: "folder")
                     Text(folderName)
                         .lineLimit(1)
+                        .accessibilityIdentifier("gallery-folder-\(file.id)")
                     Spacer(minLength: 0)
                     if file.hasAttachments {
                         Image(systemName: "paperclip")
@@ -3495,10 +3490,16 @@ private struct NoteGalleryCard: View {
                 }
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.muted)
+                Text(file.title)
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
+                    .lineLimit(2)
+                galleryPreview
+                Spacer(minLength: 0)
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 14))
+            .mudsnoteGlassSurface(in: RoundedRectangle(cornerRadius: 14))
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(MudsnoteColors.line, lineWidth: 1)
@@ -4329,9 +4330,9 @@ struct NotesBottomCommandBar: ToolbarContent {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 20, weight: .semibold))
                         .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(MudsnoteColors.text)
                         .frame(width: 46, height: 46)
-                        .background(MudsnoteColors.captureAccent, in: Circle())
+                        .background(Color.clear, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Quick note")
@@ -4355,9 +4356,9 @@ struct NotesBottomCommandBar: ToolbarContent {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 20, weight: .semibold))
                         .symbolRenderingMode(.monochrome)
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(MudsnoteColors.text)
                         .frame(width: 46, height: 46)
-                        .background(MudsnoteColors.captureAccent, in: Circle())
+                        .background(Color.clear, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Quick note")

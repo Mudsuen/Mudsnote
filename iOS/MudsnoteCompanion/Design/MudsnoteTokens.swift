@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum MudsnoteColors {
-    static let canvas = Color(hex: 0x050608)
-    static let panel = Color(hex: 0x12141A)
-    static let card = Color(hex: 0x1A1D24)
-    static let line = Color(hex: 0x2A2D35)
+    static let canvas = Color(hex: 0x0B111A)
+    static let panel = Color(hex: 0x111A26)
+    static let card = Color(hex: 0x192432)
+    static let line = Color(hex: 0x344253)
     static let text = Color(hex: 0xECEDEF)
-    static let muted = Color(hex: 0xA4A7AD)
+    static let muted = Color(hex: 0xABB4C0)
     static let primary = Color(hex: 0xF2F3F5)
     static let captureAccent = Color(hex: 0x0A84FF)
 }
@@ -30,6 +30,41 @@ extension Color {
             green: Double((hex >> 8) & 0xFF) / 255,
             blue: Double(hex & 0xFF) / 255
         )
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func mudsnoteGlassSurface<S: Shape>(
+        in shape: S,
+        tint: Color = MudsnoteColors.card.opacity(0.58)
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            background(tint, in: shape)
+                .glassEffect(.regular, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+                .background(tint, in: shape)
+        }
+    }
+}
+
+struct MudsnoteReaderSheetBackground: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    MudsnoteColors.panel.opacity(0.88),
+                    MudsnoteColors.canvas.opacity(0.94),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
+        .accessibilityElement()
+        .accessibilityIdentifier("note-reader-surface")
     }
 }
 

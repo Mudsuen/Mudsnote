@@ -108,25 +108,30 @@ struct MarkdownPreviewView: View {
     @State private var isExportingPDF = false
     @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
+    private let requestEditing: () -> Void
 
     init(
         memo: MemoBlock,
-        startsEditing: Bool = false
+        startsEditing: Bool = false,
+        requestEditing: @escaping () -> Void = {}
     ) {
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
         _isEditing = State(initialValue: startsEditing)
+        self.requestEditing = requestEditing
     }
 
     init(
         document: MarkdownDocument,
-        startsEditing: Bool = false
+        startsEditing: Bool = false,
+        requestEditing: @escaping () -> Void = {}
     ) {
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
         _isEditing = State(initialValue: document.isNew || startsEditing)
+        self.requestEditing = requestEditing
     }
 
     var body: some View {
@@ -179,10 +184,15 @@ struct MarkdownPreviewView: View {
                             )
                             scrollToActiveFindMatch(using: proxy)
                         }
+                        .simultaneousGesture(
+                            TapGesture(count: 2).onEnded {
+                                beginEditingFromHalfReader()
+                            }
+                        )
                     }
                 }
             }
-            .background(MudsnoteColors.canvas)
+            .background(MudsnoteColors.panel.opacity(0.78))
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -410,6 +420,13 @@ struct MarkdownPreviewView: View {
             }
             .disabled(attachmentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+    }
+
+    private func beginEditingFromHalfReader() {
+        guard !isEditing, !appModel.isReaderExpanded else { return }
+        requestEditing()
+        isEditing = true
+        focusEditorAfterPresentation()
     }
 
     private var metadataLabel: some View {

@@ -78,24 +78,30 @@ struct RootView: View {
         .sheet(item: $appModel.selectedMemo) { memo in
             MarkdownPreviewView(
                 memo: memo,
-                startsEditing: appModel.noteOpenMode == .edit
+                startsEditing: appModel.noteOpenMode == .edit,
+                requestEditing: expandReaderForEditing
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
-                .presentationBackground(MudsnoteColors.panel)
+                .presentationBackground {
+                    MudsnoteReaderSheetBackground()
+                }
         }
         .sheet(item: $appModel.selectedDocument) { document in
             MarkdownPreviewView(
                 document: document,
-                startsEditing: appModel.noteOpenMode == .edit
+                startsEditing: appModel.noteOpenMode == .edit,
+                requestEditing: expandReaderForEditing
             )
                 .presentationDetents([.medium, .large], selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
-                .presentationBackground(MudsnoteColors.panel)
+                .presentationBackground {
+                    MudsnoteReaderSheetBackground()
+                }
         }
         .onChange(of: appModel.selectedMemo?.id) { _, id in
             if id != nil {
@@ -135,5 +141,11 @@ struct RootView: View {
     private var isHalfReaderPresented: Bool {
         !appModel.isReaderExpanded
             && (appModel.selectedMemo != nil || appModel.selectedDocument != nil)
+    }
+
+    private func expandReaderForEditing() {
+        appModel.noteOpenMode = .edit
+        readerDetent = .large
+        appModel.isReaderExpanded = true
     }
 }
