@@ -2027,7 +2027,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "The home gallery should move vertically when the user scrolls"
         )
         let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
-        scrolledScreenshot.name = "Home cards under opaque pinned date header"
+        scrolledScreenshot.name = "Home cards scroll without opaque pinned overlay"
         scrolledScreenshot.lifetime = .keepAlways
         add(scrolledScreenshot)
         gallery.swipeDown()
@@ -2183,7 +2183,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
         projects.tap()
 
-        let options = app.buttons["note-list-options"]
+        let options = app.buttons["folder-actions"]
         XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
         let gallery = app.buttons["View as Gallery"]

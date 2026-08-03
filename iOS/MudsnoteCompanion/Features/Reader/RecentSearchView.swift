@@ -209,7 +209,17 @@ private extension View {
     @ViewBuilder
     func homeTopScrollEdgeEffect() -> some View {
         if #available(iOS 26.0, *) {
-            scrollEdgeEffectStyle(.hard, for: .top)
+            scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func notesGlassBottomToolbar() -> some View {
+        if #available(iOS 26.0, *) {
+            toolbarBackground(.hidden, for: .bottomBar)
+                .toolbarColorScheme(.dark, for: .bottomBar)
         } else {
             self
         }
@@ -488,6 +498,7 @@ struct LibraryHomeView: View {
             text: $searchQuery,
             isPresented: $isSearchFocused
         )
+        .notesGlassBottomToolbar()
     }
 
     @ViewBuilder
@@ -510,7 +521,7 @@ struct LibraryHomeView: View {
 
     private var homeCardStream: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 if appModel.isInitialLibraryLoading, homeTimelineProjection.sections.isEmpty {
                     ProgressView("Loading Notes…")
                         .frame(maxWidth: .infinity)
@@ -2101,6 +2112,7 @@ struct FolderNotesListView: View {
             text: $searchQuery,
             isPresented: $isSearchFocused
         )
+        .notesGlassBottomToolbar()
         .task(id: NotesListSearchTaskID(
             query: normalizedSearchQuery,
             libraryRevision: appModel.libraryRevision
@@ -2142,7 +2154,7 @@ struct FolderNotesListView: View {
 
     private var noteGallery: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 if !pinnedFiles.isEmpty {
                     NoteGallerySection(
                         title: String(localized: "Pinned"),
@@ -2415,6 +2427,7 @@ struct LibraryFolderView: View {
             text: $searchQuery,
             isPresented: $isSearchFocused
         )
+        .notesGlassBottomToolbar()
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder Name", text: $folderName)
             Button("Cancel", role: .cancel) {}
@@ -2600,7 +2613,7 @@ struct LibraryFolderView: View {
 
     private var folderGallery: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22, pinnedViews: [.sectionHeaders]) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 if !isSelecting, !currentFolder.children.isEmpty {
                     VStack(spacing: 0) {
                         ForEach(currentFolder.children) { child in
@@ -3072,7 +3085,6 @@ private struct NoteGallerySection: View {
                     .foregroundStyle(MudsnoteColors.text)
                     .padding(.vertical, 5)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(MudsnoteColors.canvas)
             }
         }
     }
@@ -3110,11 +3122,8 @@ private struct HomeTimelineCardSection: View {
 
                     Spacer(minLength: 0)
                 }
-                    .padding(.horizontal, 16)
                     .padding(.vertical, 5)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(MudsnoteColors.canvas)
-                    .padding(.horizontal, -16)
                     .accessibilityIdentifier("home-section-header-\(section.id)")
             }
         }
@@ -3156,11 +3165,8 @@ private struct HomeTimelineListSection: View {
                         .foregroundStyle(MudsnoteColors.text)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(MudsnoteColors.canvas)
-                .padding(.horizontal, -16)
                 .accessibilityIdentifier("home-section-header-\(section.id)")
             }
         }
@@ -4333,8 +4339,10 @@ struct NotesBottomCommandBar: ToolbarContent {
                         .foregroundStyle(MudsnoteColors.text)
                         .frame(width: 46, height: 46)
                         .background(Color.clear, in: Circle())
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .tint(MudsnoteColors.text)
                 .accessibilityLabel("Quick note")
                 .accessibilityIdentifier("new-note-button")
             }
@@ -4359,8 +4367,10 @@ struct NotesBottomCommandBar: ToolbarContent {
                         .foregroundStyle(MudsnoteColors.text)
                         .frame(width: 46, height: 46)
                         .background(Color.clear, in: Circle())
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .tint(MudsnoteColors.text)
                 .accessibilityLabel("Quick note")
                 .accessibilityIdentifier("new-note-button")
             }
@@ -4382,6 +4392,7 @@ private struct NotesVoiceInputButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .tint(MudsnoteColors.text)
         .accessibilityLabel("Quick recording")
         .accessibilityHint("Opens quick capture and starts recording")
         .accessibilityIdentifier("voice-input-button")
