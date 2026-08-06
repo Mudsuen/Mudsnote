@@ -1959,6 +1959,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(options.exists)
         let nativeTitle = app.navigationBars["Notes"].staticTexts["Notes"].firstMatch
         XCTAssertTrue(nativeTitle.waitForExistence(timeout: 3))
+        XCTAssertTrue(nativeTitle.isHittable)
+        XCTAssertGreaterThan(nativeTitle.frame.height, 20)
 
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]

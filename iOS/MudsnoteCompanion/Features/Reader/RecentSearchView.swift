@@ -207,19 +207,12 @@ private extension View {
     }
 
     @ViewBuilder
-    func homeTopScrollEdgeEffect() -> some View {
-        if #available(iOS 26.0, *) {
-            scrollEdgeEffectStyle(.soft, for: .top)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
-            toolbarBackground(.hidden, for: .bottomBar)
+            toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .bottomBar)
                 .toolbarColorScheme(.dark, for: .bottomBar)
+                .scrollEdgeEffectHidden(true, for: [.top, .bottom])
         } else {
             self
         }
@@ -278,6 +271,7 @@ struct LibraryHomeView: View {
     var body: some View {
         NavigationStack {
             directoryStage(width: directoryPanelWidth)
+                .ignoresSafeArea(.container, edges: .bottom)
                 .background {
                     GeometryReader { proxy in
                         Color.clear
@@ -558,7 +552,6 @@ struct LibraryHomeView: View {
             .padding(.top, 8)
             .padding(.bottom, 110)
         }
-        .homeTopScrollEdgeEffect()
         .accessibilityIdentifier(viewStyle == .gallery ? "home-note-gallery" : "home-note-list")
     }
 
