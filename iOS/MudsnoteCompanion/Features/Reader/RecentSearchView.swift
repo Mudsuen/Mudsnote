@@ -198,6 +198,15 @@ private final class DirectoryHapticFeedback {
 
 private extension View {
     @ViewBuilder
+    func homeNavigationSubtitle(_ subtitle: String?) -> some View {
+        if #available(iOS 26.0, *), let subtitle {
+            navigationSubtitle(subtitle)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
             toolbarBackground(.hidden, for: .navigationBar)
@@ -273,8 +282,9 @@ struct LibraryHomeView: View {
                     }
                 }
             .background(NotesCloneColors.background)
-            .navigationTitle(systemNavigationTitle)
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(navigationTitle)
+            .navigationBarTitleDisplayMode(.large)
+            .homeNavigationSubtitle(homeNavigationSubtitle)
             .navigationDestination(isPresented: $isShowingAttachments) {
                 AttachmentLibraryView()
             }
@@ -391,17 +401,13 @@ struct LibraryHomeView: View {
                     }
                 } else {
                     ToolbarItem(placement: .topBarLeading) {
-                        HStack(spacing: 10) {
-                            Button {
-                                settleDirectory(open: true, emitsHaptic: true)
-                            } label: {
-                                Image(systemName: "sidebar.left")
-                            }
-                            .accessibilityLabel("Open Folders")
-                            .accessibilityIdentifier("directory-button")
-
-                            homeToolbarTitle
+                        Button {
+                            settleDirectory(open: true, emitsHaptic: true)
+                        } label: {
+                            Image(systemName: "sidebar.left")
                         }
+                        .accessibilityLabel("Open Folders")
+                        .accessibilityIdentifier("directory-button")
                     }
 
                     ToolbarItem(placement: .topBarTrailing) {
@@ -682,7 +688,7 @@ struct LibraryHomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
-    private var systemNavigationTitle: String {
+    private var navigationTitle: String {
         if isDirectoryPresented { return String(localized: "Folders") }
         if isSelectingNotes {
             return String(
@@ -691,26 +697,16 @@ struct LibraryHomeView: View {
                 selectedHomeEntryIDs.count
             )
         }
-        return ""
+        return String(localized: "Notes")
     }
 
-    private var homeToolbarTitle: some View {
-        VStack(alignment: .leading, spacing: -2) {
-            Text(String(localized: "Notes"))
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(MudsnoteColors.text)
-                .accessibilityIdentifier("home-navigation-title")
-            Text(
-                String(
-                    format: String(localized: "notes.count.format"),
-                    locale: .current,
-                    homeTimelineProjection.entryCount
-                )
-            )
-            .font(.system(size: 10))
-            .foregroundStyle(MudsnoteColors.muted)
-        }
-        .fixedSize()
+    private var homeNavigationSubtitle: String? {
+        guard !isDirectoryPresented, !isSelectingNotes else { return nil }
+        return String(
+            format: String(localized: "notes.count.format"),
+            locale: .current,
+            homeTimelineProjection.entryCount
+        )
     }
 
     private var allHomeEntryIDs: Set<String> {
