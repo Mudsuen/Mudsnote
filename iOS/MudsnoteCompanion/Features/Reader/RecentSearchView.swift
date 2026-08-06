@@ -1682,27 +1682,47 @@ private struct HomeNoteOptionsButton: UIViewRepresentable {
         button.showsMenuAsPrimaryAction = true
         button.accessibilityLabel = String(localized: "More")
         button.accessibilityIdentifier = "home-note-options"
-        button.menu = context.coordinator.makeMenu()
+        context.coordinator.updateMenu(on: button, force: true)
         return button
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
         context.coordinator.parent = self
-        button.menu = context.coordinator.makeMenu()
+        context.coordinator.updateMenu(on: button)
     }
 
     @MainActor
     final class Coordinator {
+        private struct MenuState: Equatable {
+            var viewStyleRawValue: String
+            var sortOrderRawValue: String
+            var sortDirectionRawValue: String
+            var groupByDate: Bool
+        }
+
         var parent: HomeNoteOptionsButton
+        private var presentedState: MenuState?
 
         init(parent: HomeNoteOptionsButton) {
             self.parent = parent
         }
 
-        func makeMenu() -> UIMenu {
-            let viewStyle = NoteViewStyle(rawValue: parent.viewStyleRawValue) ?? .gallery
-            let sortOrder = NoteSortOrder(rawValue: parent.sortOrderRawValue) ?? .modified
-            let sortDirection = NoteSortDirection(rawValue: parent.sortDirectionRawValue) ?? .standard
+        func updateMenu(on button: UIButton, force: Bool = false) {
+            let state = MenuState(
+                viewStyleRawValue: parent.viewStyleRawValue,
+                sortOrderRawValue: parent.sortOrderRawValue,
+                sortDirectionRawValue: parent.sortDirectionRawValue,
+                groupByDate: parent.groupByDate
+            )
+            guard force || state != presentedState else { return }
+            button.menu = makeMenu(for: state)
+            presentedState = state
+        }
+
+        private func makeMenu(for state: MenuState) -> UIMenu {
+            let viewStyle = NoteViewStyle(rawValue: state.viewStyleRawValue) ?? .gallery
+            let sortOrder = NoteSortOrder(rawValue: state.sortOrderRawValue) ?? .modified
+            let sortDirection = NoteSortDirection(rawValue: state.sortDirectionRawValue) ?? .standard
 
             let viewAction = UIAction(
                 title: String(localized: viewStyle == .gallery ? "View as List" : "View as Cards"),
@@ -1730,7 +1750,7 @@ private struct HomeNoteOptionsButton: UIViewRepresentable {
             )
             let groupMenu = UIMenu(
                 title: String(localized: "Group By Date"),
-                subtitle: parent.groupByDate ? String(localized: "On") : String(localized: "Off"),
+                subtitle: state.groupByDate ? String(localized: "On") : String(localized: "Off"),
                 image: UIImage(systemName: "calendar"),
                 children: groupActions(disabled: sortOrder == .title)
             )
