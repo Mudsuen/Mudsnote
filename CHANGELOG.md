@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 251. Cancelable bounded macOS library search
+- Problem: Canceling a cold or warm search stopped result publication but did not stop the detached index work, so old queries could keep scanning, parsing, and holding the shared build lock while the latest query waited; matching also built snippets and sorted every hit before applying the visible limit.
+- Fix: Search cancellation now propagates through lock acquisition, directory enumeration, index refresh, file reads, matching, and scoped queries. Ranking retains only the exact top results, snippets are built only for those results, trash search parses each candidate once, unresolved iCloud items and malformed or oversized Markdown fail softly, and the persistent JSON cache has a hard size ceiling.
+- Lesson: Latest-query-wins requires canceling the underlying synchronous work, not only rejecting stale completion callbacks, and every cache or result limit must bound the work performed before the limit is applied.
+
 ### 250. Independent iOS capture, playable audio, and unified black glass
 - Problem: Quick capture destinations were existing Markdown files, so choosing one appended into user content and `Inbox.md` absorbed new notes; successful writes could remain absent from the home projection. Audio attachments lacked an explicit non-overwriting local save, while the gray-blue visual shell and parallax drawer conflicted with the intended native glass hierarchy.
 - Fix: Capture now chooses a folder and creates a uniquely named independent note, migrates recovered legacy file targets to their parent folder, invalidates file-store caches, and advances the library revision after every applied snapshot. Audio attachments play in-app with visible failures and save into the Files-visible `Saved Audio` directory using collision-safe names. The iOS shell now uses a true-black canvas, native glass cards and editor toolbar, consistent scale press feedback, full-width finger-tracked drawer translation, vertical-scroll-compatible gesture arbitration, landscape support, and completion-only haptics.

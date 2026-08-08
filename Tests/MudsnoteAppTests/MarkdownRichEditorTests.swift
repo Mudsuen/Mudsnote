@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreServices
 import ImageIO
-import MudsnoteCore
+@_spi(Testing) import MudsnoteCore
 import Testing
 @testable import Mudsnote
 
@@ -119,9 +119,11 @@ private final class MutableBoolFlag: @unchecked Sendable {
 private final class ThreadObservationRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var observedMainThread = false
+    private var callCount = 0
 
     func recordCurrentThread() {
         lock.lock()
+        callCount += 1
         observedMainThread = observedMainThread || Thread.isMainThread
         lock.unlock()
     }
@@ -130,6 +132,12 @@ private final class ThreadObservationRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return observedMainThread
+    }
+
+    func snapshot() -> (callCount: Int, observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (callCount, observedMainThread)
     }
 }
 
@@ -6552,6 +6560,82 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchScopeControl.isHidden)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
         #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
+    }
+
+    @MainActor
+    @Test
+    func slowLibrarySearchKeepsTypingOnMainResponsiveAndPublishesOnlyLatestQuery() async throws {
+        let suiteName = "mudsnote.library-search-responsiveness-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-search-responsiveness-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        for index in 0..<300 {
+            let marker = index == 299 ? "latest-query-marker" : "stale-query-marker"
+            try "# Fixture \(index)\n\n\(marker)\n".write(
+                to: notesDirectory.appendingPathComponent("fixture-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        let searchThread = ThreadObservationRecorder()
+        store.setSearchIndexEntryWillMatchForTesting {
+            searchThread.recordCurrentThread()
+            Thread.sleep(forTimeInterval: 0.002)
+        }
+
+        controller.searchField.stringValue = "stale-query-marker"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        let firstSearchDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while searchThread.snapshot().callCount == 0,
+              ContinuousClock.now < firstSearchDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(searchThread.snapshot().callCount > 0)
+
+        let typingStarted = ContinuousClock.now
+        controller.searchField.stringValue = "latest-query-marker"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        let typingLatency = typingStarted.duration(to: ContinuousClock.now)
+        #expect(typingLatency < .milliseconds(50))
+
+        let resultDeadline = ContinuousClock.now.advanced(by: .seconds(4))
+        while controller.noteListSearchResultsForLibrary().map(\.title) != ["Fixture 299"],
+              ContinuousClock.now < resultDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Fixture 299"])
+        #expect(!searchThread.snapshot().observedMainThread)
     }
 
     @MainActor

@@ -66,17 +66,34 @@ private func librarySearchResults(
     searchesAllNotes: Bool,
     includesSubfolderNotes: Bool
 ) -> [NoteSearchResult] {
+    let cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
     if searchesAllNotes {
-        return searchSession.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     switch scope {
     case .all:
-        return searchSession.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .recent:
-        return searchSession.searchRecentNotes(query: query, limit: limit)
+        return searchSession.searchRecentNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .inbox:
-        return searchSession.searchInboxNotes(query: query, limit: limit)
+        return searchSession.searchInboxNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .trash:
         return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
     case .folder(let url):
@@ -84,10 +101,16 @@ private func librarySearchResults(
             query: query,
             limit: limit,
             in: url,
-            includingDescendants: includesSubfolderNotes
+            includingDescendants: includesSubfolderNotes,
+            cancellationCheck: cancellationCheck
         )
     case .tag(let tag):
-        return searchSession.searchNotes(query: query, limit: limit, tagged: tag)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            tagged: tag,
+            cancellationCheck: cancellationCheck
+        )
     }
 }
 
@@ -103,44 +126,11 @@ private func libraryNote(
 }
 
 func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
-    guard limit > 0 else { return [] }
-    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
-
-    var results: [NoteSearchResult] = []
-    results.reserveCapacity(limit)
-    for note in noteStore.listTrashedNotes(limit: .max) {
-        guard !Task.isCancelled else { break }
-        guard let loaded = try? noteStore.loadNote(at: note.url) else {
-            if note.title.localizedCaseInsensitiveContains(trimmedQuery) {
-                results.append(note)
-            }
-            if results.count == limit { break }
-            continue
-        }
-
-        let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
-        let matchingLine = loaded.body
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        guard matchesTitle || matchingLine != nil || matchesTag else { continue }
-
-        results.append(NoteSearchResult(
-            url: note.url,
-            title: loaded.title,
-            snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
-                ?? libraryFirstMeaningfulLine(from: loaded.body)
-                ?? "",
-            modifiedAt: note.modifiedAt,
-            tags: loaded.tags,
-            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
-            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
-        ))
-        if results.count == limit { break }
-    }
-    return results
+    noteStore.searchTrashedNotes(
+        query: query,
+        limit: limit,
+        cancellationCheck: { Task.isCancelled }
+    )
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
@@ -6147,8 +6137,18 @@ final class LibraryWindowController: NSWindowController,
 
         let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
-            let searchSession = existingSearchSession
-                ?? noteStore.makeSearchSession(roots: preferredDirectories)
+            let searchSession: NoteSearchSession
+            if let existingSearchSession {
+                searchSession = existingSearchSession
+            } else {
+                guard let builtSession = noteStore.makeSearchSession(
+                    roots: preferredDirectories,
+                    cancellationCheck: { Task.isCancelled }
+                ) else {
+                    return
+                }
+                searchSession = builtSession
+            }
             let results = librarySearchResults(
                 noteStore: noteStore,
                 searchSession: searchSession,

@@ -36,7 +36,7 @@ final class DebouncedNoteSearchController {
         let noteStore = noteStore
         let limit = limit
         let existingSession = searchSession
-        searchTask = Task { [weak self] in
+        searchTask = Task.detached(priority: .userInitiated) { [weak self] in
             if delay > .zero {
                 do {
                     try await Task.sleep(for: delay)
@@ -46,28 +46,41 @@ final class DebouncedNoteSearchController {
             }
             guard !Task.isCancelled else { return }
 
-            let payload = await Task.detached(priority: .userInitiated) {
-                let session = existingSession ?? noteStore.makeSearchSession()
-                let results = session.searchNotes(query: query, limit: limit)
-                let rootCount = noteStore.knownSearchRoots().count
-                return (
-                    session,
-                    DebouncedNoteSearchResults(
-                        query: query,
-                        results: results,
-                        searchRootCount: rootCount
-                    )
-                )
-            }.value
-
-            guard !Task.isCancelled,
-                  let self,
-                  self.generation == requestGeneration else {
-                return
+            let session: NoteSearchSession
+            if let existingSession {
+                session = existingSession
+            } else {
+                guard let builtSession = noteStore.makeSearchSession(
+                    roots: noteStore.knownSearchRoots(),
+                    cancellationCheck: { Task.isCancelled }
+                ) else {
+                    return
+                }
+                session = builtSession
             }
-            self.searchSession = payload.0
-            self.searchTask = nil
-            completion(payload.1)
+            guard !Task.isCancelled else { return }
+            let results = session.searchNotes(
+                query: query,
+                limit: limit,
+                cancellationCheck: { Task.isCancelled }
+            )
+            guard !Task.isCancelled else { return }
+            let payload = DebouncedNoteSearchResults(
+                query: query,
+                results: results,
+                searchRootCount: noteStore.knownSearchRoots().count
+            )
+
+            await MainActor.run {
+                guard !Task.isCancelled,
+                      let self,
+                      self.generation == requestGeneration else {
+                    return
+                }
+                self.searchSession = session
+                self.searchTask = nil
+                completion(payload)
+            }
         }
     }
 
