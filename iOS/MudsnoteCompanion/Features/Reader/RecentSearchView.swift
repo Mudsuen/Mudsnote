@@ -80,7 +80,7 @@ struct DirectoryDrawerMotion {
     }
 
     enum HapticTiming: Equatable {
-        case afterAnimation
+        case afterLogicalCompletion
     }
 
     static func settlingAnimation(reduceMotion: Bool) -> Animation {
@@ -166,7 +166,7 @@ struct DirectoryDrawerMotion {
     }
 
     static func hapticTiming(wasOpen: Bool, willOpen: Bool) -> HapticTiming? {
-        wasOpen == willOpen ? nil : .afterAnimation
+        wasOpen == willOpen ? nil : .afterLogicalCompletion
     }
 
     static func shouldEmitCompletionHaptic(
@@ -174,7 +174,14 @@ struct DirectoryDrawerMotion {
         currentGeneration: Int,
         timing: HapticTiming?
     ) -> Bool {
-        timing == .afterAnimation && scheduledGeneration == currentGeneration
+        timing == .afterLogicalCompletion && scheduledGeneration == currentGeneration
+    }
+
+    static func shouldAnimateTopChrome<Value: Equatable>(
+        previous: Value,
+        next: Value
+    ) -> Bool {
+        previous != next
     }
 }
 
@@ -199,6 +206,19 @@ private final class DirectoryHapticFeedback {
 }
 
 private extension View {
+    func suppressTopChromeAnimationWhenUnchanged<Value: Equatable>(
+        previous: Value,
+        next: Value
+    ) -> some View {
+        transaction { transaction in
+            guard !DirectoryDrawerMotion.shouldAnimateTopChrome(
+                previous: previous,
+                next: next
+            ) else { return }
+            transaction.animation = nil
+        }
+    }
+
     @ViewBuilder
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
@@ -345,17 +365,36 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
-                if isDirectoryPresented {
+                if isSelectingNotes {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
+                            toggleAllHomeEntries()
+                        }
+                        .accessibilityIdentifier("toggle-select-all-home-notes")
+                    }
+                } else {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
-                            closeDirectory()
+                            if isDirectoryPresented {
+                                closeDirectory()
+                            } else {
+                                settleDirectory(open: true, emitsHaptic: true)
+                            }
                         } label: {
                             Image(systemName: "sidebar.left")
                         }
-                        .accessibilityLabel("Close Folders")
+                        .accessibilityLabel(
+                            isDirectoryPresented ? "Close Folders" : "Open Folders"
+                        )
                         .accessibilityIdentifier("directory-button")
+                        .suppressTopChromeAnimationWhenUnchanged(
+                            previous: "sidebar.left",
+                            next: "sidebar.left"
+                        )
                     }
+                }
 
+                if isDirectoryPresented {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             newFolderName = ""
@@ -396,27 +435,11 @@ struct LibraryHomeView: View {
                         .accessibilityIdentifier("edit-folders-button")
                     }
                 } else if isSelectingNotes {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
-                            toggleAllHomeEntries()
-                        }
-                        .accessibilityIdentifier("toggle-select-all-home-notes")
-                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Done") { finishSelectingHomeNotes() }
                             .accessibilityIdentifier("finish-home-note-selection")
                     }
                 } else {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            settleDirectory(open: true, emitsHaptic: true)
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                        }
-                        .accessibilityLabel("Open Folders")
-                        .accessibilityIdentifier("directory-button")
-                    }
-
                     ToolbarItem(placement: .topBarTrailing) {
                         HomeNoteOptionsMenu(
                             viewStyleRawValue: $viewStyleRawValue,
@@ -430,6 +453,10 @@ struct LibraryHomeView: View {
 
                     ToolbarItem(placement: .principal) {
                         homeCompactTitle
+                            .suppressTopChromeAnimationWhenUnchanged(
+                                previous: String(localized: "Notes"),
+                                next: String(localized: "Notes")
+                            )
                     }
                 }
             }
@@ -937,7 +964,7 @@ struct LibraryHomeView: View {
 
         withAnimation(
             DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion),
-            completionCriteria: .removed
+            completionCriteria: .logicallyComplete
         ) {
             isDirectoryPresented = open
             directoryDragOffset = 0

@@ -110,22 +110,46 @@ final class MudsnoteCompanionTests: XCTestCase {
     func testDirectoryDrawerHapticWaitsForCurrentSettlementCompletion() {
         XCTAssertEqual(
             DirectoryDrawerMotion.hapticTiming(wasOpen: false, willOpen: true),
-            .afterAnimation
+            .afterLogicalCompletion
         )
         XCTAssertNil(DirectoryDrawerMotion.hapticTiming(wasOpen: true, willOpen: true))
         XCTAssertTrue(
             DirectoryDrawerMotion.shouldEmitCompletionHaptic(
                 scheduledGeneration: 4,
                 currentGeneration: 4,
-                timing: .afterAnimation
+                timing: .afterLogicalCompletion
             )
         )
         XCTAssertFalse(
             DirectoryDrawerMotion.shouldEmitCompletionHaptic(
                 scheduledGeneration: 4,
                 currentGeneration: 5,
-                timing: .afterAnimation
+                timing: .afterLogicalCompletion
             )
+        )
+    }
+
+    func testDirectoryDrawerKeepsUnchangedTopChromeStatic() {
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldAnimateTopChrome(
+                previous: "sidebar.left",
+                next: "sidebar.left"
+            ),
+            "The unchanged leading directory icon must not be reanimated"
+        )
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldAnimateTopChrome(
+                previous: "Notes",
+                next: "Notes"
+            ),
+            "The unchanged centered Notes title must not be reanimated"
+        )
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldAnimateTopChrome(
+                previous: "Notes",
+                next: "Folders"
+            ),
+            "A real title change may still use its native transition"
         )
     }
 
