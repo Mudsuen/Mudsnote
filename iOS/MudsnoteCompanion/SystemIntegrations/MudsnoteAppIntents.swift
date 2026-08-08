@@ -75,19 +75,19 @@ struct AppShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: AppendToInboxIntent(),
             phrases: [
-                "Append to Inbox in \(.applicationName)",
-                "Add memo to \(.applicationName)"
+                "Create a new note in \(.applicationName)",
+                "Add a new note to \(.applicationName)"
             ],
-            shortTitle: "Append Inbox",
-            systemImageName: "tray.and.arrow.down"
+            shortTitle: "New Note",
+            systemImageName: "square.and.pencil"
         )
 
     }
 }
 
 struct AppendToInboxIntent: AppIntent {
-    static var title: LocalizedStringResource = "Append to Inbox"
-    static var description = IntentDescription("Append text to Inbox.md when Mudsnote has an authorized folder.")
+    static var title: LocalizedStringResource = "Create New Note"
+    static var description = IntentDescription("Create a new note when Mudsnote has an authorized folder.")
 
     @Parameter(title: "Text")
     var text: String
@@ -104,7 +104,7 @@ struct AppendToInboxIntent: AppIntent {
             throw FolderAccessError.missingFolder
         }
         try await IntentCaptureWriter.write(
-            CaptureDraft(body: text, target: .inbox),
+            CaptureDraft(body: text, target: .folder(nil)),
             root: root
         )
         return .result()

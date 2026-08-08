@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -310,14 +311,30 @@ private enum MudsnoteUITestLaunchConfiguration {
                     )
                 }
                 if arguments.contains(audioTranscriptArgument) {
-                    try Data("audio transcript fixture".utf8).write(
-                        to: root.appendingPathComponent("Attachments/ui-transcript.m4a"),
-                        options: .atomic
+                    let audioURL = root.appendingPathComponent("Attachments/ui-transcript.wav")
+                    let format = try AVAudioFormat(
+                        standardFormatWithSampleRate: 8_000,
+                        channels: 1
+                    ).unwrap()
+                    let audioFile = try AVAudioFile(
+                        forWriting: audioURL,
+                        settings: format.settings
                     )
+                    let buffer = try AVAudioPCMBuffer(
+                        pcmFormat: format,
+                        frameCapacity: 32_000
+                    ).unwrap()
+                    buffer.frameLength = 32_000
+                    if let samples = buffer.floatChannelData?[0] {
+                        for frame in 0..<Int(buffer.frameLength) {
+                            samples[frame] = sin(Float(frame) * 0.08) * 0.12
+                        }
+                    }
+                    try audioFile.write(from: buffer)
                     try """
                     # Recorded Meeting
 
-                    [Audio](Attachments/ui-transcript.m4a)
+                    [Audio](Attachments/ui-transcript.wav)
 
                     ### Audio transcription
 
@@ -374,5 +391,12 @@ private enum MudsnoteUITestLaunchConfiguration {
             )
         }
         #endif
+    }
+}
+
+private extension Optional {
+    func unwrap() throws -> Wrapped {
+        guard let self else { throw CocoaError(.fileReadCorruptFile) }
+        return self
     }
 }

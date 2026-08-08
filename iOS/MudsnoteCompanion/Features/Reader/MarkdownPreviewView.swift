@@ -185,7 +185,7 @@ struct MarkdownPreviewView: View {
                             }
                             .simultaneousGesture(
                                 TapGesture(count: 2).onEnded {
-                                    beginEditingFromHalfReader()
+                                    beginEditingFromReader()
                                 }
                             )
                         }
@@ -422,9 +422,11 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    private func beginEditingFromHalfReader() {
-        guard !isEditing, !appModel.isReaderExpanded else { return }
-        requestEditing()
+    private func beginEditingFromReader() {
+        guard !isEditing else { return }
+        if !appModel.isReaderExpanded {
+            requestEditing()
+        }
         isEditing = true
         focusEditorAfterPresentation()
     }
@@ -4188,51 +4190,108 @@ private struct AudioAttachmentPlayer: View {
     var url: URL
     var title: String
     @StateObject private var playback = AudioPlaybackController()
+    @State private var saveMessage: String?
+    @State private var saveError: String?
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                togglePlayback()
-            } label: {
-                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 42, height: 42)
-                    .background(MudsnoteColors.primary, in: Circle())
-                    .foregroundStyle(.black)
-            }
-            .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button {
+                    togglePlayback()
+                } label: {
+                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 42, height: 42)
+                        .background(MudsnoteColors.primary, in: Circle())
+                        .foregroundStyle(.black)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playback.isPlaying ? "Pause audio" : "Play audio")
+                .accessibilityIdentifier("audio-attachment-playback")
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Audio")
-                    .font(.headline)
-                    .foregroundStyle(MudsnoteColors.text)
-                Text(title)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Audio")
+                        .font(.headline)
+                        .foregroundStyle(MudsnoteColors.text)
+                    Text((title as NSString).lastPathComponent)
+                        .font(.caption)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Button {
+                    saveLocally()
+                } label: {
+                    Label("Save Locally", systemImage: "square.and.arrow.down")
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Save audio locally")
+                .accessibilityIdentifier("audio-attachment-save-local")
+            }
+
+            if let message = playback.errorMessage ?? saveMessage {
+                Text(message)
                     .font(.caption)
-                    .foregroundStyle(MudsnoteColors.muted)
-                    .lineLimit(1)
+                    .foregroundStyle(playback.errorMessage == nil ? MudsnoteColors.muted : .red)
+                    .accessibilityIdentifier(
+                        playback.errorMessage == nil
+                            ? "audio-save-success"
+                            : "audio-playback-error"
+                    )
             }
-
-            Spacer()
         }
         .padding(12)
-        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 16))
+        .mudsnoteGlassSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onDisappear {
             playback.stop()
+        }
+        .alert("Could Not Save Audio", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "")
         }
     }
 
     private func togglePlayback() {
         playback.toggle(url: url)
     }
+
+    private func saveLocally() {
+        do {
+            let savedURL = try LocalAudioSaveService().save(
+                sourceURL: url,
+                to: LocalAudioSaveService.defaultDirectory
+            )
+            saveError = nil
+            saveMessage = String(
+                format: String(localized: "Saved as %@ in Files > On My iPhone > Mudsnote > Saved Audio"),
+                locale: .current,
+                savedURL.lastPathComponent
+            )
+        } catch {
+            saveMessage = nil
+            saveError = error.localizedDescription
+        }
+    }
 }
 
 @MainActor
-private final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
+    @Published private(set) var errorMessage: String?
     private var player: AVAudioPlayer?
 
     func toggle(url: URL) {
         do {
+            errorMessage = nil
             if player == nil {
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
@@ -4243,10 +4302,15 @@ private final class AudioPlaybackController: NSObject, ObservableObject, AVAudio
                 player.pause()
                 isPlaying = false
             } else {
-                isPlaying = player.play()
+                guard player.play() else {
+                    errorMessage = String(localized: "Could not play this audio file.")
+                    return
+                }
+                isPlaying = true
             }
         } catch {
             stop()
+            errorMessage = String(localized: "Could not play this audio file.")
         }
     }
 
@@ -4265,7 +4329,59 @@ private final class AudioPlaybackController: NSObject, ObservableObject, AVAudio
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor [weak self] in
             self?.stop()
+            self?.errorMessage = String(localized: "Could not play this audio file.")
         }
+    }
+}
+
+struct LocalAudioSaveService {
+    static var defaultDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Saved Audio", isDirectory: true)
+    }
+
+    var fileManager = FileManager.default
+
+    func save(sourceURL: URL, to directory: URL) throws -> URL {
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+        guard fileManager.fileExists(atPath: sourceURL.path),
+              (try sourceURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+        let sourceName = sourceURL.deletingPathExtension().lastPathComponent
+        let sanitizedStem = sanitizedFilenameStem(sourceName)
+        let fileExtension = sourceURL.pathExtension.isEmpty
+            ? "m4a"
+            : sourceURL.pathExtension.lowercased()
+        var destination = directory.appendingPathComponent("\(sanitizedStem).\(fileExtension)")
+        var suffix = 2
+        while fileManager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent(
+                "\(sanitizedStem) \(suffix).\(fileExtension)"
+            )
+            suffix += 1
+        }
+        try fileManager.copyItem(at: sourceURL, to: destination)
+        return destination
+    }
+
+    private func sanitizedFilenameStem(_ value: String) -> String {
+        let sanitized = value
+            .replacingOccurrences(
+                of: #"[/\\:?*|\"<>\u{0000}-\u{001F}]+"#,
+                with: "-",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? "Audio" : String(sanitized.prefix(80))
     }
 }
 

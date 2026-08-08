@@ -119,7 +119,7 @@ struct DirectoryDrawerMotion {
             reveal: reveal,
             progress: progress,
             contentOffset: reveal,
-            drawerOffset: -width * 0.08 * (1 - progress),
+            drawerOffset: reveal - width,
             cornerRadius: 28 * progress,
             scrimOpacity: 0.06 * progress,
             shadowOpacity: 0.18 * progress
@@ -156,8 +156,10 @@ struct DirectoryDrawerMotion {
             width: width
         )
         let projectedTravel = projectedReveal - currentReveal
+        let minimumMomentumTravel = width * 0.08
 
-        if abs(projectedTravel) >= width * 0.12 {
+        if abs(translation) >= minimumMomentumTravel,
+           abs(projectedTravel) >= width * 0.12 {
             return projectedTravel > 0
         }
         return currentReveal >= width * 0.5
@@ -667,7 +669,7 @@ struct LibraryHomeView: View {
         return ZStack(alignment: alignment) {
             directoryPanel(width: width)
                 .offset(x: presentation.drawerOffset * physicalDirection)
-                .highPriorityGesture(directoryDragGesture(width: width))
+                .simultaneousGesture(directoryDragGesture(width: width))
                 .allowsHitTesting(presentation.reveal > 0)
                 .accessibilityHidden(presentation.reveal <= 0)
 
@@ -687,18 +689,17 @@ struct LibraryHomeView: View {
                 .offset(x: presentation.contentOffset * physicalDirection)
                 .allowsHitTesting(presentation.reveal <= 0)
 
-            Button(action: closeDirectory) {
-                Color.black
-                    .opacity(presentation.scrimOpacity)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-                .buttonStyle(.plain)
+            Color.black
+                .opacity(presentation.scrimOpacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
                 .offset(x: presentation.contentOffset * physicalDirection)
+                .onTapGesture(perform: closeDirectory)
                 .gesture(directoryDragGesture(width: width))
                 .allowsHitTesting(presentation.reveal > 0)
                 .accessibilityLabel("Close Folders")
                 .accessibilityIdentifier("directory-backdrop")
+                .accessibilityAddTraits(.isButton)
                 .accessibilityHidden(presentation.reveal <= 0)
 
             if !isDirectoryPresented {
@@ -3238,7 +3239,9 @@ private struct HomeTimelineListSection: View {
                 }
             }
             .padding(.horizontal, 14)
-            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 18))
+            .mudsnoteGlassSurface(
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(MudsnoteColors.line, lineWidth: 1)

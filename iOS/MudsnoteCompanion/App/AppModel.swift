@@ -197,9 +197,7 @@ final class AppModel: ObservableObject {
 
     func selectFolder(_ url: URL) {
         let configurationID = beginLibraryConfiguration()
-        if case .recent = draft.target {
-            draft.target = .inbox
-        }
+        draft.target = .folder(nil)
         Task {
             do {
                 guard libraryConfigurationID == configurationID else { return }
@@ -237,9 +235,7 @@ final class AppModel: ObservableObject {
         isSearching = false
         libraryRevision += 1
         queue = nil
-        if case .recent = draft.target {
-            draft.target = .inbox
-        }
+        draft.target = .folder(nil)
     }
 
     func showCapture(_ route: CaptureRoute = .text) {
@@ -375,7 +371,7 @@ final class AppModel: ObservableObject {
         cancelTranscription()
         captureSubmissionIssue = nil
         let submittedDraft = draft
-        let canUseInboxDelta = submittedDraft.target == .inbox && submittedDraft.attachments.isEmpty
+        let canUseInboxDelta = false
         isSendingDraft = true
         Task {
             defer { isSendingDraft = false }
@@ -1946,6 +1942,7 @@ final class AppModel: ObservableObject {
         } else {
             syncStatus = .idle
         }
+        libraryRevision += 1
     }
 
     private func applyTrashedProjection(_ items: [TrashedMarkdownFile]) {
@@ -2030,7 +2027,6 @@ final class AppModel: ObservableObject {
         guard libraryConfigurationID == configurationID else { return false }
         apply(snapshot, pendingCount: pendingCount)
         isInitialLibraryLoading = false
-        libraryRevision += 1
         if sceneRefreshRequested {
             sceneRefreshRequested = false
             Task { await refreshAfterSceneActivation() }

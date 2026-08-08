@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 250. Independent iOS capture, playable audio, and unified black glass
+- Problem: Quick capture destinations were existing Markdown files, so choosing one appended into user content and `Inbox.md` absorbed new notes; successful writes could remain absent from the home projection. Audio attachments lacked an explicit non-overwriting local save, while the gray-blue visual shell and parallax drawer conflicted with the intended native glass hierarchy.
+- Fix: Capture now chooses a folder and creates a uniquely named independent note, migrates recovered legacy file targets to their parent folder, invalidates file-store caches, and advances the library revision after every applied snapshot. Audio attachments play in-app with visible failures and save into the Files-visible `Saved Audio` directory using collision-safe names. The iOS shell now uses a true-black canvas, native glass cards and editor toolbar, consistent scale press feedback, full-width finger-tracked drawer translation, vertical-scroll-compatible gesture arbitration, landscape support, and completion-only haptics.
+- Lesson: A destination picker must model the ownership unit it creates, durable writes and UI projections need one revision contract, and glass, gesture, and feedback behavior should be shared system-wide rather than patched per control.
+
 ### 249. Unified iOS quick capture and reversible folder gestures
 - Problem: Quick Note had regressed to a second editor while Quick Recording used the capture composer, the latest drawer changes weakened diagonal swipe recognition and made closing look like an overlay fade, and recording controls retained opaque emphasis without complete state feedback.
 - Fix: Both bottom-bar entries now open the same capture composer and record button; Quick Recording alone auto-starts audio. The verified document date-and-time presentation remains tied to the file timestamp and scrolls with the body. Folder gestures once again move the home surface in opposite finger-tracked directions, settle with the validated spring, and emit a light haptic only after a current completed transition. Voice emphasis and audio status surfaces are transparent, with 44-point entry targets and explicit recording or permission-failure accessibility values.

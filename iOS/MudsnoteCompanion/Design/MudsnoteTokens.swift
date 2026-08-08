@@ -1,13 +1,13 @@
 import SwiftUI
 
 enum MudsnoteColors {
-    static let canvas = Color(hex: 0x0B111A)
-    static let panel = Color(hex: 0x111A26)
-    static let card = Color(hex: 0x192432)
-    static let line = Color(hex: 0x344253)
-    static let text = Color(hex: 0xECEDEF)
-    static let muted = Color(hex: 0xABB4C0)
-    static let primary = Color(hex: 0xF2F3F5)
+    static let canvas = Color.black
+    static let panel = Color(hex: 0x080808)
+    static let card = Color.white.opacity(0.10)
+    static let line = Color.white.opacity(0.22)
+    static let text = Color(hex: 0xF7F7F7)
+    static let muted = Color(hex: 0xB8B8BD)
+    static let primary = Color(hex: 0xF7F7F7)
     static let captureAccent = Color(hex: 0x0A84FF)
 }
 
@@ -55,8 +55,8 @@ struct MudsnoteReaderSheetBackground: View {
             Rectangle().fill(.ultraThinMaterial)
             LinearGradient(
                 colors: [
-                    MudsnoteColors.panel.opacity(0.88),
-                    MudsnoteColors.canvas.opacity(0.94),
+                    Color.white.opacity(0.055),
+                    Color.black.opacity(0.98),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -82,7 +82,8 @@ struct CapsuleCommandButtonStyle: ButtonStyle {
             .overlay {
                 Capsule().stroke(MudsnoteColors.line.opacity(isPrimary ? 0 : 1), lineWidth: 1)
             }
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
@@ -99,7 +100,8 @@ struct IconCircleButtonStyle: ButtonStyle {
             .overlay {
                 Circle().stroke(MudsnoteColors.line, lineWidth: isActive ? 0 : 1)
             }
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
@@ -121,6 +123,7 @@ struct CompactCaptureButtonStyle: ButtonStyle {
                 in: Capsule()
             )
             .contentShape(Rectangle())
-            .opacity(configuration.isPressed ? 0.62 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }

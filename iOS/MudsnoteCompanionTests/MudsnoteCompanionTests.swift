@@ -14,7 +14,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(presentation.reveal, 160)
         XCTAssertEqual(presentation.progress, 0.5)
         XCTAssertEqual(presentation.contentOffset, 160, accuracy: 0.001)
-        XCTAssertEqual(presentation.drawerOffset, -12.8, accuracy: 0.001)
+        XCTAssertEqual(presentation.drawerOffset, -160, accuracy: 0.001)
         XCTAssertEqual(presentation.cornerRadius, 14, accuracy: 0.001)
         XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
         XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
@@ -86,6 +86,24 @@ final class MudsnoteCompanionTests: XCTestCase {
                 projectedTranslation: -210,
                 width: 320
             )
+        )
+        XCTAssertFalse(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: false,
+                translation: 16,
+                projectedTranslation: 210,
+                width: 320
+            ),
+            "Projected momentum must not complete an opening from an incidental short drag"
+        )
+        XCTAssertTrue(
+            DirectoryDrawerMotion.shouldOpen(
+                isOpen: true,
+                translation: -16,
+                projectedTranslation: -210,
+                width: 320
+            ),
+            "Projected momentum must not complete a closing from an incidental short drag"
         )
     }
 
@@ -759,7 +777,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let access = FolderAccessService(defaults: defaults)
         let model = AppModel(bootstrapImmediately: false, folderAccess: access)
-        model.draft.target = .recent("Projects/Old.md")
+        model.draft.target = .folder("Projects")
 
         model.selectFolder(firstRoot)
         model.selectFolder(secondRoot)
@@ -777,7 +795,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertEqual(selectedRoot, secondRoot)
         XCTAssertEqual(access.currentRoot, secondRoot)
-        XCTAssertEqual(model.draft.target, .inbox)
+        XCTAssertEqual(model.draft.target, .folder(nil))
         XCTAssertEqual(model.libraryFiles.count, 1)
         XCTAssertEqual(model.libraryRevision, 1)
     }
@@ -1045,8 +1063,82 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testCaptureTargetRelativePaths() {
-        XCTAssertEqual(CaptureTarget.inbox.relativePath(), "Inbox.md")
-        XCTAssertEqual(CaptureTarget.recent("Projects/Launch.md").relativePath(), "Projects/Launch.md")
+        XCTAssertNil(CaptureTarget.folder(nil).relativeFolderPath)
+        XCTAssertEqual(
+            CaptureTarget.folder("000-inbox").relativeFolderPath,
+            "000-inbox"
+        )
+    }
+
+    func testCaptureCreatesIndependentNotesInsideSelectedFolderWithoutMutatingExistingNote() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let inboxFolder = root.appendingPathComponent("000-inbox", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: inboxFolder,
+            withIntermediateDirectories: true
+        )
+        let existing = inboxFolder.appendingPathComponent("Existing.md")
+        let existingMarkdown = "# Existing\n\nDo not append here.\n"
+        try existingMarkdown.write(to: existing, atomically: true, encoding: .utf8)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let draft = CaptureDraft(
+            body: "Independent capture",
+            target: .folder("000-inbox")
+        )
+        let first = try await store.preparePendingWrite(
+            for: draft,
+            root: root,
+            now: Date(timeIntervalSince1970: 1_754_640_000)
+        )
+        let second = try await store.preparePendingWrite(
+            for: draft,
+            root: root,
+            now: Date(timeIntervalSince1970: 1_754_640_000)
+        )
+
+        XCTAssertTrue(first.targetRelativePath.hasPrefix("000-inbox/"))
+        XCTAssertTrue(first.targetRelativePath.hasSuffix(".md"))
+        XCTAssertNotEqual(first.targetRelativePath, "000-inbox/Existing.md")
+        XCTAssertNotEqual(first.targetRelativePath, second.targetRelativePath)
+
+        try await store.performPendingWrite(first)
+        try await store.performPendingWrite(second)
+
+        XCTAssertEqual(
+            try String(contentsOf: existing, encoding: .utf8),
+            existingMarkdown
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(first.targetRelativePath).path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(second.targetRelativePath).path
+            )
+        )
+    }
+
+    func testLocalAudioSaveUsesReadableNamesAndNeverOverwrites() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("Meeting.m4a")
+        try Data([0x00, 0x01, 0x02]).write(to: source)
+        let destination = root.appendingPathComponent("Saved Audio", isDirectory: true)
+        let service = LocalAudioSaveService()
+
+        let first = try service.save(sourceURL: source, to: destination)
+        let second = try service.save(sourceURL: source, to: destination)
+
+        XCTAssertEqual(first.lastPathComponent, "Meeting.m4a")
+        XCTAssertEqual(second.lastPathComponent, "Meeting 2.m4a")
+        XCTAssertEqual(try Data(contentsOf: first), Data([0x00, 0x01, 0x02]))
+        XCTAssertEqual(try Data(contentsOf: second), Data([0x00, 0x01, 0x02]))
     }
 
     func testAttachmentOnlyDraftCanSend() {
@@ -1078,7 +1170,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         var draft = CaptureDraft(
             body: "Recovered thought",
             tags: "#launch",
-            target: .recent("Projects/Launch.md"),
+            target: .folder("Projects"),
             attachments: [image, video, audio, file],
             createdAt: date
         )
@@ -1129,7 +1221,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         let recovered = try await CaptureDraftRecoveryStore(directory: directory).load()
 
         XCTAssertEqual(recovered?.body, "Legacy thought")
-        XCTAssertEqual(recovered?.target, .inbox)
+        XCTAssertEqual(recovered?.target, .folder(nil))
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("Daily", isDirectory: true).path
@@ -1508,7 +1600,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         try FolderInitializer.initialize(root)
 
         try await IntentCaptureWriter.write(
-            CaptureDraft(body: "Captured from Shortcuts", target: .inbox),
+            CaptureDraft(body: "Captured from Shortcuts", target: .folder(nil)),
             root: root
         )
 
@@ -1516,7 +1608,18 @@ final class MudsnoteCompanionTests: XCTestCase {
             contentsOf: root.appendingPathComponent("Inbox.md"),
             encoding: .utf8
         )
-        XCTAssertTrue(inbox.contains("Captured from Shortcuts"))
+        XCTAssertFalse(inbox.contains("Captured from Shortcuts"))
+        let createdNotes = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil
+        ).filter {
+            $0.pathExtension == "md" && $0.lastPathComponent != "Inbox.md"
+        }
+        XCTAssertEqual(createdNotes.count, 1)
+        XCTAssertTrue(
+            try String(contentsOf: createdNotes[0], encoding: .utf8)
+                .contains("Captured from Shortcuts")
+        )
         let queue = PendingWriteQueue(root: root)
         try await queue.load()
         let pendingCount = await queue.pendingCount()
@@ -3956,7 +4059,8 @@ final class MudsnoteCompanionTests: XCTestCase {
             root: root,
             now: Date(timeIntervalSince1970: 1_752_384_000)
         )
-        XCTAssertEqual(pending.targetRelativePath, "Inbox.md")
+        XCTAssertTrue(pending.targetRelativePath.hasPrefix("Attachment Note-"))
+        XCTAssertTrue(pending.targetRelativePath.hasSuffix(".md"))
         XCTAssertEqual(pending.attachments.count, 1)
         XCTAssertTrue(pending.attachments[0].relativePath.contains("/Scanned Document-"))
         XCTAssertTrue(pending.attachments[0].relativePath.hasSuffix(".pdf"))
