@@ -2020,8 +2020,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 2)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
-        options.tap()
-        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            openMenu(options, expecting: app.buttons["View as List"])
+        )
         XCTAssertTrue(app.buttons["Select Notes"].exists)
         XCTAssertTrue(
             app.descendants(matching: .any)
@@ -2044,8 +2045,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.navigationBars["Attachments"].buttons.firstMatch.tap()
         XCTAssertTrue(largeTitle.waitForExistence(timeout: 5))
 
-        options.tap()
-        XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            openMenu(options, expecting: app.buttons["View as List"])
+        )
         app.buttons["View as List"].tap()
 
         let list = app.scrollViews["home-note-list"]
@@ -2058,8 +2060,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         listScreenshot.lifetime = .keepAlways
         add(listScreenshot)
 
-        options.tap()
-        XCTAssertTrue(app.buttons["View as Cards"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            openMenu(options, expecting: app.buttons["View as Cards"])
+        )
         app.buttons["View as Cards"].tap()
         XCTAssertTrue(app.scrollViews["home-note-gallery"].waitForExistence(timeout: 5))
 
@@ -2778,6 +2781,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
             for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
             timeout: 5
         ) == .completed
+    }
+
+    private func openMenu(
+        _ button: XCUIElement,
+        expecting item: XCUIElement
+    ) -> Bool {
+        guard waitForHittable(button) else { return false }
+        button.tap()
+        if item.waitForExistence(timeout: 3) {
+            return true
+        }
+        guard button.isHittable else { return false }
+        button.tap()
+        return item.waitForExistence(timeout: 5)
     }
 
     private func waitForNonexistence(_ element: XCUIElement) -> Bool {
