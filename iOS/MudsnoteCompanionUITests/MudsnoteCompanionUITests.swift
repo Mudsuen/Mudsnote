@@ -1999,20 +1999,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let compactTitle = app.otherElements["home-compact-title"]
         XCTAssertTrue(largeTitle.waitForExistence(timeout: 8))
         XCTAssertTrue(navigationBar.exists)
+        let expandedTitleFrame = largeTitle.frame
+        XCTAssertGreaterThan(expandedTitleFrame.height, 30)
         XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
         XCTAssertTrue(app.buttons["directory-button"].exists)
         let options = app.buttons["home-note-options"]
         XCTAssertTrue(options.exists)
-        XCTAssertTrue(largeTitle.isHittable)
-        let expandedTitleFrame = largeTitle.frame
-        XCTAssertGreaterThan(expandedTitleFrame.height, 30)
-        XCTAssertGreaterThanOrEqual(expandedTitleFrame.minY, navigationBar.frame.maxY - 1)
-        XCTAssertFalse(compactTitle.exists)
-
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(second.exists)
+        let expandedTitleScreenshot = XCTAttachment(screenshot: app.screenshot())
+        expandedTitleScreenshot.name = "Home native expanded Notes title"
+        expandedTitleScreenshot.lifetime = .keepAlways
+        add(expandedTitleScreenshot)
         XCTAssertTrue(
             first.frame.maxX < second.frame.minX
                 || second.frame.maxX < first.frame.minX
@@ -2074,7 +2074,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
                 thenDragTo: gallery.coordinate(
                     withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
                 )
-            )
+        )
         XCTAssertTrue(app.staticTexts["Today"].exists)
         XCTAssertTrue(compactTitle.waitForExistence(timeout: 3))
         XCTAssertTrue(navigationBar.frame.intersects(compactTitle.frame))

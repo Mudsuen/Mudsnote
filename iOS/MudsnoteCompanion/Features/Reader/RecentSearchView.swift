@@ -202,8 +202,7 @@ private extension View {
     @ViewBuilder
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
-            toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarBackground(.hidden, for: .bottomBar)
+            toolbarBackground(.hidden, for: .bottomBar)
                 .toolbarColorScheme(.dark, for: .bottomBar)
                 .scrollEdgeEffectHidden(true, for: [.top, .bottom])
         } else {
@@ -212,28 +211,18 @@ private extension View {
     }
 }
 
-private struct HomeLargeTitleVisibilityModifier: ViewModifier {
-    @Binding var isCollapsed: Bool
+private struct HomeTitleTransitionModifier: ViewModifier {
+    @Binding var progress: CGFloat
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                updateCollapseState(isVisible: isVisible)
-            }
-        } else {
-            content.onGeometryChange(for: Bool.self) { proxy in
-                proxy.frame(in: .scrollView(axis: .vertical)).maxY > 0
-            } action: { isVisible in
-                updateCollapseState(isVisible: isVisible)
-            }
+        content.onGeometryChange(for: CGFloat.self) { proxy in
+            let frame = proxy.frame(in: .scrollView(axis: .vertical))
+            guard frame.height > 0 else { return 0 }
+            return min(1, max(0, 1 - (frame.maxY / frame.height)))
+        } action: { nextProgress in
+            guard abs(progress - nextProgress) > 0.001 else { return }
+            progress = nextProgress
         }
-    }
-
-    private func updateCollapseState(isVisible: Bool) {
-        let nextValue = !isVisible
-        guard isCollapsed != nextValue else { return }
-        isCollapsed = nextValue
     }
 }
 
@@ -264,7 +253,7 @@ struct LibraryHomeView: View {
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
-    @State private var isHomeTitleCollapsed = false
+    @State private var homeTitleCollapseProgress: CGFloat = 0
     @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
@@ -736,22 +725,28 @@ struct LibraryHomeView: View {
             Text(String(localized: "Notes"))
                 .font(.system(size: 34, weight: .bold))
                 .foregroundStyle(MudsnoteColors.text)
-            Text(
-                String(
-                    format: String(localized: "notes.count.format"),
-                    locale: .current,
-                    homeTimelineProjection.entryCount
-                )
-            )
-            .font(.caption)
-            .foregroundStyle(MudsnoteColors.muted)
+            Text(homeNoteCountText)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(1 - homeTitleCollapseProgress)
+        .scaleEffect(
+            1 - (0.34 * homeTitleCollapseProgress),
+            anchor: .topLeading
+        )
+        .offset(y: -8 * homeTitleCollapseProgress)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Notes"))
         .accessibilityValue(homeNoteCountText)
         .accessibilityIdentifier("home-large-title")
-        .modifier(HomeLargeTitleVisibilityModifier(isCollapsed: $isHomeTitleCollapsed))
+        .accessibilityHidden(homeTitleCollapseProgress >= 0.99)
+        .allowsHitTesting(homeTitleCollapseProgress < 0.99)
+        .modifier(
+            HomeTitleTransitionModifier(
+                progress: $homeTitleCollapseProgress
+            )
+        )
     }
 
     private var homeCompactTitle: some View {
@@ -763,16 +758,18 @@ struct LibraryHomeView: View {
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.muted)
         }
-        .opacity(isHomeTitleCollapsed ? 1 : 0)
+        .opacity(homeTitleCollapseProgress)
+        .scaleEffect(0.9 + (0.1 * homeTitleCollapseProgress))
+        .offset(y: 4 * (1 - homeTitleCollapseProgress))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Notes"))
         .accessibilityValue(homeNoteCountText)
         .accessibilityIdentifier(
-            isHomeTitleCollapsed
+            homeTitleCollapseProgress >= 0.99
                 ? "home-compact-title"
                 : "home-compact-title-hidden"
         )
-        .accessibilityHidden(!isHomeTitleCollapsed)
+        .accessibilityHidden(homeTitleCollapseProgress < 0.99)
         .allowsHitTesting(false)
     }
 
