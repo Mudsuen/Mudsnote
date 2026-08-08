@@ -2200,10 +2200,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(openScreenshot)
 
         let closeSwipeStart = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+            withNormalizedOffset: CGVector(dx: 0.94, dy: 0.45)
         )
         let cancelledCloseEnd = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.66, dy: 0.45)
+            withNormalizedOffset: CGVector(dx: 0.90, dy: 0.45)
         )
         closeSwipeStart.press(
             forDuration: 0.3,

@@ -657,7 +657,8 @@ struct LibraryHomeView: View {
     }
 
     private func updateDirectoryWidth(_ availableWidth: CGFloat) {
-        let width = min(max(availableWidth * 0.86, 280), 360)
+        let minimumWidth = min(320, availableWidth)
+        let width = min(max(availableWidth * 0.90, minimumWidth), 360)
         guard abs(width - directoryPanelWidth) > 0.5 else { return }
         directoryPanelWidth = width
     }
@@ -4237,6 +4238,7 @@ struct NotesFolderRow: View {
             Text(title)
                 .font(.system(.body, design: .rounded, weight: .medium))
                 .foregroundStyle(MudsnoteColors.text)
+                .layoutPriority(1)
 
             Spacer()
 
@@ -4246,6 +4248,7 @@ struct NotesFolderRow: View {
                     .monospacedDigit()
                     .foregroundStyle(MudsnoteColors.muted)
                     .frame(minWidth: 28, alignment: .trailing)
+                    .fixedSize()
                     .accessibilityIdentifier("folder-count-\(title)")
             }
 
