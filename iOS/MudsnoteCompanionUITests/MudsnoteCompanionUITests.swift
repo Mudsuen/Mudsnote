@@ -1952,16 +1952,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
             openDirectory: false
         )
 
-        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 8))
+        let navigationBar = app.navigationBars.firstMatch
+        let largeTitle = app.otherElements["home-large-title"]
+        let compactTitle = app.otherElements["home-compact-title"]
+        XCTAssertTrue(largeTitle.waitForExistence(timeout: 8))
+        XCTAssertTrue(navigationBar.exists)
         XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
         XCTAssertTrue(app.buttons["directory-button"].exists)
         let options = app.buttons["home-note-options"]
         XCTAssertTrue(options.exists)
-        let nativeTitle = app.navigationBars["Notes"].staticTexts["Notes"].firstMatch
-        XCTAssertTrue(nativeTitle.waitForExistence(timeout: 3))
-        XCTAssertTrue(nativeTitle.isHittable)
-        let expandedTitleFrame = nativeTitle.frame
+        XCTAssertTrue(largeTitle.isHittable)
+        let expandedTitleFrame = largeTitle.frame
         XCTAssertGreaterThan(expandedTitleFrame.height, 30)
+        XCTAssertGreaterThanOrEqual(expandedTitleFrame.minY, navigationBar.frame.maxY - 1)
+        XCTAssertFalse(compactTitle.exists)
 
         let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
@@ -1996,7 +2000,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["View Attachments"].tap()
         XCTAssertTrue(app.navigationBars["Attachments"].waitForExistence(timeout: 5))
         app.navigationBars["Attachments"].buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(largeTitle.waitForExistence(timeout: 5))
 
         options.tap()
         XCTAssertTrue(app.buttons["View as List"].waitForExistence(timeout: 3))
@@ -2019,14 +2023,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let gallery = app.scrollViews["home-note-gallery"]
         let firstCardBeforeScroll = first.frame.minY
-        gallery.swipeUp()
-        if first.frame.minY >= firstCardBeforeScroll - 20 {
-            gallery.swipeUp()
-        }
+        gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: gallery.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
+                )
+            )
         XCTAssertTrue(app.staticTexts["Today"].exists)
-        XCTAssertTrue(nativeTitle.isHittable)
-        XCTAssertLessThan(nativeTitle.frame.height, expandedTitleFrame.height)
-        XCTAssertLessThan(nativeTitle.frame.minY, expandedTitleFrame.minY)
+        XCTAssertTrue(compactTitle.waitForExistence(timeout: 3))
+        XCTAssertTrue(navigationBar.frame.intersects(compactTitle.frame))
+        XCTAssertFalse(largeTitle.isHittable)
         XCTAssertLessThan(
             first.frame.minY,
             firstCardBeforeScroll - 20,
@@ -2037,6 +2044,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         scrolledScreenshot.lifetime = .keepAlways
         add(scrolledScreenshot)
         gallery.swipeDown()
+        XCTAssertTrue(largeTitle.waitForExistence(timeout: 3))
+        XCTAssertTrue(largeTitle.isHittable)
+        XCTAssertFalse(compactTitle.exists)
 
         app.terminate()
         app.launchArguments.append("-ui-testing-open-directory")
@@ -2085,7 +2095,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             withVelocity: .slow,
             thenHoldForDuration: 0.1
         )
-        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.otherElements["home-large-title"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
 
         app.terminate()
@@ -2100,7 +2110,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let backdrop = app.buttons["directory-backdrop"]
         XCTAssertTrue(backdrop.exists)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
-        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.otherElements["home-large-title"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 
@@ -2112,7 +2122,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
         let appWindow = app.windows.firstMatch
         XCTAssertTrue(appWindow.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.navigationBars["Notes"].exists)
+        XCTAssertTrue(app.otherElements["home-large-title"].exists)
 
         let openSwipeStart = appWindow.coordinate(
             withNormalizedOffset: CGVector(dx: 0.01, dy: 0.45)
@@ -2149,7 +2159,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             thenHoldForDuration: 0.1
         )
 
-        XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["home-large-title"].waitForExistence(timeout: 5))
         XCTAssertFalse(projects.isHittable)
         let closedScreenshot = XCTAttachment(screenshot: app.screenshot())
         closedScreenshot.name = "Reverse directory gesture returns home"

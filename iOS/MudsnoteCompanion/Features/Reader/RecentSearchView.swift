@@ -198,15 +198,6 @@ private final class DirectoryHapticFeedback {
 
 private extension View {
     @ViewBuilder
-    func homeNavigationSubtitle(_ subtitle: String?) -> some View {
-        if #available(iOS 26.0, *), let subtitle {
-            navigationSubtitle(subtitle)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
             toolbarBackground(.hidden, for: .navigationBar)
@@ -216,6 +207,31 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+private struct HomeLargeTitleVisibilityModifier: ViewModifier {
+    @Binding var isCollapsed: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollVisibilityChange(threshold: 0.01) { isVisible in
+                updateCollapseState(isVisible: isVisible)
+            }
+        } else {
+            content.onGeometryChange(for: Bool.self) { proxy in
+                proxy.frame(in: .scrollView(axis: .vertical)).maxY > 0
+            } action: { isVisible in
+                updateCollapseState(isVisible: isVisible)
+            }
+        }
+    }
+
+    private func updateCollapseState(isVisible: Bool) {
+        let nextValue = !isVisible
+        guard isCollapsed != nextValue else { return }
+        isCollapsed = nextValue
     }
 }
 
@@ -246,6 +262,7 @@ struct LibraryHomeView: View {
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var homeTimelineProjection = HomeTimelineProjection()
+    @State private var isHomeTitleCollapsed = false
     @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
@@ -280,11 +297,10 @@ struct LibraryHomeView: View {
                                 updateDirectoryWidth(width)
                             }
                     }
-                }
+            }
             .background(NotesCloneColors.background)
             .navigationTitle(navigationTitle)
-            .navigationBarTitleDisplayMode(.large)
-            .homeNavigationSubtitle(homeNavigationSubtitle)
+            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $isShowingAttachments) {
                 AttachmentLibraryView()
             }
@@ -420,6 +436,10 @@ struct LibraryHomeView: View {
                             viewAttachments: { isShowingAttachments = true }
                         )
                     }
+
+                    ToolbarItem(placement: .principal) {
+                        homeCompactTitle
+                    }
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -499,7 +519,10 @@ struct LibraryHomeView: View {
     private var homeContent: some View {
         if showsSearchExperience {
             ScrollView {
-                searchSection
+                VStack(alignment: .leading, spacing: 22) {
+                    homeLargeTitleHeader
+                    searchSection
+                }
                     .padding(.horizontal, 18)
                     .padding(.top, 12)
                     .padding(.bottom, 110)
@@ -515,35 +538,41 @@ struct LibraryHomeView: View {
 
     private var homeCardStream: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                if appModel.isInitialLibraryLoading, homeTimelineProjection.sections.isEmpty {
-                    ProgressView("Loading Notes…")
+            VStack(alignment: .leading, spacing: 22) {
+                if !isSelectingNotes {
+                    homeLargeTitleHeader
+                }
+
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    if appModel.isInitialLibraryLoading, homeTimelineProjection.sections.isEmpty {
+                        ProgressView("Loading Notes…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                    } else if homeTimelineProjection.sections.isEmpty {
+                        ContentUnavailableView(
+                            "No Notes",
+                            systemImage: "note.text",
+                            description: Text("Create a note or swipe right to open your folders.")
+                        )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 60)
-                } else if homeTimelineProjection.sections.isEmpty {
-                    ContentUnavailableView(
-                        "No Notes",
-                        systemImage: "note.text",
-                        description: Text("Create a note or swipe right to open your folders.")
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 60)
-                } else {
-                    ForEach(homeTimelineProjection.sections) { section in
-                        if viewStyle == .gallery {
-                            HomeTimelineCardSection(
-                                section: section,
-                                isSelecting: isSelectingNotes,
-                                selectedIDs: selectedHomeEntryIDs,
-                                toggleSelection: toggleHomeSelection
-                            )
-                        } else {
-                            HomeTimelineListSection(
-                                section: section,
-                                isSelecting: isSelectingNotes,
-                                selectedIDs: selectedHomeEntryIDs,
-                                toggleSelection: toggleHomeSelection
-                            )
+                    } else {
+                        ForEach(homeTimelineProjection.sections) { section in
+                            if viewStyle == .gallery {
+                                HomeTimelineCardSection(
+                                    section: section,
+                                    isSelecting: isSelectingNotes,
+                                    selectedIDs: selectedHomeEntryIDs,
+                                    toggleSelection: toggleHomeSelection
+                                )
+                            } else {
+                                HomeTimelineListSection(
+                                    section: section,
+                                    isSelecting: isSelectingNotes,
+                                    selectedIDs: selectedHomeEntryIDs,
+                                    toggleSelection: toggleHomeSelection
+                                )
+                            }
                         }
                     }
                 }
@@ -697,12 +726,56 @@ struct LibraryHomeView: View {
                 selectedHomeEntryIDs.count
             )
         }
-        return String(localized: "Notes")
+        return ""
     }
 
-    private var homeNavigationSubtitle: String? {
-        guard !isDirectoryPresented, !isSelectingNotes else { return nil }
-        return String(
+    private var homeLargeTitleHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(String(localized: "Notes"))
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(MudsnoteColors.text)
+            Text(
+                String(
+                    format: String(localized: "notes.count.format"),
+                    locale: .current,
+                    homeTimelineProjection.entryCount
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(MudsnoteColors.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Notes"))
+        .accessibilityValue(homeNoteCountText)
+        .accessibilityIdentifier("home-large-title")
+        .modifier(HomeLargeTitleVisibilityModifier(isCollapsed: $isHomeTitleCollapsed))
+    }
+
+    private var homeCompactTitle: some View {
+        VStack(spacing: -2) {
+            Text(String(localized: "Notes"))
+                .font(.headline)
+                .foregroundStyle(MudsnoteColors.text)
+            Text(homeNoteCountText)
+                .font(.caption)
+                .foregroundStyle(MudsnoteColors.muted)
+        }
+        .opacity(isHomeTitleCollapsed ? 1 : 0)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Notes"))
+        .accessibilityValue(homeNoteCountText)
+        .accessibilityIdentifier(
+            isHomeTitleCollapsed
+                ? "home-compact-title"
+                : "home-compact-title-hidden"
+        )
+        .accessibilityHidden(!isHomeTitleCollapsed)
+        .allowsHitTesting(false)
+    }
+
+    private var homeNoteCountText: String {
+        String(
             format: String(localized: "notes.count.format"),
             locale: .current,
             homeTimelineProjection.entryCount
