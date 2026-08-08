@@ -63,6 +63,8 @@ configure_logging() {
     return
   fi
   mkdir -p "$LOG_DIR"
+  touch "$LOG_FILE"
+  chmod 600 "$LOG_FILE"
   if [[ -t 1 ]]; then
     exec > >(tee -a "$LOG_FILE") 2>&1
   else

@@ -29,6 +29,8 @@ assert_script_contract 'redact_build_output' \
   "persisted build diagnostics must redact signing material"
 assert_script_contract '^[[:space:]]*-quiet' \
   "background signing builds must suppress verbose identity output"
+assert_script_contract 'chmod 600 "\$LOG_FILE"' \
+  "the signing refresh log must be readable only by the signed-in user"
 
 dry_run_output="$("$SCRIPT" --dry-run --auto-install --auto-launch)"
 grep -Fq "would inspect the cached embedded profiles" <<<"$dry_run_output" \
