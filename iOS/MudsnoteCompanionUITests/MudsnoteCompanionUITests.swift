@@ -2270,10 +2270,54 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.launchArguments.append("-ui-testing-open-directory")
         app.launch()
         XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["folders-compact-title"].exists)
         let directoryScreenshot = XCTAttachment(screenshot: app.screenshot())
         directoryScreenshot.name = "Notes translucent top bar directory"
         directoryScreenshot.lifetime = .keepAlways
         add(directoryScreenshot)
+    }
+
+    func testNotesAndFoldersShareOneRestrainedPrincipalTitleSlot() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            homeScrollNotes: true,
+            openDirectory: false
+        )
+        let gallery = app.scrollViews["home-note-gallery"]
+        XCTAssertTrue(gallery.waitForExistence(timeout: 8))
+
+        gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: gallery.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
+                )
+            )
+
+        let notesTitle = app.otherElements["home-compact-title"]
+        XCTAssertTrue(notesTitle.waitForExistence(timeout: 3))
+        let notesTitleMidY = notesTitle.frame.midY
+
+        let directoryButton = app.buttons["directory-button"]
+        XCTAssertTrue(directoryButton.isHittable)
+        directoryButton.tap()
+
+        let foldersTitle = app.staticTexts["folders-compact-title"]
+        XCTAssertTrue(foldersTitle.waitForExistence(timeout: 3))
+        XCTAssertEqual(foldersTitle.frame.midY, notesTitleMidY, accuracy: 3)
+        XCTAssertFalse(notesTitle.exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Notes and Folders restrained principal transition"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        directoryButton.tap()
+        XCTAssertTrue(notesTitle.waitForExistence(timeout: 3))
+        XCTAssertFalse(foldersTitle.exists)
+        XCTAssertEqual(notesTitle.frame.midY, notesTitleMidY, accuracy: 3)
     }
 
     func testBlackGlassHomeSupportsLandscapeAndAccessibilityText() {

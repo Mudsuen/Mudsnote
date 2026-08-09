@@ -74,6 +74,47 @@ struct NotesTopBarAppearance: Equatable {
     )
 }
 
+struct HomeChromeMotion {
+    enum Title: Equatable {
+        case notes
+        case folders
+    }
+
+    enum TitleTransition: Equatable {
+        case opacity
+    }
+
+    static let titleTransition = TitleTransition.opacity
+    static let titleDuration = 0.12
+
+    static func titleDuration(
+        from previous: Title,
+        to next: Title,
+        reduceMotion: Bool
+    ) -> TimeInterval {
+        guard !reduceMotion, previous != next else { return 0 }
+        return titleDuration
+    }
+
+    static func titleAnimation(reduceMotion: Bool) -> Animation? {
+        let duration = titleDuration(
+            from: .notes,
+            to: .folders,
+            reduceMotion: reduceMotion
+        )
+        return duration > 0 ? .easeOut(duration: duration) : nil
+    }
+
+    static func captureDismissDuration(reduceMotion: Bool) -> TimeInterval {
+        reduceMotion ? 0 : 0.18
+    }
+
+    static func captureDismissAnimation(reduceMotion: Bool) -> Animation? {
+        let duration = captureDismissDuration(reduceMotion: reduceMotion)
+        return duration > 0 ? .easeOut(duration: duration) : nil
+    }
+}
+
 struct DirectoryDrawerMotion {
     enum DragAxis: Equatable {
         case undecided
@@ -402,6 +443,12 @@ struct LibraryHomeView: View {
                 await appModel.searchLibrary(query: trimmed, scope: searchScope)
             }
             .toolbar {
+                if !isSelectingNotes {
+                    ToolbarItem(placement: .principal) {
+                        homePrincipalTitle
+                    }
+                }
+
                 if isSelectingNotes {
                     ToolbarItem(placement: .topBarLeading) {
                         Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
@@ -488,13 +535,6 @@ struct LibraryHomeView: View {
                         )
                     }
 
-                    ToolbarItem(placement: .principal) {
-                        homeCompactTitle
-                            .suppressTopChromeAnimationWhenUnchanged(
-                                previous: String(localized: "Notes"),
-                                next: String(localized: "Notes")
-                            )
-                    }
                 }
             }
             .alert("New Folder", isPresented: $isCreatingFolder) {
@@ -783,6 +823,26 @@ struct LibraryHomeView: View {
             )
         }
         return ""
+    }
+
+    private var homePrincipalTitle: some View {
+        ZStack {
+            if isDirectoryPresented {
+                Text(String(localized: "Folders"))
+                    .font(.headline)
+                    .foregroundStyle(MudsnoteColors.text)
+                    .accessibilityIdentifier("folders-compact-title")
+                    .transition(.opacity)
+            } else {
+                homeCompactTitle
+                    .transition(.opacity)
+            }
+        }
+        .frame(minWidth: 92, minHeight: 36)
+        .animation(
+            HomeChromeMotion.titleAnimation(reduceMotion: reduceMotion),
+            value: isDirectoryPresented
+        )
     }
 
     private var homeLargeTitleHeader: some View {

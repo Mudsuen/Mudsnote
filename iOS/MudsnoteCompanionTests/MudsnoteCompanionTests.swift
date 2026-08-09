@@ -153,6 +153,28 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testHomeChromeUsesOneRestrainedBidirectionalTitleTransition() {
+        XCTAssertEqual(HomeChromeMotion.titleTransition, .opacity)
+        XCTAssertEqual(HomeChromeMotion.titleDuration, 0.12)
+        XCTAssertEqual(
+            HomeChromeMotion.titleDuration(from: .notes, to: .folders, reduceMotion: false),
+            HomeChromeMotion.titleDuration(from: .folders, to: .notes, reduceMotion: false)
+        )
+        XCTAssertEqual(
+            HomeChromeMotion.titleDuration(from: .notes, to: .notes, reduceMotion: false),
+            0
+        )
+        XCTAssertEqual(
+            HomeChromeMotion.titleDuration(from: .notes, to: .folders, reduceMotion: true),
+            0
+        )
+    }
+
+    func testSuccessfulCaptureUsesFasterDismissalMotion() {
+        XCTAssertEqual(HomeChromeMotion.captureDismissDuration(reduceMotion: false), 0.18)
+        XCTAssertEqual(HomeChromeMotion.captureDismissDuration(reduceMotion: true), 0)
+    }
+
     func testHomeTopBarUsesNativeTranslucentMaterialOverBlackCanvas() {
         XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.06)
         XCTAssertTrue(NotesTopBarAppearance.notes.isVisible)

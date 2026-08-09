@@ -2080,7 +2080,13 @@ final class AppModel: ObservableObject {
         draft = CaptureDraft(target: submittedDraft.target)
         captureRoute = .text
         if !continueCapturing {
-            isCapturePresented = false
+            withAnimation(
+                HomeChromeMotion.captureDismissAnimation(
+                    reduceMotion: UIAccessibility.isReduceMotionEnabled
+                )
+            ) {
+                isCapturePresented = false
+            }
         }
         return true
     }
