@@ -62,6 +62,18 @@ private struct HomeTimelineProjection {
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
+struct NotesTopBarAppearance: Equatable {
+    var tintOpacity: Double
+    var isVisible: Bool
+    var keepsBlackCanvas: Bool
+
+    static let notes = NotesTopBarAppearance(
+        tintOpacity: 0.06,
+        isVisible: true,
+        keepsBlackCanvas: true
+    )
+}
+
 struct DirectoryDrawerMotion {
     enum DragAxis: Equatable {
         case undecided
@@ -206,6 +218,31 @@ private final class DirectoryHapticFeedback {
 }
 
 private extension View {
+    @ViewBuilder
+    func notesTranslucentTopToolbar(
+        appearance: NotesTopBarAppearance = .notes
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            toolbarBackground(
+                Color.white.opacity(appearance.tintOpacity),
+                for: .navigationBar
+            )
+                .toolbarBackground(
+                    appearance.isVisible ? .visible : .hidden,
+                    for: .navigationBar
+                )
+                .toolbarColorScheme(.dark, for: .navigationBar)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            toolbarBackground(.regularMaterial, for: .navigationBar)
+                .toolbarBackground(
+                    appearance.isVisible ? .visible : .hidden,
+                    for: .navigationBar
+                )
+                .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+    }
+
     func suppressTopChromeAnimationWhenUnchanged<Value: Equatable>(
         previous: Value,
         next: Value
@@ -224,7 +261,7 @@ private extension View {
         if #available(iOS 26.0, *) {
             toolbarBackground(.hidden, for: .bottomBar)
                 .toolbarColorScheme(.dark, for: .bottomBar)
-                .scrollEdgeEffectHidden(true, for: [.top, .bottom])
+                .scrollEdgeEffectHidden(true, for: .bottom)
         } else {
             self
         }
@@ -530,6 +567,7 @@ struct LibraryHomeView: View {
             text: $searchQuery,
             isPresented: $isSearchFocused
         )
+        .notesTranslucentTopToolbar()
         .notesGlassBottomToolbar()
     }
 

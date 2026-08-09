@@ -2091,7 +2091,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         gallery.swipeDown()
         XCTAssertTrue(largeTitle.waitForExistence(timeout: 3))
         XCTAssertTrue(largeTitle.isHittable)
-        XCTAssertFalse(compactTitle.exists)
+        XCTAssertTrue(
+            compactTitle.waitForNonExistence(timeout: 3),
+            "The compact title should leave the accessibility tree after the large title returns"
+        )
 
         app.terminate()
         app.launchArguments.append("-ui-testing-open-directory")
@@ -2232,6 +2235,45 @@ final class MudsnoteCompanionUITests: XCTestCase {
         closedScreenshot.name = "Reverse directory gesture returns home"
         closedScreenshot.lifetime = .keepAlways
         add(closedScreenshot)
+    }
+
+    func testNotesTopBarMaterialAcrossHomeAndDirectoryStates() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            batchNotes: true,
+            homeScrollNotes: true,
+            openDirectory: false
+        )
+        let gallery = app.scrollViews["home-note-gallery"]
+        XCTAssertTrue(gallery.waitForExistence(timeout: 8))
+
+        let expandedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        expandedScreenshot.name = "Notes translucent top bar expanded"
+        expandedScreenshot.lifetime = .keepAlways
+        add(expandedScreenshot)
+
+        gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: gallery.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
+                )
+            )
+        XCTAssertTrue(app.otherElements["home-compact-title"].waitForExistence(timeout: 3))
+        let compactScreenshot = XCTAttachment(screenshot: app.screenshot())
+        compactScreenshot.name = "Notes translucent top bar compact"
+        compactScreenshot.lifetime = .keepAlways
+        add(compactScreenshot)
+
+        app.terminate()
+        app.launchArguments.append("-ui-testing-open-directory")
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 8))
+        let directoryScreenshot = XCTAttachment(screenshot: app.screenshot())
+        directoryScreenshot.name = "Notes translucent top bar directory"
+        directoryScreenshot.lifetime = .keepAlways
+        add(directoryScreenshot)
     }
 
     func testBlackGlassHomeSupportsLandscapeAndAccessibilityText() {

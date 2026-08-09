@@ -153,6 +153,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testHomeTopBarUsesNativeTranslucentMaterialOverBlackCanvas() {
+        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.06)
+        XCTAssertTrue(NotesTopBarAppearance.notes.isVisible)
+        XCTAssertTrue(
+            NotesTopBarAppearance.notes.keepsBlackCanvas,
+            "The navigation material must not replace the true-black page background"
+        )
+    }
+
     func testQuickCaptureLaunchPlanSharesComposerWhilePreservingEntryBehavior() {
         XCTAssertEqual(
             QuickCaptureLaunchPlan.make(for: .text),
