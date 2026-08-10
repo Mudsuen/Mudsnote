@@ -64,14 +64,15 @@
   function rowByLabel(label) {
     return [...document.querySelectorAll("div")].find((element) => {
       if (!visible(element) || textOf(element) !== normalize(label)) return false;
-      const row = element.closest("div[class*='row_']");
+      const row = element.closest("div[class*='row___']");
       return row && visible(row);
-    })?.closest("div[class*='row_']");
+    })?.closest("div[class*='row___']");
   }
 
   async function chooseOption(label, optionText) {
     const row = rowByLabel(label);
     if (!row) throw new Error(`找不到筛选项：${label}`);
+    if (textOf(row).includes(normalize(optionText))) return;
     const trigger = [...row.querySelectorAll("input,[role='combobox']")].find(visible);
     if (!trigger) throw new Error(`找不到筛选框：${label}`);
     click(trigger);
@@ -99,10 +100,12 @@
       (element) => visible(element) && textOf(element) === normalize(label),
     );
     const container = labelNode?.parentElement;
-    const control = container?.querySelector("[role='switch'],input[type='checkbox']")
+    const control = container?.querySelector("[role='switch'],[data-testid='beast-core-switch'],input[type='checkbox']")
       || labelNode?.closest("label")?.querySelector("input[type='checkbox']");
     if (!control) throw new Error(`找不到开关：${label}`);
-    const checked = control.matches(":checked") || control.getAttribute("aria-checked") === "true";
+    const checked = control.matches?.(":checked")
+      || control.getAttribute("aria-checked") === "true"
+      || /checked|active/i.test(control.className);
     if (checked !== enabled) click(control);
   }
 
