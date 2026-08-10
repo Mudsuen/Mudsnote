@@ -18,6 +18,20 @@ struct SettingsRulesView: View {
                     }
                 }
                 Button("Choose Another Folder", action: chooseFolder)
+
+                NavigationLink {
+                    DefaultCaptureFolderView()
+                } label: {
+                    HStack {
+                        Label("Default Folder", systemImage: "tray.full")
+                        Spacer()
+                        Text(appModel.defaultCaptureFolderLabel)
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .lineLimit(1)
+                    }
+                }
+                .accessibilityValue(appModel.defaultCaptureFolderLabel)
+                .accessibilityIdentifier("default-capture-folder-link")
             }
 
             Section("Storage") {
@@ -129,6 +143,48 @@ struct SettingsRulesView: View {
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+}
+
+private struct DefaultCaptureFolderView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(appModel.allFolders) { folder in
+                    Button {
+                        appModel.setDefaultCaptureFolder(folder.relativePath)
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Label(folder.name, systemImage: "folder")
+                                .foregroundStyle(MudsnoteColors.text)
+                            Spacer()
+                            if folder.relativePath == appModel.defaultCaptureFolderPath {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(MudsnoteColors.primary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityValue(
+                        folder.relativePath == appModel.defaultCaptureFolderPath
+                            ? String(localized: "Selected")
+                            : ""
+                    )
+                    .accessibilityIdentifier(
+                        "default-capture-folder-\(folder.relativePath)"
+                    )
+                }
+            } footer: {
+                Text("New notes start in this folder. Existing notes are not moved.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(MudsnoteColors.canvas)
+        .navigationTitle("Default Folder")
     }
 }
 

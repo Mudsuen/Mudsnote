@@ -5,8 +5,23 @@ struct TargetMenuView: View {
 
     var body: some View {
         Menu {
+            if !appModel.recentCaptureFolders.isEmpty {
+                Section("Recently Used") {
+                    ForEach(appModel.recentCaptureFolders) { folder in
+                        Button {
+                            appModel.selectCaptureFolder(folder.relativePath)
+                        } label: {
+                            Label(folder.name, systemImage: "clock.fill")
+                        }
+                        .accessibilityIdentifier(
+                            "recent-capture-folder-\(folder.relativePath)"
+                        )
+                    }
+                }
+            }
+
             Button {
-                appModel.draft.target = .folder(nil)
+                appModel.selectCaptureFolder(nil)
             } label: {
                 Label("Top Level", systemImage: "folder")
             }
@@ -15,7 +30,7 @@ struct TargetMenuView: View {
                 Section("Create New Note In") {
                     ForEach(appModel.allFolders) { folder in
                         Button {
-                            appModel.draft.target = .folder(folder.relativePath)
+                            appModel.selectCaptureFolder(folder.relativePath)
                         } label: {
                             Label(folder.name, systemImage: "folder.fill")
                         }

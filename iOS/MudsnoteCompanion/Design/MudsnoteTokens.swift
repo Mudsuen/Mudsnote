@@ -117,13 +117,52 @@ struct CompactCaptureButtonStyle: ButtonStyle {
                     ? (fillsActiveBackground ? Color.black : Color.red)
                     : MudsnoteColors.text
             )
-            .frame(width: 36, height: 40)
+            .frame(width: 36, height: 36)
             .background(
                 isActive && fillsActiveBackground ? MudsnoteColors.primary : Color.clear,
                 in: Capsule()
             )
+            .frame(width: 36, height: CaptureCommandMetrics.minimumHitHeight)
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+enum CaptureCommandMetrics {
+    static let saveVisualWidth: CGFloat = 52
+    static let saveVisualHeight: CGFloat = 32
+    static let minimumHitHeight: CGFloat = MudsnoteSpacing.tapTargetMin
+}
+
+struct CaptureSaveButtonStyle: ButtonStyle {
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(isActive ? Color.black : MudsnoteColors.muted)
+            .frame(
+                width: CaptureCommandMetrics.saveVisualWidth,
+                height: CaptureCommandMetrics.saveVisualHeight
+            )
+            .mudsnoteGlassSurface(
+                in: Capsule(),
+                tint: isActive
+                    ? MudsnoteColors.primary.opacity(0.82)
+                    : MudsnoteColors.card.opacity(0.32)
+            )
+            .overlay {
+                Capsule()
+                    .stroke(MudsnoteColors.line.opacity(isActive ? 0.35 : 0.7), lineWidth: 0.75)
+            }
+            .frame(
+                width: CaptureCommandMetrics.saveVisualWidth,
+                height: CaptureCommandMetrics.minimumHitHeight
+            )
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }

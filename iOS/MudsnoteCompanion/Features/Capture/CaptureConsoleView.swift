@@ -310,30 +310,6 @@ struct CaptureConsoleView: View {
             .accessibilityLabel("Add Attachment")
             .accessibilityIdentifier("capture-attachment-menu")
 
-            Button {
-                selectedRoute = .audio
-                appModel.toggleAudioRecording()
-            } label: {
-                Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
-            }
-            .buttonStyle(
-                CompactCaptureButtonStyle(
-                    isActive: appModel.audioRecorder.isRecording,
-                    fillsActiveBackground: false
-                )
-            )
-            .disabled(
-                appModel.isSendingDraft
-                    || appModel.isPreparingAttachment
-                    || appModel.isAudioTransitioning
-                    || appModel.isTranscribingAudio
-            )
-            .accessibilityLabel(
-                Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
-            )
-            .accessibilityValue(Text(verbatim: audioAccessibilityValue))
-            .accessibilityIdentifier("capture-record-audio")
-
             Button("#") { appendToken(" #tag") }
                 .buttonStyle(CompactCaptureButtonStyle())
                 .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
@@ -378,6 +354,30 @@ struct CaptureConsoleView: View {
             Spacer(minLength: 0)
 
             Button {
+                selectedRoute = .audio
+                appModel.toggleAudioRecording()
+            } label: {
+                Image(systemName: appModel.isAudioTransitioning ? "hourglass" : (appModel.audioRecorder.isRecording ? "stop.fill" : "waveform"))
+            }
+            .buttonStyle(
+                CompactCaptureButtonStyle(
+                    isActive: appModel.audioRecorder.isRecording,
+                    fillsActiveBackground: false
+                )
+            )
+            .disabled(
+                appModel.isSendingDraft
+                    || appModel.isPreparingAttachment
+                    || appModel.isAudioTransitioning
+                    || appModel.isTranscribingAudio
+            )
+            .accessibilityLabel(
+                Text(LocalizedStringKey(appModel.audioRecorder.isRecording ? "Stop recording" : "Record audio"))
+            )
+            .accessibilityValue(Text(verbatim: audioAccessibilityValue))
+            .accessibilityIdentifier("capture-record-audio")
+
+            Button {
                 isBodyFocused = false
                 appModel.sendDraft(continueCapturing: false)
                 selectedRoute = .text
@@ -385,7 +385,7 @@ struct CaptureConsoleView: View {
             } label: {
                 Image(systemName: appModel.isSendingDraft ? "hourglass" : "arrow.up")
             }
-            .buttonStyle(CompactCaptureButtonStyle(isActive: appModel.draft.canSend))
+            .buttonStyle(CaptureSaveButtonStyle(isActive: appModel.draft.canSend))
             .disabled(
                 !appModel.draft.canSend
                     || appModel.isSendingDraft

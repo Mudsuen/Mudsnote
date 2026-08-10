@@ -364,7 +364,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let targetMenu = app.buttons["capture-target-menu"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertFalse(saveButton.isEnabled)
-        XCTAssertEqual(targetMenu.value as? String, "Top Level")
+        XCTAssertEqual(targetMenu.value as? String, "Inbox")
 
         editor.tap()
         editor.typeText("First UI memo")
@@ -385,14 +385,120 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let targetMenu = app.buttons["capture-target-menu"]
         XCTAssertTrue(targetMenu.waitForExistence(timeout: 8))
-        XCTAssertEqual(targetMenu.value as? String, "Top Level")
+        XCTAssertEqual(targetMenu.value as? String, "Inbox")
         targetMenu.tap()
 
         XCTAssertTrue(app.buttons["Top Level"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Inbox"].exists)
         XCTAssertTrue(app.buttons["Projects"].exists)
         XCTAssertFalse(app.buttons["UI Lifecycle"].exists)
         XCTAssertFalse(app.buttons["Daily"].exists)
         XCTAssertFalse(app.staticTexts["Daily"].exists)
+    }
+
+    func testDefaultFolderSettingAndSuccessfulSaveRecentFolderBoundary() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            captureRoute: true,
+            inboxFolder: true,
+            openDirectory: false
+        )
+        let targetMenu = app.buttons["capture-target-menu"]
+        XCTAssertTrue(targetMenu.waitForExistence(timeout: 8))
+        XCTAssertEqual(targetMenu.value as? String, "Inbox")
+
+        targetMenu.tap()
+        XCTAssertFalse(app.staticTexts["Recently Used"].exists)
+        app.buttons["Projects"].tap()
+
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.tap()
+        editor.typeText("Recent folder history fixture")
+        app.buttons["save-memo-button"].tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+
+        app.buttons["new-note-button"].tap()
+        XCTAssertTrue(targetMenu.waitForExistence(timeout: 5))
+        targetMenu.tap()
+        XCTAssertTrue(app.staticTexts["Recently Used"].waitForExistence(timeout: 3))
+        let recentProjects = app.buttons["recent-capture-folder-Projects"]
+        XCTAssertTrue(recentProjects.exists)
+        recentProjects.tap()
+
+        app.terminate()
+        let relaunched = launchApp(
+            reset: false,
+            fixtureFolder: true,
+            inboxFolder: true
+        )
+        let settings = relaunched.buttons["settings-link"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let defaultFolder = relaunched.buttons["default-capture-folder-link"]
+        XCTAssertTrue(defaultFolder.waitForExistence(timeout: 5))
+        XCTAssertEqual(defaultFolder.value as? String, "Inbox")
+        defaultFolder.tap()
+        relaunched.buttons["default-capture-folder-Projects"].tap()
+
+        relaunched.navigationBars["Settings"].buttons.firstMatch.tap()
+        relaunched.buttons["new-note-button"].tap()
+        let relaunchedTargetMenu = relaunched.buttons["capture-target-menu"]
+        XCTAssertTrue(relaunchedTargetMenu.waitForExistence(timeout: 5))
+        XCTAssertEqual(relaunchedTargetMenu.value as? String, "Projects")
+    }
+
+    func testCaptureVoicePrecedesWiderSaveButtonWithAccessibleTargets() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            captureRoute: true,
+            inboxFolder: true,
+            openDirectory: false
+        )
+        let editor = app.textViews["capture-body-editor"]
+        let voice = app.buttons["capture-record-audio"]
+        let save = app.buttons["save-memo-button"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 8))
+        XCTAssertTrue(voice.exists)
+        XCTAssertTrue(save.exists)
+
+        XCTAssertLessThanOrEqual(voice.frame.maxX, save.frame.minX + 1)
+        XCTAssertGreaterThan(save.frame.width, voice.frame.width)
+        XCTAssertGreaterThanOrEqual(voice.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(save.frame.height, 44)
+    }
+
+    func testCaptureLandscapeAccessibilityLayout() {
+        let device = XCUIDevice.shared
+        defer { device.orientation = .portrait }
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            captureRoute: true,
+            inboxFolder: true,
+            openDirectory: false,
+            accessibilityText: true
+        )
+        let editor = app.textViews["capture-body-editor"]
+        let target = app.buttons["capture-target-menu"]
+        let voice = app.buttons["capture-record-audio"]
+        let save = app.buttons["save-memo-button"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 8))
+
+        device.orientation = .landscapeLeft
+        XCTAssertTrue(waitForHittable(target))
+        XCTAssertTrue(waitForHittable(voice))
+        XCTAssertTrue(save.exists)
+        XCTAssertGreaterThanOrEqual(voice.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(save.frame.height, 44)
+        XCTAssertLessThanOrEqual(voice.frame.maxX, save.frame.minX + 1)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Capture commands - landscape accessibility text"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testCaptureSelectsFolderAndCreatesANewIndependentNote() {

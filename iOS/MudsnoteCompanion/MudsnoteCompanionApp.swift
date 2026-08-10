@@ -102,6 +102,12 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(
                 forKey: AttachmentPresentationPreferences.defaultsKey
             )
+            UserDefaults.standard.removeObject(
+                forKey: CaptureFolderPreferences.defaultFolderKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: CaptureFolderPreferences.recentFoldersKey
+            )
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: CaptureDraftRecoveryStore.defaultDirectory)
         }

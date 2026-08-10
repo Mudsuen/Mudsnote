@@ -69,6 +69,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
     @Published private(set) var isInitialLibraryLoading = true
+    @Published private(set) var defaultCaptureFolderPath: String?
+    @Published private(set) var recentCaptureFolders: [LibraryFolderNode] = []
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -93,8 +95,10 @@ final class AppModel: ObservableObject {
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    private let captureFolderPreferences: CaptureFolderPreferences
     private let libraryRefreshBarrier: @Sendable () async -> Void
     private let initialLibraryLoadBarrier: @Sendable () async -> Void
+    private var captureTargetWasExplicitlySelected = false
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -150,6 +154,12 @@ final class AppModel: ObservableObject {
         inboxItems.count + mergedInboxFiles.count
     }
 
+    var defaultCaptureFolderLabel: String {
+        allFolders.first {
+            $0.relativePath == defaultCaptureFolderPath
+        }?.name ?? String(localized: "Inbox")
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
@@ -168,6 +178,7 @@ final class AppModel: ObservableObject {
         self.libraryRefreshBarrier = libraryRefreshBarrier
         self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
+        captureFolderPreferences = CaptureFolderPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
             Task { await restoreCaptureDraftIfNeeded() }
@@ -198,6 +209,7 @@ final class AppModel: ObservableObject {
     func selectFolder(_ url: URL) {
         let configurationID = beginLibraryConfiguration()
         draft.target = .folder(nil)
+        captureTargetWasExplicitlySelected = false
         Task {
             do {
                 guard libraryConfigurationID == configurationID else { return }
@@ -236,11 +248,18 @@ final class AppModel: ObservableObject {
         libraryRevision += 1
         queue = nil
         draft.target = .folder(nil)
+        defaultCaptureFolderPath = nil
+        recentCaptureFolders = []
+        captureTargetWasExplicitlySelected = false
     }
 
     func showCapture(_ route: CaptureRoute = .text) {
         endCaptureSession()
         captureSessionID = UUID()
+        if !draft.canSend {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(defaultCaptureFolderPath)
+        }
         captureRoute = route
         isCapturePresented = true
         #if DEBUG
@@ -249,6 +268,20 @@ final class AppModel: ObservableObject {
             attachCameraPhoto(.photo(Data()))
         }
         #endif
+    }
+
+    func selectCaptureFolder(_ relativePath: String?) {
+        captureTargetWasExplicitlySelected = true
+        draft.target = .folder(relativePath)
+    }
+
+    func setDefaultCaptureFolder(_ relativePath: String) {
+        captureFolderPreferences.setDefaultFolder(relativePath)
+        refreshCaptureFolderPreferences()
+        if !draft.canSend, !isCapturePresented {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(defaultCaptureFolderPath)
+        }
     }
 
     func handle(url: URL) {
@@ -657,6 +690,7 @@ final class AppModel: ObservableObject {
             draftRecoveryEnabled = false
             draft = recovered
             draftRecoveryEnabled = true
+            captureTargetWasExplicitlySelected = true
             draftRecoveryIssue = nil
             recoveredDraftNeedsAnnouncement = true
             announceRecoveredDraftIfPossible()
@@ -719,8 +753,9 @@ final class AppModel: ObservableObject {
     func replayQueue() {
         Task {
             do {
-                try await queue?.replay { [fileStore] item in
+                try await queue?.replay { [fileStore, weak self] item in
                     try await fileStore.performPendingWrite(item)
+                    self?.recordSuccessfulPendingWrite(item)
                 }
                 statusToast = .saved(String(localized: "Pending queue replayed"))
                 await refreshInbox()
@@ -763,8 +798,9 @@ final class AppModel: ObservableObject {
 
             pendingCount = await queue.pendingCount()
             if pendingCount > 0 {
-                try await queue.replay { [fileStore] item in
+                try await queue.replay { [fileStore, weak self] item in
                     try await fileStore.performPendingWrite(item)
+                    self?.recordSuccessfulPendingWrite(item)
                 }
             }
             guard libraryConfigurationID == configurationID else { return }
@@ -1926,6 +1962,7 @@ final class AppModel: ObservableObject {
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
         folders = snapshot.folders
+        refreshCaptureFolderPreferences()
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
         smartFolders = snapshot.smartFolders
@@ -1995,6 +2032,12 @@ final class AppModel: ObservableObject {
         // navigation shell remain responsive on the main actor.
         try await fileStore.configureAndInitialize(root: root)
         guard libraryConfigurationID == configurationID else { return false }
+        defaultCaptureFolderPath = captureFolderPreferences.resolveDefaultFolder(
+            libraryRoot: root
+        )
+        if !draft.canSend, !captureTargetWasExplicitlySelected {
+            draft.target = .folder(defaultCaptureFolderPath)
+        }
         let nextQueue = PendingWriteQueue(root: root)
         let queueLoadResult = try await nextQueue.load()
         switch queueLoadResult {
@@ -2006,8 +2049,9 @@ final class AppModel: ObservableObject {
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
         do {
-            try await nextQueue.replay { [fileStore] item in
+            try await nextQueue.replay { [fileStore, weak self] item in
                 try await fileStore.performPendingWrite(item)
+                self?.recordSuccessfulPendingWrite(item)
             }
         } catch {
             replayFailed = true
@@ -2068,6 +2112,7 @@ final class AppModel: ObservableObject {
         }
         do {
             try await fileStore.performPendingWrite(pending)
+            recordSuccessfulCaptureFolder(for: draft.target)
             try await queue.remove(id: pending.id)
         } catch {
             throw DraftSaveError.queuedForReplay
@@ -2077,7 +2122,8 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func finishSubmission(_ submittedDraft: CaptureDraft, continueCapturing: Bool) -> Bool {
         guard draft == submittedDraft else { return false }
-        draft = CaptureDraft(target: submittedDraft.target)
+        captureTargetWasExplicitlySelected = false
+        draft = CaptureDraft(target: .folder(defaultCaptureFolderPath))
         captureRoute = .text
         if !continueCapturing {
             withAnimation(
@@ -2089,6 +2135,42 @@ final class AppModel: ObservableObject {
             }
         }
         return true
+    }
+
+    private func refreshCaptureFolderPreferences() {
+        let resolvedDefault = captureFolderPreferences.resolveDefaultFolder(in: folders)
+        defaultCaptureFolderPath = resolvedDefault
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
+
+        let availablePaths = Set(allFolders.map(\.relativePath))
+        if case .folder(let path?) = draft.target,
+           !availablePaths.contains(path) {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(resolvedDefault)
+        } else if !draft.canSend, !captureTargetWasExplicitlySelected {
+            draft.target = .folder(resolvedDefault)
+        }
+    }
+
+    private func recordSuccessfulCaptureFolder(for target: CaptureTarget) {
+        captureFolderPreferences.recordSuccessfulSave(to: target.relativeFolderPath)
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
+    }
+
+    private func recordSuccessfulPendingWrite(_ pending: PendingWrite) {
+        let rawParent = (pending.targetRelativePath as NSString).deletingLastPathComponent
+        let parent = rawParent == "." || rawParent.isEmpty ? nil : rawParent
+        captureFolderPreferences.recordSuccessfulSave(to: parent, at: pending.createdAt)
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
     }
 
     private func openSystemCapture(_ route: CaptureRoute) {

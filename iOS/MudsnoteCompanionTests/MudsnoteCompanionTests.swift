@@ -850,7 +850,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertEqual(selectedRoot, secondRoot)
         XCTAssertEqual(access.currentRoot, secondRoot)
-        XCTAssertEqual(model.draft.target, .folder(nil))
+        XCTAssertEqual(model.draft.target, .folder("Inbox"))
         XCTAssertEqual(model.libraryFiles.count, 1)
         XCTAssertEqual(model.libraryRevision, 1)
     }
@@ -1123,6 +1123,144 @@ final class MudsnoteCompanionTests: XCTestCase {
             CaptureTarget.folder("000-inbox").relativeFolderPath,
             "000-inbox"
         )
+    }
+
+    func testCaptureFolderPreferencesDefaultToExistingInboxAndFallbackWhenStoredFolderDisappears() throws {
+        let suiteName = "MudsnoteCompanionTests.capture-folders.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = CaptureFolderPreferences(defaults: defaults)
+        let folders = LibraryFolderNode.makeTree(
+            directoryPaths: ["Inbox", "Projects", "Projects/Launch"],
+            files: []
+        )
+
+        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Inbox")
+
+        preferences.setDefaultFolder("Projects/Launch")
+        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Projects/Launch")
+
+        preferences.setDefaultFolder("Deleted Folder")
+        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Inbox")
+        XCTAssertEqual(preferences.storedDefaultFolder, nil)
+    }
+
+    func testCaptureFolderPreferencesKeepTenMostRecentExistingWritableFolders() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-recents.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = CaptureFolderPreferences(defaults: defaults)
+        let paths = (0..<12).map { "Folder \($0)" }
+        for path in paths {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(path, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+        let folders = LibraryFolderNode.makeTree(directoryPaths: paths, files: [])
+        let base = Date(timeIntervalSince1970: 1_755_000_000)
+
+        for (index, path) in paths.enumerated() {
+            preferences.recordSuccessfulSave(
+                to: path,
+                at: base.addingTimeInterval(TimeInterval(index))
+            )
+        }
+        preferences.recordSuccessfulSave(
+            to: "Folder 5",
+            at: base.addingTimeInterval(100)
+        )
+
+        XCTAssertEqual(
+            preferences.recentFolders(in: folders, libraryRoot: root).map(\.relativePath),
+            ["Folder 5", "Folder 11", "Folder 10", "Folder 9", "Folder 8",
+             "Folder 7", "Folder 6", "Folder 4", "Folder 3", "Folder 2"]
+        )
+
+        try FileManager.default.removeItem(
+            at: root.appendingPathComponent("Folder 11", isDirectory: true)
+        )
+        let remainingFolders = LibraryFolderNode.makeTree(
+            directoryPaths: paths.filter { $0 != "Folder 11" },
+            files: []
+        )
+        XCTAssertFalse(
+            preferences.recentFolders(in: remainingFolders, libraryRoot: root)
+                .contains { $0.relativePath == "Folder 11" }
+        )
+    }
+
+    func testDefaultSelectionAndCancelledCaptureDoNotCreateRecentFolderHistory() throws {
+        let suiteName = "MudsnoteCompanionTests.capture-history-boundary.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = CaptureFolderPreferences(defaults: defaults)
+        let folders = LibraryFolderNode.makeTree(
+            directoryPaths: ["Inbox", "Projects"],
+            files: []
+        )
+
+        preferences.setDefaultFolder("Projects")
+
+        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Projects")
+        XCTAssertTrue(preferences.recentFolders(in: folders, libraryRoot: nil).isEmpty)
+    }
+
+    @MainActor
+    func testOnlyCompletedCaptureWriteUpdatesRecentFolderHistory() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let suiteName = "MudsnoteCompanionTests.capture-success-history.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let recoveryDirectory = root.appendingPathComponent(".test-draft", isDirectory: true)
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            draftRecoveryStore: CaptureDraftRecoveryStore(directory: recoveryDirectory),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.allFolders.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.defaultCaptureFolderPath, "Inbox")
+
+        model.selectCaptureFolder("Missing")
+        model.draft.body = "This save must fail"
+        model.sendDraft(continueCapturing: false)
+        let failedDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < failedDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNotNil(model.captureSubmissionIssue)
+        XCTAssertTrue(model.recentCaptureFolders.isEmpty)
+
+        model.draft.body = "This save completes"
+        model.selectCaptureFolder("Projects")
+        model.sendDraft(continueCapturing: false)
+        let savedDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < savedDeadline,
+              model.recentCaptureFolders.first?.relativePath != "Projects" {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.recentCaptureFolders.first?.relativePath, "Projects")
+    }
+
+    func testCaptureCommandMetricsKeepLowSaveVisualInsideAccessibleHitTarget() {
+        XCTAssertGreaterThan(CaptureCommandMetrics.saveVisualWidth, 36)
+        XCTAssertLessThan(CaptureCommandMetrics.saveVisualHeight, 40)
+        XCTAssertGreaterThanOrEqual(CaptureCommandMetrics.minimumHitHeight, 44)
     }
 
     func testCaptureCreatesIndependentNotesInsideSelectedFolderWithoutMutatingExistingNote() async throws {
@@ -1800,10 +1938,12 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
 
-        XCTAssertEqual(snapshot.folders.map(\.name), ["Archive", "Projects"])
+        XCTAssertEqual(snapshot.folders.map(\.name), ["Archive", "Inbox", "Projects"])
         let archive = try XCTUnwrap(snapshot.folders.first { $0.name == "Archive" })
         XCTAssertEqual(archive.totalNoteCount, 0)
         XCTAssertEqual(archive.children.map(\.name), ["Empty"])
+        let inbox = try XCTUnwrap(snapshot.folders.first { $0.name == "Inbox" })
+        XCTAssertEqual(inbox.totalNoteCount, 0)
         let projects = try XCTUnwrap(snapshot.folders.first { $0.name == "Projects" })
         XCTAssertEqual(projects.directNoteCount, 1)
         XCTAssertEqual(projects.totalNoteCount, 2)
