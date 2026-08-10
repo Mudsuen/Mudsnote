@@ -39,9 +39,11 @@ func styleToolbarButton(_ button: NSButton) {
 @MainActor
 final class HoverToolbarButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
+    private var isPressing = false
     private(set) var isHovered = false
     var onMouseDown: (() -> Void)?
     var performsActionOnMouseDown = false
+    var usesSubtlePressFeedback = false
     var imageOffsetY: CGFloat = 0 {
         didSet {
             (cell as? OffsetImageButtonCell)?.imageOffsetY = imageOffsetY
@@ -115,6 +117,15 @@ final class HoverToolbarButton: NSButton {
         super.mouseDown(with: event)
     }
 
+    override func highlight(_ flag: Bool) {
+        guard usesSubtlePressFeedback else {
+            super.highlight(flag)
+            return
+        }
+        isPressing = flag
+        updateAppearance()
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
@@ -138,7 +149,10 @@ final class HoverToolbarButton: NSButton {
         layer?.backgroundColor = (isActive || isHovered) ? highlightColor.cgColor : NSColor.clear.cgColor
         layer?.borderWidth = 0
         layer?.borderColor = NSColor.clear.cgColor
-        alphaValue = isWindowFocused ? 1.0 : 0.92
+        alphaValue = isPressing ? 0.72 : (isWindowFocused ? 1.0 : 0.92)
+        layer?.transform = isPressing
+            ? CATransform3DMakeScale(0.97, 0.97, 1)
+            : CATransform3DIdentity
         contentTintColor = foregroundColor
         if !title.isEmpty {
             attributedTitle = NSAttributedString(
@@ -330,8 +344,10 @@ final class FocusAwareSecondaryButton: ModernPillButton {
 @MainActor
 final class FocusAwareGhostButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
+    private var isPressing = false
     private(set) var isHovered = false
     var isWindowFocused = true { didSet { updateAppearance() } }
+    var usesSubtlePressFeedback = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -378,7 +394,11 @@ final class FocusAwareGhostButton: NSButton {
     }
 
     override func highlight(_ flag: Bool) {
-        super.highlight(flag)
+        if usesSubtlePressFeedback {
+            isPressing = flag
+        } else {
+            super.highlight(flag)
+        }
         updateAppearance()
     }
 
@@ -391,7 +411,7 @@ final class FocusAwareGhostButton: NSButton {
         let foreground: NSColor
         let background: NSColor
 
-        if isHighlighted {
+        if isHighlighted && !usesSubtlePressFeedback {
             foreground = panelPrimaryTextColor()
             background = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.72 : 0.56)
         } else if isHovered {
@@ -407,7 +427,10 @@ final class FocusAwareGhostButton: NSButton {
         layer?.backgroundColor = background.cgColor
         layer?.borderWidth = 0
         layer?.shadowOpacity = 0
-        alphaValue = isWindowFocused ? 1.0 : 0.92
+        alphaValue = isPressing ? 0.72 : (isWindowFocused ? 1.0 : 0.92)
+        layer?.transform = isPressing
+            ? CATransform3DMakeScale(0.97, 0.97, 1)
+            : CATransform3DIdentity
         contentTintColor = foreground
         image?.isTemplate = true
         attributedTitle = NSAttributedString(

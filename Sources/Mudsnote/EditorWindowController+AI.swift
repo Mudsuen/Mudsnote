@@ -100,8 +100,9 @@ extension EditorWindowController {
     }
 
     private func currentNoteTitleForAI() -> String? {
-        if let title = quickCaptureTitleTextView?.string.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
+        if isQuickCaptureMode {
+            let title = currentQuickCaptureTitleValue()
+            return title.isEmpty ? nil : title
         }
         return (activeFloatingNoteURL ?? fileURL)?.deletingPathExtension().lastPathComponent
     }

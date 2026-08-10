@@ -1609,30 +1609,50 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func quickCaptureDocumentStateSeparatesTitleAndBody() {
+    func quickCaptureDocumentStateDerivesTitleWithoutRemovingBody() {
         let state = QuickCaptureDocumentState(
-            title: "  Weekly Review  ",
-            bodyMarkdown: "\n- [ ] Finish report\n#ops\n"
+            title: "",
+            bodyMarkdown: "\n\n  这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops\n"
         )
 
-        #expect(state.normalizedTitle == "Weekly Review")
-        #expect(state.normalizedBody == "- [ ] Finish report\n#ops")
-        #expect(state.document.title == "Weekly Review")
-        #expect(state.document.body == "- [ ] Finish report\n#ops")
+        #expect(state.normalizedTitle == "这是第一句。")
+        #expect(state.normalizedBody == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
+        #expect(state.document.title == "这是第一句。")
+        #expect(state.document.body == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
         #expect(state.document.tags == ["ops"])
         #expect(state.hasMeaningfulContent == true)
     }
 
     @Test
-    func quickCaptureTagToggleAddsAndRemovesStandaloneTags() {
-        let original = "Draft body\n#alpha\nkeep #beta"
-        let removed = QuickCaptureDocumentState.toggledTag("alpha", in: original)
-        let added = QuickCaptureDocumentState.toggledTag("gamma", in: removed)
+    func quickCaptureTitleDerivationHandlesMarkdownPunctuationAndLength() {
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "  \n# Plan v2? Keep this") == "Plan v2?")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "\n「中文标题！」后续") == "「中文标题！」")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "\n\n") == "")
 
-        #expect(!QuickCaptureDocumentState.containsTag("alpha", in: removed))
-        #expect(QuickCaptureDocumentState.containsTag("beta", in: removed))
-        #expect(QuickCaptureDocumentState.containsTag("gamma", in: added))
-        #expect(added.contains("#gamma"))
+        let longSentence = String(repeating: "长", count: 200)
+        #expect(QuickCaptureDocumentState.derivedTitle(from: longSentence).count == 80)
+    }
+
+    @Test
+    func quickCaptureLegacyTitleAndBodyMergeWithoutLossOrDuplication() {
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "Legacy title",
+                bodyMarkdown: "Body line\nSecond line"
+            ) == "Legacy title\n\nBody line\nSecond line"
+        )
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "Already present.",
+                bodyMarkdown: "Already present. More text\nSecond line"
+            ) == "Already present. More text\nSecond line"
+        )
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "",
+                bodyMarkdown: "Body only"
+            ) == "Body only"
+        )
     }
 
     @MainActor
@@ -9153,7 +9173,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func quickCaptureUsesQuietIconOnlyFooterActions() throws {
+    func quickCaptureFooterRemovesTagActionAndAlignsRemainingControls() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "quick-capture",
             showsSaveButton: true,
@@ -9170,14 +9190,11 @@ struct MarkdownRichEditorTests {
         defer { harness.tearDown() }
 
         let directoryButton = try #require(harness.controller.quickCaptureDirectoryButton)
-        let tagButton = try #require(harness.controller.quickCaptureTagButton)
         let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
         let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
 
         #expect(harness.controller.selectedDirectoryURL == harness.store.preferredInboxDirectory)
         #expect(harness.controller.quickCaptureDestinationTitle() == "Inbox")
-        #expect(harness.controller.quickCaptureButtonsByAction.isEmpty)
-        #expect(tagButton.superview?.superview === directoryButton.superview)
         let directoryMenu = harness.controller.makeQuickCaptureDirectoryMenu()
         #expect(directoryMenu.items.compactMap { ($0.representedObject as? URL)?.lastPathComponent } == [
             "000-Inbox",
@@ -9187,12 +9204,83 @@ struct MarkdownRichEditorTests {
         #expect(directoryMenu.items.map(\.title) == ["Inbox", "Areas", "Projects"])
         #expect(saveButton.title.isEmpty)
         #expect(saveButton.toolTip == "保存")
-        #expect(saveButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(saveButton.preferredSize == NSSize(width: 28, height: 28))
         #expect(cancelButton.title.isEmpty)
         #expect(cancelButton.toolTip == "取消")
-        #expect(cancelButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(cancelButton.preferredSize == NSSize(width: 28, height: 28))
+        let tagButtons = harness.controller.window?.contentView?.allSubviews
+            .compactMap { $0 as? NSButton }
+            .filter { $0.accessibilityIdentifier() == "QuickCapture标签Button" } ?? []
+        #expect(tagButtons.isEmpty)
+        #expect(directoryButton.frame.midY == cancelButton.frame.midY)
+        #expect(cancelButton.frame.midY == saveButton.frame.midY)
         #expect(saveButton.layer?.backgroundColor == NSColor.clear.cgColor)
         #expect(cancelButton.layer?.backgroundColor == NSColor.clear.cgColor)
+
+        let saveRestingBackground = saveButton.layer?.backgroundColor
+        saveButton.highlight(true)
+        #expect(saveButton.layer?.backgroundColor == saveRestingBackground)
+        #expect(saveButton.alphaValue < 1)
+        saveButton.highlight(false)
+        #expect(saveButton.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureUsesOneEditorAndRestoresLegacyDraftWithoutDuplication() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+                try? store.saveDraft(DraftSnapshot(
+                    id: "quick-capture",
+                    sourcePath: nil,
+                    selectedDirectoryPath: store.notesDirectory.path,
+                    title: "Recovered title.",
+                    body: "Recovered title. Body remains\nSecond line",
+                    updatedAt: Date()
+                ))
+            }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        let separateTitleEditors = controller.window?.contentView?.allSubviews
+            .compactMap { $0 as? FocusableTitleTextView } ?? []
+        #expect(separateTitleEditors.isEmpty)
+        #expect(controller.editorTextView.string == "Recovered title. Body remains\nSecond line")
+        #expect(controller.currentDocument().title == "Recovered title.")
+        #expect(controller.currentDocument().body == "Recovered title. Body remains\nSecond line")
+
+        controller.showWindowAndFocus()
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureSaveUsesFirstSentenceAsTitleAndPreservesFullBody() throws {
+        var savedURL: URL?
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+            },
+            onSave: { savedURL = $0 }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.string = "\nProject / Alpha? Keep this sentence.\nSecond line"
+
+        controller.savePressed()
+
+        let url = try #require(savedURL)
+        let saved = try harness.store.loadNote(at: url)
+        #expect(saved.title == "Project / Alpha?")
+        #expect(saved.body == "Project / Alpha? Keep this sentence.\nSecond line")
+        #expect(!url.lastPathComponent.contains("/"))
+        #expect(url.deletingLastPathComponent() == harness.store.preferredInboxDirectory)
     }
 
     @MainActor

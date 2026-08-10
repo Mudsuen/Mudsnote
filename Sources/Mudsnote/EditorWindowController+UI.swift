@@ -93,15 +93,10 @@ extension EditorWindowController {
 
         toolbarButtons.removeAll()
         toolbarButtonsByAction.removeAll()
-        quickCaptureButtonsByAction.removeAll()
         saveButton = nil
         cancelButton = nil
         quickCaptureDirectoryButton = nil
-        quickCaptureTitleHost = nil
-        quickCaptureTitleTextView = nil
-        quickCaptureTitlePlaceholderLabel = nil
         quickCapturePlaceholderBodyLabel = nil
-        quickCaptureTagButton = nil
         floatingNotePlaceholderLabel = nil
         floatingNoteTitlebarView = nil
         floatingNoteBrowseButton = nil
@@ -307,8 +302,6 @@ extension EditorWindowController {
         scrollView: NSScrollView,
         overlayScrollIndicator: ScrollIndicatorOverlay
     ) {
-        let titleBodyGap: CGFloat = 6
-
         let bodyContainer = SubviewPassthroughView()
         bodyContainer.translatesAutoresizingMaskIntoConstraints = false
         shellContent.addSubview(bodyContainer)
@@ -317,96 +310,16 @@ extension EditorWindowController {
         dragHandle.translatesAutoresizingMaskIntoConstraints = false
         bodyContainer.addSubview(dragHandle)
 
-        let titleHost = TitleEditorProxyView()
-        titleHost.translatesAutoresizingMaskIntoConstraints = false
-        bodyContainer.addSubview(titleHost)
-        quickCaptureTitleHost = titleHost
-
-        let titleTextContainer = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        titleTextContainer.widthTracksTextView = true
-        titleTextContainer.heightTracksTextView = true
-        titleTextContainer.maximumNumberOfLines = 1
-        titleTextContainer.lineBreakMode = NSLineBreakMode.byClipping
-
-        let titleLayoutManager = NSLayoutManager()
-        titleLayoutManager.addTextContainer(titleTextContainer)
-
-        let titleStorage = NSTextStorage()
-        titleStorage.addLayoutManager(titleLayoutManager)
-
-        let titleTextView = FocusableTitleTextView(frame: .zero, textContainer: titleTextContainer)
-        titleTextView.translatesAutoresizingMaskIntoConstraints = false
-        titleTextView.delegate = self
-        titleTextView.drawsBackground = false
-        titleTextView.isRichText = false
-        titleTextView.importsGraphics = false
-        titleTextView.usesFontPanel = false
-        titleTextView.isAutomaticDataDetectionEnabled = false
-        titleTextView.isAutomaticQuoteSubstitutionEnabled = false
-        titleTextView.isAutomaticDashSubstitutionEnabled = false
-        titleTextView.isAutomaticTextReplacementEnabled = false
-        titleTextView.isContinuousSpellCheckingEnabled = false
-        titleTextView.allowsUndo = true
-        titleTextView.isEditable = true
-        titleTextView.isSelectable = true
-        titleTextView.isHorizontallyResizable = false
-        titleTextView.isVerticallyResizable = true
-        titleTextView.minSize = NSSize(width: 0, height: 28)
-        titleTextView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        titleTextView.textColor = panelPrimaryTextColor()
-        titleTextView.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
-        titleTextView.insertionPointColor = theme.accentColor
-        titleTextView.textContainerInset = NSSize(width: 0, height: 4)
-        titleTextView.textContainer?.lineFragmentPadding = 0
-        titleTextView.typingAttributes = [
-            NSAttributedString.Key.font: NSFont.systemFont(ofSize: 18, weight: .semibold),
-            NSAttributedString.Key.foregroundColor: panelPrimaryTextColor()
-        ]
-        titleHost.addSubview(titleTextView)
-        quickCaptureTitleTextView = titleTextView
-        titleTextView.onTextInputStateChanged = { [weak self] in
-            self?.refreshChrome()
-        }
-        titleTextView.nextKeyView = editorTextView
-        editorTextView.nextKeyView = titleTextView
-
-        let titlePlaceholderOverlay = PassthroughOverlayView()
-        titlePlaceholderOverlay.translatesAutoresizingMaskIntoConstraints = false
-        titleHost.addSubview(titlePlaceholderOverlay)
-
-        let titlePlaceholderLabel = NSTextField(labelWithString: "新笔记")
-        titlePlaceholderLabel.translatesAutoresizingMaskIntoConstraints = false
-        titlePlaceholderLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-        titlePlaceholderLabel.textColor = panelTertiaryTextColor()
-        titlePlaceholderOverlay.addSubview(titlePlaceholderLabel)
-        quickCaptureTitlePlaceholderLabel = titlePlaceholderLabel
-
         let bodyPlaceholderOverlay = PassthroughOverlayView()
         bodyPlaceholderOverlay.translatesAutoresizingMaskIntoConstraints = false
         bodyContainer.addSubview(bodyPlaceholderOverlay)
 
-        let bodyLabel = NSTextField(labelWithString: "正文")
+        let bodyLabel = NSTextField(labelWithString: "开始输入笔记…")
         bodyLabel.translatesAutoresizingMaskIntoConstraints = false
         bodyLabel.font = .systemFont(ofSize: 15, weight: .regular)
         bodyLabel.textColor = panelTertiaryTextColor()
         bodyPlaceholderOverlay.addSubview(bodyLabel)
         quickCapturePlaceholderBodyLabel = bodyLabel
-
-        let actionStack = NSStackView()
-        actionStack.orientation = .horizontal
-        actionStack.alignment = .centerY
-        actionStack.spacing = 10
-        actionStack.translatesAutoresizingMaskIntoConstraints = false
-
-        QuickCaptureAction.footerActions.forEach { action in
-            let button = makeQuickCaptureActionButton(for: action)
-            toolbarButtons.append(button)
-            if action == .tag { quickCaptureTagButton = button }
-            if let linkedAction = action.linkedToolbarAction {
-                quickCaptureButtonsByAction[linkedAction] = button
-            }
-            actionStack.addArrangedSubview(button)
-        }
 
         let footerShelf = NSVisualEffectView()
         footerShelf.translatesAutoresizingMaskIntoConstraints = false
@@ -417,7 +330,6 @@ extension EditorWindowController {
         footerShelf.layer?.masksToBounds = true
         footerShelf.layer?.cornerRadius = 0
         shellContent.addSubview(footerShelf)
-        footerShelf.addSubview(actionStack)
 
         let footerDivider = NSBox()
         footerDivider.boxType = .separator
@@ -436,6 +348,8 @@ extension EditorWindowController {
         directoryButton.imagePosition = .imageLeading
         directoryButton.imageHugsTitle = true
         directoryButton.controlSize = .regular
+        directoryButton.usesSubtlePressFeedback = true
+        directoryButton.setAccessibilityIdentifier("QuickCaptureDestinationButton")
         (directoryButton.cell as? NSButtonCell)?.lineBreakMode = .byTruncatingTail
         footerShelf.addSubview(directoryButton)
         quickCaptureDirectoryButton = directoryButton
@@ -474,26 +388,8 @@ extension EditorWindowController {
             dragHandle.topAnchor.constraint(equalTo: bodyContainer.topAnchor, constant: 6),
             dragHandle.heightAnchor.constraint(equalToConstant: 16),
 
-            titleHost.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 18),
-            titleHost.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -20),
-            titleHost.topAnchor.constraint(equalTo: dragHandle.bottomAnchor, constant: 8),
-            titleHost.heightAnchor.constraint(equalToConstant: 32),
-
-            titleTextView.leadingAnchor.constraint(equalTo: titleHost.leadingAnchor),
-            titleTextView.trailingAnchor.constraint(equalTo: titleHost.trailingAnchor),
-            titleTextView.topAnchor.constraint(equalTo: titleHost.topAnchor),
-            titleTextView.bottomAnchor.constraint(equalTo: titleHost.bottomAnchor),
-
-            titlePlaceholderOverlay.leadingAnchor.constraint(equalTo: titleHost.leadingAnchor),
-            titlePlaceholderOverlay.trailingAnchor.constraint(equalTo: titleHost.trailingAnchor),
-            titlePlaceholderOverlay.topAnchor.constraint(equalTo: titleHost.topAnchor),
-            titlePlaceholderOverlay.bottomAnchor.constraint(equalTo: titleHost.bottomAnchor),
-
-            titlePlaceholderLabel.leadingAnchor.constraint(equalTo: titlePlaceholderOverlay.leadingAnchor),
-            titlePlaceholderLabel.centerYAnchor.constraint(equalTo: titlePlaceholderOverlay.centerYAnchor),
-
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 18),
-            scrollView.topAnchor.constraint(equalTo: titleHost.bottomAnchor, constant: titleBodyGap),
+            scrollView.topAnchor.constraint(equalTo: dragHandle.bottomAnchor, constant: 8),
             scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -12),
 
             overlayScrollIndicator.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -10),
@@ -508,9 +404,7 @@ extension EditorWindowController {
             bodyPlaceholderOverlay.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
 
             bodyLabel.leadingAnchor.constraint(equalTo: bodyPlaceholderOverlay.leadingAnchor, constant: 20),
-            bodyLabel.topAnchor.constraint(equalTo: bodyPlaceholderOverlay.topAnchor, constant: titleBodyGap),
-
-            actionStack.heightAnchor.constraint(equalToConstant: 28),
+            bodyLabel.topAnchor.constraint(equalTo: bodyPlaceholderOverlay.topAnchor, constant: 8),
 
             footerShelf.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor),
             footerShelf.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor),
@@ -523,11 +417,7 @@ extension EditorWindowController {
 
             directoryButton.leadingAnchor.constraint(equalTo: footerShelf.leadingAnchor, constant: 10),
             directoryButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
-            directoryButton.heightAnchor.constraint(equalToConstant: 22),
-            actionStack.leadingAnchor.constraint(greaterThanOrEqualTo: directoryButton.trailingAnchor, constant: 10),
-            actionStack.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
-            actionStack.centerXAnchor.constraint(equalTo: footerShelf.centerXAnchor),
-            actionStack.trailingAnchor.constraint(lessThanOrEqualTo: cancelButton.leadingAnchor, constant: -10),
+            directoryButton.heightAnchor.constraint(equalToConstant: 28),
 
             saveButton.trailingAnchor.constraint(equalTo: footerShelf.trailingAnchor, constant: -10),
             saveButton.centerYAnchor.constraint(equalTo: footerShelf.centerYAnchor),
@@ -573,10 +463,12 @@ extension EditorWindowController {
         button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: toolTip)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: symbolWeight))
         button.imagePosition = .imageOnly
-        button.preferredSize = NSSize(width: 26, height: 26)
+        button.preferredSize = NSSize(width: 28, height: 28)
+        button.usesSubtlePressFeedback = true
+        button.setAccessibilityIdentifier("QuickCapture\(toolTip)Button")
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 26).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
         return button
     }
 
@@ -603,24 +495,6 @@ extension EditorWindowController {
                 .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
             button.imagePosition = .imageOnly
         }
-        return button
-    }
-
-    func makeQuickCaptureActionButton(for action: QuickCaptureAction) -> HoverToolbarButton {
-        let button = HoverToolbarButton(frame: .zero)
-        button.target = self
-        button.action = #selector(quickCaptureActionPressed(_:))
-        button.tag = action.rawValue
-        button.toolTip = action.toolTip
-        button.image = NSImage(systemSymbolName: action.symbolName, accessibilityDescription: action.toolTip)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
-        button.imagePosition = .imageOnly
-        button.title = ""
-        button.preferredSize = NSSize(width: 28, height: 28)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        button.imageOffsetY = -1
         return button
     }
 
@@ -677,16 +551,6 @@ extension EditorWindowController {
                 Task { @MainActor [weak self] in self?.userDidEdit() }
             }
         )
-        if let titleTextView = quickCaptureTitleTextView {
-            observers.append(
-                center.addObserver(forName: NSText.didChangeNotification, object: titleTextView, queue: nil) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        self?.refreshChrome()
-                        self?.markDocumentDirty()
-                    }
-                }
-            )
-        }
         if let contentView = editorTextView.enclosingScrollView?.contentView {
             observers.append(
                 center.addObserver(forName: NSView.boundsDidChangeNotification, object: contentView, queue: nil) { [weak self] _ in
@@ -748,8 +612,10 @@ extension EditorWindowController {
 
     func applyInitialContent(title: String, body: String) {
         if isQuickCaptureMode {
-            quickCaptureTitleTextView?.string = title
-            applyBodyMarkdown(body)
+            applyBodyMarkdown(QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: title,
+                bodyMarkdown: body
+            ))
             return
         }
         applyBodyMarkdown(MarkdownEditorDocument(title: title, body: body).editorText)
@@ -786,21 +652,12 @@ extension EditorWindowController {
         guard isQuickCaptureMode else { return }
 
         let state = QuickCaptureDocumentState(
-            title: currentQuickCaptureTitleValue(),
+            title: "",
             bodyMarkdown: serializedBodyMarkdown()
         )
-        let titleHasMarkedText = quickCaptureTitleTextView?.hasMarkedText() == true
         let bodyHasMarkedText = editorTextView.hasMarkedText()
 
-        quickCaptureTitlePlaceholderLabel?.isHidden = !state.normalizedTitle.isEmpty || titleHasMarkedText
         quickCapturePlaceholderBodyLabel?.isHidden = !state.normalizedBody.isEmpty || bodyHasMarkedText
-
-        if let tagButton = quickCaptureTagButton {
-            tagButton.isActive = !state.tags.isEmpty
-            tagButton.toolTip = state.tags.isEmpty
-                ? "选择已有标签，或在正文中插入 #"
-                : state.tags.map { "#\($0)" }.joined(separator: ", ")
-        }
 
         let destinationTitle = quickCaptureDestinationTitle()
         quickCaptureDirectoryButton?.title = destinationTitle

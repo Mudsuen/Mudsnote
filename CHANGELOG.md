@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 252. Unified macOS Quick Capture editor
+- Problem: Quick Capture split a note into separate title and body fields, while its visually raised tag button synchronously scanned the note library and could stall the entire panel.
+- Fix: Quick Capture now opens directly in one native editor, derives the saved title from the first sentence while preserving that sentence in the body, and losslessly folds legacy title/body drafts into the unified content. The tag button and its blocking entry point are removed; Inbox, cancel, and save share one 28-point footer centerline with restrained opacity/scale press feedback.
+- Lesson: Capture should keep one uninterrupted writing surface, and a secondary action that requires library-scale work should not occupy the critical save path when inline Markdown already provides the same semantics.
+
 ### 251. Cancelable bounded macOS library search
 - Problem: Canceling a cold or warm search stopped result publication but did not stop the detached index work, so old queries could keep scanning, parsing, and holding the shared build lock while the latest query waited; matching also built snippets and sorted every hit before applying the visible limit.
 - Fix: Search cancellation now propagates through lock acquisition, directory enumeration, index refresh, file reads, matching, and scoped queries. Ranking retains only the exact top results, snippets are built only for those results, trash search parses each candidate once, unresolved iCloud items and malformed or oversized Markdown fail softly, and the persistent JSON cache has a hard size ceiling.

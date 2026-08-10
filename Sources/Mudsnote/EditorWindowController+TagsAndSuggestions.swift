@@ -275,61 +275,6 @@ extension EditorWindowController {
         return attributes
     }
 
-    // MARK: - Tag menu (quick capture)
-
-    func showQuickCaptureTagMenu(from sender: NSButton) {
-        let menu = NSMenu()
-
-        let insertHashItem = NSMenuItem(title: "插入 # 到正文", action: #selector(insertInlineHashMarkerFromMenu(_:)), keyEquivalent: "")
-        insertHashItem.target = self
-        menu.addItem(insertHashItem)
-
-        let knownTags = noteStore.knownTags(limit: 12)
-        if knownTags.isEmpty {
-            menu.addItem(.separator())
-            let emptyItem = NSMenuItem(title: "暂无已保存标签", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-        } else {
-            menu.addItem(.separator())
-            for tag in knownTags {
-                let item = NSMenuItem(title: "#\(tag)", action: #selector(toggleQuickCaptureTagFromMenu(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = tag
-                item.state = QuickCaptureDocumentState.containsTag(tag, in: serializedBodyMarkdown()) ? .on : .off
-                menu.addItem(item)
-            }
-        }
-
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func insertInlineHashMarkerFromMenu(_ sender: NSMenuItem) {
-        window?.makeFirstResponder(editorTextView)
-        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-        insertTextAtSelection("#")
-        userDidEdit()
-    }
-
-    @objc private func toggleQuickCaptureTagFromMenu(_ sender: NSMenuItem) {
-        guard let tag = sender.representedObject as? String else { return }
-        let updatedBody = QuickCaptureDocumentState.toggledTag(tag, in: serializedBodyMarkdown())
-        replaceBodyMarkdownFromQuickCaptureMenu(updatedBody)
-    }
-
-    private func replaceBodyMarkdownFromQuickCaptureMenu(_ markdown: String) {
-        suppressAutosave = true
-        applyBodyMarkdown(markdown)
-        suppressAutosave = false
-        window?.makeFirstResponder(editorTextView)
-        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-        updateTypingAttributesFromInsertionPoint()
-        updateToolbarSelectionState()
-        updateInlineSuggestions()
-        refreshChrome()
-        markDocumentDirty()
-    }
-
     // MARK: - String algorithms
 
     private func isSubsequence(_ needle: String, of haystack: String) -> Bool {
