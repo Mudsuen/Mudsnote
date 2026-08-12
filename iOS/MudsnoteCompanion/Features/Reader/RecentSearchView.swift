@@ -403,12 +403,6 @@ struct LibraryHomeView: View {
                 if requested { presentRequestedSearchIfNeeded() }
             }
             .onChange(of: appModel.libraryRevision) { _, _ in
-                if let selectedHomeFolderPath,
-                   !appModel.allFolders.contains(where: {
-                       $0.relativePath == selectedHomeFolderPath
-                   }) {
-                    self.selectedHomeFolderPath = nil
-                }
                 refreshHomeTimelineProjection()
             }
             .onChange(of: viewStyleRawValue) { _, _ in
@@ -648,7 +642,7 @@ struct LibraryHomeView: View {
                             "No Notes",
                             systemImage: "note.text",
                             description: Text(
-                                selectedHomeFolder == nil
+                                selectedHomeFolderPath == nil
                                     ? "Create a note or swipe right to open your folders."
                                     : "This folder has no notes yet."
                             )
@@ -917,15 +911,13 @@ struct LibraryHomeView: View {
         )
     }
 
-    private var selectedHomeFolder: LibraryFolderNode? {
-        guard let selectedHomeFolderPath else { return nil }
+    private var homeDisplayTitle: String {
+        guard let selectedHomeFolderPath else {
+            return String(localized: "Notes")
+        }
         return appModel.allFolders.first {
             $0.relativePath == selectedHomeFolderPath
-        }
-    }
-
-    private var homeDisplayTitle: String {
-        selectedHomeFolder?.name ?? String(localized: "Notes")
+        }?.name ?? (selectedHomeFolderPath as NSString).lastPathComponent
     }
 
     private var allHomeNoteCount: Int {
