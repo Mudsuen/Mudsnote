@@ -1,14 +1,66 @@
 import SwiftUI
 
+enum MudsnoteAppearance: String, CaseIterable, Identifiable {
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var colorScheme: ColorScheme {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .light: "sun.max"
+        case .dark: "moon.stars"
+        }
+    }
+}
+
 enum MudsnoteColors {
-    static let canvas = Color.black
-    static let panel = Color(hex: 0x080808)
-    static let card = Color.white.opacity(0.10)
-    static let line = Color.white.opacity(0.22)
-    static let text = Color(hex: 0xF7F7F7)
-    static let muted = Color(hex: 0xB8B8BD)
-    static let primary = Color(hex: 0xF7F7F7)
-    static let captureAccent = Color(hex: 0x0A84FF)
+    static let canvas = adaptive(light: 0xF4F4F7, dark: 0x000000)
+    static let panel = adaptive(light: 0xFBFBFD, dark: 0x080808)
+    static let card = adaptive(
+        light: 0x000000,
+        dark: 0xFFFFFF,
+        lightAlpha: 0.055,
+        darkAlpha: 0.10
+    )
+    static let line = adaptive(
+        light: 0x000000,
+        dark: 0xFFFFFF,
+        lightAlpha: 0.13,
+        darkAlpha: 0.22
+    )
+    static let text = adaptive(light: 0x17171A, dark: 0xF7F7F7)
+    static let muted = adaptive(light: 0x68686F, dark: 0xB8B8BD)
+    static let primary = adaptive(light: 0x17171A, dark: 0xF7F7F7)
+    static let captureAccent = Color(uiColor: .systemBlue)
+
+    private static func adaptive(
+        light: UInt32,
+        dark: UInt32,
+        lightAlpha: CGFloat = 1,
+        darkAlpha: CGFloat = 1
+    ) -> Color {
+        Color(uiColor: UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(hex: dark).withAlphaComponent(darkAlpha)
+            }
+            return UIColor(hex: light).withAlphaComponent(lightAlpha)
+        })
+    }
 }
 
 enum MudsnoteRadius {
@@ -33,6 +85,17 @@ extension Color {
     }
 }
 
+private extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+}
+
 extension View {
     @ViewBuilder
     func mudsnoteGlassSurface<S: Shape>(
@@ -49,6 +112,22 @@ extension View {
     }
 }
 
+struct MudsnoteTopFadeMaterial: View {
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .mask {
+                LinearGradient(
+                    colors: [.black, .black.opacity(0.72), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
 struct MudsnoteReaderSheetBackground: View {
     var body: some View {
         ZStack {
@@ -56,7 +135,7 @@ struct MudsnoteReaderSheetBackground: View {
             LinearGradient(
                 colors: [
                     Color.white.opacity(0.055),
-                    Color.black.opacity(0.98),
+                    MudsnoteColors.panel.opacity(0.96),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing

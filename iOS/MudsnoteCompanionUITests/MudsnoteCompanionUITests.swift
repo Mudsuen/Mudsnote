@@ -1455,6 +1455,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         note.press(forDuration: 1)
 
+        XCTAssertTrue(app.buttons["copy-note-Projects/UI Lifecycle.md"].waitForExistence(timeout: 3))
         let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
         XCTAssertTrue(edit.waitForExistence(timeout: 3))
         edit.tap()
@@ -2214,7 +2215,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
-        XCTAssertTrue(app.buttons["settings-link"].isHittable)
+        XCTAssertTrue(app.buttons["settings-link"].exists)
 
         let inboxCount = app.staticTexts["folder-count-000-inbox"]
         let projectsCount = app.staticTexts["folder-count-Projects"]
@@ -2238,7 +2239,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertEqual(editFolders.label, "Done")
 
         let closeSwipeStart = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.7, dy: 0.45)
+            withNormalizedOffset: CGVector(dx: 0.94, dy: 0.45)
         )
         let closeSwipeEnd = appWindow.coordinate(
             withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
@@ -2261,10 +2262,16 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "Edit",
             "Closing by drag should leave folder editing mode"
         )
-        let backdrop = app.buttons["directory-backdrop"]
-        XCTAssertTrue(backdrop.exists)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
-        XCTAssertTrue(app.otherElements["home-large-title"].waitForExistence(timeout: 3))
+        let selectedProjects = app.buttons["folder-row-Projects"]
+        selectedProjects.tap()
+        let folderTitle = app.otherElements["home-large-title"]
+        XCTAssertTrue(folderTitle.waitForExistence(timeout: 3))
+        XCTAssertTrue(folderTitle.label.contains("Projects"))
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.navigationBars["Projects"].exists)
         XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 

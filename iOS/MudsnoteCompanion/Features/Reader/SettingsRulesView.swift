@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsRulesView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var isDiscardRecoveryPresented = false
+    @AppStorage("mudsnote.ios.appearance") private var appearanceRawValue =
+        MudsnoteAppearance.dark.rawValue
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -32,6 +34,17 @@ struct SettingsRulesView: View {
                 }
                 .accessibilityValue(appModel.defaultCaptureFolderLabel)
                 .accessibilityIdentifier("default-capture-folder-link")
+            }
+
+            Section("Appearance") {
+                Picker("Appearance", selection: $appearanceRawValue) {
+                    ForEach(MudsnoteAppearance.allCases) { appearance in
+                        Label(appearance.label, systemImage: appearance.systemImage)
+                            .tag(appearance.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("appearance-picker")
             }
 
             Section("Storage") {

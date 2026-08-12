@@ -23,6 +23,28 @@ enum NoteMetadataPresentation {
     }
 }
 
+struct MarkdownFrontMatterProjection: Equatable {
+    var metadata: String?
+    var body: String
+
+    init(_ markdown: String) {
+        let lines = markdown.components(separatedBy: .newlines)
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
+              let closingIndex = lines.indices.dropFirst().first(where: {
+                  let marker = lines[$0].trimmingCharacters(in: .whitespacesAndNewlines)
+                  return marker == "---" || marker == "..."
+              })
+        else {
+            metadata = nil
+            body = markdown
+            return
+        }
+
+        metadata = lines[...closingIndex].joined(separator: "\n")
+        body = lines.dropFirst(closingIndex + 1).joined(separator: "\n")
+    }
+}
+
 struct MarkdownPreviewView: View {
     private enum Source {
         case memo(MemoBlock)
@@ -103,35 +125,41 @@ struct MarkdownPreviewView: View {
     @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
     @State private var isLoadingFindAttachments = false
     @State private var collapsedHeadingIndices: Set<Int> = []
+    @State private var showsFrontMatter = false
     @State private var linkedSourceHistory: [Source] = []
     @State private var exportedPDF: ExportedNotePDF?
     @State private var isExportingPDF = false
     @State private var pdfExportErrorMessage: String?
     @FocusState private var isFindFocused: Bool
     private let requestEditing: () -> Void
+    private let editingChanged: (Bool) -> Void
 
     init(
         memo: MemoBlock,
         startsEditing: Bool = false,
-        requestEditing: @escaping () -> Void = {}
+        requestEditing: @escaping () -> Void = {},
+        editingChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         _source = State(initialValue: .memo(memo))
         _draftMarkdown = State(initialValue: memo.body)
         _originalMarkdown = State(initialValue: memo.body)
         _isEditing = State(initialValue: startsEditing)
         self.requestEditing = requestEditing
+        self.editingChanged = editingChanged
     }
 
     init(
         document: MarkdownDocument,
         startsEditing: Bool = false,
-        requestEditing: @escaping () -> Void = {}
+        requestEditing: @escaping () -> Void = {},
+        editingChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         _source = State(initialValue: .document(document))
         _draftMarkdown = State(initialValue: document.markdown)
         _originalMarkdown = State(initialValue: document.markdown)
         _isEditing = State(initialValue: document.isNew || startsEditing)
         self.requestEditing = requestEditing
+        self.editingChanged = editingChanged
     }
 
     var body: some View {
@@ -212,9 +240,13 @@ struct MarkdownPreviewView: View {
         )
         .onAppear {
             beginLibraryAccess()
+            editingChanged(isEditing)
             if isEditing {
                 focusEditorAfterPresentation()
             }
+        }
+        .onChange(of: isEditing) { _, editing in
+            editingChanged(editing)
         }
         .onDisappear {
             if case .document(let document) = source {
@@ -537,7 +569,15 @@ struct MarkdownPreviewView: View {
     }
 
     private var renderBlocks: [MarkdownRenderBlock] {
-        MarkdownRenderBlock.parse(draftMarkdown)
+        MarkdownRenderBlock.parse(renderedMarkdown)
+    }
+
+    private var frontMatterProjection: MarkdownFrontMatterProjection {
+        MarkdownFrontMatterProjection(draftMarkdown)
+    }
+
+    private var renderedMarkdown: String {
+        showsFrontMatter ? draftMarkdown : frontMatterProjection.body
     }
 
     private var presentationPreferenceNotePath: String {
@@ -862,6 +902,26 @@ struct MarkdownPreviewView: View {
 
     @ViewBuilder
     private var readerContextMenuContent: some View {
+        Button {
+            UIPasteboard.general.string = draftMarkdown
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+        .disabled(draftMarkdown.isEmpty)
+        .accessibilityIdentifier("copy-note")
+
+        if frontMatterProjection.metadata != nil {
+            Button {
+                showsFrontMatter.toggle()
+            } label: {
+                Label(
+                    showsFrontMatter ? "Hide Metadata" : "Show Metadata",
+                    systemImage: showsFrontMatter ? "eye.slash" : "eye"
+                )
+            }
+            .accessibilityIdentifier("toggle-note-metadata")
+        }
+
         if case .document(let document) = source {
             Button {
                 Task { await exportCurrentDocumentAsPDF(document) }
@@ -1345,16 +1405,10 @@ struct MarkdownPreviewView: View {
         indentation: Int,
         blockIndex: Int
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(marker)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(MudsnoteColors.muted)
-                .frame(minWidth: 18, alignment: .trailing)
-            markdownText(
-                text,
-                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
-            )
-        }
+        markdownText(
+            "\(marker) \(text)",
+            location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil)
+        )
         .padding(.leading, CGFloat(indentation) * 16)
     }
 
@@ -1739,19 +1793,7 @@ struct MarkdownPreviewView: View {
         )
         return Text(renderedText)
             .foregroundStyle(MudsnoteColors.text)
-            .accessibilityHidden(true)
-            .overlay {
-                MarkdownTextSelectionOverlay(
-                    attributedText: renderedText,
-                    font: selectionFont,
-                    onOpenURL: { url in
-                        openRenderedURL(url)
-                    }
-                )
-            }
-            .accessibilityRepresentation {
-                Text(renderedText)
-            }
+            .font(Font(selectionFont))
     }
 
     @MainActor
@@ -2143,102 +2185,6 @@ struct MarkdownPreviewView: View {
             guard case .line(let line) = block else { return nil }
             return MarkdownAttachmentLine(line)?.path
         })
-    }
-}
-
-private struct MarkdownTextSelectionOverlay: UIViewRepresentable {
-    var attributedText: AttributedString
-    var font: UIFont
-    var onOpenURL: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.delegate = context.coordinator
-        textView.backgroundColor = .clear
-        textView.isOpaque = false
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isScrollEnabled = false
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.adjustsFontForContentSizeCategory = true
-        textView.tintColor = .systemBlue
-        textView.clipsToBounds = false
-        textView.isAccessibilityElement = false
-        textView.accessibilityElementsHidden = true
-        textView.linkTextAttributes = [.foregroundColor: UIColor.clear]
-
-        let tap = UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleTap(_:))
-        )
-        tap.cancelsTouchesInView = false
-        textView.addGestureRecognizer(tap)
-        context.coordinator.textView = textView
-        update(textView)
-        return textView
-    }
-
-    func updateUIView(_ textView: UITextView, context: Context) {
-        context.coordinator.parent = self
-        update(textView)
-    }
-
-    private func update(_ textView: UITextView) {
-        textView.font = font
-        let invisibleText = NSMutableAttributedString(
-            attributedString: NSAttributedString(attributedText)
-        )
-        let fullRange = NSRange(location: 0, length: invisibleText.length)
-        invisibleText.removeAttribute(.backgroundColor, range: fullRange)
-        invisibleText.addAttribute(.foregroundColor, value: UIColor.clear, range: fullRange)
-        textView.attributedText = invisibleText
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var parent: MarkdownTextSelectionOverlay
-        weak var textView: UITextView?
-
-        init(parent: MarkdownTextSelectionOverlay) {
-            self.parent = parent
-        }
-
-        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard recognizer.state == .ended, let textView else { return }
-            if let url = link(at: recognizer.location(in: textView), in: textView) {
-                parent.onOpenURL(url)
-            }
-        }
-
-        func textView(
-            _ textView: UITextView,
-            primaryActionFor textItem: UITextItem,
-            defaultAction: UIAction
-        ) -> UIAction? {
-            guard case .link = textItem.content else { return defaultAction }
-            return nil
-        }
-
-        private func link(at point: CGPoint, in textView: UITextView) -> URL? {
-            var location = point
-            location.x -= textView.textContainerInset.left
-            location.y -= textView.textContainerInset.top
-            let glyphIndex = textView.layoutManager.glyphIndex(
-                for: location,
-                in: textView.textContainer
-            )
-            let characterIndex = textView.layoutManager.characterIndexForGlyph(at: glyphIndex)
-            guard characterIndex < textView.attributedText.length else { return nil }
-            return textView.attributedText.attribute(
-                .link,
-                at: characterIndex,
-                effectiveRange: nil
-            ) as? URL
-        }
     }
 }
 

@@ -1,9 +1,16 @@
 import SwiftUI
 
+enum ReaderPresentationPolicy {
+    static func detents(isEditing: Bool) -> Set<PresentationDetent> {
+        isEditing ? [.large] : [.medium, .large]
+    }
+}
+
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var isFolderImporterPresented = false
     @State private var readerDetent: PresentationDetent = .medium
+    @State private var isReaderEditing = false
 
     private var usesFullReaderForUITests: Bool {
         ProcessInfo.processInfo.arguments.contains("-ui-testing-full-reader")
@@ -79,9 +86,10 @@ struct RootView: View {
             MarkdownPreviewView(
                 memo: memo,
                 startsEditing: appModel.noteOpenMode == .edit,
-                requestEditing: expandReaderForEditing
+                requestEditing: expandReaderForEditing,
+                editingChanged: updateReaderEditing
             )
-                .presentationDetents([.medium, .large], selection: $readerDetent)
+                .presentationDetents(readerDetents, selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
@@ -93,9 +101,10 @@ struct RootView: View {
             MarkdownPreviewView(
                 document: document,
                 startsEditing: appModel.noteOpenMode == .edit,
-                requestEditing: expandReaderForEditing
+                requestEditing: expandReaderForEditing,
+                editingChanged: updateReaderEditing
             )
-                .presentationDetents([.medium, .large], selection: $readerDetent)
+                .presentationDetents(readerDetents, selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
@@ -112,6 +121,7 @@ struct RootView: View {
             } else {
                 appModel.noteOpenMode = .read
                 appModel.isReaderExpanded = false
+                isReaderEditing = false
             }
         }
         .onChange(of: appModel.selectedDocument?.id) { _, id in
@@ -125,6 +135,7 @@ struct RootView: View {
             } else {
                 appModel.noteOpenMode = .read
                 appModel.isReaderExpanded = false
+                isReaderEditing = false
             }
         }
         .onChange(of: readerDetent) { _, detent in
@@ -143,9 +154,20 @@ struct RootView: View {
             && (appModel.selectedMemo != nil || appModel.selectedDocument != nil)
     }
 
+    private var readerDetents: Set<PresentationDetent> {
+        ReaderPresentationPolicy.detents(isEditing: isReaderEditing)
+    }
+
     private func expandReaderForEditing() {
         appModel.noteOpenMode = .edit
         readerDetent = .large
         appModel.isReaderExpanded = true
+    }
+
+    private func updateReaderEditing(_ isEditing: Bool) {
+        isReaderEditing = isEditing
+        if isEditing {
+            expandReaderForEditing()
+        }
     }
 }

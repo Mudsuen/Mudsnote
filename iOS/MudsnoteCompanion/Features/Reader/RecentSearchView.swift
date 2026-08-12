@@ -65,12 +65,12 @@ private struct HomeTimelineProjection {
 struct NotesTopBarAppearance: Equatable {
     var tintOpacity: Double
     var isVisible: Bool
-    var keepsBlackCanvas: Bool
+    var usesAdaptiveCanvas: Bool
 
     static let notes = NotesTopBarAppearance(
-        tintOpacity: 0.06,
+        tintOpacity: 0.08,
         isVisible: true,
-        keepsBlackCanvas: true
+        usesAdaptiveCanvas: true
     )
 }
 
@@ -133,7 +133,7 @@ struct DirectoryDrawerMotion {
     }
 
     enum HapticTiming: Equatable {
-        case afterLogicalCompletion
+        case atSettlementStart
     }
 
     static func settlingAnimation(reduceMotion: Bool) -> Animation {
@@ -141,9 +141,9 @@ struct DirectoryDrawerMotion {
             return .easeOut(duration: 0.16)
         }
         return .interactiveSpring(
-            response: 0.34,
+            response: 0.28,
             dampingFraction: 0.88,
-            blendDuration: 0.1
+            blendDuration: 0.08
         )
     }
 
@@ -219,15 +219,7 @@ struct DirectoryDrawerMotion {
     }
 
     static func hapticTiming(wasOpen: Bool, willOpen: Bool) -> HapticTiming? {
-        wasOpen == willOpen ? nil : .afterLogicalCompletion
-    }
-
-    static func shouldEmitCompletionHaptic(
-        scheduledGeneration: Int,
-        currentGeneration: Int,
-        timing: HapticTiming?
-    ) -> Bool {
-        timing == .afterLogicalCompletion && scheduledGeneration == currentGeneration
+        wasOpen == willOpen ? nil : .atSettlementStart
     }
 
     static func shouldAnimateTopChrome<Value: Equatable>(
@@ -265,22 +257,20 @@ private extension View {
     ) -> some View {
         if #available(iOS 26.0, *) {
             toolbarBackground(
-                Color.white.opacity(appearance.tintOpacity),
+                .ultraThinMaterial,
                 for: .navigationBar
             )
                 .toolbarBackground(
                     appearance.isVisible ? .visible : .hidden,
                     for: .navigationBar
                 )
-                .toolbarColorScheme(.dark, for: .navigationBar)
                 .scrollEdgeEffectStyle(.soft, for: .top)
         } else {
-            toolbarBackground(.regularMaterial, for: .navigationBar)
+            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(
                     appearance.isVisible ? .visible : .hidden,
                     for: .navigationBar
                 )
-                .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
 
@@ -301,7 +291,6 @@ private extension View {
     func notesGlassBottomToolbar() -> some View {
         if #available(iOS 26.0, *) {
             toolbarBackground(.hidden, for: .bottomBar)
-                .toolbarColorScheme(.dark, for: .bottomBar)
                 .scrollEdgeEffectHidden(true, for: .bottom)
         } else {
             self
@@ -349,7 +338,7 @@ struct LibraryHomeView: View {
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
     @State private var directorySettlementGeneration = 0
     @State private var directoryPanelWidth: CGFloat = 360
-    @State private var expandedDirectoryPaths = Set<String>()
+    @State private var selectedHomeFolderPath: String?
     @State private var homeTimelineProjection = HomeTimelineProjection()
     @State private var homeTitleCollapseProgress: CGFloat = 0
     @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
@@ -414,6 +403,12 @@ struct LibraryHomeView: View {
                 if requested { presentRequestedSearchIfNeeded() }
             }
             .onChange(of: appModel.libraryRevision) { _, _ in
+                if let selectedHomeFolderPath,
+                   !appModel.allFolders.contains(where: {
+                       $0.relativePath == selectedHomeFolderPath
+                   }) {
+                    self.selectedHomeFolderPath = nil
+                }
                 refreshHomeTimelineProjection()
             }
             .onChange(of: viewStyleRawValue) { _, _ in
@@ -627,6 +622,10 @@ struct LibraryHomeView: View {
             .simultaneousGesture(TapGesture().onEnded {
                 if isSearchFocused { isSearchFocused = false }
             })
+            .overlay(alignment: .top) {
+                MudsnoteTopFadeMaterial()
+                    .frame(height: 72)
+            }
         } else {
             homeCardStream
         }
@@ -648,7 +647,11 @@ struct LibraryHomeView: View {
                         ContentUnavailableView(
                             "No Notes",
                             systemImage: "note.text",
-                            description: Text("Create a note or swipe right to open your folders.")
+                            description: Text(
+                                selectedHomeFolder == nil
+                                    ? "Create a note or swipe right to open your folders."
+                                    : "This folder has no notes yet."
+                            )
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 60)
@@ -678,14 +681,22 @@ struct LibraryHomeView: View {
             .padding(.bottom, 110)
         }
         .accessibilityIdentifier(viewStyle == .gallery ? "home-note-gallery" : "home-note-list")
+        .overlay(alignment: .top) {
+            MudsnoteTopFadeMaterial()
+                .frame(height: 72)
+        }
     }
 
     private func makeHomeTimelineProjection() -> HomeTimelineProjection {
+        let folderPath = selectedHomeFolderPath
+        let visibleFiles = appModel.libraryFiles.filter { file in
+            guard file.relativePath != "Inbox.md" else { return false }
+            guard let folderPath else { return true }
+            return (file.relativePath as NSString).deletingLastPathComponent == folderPath
+        }
         let unsortedEntries = (
-            appModel.libraryFiles
-                .filter { $0.relativePath != "Inbox.md" }
-                .map(HomeTimelineEntry.file)
-                + appModel.inboxItems.map(HomeTimelineEntry.memo)
+            visibleFiles.map(HomeTimelineEntry.file)
+                + (folderPath == nil ? appModel.inboxItems.map(HomeTimelineEntry.memo) : [])
         )
         let entries = unsortedEntries.sorted { lhs, rhs in
             let standard: Bool
@@ -847,7 +858,7 @@ struct LibraryHomeView: View {
 
     private var homeLargeTitleHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(String(localized: "Notes"))
+            Text(homeDisplayTitle)
                 .font(.system(size: 34, weight: .bold))
                 .foregroundStyle(MudsnoteColors.text)
             Text(homeNoteCountText)
@@ -862,7 +873,7 @@ struct LibraryHomeView: View {
         )
         .offset(y: -8 * homeTitleCollapseProgress)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Notes"))
+        .accessibilityLabel(homeDisplayTitle)
         .accessibilityValue(homeNoteCountText)
         .accessibilityIdentifier("home-large-title")
         .accessibilityHidden(homeTitleCollapseProgress >= 0.99)
@@ -876,7 +887,7 @@ struct LibraryHomeView: View {
 
     private var homeCompactTitle: some View {
         VStack(spacing: -2) {
-            Text(String(localized: "Notes"))
+            Text(homeDisplayTitle)
                 .font(.headline)
                 .foregroundStyle(MudsnoteColors.text)
             Text(homeNoteCountText)
@@ -887,7 +898,7 @@ struct LibraryHomeView: View {
         .scaleEffect(0.9 + (0.1 * homeTitleCollapseProgress))
         .offset(y: 4 * (1 - homeTitleCollapseProgress))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Notes"))
+        .accessibilityLabel(homeDisplayTitle)
         .accessibilityValue(homeNoteCountText)
         .accessibilityIdentifier(
             homeTitleCollapseProgress >= 0.99
@@ -904,6 +915,26 @@ struct LibraryHomeView: View {
             locale: .current,
             homeTimelineProjection.entryCount
         )
+    }
+
+    private var selectedHomeFolder: LibraryFolderNode? {
+        guard let selectedHomeFolderPath else { return nil }
+        return appModel.allFolders.first {
+            $0.relativePath == selectedHomeFolderPath
+        }
+    }
+
+    private var homeDisplayTitle: String {
+        selectedHomeFolder?.name ?? String(localized: "Notes")
+    }
+
+    private var allHomeNoteCount: Int {
+        appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
+            + appModel.inboxItems.count
+    }
+
+    private var directoryFolders: [LibraryFolderNode] {
+        appModel.allFolders.filter { !$0.isMergedInboxFolder }
     }
 
     private var allHomeEntryIDs: Set<String> {
@@ -964,6 +995,10 @@ struct LibraryHomeView: View {
             Rectangle()
                 .fill(MudsnoteColors.line)
                 .frame(width: 1)
+        }
+        .overlay(alignment: .top) {
+            MudsnoteTopFadeMaterial()
+                .frame(height: 72)
         }
         .shadow(color: .black.opacity(0.22), radius: 12, x: 5)
         .accessibilityIdentifier("directory-drawer")
@@ -1037,6 +1072,22 @@ struct LibraryHomeView: View {
         settleDirectory(open: false, emitsHaptic: true)
     }
 
+    private func selectAllNotes() {
+        selectedHomeFolderPath = nil
+        selectedHomeEntryIDs.removeAll()
+        homeTitleCollapseProgress = 0
+        refreshHomeTimelineProjection()
+        closeDirectory()
+    }
+
+    private func selectHomeFolder(_ folder: LibraryFolderNode) {
+        selectedHomeFolderPath = folder.relativePath
+        selectedHomeEntryIDs.removeAll()
+        homeTitleCollapseProgress = 0
+        refreshHomeTimelineProjection()
+        closeDirectory()
+    }
+
     private func settleDirectory(open: Bool, emitsHaptic: Bool) {
         if open {
             isSearchFocused = false
@@ -1046,7 +1097,6 @@ struct LibraryHomeView: View {
         }
 
         directorySettlementGeneration += 1
-        let settlementGeneration = directorySettlementGeneration
         let hapticTiming = emitsHaptic
             ? DirectoryDrawerMotion.hapticTiming(
                 wasOpen: isDirectoryPresented,
@@ -1056,23 +1106,14 @@ struct LibraryHomeView: View {
 
         if hapticTiming != nil {
             directoryHapticFeedback.prepare()
+            directoryHapticFeedback.impact()
         } else {
             directoryHapticFeedback.cancel()
         }
 
-        withAnimation(
-            DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion),
-            completionCriteria: .logicallyComplete
-        ) {
+        withAnimation(DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion)) {
             isDirectoryPresented = open
             directoryDragOffset = 0
-        } completion: {
-            guard DirectoryDrawerMotion.shouldEmitCompletionHaptic(
-                scheduledGeneration: settlementGeneration,
-                currentGeneration: directorySettlementGeneration,
-                timing: hapticTiming
-            ) else { return }
-            directoryHapticFeedback.impact()
         }
     }
 
@@ -1129,6 +1170,17 @@ struct LibraryHomeView: View {
                 .padding(.horizontal, 2)
 
                 notesCard {
+                    Button(action: selectAllNotes) {
+                        NotesFolderRow(
+                            title: String(localized: "Notes"),
+                            systemImage: "note.text",
+                            count: allHomeNoteCount,
+                            showsChevron: false
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("all-notes-row")
+
                     NavigationLink {
                         InboxStreamView()
                     } label: {
@@ -1140,13 +1192,13 @@ struct LibraryHomeView: View {
                     }
                     .accessibilityIdentifier("inbox-link")
 
-                    ForEach(appModel.visibleLibraryFolders) { folder in
+                    ForEach(directoryFolders) { folder in
                         DirectoryFolderTree(
                             folder: folder,
-                            depth: 0,
                             isManaging: isManagingFolders,
-                            expandedPaths: $expandedDirectoryPaths,
-                            systemImage: folderSystemImage
+                            isSelected: selectedHomeFolderPath == folder.relativePath,
+                            systemImage: folderSystemImage,
+                            select: { selectHomeFolder(folder) }
                         )
                     }
                 }
@@ -1481,62 +1533,17 @@ struct LibraryHomeView: View {
 
 private struct DirectoryFolderTree: View {
     var folder: LibraryFolderNode
-    var depth: Int
     var isManaging: Bool
-    @Binding var expandedPaths: Set<String>
+    var isSelected: Bool
     var systemImage: (LibraryFolderNode) -> String
-
-    private var isExpanded: Bool {
-        expandedPaths.contains(folder.relativePath)
-    }
-
-    private var hasChildren: Bool {
-        !folder.children.isEmpty
-    }
+    var select: () -> Void
 
     private var trailingAccessoryWidth: CGFloat {
-        (isManaging ? 88 : 0) + 28
+        isManaging ? 88 : 28
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack(alignment: .trailing) {
-                folderEntry
-
-                if hasChildren {
-                    Button {
-                        withAnimation(.snappy(duration: 0.26, extraBounce: 0.04)) {
-                            if !expandedPaths.insert(folder.relativePath).inserted {
-                                expandedPaths.remove(folder.relativePath)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.muted)
-                            .frame(width: 44, height: 58)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, isManaging ? 88 : 0)
-                    .accessibilityLabel(isExpanded ? "Collapse \(folder.name)" : "Expand \(folder.name)")
-                    .accessibilityIdentifier("folder-disclosure-\(folder.relativePath)")
-                }
-            }
-
-            if isExpanded {
-                ForEach(folder.children) { child in
-                    DirectoryFolderTree(
-                        folder: child,
-                        depth: depth + 1,
-                        isManaging: isManaging,
-                        expandedPaths: $expandedPaths,
-                        systemImage: systemImage
-                    )
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
+        folderEntry
     }
 
     @ViewBuilder
@@ -1545,10 +1552,9 @@ private struct DirectoryFolderTree: View {
             NotesFolderRow(
                 title: folder.name,
                 systemImage: systemImage(folder),
-                count: folder.totalNoteCount,
+                count: folder.directNoteCount,
                 showsChevron: false,
-                trailingAccessoryWidth: trailingAccessoryWidth,
-                indentation: CGFloat(depth) * 18
+                trailingAccessoryWidth: trailingAccessoryWidth
             )
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
             .modifier(
@@ -1558,18 +1564,18 @@ private struct DirectoryFolderTree: View {
                 )
             )
         } else {
-            NavigationLink {
-                LibraryFolderView(folder: folder)
-            } label: {
+            Button(action: select) {
                 NotesFolderRow(
                     title: folder.name,
                     systemImage: systemImage(folder),
-                    count: folder.totalNoteCount,
+                    count: folder.directNoteCount,
                     showsChevron: false,
-                    trailingAccessoryWidth: trailingAccessoryWidth,
-                    indentation: CGFloat(depth) * 18
+                    trailingAccessoryWidth: trailingAccessoryWidth
                 )
             }
+            .buttonStyle(.plain)
+            .background(isSelected ? MudsnoteColors.card : Color.clear)
+            .accessibilityValue(isSelected ? String(localized: "Selected") : "")
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
             .modifier(FolderLifecycleActions(folder: folder))
         }
@@ -3348,26 +3354,23 @@ private struct HomeTimelineListSection: View {
 
     var body: some View {
         Section {
-            VStack(spacing: 0) {
-                ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
+            VStack(spacing: 10) {
+                ForEach(section.entries) { entry in
                     HomeTimelineListEntryButton(
                         entry: entry,
                         isSelecting: isSelecting,
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
                     )
-                    if index < section.entries.count - 1 {
-                        Divider().padding(.leading, 14)
+                    .padding(.horizontal, 14)
+                    .mudsnoteGlassSurface(
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(MudsnoteColors.line, lineWidth: 1)
                     }
                 }
-            }
-            .padding(.horizontal, 14)
-            .mudsnoteGlassSurface(
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(MudsnoteColors.line, lineWidth: 1)
             }
         } header: {
             if let title = section.title {
@@ -3493,6 +3496,11 @@ private struct HomeMemoCardButton: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("home-memo-card-\(memo.id)")
         .contextMenu {
+            Button {
+                UIPasteboard.general.string = memo.body
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
             Button {
                 appModel.pinMemo(memo)
             } label: {
@@ -3862,6 +3870,19 @@ private struct NoteLifecycleActions: ViewModifier {
             }
             .contextMenu {
                 Button {
+                    Task {
+                        if let document = await appModel.loadDocument(
+                            relativePath: file.relativePath
+                        ) {
+                            UIPasteboard.general.string = document.markdown
+                        }
+                    }
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .accessibilityIdentifier("copy-note-\(file.id)")
+
+                Button {
                     appModel.openFile(file, mode: .edit)
                 } label: {
                     Label("Edit", systemImage: "square.and.pencil")
@@ -3983,7 +4004,6 @@ private struct NoteMovePicker: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .accessibilityIdentifier("note-move-picker")
     }
 

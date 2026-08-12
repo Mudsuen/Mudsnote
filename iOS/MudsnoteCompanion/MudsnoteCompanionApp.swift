@@ -6,6 +6,8 @@ import UIKit
 struct MudsnoteCompanionApp: App {
     @StateObject private var appModel: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("mudsnote.ios.appearance") private var appearanceRawValue =
+        MudsnoteAppearance.dark.rawValue
 
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
@@ -36,8 +38,12 @@ struct MudsnoteCompanionApp: App {
                 .onOpenURL { url in
                     appModel.handle(url: url)
                 }
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance.colorScheme)
         }
+    }
+
+    private var appearance: MudsnoteAppearance {
+        MudsnoteAppearance(rawValue: appearanceRawValue) ?? .dark
     }
 }
 
@@ -99,6 +105,7 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortDirection")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeGroupNotesByDate")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.appearance")
             UserDefaults.standard.removeObject(
                 forKey: AttachmentPresentationPreferences.defaultsKey
             )

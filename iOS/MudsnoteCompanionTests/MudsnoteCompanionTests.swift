@@ -107,26 +107,12 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testDirectoryDrawerHapticWaitsForCurrentSettlementCompletion() {
+    func testDirectoryDrawerHapticStartsWithSettlement() {
         XCTAssertEqual(
             DirectoryDrawerMotion.hapticTiming(wasOpen: false, willOpen: true),
-            .afterLogicalCompletion
+            .atSettlementStart
         )
         XCTAssertNil(DirectoryDrawerMotion.hapticTiming(wasOpen: true, willOpen: true))
-        XCTAssertTrue(
-            DirectoryDrawerMotion.shouldEmitCompletionHaptic(
-                scheduledGeneration: 4,
-                currentGeneration: 4,
-                timing: .afterLogicalCompletion
-            )
-        )
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldEmitCompletionHaptic(
-                scheduledGeneration: 4,
-                currentGeneration: 5,
-                timing: .afterLogicalCompletion
-            )
-        )
     }
 
     func testDirectoryDrawerKeepsUnchangedTopChromeStatic() {
@@ -175,12 +161,12 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(HomeChromeMotion.captureDismissDuration(reduceMotion: true), 0)
     }
 
-    func testHomeTopBarUsesNativeTranslucentMaterialOverBlackCanvas() {
-        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.06)
+    func testHomeTopBarUsesNativeTranslucentMaterialOverAdaptiveCanvas() {
+        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.08)
         XCTAssertTrue(NotesTopBarAppearance.notes.isVisible)
         XCTAssertTrue(
-            NotesTopBarAppearance.notes.keepsBlackCanvas,
-            "The navigation material must not replace the true-black page background"
+            NotesTopBarAppearance.notes.usesAdaptiveCanvas,
+            "The navigation material must preserve the selected light or dark canvas"
         )
     }
 
@@ -227,6 +213,69 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(documentText.contains("10:13"))
         XCTAssertTrue(fallbackText.contains("Sep 13, 2020"))
         XCTAssertNotEqual(documentText, fallbackText)
+    }
+
+    func testMarkdownFrontMatterIsHiddenFromPreviewWithoutChangingSource() {
+        let markdown = """
+        ---
+        aliases:
+          - launch
+        status: active
+        ---
+        # Launch Plan
+
+        Ship the release.
+        """
+
+        let projection = MarkdownFrontMatterProjection(markdown)
+
+        XCTAssertEqual(
+            projection.metadata,
+            """
+            ---
+            aliases:
+              - launch
+            status: active
+            ---
+            """
+        )
+        XCTAssertEqual(
+            projection.body,
+            """
+            # Launch Plan
+
+            Ship the release.
+            """
+        )
+        XCTAssertEqual(
+            projection.metadata.map { $0 + "\n" + projection.body },
+            markdown
+        )
+    }
+
+    func testMarkdownWithoutFrontMatterRemainsUnchanged() {
+        let markdown = "# Launch Plan\n\nShip the release."
+        let projection = MarkdownFrontMatterProjection(markdown)
+
+        XCTAssertNil(projection.metadata)
+        XCTAssertEqual(projection.body, markdown)
+    }
+
+    func testEditingReaderUsesOneDirectDismissDetent() {
+        XCTAssertEqual(
+            ReaderPresentationPolicy.detents(isEditing: true),
+            [.large]
+        )
+        XCTAssertEqual(
+            ReaderPresentationPolicy.detents(isEditing: false),
+            [.medium, .large]
+        )
+    }
+
+    func testAppearanceOffersLightAndExistingDarkModes() {
+        XCTAssertEqual(MudsnoteAppearance.allCases, [.light, .dark])
+        XCTAssertEqual(MudsnoteAppearance.light.colorScheme, .light)
+        XCTAssertEqual(MudsnoteAppearance.dark.colorScheme, .dark)
     }
 
     func testAttachmentPresentationPreferencesPersistAndFollowNoteLifecycle() throws {
