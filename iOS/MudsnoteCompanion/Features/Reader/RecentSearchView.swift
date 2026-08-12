@@ -1572,7 +1572,6 @@ private struct DirectoryFolderTree: View {
             .background(isSelected ? MudsnoteColors.card : Color.clear)
             .accessibilityValue(isSelected ? String(localized: "Selected") : "")
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
-            .modifier(FolderLifecycleActions(folder: folder))
         }
     }
 }
