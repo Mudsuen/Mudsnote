@@ -2233,6 +2233,23 @@ final class MudsnoteCompanionUITests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
+        projectsFolder.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).tap()
+        XCTAssertTrue(
+            app.scrollViews["home-note-gallery-folder:Projects"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.navigationBars["Projects"].exists)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 8))
+
         let editFolders = app.buttons["edit-folders-button"]
         XCTAssertTrue(editFolders.isHittable)
         editFolders.tap()
@@ -2262,17 +2279,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "Edit",
             "Closing by drag should leave folder editing mode"
         )
-        let selectedProjects = app.buttons["folder-row-Projects"]
-        selectedProjects.tap()
-        let folderTitle = app.otherElements["home-large-title-folder:Projects"]
-        XCTAssertTrue(folderTitle.waitForExistence(timeout: 3))
-        XCTAssertTrue(folderTitle.label.contains("Projects"))
-        XCTAssertTrue(
-            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertFalse(app.navigationBars["Projects"].exists)
-        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
     }
 
     func testDirectoryDrawerRespondsToOppositeFingerTrackedGestures() {

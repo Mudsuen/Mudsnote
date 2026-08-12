@@ -338,7 +338,8 @@ struct LibraryHomeView: View {
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
     @State private var directorySettlementGeneration = 0
     @State private var directoryPanelWidth: CGFloat = 360
-    @State private var selectedHomeFolderPath: String?
+    @AppStorage("mudsnote.ios.selectedHomeFolderPath")
+    private var selectedHomeFolderPath = ""
     @State private var homeTimelineProjection = HomeTimelineProjection()
     @State private var homeTitleCollapseProgress: CGFloat = 0
     @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
@@ -642,7 +643,7 @@ struct LibraryHomeView: View {
                             "No Notes",
                             systemImage: "note.text",
                             description: Text(
-                                selectedHomeFolderPath == nil
+                                selectedHomeFolderPath.isEmpty
                                     ? "Create a note or swipe right to open your folders."
                                     : "This folder has no notes yet."
                             )
@@ -674,7 +675,7 @@ struct LibraryHomeView: View {
             .padding(.top, 8)
             .padding(.bottom, 110)
         }
-        .accessibilityIdentifier(viewStyle == .gallery ? "home-note-gallery" : "home-note-list")
+        .accessibilityIdentifier(homeContentIdentifier)
         .overlay(alignment: .top) {
             MudsnoteTopFadeMaterial()
                 .frame(height: 72)
@@ -685,12 +686,12 @@ struct LibraryHomeView: View {
         let folderPath = selectedHomeFolderPath
         let visibleFiles = appModel.libraryFiles.filter { file in
             guard file.relativePath != "Inbox.md" else { return false }
-            guard let folderPath else { return true }
+            guard !folderPath.isEmpty else { return true }
             return (file.relativePath as NSString).deletingLastPathComponent == folderPath
         }
         let unsortedEntries = (
             visibleFiles.map(HomeTimelineEntry.file)
-                + (folderPath == nil ? appModel.inboxItems.map(HomeTimelineEntry.memo) : [])
+                + (folderPath.isEmpty ? appModel.inboxItems.map(HomeTimelineEntry.memo) : [])
         )
         let entries = unsortedEntries.sorted { lhs, rhs in
             let standard: Bool
@@ -769,7 +770,12 @@ struct LibraryHomeView: View {
         return ZStack(alignment: alignment) {
             directoryPanel(width: width)
                 .offset(x: presentation.drawerOffset * physicalDirection)
-                .simultaneousGesture(directoryDragGesture(width: width))
+                .overlay(alignment: layoutDirection == .leftToRight ? .trailing : .leading) {
+                    Color.clear
+                        .frame(width: 32)
+                        .contentShape(Rectangle())
+                        .gesture(directoryDragGesture(width: width))
+                }
                 .allowsHitTesting(presentation.reveal > 0)
                 .accessibilityHidden(presentation.reveal <= 0)
 
@@ -869,10 +875,7 @@ struct LibraryHomeView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(homeDisplayTitle)
         .accessibilityValue(homeNoteCountText)
-        .accessibilityIdentifier(
-            selectedHomeFolderPath.map { "home-large-title-folder:\($0)" }
-                ?? "home-large-title"
-        )
+        .accessibilityIdentifier("home-large-title")
         .accessibilityHidden(homeTitleCollapseProgress >= 0.99)
         .allowsHitTesting(homeTitleCollapseProgress < 0.99)
         .modifier(
@@ -915,12 +918,18 @@ struct LibraryHomeView: View {
     }
 
     private var homeDisplayTitle: String {
-        guard let selectedHomeFolderPath else {
+        guard !selectedHomeFolderPath.isEmpty else {
             return String(localized: "Notes")
         }
         return appModel.allFolders.first {
             $0.relativePath == selectedHomeFolderPath
         }?.name ?? (selectedHomeFolderPath as NSString).lastPathComponent
+    }
+
+    private var homeContentIdentifier: String {
+        let base = viewStyle == .gallery ? "home-note-gallery" : "home-note-list"
+        guard !selectedHomeFolderPath.isEmpty else { return base }
+        return "\(base)-folder:\(selectedHomeFolderPath)"
     }
 
     private var allHomeNoteCount: Int {
@@ -1068,19 +1077,25 @@ struct LibraryHomeView: View {
     }
 
     private func selectAllNotes() {
-        selectedHomeFolderPath = nil
+        selectedHomeFolderPath = ""
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
-        refreshHomeTimelineProjection()
-        closeDirectory()
+        Task { @MainActor in
+            await Task.yield()
+            refreshHomeTimelineProjection()
+            closeDirectory()
+        }
     }
 
     private func selectHomeFolder(_ folder: LibraryFolderNode) {
         selectedHomeFolderPath = folder.relativePath
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
-        refreshHomeTimelineProjection()
-        closeDirectory()
+        Task { @MainActor in
+            await Task.yield()
+            refreshHomeTimelineProjection()
+            closeDirectory()
+        }
     }
 
     private func settleDirectory(open: Bool, emitsHaptic: Bool) {
@@ -1559,17 +1574,21 @@ private struct DirectoryFolderTree: View {
                 )
             )
         } else {
-            Button(action: select) {
-                NotesFolderRow(
-                    title: folder.name,
-                    systemImage: systemImage(folder),
-                    count: folder.directNoteCount,
-                    showsChevron: false,
-                    trailingAccessoryWidth: trailingAccessoryWidth
-                )
-            }
-            .buttonStyle(.plain)
+            NotesFolderRow(
+                title: folder.name,
+                systemImage: systemImage(folder),
+                count: folder.directNoteCount,
+                showsChevron: false,
+                trailingAccessoryWidth: trailingAccessoryWidth
+            )
+            .contentShape(Rectangle())
+            .onTapGesture(perform: select)
             .background(isSelected ? MudsnoteColors.card : Color.clear)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                select()
+            }
             .accessibilityValue(isSelected ? String(localized: "Selected") : "")
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
         }

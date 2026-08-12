@@ -105,6 +105,7 @@ private enum MudsnoteUITestLaunchConfiguration {
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortOrder")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeNoteSortDirection")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.homeGroupNotesByDate")
+            UserDefaults.standard.removeObject(forKey: "mudsnote.ios.selectedHomeFolderPath")
             UserDefaults.standard.removeObject(forKey: "mudsnote.ios.appearance")
             UserDefaults.standard.removeObject(
                 forKey: AttachmentPresentationPreferences.defaultsKey
