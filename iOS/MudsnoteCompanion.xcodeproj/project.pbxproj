@@ -22,6 +22,7 @@
 		A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000002 /* AttachmentTextIndex.swift */; };
 		E10000000000000000000001 /* NotePDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* NotePDFExporter.swift */; };
 		F10000000000000000000001 /* AttachmentPresentationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002 /* AttachmentPresentationPreferences.swift */; };
+		C81000000000000000000001 /* CaptureFolderPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81000000000000000000002 /* CaptureFolderPreferences.swift */; };
 		A60000000000000000000001 /* DocumentScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000002 /* DocumentScanner.swift */; };
 		D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* AttachmentQuickLookPreview.swift */; };
 		A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000002 /* MarkdownNoteLink.swift */; };
@@ -110,6 +111,7 @@
 		A50000000000000000000002 /* AttachmentTextIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentTextIndex.swift; sourceTree = "<group>"; };
 		E10000000000000000000002 /* NotePDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/NotePDFExporter.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* AttachmentPresentationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AttachmentPresentationPreferences.swift; sourceTree = "<group>"; };
+		C81000000000000000000002 /* CaptureFolderPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/CaptureFolderPreferences.swift; sourceTree = "<group>"; };
 		A60000000000000000000002 /* DocumentScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/DocumentScanner.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* AttachmentQuickLookPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Shared/AttachmentQuickLookPreview.swift; sourceTree = "<group>"; };
 		A70000000000000000000002 /* MarkdownNoteLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/MarkdownNoteLink.swift; sourceTree = "<group>"; };
@@ -431,6 +433,7 @@
 				A50000000000000000000001 /* AttachmentTextIndex.swift in Sources */,
 				E10000000000000000000001 /* NotePDFExporter.swift in Sources */,
 				F10000000000000000000001 /* AttachmentPresentationPreferences.swift in Sources */,
+				C81000000000000000000001 /* CaptureFolderPreferences.swift in Sources */,
 				A60000000000000000000001 /* DocumentScanner.swift in Sources */,
 				D10000000000000000000001 /* AttachmentQuickLookPreview.swift in Sources */,
 				A70000000000000000000001 /* MarkdownNoteLink.swift in Sources */,

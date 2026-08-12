@@ -9,6 +9,8 @@ public final class NoteStore: @unchecked Sendable {
     public static let maximumPanelOpacity = 0.96
     public static let defaultPanelOpacity = 0.78
     public static let attachmentDirectoryName = "Attachments"
+    static let maximumSearchIndexedFileSize: UInt64 = 8 * 1_024 * 1_024
+    static let maximumSearchIndexDiskCacheSize: UInt64 = 64 * 1_024 * 1_024
 
     let defaults: UserDefaults
     let fileManager: FileManager
@@ -22,6 +24,8 @@ public final class NoteStore: @unchecked Sendable {
     var searchIndexEntryReadCountForTesting = 0
     var searchIndexSignatureReadCountForTesting = 0
     var searchIndexBuildWillReadForTesting: (() -> Void)?
+    var searchIndexEntryWillReadForTesting: (() -> Void)?
+    var searchIndexEntryWillMatchForTesting: (() -> Void)?
     var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?
     var searchIndexCacheURL: URL {
         appSupportDirectory
@@ -51,6 +55,13 @@ public final class NoteStore: @unchecked Sendable {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
         return appSupport.appendingPathComponent("Mudsnote", isDirectory: true)
+    }
+
+    @_spi(Testing)
+    public func setSearchIndexEntryWillMatchForTesting(
+        _ hook: (@Sendable () -> Void)?
+    ) {
+        searchIndexEntryWillMatchForTesting = hook
     }
 
     func deduplicatedDirectories(_ directories: [URL]) -> [URL] {

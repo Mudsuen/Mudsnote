@@ -17,6 +17,31 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 252. Unified macOS Quick Capture editor
+- Problem: Quick Capture split a note into separate title and body fields, while its visually raised tag button synchronously scanned the note library and could stall the entire panel.
+- Fix: Quick Capture now opens directly in one native editor, derives the saved title from the first sentence while preserving that sentence in the body, and losslessly folds legacy title/body drafts into the unified content. The tag button and its blocking entry point are removed; Inbox, cancel, and save share one 28-point footer centerline with restrained opacity/scale press feedback.
+- Lesson: Capture should keep one uninterrupted writing surface, and a secondary action that requires library-scale work should not occupy the critical save path when inline Markdown already provides the same semantics.
+
+### 251. Cancelable bounded macOS library search
+- Problem: Canceling a cold or warm search stopped result publication but did not stop the detached index work, so old queries could keep scanning, parsing, and holding the shared build lock while the latest query waited; matching also built snippets and sorted every hit before applying the visible limit.
+- Fix: Search cancellation now propagates through lock acquisition, directory enumeration, index refresh, file reads, matching, and scoped queries. Ranking retains only the exact top results, snippets are built only for those results, trash search parses each candidate once, unresolved iCloud items and malformed or oversized Markdown fail softly, and the persistent JSON cache has a hard size ceiling.
+- Lesson: Latest-query-wins requires canceling the underlying synchronous work, not only rejecting stale completion callbacks, and every cache or result limit must bound the work performed before the limit is applied.
+
+### 250. Independent iOS capture, playable audio, and unified black glass
+- Problem: Quick capture destinations were existing Markdown files, so choosing one appended into user content and `Inbox.md` absorbed new notes; successful writes could remain absent from the home projection. Audio attachments lacked an explicit non-overwriting local save, while the gray-blue visual shell and parallax drawer conflicted with the intended native glass hierarchy.
+- Fix: Capture now chooses a folder and creates a uniquely named independent note, migrates recovered legacy file targets to their parent folder, invalidates file-store caches, and advances the library revision after every applied snapshot. Audio attachments play in-app with visible failures and save into the Files-visible `Saved Audio` directory using collision-safe names. The iOS shell now uses a true-black canvas, native glass cards and editor toolbar, consistent scale press feedback, full-width finger-tracked drawer translation, vertical-scroll-compatible gesture arbitration, landscape support, and completion-only haptics.
+- Lesson: A destination picker must model the ownership unit it creates, durable writes and UI projections need one revision contract, and glass, gesture, and feedback behavior should be shared system-wide rather than patched per control.
+
+### 249. Unified iOS quick capture and reversible folder gestures
+- Problem: Quick Note had regressed to a second editor while Quick Recording used the capture composer, the latest drawer changes weakened diagonal swipe recognition and made closing look like an overlay fade, and recording controls retained opaque emphasis without complete state feedback.
+- Fix: Both bottom-bar entries now open the same capture composer and record button; Quick Recording alone auto-starts audio. The verified document date-and-time presentation remains tied to the file timestamp and scrolls with the body. Folder gestures once again move the home surface in opposite finger-tracked directions, settle with the validated spring, and emit a light haptic only after a current completed transition. Voice emphasis and audio status surfaces are transparent, with 44-point entry targets and explicit recording or permission-failure accessibility values.
+- Lesson: Entry points may select different initial state without owning different UI, and gesture feedback must be derived from the rendered transition rather than pre-empting it.
+
+### 248. Direct iOS voice capture and responsive library shell
+- Problem: Quick Capture had no direct voice entry, recording and transcription could outlive a dismissed sheet, the folder drawer displaced the note timeline, and cold folder preparation plus duplicate scene refreshes delayed interaction.
+- Fix: The Notes-style bottom bar now keeps Search, Voice, and New Note as separate actions; voice entry opens an explicit recording state machine that preserves audio before optional transcription and invalidates stale sessions. The folder directory is now an overlay drawer with deliberate axis locking, immediate commit haptics, RTL and Reduce Motion behavior, while folder preparation runs on the file-store actor and scene refreshes coalesce behind the initial index.
+- Lesson: Capture must make the durable attachment independent from best-effort transcription, and navigation or launch work should preserve one responsive visual surface while asynchronous state catches up.
+
 ### 247. Conflict-safe note and recovery writes
 - Problem: A macOS autosave could replace an externally edited note, unreadable files could be rewritten from an empty fallback, and iOS recovery could discard staged data or quarantine a healthy queue after transient I/O failures.
 - Fix: macOS saves now compare the exact loaded source inside file coordination and preserve local edits as a named conflict copy; in-place updates fail closed on unreadable or missing sources. iOS queue loading now shares the coordinated mutation path and quarantines only validated corruption, while interrupted permanent-delete recovery refuses different-content collisions.

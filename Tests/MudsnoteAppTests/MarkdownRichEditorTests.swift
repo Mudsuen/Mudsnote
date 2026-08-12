@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreServices
 import ImageIO
-import MudsnoteCore
+@_spi(Testing) import MudsnoteCore
 import Testing
 @testable import Mudsnote
 
@@ -21,6 +21,32 @@ private actor LibraryFileSystemChangeRecorder {
 
     func snapshot() -> Set<LibraryFileSystemChange> {
         changes
+    }
+}
+
+@MainActor
+private final class SlashCommandInputSourceSessionRecorder: SlashCommandInputSourceSessioning {
+    private(set) var beginCalls: [(hasMarkedText: Bool, editorIsFirstResponder: Bool)] = []
+    private(set) var endCallCount = 0
+    private(set) var isActive = false
+
+    @discardableResult
+    func beginIfAllowed(hasMarkedText: Bool, editorIsFirstResponder: Bool) -> Bool {
+        beginCalls.append((hasMarkedText, editorIsFirstResponder))
+        guard !hasMarkedText, editorIsFirstResponder else { return false }
+        isActive = true
+        return true
+    }
+
+    func end() {
+        endCallCount += 1
+        isActive = false
+    }
+
+    func reset() {
+        beginCalls = []
+        endCallCount = 0
+        isActive = false
     }
 }
 
@@ -93,9 +119,11 @@ private final class MutableBoolFlag: @unchecked Sendable {
 private final class ThreadObservationRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var observedMainThread = false
+    private var callCount = 0
 
     func recordCurrentThread() {
         lock.lock()
+        callCount += 1
         observedMainThread = observedMainThread || Thread.isMainThread
         lock.unlock()
     }
@@ -104,6 +132,12 @@ private final class ThreadObservationRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return observedMainThread
+    }
+
+    func snapshot() -> (callCount: Int, observedMainThread: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (callCount, observedMainThread)
     }
 }
 
@@ -851,6 +885,12 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         let titles = controller.editorSlashSuggestionTitlesForLibrary
         #expect(!suggestionView.isHidden)
+        let suggestionList = try #require(
+            suggestionView.allSubviews.compactMap { $0 as? SuggestionListView }.first
+        )
+        let libraryCommands = SlashCommand.matching("", includesAI: false)
+        #expect(suggestionList.items.map(\.title) == libraryCommands.map(\.title))
+        #expect(suggestionList.items.allSatisfy { $0.symbolName == nil })
         let checklistIndex = try #require(titles.firstIndex(of: "待办列表"))
         controller.acceptEditorSlashSuggestionForLibrary(at: checklistIndex)
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] ")
@@ -1569,30 +1609,50 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func quickCaptureDocumentStateSeparatesTitleAndBody() {
+    func quickCaptureDocumentStateDerivesTitleWithoutRemovingBody() {
         let state = QuickCaptureDocumentState(
-            title: "  Weekly Review  ",
-            bodyMarkdown: "\n- [ ] Finish report\n#ops\n"
+            title: "",
+            bodyMarkdown: "\n\n  这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops\n"
         )
 
-        #expect(state.normalizedTitle == "Weekly Review")
-        #expect(state.normalizedBody == "- [ ] Finish report\n#ops")
-        #expect(state.document.title == "Weekly Review")
-        #expect(state.document.body == "- [ ] Finish report\n#ops")
+        #expect(state.normalizedTitle == "这是第一句。")
+        #expect(state.normalizedBody == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
+        #expect(state.document.title == "这是第一句。")
+        #expect(state.document.body == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
         #expect(state.document.tags == ["ops"])
         #expect(state.hasMeaningfulContent == true)
     }
 
     @Test
-    func quickCaptureTagToggleAddsAndRemovesStandaloneTags() {
-        let original = "Draft body\n#alpha\nkeep #beta"
-        let removed = QuickCaptureDocumentState.toggledTag("alpha", in: original)
-        let added = QuickCaptureDocumentState.toggledTag("gamma", in: removed)
+    func quickCaptureTitleDerivationHandlesMarkdownPunctuationAndLength() {
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "  \n# Plan v2? Keep this") == "Plan v2?")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "\n「中文标题！」后续") == "「中文标题！」")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "\n\n") == "")
 
-        #expect(!QuickCaptureDocumentState.containsTag("alpha", in: removed))
-        #expect(QuickCaptureDocumentState.containsTag("beta", in: removed))
-        #expect(QuickCaptureDocumentState.containsTag("gamma", in: added))
-        #expect(added.contains("#gamma"))
+        let longSentence = String(repeating: "长", count: 200)
+        #expect(QuickCaptureDocumentState.derivedTitle(from: longSentence).count == 80)
+    }
+
+    @Test
+    func quickCaptureLegacyTitleAndBodyMergeWithoutLossOrDuplication() {
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "Legacy title",
+                bodyMarkdown: "Body line\nSecond line"
+            ) == "Legacy title\n\nBody line\nSecond line"
+        )
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "Already present.",
+                bodyMarkdown: "Already present. More text\nSecond line"
+            ) == "Already present. More text\nSecond line"
+        )
+        #expect(
+            QuickCaptureDocumentState.unifiedMarkdown(
+                legacyTitle: "",
+                bodyMarkdown: "Body only"
+            ) == "Body only"
+        )
     }
 
     @MainActor
@@ -6524,6 +6584,82 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func slowLibrarySearchKeepsTypingOnMainResponsiveAndPublishesOnlyLatestQuery() async throws {
+        let suiteName = "mudsnote.library-search-responsiveness-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-search-responsiveness-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        for index in 0..<300 {
+            let marker = index == 299 ? "latest-query-marker" : "stale-query-marker"
+            try "# Fixture \(index)\n\n\(marker)\n".write(
+                to: notesDirectory.appendingPathComponent("fixture-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        await controller.waitForExternalLibraryRefreshForTesting()
+
+        let searchThread = ThreadObservationRecorder()
+        store.setSearchIndexEntryWillMatchForTesting {
+            searchThread.recordCurrentThread()
+            Thread.sleep(forTimeInterval: 0.002)
+        }
+
+        controller.searchField.stringValue = "stale-query-marker"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        let firstSearchDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while searchThread.snapshot().callCount == 0,
+              ContinuousClock.now < firstSearchDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(searchThread.snapshot().callCount > 0)
+
+        let typingStarted = ContinuousClock.now
+        controller.searchField.stringValue = "latest-query-marker"
+        controller.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: controller.searchField
+        ))
+        let typingLatency = typingStarted.duration(to: ContinuousClock.now)
+        #expect(typingLatency < .milliseconds(50))
+
+        let resultDeadline = ContinuousClock.now.advanced(by: .seconds(4))
+        while controller.noteListSearchResultsForLibrary().map(\.title) != ["Fixture 299"],
+              ContinuousClock.now < resultDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Fixture 299"])
+        #expect(!searchThread.snapshot().observedMainThread)
+    }
+
+    @MainActor
+    @Test
     func firstKeyboardSearchFlushUsesSnapshotBeforeBuildingSearchSession() async throws {
         let suiteName = "mudsnote.first-search-flush-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -8860,6 +8996,125 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func slashCommandsShareStableIdentifiersAndMatching() {
+        let identifiers = SlashCommand.allCases.map(\.identifier)
+        #expect(Set(identifiers).count == identifiers.count)
+
+        #expect(SlashCommand.matching("h", includesAI: false).map(\.identifier) == [
+            "heading1", "heading2", "heading3"
+        ])
+        #expect(SlashCommand.matching("H", includesAI: false).map(\.identifier) == [
+            "heading1", "heading2", "heading3"
+        ])
+        #expect(SlashCommand.matching("t", includesAI: false).map(\.identifier) == ["checklist"])
+        #expect(SlashCommand.matching("编号", includesAI: false).map(\.identifier) == ["orderedList"])
+        #expect(SlashCommand.matching("sum", includesAI: true).map(\.identifier) == ["aiSummarize"])
+        #expect(SlashCommand.matching("sum", includesAI: false).isEmpty)
+        #expect(SlashCommand.matching("not-a-command", includesAI: true).isEmpty)
+    }
+
+    @MainActor
+    @Test
+    func floatingSlashSuggestionsStayTextOnlyAndKeepAnEmptyStateVisible() async throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let recorder = SlashCommandInputSourceSessionRecorder()
+        controller.slashCommandInputSourceSession = recorder
+        controller.window?.makeFirstResponder(controller.editorTextView)
+
+        controller.editorTextView.string = "/"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
+
+        let scrollView = try #require(
+            controller.suggestionController.view.subviews.compactMap { $0 as? NSScrollView }.first
+        )
+        let listView = try #require(scrollView.documentView as? SuggestionListView)
+        #expect(listView.items.map(\.title) == SlashCommand.allCases.map(\.title))
+        #expect(listView.items.allSatisfy { $0.symbolName == nil })
+        #expect(recorder.beginCalls.last?.hasMarkedText == false)
+        #expect(recorder.beginCalls.last?.editorIsFirstResponder == true)
+
+        controller.editorTextView.string = "/does-not-exist"
+        controller.editorTextView.setSelectedRange(NSRange(location: 15, length: 0))
+        controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
+
+        guard case .slash(_, _, let commands) = controller.inlineSuggestionContext else {
+            Issue.record("Expected a slash context with no command matches")
+            return
+        }
+        #expect(commands.isEmpty)
+        #expect(!controller.suggestionController.view.isHidden)
+        #expect(listView.items == [
+            SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)
+        ])
+    }
+
+    @MainActor
+    @Test
+    func slashSuggestionCompositionAndCancelPreserveEditorState() async throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        let recorder = SlashCommandInputSourceSessionRecorder()
+        controller.slashCommandInputSourceSession = recorder
+        controller.window?.makeFirstResponder(controller.editorTextView)
+
+        controller.editorTextView.string = "/"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
+        let beforeCancel = controller.editorTextView.attributedString()
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Escape)
+        ))
+        #expect(controller.handleShortcutEvent(escape))
+        #expect(controller.editorTextView.attributedString().isEqual(to: beforeCancel))
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+        #expect(recorder.endCallCount > 0)
+
+        recorder.reset()
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        controller.editorTextView.setMarkedText(
+            "拼",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: 1, length: 0)
+        )
+        let markedTextSnapshot = controller.editorTextView.attributedString()
+        #expect(controller.editorTextView.hasMarkedText())
+        controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(10))
+        #expect(recorder.beginCalls.isEmpty)
+        #expect(controller.editorTextView.attributedString().isEqual(to: markedTextSnapshot))
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+        controller.editorTextView.unmarkText()
+    }
+
+    @MainActor
+    @Test
+    func systemSlashInputSourceSessionRefusesUnsafeSwitchBoundaries() {
+        let session = SlashCommandInputSourceSession()
+
+        #expect(!session.beginIfAllowed(hasMarkedText: true, editorIsFirstResponder: true))
+        #expect(!session.isActive)
+        #expect(!session.beginIfAllowed(hasMarkedText: false, editorIsFirstResponder: false))
+        #expect(!session.isActive)
+    }
+
+    @MainActor
+    @Test
     func inlineSuggestionPopoverIsHostedAtWindowContentLevel() throws {
         let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
         defer { harness.tearDown() }
@@ -8918,7 +9173,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func quickCaptureUsesQuietIconOnlyFooterActions() throws {
+    func quickCaptureFooterRemovesTagActionAndAlignsRemainingControls() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "quick-capture",
             showsSaveButton: true,
@@ -8935,14 +9190,11 @@ struct MarkdownRichEditorTests {
         defer { harness.tearDown() }
 
         let directoryButton = try #require(harness.controller.quickCaptureDirectoryButton)
-        let tagButton = try #require(harness.controller.quickCaptureTagButton)
         let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
         let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
 
         #expect(harness.controller.selectedDirectoryURL == harness.store.preferredInboxDirectory)
         #expect(harness.controller.quickCaptureDestinationTitle() == "Inbox")
-        #expect(harness.controller.quickCaptureButtonsByAction.isEmpty)
-        #expect(tagButton.superview?.superview === directoryButton.superview)
         let directoryMenu = harness.controller.makeQuickCaptureDirectoryMenu()
         #expect(directoryMenu.items.compactMap { ($0.representedObject as? URL)?.lastPathComponent } == [
             "000-Inbox",
@@ -8952,12 +9204,83 @@ struct MarkdownRichEditorTests {
         #expect(directoryMenu.items.map(\.title) == ["Inbox", "Areas", "Projects"])
         #expect(saveButton.title.isEmpty)
         #expect(saveButton.toolTip == "保存")
-        #expect(saveButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(saveButton.preferredSize == NSSize(width: 28, height: 28))
         #expect(cancelButton.title.isEmpty)
         #expect(cancelButton.toolTip == "取消")
-        #expect(cancelButton.preferredSize == NSSize(width: 26, height: 26))
+        #expect(cancelButton.preferredSize == NSSize(width: 28, height: 28))
+        let tagButtons = harness.controller.window?.contentView?.allSubviews
+            .compactMap { $0 as? NSButton }
+            .filter { $0.accessibilityIdentifier() == "QuickCapture标签Button" } ?? []
+        #expect(tagButtons.isEmpty)
+        #expect(directoryButton.frame.midY == cancelButton.frame.midY)
+        #expect(cancelButton.frame.midY == saveButton.frame.midY)
         #expect(saveButton.layer?.backgroundColor == NSColor.clear.cgColor)
         #expect(cancelButton.layer?.backgroundColor == NSColor.clear.cgColor)
+
+        let saveRestingBackground = saveButton.layer?.backgroundColor
+        saveButton.highlight(true)
+        #expect(saveButton.layer?.backgroundColor == saveRestingBackground)
+        #expect(saveButton.alphaValue < 1)
+        saveButton.highlight(false)
+        #expect(saveButton.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureUsesOneEditorAndRestoresLegacyDraftWithoutDuplication() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+                try? store.saveDraft(DraftSnapshot(
+                    id: "quick-capture",
+                    sourcePath: nil,
+                    selectedDirectoryPath: store.notesDirectory.path,
+                    title: "Recovered title.",
+                    body: "Recovered title. Body remains\nSecond line",
+                    updatedAt: Date()
+                ))
+            }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+
+        let separateTitleEditors = controller.window?.contentView?.allSubviews
+            .compactMap { $0 as? FocusableTitleTextView } ?? []
+        #expect(separateTitleEditors.isEmpty)
+        #expect(controller.editorTextView.string == "Recovered title. Body remains\nSecond line")
+        #expect(controller.currentDocument().title == "Recovered title.")
+        #expect(controller.currentDocument().body == "Recovered title. Body remains\nSecond line")
+
+        controller.showWindowAndFocus()
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureSaveUsesFirstSentenceAsTitleAndPreservesFullBody() throws {
+        var savedURL: URL?
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true,
+            configureStore: { store in
+                store.configurePreferredDirectories([store.notesDirectory], defaultDirectory: store.notesDirectory)
+            },
+            onSave: { savedURL = $0 }
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.string = "\nProject / Alpha? Keep this sentence.\nSecond line"
+
+        controller.savePressed()
+
+        let url = try #require(savedURL)
+        let saved = try harness.store.loadNote(at: url)
+        #expect(saved.title == "Project / Alpha?")
+        #expect(saved.body == "Project / Alpha? Keep this sentence.\nSecond line")
+        #expect(!url.lastPathComponent.contains("/"))
+        #expect(url.deletingLastPathComponent() == harness.store.preferredInboxDirectory)
     }
 
     @MainActor

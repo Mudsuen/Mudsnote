@@ -8,74 +8,6 @@ import MudsnoteCore
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate, WindowOpacityAdjusting, MarkdownTextViewCommands, NSTextViewDelegate {
 
-    enum SlashCommand: CaseIterable {
-        case heading1, heading2, heading3, checklist, bulletList, orderedList, divider
-        case aiSummarize, aiFix, aiTodos
-
-        var title: String {
-            switch self {
-            case .heading1: return "一级标题"
-            case .heading2: return "二级标题"
-            case .heading3: return "三级标题"
-            case .checklist: return "待办列表"
-            case .bulletList: return "项目符号列表"
-            case .orderedList: return "编号列表"
-            case .divider: return "分割线"
-            case .aiSummarize: return "AI 总结"
-            case .aiFix: return "AI 修正"
-            case .aiTodos: return "AI 提取待办"
-            }
-        }
-
-        var subtitle: String {
-            switch self {
-            case .heading1, .heading2, .heading3: return "将当前行改为标题"
-            case .checklist: return "开始一个待办项"
-            case .bulletList: return "开始一个项目符号项"
-            case .orderedList: return "开始一个编号项"
-            case .divider: return "插入分割线"
-            case .aiSummarize: return "总结选中内容或当前笔记"
-            case .aiFix: return "修正选中内容或当前段落"
-            case .aiTodos: return "提取 Markdown 待办项"
-            }
-        }
-
-        var searchAliases: [String] {
-            switch self {
-            case .heading1: return ["heading 1", "h1", "一级标题"]
-            case .heading2: return ["heading 2", "h2", "二级标题"]
-            case .heading3: return ["heading 3", "h3", "三级标题"]
-            case .checklist: return ["todo", "to-do", "checklist", "待办", "清单"]
-            case .bulletList: return ["bullet", "bulleted", "list", "项目符号"]
-            case .orderedList: return ["numbered", "ordered", "number", "编号"]
-            case .divider: return ["divider", "line", "分割线"]
-            case .aiSummarize: return ["summarize", "summary", "sum", "tldr", "总结", "摘要"]
-            case .aiFix: return ["fix", "proofread", "grammar", "ai fix", "修正", "润色"]
-            case .aiTodos: return ["todos", "actions", "tasks", "待办", "行动项"]
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .heading1, .heading2, .heading3: return "textformat.size"
-            case .checklist: return "checklist"
-            case .bulletList: return "list.bullet"
-            case .orderedList: return "list.number"
-            case .divider: return "minus"
-            case .aiSummarize, .aiFix, .aiTodos: return "sparkles"
-            }
-        }
-
-        var aiActionID: AIActionID? {
-            switch self {
-            case .aiSummarize: return .summarize
-            case .aiFix: return .fix
-            case .aiTodos: return .todos
-            default: return nil
-            }
-        }
-    }
-
     enum InlineSuggestionContext {
         case tags(query: String, replacementRange: NSRange, items: [String])
         case slash(query: String, replacementRange: NSRange, items: [SlashCommand])
@@ -123,48 +55,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         var keyModifiers: NSEvent.ModifierFlags { [] }
     }
 
-    enum QuickCaptureAction: Int, CaseIterable {
-        case tag, checklist, orderedList, bulletList
-
-        static let footerActions: [QuickCaptureAction] = [.tag]
-
-        var buttonTitle: String {
-            switch self {
-            case .tag: return "标签"
-            case .checklist: return "待办"
-            case .orderedList: return "编号"
-            case .bulletList: return "项目符号"
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .tag: return "tag"
-            case .checklist: return "checkmark.square"
-            case .orderedList: return "list.number"
-            case .bulletList: return "list.bullet"
-            }
-        }
-
-        var toolTip: String {
-            switch self {
-            case .tag: return "插入标签"
-            case .checklist: return "待办列表"
-            case .orderedList: return "编号列表"
-            case .bulletList: return "项目符号列表"
-            }
-        }
-
-        var linkedToolbarAction: ToolbarAction? {
-            switch self {
-            case .tag: return nil
-            case .checklist: return .checklist
-            case .orderedList: return .orderedList
-            case .bulletList: return .bulletList
-            }
-        }
-    }
-
     // MARK: - Stored properties
 
     let noteStore: NoteStore
@@ -197,15 +87,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let statusLabel = NSTextField(labelWithString: "")
     var toolbarButtons: [HoverToolbarButton] = []
     var toolbarButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
-    var quickCaptureButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
     weak var saveButton: NSButton?
     weak var cancelButton: NSButton?
     weak var quickCaptureDirectoryButton: NSButton?
-    weak var quickCaptureTitleHost: NSView?
-    weak var quickCaptureTitleTextView: FocusableTitleTextView?
-    weak var quickCaptureTitlePlaceholderLabel: NSTextField?
     weak var quickCapturePlaceholderBodyLabel: NSTextField?
-    weak var quickCaptureTagButton: HoverToolbarButton?
     weak var floatingNotePlaceholderLabel: NSTextField?
     weak var floatingNoteTitlebarView: NSView?
     weak var floatingNoteBrowseButton: NSButton?
@@ -227,6 +112,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var lastEditorSelectionForToolbarAction: NSRange?
     var activeToolbarActionSelection: NSRange?
     let suggestionController = SuggestionPopoverController()
+    var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
     var inlineSuggestionContext: InlineSuggestionContext?
     var knownTagsForSuggestions: [String]?
     var tagSuggestionTask: Task<Void, Never>?
@@ -320,9 +206,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         window.onCommandF = { [weak self] in self?.searchPressed() }
         window.onCommandComma = { [weak self] in self?.onRequestPreferences() }
         window.onEscape = { [weak self] in self?.cancelPressed() }
-        window.onLeftMouseDownPreflight = { [weak self] event in
+        window.onLeftMouseDownPreflight = { [weak self] _ in
             self?.rememberEditorSelectionForToolbarActions()
-            self?.preflightQuickCaptureTitleClick(with: event)
         }
         window.onStandardEditCommand = { [weak self] selector in self?.performStandardEditCommand(selector) ?? false }
         window.onEditorCommand = { [weak self] event in self?.handleShortcutEvent(event) ?? false }
@@ -371,15 +256,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             performRevealAnimation(window: window, targetFrame: targetFrame, targetAlpha: targetAlpha)
         }
 
-        if isQuickCaptureMode, quickCaptureTitleTextView != nil {
-            DispatchQueue.main.async { [weak self, weak window] in
-                guard let self, let window, window.isVisible else { return }
-                self.focusQuickCaptureTitle(placingCaretAtEnd: true)
-            }
-        } else {
-            window.makeFirstResponder(editorTextView)
-            editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-        }
+        window.makeFirstResponder(editorTextView)
+        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
     }
 
     func hasMeaningfulUnsavedContent() -> Bool {
@@ -704,91 +582,4 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         return URL(fileURLWithPath: path)
     }
 
-    // MARK: - NSTextViewDelegate
-
-    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if textView === quickCaptureTitleTextView {
-            switch commandSelector {
-            case #selector(insertNewline(_:)), #selector(insertTab(_:)):
-                focusQuickCaptureBody()
-                return true
-            case #selector(cancelOperation(_:)):
-                cancelPressed()
-                return true
-            default:
-                return false
-            }
-        }
-
-        if textView === editorTextView {
-            switch commandSelector {
-            case #selector(insertBacktab(_:)):
-                focusQuickCaptureTitle(placingCaretAtEnd: true)
-                return true
-            default:
-                return false
-            }
-        }
-
-        return false
-    }
-
-    func focusQuickCaptureTitle(placingCaretAtEnd: Bool, clickEvent: NSEvent? = nil) {
-        guard let window, let titleTextView = quickCaptureTitleTextView else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        if !window.isKeyWindow {
-            window.makeKeyAndOrderFront(nil)
-        }
-        guard titleTextView.activateEditing(placingCaretAtEnd: placingCaretAtEnd) else { return }
-        if let clickEvent {
-            placeQuickCaptureTitleCaret(using: clickEvent, in: titleTextView)
-        }
-    }
-
-    func focusQuickCaptureBody() {
-        guard let window else { return }
-        _ = window.makeFirstResponder(nil)
-        window.makeFirstResponder(editorTextView)
-        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
-    }
-
-    func preflightQuickCaptureTitleClick(with event: NSEvent) {
-        guard
-            isQuickCaptureMode,
-            let window,
-            let titleHost = quickCaptureTitleHost,
-            let titleTextView = quickCaptureTitleTextView,
-            window.firstResponder !== titleTextView
-        else {
-            return
-        }
-
-        let titleFrameInWindow = titleHost.convert(titleHost.bounds, to: nil)
-        guard titleFrameInWindow.contains(event.locationInWindow) else { return }
-        guard titleTextView.activateEditing(placingCaretAtEnd: false) else { return }
-        placeQuickCaptureTitleCaret(using: event, in: titleTextView)
-    }
-
-    private func placeQuickCaptureTitleCaret(using event: NSEvent, in textView: NSTextView) {
-        guard
-            let layoutManager = textView.layoutManager,
-            let textContainer = textView.textContainer
-        else {
-            return
-        }
-
-        layoutManager.ensureLayout(for: textContainer)
-        let point = textView.convert(event.locationInWindow, from: nil)
-        let containerPoint = NSPoint(
-            x: max(point.x - textView.textContainerInset.width, 0),
-            y: max(point.y - textView.textContainerInset.height, 0)
-        )
-        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
-        let characterIndex = min(
-            layoutManager.characterIndexForGlyph(at: glyphIndex),
-            textView.string.utf16.count
-        )
-        textView.setSelectedRange(NSRange(location: characterIndex, length: 0))
-        textView.scrollRangeToVisible(textView.selectedRange())
-    }
 }

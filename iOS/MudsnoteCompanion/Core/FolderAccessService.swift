@@ -105,6 +105,7 @@ enum FolderInitializer {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try ensureDirectory(root.appendingPathComponent("Attachments"))
+        try ensureDirectory(root.appendingPathComponent("Inbox"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote/Trash"))
 

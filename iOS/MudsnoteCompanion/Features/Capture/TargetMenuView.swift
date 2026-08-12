@@ -5,20 +5,36 @@ struct TargetMenuView: View {
 
     var body: some View {
         Menu {
-            Button {
-                appModel.draft.target = .inbox
-            } label: {
-                Label("Inbox.md", systemImage: "tray.fill")
+            if !appModel.recentCaptureFolders.isEmpty {
+                Section("Recently Used") {
+                    ForEach(appModel.recentCaptureFolders) { folder in
+                        Button {
+                            appModel.selectCaptureFolder(folder.relativePath)
+                        } label: {
+                            Label(folder.name, systemImage: "clock.fill")
+                        }
+                        .accessibilityIdentifier(
+                            "recent-capture-folder-\(folder.relativePath)"
+                        )
+                    }
+                }
             }
 
-            if !appModel.recentFiles.isEmpty {
-                Section("Recent") {
-                    ForEach(appModel.recentFiles.prefix(6)) { file in
+            Button {
+                appModel.selectCaptureFolder(nil)
+            } label: {
+                Label("Top Level", systemImage: "folder")
+            }
+
+            if !appModel.allFolders.isEmpty {
+                Section("Create New Note In") {
+                    ForEach(appModel.allFolders) { folder in
                         Button {
-                            appModel.draft.target = .recent(file.relativePath)
+                            appModel.selectCaptureFolder(folder.relativePath)
                         } label: {
-                            Label(file.title, systemImage: "doc.text")
+                            Label(folder.name, systemImage: "folder.fill")
                         }
+                        .accessibilityIdentifier("capture-target-folder-\(folder.relativePath)")
                     }
                 }
             }
@@ -37,7 +53,7 @@ struct TargetMenuView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             String(
-                format: String(localized: "capture.destination.format"),
+                format: String(localized: "New note in %@"),
                 locale: .current,
                 appModel.draft.target.compactLabel
             )
@@ -49,11 +65,6 @@ struct TargetMenuView: View {
 
 private extension CaptureTarget {
     var compactLabel: String {
-        switch self {
-        case .inbox:
-            return String(localized: "Inbox")
-        case .recent(let path):
-            return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-        }
+        label
     }
 }

@@ -66,17 +66,34 @@ private func librarySearchResults(
     searchesAllNotes: Bool,
     includesSubfolderNotes: Bool
 ) -> [NoteSearchResult] {
+    let cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
     if searchesAllNotes {
-        return searchSession.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     switch scope {
     case .all:
-        return searchSession.searchNotes(query: query, limit: limit)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .recent:
-        return searchSession.searchRecentNotes(query: query, limit: limit)
+        return searchSession.searchRecentNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .inbox:
-        return searchSession.searchInboxNotes(query: query, limit: limit)
+        return searchSession.searchInboxNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        )
     case .trash:
         return libraryFilteredTrashedNotes(noteStore: noteStore, query: query, limit: limit)
     case .folder(let url):
@@ -84,10 +101,16 @@ private func librarySearchResults(
             query: query,
             limit: limit,
             in: url,
-            includingDescendants: includesSubfolderNotes
+            includingDescendants: includesSubfolderNotes,
+            cancellationCheck: cancellationCheck
         )
     case .tag(let tag):
-        return searchSession.searchNotes(query: query, limit: limit, tagged: tag)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            tagged: tag,
+            cancellationCheck: cancellationCheck
+        )
     }
 }
 
@@ -103,44 +126,11 @@ private func libraryNote(
 }
 
 func libraryFilteredTrashedNotes(noteStore: NoteStore, query: String, limit: Int) -> [NoteSearchResult] {
-    guard limit > 0 else { return [] }
-    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedQuery.isEmpty else { return noteStore.listTrashedNotes(limit: limit) }
-
-    var results: [NoteSearchResult] = []
-    results.reserveCapacity(limit)
-    for note in noteStore.listTrashedNotes(limit: .max) {
-        guard !Task.isCancelled else { break }
-        guard let loaded = try? noteStore.loadNote(at: note.url) else {
-            if note.title.localizedCaseInsensitiveContains(trimmedQuery) {
-                results.append(note)
-            }
-            if results.count == limit { break }
-            continue
-        }
-
-        let matchesTitle = loaded.title.localizedCaseInsensitiveContains(trimmedQuery)
-        let matchingLine = loaded.body
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        let matchesTag = loaded.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-        guard matchesTitle || matchingLine != nil || matchesTag else { continue }
-
-        results.append(NoteSearchResult(
-            url: note.url,
-            title: loaded.title,
-            snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
-                ?? libraryFirstMeaningfulLine(from: loaded.body)
-                ?? "",
-            modifiedAt: note.modifiedAt,
-            tags: loaded.tags,
-            hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
-            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: note.url)
-        ))
-        if results.count == limit { break }
-    }
-    return results
+    noteStore.searchTrashedNotes(
+        query: query,
+        limit: limit,
+        cancellationCheck: { Task.isCancelled }
+    )
 }
 
 private func libraryFirstMeaningfulLine(from body: String) -> String? {
@@ -1411,8 +1401,9 @@ final class LibraryWindowController: NSWindowController,
     private var inlineFolderEditHasReceivedFocus = false
     private var linkEditorSheetController: LinkEditorSheetController?
     private let editorSuggestionController = SuggestionPopoverController()
-    private var editorSlashSuggestion: (replacementRange: NSRange, commands: [EditorWindowController.SlashCommand])?
+    private var editorSlashSuggestion: (replacementRange: NSRange, commands: [SlashCommand])?
     private var editorSlashSuggestionLastInput: (caret: Int, prefixStart: Int, prefix: String)?
+    var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
     private(set) var editorSlashSuggestionInspectionLengthForLibrary = 0
     private var isApplyingStoredSplitLayout = false
     private var splitLayoutPersistenceWorkItem: DispatchWorkItem?
@@ -6146,8 +6137,18 @@ final class LibraryWindowController: NSWindowController,
 
         let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, generation, preferredURL] in
             guard !Task.isCancelled else { return }
-            let searchSession = existingSearchSession
-                ?? noteStore.makeSearchSession(roots: preferredDirectories)
+            let searchSession: NoteSearchSession
+            if let existingSearchSession {
+                searchSession = existingSearchSession
+            } else {
+                guard let builtSession = noteStore.makeSearchSession(
+                    roots: preferredDirectories,
+                    cancellationCheck: { Task.isCancelled }
+                ) else {
+                    return
+                }
+                searchSession = builtSession
+            }
             let results = librarySearchResults(
                 noteStore: noteStore,
                 searchSession: searchSession,
@@ -11458,6 +11459,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateEditorSlashSuggestions() {
+        if editorTextView.hasMarkedText() {
+            return
+        }
         guard !isEditorShowingMarkdownSource,
               selectedScope != .trash,
               editorTextView.selectedRange().length == 0,
@@ -11507,18 +11511,7 @@ final class LibraryWindowController: NSWindowController,
         }
         let token = String(matchedText[slashIndex...])
         let query = String(token.dropFirst()).lowercased()
-        let commands = EditorWindowController.SlashCommand.allCases.filter { command in
-            command.aiActionID == nil && (
-                query.isEmpty
-                    || command.title.lowercased().contains(query)
-                    || command.subtitle.lowercased().contains(query)
-                    || command.searchAliases.contains { $0.lowercased().contains(query) }
-            )
-        }
-        guard !commands.isEmpty else {
-            dismissEditorSlashSuggestions()
-            return
-        }
+        let commands = SlashCommand.matching(query, includesAI: false)
         hostEditorSuggestionView(in: host)
         let matchRange = NSRange(match, in: prefix)
         let tokenOffset = matchedText[..<slashIndex].utf16.count
@@ -11527,9 +11520,10 @@ final class LibraryWindowController: NSWindowController,
             length: token.utf16.count
         )
         editorSlashSuggestion = (replacementRange, commands)
-        editorSuggestionController.updateItems(commands.map {
-            SuggestionItem(title: $0.title, subtitle: nil, symbolName: $0.symbolName)
-        })
+        let items = commands.isEmpty
+            ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
+            : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
+        editorSuggestionController.updateItems(items)
         let size = editorSuggestionController.preferredContentSize
         let tokenRect = editorTextView.convert(
             caretRectInWindow(for: editorTextView, at: replacementRange.location),
@@ -11540,11 +11534,25 @@ final class LibraryWindowController: NSWindowController,
         origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
         editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
         editorSuggestionController.view.isHidden = false
+        scheduleEditorSlashInputSourceSwitch()
+    }
+
+    private func scheduleEditorSlashInputSourceSwitch() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  !editorSuggestionController.view.isHidden,
+                  editorSlashSuggestion != nil else { return }
+            slashCommandInputSourceSession.beginIfAllowed(
+                hasMarkedText: editorTextView.hasMarkedText(),
+                editorIsFirstResponder: window?.firstResponder === editorTextView
+            )
+        }
     }
 
     private func dismissEditorSlashSuggestions() {
         editorSlashSuggestion = nil
         editorSuggestionController.view.isHidden = true
+        slashCommandInputSourceSession.end()
     }
 
     private func acceptEditorSlashSuggestion(at index: Int) {

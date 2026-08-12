@@ -429,6 +429,71 @@ extension NoteStore {
             .map { $0 }
     }
 
+    public func searchTrashedNotes(
+        query: String,
+        limit: Int,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
+        guard limit > 0 else { return [] }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return listTrashedNotes(limit: limit) }
+        let metadata = storedTrashedNotesMetadata()
+        guard let fileURLs = markdownFiles(
+            in: trashDirectory(),
+            cancellationCheck: cancellationCheck
+        ) else {
+            return []
+        }
+
+        var results: [NoteSearchResult] = []
+        results.reserveCapacity(min(limit, fileURLs.count))
+        for fileURL in fileURLs {
+            guard !cancellationCheck() else { return [] }
+            let fileSize = (
+                try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber
+            )??.uint64Value ?? 0
+            guard fileSize <= Self.maximumSearchIndexedFileSize else { continue }
+
+            let loaded = try? loadNote(at: fileURL)
+            guard !cancellationCheck() else { return [] }
+            let title = loaded?.title ?? fileURL.deletingPathExtension().lastPathComponent
+            let body = loaded?.body ?? ""
+            let tags = loaded?.tags ?? []
+            let matchingLine = body
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
+            guard title.localizedCaseInsensitiveContains(trimmedQuery)
+                    || matchingLine != nil
+                    || tags.contains(where: { $0.localizedCaseInsensitiveContains(trimmedQuery) }) else {
+                continue
+            }
+
+            let modifiedAt = resolvedTrashedNoteMetadata(for: fileURL, in: metadata)?.metadata.deletedAt
+                ?? fileModificationDate(for: fileURL)
+                ?? Date()
+            let result = NoteSearchResult(
+                url: fileURL,
+                title: title,
+                snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
+                    ?? MarkdownEditorDocument.firstPreviewLine(in: body)
+                    ?? "",
+                modifiedAt: modifiedAt,
+                tags: tags,
+                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),
+                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: body, relativeTo: fileURL)
+            )
+            let insertionIndex = results.firstIndex {
+                $0.modifiedAt < result.modifiedAt
+            } ?? results.endIndex
+            results.insert(result, at: insertionIndex)
+            if results.count > limit {
+                results.removeLast()
+            }
+        }
+        return results
+    }
+
     public func trashedNoteCount() -> Int {
         markdownFiles(in: trashDirectory()).count
     }
@@ -492,6 +557,13 @@ extension NoteStore {
     }
 
     func markdownFiles(in root: URL) -> [URL] {
+        markdownFiles(in: root, cancellationCheck: { false }) ?? []
+    }
+
+    func markdownFiles(
+        in root: URL,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [URL]? {
         guard fileManager.fileExists(atPath: root.path) else { return [] }
         let resourceKeys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
 
@@ -503,6 +575,7 @@ extension NoteStore {
 
         var results: [URL] = []
         while let url = enumerator?.nextObject() as? URL {
+            guard !cancellationCheck() else { return nil }
             guard let values = try? url.resourceValues(forKeys: Set(resourceKeys)) else {
                 continue
             }

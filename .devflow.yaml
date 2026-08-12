@@ -72,4 +72,5 @@ control_plane:
   - scripts/validate_ios_app_store_metadata.py
   - scripts/package*
   - scripts/device_smoke.sh
+  - scripts/ios_signing_refresh.sh
   - '**/*.entitlements'

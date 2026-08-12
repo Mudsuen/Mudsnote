@@ -99,7 +99,7 @@ extension EditorWindowController {
     func currentDocument() -> MarkdownEditorDocument {
         if isQuickCaptureMode {
             return QuickCaptureDocumentState(
-                title: currentQuickCaptureTitleValue(),
+                title: "",
                 bodyMarkdown: serializedBodyMarkdown()
             ).document
         }
@@ -108,9 +108,7 @@ extension EditorWindowController {
     }
 
     func currentQuickCaptureTitleValue() -> String {
-        quickCaptureTitleTextView?.string
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        QuickCaptureDocumentState.derivedTitle(from: serializedBodyMarkdown())
     }
 
     func serializedBodyMarkdown() -> String {

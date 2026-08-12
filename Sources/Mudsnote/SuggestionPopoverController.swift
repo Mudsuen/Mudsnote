@@ -130,15 +130,19 @@ final class SuggestionListView: NSView {
         let hasIcon = item.symbolName != nil
         let textX = hasIcon ? iconLeading + iconWidth + iconTitleGap : titleLeading
         if let symbolName = item.symbolName,
-           let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: item.title)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) {
-            let iconRect = NSRect(
-                x: iconLeading,
-                y: rowRect.midY - (iconWidth / 2) - 1,
-                width: iconWidth,
-                height: iconWidth
-            )
-            image.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: selected ? 0.95 : 0.72)
+           let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: item.title) {
+            let color = selected ? panelPrimaryTextColor() : panelSecondaryTextColor()
+            let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                .applying(.init(hierarchicalColor: color))
+            if let image = baseImage.withSymbolConfiguration(configuration) {
+                let iconRect = NSRect(
+                    x: iconLeading,
+                    y: rowRect.midY - (iconWidth / 2) - 1,
+                    width: iconWidth,
+                    height: iconWidth
+                )
+                image.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: selected ? 0.95 : 0.72)
+            }
         }
 
         let paragraphStyle = NSMutableParagraphStyle()

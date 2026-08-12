@@ -50,6 +50,15 @@ actor MarkdownFileStore {
         listMetadataCache = [:]
     }
 
+    func configureAndInitialize(root: URL) throws {
+        configure(root: root)
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        try FolderInitializer.initialize(root)
+    }
+
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -855,10 +864,33 @@ actor MarkdownFileStore {
             now: now
         )
 
+        let pendingID = UUID()
+        let directory = try userFolderURL(
+            relativePath: draft.target.relativeFolderPath,
+            root: root,
+            allowRoot: true
+        )
+        let titleSource = draft.body
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+            ?? draft.attachments.first.map {
+                switch $0 {
+                case .audio: return "Audio Note"
+                case .image: return "Image Note"
+                case .video: return "Video Note"
+                case .file: return "Attachment Note"
+                }
+            }
+            ?? "Untitled Note"
+        let preferredStem = Self.portableNoteFilenameStem(from: "# \(titleSource)")
+        let suffix = pendingID.uuidString.prefix(8).uppercased()
+        let target = directory.appendingPathComponent("\(preferredStem)-\(suffix).md")
+
         return PendingWrite(
-            id: UUID(),
+            id: pendingID,
             createdAt: now,
-            targetRelativePath: draft.target.relativePath(now: now),
+            targetRelativePath: Self.relativePath(for: target, root: root),
             markdownBlock: markdown,
             attachments: attachmentWrites.map {
                 PendingAttachment(relativePath: $0.relativePath, base64Data: $0.data.base64EncodedString())
@@ -2451,6 +2483,7 @@ actor MarkdownFileStore {
         }
 
         try appendPendingWriteIfNeeded(pending, to: target)
+        invalidateAfterMutation(relativePaths: [pending.targetRelativePath])
     }
 
     private func attachmentWrites(for attachments: [CaptureAttachment], root: URL, now: Date) throws -> [(relativePath: String, data: Data)] {

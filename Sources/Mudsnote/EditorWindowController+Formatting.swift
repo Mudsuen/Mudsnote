@@ -413,7 +413,6 @@ extension EditorWindowController {
 
     func setToolbarActionState(_ action: ToolbarAction, active: Bool) {
         toolbarButtonsByAction[action]?.isActive = active
-        quickCaptureButtonsByAction[action]?.isActive = active
     }
 
     func rememberEditorSelectionForToolbarActions() {
@@ -472,23 +471,6 @@ extension EditorWindowController {
         }
         updateToolbarSelectionState()
         editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
-    }
-
-    @objc func quickCaptureActionPressed(_ sender: NSButton) {
-        guard let action = QuickCaptureAction(rawValue: sender.tag) else { return }
-        switch action {
-        case .tag:
-            showQuickCaptureTagMenu(from: sender)
-        case .checklist:
-            window?.makeFirstResponder(editorTextView)
-            toggleParagraphKind(.checklist(checked: false))
-        case .orderedList:
-            window?.makeFirstResponder(editorTextView)
-            toggleParagraphKind(.ordered(index: 1))
-        case .bulletList:
-            window?.makeFirstResponder(editorTextView)
-            toggleParagraphKind(.bullet)
-        }
     }
 
     // MARK: - Helpers

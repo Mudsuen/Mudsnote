@@ -2,15 +2,18 @@ import Foundation
 import MudsnoteCore
 
 struct QuickCaptureDocumentState {
+    static let maximumDerivedTitleLength = 80
+
     let title: String
     let bodyMarkdown: String
 
     var normalizedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.derivedTitle(from: normalizedBody)
     }
 
     var normalizedBody: String {
-        bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.unifiedMarkdown(legacyTitle: title, bodyMarkdown: bodyMarkdown)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var tags: [String] {
@@ -23,6 +26,69 @@ struct QuickCaptureDocumentState {
 
     var hasMeaningfulContent: Bool {
         !normalizedTitle.isEmpty || !normalizedBody.isEmpty || !tags.isEmpty
+    }
+
+    static func derivedTitle(from markdown: String) -> String {
+        let firstContentLine = markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard let firstContentLine,
+              let preview = MarkdownEditorDocument.previewText(fromMarkdownLine: firstContentLine) else {
+            return ""
+        }
+
+        let normalized = preview
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return "" }
+
+        let terminators = Set<Character>([".", "?", "!", "。", "？", "！"])
+        let closingPunctuation = Set<Character>(["\"", "'", "”", "’", "」", "』", "》", "】", ")", "）"])
+        let characters = Array(normalized)
+        var sentenceEnd = characters.endIndex
+        if let terminatorIndex = characters.firstIndex(where: terminators.contains) {
+            sentenceEnd = characters.index(after: terminatorIndex)
+            while sentenceEnd < characters.endIndex,
+                  terminators.contains(characters[sentenceEnd]) || closingPunctuation.contains(characters[sentenceEnd]) {
+                sentenceEnd = characters.index(after: sentenceEnd)
+            }
+        }
+
+        return String(characters[..<sentenceEnd])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(maximumDerivedTitleLength)
+            .description
+    }
+
+    static func unifiedMarkdown(legacyTitle: String, bodyMarkdown: String) -> String {
+        let normalizedLegacyTitle = legacyTitle
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !normalizedLegacyTitle.isEmpty else { return bodyMarkdown }
+
+        let normalizedBody = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedBody.isEmpty else { return normalizedLegacyTitle }
+
+        let derivedBodyTitle = derivedTitle(from: normalizedBody)
+        if titlesMatch(normalizedLegacyTitle, derivedBodyTitle) {
+            return bodyMarkdown
+        }
+        return normalizedLegacyTitle + "\n\n" + bodyMarkdown
+    }
+
+    private static func titlesMatch(_ lhs: String, _ rhs: String) -> Bool {
+        func comparable(_ value: String) -> String {
+            value
+                .trimmingCharacters(in: CharacterSet(
+                    charactersIn: " \t\r\n.?!。？！\"'”’」』》】)）"
+                ))
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }
+        return !lhs.isEmpty && comparable(lhs) == comparable(rhs)
     }
 
     static func extractedInlineTags(from text: String) -> [String] {
@@ -49,58 +115,4 @@ struct QuickCaptureDocumentState {
         return MarkdownEditorDocument.normalizedTags(tags)
     }
 
-    static func containsTag(_ tag: String, in bodyMarkdown: String) -> Bool {
-        let normalized = MarkdownEditorDocument.normalizedTags([tag]).first?.lowercased()
-        guard let normalized else { return false }
-        return extractedInlineTags(from: bodyMarkdown).contains { $0.lowercased() == normalized }
-    }
-
-    static func toggledTag(_ tag: String, in bodyMarkdown: String) -> String {
-        guard let normalizedTag = MarkdownEditorDocument.normalizedTags([tag]).first else {
-            return bodyMarkdown
-        }
-
-        if containsTag(normalizedTag, in: bodyMarkdown) {
-            return removingTag(normalizedTag, from: bodyMarkdown)
-        }
-
-        return appendingTag(normalizedTag, to: bodyMarkdown)
-    }
-
-    private static func appendingTag(_ tag: String, to bodyMarkdown: String) -> String {
-        let trimmed = bodyMarkdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return "#\(tag)"
-        }
-        return trimmed + "\n#\(tag)"
-    }
-
-    private static func removingTag(_ tag: String, from bodyMarkdown: String) -> String {
-        let pattern = "(^|\\s)#" + NSRegularExpression.escapedPattern(for: tag) + "(?=$|\\s)"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return bodyMarkdown
-        }
-
-        let nsString = bodyMarkdown as NSString
-        let fullRange = NSRange(location: 0, length: nsString.length)
-        let replaced = regex.stringByReplacingMatches(
-            in: bodyMarkdown,
-            options: [],
-            range: fullRange,
-            withTemplate: "$1"
-        )
-
-        let collapsedSpaces = replaced.replacingOccurrences(
-            of: #"(?m)[ \t]{2,}"#,
-            with: " ",
-            options: .regularExpression
-        )
-        let collapsedLines = collapsedSpaces.replacingOccurrences(
-            of: #"\n{3,}"#,
-            with: "\n\n",
-            options: .regularExpression
-        )
-
-        return collapsedLines.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }

@@ -15,6 +15,15 @@ enum NoteOpenMode {
     case edit
 }
 
+enum AudioCapturePhase: Equatable {
+    case idle
+    case requestingPermission
+    case recording
+    case stopping
+    case transcribing
+    case failed(String)
+}
+
 enum SystemEntryRequest {
     static let pendingRouteKey = "MudsnotePendingSystemRoute"
     static let pendingSearchKey = "MudsnotePendingSystemSearch"
@@ -42,8 +51,7 @@ final class AppModel: ObservableObject {
     @Published var captureRoute: CaptureRoute = .text
     @Published var isCapturePresented = false
     @Published var isSendingDraft = false
-    @Published private(set) var isAudioTransitioning = false
-    @Published private(set) var isTranscribingAudio = false
+    @Published private(set) var audioCapturePhase: AudioCapturePhase = .idle
     @Published private(set) var attachmentPreparationCount = 0
     @Published var statusToast: StatusToast?
     @Published var query = ""
@@ -61,6 +69,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
     @Published private(set) var isInitialLibraryLoading = true
+    @Published private(set) var defaultCaptureFolderPath: String?
+    @Published private(set) var recentCaptureFolders: [LibraryFolderNode] = []
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -74,12 +84,21 @@ final class AppModel: ObservableObject {
     private var searchGeneration = 0
     private var libraryConfigurationID = UUID()
     private var draftPersistenceTask: Task<Void, Never>?
+    private var audioStartTask: Task<Void, Never>?
+    private var audioStopTask: Task<Void, Never>?
+    private var transcriptionTask: Task<Void, Never>?
+    private var captureSessionID = UUID()
+    private var transcriptionID: UUID?
+    private var isSceneRefreshRunning = false
+    private var sceneRefreshRequested = false
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
+    private let captureFolderPreferences: CaptureFolderPreferences
     private let libraryRefreshBarrier: @Sendable () async -> Void
     private let initialLibraryLoadBarrier: @Sendable () async -> Void
+    private var captureTargetWasExplicitlySelected = false
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -87,6 +106,19 @@ final class AppModel: ObservableObject {
     #endif
 
     var isPreparingAttachment: Bool { attachmentPreparationCount > 0 }
+
+    var isAudioTransitioning: Bool {
+        switch audioCapturePhase {
+        case .requestingPermission, .stopping:
+            true
+        default:
+            false
+        }
+    }
+
+    var isTranscribingAudio: Bool {
+        audioCapturePhase == .transcribing
+    }
 
     var conflictFiles: [RecentMarkdownFile] {
         let paths = Set(conflictWarnings)
@@ -122,6 +154,12 @@ final class AppModel: ObservableObject {
         inboxItems.count + mergedInboxFiles.count
     }
 
+    var defaultCaptureFolderLabel: String {
+        allFolders.first {
+            $0.relativePath == defaultCaptureFolderPath
+        }?.name ?? String(localized: "Inbox")
+    }
+
     init(
         bootstrapImmediately: Bool = true,
         folderAccess: FolderAccessService = FolderAccessService(),
@@ -140,6 +178,7 @@ final class AppModel: ObservableObject {
         self.libraryRefreshBarrier = libraryRefreshBarrier
         self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
+        captureFolderPreferences = CaptureFolderPreferences(defaults: defaults)
         draftRecoveryEnabled = true
         if restoreDraftImmediately ?? bootstrapImmediately {
             Task { await restoreCaptureDraftIfNeeded() }
@@ -169,9 +208,8 @@ final class AppModel: ObservableObject {
 
     func selectFolder(_ url: URL) {
         let configurationID = beginLibraryConfiguration()
-        if case .recent = draft.target {
-            draft.target = .inbox
-        }
+        draft.target = .folder(nil)
+        captureTargetWasExplicitlySelected = false
         Task {
             do {
                 guard libraryConfigurationID == configurationID else { return }
@@ -209,12 +247,19 @@ final class AppModel: ObservableObject {
         isSearching = false
         libraryRevision += 1
         queue = nil
-        if case .recent = draft.target {
-            draft.target = .inbox
-        }
+        draft.target = .folder(nil)
+        defaultCaptureFolderPath = nil
+        recentCaptureFolders = []
+        captureTargetWasExplicitlySelected = false
     }
 
     func showCapture(_ route: CaptureRoute = .text) {
+        endCaptureSession()
+        captureSessionID = UUID()
+        if !draft.canSend {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(defaultCaptureFolderPath)
+        }
         captureRoute = route
         isCapturePresented = true
         #if DEBUG
@@ -223,6 +268,20 @@ final class AppModel: ObservableObject {
             attachCameraPhoto(.photo(Data()))
         }
         #endif
+    }
+
+    func selectCaptureFolder(_ relativePath: String?) {
+        captureTargetWasExplicitlySelected = true
+        draft.target = .folder(relativePath)
+    }
+
+    func setDefaultCaptureFolder(_ relativePath: String) {
+        captureFolderPreferences.setDefaultFolder(relativePath)
+        refreshCaptureFolderPreferences()
+        if !draft.canSend, !isCapturePresented {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(defaultCaptureFolderPath)
+        }
     }
 
     func handle(url: URL) {
@@ -341,11 +400,11 @@ final class AppModel: ObservableObject {
               !isSendingDraft,
               !isPreparingAttachment,
               !isAudioTransitioning,
-              !isTranscribingAudio,
               !audioRecorder.isRecording else { return }
+        cancelTranscription()
         captureSubmissionIssue = nil
         let submittedDraft = draft
-        let canUseInboxDelta = submittedDraft.target == .inbox && submittedDraft.attachments.isEmpty
+        let canUseInboxDelta = false
         isSendingDraft = true
         Task {
             defer { isSendingDraft = false }
@@ -487,39 +546,115 @@ final class AppModel: ObservableObject {
 
     func toggleAudioRecording() {
         guard !isAudioTransitioning, !isTranscribingAudio else { return }
-        isAudioTransitioning = true
-        Task {
-            defer { isAudioTransitioning = false }
+        if audioRecorder.isRecording {
+            stopAudioRecording()
+        } else {
+            startAudioRecording()
+        }
+    }
+
+    func startAudioRecording() {
+        guard !audioRecorder.isRecording,
+              !isAudioTransitioning,
+              !isTranscribingAudio else { return }
+        let sessionID = captureSessionID
+        audioCapturePhase = .requestingPermission
+        audioStartTask?.cancel()
+        audioStartTask = Task {
             do {
-                if audioRecorder.isRecording {
-                    if let recording = try audioRecorder.stop() {
-                        let attachment: CaptureAttachment
-                        do {
-                            attachment = try CaptureAttachment.validatedAudio(data: recording.data)
-                            try appendAttachment(attachment)
-                        } catch {
-                            try? FileManager.default.removeItem(at: recording.temporaryURL)
-                            throw error
-                        }
-                        statusToast = .saved(String(localized: "Audio attached"))
-                        isTranscribingAudio = true
-                        Task {
-                            await transcribe(recording)
-                        }
-                    }
-                } else {
-                    try await audioRecorder.start()
-                    statusToast = .pending(String(localized: "Recording"))
+                try await audioRecorder.start()
+                try Task.checkCancellation()
+                guard captureSessionID == sessionID, isCapturePresented else {
+                    audioRecorder.cancel()
+                    return
+                }
+                audioCapturePhase = .recording
+                statusToast = .pending(String(localized: "Recording"))
+            } catch is CancellationError {
+                if captureSessionID == sessionID {
+                    audioCapturePhase = .idle
                 }
             } catch {
+                guard captureSessionID == sessionID else { return }
+                audioCapturePhase = .failed(error.localizedDescription)
                 reportCaptureAttachmentFailure(error.localizedDescription)
+            }
+            if captureSessionID == sessionID {
+                audioStartTask = nil
+            }
+        }
+    }
+
+    private func stopAudioRecording() {
+        guard audioRecorder.isRecording,
+              !isAudioTransitioning,
+              !isTranscribingAudio else { return }
+        let sessionID = captureSessionID
+        audioCapturePhase = .stopping
+        audioStopTask?.cancel()
+        audioStopTask = Task {
+            do {
+                guard let recording = try await audioRecorder.stop() else { return }
+                try Task.checkCancellation()
+                guard captureSessionID == sessionID, isCapturePresented else {
+                    try? FileManager.default.removeItem(at: recording.temporaryURL)
+                    return
+                }
+                let attachment: CaptureAttachment
+                do {
+                    attachment = try CaptureAttachment.validatedAudio(data: recording.data)
+                    try appendAttachment(attachment)
+                } catch {
+                    try? FileManager.default.removeItem(at: recording.temporaryURL)
+                    throw error
+                }
+                statusToast = .saved(String(localized: "Audio attached"))
+                persistCaptureDraftNow()
+                let operationID = UUID()
+                transcriptionID = operationID
+                audioCapturePhase = .transcribing
+                transcriptionTask?.cancel()
+                transcriptionTask = Task {
+                    await transcribe(
+                        recording,
+                        sessionID: sessionID,
+                        operationID: operationID
+                    )
+                }
+            } catch is CancellationError {
+                if captureSessionID == sessionID {
+                    audioCapturePhase = .idle
+                }
+            } catch {
+                guard captureSessionID == sessionID else { return }
+                audioCapturePhase = .failed(error.localizedDescription)
+                reportCaptureAttachmentFailure(error.localizedDescription)
+            }
+            if captureSessionID == sessionID {
+                audioStopTask = nil
             }
         }
     }
 
     func cancelAudioRecording() {
-        guard audioRecorder.isRecording else { return }
+        audioStartTask?.cancel()
+        audioStartTask = nil
+        audioStopTask?.cancel()
+        audioStopTask = nil
         audioRecorder.cancel()
+        audioCapturePhase = .idle
+    }
+
+    func skipAudioTranscription() {
+        guard isTranscribingAudio else { return }
+        cancelTranscription()
+        statusToast = .pending(String(localized: "Audio kept without transcript"))
+    }
+
+    func endCaptureSession() {
+        captureSessionID = UUID()
+        cancelAudioRecording()
+        cancelTranscription()
     }
 
     private func appendAttachment(_ attachment: CaptureAttachment) throws {
@@ -555,6 +690,7 @@ final class AppModel: ObservableObject {
             draftRecoveryEnabled = false
             draft = recovered
             draftRecoveryEnabled = true
+            captureTargetWasExplicitlySelected = true
             draftRecoveryIssue = nil
             recoveredDraftNeedsAnnouncement = true
             announceRecoveredDraftIfPossible()
@@ -564,14 +700,25 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func transcribe(_ recording: RecordedAudio) async {
+    private func transcribe(
+        _ recording: RecordedAudio,
+        sessionID: UUID,
+        operationID: UUID
+    ) async {
         defer {
             try? FileManager.default.removeItem(at: recording.temporaryURL)
-            isTranscribingAudio = false
+            if captureSessionID == sessionID, transcriptionID == operationID {
+                transcriptionID = nil
+                transcriptionTask = nil
+                audioCapturePhase = .idle
+            }
         }
 
         do {
             let text = try await audioRecorder.transcribe(url: recording.temporaryURL)
+            try Task.checkCancellation()
+            guard captureSessionID == sessionID,
+                  transcriptionID == operationID else { return }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 statusToast = .pending(String(localized: "No speech detected. Audio kept."))
@@ -584,16 +731,31 @@ final class AppModel: ObservableObject {
                 draft.body += "\n\n\(trimmed)"
             }
             statusToast = .saved(String(localized: "Transcribed"))
+        } catch is CancellationError {
+            return
         } catch {
+            guard captureSessionID == sessionID,
+                  transcriptionID == operationID else { return }
+            audioCapturePhase = .failed(error.localizedDescription)
             statusToast = .error(error.localizedDescription)
+        }
+    }
+
+    private func cancelTranscription() {
+        transcriptionID = nil
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        if isTranscribingAudio {
+            audioCapturePhase = .idle
         }
     }
 
     func replayQueue() {
         Task {
             do {
-                try await queue?.replay { [fileStore] item in
+                try await queue?.replay { [fileStore, weak self] item in
                     try await fileStore.performPendingWrite(item)
+                    self?.recordSuccessfulPendingWrite(item)
                 }
                 statusToast = .saved(String(localized: "Pending queue replayed"))
                 await refreshInbox()
@@ -604,13 +766,31 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAfterSceneActivation() async {
+        if isSceneRefreshRunning {
+            sceneRefreshRequested = true
+            return
+        }
+        if isInitialLibraryLoading {
+            sceneRefreshRequested = true
+            return
+        }
         guard case .ready = folderStatus,
               let queue,
               !isSendingDraft else { return }
+        let configurationID = libraryConfigurationID
+        isSceneRefreshRunning = true
+        defer {
+            isSceneRefreshRunning = false
+            if sceneRefreshRequested {
+                sceneRefreshRequested = false
+                Task { await refreshAfterSceneActivation() }
+            }
+        }
 
         let pendingCount: Int
         do {
             let queueLoadResult = try await queue.load()
+            guard libraryConfigurationID == configurationID else { return }
             if case .quarantined(let filename) = queueLoadResult {
                 queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
                 statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
@@ -618,11 +798,14 @@ final class AppModel: ObservableObject {
 
             pendingCount = await queue.pendingCount()
             if pendingCount > 0 {
-                try await queue.replay { [fileStore] item in
+                try await queue.replay { [fileStore, weak self] item in
                     try await fileStore.performPendingWrite(item)
+                    self?.recordSuccessfulPendingWrite(item)
                 }
             }
+            guard libraryConfigurationID == configurationID else { return }
         } catch {
+            guard libraryConfigurationID == configurationID else { return }
             let remainingCount = await queue.pendingCount()
             if remainingCount > 0 { syncStatus = .pending }
             statusToast = .error(String(localized: "Queue replay failed"))
@@ -634,6 +817,7 @@ final class AppModel: ObservableObject {
         do {
             let snapshot = try await fileStore.loadLibrarySnapshot()
             let remainingCount = await queue.pendingCount()
+            guard libraryConfigurationID == configurationID else { return }
             apply(snapshot, pendingCount: remainingCount)
             libraryRevision += 1
             await refreshActiveSearchIfNeeded()
@@ -1778,6 +1962,7 @@ final class AppModel: ObservableObject {
         libraryFiles = snapshot.allFiles
         recentFiles = snapshot.recentFiles
         folders = snapshot.folders
+        refreshCaptureFolderPreferences()
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
         smartFolders = snapshot.smartFolders
@@ -1794,6 +1979,7 @@ final class AppModel: ObservableObject {
         } else {
             syncStatus = .idle
         }
+        libraryRevision += 1
     }
 
     private func applyTrashedProjection(_ items: [TrashedMarkdownFile]) {
@@ -1841,12 +2027,17 @@ final class AppModel: ObservableObject {
 
     private func configureFolder(_ root: URL, configurationID: UUID) async throws -> Bool {
         guard libraryConfigurationID == configurationID else { return false }
-        try folderAccess.withAccess(to: root) {
-            try FolderInitializer.initialize(root)
+        // Directory creation and iCloud-backed existence checks can block.
+        // Perform them on the file-store actor so the launch spinner and
+        // navigation shell remain responsive on the main actor.
+        try await fileStore.configureAndInitialize(root: root)
+        guard libraryConfigurationID == configurationID else { return false }
+        defaultCaptureFolderPath = captureFolderPreferences.resolveDefaultFolder(
+            libraryRoot: root
+        )
+        if !draft.canSend, !captureTargetWasExplicitlySelected {
+            draft.target = .folder(defaultCaptureFolderPath)
         }
-        guard libraryConfigurationID == configurationID else { return false }
-        await fileStore.configure(root: root)
-        guard libraryConfigurationID == configurationID else { return false }
         let nextQueue = PendingWriteQueue(root: root)
         let queueLoadResult = try await nextQueue.load()
         switch queueLoadResult {
@@ -1858,8 +2049,9 @@ final class AppModel: ObservableObject {
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
         do {
-            try await nextQueue.replay { [fileStore] item in
+            try await nextQueue.replay { [fileStore, weak self] item in
                 try await fileStore.performPendingWrite(item)
+                self?.recordSuccessfulPendingWrite(item)
             }
         } catch {
             replayFailed = true
@@ -1879,7 +2071,10 @@ final class AppModel: ObservableObject {
         guard libraryConfigurationID == configurationID else { return false }
         apply(snapshot, pendingCount: pendingCount)
         isInitialLibraryLoading = false
-        libraryRevision += 1
+        if sceneRefreshRequested {
+            sceneRefreshRequested = false
+            Task { await refreshAfterSceneActivation() }
+        }
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
@@ -1917,6 +2112,7 @@ final class AppModel: ObservableObject {
         }
         do {
             try await fileStore.performPendingWrite(pending)
+            recordSuccessfulCaptureFolder(for: draft.target)
             try await queue.remove(id: pending.id)
         } catch {
             throw DraftSaveError.queuedForReplay
@@ -1926,12 +2122,55 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func finishSubmission(_ submittedDraft: CaptureDraft, continueCapturing: Bool) -> Bool {
         guard draft == submittedDraft else { return false }
-        draft = CaptureDraft(target: submittedDraft.target)
+        captureTargetWasExplicitlySelected = false
+        draft = CaptureDraft(target: .folder(defaultCaptureFolderPath))
         captureRoute = .text
         if !continueCapturing {
-            isCapturePresented = false
+            withAnimation(
+                HomeChromeMotion.captureDismissAnimation(
+                    reduceMotion: UIAccessibility.isReduceMotionEnabled
+                )
+            ) {
+                isCapturePresented = false
+            }
         }
         return true
+    }
+
+    private func refreshCaptureFolderPreferences() {
+        let resolvedDefault = captureFolderPreferences.resolveDefaultFolder(in: folders)
+        defaultCaptureFolderPath = resolvedDefault
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
+
+        let availablePaths = Set(allFolders.map(\.relativePath))
+        if case .folder(let path?) = draft.target,
+           !availablePaths.contains(path) {
+            captureTargetWasExplicitlySelected = false
+            draft.target = .folder(resolvedDefault)
+        } else if !draft.canSend, !captureTargetWasExplicitlySelected {
+            draft.target = .folder(resolvedDefault)
+        }
+    }
+
+    private func recordSuccessfulCaptureFolder(for target: CaptureTarget) {
+        captureFolderPreferences.recordSuccessfulSave(to: target.relativeFolderPath)
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
+    }
+
+    private func recordSuccessfulPendingWrite(_ pending: PendingWrite) {
+        let rawParent = (pending.targetRelativePath as NSString).deletingLastPathComponent
+        let parent = rawParent == "." || rawParent.isEmpty ? nil : rawParent
+        captureFolderPreferences.recordSuccessfulSave(to: parent, at: pending.createdAt)
+        recentCaptureFolders = captureFolderPreferences.recentFolders(
+            in: folders,
+            libraryRoot: folderAccess.currentRoot
+        )
     }
 
     private func openSystemCapture(_ route: CaptureRoute) {

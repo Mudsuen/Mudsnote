@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 struct CaptureDraft: Equatable {
     var body: String = ""
     var tags: String = ""
-    var target: CaptureTarget = .inbox
+    var target: CaptureTarget = .folder(nil)
     var attachments: [CaptureAttachment] = []
     var createdAt: Date = Date()
 
@@ -16,32 +16,27 @@ struct CaptureDraft: Equatable {
 }
 
 enum CaptureTarget: Equatable, Identifiable {
-    case inbox
-    case recent(String)
+    case folder(String?)
 
     var id: String {
         switch self {
-        case .inbox:
-            return "inbox"
-        case .recent(let path):
-            return "recent-\(path)"
+        case .folder(let path):
+            return "folder-\(path ?? "root")"
         }
     }
 
     var label: String {
         switch self {
-        case .inbox:
-            return String(localized: "Inbox")
-        case .recent(let path):
+        case .folder(nil):
+            return String(localized: "Top Level")
+        case .folder(let path?):
             return URL(fileURLWithPath: path).lastPathComponent
         }
     }
 
-    func relativePath(now: Date = Date()) -> String {
+    var relativeFolderPath: String? {
         switch self {
-        case .inbox:
-            return "Inbox.md"
-        case .recent(let path):
+        case .folder(let path):
             return path
         }
     }
@@ -288,6 +283,7 @@ actor CaptureDraftRecoveryStore {
         // Decode legacy recovered drafts without recreating the removed Daily feature.
         case daily(Date)
         case recent(String)
+        case folder(String?)
     }
 
     private struct Attachment: Codable {
@@ -459,16 +455,19 @@ actor CaptureDraftRecoveryStore {
 
     private func storedTarget(_ target: CaptureTarget) -> Target {
         switch target {
-        case .inbox: .inbox
-        case .recent(let path): .recent(path)
+        case .folder(let path): .folder(path)
         }
     }
 
     private func captureTarget(_ target: Target) -> CaptureTarget {
         switch target {
-        case .inbox: .inbox
-        case .daily: .inbox
-        case .recent(let path): .recent(path)
+        case .inbox, .daily:
+            return CaptureTarget.folder(nil)
+        case .recent(let path):
+            let parent = (path as NSString).deletingLastPathComponent
+            return .folder(parent.isEmpty || parent == "." ? nil : parent)
+        case .folder(let path):
+            return CaptureTarget.folder(path)
         }
     }
 

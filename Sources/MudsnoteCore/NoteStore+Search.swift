@@ -14,17 +14,49 @@ public final class NoteSearchSession: @unchecked Sendable {
     }
 
     public func searchNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        searchNotes(query: query, limit: limit, cancellationCheck: { false })
+    }
+
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return recentResults(limit: limit) }
-        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: entries)
+        return noteStore.rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: entries,
+            cancellationCheck: cancellationCheck
+        ) ?? []
     }
 
     public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
+        searchRecentNotes(query: query, limit: limit, cancellationCheck: { false })
+    }
+
+    public func searchRecentNotes(
+        query: String,
+        limit: Int = 30,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
         let recentPaths = Set(noteStore.listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
-        let recentEntries = entries.filter { recentPaths.contains($0.url.standardizedFileURL.path) }
+        var recentEntries: [NoteSearchIndexEntry] = []
+        for entry in entries {
+            guard !cancellationCheck() else { return [] }
+            if recentPaths.contains(entry.url.standardizedFileURL.path) {
+                recentEntries.append(entry)
+            }
+        }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return recentResults(limit: limit) }
-        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: recentEntries)
+        return noteStore.rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: recentEntries,
+            cancellationCheck: cancellationCheck
+        ) ?? []
     }
 
     public func searchNotes(
@@ -33,8 +65,28 @@ public final class NoteSearchSession: @unchecked Sendable {
         in directory: URL,
         includingDescendants: Bool = true
     ) -> [NoteSearchResult] {
+        searchNotes(
+            query: query,
+            limit: limit,
+            in: directory,
+            includingDescendants: includingDescendants,
+            cancellationCheck: { false }
+        )
+    }
+
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
+        in directory: URL,
+        includingDescendants: Bool = true,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
         let directoryPath = directory.standardizedFileURL.path
-        return scopedSearchResults(query: query, limit: limit) { entry in
+        return scopedSearchResults(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        ) { entry in
             let noteDirectoryPath = entry.url.deletingLastPathComponent().standardizedFileURL.path
             return noteDirectoryPath == directoryPath
                 || (includingDescendants && noteDirectoryPath.hasPrefix(directoryPath + "/"))
@@ -42,13 +94,43 @@ public final class NoteSearchSession: @unchecked Sendable {
     }
 
     public func searchNotes(query: String, limit: Int = 30, tagged tag: String) -> [NoteSearchResult] {
-        scopedSearchResults(query: query, limit: limit) { entry in
+        searchNotes(
+            query: query,
+            limit: limit,
+            tagged: tag,
+            cancellationCheck: { false }
+        )
+    }
+
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
+        tagged tag: String,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
+        scopedSearchResults(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        ) { entry in
             entry.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
         }
     }
 
     public func searchInboxNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
-        scopedSearchResults(query: query, limit: limit) { entry in
+        searchInboxNotes(query: query, limit: limit, cancellationCheck: { false })
+    }
+
+    public func searchInboxNotes(
+        query: String,
+        limit: Int = 30,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
+        scopedSearchResults(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        ) { entry in
             noteStore.isInboxNote(at: entry.url)
         }
     }
@@ -56,9 +138,16 @@ public final class NoteSearchSession: @unchecked Sendable {
     private func scopedSearchResults(
         query: String,
         limit: Int,
+        cancellationCheck: @Sendable () -> Bool,
         matching predicate: (NoteSearchIndexEntry) -> Bool
     ) -> [NoteSearchResult] {
-        let scopedEntries = entries.filter(predicate)
+        var scopedEntries: [NoteSearchIndexEntry] = []
+        for entry in entries {
+            guard !cancellationCheck() else { return [] }
+            if predicate(entry) {
+                scopedEntries.append(entry)
+            }
+        }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             return scopedEntries
@@ -66,7 +155,12 @@ public final class NoteSearchSession: @unchecked Sendable {
                 .prefix(limit)
                 .map(\.result)
         }
-        return noteStore.rankedSearchResults(query: trimmedQuery, limit: limit, entries: scopedEntries)
+        return noteStore.rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: scopedEntries,
+            cancellationCheck: cancellationCheck
+        ) ?? []
     }
 
     private func recentResults(limit: Int) -> [NoteSearchResult] {
@@ -93,6 +187,19 @@ extension NoteStore {
 
     public func makeSearchSession(roots: [URL]) -> NoteSearchSession {
         NoteSearchSession(noteStore: self, entries: indexedEntries(roots: roots))
+    }
+
+    public func makeSearchSession(
+        roots: [URL],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> NoteSearchSession? {
+        guard let entries = cancellableIndexedEntries(
+            roots: roots,
+            cancellationCheck: cancellationCheck
+        ) else {
+            return nil
+        }
+        return NoteSearchSession(noteStore: self, entries: entries)
     }
 
     public func knownTags(limit: Int = 200) -> [String] {
@@ -221,23 +328,115 @@ extension NoteStore {
         limit: Int,
         entries: [NoteSearchIndexEntry]
     ) -> [NoteSearchResult] {
+        rankedSearchResults(
+            query: query,
+            limit: limit,
+            entries: entries,
+            cancellationCheck: { false }
+        ) ?? []
+    }
+
+    private struct RankedSearchCandidate {
+        let entry: NoteSearchIndexEntry
+        let score: Int
+    }
+
+    fileprivate func rankedSearchResults(
+        query: String,
+        limit: Int,
+        entries: [NoteSearchIndexEntry],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult]? {
+        guard limit > 0, !cancellationCheck() else { return [] }
         let loweredQuery = query.lowercased()
-        var scoredResults: [(result: NoteSearchResult, score: Int)] = []
+        var candidates: [RankedSearchCandidate] = []
+        candidates.reserveCapacity(min(limit, entries.count))
 
         for entry in entries {
-            guard let scored = scoredMatch(for: entry, loweredQuery: loweredQuery) else { continue }
-            scoredResults.append(scored)
+            guard !cancellationCheck() else { return nil }
+            searchIndexEntryWillMatchForTesting?()
+            guard !cancellationCheck(),
+                  let score = matchScore(for: entry, loweredQuery: loweredQuery) else {
+                continue
+            }
+            let candidate = RankedSearchCandidate(entry: entry, score: score)
+            if candidates.count < limit {
+                candidates.append(candidate)
+                siftWorstCandidateUp(in: &candidates, from: candidates.count - 1)
+            } else if isHigherRanked(candidate, than: candidates[0]) {
+                candidates[0] = candidate
+                siftWorstCandidateDown(in: &candidates, from: 0)
+            }
         }
 
-        return scoredResults
-            .sorted {
-                if $0.score == $1.score {
-                    return $0.result.modifiedAt > $1.result.modifiedAt
-                }
-                return $0.score > $1.score
+        candidates.sort { isHigherRanked($0, than: $1) }
+        var results: [NoteSearchResult] = []
+        results.reserveCapacity(candidates.count)
+        for candidate in candidates {
+            guard !cancellationCheck() else { return nil }
+            let entry = candidate.entry
+            results.append(NoteSearchResult(
+                url: entry.url,
+                title: entry.title,
+                snippet: snippet(from: entry.body, query: loweredQuery),
+                modifiedAt: entry.modifiedAt,
+                createdAt: entry.createdAt,
+                tags: entry.tags,
+                hasAttachments: entry.hasAttachments,
+                thumbnailURL: entry.thumbnailURL
+            ))
+        }
+        return results
+    }
+
+    private func isHigherRanked(
+        _ lhs: RankedSearchCandidate,
+        than rhs: RankedSearchCandidate
+    ) -> Bool {
+        if lhs.score == rhs.score {
+            return lhs.entry.modifiedAt > rhs.entry.modifiedAt
+        }
+        return lhs.score > rhs.score
+    }
+
+    private func isWorseRanked(
+        _ lhs: RankedSearchCandidate,
+        than rhs: RankedSearchCandidate
+    ) -> Bool {
+        isHigherRanked(rhs, than: lhs)
+    }
+
+    private func siftWorstCandidateUp(
+        in heap: inout [RankedSearchCandidate],
+        from startIndex: Int
+    ) {
+        var index = startIndex
+        while index > 0 {
+            let parent = (index - 1) / 2
+            guard isWorseRanked(heap[index], than: heap[parent]) else { return }
+            heap.swapAt(index, parent)
+            index = parent
+        }
+    }
+
+    private func siftWorstCandidateDown(
+        in heap: inout [RankedSearchCandidate],
+        from startIndex: Int
+    ) {
+        var index = startIndex
+        while true {
+            let left = (index * 2) + 1
+            guard left < heap.count else { return }
+            let right = left + 1
+            var worseChild = left
+            if right < heap.count,
+               isWorseRanked(heap[right], than: heap[left]) {
+                worseChild = right
             }
-            .prefix(limit)
-            .map(\.result)
+            guard isWorseRanked(heap[worseChild], than: heap[index]) else { return }
+            heap.swapAt(index, worseChild)
+            index = worseChild
+        }
     }
 
     private func scopedSearchResults(
@@ -256,7 +455,7 @@ extension NoteStore {
         return rankedSearchResults(query: trimmedQuery, limit: limit, entries: entries)
     }
 
-    private func scoredMatch(for entry: NoteSearchIndexEntry, loweredQuery: String) -> (result: NoteSearchResult, score: Int)? {
+    private func matchScore(for entry: NoteSearchIndexEntry, loweredQuery: String) -> Int? {
         let titleLower = entry.title.lowercased()
         guard titleLower.contains(loweredQuery) || entry.bodyLower.contains(loweredQuery) || entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) else {
             return nil
@@ -266,21 +465,7 @@ extension NoteStore {
         let occurrences = occurrenceCount(of: loweredQuery, in: entry.bodyLower, stoppingAt: 6)
         let bodyScore = min(occurrences * 15, 90)
         let tagScore = entry.tagsLower.contains(where: { $0 == loweredQuery }) ? 80 : (entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) ? 40 : 0)
-        let snippet = snippet(from: entry.body, query: loweredQuery)
-
-        return (
-            result: NoteSearchResult(
-                url: entry.url,
-                title: entry.title,
-                snippet: snippet,
-                modifiedAt: entry.modifiedAt,
-                createdAt: entry.createdAt,
-                tags: entry.tags,
-                hasAttachments: entry.hasAttachments,
-                thumbnailURL: entry.thumbnailURL
-            ),
-            score: titleScore + bodyScore + tagScore
-        )
+        return titleScore + bodyScore + tagScore
     }
 
     private func occurrenceCount(of needle: String, in haystack: String, stoppingAt limit: Int) -> Int {
@@ -300,6 +485,19 @@ extension NoteStore {
         roots: [URL]? = nil,
         validatesMemorySnapshot: Bool = false
     ) -> [NoteSearchIndexEntry] {
+        cancellableIndexedEntries(
+            roots: roots,
+            validatesMemorySnapshot: validatesMemorySnapshot,
+            cancellationCheck: { false }
+        ) ?? []
+    }
+
+    private func cancellableIndexedEntries(
+        roots: [URL]? = nil,
+        validatesMemorySnapshot: Bool = false,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchIndexEntry]? {
+        guard !cancellationCheck() else { return nil }
         let searchRoots = roots ?? knownSearchRoots()
         let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
 
@@ -316,8 +514,12 @@ extension NoteStore {
             }
         }
 
-        searchIndexBuildLock.lock()
+        while !searchIndexBuildLock.try() {
+            guard !cancellationCheck() else { return nil }
+            Thread.sleep(forTimeInterval: 0.002)
+        }
         defer { searchIndexBuildLock.unlock() }
+        guard !cancellationCheck() else { return nil }
 
         searchIndexLock.lock()
         let stateRevision = searchIndexRevision
@@ -335,16 +537,21 @@ extension NoteStore {
         }
 
         buildWillRead?()
+        guard !cancellationCheck() else { return nil }
 
         let reusableSnapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
         if !requiresFullRefresh,
            !dirtyPaths.isEmpty,
            let reusableSnapshot {
-            let snapshot = incrementallyRefreshing(
+            guard let snapshot = incrementallyRefreshing(
                 reusableSnapshot,
                 dirtyPaths: dirtyPaths,
-                rootsKey: rootsKey
-            )
+                rootsKey: rootsKey,
+                cancellationCheck: cancellationCheck
+            ) else {
+                return nil
+            }
+            guard !cancellationCheck() else { return nil }
             publishSearchIndexSnapshot(
                 snapshot,
                 consuming: dirtyPaths,
@@ -359,7 +566,14 @@ extension NoteStore {
         var seenPaths = Set<String>()
 
         for root in searchRoots {
-            for fileURL in markdownFiles(in: root) {
+            guard let markdownURLs = markdownFiles(
+                in: root,
+                cancellationCheck: cancellationCheck
+            ) else {
+                return nil
+            }
+            for fileURL in markdownURLs {
+                guard !cancellationCheck() else { return nil }
                 let standardizedURL = fileURL.standardizedFileURL
                 let path = standardizedURL.path
                 guard seenPaths.insert(path).inserted,
@@ -389,16 +603,28 @@ extension NoteStore {
             $0[$1.url.standardizedFileURL.path] = $1
         } ?? [:]
         let reusableSignatures = reusableSnapshot?.fileSignatures ?? [:]
-        let entries = fileURLs.compactMap { fileURL -> NoteSearchIndexEntry? in
+        var entries: [NoteSearchIndexEntry] = []
+        entries.reserveCapacity(fileURLs.count)
+        for fileURL in fileURLs {
+            guard !cancellationCheck() else { return nil }
             let path = fileURL.path
             if !requiresFullRefresh,
                !dirtyPaths.contains(path),
                reusableSignatures[path] == signatures[path],
                let entry = reusableEntriesByPath[path] {
-                return entry
+                entries.append(entry)
+                continue
             }
-            return indexedEntry(for: fileURL, signature: signatures[path])
+            if let entry = indexedEntry(
+                for: fileURL,
+                signature: signatures[path],
+                cancellationCheck: cancellationCheck
+            ) {
+                entries.append(entry)
+            }
+            guard !cancellationCheck() else { return nil }
         }
+        guard !cancellationCheck() else { return nil }
         let snapshot = NoteSearchIndexSnapshot(
             rootsKey: rootsKey,
             fileSignatures: signatures,
@@ -416,21 +642,27 @@ extension NoteStore {
     private func incrementallyRefreshing(
         _ reusableSnapshot: NoteSearchIndexSnapshot,
         dirtyPaths: Set<String>,
-        rootsKey: [String]
-    ) -> NoteSearchIndexSnapshot {
+        rootsKey: [String],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> NoteSearchIndexSnapshot? {
         var signatures = reusableSnapshot.fileSignatures
         var entriesByPath = reusableSnapshot.entries.reduce(into: [String: NoteSearchIndexEntry]()) {
             $0[$1.url.standardizedFileURL.path] = $1
         }
 
         for path in dirtyPaths.sorted() {
+            guard !cancellationCheck() else { return nil }
             signatures.removeValue(forKey: path)
             entriesByPath.removeValue(forKey: path)
 
             guard isSearchableMarkdownPath(path, rootsKey: rootsKey) else { continue }
             let fileURL = URL(fileURLWithPath: path).standardizedFileURL
             guard let signature = fileSignature(for: fileURL),
-                  let entry = indexedEntry(for: fileURL, signature: signature) else {
+                  let entry = indexedEntry(
+                    for: fileURL,
+                    signature: signature,
+                    cancellationCheck: cancellationCheck
+                  ) else {
                 continue
             }
             signatures[path] = signature
@@ -494,6 +726,12 @@ extension NoteStore {
     }
 
     func readSearchIndexSnapshotFromDisk(rootsKey: [String]) -> NoteSearchIndexSnapshot? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: searchIndexCacheURL.path),
+              let cacheSize = (attributes[.size] as? NSNumber)?.uint64Value,
+              cacheSize <= Self.maximumSearchIndexDiskCacheSize else {
+            try? fileManager.removeItem(at: searchIndexCacheURL)
+            return nil
+        }
         guard let data = try? Data(contentsOf: searchIndexCacheURL) else {
             return nil
         }
@@ -512,6 +750,10 @@ extension NoteStore {
     }
 
     func writeSearchIndexSnapshotToDisk(_ snapshot: NoteSearchIndexSnapshot) {
+        guard estimatedDiskCacheSize(for: snapshot) <= Self.maximumSearchIndexDiskCacheSize else {
+            try? fileManager.removeItem(at: searchIndexCacheURL)
+            return
+        }
         let cache = NoteSearchIndexDiskCache(
             schemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion,
             snapshot: snapshot
@@ -529,6 +771,23 @@ extension NoteStore {
         }
     }
 
+    private func estimatedDiskCacheSize(for snapshot: NoteSearchIndexSnapshot) -> UInt64 {
+        var size: UInt64 = 0
+        for entry in snapshot.entries {
+            size += UInt64(entry.url.path.utf8.count)
+            size += UInt64(entry.title.utf8.count)
+            size += UInt64(entry.body.utf8.count)
+            size += UInt64(entry.bodyLower.utf8.count)
+            size += UInt64(entry.snippet.utf8.count)
+            size += UInt64(entry.tags.reduce(0) { $0 + $1.utf8.count })
+            size += 256
+            if size > Self.maximumSearchIndexDiskCacheSize {
+                return size
+            }
+        }
+        return size
+    }
+
     private func fileSignature(for fileURL: URL) -> NoteSearchFileSignature? {
         searchIndexSignatureReadCountForTesting += 1
         guard let attrs = try? fileManager.attributesOfItem(atPath: fileURL.path),
@@ -541,15 +800,31 @@ extension NoteStore {
         return NoteSearchFileSignature(modifiedAt: modifiedAt, createdAt: createdAt, fileSize: fileSize)
     }
 
-    private func indexedEntry(for fileURL: URL, signature: NoteSearchFileSignature?) -> NoteSearchIndexEntry? {
+    private func indexedEntry(
+        for fileURL: URL,
+        signature: NoteSearchFileSignature?,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> NoteSearchIndexEntry? {
+        guard !cancellationCheck(),
+              let signature,
+              signature.fileSize <= Self.maximumSearchIndexedFileSize,
+              isLocallyAvailableForSearch(fileURL) else {
+            return nil
+        }
         searchIndexEntryReadCountForTesting += 1
-        guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        searchIndexEntryWillReadForTesting?()
+        guard !cancellationCheck(),
+              let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
+              data.count <= Self.maximumSearchIndexedFileSize,
+              let text = String(data: data, encoding: .utf8),
+              !cancellationCheck() else {
             return nil
         }
 
-        let modifiedAt = signature?.modifiedAt ?? Date()
-        let createdAt = signature?.createdAt ?? modifiedAt
+        let modifiedAt = signature.modifiedAt
+        let createdAt = signature.createdAt
         let note = loadedNote(from: text, at: fileURL)
+        guard !cancellationCheck() else { return nil }
         let title = displayTitle(for: fileURL, loadedTitle: note.title)
         let snippet = MarkdownEditorDocument.firstPreviewLine(in: note.body) ?? ""
 
@@ -566,6 +841,18 @@ extension NoteStore {
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
         )
+    }
+
+    private func isLocallyAvailableForSearch(_ fileURL: URL) -> Bool {
+        let keys: Set<URLResourceKey> = [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey
+        ]
+        guard let values = try? fileURL.resourceValues(forKeys: keys),
+              values.isUbiquitousItem == true else {
+            return true
+        }
+        return values.ubiquitousItemDownloadingStatus == .current
     }
 
     private func snippet(from body: String, query: String) -> String {

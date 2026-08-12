@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum MudsnoteColors {
-    static let canvas = Color(hex: 0x050608)
-    static let panel = Color(hex: 0x12141A)
-    static let card = Color(hex: 0x1A1D24)
-    static let line = Color(hex: 0x2A2D35)
-    static let text = Color(hex: 0xECEDEF)
-    static let muted = Color(hex: 0xA4A7AD)
-    static let primary = Color(hex: 0xF2F3F5)
+    static let canvas = Color.black
+    static let panel = Color(hex: 0x080808)
+    static let card = Color.white.opacity(0.10)
+    static let line = Color.white.opacity(0.22)
+    static let text = Color(hex: 0xF7F7F7)
+    static let muted = Color(hex: 0xB8B8BD)
+    static let primary = Color(hex: 0xF7F7F7)
+    static let captureAccent = Color(hex: 0x0A84FF)
 }
 
 enum MudsnoteRadius {
@@ -32,6 +33,41 @@ extension Color {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func mudsnoteGlassSurface<S: Shape>(
+        in shape: S,
+        tint: Color = MudsnoteColors.card.opacity(0.58)
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            background(tint, in: shape)
+                .glassEffect(.regular, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+                .background(tint, in: shape)
+        }
+    }
+}
+
+struct MudsnoteReaderSheetBackground: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.055),
+                    Color.black.opacity(0.98),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
+        .accessibilityElement()
+        .accessibilityIdentifier("note-reader-surface")
+    }
+}
+
 struct CapsuleCommandButtonStyle: ButtonStyle {
     var isPrimary = false
 
@@ -46,7 +82,8 @@ struct CapsuleCommandButtonStyle: ButtonStyle {
             .overlay {
                 Capsule().stroke(MudsnoteColors.line.opacity(isPrimary ? 0 : 1), lineWidth: 1)
             }
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
@@ -63,23 +100,69 @@ struct IconCircleButtonStyle: ButtonStyle {
             .overlay {
                 Circle().stroke(MudsnoteColors.line, lineWidth: isActive ? 0 : 1)
             }
-            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
 struct CompactCaptureButtonStyle: ButtonStyle {
     var isActive = false
+    var fillsActiveBackground = true
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(isActive ? Color.black : MudsnoteColors.text)
-            .frame(width: 36, height: 40)
+            .foregroundStyle(
+                isActive
+                    ? (fillsActiveBackground ? Color.black : Color.red)
+                    : MudsnoteColors.text
+            )
+            .frame(width: 36, height: 36)
             .background(
-                isActive ? MudsnoteColors.primary : Color.clear,
+                isActive && fillsActiveBackground ? MudsnoteColors.primary : Color.clear,
                 in: Capsule()
             )
+            .frame(width: 36, height: CaptureCommandMetrics.minimumHitHeight)
             .contentShape(Rectangle())
-            .opacity(configuration.isPressed ? 0.62 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+enum CaptureCommandMetrics {
+    static let saveVisualWidth: CGFloat = 52
+    static let saveVisualHeight: CGFloat = 32
+    static let minimumHitHeight: CGFloat = MudsnoteSpacing.tapTargetMin
+}
+
+struct CaptureSaveButtonStyle: ButtonStyle {
+    var isActive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(isActive ? Color.black : MudsnoteColors.muted)
+            .frame(
+                width: CaptureCommandMetrics.saveVisualWidth,
+                height: CaptureCommandMetrics.saveVisualHeight
+            )
+            .mudsnoteGlassSurface(
+                in: Capsule(),
+                tint: isActive
+                    ? MudsnoteColors.primary.opacity(0.82)
+                    : MudsnoteColors.card.opacity(0.32)
+            )
+            .overlay {
+                Capsule()
+                    .stroke(MudsnoteColors.line.opacity(isActive ? 0.35 : 0.7), lineWidth: 0.75)
+            }
+            .frame(
+                width: CaptureCommandMetrics.saveVisualWidth,
+                height: CaptureCommandMetrics.minimumHitHeight
+            )
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }

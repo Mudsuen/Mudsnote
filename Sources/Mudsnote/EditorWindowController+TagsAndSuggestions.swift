@@ -22,6 +22,7 @@ extension EditorWindowController {
     func dismissInlineSuggestions() {
         inlineSuggestionContext = nil
         suggestionController.view.isHidden = true
+        slashCommandInputSourceSession.end()
     }
 
     // MARK: - Tag token matching
@@ -81,6 +82,9 @@ extension EditorWindowController {
 
     func updateInlineSuggestions() {
         guard editorTextView.window != nil else { return }
+        if editorTextView.hasMarkedText() {
+            return
+        }
         if currentTagToken() != nil, knownTagsForSuggestions == nil {
             scheduleKnownTagsSuggestionLoad()
             dismissInlineSuggestions()
@@ -97,7 +101,9 @@ extension EditorWindowController {
         case .tags(_, _, let tags):
             items = tags.map { SuggestionItem(title: "#\($0)", subtitle: nil, symbolName: nil) }
         case .slash(_, _, let commands):
-            items = commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
+            items = commands.isEmpty
+                ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
+                : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
         }
 
         guard !items.isEmpty else {
@@ -107,6 +113,24 @@ extension EditorWindowController {
 
         suggestionController.updateItems(items)
         positionSuggestionView(for: context)
+        if case .slash = context {
+            scheduleSlashCommandInputSourceSwitch()
+        } else {
+            slashCommandInputSourceSession.end()
+        }
+    }
+
+    private func scheduleSlashCommandInputSourceSwitch() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  isSuggestionVisible,
+                  let context = inlineSuggestionContext,
+                  case .slash = context else { return }
+            slashCommandInputSourceSession.beginIfAllowed(
+                hasMarkedText: editorTextView.hasMarkedText(),
+                editorIsFirstResponder: window?.firstResponder === editorTextView
+            )
+        }
     }
 
     func currentInlineSuggestionContext() -> InlineSuggestionContext? {
@@ -132,13 +156,8 @@ extension EditorWindowController {
                 location: paragraphRange.location + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound) + (token.hasPrefix(" ") ? 1 : 0),
                 length: token.trimmingCharacters(in: .whitespaces).utf16.count
             )
-            let commands = SlashCommand.allCases.filter {
-                query.isEmpty ||
-                    $0.title.lowercased().contains(query) ||
-                    $0.subtitle.lowercased().contains(query) ||
-                    $0.searchAliases.contains { $0.lowercased().contains(query) }
-            }
-            return commands.isEmpty ? nil : .slash(query: String(query), replacementRange: replacementRange, items: commands)
+            let commands = SlashCommand.matching(String(query), includesAI: true)
+            return .slash(query: String(query), replacementRange: replacementRange, items: commands)
         }
 
         return nil
@@ -254,61 +273,6 @@ extension EditorWindowController {
         var attributes = theme.baseAttributes(for: kind)
         attributes.removeValue(forKey: .qmTag)
         return attributes
-    }
-
-    // MARK: - Tag menu (quick capture)
-
-    func showQuickCaptureTagMenu(from sender: NSButton) {
-        let menu = NSMenu()
-
-        let insertHashItem = NSMenuItem(title: "插入 # 到正文", action: #selector(insertInlineHashMarkerFromMenu(_:)), keyEquivalent: "")
-        insertHashItem.target = self
-        menu.addItem(insertHashItem)
-
-        let knownTags = noteStore.knownTags(limit: 12)
-        if knownTags.isEmpty {
-            menu.addItem(.separator())
-            let emptyItem = NSMenuItem(title: "暂无已保存标签", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-        } else {
-            menu.addItem(.separator())
-            for tag in knownTags {
-                let item = NSMenuItem(title: "#\(tag)", action: #selector(toggleQuickCaptureTagFromMenu(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = tag
-                item.state = QuickCaptureDocumentState.containsTag(tag, in: serializedBodyMarkdown()) ? .on : .off
-                menu.addItem(item)
-            }
-        }
-
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func insertInlineHashMarkerFromMenu(_ sender: NSMenuItem) {
-        window?.makeFirstResponder(editorTextView)
-        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-        insertTextAtSelection("#")
-        userDidEdit()
-    }
-
-    @objc private func toggleQuickCaptureTagFromMenu(_ sender: NSMenuItem) {
-        guard let tag = sender.representedObject as? String else { return }
-        let updatedBody = QuickCaptureDocumentState.toggledTag(tag, in: serializedBodyMarkdown())
-        replaceBodyMarkdownFromQuickCaptureMenu(updatedBody)
-    }
-
-    private func replaceBodyMarkdownFromQuickCaptureMenu(_ markdown: String) {
-        suppressAutosave = true
-        applyBodyMarkdown(markdown)
-        suppressAutosave = false
-        window?.makeFirstResponder(editorTextView)
-        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-        updateTypingAttributesFromInsertionPoint()
-        updateToolbarSelectionState()
-        updateInlineSuggestions()
-        refreshChrome()
-        markDocumentDirty()
     }
 
     // MARK: - String algorithms
