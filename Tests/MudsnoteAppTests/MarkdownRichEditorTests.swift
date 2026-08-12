@@ -5369,21 +5369,97 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func noteLinksViewHidesWhenCurrentNoteHasNoRelations() {
-        let view = NoteLinksView(frame: .zero)
-        #expect(view.isHidden)
+    func knowledgeRelationNavigationStaysInOneWindowAndSupportsBack() async throws {
+        let suiteName = "mudsnote.knowledge-navigation-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-knowledge-navigation-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
 
-        view.update(NoteLinkRelations(
-            incoming: [NoteLinkItem(
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let sourceURL = try store.saveNewNote(
+            title: "Source",
+            body: "Source body",
+            tags: ["层级/点"],
+            in: notesDirectory
+        )
+        let targetURL = try store.saveNewNote(
+            title: "Target",
+            body: "[Source](\(sourceURL.lastPathComponent))",
+            tags: ["层级/线"],
+            in: notesDirectory
+        )
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try controller.openMarkdownDocumentForLibrary(at: targetURL)
+        await controller.waitForNoteLinksRefreshForLibrary()
+        let sourceButton = try #require(controller.noteLinksView.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "Source" })
+        sourceButton.performClick(nil)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == sourceURL.standardizedFileURL)
+
+        let backButton = try #require(controller.noteLinksView.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "‹" })
+        #expect(backButton.isEnabled)
+        backButton.performClick(nil)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeRelationsViewStaysAvailableWithoutExistingRelations() {
+        let view = NoteLinksView(frame: .zero)
+        #expect(!view.isHidden)
+        var requestedLayer: KnowledgeLayer?
+        view.onGenerateHigherLayer = { requestedLayer = $0 }
+
+        view.update(KnowledgeRelations(
+            currentLayer: .point,
+            parents: [],
+            children: [],
+            related: [KnowledgeRelationItem(
                 url: URL(fileURLWithPath: "/tmp/source.md"),
                 title: "Source"
             )],
-            outgoing: []
+            suggested: [KnowledgeRelationItem(
+                url: URL(fileURLWithPath: "/tmp/suggested.md"),
+                title: "Suggested",
+                reason: "共同标签：数据治理"
+            )]
         ))
         #expect(!view.isHidden)
+        let buttonTitles = view.allSubviews.compactMap { ($0 as? NSButton)?.title }
+        #expect(buttonTitles.contains("生成线层草案"))
+        let relationLabels = view.allSubviews
+            .compactMap { ($0 as? NSTextField)?.stringValue }
+        #expect(relationLabels.contains("共同标签：数据治理"))
+        view.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "生成线层草案" }?
+            .performClick(nil)
+        #expect(requestedLayer == .line)
 
         view.update(.empty)
-        #expect(view.isHidden)
+        #expect(!view.isHidden)
     }
 
     @MainActor

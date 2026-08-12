@@ -492,6 +492,16 @@ extension NoteStore {
         ) ?? []
     }
 
+    func indexedEntries(
+        roots: [URL]? = nil,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchIndexEntry]? {
+        cancellableIndexedEntries(
+            roots: roots,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
     private func cancellableIndexedEntries(
         roots: [URL]? = nil,
         validatesMemorySnapshot: Bool = false,
@@ -838,6 +848,7 @@ extension NoteStore {
             createdAt: createdAt,
             tags: note.tags,
             tagsLower: note.tags.map { $0.lowercased() },
+            knowledgeLayer: KnowledgeLayer.parse(sourceContents: text, tags: note.tags),
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
         )
