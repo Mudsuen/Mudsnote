@@ -839,7 +839,9 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let deadline = ContinuousClock.now + .seconds(5)
         while ContinuousClock.now < deadline {
-            if case .ready(let root) = model.folderStatus, root == secondRoot {
+            if case .ready(let root) = model.folderStatus,
+               root == secondRoot,
+               model.libraryRevision == 1 {
                 break
             }
             try await Task.sleep(for: .milliseconds(20))
@@ -847,6 +849,9 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         guard case .ready(let selectedRoot) = model.folderStatus else {
             return XCTFail("The latest folder never became ready")
+        }
+        guard model.libraryRevision == 1 else {
+            return XCTFail("The latest folder snapshot never finished publishing")
         }
         XCTAssertEqual(selectedRoot, secondRoot)
         XCTAssertEqual(access.currentRoot, secondRoot)
