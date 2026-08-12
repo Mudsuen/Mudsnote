@@ -29,6 +29,23 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Folder Unavailable"].exists)
     }
 
+    func testAppearanceCanFollowSystemOrStayLightOrDark() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let settings = app.buttons["settings-link"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+
+        let appearance = app.segmentedControls["appearance-picker"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        XCTAssertEqual(appearance.buttons.count, 3)
+        XCTAssertTrue(appearance.buttons["System"].exists)
+        XCTAssertTrue(appearance.buttons["Light"].exists)
+        XCTAssertTrue(appearance.buttons["Dark"].exists)
+
+        appearance.buttons["System"].tap()
+        XCTAssertTrue(appearance.buttons["System"].isSelected)
+    }
+
     func testDamagedQuickDraftCanBeDiscardedWithoutChangingLibrary() {
         let app = launchApp(
             reset: true,
@@ -556,6 +573,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["all-notes-link"].exists)
         XCTAssertFalse(app.buttons["folder-row-Inbox"].exists)
         XCTAssertFalse(app.staticTexts["Daily"].exists)
+        let folderTitles = app.staticTexts.matching(
+            NSPredicate(format: "label == %@", "Folders")
+        )
+        XCTAssertGreaterThanOrEqual(folderTitles.count, 1)
+        for index in 0..<folderTitles.count {
+            XCTAssertLessThan(
+                folderTitles.element(boundBy: index).frame.maxY,
+                130,
+                "Folders must stay in the top chrome instead of repeating in the drawer content"
+            )
+        }
 
         let foldersScreenshot = XCTAttachment(screenshot: app.screenshot())
         foldersScreenshot.name = "iOS 26 reference - folders"
@@ -584,7 +612,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         projects.tap()
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
-        XCTAssertFalse(note.label.contains("Projects"))
+        XCTAssertFalse(
+            app.navigationBars["Projects"].exists,
+            "Selecting a folder should filter the home view instead of navigating into a list"
+        )
 
         let listScreenshot = XCTAttachment(screenshot: app.screenshot())
         listScreenshot.name = "iOS 26 reference - note list"

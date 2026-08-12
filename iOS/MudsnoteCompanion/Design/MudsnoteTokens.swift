@@ -1,13 +1,15 @@
 import SwiftUI
 
 enum MudsnoteAppearance: String, CaseIterable, Identifiable {
+    case system
     case light
     case dark
 
     var id: String { rawValue }
 
-    var colorScheme: ColorScheme {
+    var colorScheme: ColorScheme? {
         switch self {
+        case .system: nil
         case .light: .light
         case .dark: .dark
         }
@@ -15,6 +17,7 @@ enum MudsnoteAppearance: String, CaseIterable, Identifiable {
 
     var label: LocalizedStringKey {
         switch self {
+        case .system: "System"
         case .light: "Light"
         case .dark: "Dark"
         }
@@ -22,6 +25,7 @@ enum MudsnoteAppearance: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .system: "circle.lefthalf.filled"
         case .light: "sun.max"
         case .dark: "moon.stars"
         }
@@ -113,12 +117,28 @@ extension View {
 }
 
 struct MudsnoteTopFadeMaterial: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var tintOpacity = 0.055
+
     var body: some View {
-        Rectangle()
-            .fill(.ultraThinMaterial)
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            Rectangle()
+                .fill(
+                    colorScheme == .dark
+                        ? Color.white.opacity(tintOpacity)
+                        : Color.white.opacity(0.16)
+                )
+        }
             .mask {
                 LinearGradient(
-                    colors: [.black, .black.opacity(0.72), .clear],
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.44),
+                        .init(color: .black.opacity(0.72), location: 0.68),
+                        .init(color: .clear, location: 1),
+                    ],
                     startPoint: .top,
                     endPoint: .bottom
                 )

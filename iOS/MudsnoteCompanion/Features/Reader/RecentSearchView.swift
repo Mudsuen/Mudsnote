@@ -68,8 +68,8 @@ struct NotesTopBarAppearance: Equatable {
     var usesAdaptiveCanvas: Bool
 
     static let notes = NotesTopBarAppearance(
-        tintOpacity: 0.08,
-        isVisible: true,
+        tintOpacity: 0.055,
+        isVisible: false,
         usesAdaptiveCanvas: true
     )
 }
@@ -256,15 +256,12 @@ private extension View {
         appearance: NotesTopBarAppearance = .notes
     ) -> some View {
         if #available(iOS 26.0, *) {
-            toolbarBackground(
-                .ultraThinMaterial,
-                for: .navigationBar
-            )
+            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(
                     appearance.isVisible ? .visible : .hidden,
                     for: .navigationBar
                 )
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectHidden(!appearance.isVisible, for: .top)
         } else {
             toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(
@@ -379,6 +376,13 @@ struct LibraryHomeView: View {
                     }
             }
             .background(NotesCloneColors.background)
+            .overlay(alignment: .top) {
+                MudsnoteTopFadeMaterial(
+                    tintOpacity: NotesTopBarAppearance.notes.tintOpacity
+                )
+                    .frame(height: 128)
+                    .ignoresSafeArea(edges: .top)
+            }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $isShowingAttachments) {
@@ -600,11 +604,6 @@ struct LibraryHomeView: View {
         )
         .notesTranslucentTopToolbar()
         .notesGlassBottomToolbar()
-        .overlay(alignment: .top) {
-            MudsnoteTopFadeMaterial()
-                .frame(height: 96)
-                .ignoresSafeArea(edges: .top)
-        }
     }
 
     @ViewBuilder
@@ -1148,31 +1147,6 @@ struct LibraryHomeView: View {
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Text("Folders")
-                        .font(.system(.title2, design: .rounded, weight: .bold))
-                        .foregroundStyle(MudsnoteColors.text)
-
-                    Spacer(minLength: 0)
-
-                    NavigationLink {
-                        SettingsRulesView(chooseFolder: chooseFolder)
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.text)
-                            .frame(width: 34, height: 34)
-                            .background(MudsnoteColors.card, in: Circle())
-                            .overlay {
-                                Circle().stroke(MudsnoteColors.line, lineWidth: 1)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Settings")
-                    .accessibilityIdentifier("settings-link")
-                }
-                .padding(.horizontal, 2)
-
                 notesCard {
                     Button(action: selectAllNotes) {
                         NotesFolderRow(
@@ -1231,6 +1205,16 @@ struct LibraryHomeView: View {
                         )
                     }
                     .accessibilityIdentifier("recently-deleted-link")
+
+                    NavigationLink {
+                        SettingsRulesView(chooseFolder: chooseFolder)
+                    } label: {
+                        NotesFolderRow(
+                            title: String(localized: "Settings"),
+                            systemImage: "gearshape"
+                        )
+                    }
+                    .accessibilityIdentifier("settings-link")
                 }
             }
         }

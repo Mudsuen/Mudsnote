@@ -162,8 +162,11 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testHomeTopBarUsesNativeTranslucentMaterialOverAdaptiveCanvas() {
-        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.08)
-        XCTAssertTrue(NotesTopBarAppearance.notes.isVisible)
+        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.055)
+        XCTAssertFalse(
+            NotesTopBarAppearance.notes.isVisible,
+            "The custom fade must not be darkened by a second native toolbar material"
+        )
         XCTAssertTrue(
             NotesTopBarAppearance.notes.usesAdaptiveCanvas,
             "The navigation material must preserve the selected light or dark canvas"
@@ -272,8 +275,9 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testAppearanceOffersLightAndExistingDarkModes() {
-        XCTAssertEqual(MudsnoteAppearance.allCases, [.light, .dark])
+    func testAppearanceOffersSystemLightAndExistingDarkModes() {
+        XCTAssertEqual(MudsnoteAppearance.allCases, [.system, .light, .dark])
+        XCTAssertNil(MudsnoteAppearance.system.colorScheme)
         XCTAssertEqual(MudsnoteAppearance.light.colorScheme, .light)
         XCTAssertEqual(MudsnoteAppearance.dark.colorScheme, .dark)
     }
