@@ -338,6 +338,7 @@ struct LibraryHomeView: View {
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
     @State private var directorySettlementGeneration = 0
     @State private var directoryPanelWidth: CGFloat = 360
+    @State private var expandedDirectoryPaths = Set<String>()
     @AppStorage("mudsnote.ios.selectedHomeFolderPath")
     private var selectedHomeFolderPath = ""
     @State private var homeTimelineProjection = HomeTimelineProjection()
@@ -599,6 +600,11 @@ struct LibraryHomeView: View {
         )
         .notesTranslucentTopToolbar()
         .notesGlassBottomToolbar()
+        .overlay(alignment: .top) {
+            MudsnoteTopFadeMaterial()
+                .frame(height: 96)
+                .ignoresSafeArea(edges: .top)
+        }
     }
 
     @ViewBuilder
@@ -617,10 +623,6 @@ struct LibraryHomeView: View {
             .simultaneousGesture(TapGesture().onEnded {
                 if isSearchFocused { isSearchFocused = false }
             })
-            .overlay(alignment: .top) {
-                MudsnoteTopFadeMaterial()
-                    .frame(height: 72)
-            }
         } else {
             homeCardStream
         }
@@ -676,10 +678,6 @@ struct LibraryHomeView: View {
             .padding(.bottom, 110)
         }
         .accessibilityIdentifier(homeContentIdentifier)
-        .overlay(alignment: .top) {
-            MudsnoteTopFadeMaterial()
-                .frame(height: 72)
-        }
     }
 
     private func makeHomeTimelineProjection() -> HomeTimelineProjection {
@@ -938,7 +936,7 @@ struct LibraryHomeView: View {
     }
 
     private var directoryFolders: [LibraryFolderNode] {
-        appModel.allFolders.filter { !$0.isMergedInboxFolder }
+        appModel.visibleLibraryFolders.filter { !$0.isMergedInboxFolder }
     }
 
     private var allHomeEntryIDs: Set<String> {
@@ -999,10 +997,6 @@ struct LibraryHomeView: View {
             Rectangle()
                 .fill(MudsnoteColors.line)
                 .frame(width: 1)
-        }
-        .overlay(alignment: .top) {
-            MudsnoteTopFadeMaterial()
-                .frame(height: 72)
         }
         .shadow(color: .black.opacity(0.22), radius: 12, x: 5)
         .accessibilityIdentifier("directory-drawer")
@@ -1205,10 +1199,12 @@ struct LibraryHomeView: View {
                     ForEach(directoryFolders) { folder in
                         DirectoryFolderTree(
                             folder: folder,
+                            depth: 0,
                             isManaging: isManagingFolders,
-                            isSelected: selectedHomeFolderPath == folder.relativePath,
+                            expandedPaths: $expandedDirectoryPaths,
+                            selectedPath: selectedHomeFolderPath,
                             systemImage: folderSystemImage,
-                            select: { selectHomeFolder(folder) }
+                            select: selectHomeFolder
                         )
                     }
                 }
@@ -1543,17 +1539,66 @@ struct LibraryHomeView: View {
 
 private struct DirectoryFolderTree: View {
     var folder: LibraryFolderNode
+    var depth: Int
     var isManaging: Bool
-    var isSelected: Bool
+    @Binding var expandedPaths: Set<String>
+    var selectedPath: String
     var systemImage: (LibraryFolderNode) -> String
-    var select: () -> Void
+    var select: (LibraryFolderNode) -> Void
+
+    private var isExpanded: Bool {
+        expandedPaths.contains(folder.relativePath)
+    }
+
+    private var hasChildren: Bool {
+        !folder.children.isEmpty
+    }
 
     private var trailingAccessoryWidth: CGFloat {
-        isManaging ? 88 : 28
+        (isManaging ? 88 : 0) + 28
     }
 
     var body: some View {
-        folderEntry
+        VStack(spacing: 0) {
+            ZStack(alignment: .trailing) {
+                folderEntry
+
+                if hasChildren {
+                    Button {
+                        withAnimation(.snappy(duration: 0.26, extraBounce: 0.04)) {
+                            if !expandedPaths.insert(folder.relativePath).inserted {
+                                expandedPaths.remove(folder.relativePath)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                            .frame(width: 44, height: 58)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, isManaging ? 88 : 0)
+                    .accessibilityLabel(isExpanded ? "Collapse \(folder.name)" : "Expand \(folder.name)")
+                    .accessibilityIdentifier("folder-disclosure-\(folder.relativePath)")
+                }
+            }
+
+            if isExpanded {
+                ForEach(folder.children) { child in
+                    DirectoryFolderTree(
+                        folder: child,
+                        depth: depth + 1,
+                        isManaging: isManaging,
+                        expandedPaths: $expandedPaths,
+                        selectedPath: selectedPath,
+                        systemImage: systemImage,
+                        select: select
+                    )
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
     }
 
     @ViewBuilder
@@ -1562,9 +1607,10 @@ private struct DirectoryFolderTree: View {
             NotesFolderRow(
                 title: folder.name,
                 systemImage: systemImage(folder),
-                count: folder.directNoteCount,
+                count: folder.totalNoteCount,
                 showsChevron: false,
-                trailingAccessoryWidth: trailingAccessoryWidth
+                trailingAccessoryWidth: trailingAccessoryWidth,
+                indentation: CGFloat(depth) * 18
             )
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
             .modifier(
@@ -1577,20 +1623,24 @@ private struct DirectoryFolderTree: View {
             NotesFolderRow(
                 title: folder.name,
                 systemImage: systemImage(folder),
-                count: folder.directNoteCount,
+                count: folder.totalNoteCount,
                 showsChevron: false,
-                trailingAccessoryWidth: trailingAccessoryWidth
+                trailingAccessoryWidth: trailingAccessoryWidth,
+                indentation: CGFloat(depth) * 18
             )
             .contentShape(Rectangle())
-            .onTapGesture(perform: select)
-            .background(isSelected ? MudsnoteColors.card : Color.clear)
+            .onTapGesture { select(folder) }
+            .background(selectedPath == folder.relativePath ? MudsnoteColors.card : Color.clear)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction {
-                select()
+                select(folder)
             }
-            .accessibilityValue(isSelected ? String(localized: "Selected") : "")
+            .accessibilityValue(
+                selectedPath == folder.relativePath ? String(localized: "Selected") : ""
+            )
             .accessibilityIdentifier("folder-row-\(folder.relativePath)")
+            .modifier(FolderLifecycleActions(folder: folder))
         }
     }
 }

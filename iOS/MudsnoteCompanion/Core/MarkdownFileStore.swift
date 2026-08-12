@@ -36,6 +36,7 @@ actor MarkdownFileStore {
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var searchCache: [String: SearchCacheEntry] = [:]
     private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
+    private var reservedPendingTargets = Set<String>()
     private let fileManager = FileManager.default
     private let attachmentTextIndex: AttachmentTextIndex
 
@@ -48,6 +49,7 @@ actor MarkdownFileStore {
         cachedLibrarySnapshot = nil
         searchCache = [:]
         listMetadataCache = [:]
+        reservedPendingTargets = []
     }
 
     func configureAndInitialize(root: URL) throws {
@@ -884,8 +886,10 @@ actor MarkdownFileStore {
             }
             ?? "Untitled Note"
         let preferredStem = Self.portableNoteFilenameStem(from: "# \(titleSource)")
-        let suffix = pendingID.uuidString.prefix(8).uppercased()
-        let target = directory.appendingPathComponent("\(preferredStem)-\(suffix).md")
+        let target = uniquePendingNoteURL(
+            for: directory.appendingPathComponent("\(preferredStem).md")
+        )
+        reservedPendingTargets.insert(target.standardizedFileURL.path)
 
         return PendingWrite(
             id: pendingID,
@@ -1909,6 +1913,23 @@ actor MarkdownFileStore {
         }
     }
 
+    private func uniquePendingNoteURL(for requested: URL) -> URL {
+        let directory = requested.deletingLastPathComponent()
+        let stem = requested.deletingPathExtension().lastPathComponent
+        var suffix = 1
+        while true {
+            let candidate = suffix == 1
+                ? requested
+                : directory.appendingPathComponent("\(stem) \(suffix).md")
+            let path = candidate.standardizedFileURL.path
+            if !fileManager.fileExists(atPath: path),
+               !reservedPendingTargets.contains(path) {
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
     private func uniqueFolderURL(for requested: URL) -> URL {
         guard fileManager.fileExists(atPath: requested.path) else { return requested }
         let parent = requested.deletingLastPathComponent()
@@ -2478,11 +2499,8 @@ actor MarkdownFileStore {
         }
 
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !fileManager.fileExists(atPath: target.path) {
-            try "# \(target.deletingPathExtension().lastPathComponent)\n\n".write(to: target, atomically: true, encoding: .utf8)
-        }
-
-        try appendPendingWriteIfNeeded(pending, to: target)
+        try writePendingNoteIfNeeded(pending, to: target)
+        reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [pending.targetRelativePath])
     }
 
@@ -2573,7 +2591,44 @@ actor MarkdownFileStore {
         return false
     }
 
-    private func appendPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
+    private func writePendingNoteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
+        if target.lastPathComponent == "Inbox.md" {
+            try appendLegacyPendingWriteIfNeeded(pending, to: target)
+            return
+        }
+
+        let title = target.deletingPathExtension().lastPathComponent
+        let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = "# \(title)\n\n\(body)\n"
+        let legacyMarker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var writeError: Error?
+
+        coordinator.coordinate(writingItemAt: target, options: .forMerging, error: &coordinationError) { coordinatedURL in
+            do {
+                if fileManager.fileExists(atPath: coordinatedURL.path) {
+                    let existing = try String(contentsOf: coordinatedURL, encoding: .utf8)
+                    if existing == note || existing.contains(legacyMarker) {
+                        return
+                    }
+                    throw PendingWriteValidationError.targetAlreadyExists
+                }
+                try note.write(to: coordinatedURL, atomically: true, encoding: .utf8)
+            } catch {
+                writeError = error
+            }
+        }
+
+        if let coordinationError {
+            throw coordinationError
+        }
+        if let writeError {
+            throw writeError
+        }
+    }
+
+    private func appendLegacyPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
         let marker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
         let block = pending.markdownBlock + marker + "\n"
         let coordinator = NSFileCoordinator()
@@ -2613,11 +2668,7 @@ actor MarkdownFileStore {
         attachmentTags: [String],
         now: Date
     ) -> String {
-        var lines: [String] = [
-            "",
-            "## \(memoFormatter.string(from: now))",
-            "",
-        ]
+        var lines: [String] = []
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedBody.isEmpty {
             lines.append(trimmedBody)
@@ -2639,8 +2690,7 @@ actor MarkdownFileStore {
         if !tagLine.isEmpty {
             lines.append(tagLine)
         }
-        lines.append("")
-        return lines.joined(separator: "\n")
+        return lines.joined(separator: "\n") + "\n"
     }
 
     private static let memoFormatter: DateFormatter = {
@@ -2863,9 +2913,15 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
     case invalidAttachmentPath
     case invalidAttachmentData
     case invalidMarkdown
+    case targetAlreadyExists
 
     var errorDescription: String? {
-        String(localized: "A pending capture is damaged and was not written.")
+        switch self {
+        case .targetAlreadyExists:
+            String(localized: "A note with this name was created elsewhere. Try saving again.")
+        default:
+            String(localized: "A pending capture is damaged and was not written.")
+        }
     }
 }
 

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 253. Corrected iOS folder, capture, and preview behavior
+- Problem: A heading disclosure affordance was added without product intent, the folder drawer lost its hierarchy, its selection semantics and top material landed on the wrong surfaces, new captures exposed internal IDs and timestamps, and native preview selection handles disappeared.
+- Fix: Headings remain presentation-only; the recursive folder drawer is restored while folder taps filter the existing home timeline. The fading material now occupies the actual top safe-area chrome, independent captures use readable collision-safe names and clean Markdown without hidden write markers or timestamp headings, unchanged autosaved new notes still finalize on edit exit, and one native selection surface spans rendered paragraphs and list markers.
+- Lesson: Navigation structure, content projection, storage metadata, and selection interaction are separate contracts; changing one must not silently reshape or expose another.
+
 ### 252. Unified macOS Quick Capture editor
 - Problem: Quick Capture split a note into separate title and body fields, while its visually raised tag button synchronously scanned the note library and could stall the entire panel.
 - Fix: Quick Capture now opens directly in one native editor, derives the saved title from the first sentence while preserving that sentence in the body, and losslessly folds legacy title/body drafts into the unified content. The tag button and its blocking entry point are removed; Inbox, cancel, and save share one 28-point footer centerline with restrained opacity/scale press feedback.

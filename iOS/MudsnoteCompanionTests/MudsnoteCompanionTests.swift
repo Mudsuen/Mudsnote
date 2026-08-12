@@ -1076,7 +1076,9 @@ final class MudsnoteCompanionTests: XCTestCase {
             now: date
         )
 
-        XCTAssertTrue(block.contains("## 2024-06-07"))
+        XCTAssertFalse(block.contains("2024-06-07"))
+        XCTAssertFalse(block.contains("mudsnote-write:"))
+        XCTAssertTrue(block.hasPrefix("把 iCloud 文件夹作为唯一数据源。"))
         XCTAssertTrue(block.contains("![Image](Attachments/2026/06/IMG-test.jpg)"))
         XCTAssertTrue(block.contains("[Video](Attachments/2026/06/launch-test.mp4)"))
         XCTAssertTrue(block.contains("[Audio](Attachments/2026/06/audio-test.m4a)"))
@@ -1351,6 +1353,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(first.targetRelativePath.hasSuffix(".md"))
         XCTAssertNotEqual(first.targetRelativePath, "000-inbox/Existing.md")
         XCTAssertNotEqual(first.targetRelativePath, second.targetRelativePath)
+        XCTAssertEqual(first.targetRelativePath, "000-inbox/Independent capture.md")
+        XCTAssertEqual(second.targetRelativePath, "000-inbox/Independent capture 2.md")
 
         try await store.performPendingWrite(first)
         try await store.performPendingWrite(second)
@@ -1369,6 +1373,16 @@ final class MudsnoteCompanionTests: XCTestCase {
                 atPath: root.appendingPathComponent(second.targetRelativePath).path
             )
         )
+        let createdMarkdown = try String(
+            contentsOf: root.appendingPathComponent(first.targetRelativePath),
+            encoding: .utf8
+        )
+        XCTAssertEqual(
+            createdMarkdown,
+            "# Independent capture\n\nIndependent capture\n"
+        )
+        XCTAssertFalse(createdMarkdown.contains("mudsnote-write:"))
+        XCTAssertFalse(createdMarkdown.contains("2025-"))
     }
 
     func testLocalAudioSaveUsesReadableNamesAndNeverOverwrites() throws {
@@ -3773,43 +3787,19 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(NoteFindIndex.visibleText(for: "- [ ] Verify device"), "Verify device")
     }
 
-    func testMarkdownHeadingSectionsCollapseByLevelAndRevealFindTargets() {
+    func testMarkdownHeadingsRemainPresentationOnlyAndSelectionCrossesListParagraphs() {
         let blocks: [MarkdownRenderBlock] = [
             .line("# Plan"),
             .line("Overview"),
-            .line("## Tasks"),
-            .line("Ship the app"),
-            .line("# Notes"),
-            .line("Done")
+            .line("1. Ship the app"),
+            .line("2. Verify the app")
         ]
 
         XCTAssertEqual(MarkdownHeading("# Plan"), MarkdownHeading(level: 1, title: "Plan"))
         XCTAssertNil(MarkdownHeading("#tag"))
-        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 0, in: blocks))
-        XCTAssertTrue(MarkdownSectionProjection.hasCollapsibleContent(after: 2, in: blocks))
         XCTAssertEqual(
-            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [0]),
-            [0, 4, 5]
-        )
-        XCTAssertEqual(
-            MarkdownSectionProjection.visibleIndices(in: blocks, collapsed: [2]),
-            [0, 1, 2, 4, 5]
-        )
-        XCTAssertEqual(
-            MarkdownSectionProjection.collapsedHeadings(
-                containing: 3,
-                in: blocks,
-                collapsed: [0, 2]
-            ),
-            [0, 2]
-        )
-        XCTAssertEqual(
-            MarkdownSectionProjection.collapsedHeadings(
-                containing: 5,
-                in: blocks,
-                collapsed: [0, 2]
-            ),
-            []
+            MarkdownSelectionProjection.attributedText(from: blocks).string,
+            "Plan\nOverview\n1. Ship the app\n2. Verify the app\n"
         )
     }
 
@@ -4308,8 +4298,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             root: root,
             now: Date(timeIntervalSince1970: 1_752_384_000)
         )
-        XCTAssertTrue(pending.targetRelativePath.hasPrefix("Attachment Note-"))
-        XCTAssertTrue(pending.targetRelativePath.hasSuffix(".md"))
+        XCTAssertEqual(pending.targetRelativePath, "Attachment Note.md")
         XCTAssertEqual(pending.attachments.count, 1)
         XCTAssertTrue(pending.attachments[0].relativePath.contains("/Scanned Document-"))
         XCTAssertTrue(pending.attachments[0].relativePath.hasSuffix(".pdf"))

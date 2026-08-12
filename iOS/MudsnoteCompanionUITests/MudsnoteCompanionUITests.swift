@@ -706,8 +706,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Folders"].exists)
 
         projects.tap()
+        XCTAssertTrue(
+            app.scrollViews["home-note-gallery-folder:Projects"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.navigationBars["Projects"].exists)
+
+        app.buttons["directory-button"].tap()
         XCTAssertTrue(nested.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["Projects"].exists)
+        nested.tap()
+        XCTAssertTrue(
+            app.scrollViews["home-note-gallery-folder:Projects/Launch"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.navigationBars["Launch"].exists)
     }
 
     func testFolderContextMenuMovesNestedFolderToTopLevel() {
@@ -721,7 +733,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         alert.textFields["Folder Name"].typeText("Launch")
         alert.buttons["Create"].tap()
         XCTAssertTrue(waitForHittable(projects))
-        projects.tap()
+        app.buttons["folder-disclosure-Projects"].tap()
 
         let launch = app.buttons["folder-row-Projects/Launch"]
         XCTAssertTrue(launch.waitForExistence(timeout: 5))
@@ -734,7 +746,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         topLevel.tap()
         XCTAssertTrue(waitForNonexistence(launch))
 
-        app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["folder-row-Launch"].waitForExistence(timeout: 5))
     }
 
@@ -1701,30 +1712,20 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["rendered-markdown"].exists)
     }
 
-    func testRenderedHeadingCollapsesSectionAndFindRevealsItsContent() {
-        let app = launchApp(reset: true, fixtureFolder: true)
-        XCTAssertTrue(app.buttons["all-notes-link"].waitForExistence(timeout: 8))
-        app.buttons["all-notes-link"].tap()
+    func testRenderedHeadingHasNoCollapseControlAndFindKeepsContentVisible() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            openDirectory: false
+        )
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.tap()
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
 
         let body = app.staticTexts["Restore this note end to end."]
         XCTAssertTrue(body.waitForExistence(timeout: 5))
         let toggle = app.buttons["markdown-section-toggle-0"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        toggle.tap()
-        XCTAssertTrue(waitForNonexistence(body))
-
-        let collapsedScreenshot = XCTAttachment(screenshot: app.screenshot())
-        collapsedScreenshot.name = "Collapsed Markdown heading"
-        collapsedScreenshot.lifetime = .keepAlways
-        add(collapsedScreenshot)
-
-        toggle.tap()
-        XCTAssertTrue(body.waitForExistence(timeout: 5))
-        toggle.tap()
-        XCTAssertTrue(waitForNonexistence(body))
+        XCTAssertFalse(toggle.exists)
 
         openRenderedNoteActions(in: app)
         let find = app.buttons["Find in Note"]

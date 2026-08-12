@@ -78,7 +78,6 @@ struct MarkdownPreviewView: View {
     private struct RenderedBlockItem: Identifiable {
         var index: Int
         var block: MarkdownRenderBlock
-        var hasCollapsibleContent: Bool
 
         var id: Int { index }
     }
@@ -124,7 +123,6 @@ struct MarkdownPreviewView: View {
     @State private var includesAttachmentsInFind = false
     @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
     @State private var isLoadingFindAttachments = false
-    @State private var collapsedHeadingIndices: Set<Int> = []
     @State private var showsFrontMatter = false
     @State private var linkedSourceHistory: [Source] = []
     @State private var exportedPDF: ExportedNotePDF?
@@ -193,7 +191,6 @@ struct MarkdownPreviewView: View {
                                     })
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("rendered-markdown")
-                                    .textSelection(.enabled)
                                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
                                     .padding(.bottom, MudsnoteSpacing.safeHorizontal)
                             }
@@ -780,16 +777,6 @@ struct MarkdownPreviewView: View {
     private func scrollToActiveFindMatch(using proxy: ScrollViewProxy) {
         guard !findResults.isEmpty else { return }
         let result = findResults[min(activeFindIndex, findResults.count - 1)]
-        let hiddenSections = MarkdownSectionProjection.collapsedHeadings(
-            containing: result.location.blockIndex,
-            in: renderBlocks,
-            collapsed: collapsedHeadingIndices
-        )
-        if !hiddenSections.isEmpty {
-            withAnimation(.snappy(duration: 0.22)) {
-                collapsedHeadingIndices.subtract(hiddenSections)
-            }
-        }
         Task { @MainActor in
             await Task.yield()
             withAnimation(.snappy(duration: 0.2)) {
@@ -1207,7 +1194,6 @@ struct MarkdownPreviewView: View {
 
     private func showLinkedSource(_ linkedSource: Source) {
         closeFindInNote()
-        collapsedHeadingIndices.removeAll()
         isEditing = false
         editorFocused = false
         source = linkedSource
@@ -1254,11 +1240,7 @@ struct MarkdownPreviewView: View {
                 Group {
                     switch item.block {
                     case .line(let line):
-                        markdownLine(
-                            line,
-                            blockIndex: item.index,
-                            hasCollapsibleContent: item.hasCollapsibleContent
-                        )
+                        markdownLine(line, blockIndex: item.index)
                     case .table(let headers, let rows):
                         markdownTable(
                             headers: headers,
@@ -1277,22 +1259,20 @@ struct MarkdownPreviewView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.snappy(duration: 0.22), value: collapsedHeadingIndices)
+        .background {
+            MarkdownDocumentSelectionOverlay(attributedText: previewSelectionText)
+        }
+    }
+
+    private var previewSelectionText: NSAttributedString {
+        MarkdownSelectionProjection.attributedText(from: renderBlocks)
     }
 
     private var visibleRenderBlockItems: [RenderedBlockItem] {
-        let blocks = renderBlocks
-        return MarkdownSectionProjection.visibleIndices(
-            in: blocks,
-            collapsed: collapsedHeadingIndices
-        ).map { index in
+        renderBlocks.indices.map { index in
             RenderedBlockItem(
                 index: index,
-                block: blocks[index],
-                hasCollapsibleContent: MarkdownSectionProjection.hasCollapsibleContent(
-                    after: index,
-                    in: blocks
-                )
+                block: renderBlocks[index]
             )
         }
     }
@@ -1308,42 +1288,17 @@ struct MarkdownPreviewView: View {
     @ViewBuilder
     private func markdownLine(
         _ line: String,
-        blockIndex: Int,
-        hasCollapsibleContent: Bool
+        blockIndex: Int
     ) -> some View {
         if let attachment = MarkdownAttachmentLine(line) {
             attachmentView(attachment, blockIndex: blockIndex)
         } else if case .heading(let heading) = MarkdownLineStyle(line) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if hasCollapsibleContent {
-                    Button {
-                        withAnimation(.snappy(duration: 0.22)) {
-                            if collapsedHeadingIndices.contains(blockIndex) {
-                                collapsedHeadingIndices.remove(blockIndex)
-                            } else {
-                                collapsedHeadingIndices.insert(blockIndex)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(MudsnoteColors.muted)
-                            .rotationEffect(
-                                .degrees(collapsedHeadingIndices.contains(blockIndex) ? 0 : 90)
-                            )
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("markdown-section-toggle-\(blockIndex)")
-                }
-
-                markdownText(
-                    heading.title,
-                    location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
-                    selectionFont: heading.uiFont
-                )
-                .font(heading.font)
-            }
+            markdownText(
+                heading.title,
+                location: NoteFindLocation(blockIndex: blockIndex, cellIndex: nil),
+                selectionFont: heading.uiFont
+            )
+            .font(heading.font)
         } else if case .task(let isChecked, let text, let indentation) = MarkdownLineStyle(line) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
@@ -1809,7 +1764,13 @@ struct MarkdownPreviewView: View {
     private func persistDraft(finishEditing: Bool, announce: Bool) async {
         if finishEditing { editorFocused = false }
         guard !isSaving else { return }
-        guard draftMarkdown != originalMarkdown else {
+        let requiresNewDocumentFinalization: Bool
+        if case .document(let document) = source {
+            requiresNewDocumentFinalization = finishEditing && document.isNew
+        } else {
+            requiresNewDocumentFinalization = false
+        }
+        guard draftMarkdown != originalMarkdown || requiresNewDocumentFinalization else {
             if finishEditing { isEditing = false }
             return
         }
@@ -1840,7 +1801,6 @@ struct MarkdownPreviewView: View {
         isSaving = false
         isSaveProgressVisible = false
         if finishEditing, succeeded, draftMarkdown == originalMarkdown {
-            collapsedHeadingIndices.removeAll()
             isEditing = false
         } else if !succeeded {
             editorFocused = true
@@ -2185,6 +2145,112 @@ struct MarkdownPreviewView: View {
             guard case .line(let line) = block else { return nil }
             return MarkdownAttachmentLine(line)?.path
         })
+    }
+}
+
+private struct MarkdownDocumentSelectionOverlay: UIViewRepresentable {
+    var attributedText: NSAttributedString
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .clear
+        textView.isOpaque = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.tintColor = .systemBlue
+        textView.clipsToBounds = false
+        textView.isAccessibilityElement = false
+        textView.accessibilityElementsHidden = true
+        update(textView)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        update(textView)
+    }
+
+    private func update(_ textView: UITextView) {
+        let invisibleText = NSMutableAttributedString(attributedString: attributedText)
+        let range = NSRange(location: 0, length: invisibleText.length)
+        invisibleText.addAttribute(.foregroundColor, value: UIColor.clear, range: range)
+        textView.attributedText = invisibleText
+    }
+}
+
+enum MarkdownSelectionProjection {
+    static func attributedText(from blocks: [MarkdownRenderBlock]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for block in blocks {
+            let projected: (text: String, font: UIFont, indentation: CGFloat)
+            switch block {
+            case .line(let line):
+                guard MarkdownAttachmentLine(line) == nil else { continue }
+                switch MarkdownLineStyle(line) {
+                case .heading(let heading):
+                    projected = (heading.title, heading.uiFont, 0)
+                case .task(let checked, let text, let indentation):
+                    projected = ("\(checked ? "☑︎" : "☐") \(text)", .preferredFont(forTextStyle: .body), CGFloat(indentation) * 16)
+                case .unordered(let text, let indentation):
+                    projected = ("• \(text)", .preferredFont(forTextStyle: .body), CGFloat(indentation) * 16)
+                case .ordered(let marker, let text, let indentation):
+                    projected = ("\(marker) \(text)", .preferredFont(forTextStyle: .body), CGFloat(indentation) * 16)
+                case .quote(let text):
+                    projected = (
+                        text,
+                        .preferredFont(forTextStyle: .body).withTraits(.traitItalic),
+                        12
+                    )
+                case .thematicBreak:
+                    projected = ("────────", .preferredFont(forTextStyle: .body), 0)
+                case .paragraph(let text):
+                    projected = (
+                        plainInlineMarkdown(text),
+                        .preferredFont(forTextStyle: .body),
+                        0
+                    )
+                }
+            case .table(let headers, let rows):
+                let text = ([headers] + rows)
+                    .map { $0.joined(separator: "\t") }
+                    .joined(separator: "\n")
+                projected = (text, .preferredFont(forTextStyle: .body), 0)
+            case .code(_, let content):
+                projected = (
+                    content,
+                    .monospacedSystemFont(ofSize: 15, weight: .regular),
+                    0
+                )
+            }
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.paragraphSpacing = 12
+            paragraph.firstLineHeadIndent = projected.indentation
+            paragraph.headIndent = projected.indentation
+            result.append(
+                NSAttributedString(
+                    string: projected.text + "\n",
+                    attributes: [
+                        .font: projected.font,
+                        .paragraphStyle: paragraph,
+                    ]
+                )
+            )
+        }
+        return result
+    }
+
+    private static func plainInlineMarkdown(_ source: String) -> String {
+        guard let attributed = try? AttributedString(
+            markdown: source,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) else {
+            return source
+        }
+        return String(attributed.characters)
     }
 }
 
@@ -2782,66 +2848,6 @@ enum MarkdownLineStyle: Equatable {
             guard let range = Range(match.range(at: index), in: value) else { return nil }
             return String(value[range])
         }
-    }
-}
-
-enum MarkdownSectionProjection {
-    static func visibleIndices(
-        in blocks: [MarkdownRenderBlock],
-        collapsed: Set<Int>
-    ) -> [Int] {
-        var result: [Int] = []
-        var hiddenUntilHeadingLevel: Int?
-
-        for (index, block) in blocks.enumerated() {
-            let heading = parsedHeading(in: block)
-            if let hiddenLevel = hiddenUntilHeadingLevel {
-                guard let heading, heading.level <= hiddenLevel else { continue }
-                hiddenUntilHeadingLevel = nil
-            }
-
-            result.append(index)
-            if let heading, collapsed.contains(index) {
-                hiddenUntilHeadingLevel = heading.level
-            }
-        }
-        return result
-    }
-
-    static func hasCollapsibleContent(
-        after headingIndex: Int,
-        in blocks: [MarkdownRenderBlock]
-    ) -> Bool {
-        guard blocks.indices.contains(headingIndex),
-              let currentHeading = parsedHeading(in: blocks[headingIndex]),
-              blocks.indices.contains(headingIndex + 1) else { return false }
-        if let nextHeading = parsedHeading(in: blocks[headingIndex + 1]) {
-            return nextHeading.level > currentHeading.level
-        }
-        return true
-    }
-
-    static func collapsedHeadings(
-        containing blockIndex: Int,
-        in blocks: [MarkdownRenderBlock],
-        collapsed: Set<Int>
-    ) -> Set<Int> {
-        guard blocks.indices.contains(blockIndex) else { return [] }
-        return Set(collapsed.filter { headingIndex in
-            guard headingIndex < blockIndex,
-                  blocks.indices.contains(headingIndex),
-                  let currentHeading = parsedHeading(in: blocks[headingIndex]) else { return false }
-            let end = blocks.indices.dropFirst(headingIndex + 1).first { candidate in
-                guard let candidateHeading = parsedHeading(in: blocks[candidate]) else { return false }
-                return candidateHeading.level <= currentHeading.level
-            } ?? blocks.endIndex
-            return blockIndex < end
-        })
-    }
-
-    private static func parsedHeading(in block: MarkdownRenderBlock) -> MarkdownHeading? {
-        guard case .line(let line) = block else { return nil }
-        return MarkdownHeading(line)
     }
 }
 
