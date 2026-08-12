@@ -63,13 +63,13 @@ private struct HomeTimelineProjection {
 }
 
 struct NotesTopBarAppearance: Equatable {
-    var tintOpacity: Double
-    var isVisible: Bool
+    var isToolbarBackgroundVisible: Bool
+    var usesSystemScrollEdgeBlur: Bool
     var usesAdaptiveCanvas: Bool
 
     static let notes = NotesTopBarAppearance(
-        tintOpacity: 0.055,
-        isVisible: false,
+        isToolbarBackgroundVisible: false,
+        usesSystemScrollEdgeBlur: true,
         usesAdaptiveCanvas: true
     )
 }
@@ -258,16 +258,21 @@ private extension View {
         if #available(iOS 26.0, *) {
             toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(
-                    appearance.isVisible ? .visible : .hidden,
+                    appearance.isToolbarBackgroundVisible ? .visible : .hidden,
                     for: .navigationBar
                 )
-                .scrollEdgeEffectHidden(!appearance.isVisible, for: .top)
         } else {
             toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(
-                    appearance.isVisible ? .visible : .hidden,
-                    for: .navigationBar
-                )
+                .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+
+    @ViewBuilder
+    func notesTopScrollEdgeBlur(isEnabled: Bool) -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(isEnabled ? .soft : nil, for: .top)
+        } else {
+            self
         }
     }
 
@@ -333,8 +338,8 @@ struct LibraryHomeView: View {
     @State private var directoryDragOffset: CGFloat = 0
     @State private var directoryDragAxis = DirectoryDrawerMotion.DragAxis.undecided
     @State private var directoryHapticFeedback = DirectoryHapticFeedback()
-    @State private var directorySettlementGeneration = 0
     @State private var directoryPanelWidth: CGFloat = 360
+    @State private var topChromeContentInset: CGFloat = 116
     @State private var expandedDirectoryPaths = Set<String>()
     @AppStorage("mudsnote.ios.selectedHomeFolderPath")
     private var selectedHomeFolderPath = ""
@@ -365,7 +370,7 @@ struct LibraryHomeView: View {
     var body: some View {
         NavigationStack {
             directoryStage(width: directoryPanelWidth)
-                .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
                 .background {
                     GeometryReader { proxy in
                         Color.clear
@@ -376,13 +381,6 @@ struct LibraryHomeView: View {
                     }
             }
             .background(NotesCloneColors.background)
-            .overlay(alignment: .top) {
-                MudsnoteTopFadeMaterial(
-                    tintOpacity: NotesTopBarAppearance.notes.tintOpacity
-                )
-                    .frame(height: 128)
-                    .ignoresSafeArea(edges: .top)
-            }
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $isShowingAttachments) {
@@ -615,10 +613,11 @@ struct LibraryHomeView: View {
                     searchSection
                 }
                     .padding(.horizontal, 18)
-                    .padding(.top, 12)
+                    .padding(.top, topChromeContentInset + 12)
                     .padding(.bottom, 110)
             }
             .scrollDismissesKeyboard(.interactively)
+            .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
             .simultaneousGesture(TapGesture().onEnded {
                 if isSearchFocused { isSearchFocused = false }
             })
@@ -673,9 +672,10 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, topChromeContentInset + 8)
             .padding(.bottom, 110)
         }
+        .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
         .accessibilityIdentifier(homeContentIdentifier)
     }
 
@@ -822,7 +822,6 @@ struct LibraryHomeView: View {
     }
 
     private var navigationTitle: String {
-        if isDirectoryPresented { return String(localized: "Folders") }
         if isSelectingNotes {
             return String(
                 format: String(localized: "notes.selected.format"),
@@ -836,11 +835,7 @@ struct LibraryHomeView: View {
     private var homePrincipalTitle: some View {
         ZStack {
             if isDirectoryPresented {
-                Text(String(localized: "Folders"))
-                    .font(.headline)
-                    .foregroundStyle(MudsnoteColors.text)
-                    .accessibilityIdentifier("folders-compact-title")
-                    .transition(.opacity)
+                Color.clear
             } else {
                 homeCompactTitle
                     .transition(.opacity)
@@ -851,6 +846,12 @@ struct LibraryHomeView: View {
             HomeChromeMotion.titleAnimation(reduceMotion: reduceMotion),
             value: isDirectoryPresented
         )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).maxY + 12
+        } action: { inset in
+            guard inset > 0, abs(inset - topChromeContentInset) > 0.5 else { return }
+            topChromeContentInset = inset
+        }
     }
 
     private var homeLargeTitleHeader: some View {
@@ -986,12 +987,22 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, 8)
+            .padding(.top, topChromeContentInset + 8)
             .padding(.bottom, 110)
         }
+        .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(MudsnoteColors.canvas)
+        .overlay(alignment: .topLeading) {
+            Text(String(localized: "Folders"))
+                .font(.headline)
+                .foregroundStyle(MudsnoteColors.text)
+                .frame(width: width, height: 36)
+                .padding(.top, max(0, topChromeContentInset - 48))
+                .accessibilityIdentifier("folders-compact-title")
+                .allowsHitTesting(false)
+        }
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(MudsnoteColors.line)
@@ -1022,7 +1033,6 @@ struct LibraryHomeView: View {
                     guard resolvedAxis != .undecided else { return }
                     directoryDragAxis = resolvedAxis
                     if resolvedAxis == .horizontal {
-                        directorySettlementGeneration += 1
                         directoryHapticFeedback.cancel()
                         directoryHapticFeedback.prepare()
                     }
@@ -1099,7 +1109,6 @@ struct LibraryHomeView: View {
             isManagingFolders = false
         }
 
-        directorySettlementGeneration += 1
         let hapticTiming = emitsHaptic
             ? DirectoryDrawerMotion.hapticTiming(
                 wasOpen: isDirectoryPresented,
@@ -1125,7 +1134,6 @@ struct LibraryHomeView: View {
     }
 
     private func resetDirectoryState() {
-        directorySettlementGeneration += 1
         isDirectoryPresented = false
         directoryDragOffset = 0
         directoryDragAxis = .undecided

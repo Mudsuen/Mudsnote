@@ -162,10 +162,13 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testHomeTopBarUsesNativeTranslucentMaterialOverAdaptiveCanvas() {
-        XCTAssertEqual(NotesTopBarAppearance.notes.tintOpacity, 0.055)
         XCTAssertFalse(
-            NotesTopBarAppearance.notes.isVisible,
-            "The custom fade must not be darkened by a second native toolbar material"
+            NotesTopBarAppearance.notes.isToolbarBackgroundVisible,
+            "The scroll edge should blur underlaid content without adding a tinted toolbar fill"
+        )
+        XCTAssertTrue(
+            NotesTopBarAppearance.notes.usesSystemScrollEdgeBlur,
+            "The top edge should use native scrolling blur instead of a tinted gradient overlay"
         )
         XCTAssertTrue(
             NotesTopBarAppearance.notes.usesAdaptiveCanvas,

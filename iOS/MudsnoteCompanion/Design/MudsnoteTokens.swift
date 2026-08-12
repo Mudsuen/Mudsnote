@@ -116,38 +116,6 @@ extension View {
     }
 }
 
-struct MudsnoteTopFadeMaterial: View {
-    @Environment(\.colorScheme) private var colorScheme
-    var tintOpacity = 0.055
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-            Rectangle()
-                .fill(
-                    colorScheme == .dark
-                        ? Color.white.opacity(tintOpacity)
-                        : Color.white.opacity(0.16)
-                )
-        }
-            .mask {
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: 0.44),
-                        .init(color: .black.opacity(0.72), location: 0.68),
-                        .init(color: .clear, location: 1),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .accessibilityHidden(true)
-            .allowsHitTesting(false)
-    }
-}
-
 struct MudsnoteReaderSheetBackground: View {
     var body: some View {
         ZStack {

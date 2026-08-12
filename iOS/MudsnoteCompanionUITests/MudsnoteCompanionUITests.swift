@@ -734,7 +734,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let nested = app.buttons["folder-row-Projects/Launch"]
         XCTAssertTrue(nested.waitForExistence(timeout: 5))
         XCTAssertTrue(nested.isHittable)
-        XCTAssertTrue(app.navigationBars["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Folders"].exists)
 
         projects.tap()
         XCTAssertTrue(
@@ -2244,7 +2244,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let projectsFolder = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projectsFolder.waitForExistence(timeout: 8))
         XCTAssertTrue(projectsFolder.isHittable)
-        XCTAssertTrue(app.navigationBars["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
         XCTAssertTrue(app.staticTexts["Library"].exists)
         XCTAssertTrue(app.buttons["settings-link"].exists)
@@ -2350,7 +2349,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(projects.waitForExistence(timeout: 5))
         XCTAssertTrue(projects.isHittable)
-        XCTAssertTrue(app.navigationBars["Folders"].exists)
+        XCTAssertTrue(app.staticTexts["Folders"].exists)
         let openScreenshot = XCTAttachment(screenshot: app.screenshot())
         openScreenshot.name = "Finger-tracked directory drawer open"
         openScreenshot.lifetime = .keepAlways
@@ -2420,8 +2419,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.terminate()
         app.launchArguments.append("-ui-testing-open-directory")
         app.launch()
-        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["folders-compact-title"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Folders"].waitForExistence(timeout: 8)
+        )
         let directoryScreenshot = XCTAttachment(screenshot: app.screenshot())
         directoryScreenshot.name = "Notes translucent top bar directory"
         directoryScreenshot.lifetime = .keepAlways
@@ -2455,10 +2455,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(directoryButton.isHittable)
         directoryButton.tap()
 
-        let foldersTitle = app.staticTexts["folders-compact-title"]
+        let foldersTitle = app.staticTexts["Folders"]
         XCTAssertTrue(foldersTitle.waitForExistence(timeout: 3))
         XCTAssertEqual(foldersTitle.frame.midY, notesTitleMidY, accuracy: 3)
-        XCTAssertFalse(notesTitle.exists)
+        XCTAssertEqual(
+            foldersTitle.frame.midX,
+            app.scrollViews["directory-drawer"].frame.midX,
+            accuracy: 3
+        )
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Notes and Folders restrained principal transition"
