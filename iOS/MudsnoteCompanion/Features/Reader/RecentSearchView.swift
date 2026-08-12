@@ -869,7 +869,10 @@ struct LibraryHomeView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(homeDisplayTitle)
         .accessibilityValue(homeNoteCountText)
-        .accessibilityIdentifier("home-large-title")
+        .accessibilityIdentifier(
+            selectedHomeFolderPath.map { "home-large-title-folder:\($0)" }
+                ?? "home-large-title"
+        )
         .accessibilityHidden(homeTitleCollapseProgress >= 0.99)
         .allowsHitTesting(homeTitleCollapseProgress < 0.99)
         .modifier(

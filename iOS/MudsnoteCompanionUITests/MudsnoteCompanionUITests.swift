@@ -2264,11 +2264,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
         let selectedProjects = app.buttons["folder-row-Projects"]
         selectedProjects.tap()
-        let folderTitle = app.otherElements
-            .matching(identifier: "home-large-title")
-            .matching(NSPredicate(format: "label CONTAINS %@", "Projects"))
-            .firstMatch
+        let folderTitle = app.otherElements["home-large-title-folder:Projects"]
         XCTAssertTrue(folderTitle.waitForExistence(timeout: 3))
+        XCTAssertTrue(folderTitle.label.contains("Projects"))
         XCTAssertTrue(
             app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
                 .waitForExistence(timeout: 5)
