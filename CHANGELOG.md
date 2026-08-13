@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 259. Immediate cached note body on macOS relaunch
+- Problem: The macOS library could restore its note list quickly while leaving the editor body empty until an iCloud-backed source file finished opening.
+- Fix: The last successfully loaded note now has one bounded local launch snapshot. Relaunch restores that note and renders its cached body immediately in read-only mode, then refreshes from the source in the background before enabling edits.
+- Lesson: A fast navigation shell also needs a small content snapshot; stale launch content may be shown for continuity only when it stays non-editable until the source of truth is confirmed.
+
 ### 258. Configurable macOS title scrolling
 - Problem: The macOS library title lived outside the body scroll view, so it was always frozen and users could not choose a continuous document-style reading layout.
 - Fix: The date and editable title now share the body document's scroll coordinates and move away with content by default. An Editor setting can freeze that header; changing it applies immediately to the open library and persists without changing note data.

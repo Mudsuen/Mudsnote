@@ -1465,6 +1465,44 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func libraryLaunchNoteCachePersistsOneBoundedDocumentAcrossStoreInstances() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let noteURL = harness.root.appendingPathComponent("Cached Launch.md")
+        let modifiedAt = Date(timeIntervalSince1970: 1_786_500_000)
+        let document = LoadedNoteDocument(
+            title: "Cached Launch",
+            body: "Immediately visible body",
+            tags: ["launch"],
+            sourceContents: "# Cached Launch\n\nImmediately visible body"
+        )
+
+        store.cacheLibraryLaunchNote(document, at: noteURL, modifiedAt: modifiedAt)
+
+        let relaunchedStore = NoteStore(
+            defaults: store.defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: store.appSupportDirectory
+        )
+        let snapshot = try #require(relaunchedStore.cachedLibraryLaunchNote())
+        #expect(snapshot.url == noteURL.standardizedFileURL)
+        #expect(snapshot.document == document)
+        #expect(snapshot.modifiedAt == modifiedAt)
+
+        relaunchedStore.cacheLibraryLaunchNote(
+            LoadedNoteDocument(
+                title: "Oversized",
+                body: String(repeating: "x", count: 4 * 1_024 * 1_024),
+                tags: [],
+                sourceContents: ""
+            ),
+            at: noteURL,
+            modifiedAt: modifiedAt
+        )
+        #expect(relaunchedStore.cachedLibraryLaunchNote() == nil)
+    }
+
+    @Test
     func preferredDirectoriesIncludeSettingsFolders() throws {
         let harness = try TestHarness()
         let store = harness.store

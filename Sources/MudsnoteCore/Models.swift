@@ -14,6 +14,18 @@ public struct LoadedNoteDocument: Equatable, Sendable {
     }
 }
 
+public struct LibraryLaunchNoteSnapshot: Equatable, Sendable {
+    public let url: URL
+    public let document: LoadedNoteDocument
+    public let modifiedAt: Date
+
+    public init(url: URL, document: LoadedNoteDocument, modifiedAt: Date) {
+        self.url = url
+        self.document = document
+        self.modifiedAt = modifiedAt
+    }
+}
+
 public struct NoteUpdateResult: Equatable, Sendable {
     public let url: URL
     public let sourceContents: String

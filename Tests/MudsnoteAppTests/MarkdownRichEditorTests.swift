@@ -8960,6 +8960,69 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func deferredLibraryLaunchShowsLastCachedBodyBeforeSlowSourceRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-launch-body-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "mudsnote.library-launch-body-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let cachedURL = try store.saveNewNote(title: "Cached Selection", body: "Fresh source body")
+        _ = try store.saveNewNote(title: "Newer List Note", body: "Other body")
+        let modifiedAt = try #require(
+            (try FileManager.default.attributesOfItem(atPath: cachedURL.path)[.modificationDate]) as? Date
+        )
+        store.cacheLibraryLaunchNote(
+            LoadedNoteDocument(
+                title: "Cached Selection",
+                body: "Cached body is immediate",
+                tags: [],
+                sourceContents: "# Cached Selection\n\nCached body is immediate"
+            ),
+            at: cachedURL,
+            modifiedAt: modifiedAt
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.45)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindowAndFocus()
+
+        #expect(controller.selectedMarkdownFileURLForLibrary() == cachedURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Cached Selection")
+        #expect(controller.editorTextView.string == "Cached body is immediate")
+        #expect(!controller.editorTextView.isEditable)
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, controller.editorTextView.string != "Fresh source body" {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(controller.editorTextView.string == "Fresh source body")
+        #expect(controller.editorTextView.isEditable)
+    }
+
+    @MainActor
+    @Test
     func libraryWindowDeferredShowSkipsMissingRecentNoteWithoutAlert() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-library-missing-recent-tests-\(UUID().uuidString)", isDirectory: true)
