@@ -309,6 +309,7 @@ struct SearchPerformanceTests {
                 tags: [],
                 tagsLower: [],
                 knowledgeLayer: nil,
+                knowledgeLinkTargets: [],
                 hasAttachments: false,
                 thumbnailURL: nil
             )

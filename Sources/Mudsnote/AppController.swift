@@ -415,6 +415,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
+
+        let knowledgeGraphItem = NSMenuItem(
+            title: "显示知识图谱",
+            action: #selector(showKnowledgeGraphFromMainMenu),
+            keyEquivalent: "g"
+        )
+        knowledgeGraphItem.target = self
+        knowledgeGraphItem.keyEquivalentModifierMask = [.command, .option]
+        viewMenu.addItem(knowledgeGraphItem)
         viewMenu.addItem(.separator())
 
         let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
@@ -830,6 +839,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
+    func showKnowledgeGraphFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.showKnowledgeGraphForLibrary()
+    }
+
+    @objc
     func setLibraryNoteViewModeFromMainMenu(_ sender: NSMenuItem) {
         guard let mode = LibraryNoteViewMode(rawValue: sender.tag) else { return }
         showLibraryWindow()
@@ -860,6 +875,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
         case #selector(restoreSelectedNotesFromMainMenu):
             return libraryWindowController?.canRestoreSelectedNotesFromMenuForLibrary ?? false
+        case #selector(showKnowledgeGraphFromMainMenu):
+            return libraryWindowController?.canShowKnowledgeGraphForLibrary ?? false
         case #selector(sortLibraryNotesFromMainMenu(_:)):
             let currentOrder = libraryWindowController?.noteListSortOrder
                 ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)

@@ -1143,6 +1143,129 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func knowledgeGraphBuildsConfirmedLocalAndGlobalSnapshotsWithoutSuggestions() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let pointURL = try store.saveNewNote(
+            title: "Point",
+            body: "数据治理事实",
+            tags: ["层级/点", "数据治理"],
+            in: notesDirectory
+        )
+        let lineURL = try store.saveNewNote(
+            title: "Line",
+            body: "[Point](\(pointURL.lastPathComponent))",
+            tags: ["层级/线", "数据治理"],
+            in: notesDirectory
+        )
+        let planeURL = try store.saveNewNote(
+            title: "Plane",
+            body: "[Line](\(lineURL.lastPathComponent))",
+            tags: ["层级/面"],
+            in: notesDirectory
+        )
+        let candidateURL = try store.saveNewNote(
+            title: "Candidate",
+            body: "数据治理事实方法",
+            tags: ["数据治理"],
+            in: notesDirectory
+        )
+        _ = try store.saveNewNote(
+            title: "Disconnected",
+            body: "No links",
+            in: notesDirectory
+        )
+
+        let oneHop = store.knowledgeGraphSnapshot(
+            scope: .local(focus: lineURL, depth: 1),
+            roots: [notesDirectory]
+        )
+        #expect(Set(oneHop.nodes.map(\.url)) == Set([
+            pointURL.standardizedFileURL,
+            lineURL.standardizedFileURL,
+            planeURL.standardizedFileURL
+        ]))
+        #expect(!oneHop.nodes.map(\.url).contains(candidateURL.standardizedFileURL))
+        #expect(oneHop.edges.count == 2)
+        #expect(oneHop.edges.allSatisfy { $0.kind == .hierarchy })
+
+        let global = store.knowledgeGraphSnapshot(scope: .global, roots: [notesDirectory])
+        #expect(Set(global.nodes.map(\.url)) == Set([
+            pointURL.standardizedFileURL,
+            lineURL.standardizedFileURL,
+            planeURL.standardizedFileURL
+        ]))
+        #expect(global.edges == oneHop.edges)
+    }
+
+    @Test
+    func knowledgeGraphDepthExpandsCyclesOnceAndCancellationPublishesNoPartialGraph() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let thirdURL = try store.saveNewNote(
+            title: "Third",
+            body: "[First](First.md)",
+            in: notesDirectory
+        )
+        let secondURL = try store.saveNewNote(
+            title: "Second",
+            body: "[Third](\(thirdURL.lastPathComponent))",
+            in: notesDirectory
+        )
+        let firstURL = try store.saveNewNote(
+            title: "First",
+            body: "[Second](\(secondURL.lastPathComponent))",
+            in: notesDirectory
+        )
+        _ = try store.updateNote(
+            at: thirdURL,
+            title: "Third",
+            body: "[First](\(firstURL.lastPathComponent))"
+        )
+
+        let oneHop = store.knowledgeGraphSnapshot(
+            scope: .local(focus: firstURL, depth: 1),
+            roots: [notesDirectory]
+        )
+        let twoHops = store.knowledgeGraphSnapshot(
+            scope: .local(focus: firstURL, depth: 2),
+            roots: [notesDirectory]
+        )
+        let beyondDiameter = store.knowledgeGraphSnapshot(
+            scope: .local(focus: firstURL, depth: 6),
+            roots: [notesDirectory]
+        )
+        let isolatedURL = try store.saveNewNote(
+            title: "Isolated",
+            body: "No confirmed links",
+            in: notesDirectory
+        )
+        let isolated = store.knowledgeGraphSnapshot(
+            scope: .local(focus: isolatedURL, depth: 3),
+            roots: [notesDirectory]
+        )
+
+        #expect(oneHop.nodes.count == 3)
+        #expect(twoHops.nodes.count == 3)
+        #expect(twoHops.edges.count == 3)
+        #expect(beyondDiameter.nodes.count == 3)
+        #expect(isolated.nodes.map(\.url) == [isolatedURL.standardizedFileURL])
+        #expect(isolated.edges.isEmpty)
+        #expect(Set(twoHops.edges.map {
+            Set([$0.sourceURL.standardizedFileURL, $0.targetURL.standardizedFileURL])
+        }).count == 3)
+        #expect(store.knowledgeGraphSnapshot(
+            scope: .global,
+            roots: [notesDirectory],
+            cancellationCheck: { true }
+        ) == .empty)
+    }
+
+    @Test
     func ordinaryMarkdownLinksDoNotFallBackToSameNamedNotes() throws {
         let harness = try TestHarness()
         let store = harness.store

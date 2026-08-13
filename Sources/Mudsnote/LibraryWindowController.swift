@@ -1258,6 +1258,7 @@ final class LibraryWindowController: NSWindowController,
     let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
+    private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1801,6 +1802,8 @@ final class LibraryWindowController: NSWindowController,
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil
+        knowledgeGraphWindowController?.close()
+        knowledgeGraphWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -1919,6 +1922,7 @@ final class LibraryWindowController: NSWindowController,
                 URL(fileURLWithPath: $0)
             })
         }
+        knowledgeGraphWindowController?.reload()
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -2384,6 +2388,9 @@ final class LibraryWindowController: NSWindowController,
         }
         noteLinksView.onGenerateHigherLayer = { [weak self] layer in
             self?.generateHigherLayerDraft(targetLayer: layer)
+        }
+        noteLinksView.onShowGraph = { [weak self] in
+            self?.showKnowledgeGraphForLibrary()
         }
 
         let stack = NSStackView(views: [dateRow, titleField, bodyContainer, noteLinksView])
@@ -6777,6 +6784,7 @@ final class LibraryWindowController: NSWindowController,
         body: String
     ) {
         refreshNoteLinks(for: noteURL, body: body)
+        knowledgeGraphWindowController?.reload()
     }
 
     private func acceptKnowledgeSuggestion(_ item: KnowledgeRelationItem) {
@@ -6807,6 +6815,8 @@ final class LibraryWindowController: NSWindowController,
     private func openKnowledgeRelation(at url: URL) {
         guard let currentURL = selectedURL?.standardizedFileURL,
               currentURL != url.standardizedFileURL else {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
         do {
@@ -6815,9 +6825,41 @@ final class LibraryWindowController: NSWindowController,
             knowledgeForwardStack.removeAll()
             updateKnowledgeNavigationControls()
             announceKnowledgeNavigation(title: url.deletingPathExtension().lastPathComponent)
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         } catch {
             presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
         }
+    }
+
+    var canShowKnowledgeGraphForLibrary: Bool {
+        selectedURL != nil
+    }
+
+    func showKnowledgeGraphForLibrary() {
+        guard let selectedURL else { return }
+        let controller: KnowledgeGraphWindowController
+        if let existing = knowledgeGraphWindowController {
+            controller = existing
+        } else {
+            let noteStore = noteStore
+            let created = KnowledgeGraphWindowController(
+                noteStore: noteStore,
+                rootsProvider: {
+                    noteStore.preferredDirectories
+                }
+            )
+            created.onOpenNode = { [weak self] url in
+                self?.openKnowledgeRelation(at: url)
+            }
+            created.onClose = { [weak self, weak created] in
+                guard self?.knowledgeGraphWindowController === created else { return }
+                self?.knowledgeGraphWindowController = nil
+            }
+            knowledgeGraphWindowController = created
+            controller = created
+        }
+        controller.show(rootURL: selectedURL)
     }
 
     private func goBackInKnowledgeRelations() {
@@ -6883,6 +6925,7 @@ final class LibraryWindowController: NSWindowController,
     private func setSelectedURLForLibrary(_ nextURL: URL?) {
         cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
         selectedURL = nextURL
+        knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
     }
 
     private func generateHigherLayerDraft(targetLayer: KnowledgeLayer) {

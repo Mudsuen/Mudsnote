@@ -91,6 +91,7 @@ final class NoteLinksView: NSView {
     var onGoBack: (() -> Void)?
     var onGoForward: (() -> Void)?
     var onGenerateHigherLayer: ((KnowledgeLayer) -> Void)?
+    var onShowGraph: (() -> Void)?
     private(set) var knowledgeRelations = KnowledgeRelations.empty
     private var hasRenderedRelations = false
     private var synthesisTargetLayer: KnowledgeLayer?
@@ -115,6 +116,23 @@ final class NoteLinksView: NSView {
         button.font = .systemFont(ofSize: 10, weight: .semibold)
         button.setAccessibilityHelp("使用当前笔记与关联笔记生成待审核草案")
         button.isHidden = true
+        return button
+    }()
+    private lazy var graphButton: NSButton = {
+        let image = NSImage(
+            systemSymbolName: "point.3.connected.trianglepath.dotted",
+            accessibilityDescription: "打开知识图谱"
+        ) ?? NSImage()
+        let button = NSButton(
+            image: image,
+            target: self,
+            action: #selector(showGraphPressed(_:))
+        )
+        button.bezelStyle = .inline
+        button.controlSize = .small
+        button.toolTip = "查看当前笔记的可视化知识图谱"
+        button.setAccessibilityLabel("打开当前笔记知识图谱")
+        button.setAccessibilityHelp("在独立窗口查看已确认的知识关系")
         return button
     }()
     private let parentsContent = NSStackView()
@@ -169,6 +187,7 @@ final class NoteLinksView: NSView {
             layerLabel,
             spacer,
             synthesisButton,
+            graphButton,
             backButton,
             forwardButton
         ])
@@ -287,6 +306,11 @@ final class NoteLinksView: NSView {
     private func generateHigherLayerPressed(_ sender: NSButton) {
         guard let targetLayer = synthesisTargetLayer else { return }
         onGenerateHigherLayer?(targetLayer)
+    }
+
+    @objc
+    private func showGraphPressed(_ sender: NSButton) {
+        onShowGraph?()
     }
 
     private func configureContentStack(_ stack: NSStackView) {

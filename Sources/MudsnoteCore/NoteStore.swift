@@ -107,6 +107,7 @@ struct NoteSearchIndexEntry: Codable {
     let tags: [String]
     let tagsLower: [String]
     let knowledgeLayer: KnowledgeLayer?
+    let knowledgeLinkTargets: [KnowledgeLinkTarget]
     let hasAttachments: Bool
     let thumbnailURL: URL?
 
@@ -125,7 +126,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 6
+    static let currentSchemaVersion = 7
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot

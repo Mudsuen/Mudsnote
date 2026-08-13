@@ -152,12 +152,200 @@ public struct KnowledgeRelations: Equatable, Sendable {
     )
 }
 
-private struct KnowledgeLinkTarget {
+public enum KnowledgeGraphScope: Equatable, Sendable {
+    case global
+    case local(focus: URL, depth: Int)
+}
+
+public enum KnowledgeGraphEdgeKind: String, Equatable, Sendable {
+    case hierarchy
+    case related
+}
+
+public struct KnowledgeGraphNode: Equatable, Hashable, Sendable {
+    public let url: URL
+    public let title: String
+    public let layer: KnowledgeLayer?
+    public let linkCount: Int
+
+    public init(
+        url: URL,
+        title: String,
+        layer: KnowledgeLayer?,
+        linkCount: Int
+    ) {
+        self.url = url
+        self.title = title
+        self.layer = layer
+        self.linkCount = linkCount
+    }
+}
+
+public struct KnowledgeGraphEdge: Equatable, Hashable, Sendable {
+    public let sourceURL: URL
+    public let targetURL: URL
+    public let kind: KnowledgeGraphEdgeKind
+
+    public init(
+        sourceURL: URL,
+        targetURL: URL,
+        kind: KnowledgeGraphEdgeKind
+    ) {
+        self.sourceURL = sourceURL
+        self.targetURL = targetURL
+        self.kind = kind
+    }
+}
+
+public struct KnowledgeGraphSnapshot: Equatable, Sendable {
+    public let nodes: [KnowledgeGraphNode]
+    public let edges: [KnowledgeGraphEdge]
+    public let focusedURL: URL?
+    public let sourceRevision: UInt64
+
+    public init(
+        nodes: [KnowledgeGraphNode],
+        edges: [KnowledgeGraphEdge],
+        focusedURL: URL?,
+        sourceRevision: UInt64 = 0
+    ) {
+        self.nodes = nodes
+        self.edges = edges
+        self.focusedURL = focusedURL
+        self.sourceRevision = sourceRevision
+    }
+
+    public static let empty = KnowledgeGraphSnapshot(
+        nodes: [],
+        edges: [],
+        focusedURL: nil,
+        sourceRevision: 0
+    )
+}
+
+struct KnowledgeLinkTarget: Codable, Equatable, Sendable {
     let value: String
     let isWikiLink: Bool
 }
 
 extension NoteStore {
+    public func knowledgeGraphSnapshot(
+        scope: KnowledgeGraphScope,
+        roots: [URL]? = nil,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> KnowledgeGraphSnapshot {
+        guard !cancellationCheck(),
+              let readView = indexedReadView(
+                roots: roots,
+                cancellationCheck: cancellationCheck
+              ) else {
+            return .empty
+        }
+        let entries = readView.entries
+
+        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.url.standardizedFileURL.path, $0)
+        })
+        let entriesByBasename = Dictionary(grouping: entries) {
+            $0.url.deletingPathExtension().lastPathComponent.lowercased()
+        }
+        let entriesBySuffix = knowledgeEntriesBySuffix(entries)
+        var uniqueEdges = Set<KnowledgeGraphEdge>()
+
+        for entry in entries {
+            guard !cancellationCheck() else { return .empty }
+            let sourceURL = entry.url.standardizedFileURL
+            let targets = resolvedKnowledgeLinkEntries(
+                entry.knowledgeLinkTargets,
+                sourceURL: sourceURL,
+                entriesByPath: entriesByPath,
+                entriesByBasename: entriesByBasename,
+                entriesBySuffix: entriesBySuffix,
+                excluding: sourceURL
+            )
+            for target in targets {
+                let edge = knowledgeGraphEdge(from: entry, to: target)
+                uniqueEdges.insert(edge)
+            }
+        }
+
+        let allEdges = uniqueEdges.sorted(by: knowledgeGraphEdgeSort)
+        let focusedURL: URL?
+        let includedPaths: Set<String>
+        switch scope {
+        case .global:
+            focusedURL = nil
+            includedPaths = Set(allEdges.flatMap {
+                [$0.sourceURL.standardizedFileURL.path, $0.targetURL.standardizedFileURL.path]
+            })
+        case .local(let focus, let requestedDepth):
+            let focusURL = focus.standardizedFileURL
+            focusedURL = focusURL
+            guard entriesByPath[focusURL.path] != nil else {
+                return KnowledgeGraphSnapshot(
+                    nodes: [],
+                    edges: [],
+                    focusedURL: focusURL,
+                    sourceRevision: readView.revision
+                )
+            }
+            var adjacency: [String: Set<String>] = [:]
+            for edge in allEdges {
+                let sourcePath = edge.sourceURL.standardizedFileURL.path
+                let targetPath = edge.targetURL.standardizedFileURL.path
+                adjacency[sourcePath, default: []].insert(targetPath)
+                adjacency[targetPath, default: []].insert(sourcePath)
+            }
+            var visited = Set([focusURL.path])
+            var frontier = Set([focusURL.path])
+            for _ in 0..<max(0, requestedDepth) {
+                guard !cancellationCheck() else { return .empty }
+                guard !frontier.isEmpty else { break }
+                var next = Set<String>()
+                for path in frontier {
+                    next.formUnion(adjacency[path] ?? [])
+                }
+                next.subtract(visited)
+                visited.formUnion(next)
+                frontier = next
+            }
+            includedPaths = visited
+        }
+
+        let edges = allEdges.filter {
+            includedPaths.contains($0.sourceURL.standardizedFileURL.path)
+                && includedPaths.contains($0.targetURL.standardizedFileURL.path)
+        }
+        var degreeByPath: [String: Int] = [:]
+        for edge in edges {
+            degreeByPath[edge.sourceURL.standardizedFileURL.path, default: 0] += 1
+            degreeByPath[edge.targetURL.standardizedFileURL.path, default: 0] += 1
+        }
+        let nodes = includedPaths.compactMap { path -> KnowledgeGraphNode? in
+            guard let entry = entriesByPath[path] else { return nil }
+            return KnowledgeGraphNode(
+                url: entry.url.standardizedFileURL,
+                title: entry.title,
+                layer: entry.knowledgeLayer,
+                linkCount: degreeByPath[path, default: 0]
+            )
+        }.sorted(by: knowledgeGraphNodeSort)
+
+        guard !cancellationCheck(),
+              isCurrentIndexedReadView(
+                rootsKey: readView.rootsKey,
+                revision: readView.revision
+              ) else {
+            return .empty
+        }
+        return KnowledgeGraphSnapshot(
+            nodes: nodes,
+            edges: edges,
+            focusedURL: focusedURL,
+            sourceRevision: readView.revision
+        )
+    }
+
     public func knowledgeRelations(
         for noteURL: URL,
         currentBody: String? = nil,
@@ -179,6 +367,7 @@ extension NoteStore {
         let entriesByBasename = Dictionary(grouping: entries) {
             $0.url.deletingPathExtension().lastPathComponent.lowercased()
         }
+        let entriesBySuffix = knowledgeEntriesBySuffix(entries)
         let currentEntry = entriesByPath[currentURL.path]
         let body = currentBody
             ?? currentEntry?.body
@@ -187,20 +376,22 @@ extension NoteStore {
         let currentLayer = currentEntry?.knowledgeLayer
 
         let outgoingEntries = resolvedKnowledgeLinkEntries(
-            in: body,
+            knowledgeLinkTargets(in: body, cancellationCheck: cancellationCheck),
             sourceURL: currentURL,
             entriesByPath: entriesByPath,
             entriesByBasename: entriesByBasename,
+            entriesBySuffix: entriesBySuffix,
             excluding: currentURL
         )
         var incomingEntriesByPath: [String: NoteSearchIndexEntry] = [:]
         for entry in entries where entry.url.standardizedFileURL.path != currentURL.path {
             guard !cancellationCheck() else { return .empty }
             let targets = resolvedKnowledgeLinkEntries(
-                in: entry.body,
+                entry.knowledgeLinkTargets,
                 sourceURL: entry.url,
                 entriesByPath: entriesByPath,
                 entriesByBasename: entriesByBasename,
+                entriesBySuffix: entriesBySuffix,
                 excluding: entry.url
             )
             if targets.contains(where: { $0.url.standardizedFileURL.path == currentURL.path }) {
@@ -301,20 +492,86 @@ extension NoteStore {
         }
     }
 
+    private func knowledgeGraphEdge(
+        from source: NoteSearchIndexEntry,
+        to target: NoteSearchIndexEntry
+    ) -> KnowledgeGraphEdge {
+        let sourceURL = source.url.standardizedFileURL
+        let targetURL = target.url.standardizedFileURL
+        if let sourceLayer = source.knowledgeLayer,
+           let targetLayer = target.knowledgeLayer,
+           sourceLayer != targetLayer {
+            if sourceLayer.rank < targetLayer.rank {
+                return KnowledgeGraphEdge(
+                    sourceURL: sourceURL,
+                    targetURL: targetURL,
+                    kind: .hierarchy
+                )
+            }
+            return KnowledgeGraphEdge(
+                sourceURL: targetURL,
+                targetURL: sourceURL,
+                kind: .hierarchy
+            )
+        }
+        let pathOrder = sourceURL.path.localizedCaseInsensitiveCompare(targetURL.path)
+        if pathOrder == .orderedAscending
+            || (pathOrder == .orderedSame && sourceURL.path < targetURL.path) {
+            return KnowledgeGraphEdge(
+                sourceURL: sourceURL,
+                targetURL: targetURL,
+                kind: .related
+            )
+        }
+        return KnowledgeGraphEdge(
+            sourceURL: targetURL,
+            targetURL: sourceURL,
+            kind: .related
+        )
+    }
+
+    private func knowledgeGraphEdgeSort(
+        _ lhs: KnowledgeGraphEdge,
+        _ rhs: KnowledgeGraphEdge
+    ) -> Bool {
+        let sourceOrder = lhs.sourceURL.path.localizedCaseInsensitiveCompare(rhs.sourceURL.path)
+        if sourceOrder != .orderedSame {
+            return sourceOrder == .orderedAscending
+        }
+        let targetOrder = lhs.targetURL.path.localizedCaseInsensitiveCompare(rhs.targetURL.path)
+        if targetOrder != .orderedSame {
+            return targetOrder == .orderedAscending
+        }
+        return lhs.kind.rawValue < rhs.kind.rawValue
+    }
+
+    private func knowledgeGraphNodeSort(
+        _ lhs: KnowledgeGraphNode,
+        _ rhs: KnowledgeGraphNode
+    ) -> Bool {
+        let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if titleOrder == .orderedSame {
+            return lhs.url.path.localizedCaseInsensitiveCompare(rhs.url.path) == .orderedAscending
+        }
+        return titleOrder == .orderedAscending
+    }
+
     private func resolvedKnowledgeLinkEntries(
-        in markdown: String,
+        _ targets: [KnowledgeLinkTarget],
         sourceURL: URL,
         entriesByPath: [String: NoteSearchIndexEntry],
         entriesByBasename: [String: [NoteSearchIndexEntry]],
+        entriesBySuffix: [String: [NoteSearchIndexEntry]],
         excluding excludedURL: URL
     ) -> [NoteSearchIndexEntry] {
         var matchesByPath: [String: NoteSearchIndexEntry] = [:]
-        for target in knowledgeLinkTargets(in: markdown) {
+        for target in targets {
             guard let entry = resolveKnowledgeLink(
                 target,
                 sourceURL: sourceURL,
                 entriesByPath: entriesByPath,
-                entriesByBasename: entriesByBasename
+                entriesByBasename: entriesByBasename,
+                entriesBySuffix: entriesBySuffix
             ), entry.url.standardizedFileURL.path != excludedURL.standardizedFileURL.path else {
                 continue
             }
@@ -327,7 +584,8 @@ extension NoteStore {
         _ target: KnowledgeLinkTarget,
         sourceURL: URL,
         entriesByPath: [String: NoteSearchIndexEntry],
-        entriesByBasename: [String: [NoteSearchIndexEntry]]
+        entriesByBasename: [String: [NoteSearchIndexEntry]],
+        entriesBySuffix: [String: [NoteSearchIndexEntry]]
     ) -> NoteSearchIndexEntry? {
         if !target.isWikiLink,
            let resolvedURL = MarkdownLocalLinkResolver.fileURL(
@@ -369,14 +627,10 @@ extension NoteStore {
             }
         }
 
-        let suffixMatches = entriesByPath.values.filter { entry in
-            extensions.contains { pathExtension in
-                entry.url.standardizedFileURL.path.hasSuffix(
-                    "/\(normalizedTarget).\(pathExtension)"
-                )
-            }
+        let suffixMatches = extensions.flatMap { pathExtension in
+            entriesBySuffix["\(normalizedTarget).\(pathExtension)"] ?? []
         }
-        if suffixMatches.count == 1 {
+        if Set(suffixMatches.map { $0.url.standardizedFileURL.path }).count == 1 {
             return suffixMatches[0]
         }
 
@@ -385,7 +639,27 @@ extension NoteStore {
         return basenameMatches.count == 1 ? basenameMatches[0] : nil
     }
 
-    private func knowledgeLinkTargets(in markdown: String) -> [KnowledgeLinkTarget] {
+    private func knowledgeEntriesBySuffix(
+        _ entries: [NoteSearchIndexEntry]
+    ) -> [String: [NoteSearchIndexEntry]] {
+        var result: [String: [NoteSearchIndexEntry]] = [:]
+        for entry in entries {
+            let components = entry.url.standardizedFileURL.pathComponents
+                .drop(while: { $0 == "/" })
+            guard !components.isEmpty else { continue }
+            for index in components.indices {
+                let suffix = components[index...].joined(separator: "/")
+                result[suffix, default: []].append(entry)
+            }
+        }
+        return result
+    }
+
+    func knowledgeLinkTargets(
+        in markdown: String,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> [KnowledgeLinkTarget] {
+        guard !cancellationCheck() else { return [] }
         var targets: [KnowledgeLinkTarget] = []
         if let expression = try? NSRegularExpression(
             pattern: #"(?<!!)\[[^\]]*\]\(([^)]+)\)"#
@@ -413,6 +687,7 @@ extension NoteStore {
             }
         }
 
+        guard !cancellationCheck() else { return [] }
         if let expression = try? NSRegularExpression(pattern: #"(?<!!)\[\[([^\]\n]+)\]\]"#) {
             let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
             targets += expression.matches(in: markdown, range: range).compactMap { match in
@@ -428,7 +703,7 @@ extension NoteStore {
                 return value.isEmpty ? nil : KnowledgeLinkTarget(value: value, isWikiLink: true)
             }
         }
-        return targets
+        return cancellationCheck() ? [] : targets
     }
 
     private func suggestedKnowledgeRelations(

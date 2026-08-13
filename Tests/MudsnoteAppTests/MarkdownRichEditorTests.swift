@@ -5430,7 +5430,9 @@ struct MarkdownRichEditorTests {
         let view = NoteLinksView(frame: .zero)
         #expect(!view.isHidden)
         var requestedLayer: KnowledgeLayer?
+        var requestedGraph = false
         view.onGenerateHigherLayer = { requestedLayer = $0 }
+        view.onShowGraph = { requestedGraph = true }
 
         view.update(KnowledgeRelations(
             currentLayer: .point,
@@ -5457,9 +5459,98 @@ struct MarkdownRichEditorTests {
             .first { $0.title == "生成线层草案" }?
             .performClick(nil)
         #expect(requestedLayer == .line)
+        let graphButton = view.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.accessibilityLabel() == "打开当前笔记知识图谱" }
+        graphButton?.performClick(nil)
+        #expect(requestedGraph)
 
         view.update(.empty)
         #expect(!view.isHidden)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeGraphCanvasFiltersNavigationFromGraphPresentation() {
+        let pointURL = URL(fileURLWithPath: "/tmp/Point.md")
+        let lineURL = URL(fileURLWithPath: "/tmp/Line.md")
+        let canvas = KnowledgeGraphCanvasView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+        let window = NSWindow(
+            contentRect: canvas.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = canvas
+        canvas.update(KnowledgeGraphSnapshot(
+            nodes: [
+                KnowledgeGraphNode(url: pointURL, title: "Point", layer: .point, linkCount: 1),
+                KnowledgeGraphNode(url: lineURL, title: "Line", layer: .line, linkCount: 1)
+            ],
+            edges: [
+                KnowledgeGraphEdge(
+                    sourceURL: pointURL,
+                    targetURL: lineURL,
+                    kind: .hierarchy
+                )
+            ],
+            focusedURL: lineURL
+        ))
+
+        #expect(canvas.accessibilityLabel()?.contains("2 个节点") == true)
+        let accessibleNodes = canvas.accessibilityChildren()?
+            .compactMap { $0 as? NSAccessibilityElement } ?? []
+        #expect(accessibleNodes.count == 2)
+        #expect(accessibleNodes.allSatisfy { $0.accessibilityRole() == .button })
+        #expect(accessibleNodes.contains {
+            $0.accessibilityLabel()?.contains("Point，点层") == true
+        })
+        canvas.zoom(by: 100)
+        canvas.zoom(by: 0.0001)
+        canvas.fitGraph()
+        #expect(canvas.acceptsFirstResponder)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeGraphWindowKeepsControlsAboveTheCanvasAtMinimumSize() throws {
+        let suiteName = "mudsnote.knowledge-graph-window-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-knowledge-graph-window-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let controller = KnowledgeGraphWindowController(noteStore: store, rootsProvider: { [] })
+        defer { controller.close() }
+        controller.window?.setContentSize(NSSize(width: 820, height: 460))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+
+        let content = try #require(controller.window?.contentView)
+        let scope = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphScopeControl"
+        })
+        let canvas = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphCanvas"
+        })
+        let toolbar = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphToolbar"
+        })
+        let scopeFrame = content.convert(scope.bounds, from: scope)
+        let canvasFrame = content.convert(canvas.bounds, from: canvas)
+        let toolbarFrame = content.convert(toolbar.bounds, from: toolbar)
+        #expect(toolbarFrame.height == 44)
+        #expect(!toolbarFrame.intersects(canvasFrame))
+        #expect(!scopeFrame.intersects(canvasFrame))
+        #expect(scopeFrame.minX >= content.bounds.minX)
+        #expect(scopeFrame.maxX <= content.bounds.maxX)
     }
 
     @MainActor
