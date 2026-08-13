@@ -8810,19 +8810,22 @@ struct MarkdownRichEditorTests {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "")
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
-        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.editorTextView.string != "Deferred body" {
+        while Date() < deadline,
+              controller.editorTextView.string != "Deferred body"
+                || controller.sourceCountTextForLibrary(titled: "Notes") != "1" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
     }
 
     @MainActor

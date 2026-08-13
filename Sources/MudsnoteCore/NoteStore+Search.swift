@@ -237,6 +237,32 @@ extension NoteStore {
             .map(\.result)
     }
 
+    /// Returns the last persisted search snapshot without walking the note roots.
+    ///
+    /// The result is intentionally not installed as the live search index because
+    /// callers must treat it as a fast, possibly stale launch placeholder until a
+    /// normal validating read completes.
+    public func cachedNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult]? {
+        let searchRoots = roots ?? knownSearchRoots()
+        let rootsKey = deduplicatedDirectories(searchRoots).map {
+            $0.standardizedFileURL.path
+        }
+
+        searchIndexLock.lock()
+        let memorySnapshot = searchIndexSnapshot?.rootsKey == rootsKey
+            ? searchIndexSnapshot
+            : nil
+        searchIndexLock.unlock()
+
+        guard let snapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey) else {
+            return nil
+        }
+        return snapshot.entries
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map(\.result)
+    }
+
     public func listNotesRefreshingIndex(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
         indexedEntries(roots: roots, validatesMemorySnapshot: true)
             .sorted { $0.modifiedAt > $1.modifiedAt }

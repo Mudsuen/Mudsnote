@@ -339,7 +339,7 @@ private final class LibrarySourceOutlineItem: NSObject {
     let kind: Kind
     weak var parent: LibrarySourceOutlineItem?
     var children: [LibrarySourceOutlineItem] = []
-    var count = 0
+    var count: Int?
 
     init(identifier: String, kind: Kind) {
         self.identifier = identifier
@@ -1345,6 +1345,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceSnapshotValidationGeneration = 0
     private var sourceCountRefreshTask: Task<Void, Never>?
     private var sourceCountRefreshGeneration = 0
+    private var hasLoadedSourceCounts = false
     private var sourceInboxDirectory: URL?
     private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
@@ -1511,7 +1512,7 @@ final class LibraryWindowController: NSWindowController,
             reloadNotes(
                 loadFirstIfNeeded: false,
                 allNotesSnapshot: recentShellNoteResults(limit: 240),
-                refreshCounts: true
+                refreshCounts: false
             )
         } else {
             hasHydratedInitialNoteList = true
@@ -1710,7 +1711,7 @@ final class LibraryWindowController: NSWindowController,
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
         let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .utility) { [weak self] in
             let inboxDirectory = noteStore.preferredInboxDirectory
             let recentCount = Self.recentFilesVisibleInLibrary(
                 noteStore: noteStore,
@@ -1718,6 +1719,31 @@ final class LibraryWindowController: NSWindowController,
                 externalDocumentPaths: externalDocumentPaths,
                 limit: 80
             ).count
+            if let cachedNotes = noteStore.cachedNotes(
+                limit: snapshotLimit,
+                roots: preferredDirectories
+            ) {
+                let cachedCountIndex = LibrarySourceCountIndex(
+                    notes: cachedNotes,
+                    folderPaths: sourceFolderPaths,
+                    inboxDirectory: inboxDirectory
+                )
+                await MainActor.run {
+                    guard let self,
+                          generation == self.fullLibrarySnapshotReloadGeneration,
+                          self.isFullLibrarySnapshotLoading else { return }
+                    let mergedCachedNotes = self.includingExternallyOpenedDocuments(in: cachedNotes)
+                    self.sourceInboxDirectory = inboxDirectory
+                    self.sourceCountSnapshot = mergedCachedNotes
+                    self.refreshSourceCounts(
+                        using: mergedCachedNotes,
+                        countIndex: self.currentSourceFolderPaths() == sourceFolderPaths
+                            ? cachedCountIndex
+                            : nil,
+                        recentCount: recentCount
+                    )
+                }
+            }
             let allNotes = noteStore.listNotesRefreshingIndex(
                 limit: snapshotLimit,
                 roots: preferredDirectories
@@ -3294,7 +3320,9 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineRootItems = roots
         sourceOutlineView.reloadData()
         restoreSourceOutlineExpansion()
-        refreshSourceCounts(using: sourceCountSnapshot)
+        if hasLoadedSourceCounts {
+            refreshSourceCounts(using: sourceCountSnapshot)
+        }
         refreshSourceSelection()
         focusInlineFolderEditField()
     }
@@ -4031,7 +4059,7 @@ final class LibraryWindowController: NSWindowController,
         trashCount: Int,
         countIndex: LibrarySourceCountIndex
     ) {
-
+        hasLoadedSourceCounts = true
         for item in sourceOutlineItemsByScopeIdentifier.values {
             guard let scope = item.scope else { continue }
             let count: Int
@@ -4057,7 +4085,8 @@ final class LibraryWindowController: NSWindowController,
         refreshVisibleSourceOutlinePresentation()
     }
 
-    private func sourceCountText(_ count: Int, for scope: LibraryScope) -> String {
+    private func sourceCountText(_ count: Int?, for scope: LibraryScope) -> String {
+        guard let count else { return "" }
         switch scope {
         case .folder:
             return String(count)
@@ -4712,7 +4741,9 @@ final class LibraryWindowController: NSWindowController,
             self?.activateSourceScope(scope) ?? false
         }
         cell.setAccessibilityLabel(title)
-        cell.setAccessibilityValue("\(item.count) 条笔记")
+        cell.setAccessibilityValue(
+            item.count.map { "\($0) 条笔记" } ?? "正在载入笔记数量"
+        )
     }
 
     private func isSourceOutlineItemVisuallySelected(_ item: LibrarySourceOutlineItem) -> Bool {

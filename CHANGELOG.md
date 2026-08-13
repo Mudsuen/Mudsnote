@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 255. Stable macOS launch counts
+- Problem: The deferred macOS library launch treated its small recent-note shell as a complete library snapshot, so every sidebar folder briefly displayed `0` while a full iCloud-backed index validation competed with initial note loading.
+- Fix: Sidebar counts now remain in a loading state until a complete snapshot exists, reuse the persisted search snapshot without walking note roots when available, and validate the live filesystem at utility priority before publishing exact counts.
+- Lesson: A partial launch projection must preserve “not loaded” as distinct from a real zero, and stale-while-revalidate is useful only when the stale snapshot is never promoted to canonical state.
+
 ### 254. Native visual knowledge graph
 - Problem: The library exposed confirmed upper, lower, and related knowledge links only as rows of text, so a point-to-line-to-plane-to-body path could not be inspected as a whole or followed spatially.
 - Fix: The macOS library now opens a read-only native knowledge graph from the relation card or View menu. It offers focused one-to-three-hop and connected global scopes, stable layer lanes and shapes, layer filters, title search, pan, pinch/button zoom, fit-to-window, and same-library node navigation. The graph is rebuilt locally from the existing explicit Markdown and Wiki relationships; suggestions and disconnected noise never become graph edges.
