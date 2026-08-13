@@ -348,9 +348,6 @@ struct CaptureConsoleView: View {
             .accessibilityLabel("More Formatting")
             .accessibilityIdentifier("capture-more-formatting")
 
-            TargetMenuView()
-                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-
             Spacer(minLength: 0)
 
             Button {

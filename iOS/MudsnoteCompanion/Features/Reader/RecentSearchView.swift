@@ -66,12 +66,18 @@ struct NotesTopBarAppearance: Equatable {
     var isToolbarBackgroundVisible: Bool
     var usesSystemScrollEdgeBlur: Bool
     var usesAdaptiveCanvas: Bool
+    var scrollEdgeBottom: CGFloat
 
     static let notes = NotesTopBarAppearance(
         isToolbarBackgroundVisible: false,
         usesSystemScrollEdgeBlur: true,
-        usesAdaptiveCanvas: true
+        usesAdaptiveCanvas: true,
+        scrollEdgeBottom: 128
     )
+
+    func scrollEdgeExtensionHeight(chromeBottom: CGFloat) -> CGFloat {
+        max(0, scrollEdgeBottom - chromeBottom)
+    }
 }
 
 struct HomeChromeMotion {
@@ -268,9 +274,17 @@ private extension View {
     }
 
     @ViewBuilder
-    func notesTopScrollEdgeBlur(isEnabled: Bool) -> some View {
+    func notesTopScrollEdgeBlur(
+        isEnabled: Bool,
+        extensionHeight: CGFloat
+    ) -> some View {
         if #available(iOS 26.0, *) {
             scrollEdgeEffectStyle(isEnabled ? .soft : nil, for: .top)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    Color.clear
+                        .frame(height: extensionHeight)
+                        .accessibilityHidden(true)
+                }
         } else {
             self
         }
@@ -613,11 +627,14 @@ struct LibraryHomeView: View {
                     searchSection
                 }
                     .padding(.horizontal, 18)
-                    .padding(.top, topChromeContentInset + 12)
+                    .padding(.top, topContentPadding + 12)
                     .padding(.bottom, 110)
             }
             .scrollDismissesKeyboard(.interactively)
-            .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
+            .notesTopScrollEdgeBlur(
+                isEnabled: !isDirectoryPresented,
+                extensionHeight: topScrollEdgeExtensionHeight
+            )
             .simultaneousGesture(TapGesture().onEnded {
                 if isSearchFocused { isSearchFocused = false }
             })
@@ -672,10 +689,13 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, topChromeContentInset + 8)
+            .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
-        .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
+        .notesTopScrollEdgeBlur(
+            isEnabled: !isDirectoryPresented,
+            extensionHeight: topScrollEdgeExtensionHeight
+        )
         .accessibilityIdentifier(homeContentIdentifier)
     }
 
@@ -930,6 +950,17 @@ struct LibraryHomeView: View {
         return "\(base)-folder:\(selectedHomeFolderPath)"
     }
 
+    private var topScrollEdgeExtensionHeight: CGFloat {
+        guard #available(iOS 26.0, *) else { return 0 }
+        return NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(
+            chromeBottom: topChromeContentInset
+        )
+    }
+
+    private var topContentPadding: CGFloat {
+        max(0, topChromeContentInset - topScrollEdgeExtensionHeight)
+    }
+
     private var allHomeNoteCount: Int {
         appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
             + appModel.inboxItems.count
@@ -987,10 +1018,13 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, topChromeContentInset + 8)
+            .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
-        .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
+        .notesTopScrollEdgeBlur(
+            isEnabled: isDirectoryPresented,
+            extensionHeight: topScrollEdgeExtensionHeight
+        )
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(MudsnoteColors.canvas)

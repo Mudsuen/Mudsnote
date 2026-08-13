@@ -98,7 +98,6 @@ final class AppModel: ObservableObject {
     private let captureFolderPreferences: CaptureFolderPreferences
     private let libraryRefreshBarrier: @Sendable () async -> Void
     private let initialLibraryLoadBarrier: @Sendable () async -> Void
-    private var captureTargetWasExplicitlySelected = false
     #if DEBUG
     private var shouldPresentAttachmentFailureFixture = ProcessInfo.processInfo.arguments.contains(
         "-ui-testing-attachment-error"
@@ -209,7 +208,6 @@ final class AppModel: ObservableObject {
     func selectFolder(_ url: URL) {
         let configurationID = beginLibraryConfiguration()
         draft.target = .folder(nil)
-        captureTargetWasExplicitlySelected = false
         Task {
             do {
                 guard libraryConfigurationID == configurationID else { return }
@@ -250,16 +248,12 @@ final class AppModel: ObservableObject {
         draft.target = .folder(nil)
         defaultCaptureFolderPath = nil
         recentCaptureFolders = []
-        captureTargetWasExplicitlySelected = false
     }
 
     func showCapture(_ route: CaptureRoute = .text) {
         endCaptureSession()
         captureSessionID = UUID()
-        if !draft.canSend {
-            captureTargetWasExplicitlySelected = false
-            draft.target = .folder(defaultCaptureFolderPath)
-        }
+        draft.target = .folder(defaultCaptureFolderPath)
         captureRoute = route
         isCapturePresented = true
         #if DEBUG
@@ -270,16 +264,10 @@ final class AppModel: ObservableObject {
         #endif
     }
 
-    func selectCaptureFolder(_ relativePath: String?) {
-        captureTargetWasExplicitlySelected = true
-        draft.target = .folder(relativePath)
-    }
-
     func setDefaultCaptureFolder(_ relativePath: String) {
         captureFolderPreferences.setDefaultFolder(relativePath)
         refreshCaptureFolderPreferences()
         if !draft.canSend, !isCapturePresented {
-            captureTargetWasExplicitlySelected = false
             draft.target = .folder(defaultCaptureFolderPath)
         }
     }
@@ -403,7 +391,9 @@ final class AppModel: ObservableObject {
               !audioRecorder.isRecording else { return }
         cancelTranscription()
         captureSubmissionIssue = nil
-        let submittedDraft = draft
+        let originalDraft = draft
+        var submittedDraft = originalDraft
+        submittedDraft.target = .folder(defaultCaptureFolderPath)
         let canUseInboxDelta = false
         isSendingDraft = true
         Task {
@@ -411,7 +401,7 @@ final class AppModel: ObservableObject {
             do {
                 try await appendDraft(submittedDraft)
                 captureSubmissionIssue = nil
-                let finished = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
+                let finished = finishSubmission(originalDraft, continueCapturing: continueCapturing)
                 statusToast = .saved(
                     finished
                         ? (continueCapturing
@@ -423,7 +413,7 @@ final class AppModel: ObservableObject {
             } catch {
                 if let draftSaveError = error as? DraftSaveError,
                    case .queuedForReplay = draftSaveError {
-                    _ = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
+                    _ = finishSubmission(originalDraft, continueCapturing: continueCapturing)
                     syncStatus = .pending
                     statusToast = .pending(String(localized: "Saved to pending queue"))
                     return
@@ -690,7 +680,6 @@ final class AppModel: ObservableObject {
             draftRecoveryEnabled = false
             draft = recovered
             draftRecoveryEnabled = true
-            captureTargetWasExplicitlySelected = true
             draftRecoveryIssue = nil
             recoveredDraftNeedsAnnouncement = true
             announceRecoveredDraftIfPossible()
@@ -2035,7 +2024,7 @@ final class AppModel: ObservableObject {
         defaultCaptureFolderPath = captureFolderPreferences.resolveDefaultFolder(
             libraryRoot: root
         )
-        if !draft.canSend, !captureTargetWasExplicitlySelected {
+        if !draft.canSend {
             draft.target = .folder(defaultCaptureFolderPath)
         }
         let nextQueue = PendingWriteQueue(root: root)
@@ -2122,7 +2111,6 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func finishSubmission(_ submittedDraft: CaptureDraft, continueCapturing: Bool) -> Bool {
         guard draft == submittedDraft else { return false }
-        captureTargetWasExplicitlySelected = false
         draft = CaptureDraft(target: .folder(defaultCaptureFolderPath))
         captureRoute = .text
         if !continueCapturing {
@@ -2148,9 +2136,8 @@ final class AppModel: ObservableObject {
         let availablePaths = Set(allFolders.map(\.relativePath))
         if case .folder(let path?) = draft.target,
            !availablePaths.contains(path) {
-            captureTargetWasExplicitlySelected = false
             draft.target = .folder(resolvedDefault)
-        } else if !draft.canSend, !captureTargetWasExplicitlySelected {
+        } else if !draft.canSend {
             draft.target = .folder(resolvedDefault)
         }
     }

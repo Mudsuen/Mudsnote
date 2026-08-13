@@ -31,7 +31,6 @@
 		BE055DEB12F946209B43C4E3 /* InboxParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A58139815644A9B64A433D /* InboxParser.swift */; };
 		6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */; };
 		5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */; };
-		0339CC9BFF6B4B8FA311E2A5 /* TargetMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5A6AAC5193479EAC58B423 /* TargetMenuView.swift */; };
 		3EB919FABD844D5D9F8D4265 /* InboxStreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A388752C1E4AE1B9AE9D37 /* InboxStreamView.swift */; };
 		03B559B451EB4FE994579990 /* MarkdownPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */; };
 		CD6BC6DBAEF0494B96B50011 /* RecentSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F922F593974C479D7C2F8B /* RecentSearchView.swift */; };
@@ -120,7 +119,6 @@
 		25A58139815644A9B64A433D /* InboxParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/InboxParser.swift; sourceTree = "<group>"; };
 		678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AudioCaptureService.swift; sourceTree = "<group>"; };
 		60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift; sourceTree = "<group>"; };
-		EE5A6AAC5193479EAC58B423 /* TargetMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Capture/TargetMenuView.swift; sourceTree = "<group>"; };
 		C9A388752C1E4AE1B9AE9D37 /* InboxStreamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/InboxStreamView.swift; sourceTree = "<group>"; };
 		830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift; sourceTree = "<group>"; };
 		E8F922F593974C479D7C2F8B /* RecentSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/RecentSearchView.swift; sourceTree = "<group>"; };
@@ -232,7 +230,6 @@
 				25A58139815644A9B64A433D /* InboxParser.swift */,
 				678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */,
 				60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */,
-				EE5A6AAC5193479EAC58B423 /* TargetMenuView.swift */,
 				C9A388752C1E4AE1B9AE9D37 /* InboxStreamView.swift */,
 				830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */,
 				E8F922F593974C479D7C2F8B /* RecentSearchView.swift */,
@@ -442,7 +439,6 @@
 				BE055DEB12F946209B43C4E3 /* InboxParser.swift in Sources */,
 				6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */,
 				5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */,
-				0339CC9BFF6B4B8FA311E2A5 /* TargetMenuView.swift in Sources */,
 				3EB919FABD844D5D9F8D4265 /* InboxStreamView.swift in Sources */,
 				03B559B451EB4FE994579990 /* MarkdownPreviewView.swift in Sources */,
 				CD6BC6DBAEF0494B96B50011 /* RecentSearchView.swift in Sources */,

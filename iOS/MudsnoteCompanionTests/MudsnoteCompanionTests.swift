@@ -174,6 +174,16 @@ final class MudsnoteCompanionTests: XCTestCase {
             NotesTopBarAppearance.notes.usesAdaptiveCanvas,
             "The navigation material must preserve the selected light or dark canvas"
         )
+        XCTAssertEqual(NotesTopBarAppearance.notes.scrollEdgeBottom, 128)
+        XCTAssertEqual(
+            NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(chromeBottom: 116),
+            12,
+            "The system blur should extend to the former opaque header boundary"
+        )
+        XCTAssertEqual(
+            NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(chromeBottom: 132),
+            0
+        )
     }
 
     func testQuickCaptureLaunchPlanSharesComposerWhilePreservingEntryBehavior() {
@@ -1272,7 +1282,7 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
-    func testOnlyCompletedCaptureWriteUpdatesRecentFolderHistory() async throws {
+    func testCaptureWriteUsesConfiguredDefaultFolderInsteadOfStaleDraftTarget() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -1299,24 +1309,28 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertEqual(model.defaultCaptureFolderPath, "Inbox")
 
-        model.selectCaptureFolder("Missing")
-        model.draft.body = "This save must fail"
+        model.setDefaultCaptureFolder("Projects")
+        model.draft.target = .folder("Missing")
+        model.draft.body = "Configured default capture"
         model.sendDraft(continueCapturing: false)
-        let failedDeadline = ContinuousClock.now + .seconds(5)
-        while ContinuousClock.now < failedDeadline, model.isSendingDraft {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTAssertNotNil(model.captureSubmissionIssue)
-        XCTAssertTrue(model.recentCaptureFolders.isEmpty)
-
-        model.draft.body = "This save completes"
-        model.selectCaptureFolder("Projects")
-        model.sendDraft(continueCapturing: false)
+        let createdNote = root.appendingPathComponent(
+            "Projects/Configured default capture.md"
+        )
         let savedDeadline = ContinuousClock.now + .seconds(5)
         while ContinuousClock.now < savedDeadline,
-              model.recentCaptureFolders.first?.relativePath != "Projects" {
+              !FileManager.default.fileExists(atPath: createdNote.path) {
             try await Task.sleep(for: .milliseconds(20))
         }
+
+        XCTAssertNil(model.captureSubmissionIssue)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: createdNote.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(
+                    "Missing/Configured default capture.md"
+                ).path
+            )
+        )
         XCTAssertEqual(model.recentCaptureFolders.first?.relativePath, "Projects")
     }
 
