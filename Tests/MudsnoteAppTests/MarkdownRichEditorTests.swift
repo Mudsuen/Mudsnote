@@ -8286,9 +8286,14 @@ struct MarkdownRichEditorTests {
 
         let delayedRow = try #require(row(for: delayedURL))
         let targetRow = try #require(row(for: targetURL))
+        let initialTitle = controller.titleField.stringValue
+        let initialBody = controller.editorTextView.string
         let selectionStart = Date()
         controller.tableView.selectRowIndexes(IndexSet(integer: delayedRow), byExtendingSelection: false)
         #expect(Date().timeIntervalSince(selectionStart) < 0.2)
+        #expect(controller.titleField.stringValue == initialTitle)
+        #expect(controller.editorTextView.string == initialBody)
+        #expect(!controller.editorTextView.isEditable)
 
         controller.tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
         await controller.waitForActiveNoteLoadForLibrary()

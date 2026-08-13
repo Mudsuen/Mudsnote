@@ -1349,6 +1349,7 @@ final class LibraryWindowController: NSWindowController,
     private var deferredFileSystemChangesDuringAutosave = Set<LibraryFileSystemChange>()
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
+    private var noteLoadFallbackURL: URL?
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
@@ -6648,10 +6649,11 @@ final class LibraryWindowController: NSWindowController,
     private func load(note: NoteSearchResult) {
         isLoadingInitialNote = false
         isCreatingNewNote = false
-        cancelActiveNoteLoad()
+        cancelActiveNoteLoad(preservingFallback: true)
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
         if let cached = cachedLoadedNote(for: note) {
+            noteLoadFallbackURL = nil
             applyLoadedNote(cached, for: note)
             scheduleCachedNoteValidation(cached, for: note)
             return
@@ -6663,7 +6665,7 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        showInitialNoteLoadingShell(for: note)
+        beginNoteSwitchLoading(note)
         let generation = noteLoadGeneration
         let editorRevision = editorContentRevision
         let noteLoader = noteLoader
@@ -6732,10 +6734,24 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func cancelActiveNoteLoad() {
+    private func cancelActiveNoteLoad(preservingFallback: Bool = false) {
         noteLoadTask?.cancel()
         noteLoadTask = nil
         noteLoadGeneration += 1
+        if !preservingFallback {
+            noteLoadFallbackURL = nil
+        }
+    }
+
+    private func beginNoteSwitchLoading(_ note: NoteSearchResult) {
+        if noteLoadFallbackURL == nil {
+            noteLoadFallbackURL = selectedURL
+        }
+        isLoadingInitialNote = true
+        setSelectedURLForLibrary(note.url)
+        setEditorEditable(false)
+        updateEditorStatus("正在载入…")
+        updateToolbarActionState()
     }
 
     private func applyLoadedNoteResult(
@@ -6746,9 +6762,16 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = false
         switch result {
         case .success(let loaded):
+            noteLoadFallbackURL = nil
             let cached = cacheLoadedNote(loaded, for: note, fileModifiedAt: fileModifiedAt)
             applyLoadedNote(cached, for: note)
         case .failure(let error):
+            let fallbackURL = noteLoadFallbackURL
+            noteLoadFallbackURL = nil
+            setSelectedURLForLibrary(fallbackURL)
+            setEditorEditable(selectedScope != .trash)
+            restoreNoteBrowserSelection(to: fallbackURL)
+            updateToolbarActionState()
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
     }

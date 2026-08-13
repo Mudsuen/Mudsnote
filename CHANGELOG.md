@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 257. Flicker-free macOS note switching
+- Problem: Selecting an uncached note replaced the current title and editor body with an empty loading shell before its background read completed, exposing a blank frame during otherwise responsive navigation.
+- Fix: Ordinary note switches now keep the last fully rendered document visible but read-only while the next note loads, then replace title, body, tags, status, and links together. Rapid selections still cancel stale work, cached notes remain immediate, failed loads restore the previous selection, and only the first launch uses the empty loading shell.
+- Lesson: Asynchronous navigation should retain the last complete frame until the next complete frame is ready; clearing content is a launch placeholder, not a transition animation.
+
 ### 256. Immediate macOS library deletion
 - Problem: Note deletion waited for saving, filesystem moves, trash metadata, source-count recomputation, and sidebar reconstruction before showing an existing deletion animation, making even successful actions feel stalled.
 - Fix: Toolbar, menu, and keyboard deletion now remove clean notes from the visible projection immediately and animate that state, while a serialized background queue performs trash or permanent deletion. Counts refresh off the main thread, pending paths stay excluded from search refreshes, and a failed operation restores its note and reports the persistence error.
