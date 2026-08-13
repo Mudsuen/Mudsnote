@@ -844,6 +844,34 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func libraryLaunchNoteCacheRestoresOneBoundedDocumentAcrossStoreInstances() throws {
+        let harness = try TestHarness()
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        harness.store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try harness.store.saveNewNote(
+            title: "Instant Launch",
+            body: "Visible without waiting for iCloud.",
+            tags: ["launch"],
+            in: notesDirectory
+        )
+        let document = try harness.store.loadNoteDocument(at: noteURL)
+        let modifiedAt = Date(timeIntervalSince1970: 1_786_612_800)
+        harness.store.cacheLibraryLaunchNote(document, at: noteURL, modifiedAt: modifiedAt)
+
+        let reloadedStore = NoteStore(
+            defaults: harness.defaults,
+            legacyDefaults: nil,
+            fileManager: FileManager.default,
+            appSupportDirectory: harness.store.appSupportDirectory
+        )
+        let snapshot = try #require(reloadedStore.cachedLibraryLaunchNote())
+
+        #expect(snapshot.url == noteURL.standardizedFileURL)
+        #expect(snapshot.document == document)
+        #expect(snapshot.modifiedAt == modifiedAt)
+    }
+
+    @Test
     func searchIndexPersistsAndReloadsAcrossStoreInstances() throws {
         let harness = try TestHarness()
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)

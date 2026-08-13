@@ -422,7 +422,6 @@ final class LibrarySourceOutlineView: NSOutlineView {
         selectionBeforePrimaryMouseDown = selectedRowIndexes
         isDeferringPrimaryMouseSelectionCommit = true
         primaryMouseVisualSelectionRow = visualSelectionRow
-        onPrimaryMouseSelectionPreviewChanged?()
     }
 
     func finishPrimaryMouseSelectionDeferral() {
@@ -1319,6 +1318,10 @@ final class LibraryWindowController: NSWindowController,
         label: "local.codex.mudsnote.library-autosave",
         qos: .utility
     )
+    private let launchNoteCacheQueue = DispatchQueue(
+        label: "local.codex.mudsnote.library-launch-note-cache",
+        qos: .utility
+    )
     private let backgroundAutosaveResultStore = LibraryBackgroundSaveResultStore()
     private var backgroundAutosaveGeneration = 0
     private var backgroundAutosaveIsActive = false
@@ -1328,6 +1331,7 @@ final class LibraryWindowController: NSWindowController,
     private var deferredFileSystemChangesDuringAutosave = Set<LibraryFileSystemChange>()
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
+    private var persistedLaunchFallbackURL: URL?
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
@@ -1582,16 +1586,50 @@ final class LibraryWindowController: NSWindowController,
     private func hydrateInitialNoteListIfNeeded() {
         guard !hasHydratedInitialNoteList else { return }
         hasHydratedInitialNoteList = true
-        if selectedURL == nil,
-           let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }),
-           let noteToLoad = note(at: firstNoteRow) {
+        if selectedURL == nil {
+            let launchSnapshot = noteStore.cachedLibraryLaunchNote()
+            let cachedPath = launchSnapshot?.url.standardizedFileURL.path
+            let noteRow = cachedPath.flatMap(rowIndex(for:))
+                ?? listRows.firstIndex(where: { $0.note != nil })
+            guard let noteRow,
+                  let noteToLoad = note(at: noteRow) else {
+                scheduleFullLibrarySnapshotReload()
+                return
+            }
             suppressSelectionChanges = true
-            tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
+            tableView.selectRowIndexes(IndexSet(integer: noteRow), byExtendingSelection: false)
             suppressSelectionChanges = false
-            showInitialNoteLoadingShell(for: noteToLoad)
+            if let launchSnapshot,
+               launchSnapshot.url.standardizedFileURL.path
+                    == noteToLoad.url.standardizedFileURL.path {
+                showPersistedInitialNote(launchSnapshot, for: noteToLoad)
+            } else {
+                showInitialNoteLoadingShell(for: noteToLoad)
+            }
             loadInitialNoteAfterLaunch(noteToLoad)
         }
         scheduleFullLibrarySnapshotReload()
+    }
+
+    private func showPersistedInitialNote(
+        _ snapshot: LibraryLaunchNoteSnapshot,
+        for note: NoteSearchResult
+    ) {
+        isLoadingInitialNote = true
+        isCreatingNewNote = false
+        persistedLaunchFallbackURL = note.url.standardizedFileURL
+        selectedURL = note.url
+        selectedSourceContents = snapshot.document.sourceContents
+        noteLinksView.update(.empty)
+        setEditorEditable(false)
+        applyDocument(
+            title: snapshot.document.title,
+            body: snapshot.document.body,
+            tags: snapshot.document.tags
+        )
+        isDirty = false
+        updateEditorStatus(editorDateText(for: snapshot.modifiedAt))
+        updateToolbarActionState()
     }
 
     private func showInitialNoteLoadingShell(for note: NoteSearchResult) {
@@ -1644,6 +1682,19 @@ final class LibraryWindowController: NSWindowController,
             return
         }
         guard selectedNoteStillMatchesInitialLoad(note) else { return }
+        if case .failure(let error) = result,
+           persistedLaunchFallbackURL?.standardizedFileURL.path
+                == note.url.standardizedFileURL.path {
+            isLoadingInitialNote = false
+            updateEditorStatus(
+                "暂时无法刷新",
+                kind: .failure,
+                toolTip: error.localizedDescription
+            )
+            updateToolbarActionState()
+            return
+        }
+        persistedLaunchFallbackURL = nil
         applyLoadedNoteResult(result, for: note)
     }
 
@@ -4401,7 +4452,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func recentShellNoteResults(limit: Int) -> [NoteSearchResult] {
-        recentFilesVisibleInLibrary(limit: limit).map { note in
+        var results = recentFilesVisibleInLibrary(limit: limit).map { note in
             NoteSearchResult(
                 url: note.url,
                 title: note.title,
@@ -4412,6 +4463,34 @@ final class LibraryWindowController: NSWindowController,
                 thumbnailURL: nil
             )
         }
+        if let cached = noteStore.cachedLibraryLaunchNote(),
+           noteStore.preferredDirectories.contains(where: {
+               let rootPath = $0.standardizedFileURL.path
+               let notePath = cached.url.standardizedFileURL.path
+               return notePath.hasPrefix(rootPath + "/")
+           }),
+           !results.contains(where: {
+               $0.url.standardizedFileURL.path == cached.url.standardizedFileURL.path
+           }) {
+            results.insert(
+                NoteSearchResult(
+                    url: cached.url,
+                    title: cached.document.title,
+                    snippet: "",
+                    modifiedAt: cached.modifiedAt,
+                    tags: cached.document.tags,
+                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(
+                        in: cached.document.body
+                    ),
+                    thumbnailURL: nil
+                ),
+                at: 0
+            )
+            if results.count > limit {
+                results.removeLast(results.count - limit)
+            }
+        }
+        return results
     }
 
     private func recentNoteResults(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
@@ -4695,6 +4774,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func isSourceOutlineItemVisuallySelected(_ item: LibrarySourceOutlineItem) -> Bool {
         guard let scope = item.scope else { return false }
+        if sourceOutlineView.isDeferringPrimaryMouseSelectionCommit {
+            return selectedScope == scope
+        }
         let row = sourceOutlineView.row(forItem: item)
         let visualSelectionRow = sourceOutlineView.primaryMouseVisualSelectionRow
             ?? sourceOutlineView.selectedRow
@@ -6564,6 +6646,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func load(note: NoteSearchResult) {
         isLoadingInitialNote = false
+        persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
         cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
@@ -6886,11 +6969,17 @@ final class LibraryWindowController: NSWindowController,
         for note: NoteSearchResult,
         fileModifiedAt: Date? = nil
     ) -> LoadedLibraryNoteCacheEntry {
+        let modifiedAt = fileModifiedAt ?? note.modifiedAt
         let cached = LoadedLibraryNoteCacheEntry(
             loaded: loaded,
-            fileModifiedAt: fileModifiedAt ?? note.modifiedAt
+            fileModifiedAt: modifiedAt
         )
         loadedNoteCache.insert(cached, forKey: loadedNoteCacheKey(for: note.url))
+        let noteStore = noteStore
+        let noteURL = note.url
+        launchNoteCacheQueue.async {
+            noteStore.cacheLibraryLaunchNote(loaded, at: noteURL, modifiedAt: modifiedAt)
+        }
         return cached
     }
 

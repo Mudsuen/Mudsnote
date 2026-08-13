@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 255. Instant macOS library restoration and release-committed sidebar feedback
+- Problem: Relaunching the macOS library still showed an empty editor while the selected iCloud note downloaded, and source rows changed selection color during mouse-down before the click had committed.
+- Fix: The library keeps one bounded local snapshot of the last successfully loaded document, restores it synchronously for the first frame, and validates the real Markdown file in the background. Source rows now preserve the prior selection appearance throughout mouse-down and switch color and content only after mouse-up commits the selection.
+- Lesson: A cloud-backed app needs a small local presentation snapshot for an immediate first frame, and selection visuals should follow the committed interaction state rather than the transient AppKit selection preview.
+
 ### 254. Unified macOS library title and body editor
 - Problem: The macOS library used an independent single-line title field whose intrinsic layout could stretch the home window for long titles and split one note into separate editing regions.
 - Fix: The library now presents one continuous editor, automatically styles the first line as the note title, returns subsequent lines to body formatting, and parses the unified document back into the existing title/body storage contract. Long titles wrap within the editor without changing the library window width.

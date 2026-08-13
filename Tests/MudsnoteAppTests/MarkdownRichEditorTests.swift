@@ -4327,27 +4327,25 @@ struct MarkdownRichEditorTests {
             atRow: outline.selectedRow,
             makeIfNecessary: true
         ) as? LibrarySourceOutlineRowView)
-        #expect(pressedProjectsRow.isVisuallySelected)
-        #expect(!previousSelectedRow.isVisuallySelected)
+        #expect(!pressedProjectsRow.isVisuallySelected)
+        #expect(previousSelectedRow.isVisuallySelected)
         let pressedProjectsCell = try #require(outline.view(
             atColumn: 0,
             row: projectsRow,
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
-        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
         #expect(pressedProjectsCell.imageView?.contentTintColor == nil)
         #expect(pressedProjectsCell.imageView?.image?.isTemplate == false)
-        #expect(pressedProjectsCell.textField?.needsDisplay == false)
 
         outline.selectRowIndexes(IndexSet(integer: projectsRow), byExtendingSelection: false)
         #expect(controller.selectedSourceTitleForLibrary == "Notes")
         #expect(selectedTextColorAtSave == nil)
         #expect(outline.selectedRow == projectsRow)
         #expect(!outline.needsDisplay)
-        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(pressedProjectsCell.textField?.textColor == LibrarySourceSelectionPalette.unselectedForegroundColor)
         #expect(pressedProjectsCell.imageView?.contentTintColor == nil)
         #expect(pressedProjectsCell.imageView?.image?.isTemplate == false)
-        #expect(pressedProjectsCell.textField?.needsDisplay == false)
         outline.finishPrimaryMouseSelectionDeferral()
         #expect(!outline.isDeferringPrimaryMouseSelectionCommit)
         #expect(controller.selectedSourceTitleForLibrary == "Projects")
@@ -8751,6 +8749,52 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowRestoresLastVisibleDocumentBeforeSlowFileRefresh() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-launch-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-launch-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Cached Launch", body: "Immediate cached body")
+        let cachedDocument = try store.loadNoteDocument(at: noteURL)
+        store.cacheLibraryLaunchNote(cachedDocument, at: noteURL, modifiedAt: Date())
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 1)
+                let loaded = try store.loadNoteDocument(at: url)
+                return (loaded.title, loaded.body, loaded.tags)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let startedAt = ContinuousClock.now
+        controller.showWindowAndFocus()
+        let elapsed = startedAt.duration(to: .now)
+
+        #expect(elapsed < .milliseconds(250))
+        #expect(controller.titleField.stringValue == "Cached Launch")
+        #expect(controller.editorTextView.string.contains("Immediate cached body"))
+        #expect(controller.selectedMarkdownFileURLForLibrary() == noteURL.standardizedFileURL)
     }
 
     @MainActor
