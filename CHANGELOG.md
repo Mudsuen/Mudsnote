@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 254. Unified macOS library title and body editor
+- Problem: The macOS library used an independent single-line title field whose intrinsic layout could stretch the home window for long titles and split one note into separate editing regions.
+- Fix: The library now presents one continuous editor, automatically styles the first line as the note title, returns subsequent lines to body formatting, and parses the unified document back into the existing title/body storage contract. Long titles wrap within the editor without changing the library window width.
+- Lesson: A title can remain a storage and presentation semantic without becoming a separate layout-owning control.
+
 ### 253. Corrected iOS folder, capture, and preview behavior
 - Problem: A heading disclosure affordance was added without product intent, the folder drawer lost its hierarchy, its selection semantics and top material landed on the wrong surfaces, new captures exposed internal IDs and timestamps, and native preview selection handles disappeared.
 - Fix: Headings remain presentation-only; the recursive folder drawer is restored while folder taps filter the existing home timeline. The top chrome keeps the adaptive canvas color and uses the native soft scroll-edge blur, so content progressively loses focus without a white opacity gradient or an extra compositing layer; only the active surface renders that blur. The drawer keeps one Folders title, centers it within the revealed panel, and moves Settings into the Library card. Independent captures use readable collision-safe names and clean Markdown without hidden write markers or timestamp headings, unchanged autosaved new notes still finalize on edit exit, native selection spans rendered paragraphs and list markers, and appearance can follow the system or stay explicitly light or dark.

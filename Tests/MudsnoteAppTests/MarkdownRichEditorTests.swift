@@ -2768,7 +2768,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorTitleFontSize == 24)
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.accessibilityLabel() == "笔记标题")
-        #expect(controller.editorTextView.accessibilityLabel() == "笔记正文")
+        #expect(controller.editorTextView.accessibilityLabel() == "笔记内容")
         #expect(controller.statusLabel.accessibilityLabel() == "笔记状态")
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
@@ -2823,7 +2823,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
         #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
-        #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
+        #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
         #expect(LibraryNotesLayout.editorTopInset + LibraryNotesLayout.editorDateToTitleSpacing == 17)
@@ -2839,13 +2839,13 @@ struct MarkdownRichEditorTests {
                 && $0.secondItem === editorPane.safeAreaLayoutGuide
                 && $0.secondAttribute == .top
         })
-        #expect(editorStack.constraints.contains {
-            $0.firstAttribute == .width
-                && $0.firstItem === controller.titleField
-                && $0.secondItem === editorStack
-                && $0.constant == -(LibraryNotesLayout.editorHorizontalInset * 2)
-        })
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
+        #expect(controller.titleField.superview == nil)
+        #expect(
+            MarkdownRichTextCodec.serialize(
+                controller.editorTextView.attributedString(),
+                theme: controller.theme
+            ) == "# Library Seed\n\nBody line"
+        )
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-10"
         })
@@ -2917,7 +2917,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryTitleReturnMovesToStartOfBodyWithoutSelectingTitle() throws {
+    func libraryTitleIsTheFirstEditorLineAndReturnCreatesBodyParagraph() throws {
         let suiteName = "mudsnote-library-title-return-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -2935,7 +2935,7 @@ struct MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
-        _ = try store.saveNewNote(title: "Return Target", body: "Existing body")
+        _ = try store.saveNewNote(title: "Return Target", body: "")
 
         let controller = LibraryWindowController(
             noteStore: store,
@@ -2946,20 +2946,98 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
-        #expect(window.makeFirstResponder(controller.titleField))
-        let fieldEditor = try #require(controller.titleField.currentEditor() as? NSTextView)
-        fieldEditor.setSelectedRange(NSRange(location: 3, length: 0))
-        controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.string.utf16.count, length: 0))
-
-        #expect(controller.control(
-            controller.titleField,
-            textView: fieldEditor,
-            doCommandBy: #selector(NSResponder.insertNewline(_:))
-        ))
-        #expect(window.firstResponder === controller.editorTextView)
-        #expect(controller.editorTextView.selectedRange() == NSRange(location: 0, length: 0))
+        #expect(window.makeFirstResponder(controller.editorTextView))
+        #expect(controller.titleField.superview == nil)
         #expect(controller.titleField.stringValue == "Return Target")
-        #expect(controller.editorTextView.string == "Existing body")
+        #expect(controller.editorTextView.string == "Return Target")
+        #expect(
+            MarkdownRichTextCodec.serialize(
+                controller.editorTextView.attributedString(),
+                theme: controller.theme
+            ) == "# Return Target"
+        )
+
+        let titleRange = NSRange(location: 0, length: "Return Target".utf16.count)
+        let titleKind = MarkdownRichTextCodec.paragraphKind(
+            at: titleRange,
+            in: try #require(controller.editorTextView.textStorage)
+        )
+        #expect(titleKind == .heading(level: 1))
+
+        controller.editorTextView.setSelectedRange(NSRange(location: titleRange.length, length: 0))
+        controller.markdownTextViewInsertNewline(controller.editorTextView)
+        #expect(controller.editorTextView.string == "Return Target\n")
+        #expect(controller.editorTextView.selectedRange().location == titleRange.length + 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryLongTitleWrapsInsideUnifiedEditorWithoutStretchingWindow() throws {
+        let suiteName = "mudsnote-library-long-title-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-long-title-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "短标题", body: "正文")
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        let window = try #require(controller.window)
+        let originalWidth = window.frame.width
+        let longTitle = String(repeating: "这是一个不会拉伸主页宽度的长标题", count: 12)
+        let markdown = MarkdownEditorDocument.composeEditorText(title: longTitle, body: "正文")
+        controller.editorTextView.textStorage?.setAttributedString(
+            MarkdownRichTextCodec.render(markdown: markdown, theme: controller.theme)
+        )
+        controller.textDidChange(Notification(
+            name: NSText.didChangeNotification,
+            object: controller.editorTextView
+        ))
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        #expect(controller.titleField.superview == nil)
+        #expect(controller.titleField.stringValue == longTitle)
+        #expect(abs(window.frame.width - originalWidth) < 0.5)
+        #expect(!controller.editorTextView.isHorizontallyResizable)
+        #expect(controller.editorTextView.enclosingScrollView?.hasHorizontalScroller == false)
+
+        let serialized = MarkdownRichTextCodec.serialize(
+            controller.editorTextView.attributedString(),
+            theme: controller.theme
+        )
+        let document = MarkdownEditorDocument.parse(editorText: serialized)
+        #expect(document.title == longTitle)
+        #expect(document.body == "正文")
+
+        let layoutManager = try #require(controller.editorTextView.layoutManager)
+        let titleCharacterRange = NSRange(location: 0, length: longTitle.utf16.count)
+        let titleGlyphRange = layoutManager.glyphRange(
+            forCharacterRange: titleCharacterRange,
+            actualCharacterRange: nil
+        )
+        var titleLineCount = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: titleGlyphRange) { _, _, _, _, _ in
+            titleLineCount += 1
+        }
+        #expect(titleLineCount > 1)
     }
 
     @MainActor
@@ -5838,7 +5916,7 @@ struct MarkdownRichEditorTests {
         await controller.waitForSourceCountRefreshForLibrary()
         let displayedTimeBeforeEdit = controller.statusLabel.stringValue
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Autosaved body",
+            markdown: "# Autosave Seed\n\nAutosaved body",
             theme: controller.theme,
             baseURL: noteURL
         ))
@@ -5848,6 +5926,7 @@ struct MarkdownRichEditorTests {
 
         controller.flushBackgroundAutosaveForTesting()
         let loaded = try store.loadNote(at: noteURL)
+        #expect(loaded.title == "Autosave Seed")
         #expect(loaded.body == "Autosaved body")
         #expect(!writeThreadRecorder.didObserveMainThread())
         #expect(controller.statusLabel.stringValue != displayedTimeBeforeEdit)

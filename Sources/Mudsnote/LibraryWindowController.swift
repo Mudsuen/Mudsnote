@@ -2307,6 +2307,8 @@ final class LibraryWindowController: NSWindowController,
         titleField.drawsBackground = false
         titleField.focusRingType = .none
         titleField.delegate = self
+        titleField.isHidden = true
+        titleField.setAccessibilityElement(false)
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
         statusLabel.setAccessibilityLabel("笔记状态")
@@ -2371,14 +2373,13 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        let stack = NSStackView(views: [dateRow, titleField, bodyContainer, noteLinksView])
+        let stack = NSStackView(views: [dateRow, bodyContainer, noteLinksView])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
         stack.spacing = 0
         stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
-        stack.setCustomSpacing(LibraryNotesLayout.editorTitleToBodySpacing, after: titleField)
         stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
             top: LibraryNotesLayout.editorTopInset,
@@ -2435,7 +2436,6 @@ final class LibraryWindowController: NSWindowController,
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
             dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
-            titleField.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
             bodyContainer.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
@@ -3144,7 +3144,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func configureEditorTextView() {
-        editorTextView.setAccessibilityLabel("笔记正文")
+        editorTextView.setAccessibilityLabel("笔记内容")
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
@@ -5757,6 +5757,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if object === titleField {
+            replaceUnifiedEditorTitle(titleField.stringValue)
             markDirty()
         }
     }
@@ -5822,6 +5823,8 @@ final class LibraryWindowController: NSWindowController,
 
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
+            normalizeUnifiedTitleLineFormatting()
+            titleField.stringValue = currentEditorDocument().title
             libraryUserDidEdit()
         } else {
             markDirty()
@@ -5964,10 +5967,10 @@ final class LibraryWindowController: NSWindowController,
             updateEditorStatus(editorDateText(for: Date()))
             refreshSourceSelection()
             updateToolbarActionState()
-            window?.makeFirstResponder(titleField)
+            window?.makeFirstResponder(editorTextView)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isCreatingNewNote else { return }
-                self.window?.makeFirstResponder(self.titleField)
+                self.window?.makeFirstResponder(self.editorTextView)
             }
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -6696,7 +6699,10 @@ final class LibraryWindowController: NSWindowController,
             renderedBody = rendered
         } else {
             let rendered = MarkdownRichTextCodec.render(
-                markdown: cached.loaded.body,
+                markdown: MarkdownEditorDocument.composeEditorText(
+                    title: cached.loaded.title,
+                    body: cached.loaded.body
+                ),
                 theme: theme,
                 baseURL: note.url,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
@@ -6797,15 +6803,16 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
         selectedTags = tags
+        let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(title: title, body: body)
         editorTextView.textStorage?.setAttributedString(
             renderedBody ?? MarkdownRichTextCodec.render(
-                markdown: body,
+                markdown: unifiedMarkdown,
                 theme: theme,
                 baseURL: selectedURL,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
         )
-        editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+        editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
         let requestedSelection = preservedSelection ?? NSRange(location: 0, length: 0)
         let contentLength = editorTextView.textStorage?.length ?? 0
         let location = min(requestedSelection.location, contentLength)
@@ -6816,6 +6823,53 @@ final class LibraryWindowController: NSWindowController,
 
     private func normalizedEditorMarkdownBody() -> String {
         normalizedMarkdownBody(currentEditorMarkdownBody())
+    }
+
+    private func replaceUnifiedEditorTitle(_ title: String) {
+        let document = currentEditorDocument()
+        let markdown = MarkdownEditorDocument.composeEditorText(title: title, body: document.body)
+        let selection = editorTextView.selectedRange()
+        suppressEditorChanges = true
+        editorTextView.textStorage?.setAttributedString(
+            MarkdownRichTextCodec.render(
+                markdown: markdown,
+                theme: theme,
+                baseURL: selectedURL,
+                imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
+            )
+        )
+        suppressEditorChanges = false
+        let contentLength = editorTextView.textStorage?.length ?? 0
+        editorTextView.setSelectedRange(NSRange(location: min(selection.location, contentLength), length: 0))
+    }
+
+    private func normalizeUnifiedTitleLineFormatting() {
+        guard !suppressEditorChanges,
+              !isEditorShowingMarkdownSource,
+              let storage = editorTextView.textStorage else {
+            return
+        }
+        guard storage.length > 0 else {
+            editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
+            return
+        }
+
+        let firstParagraph = (storage.string as NSString).paragraphRange(
+            for: NSRange(location: 0, length: 0)
+        )
+        let hasTrailingNewline = (storage.string as NSString)
+            .substring(with: firstParagraph)
+            .hasSuffix("\n")
+        let titleRange = NSRange(
+            location: 0,
+            length: max(firstParagraph.length - (hasTrailingNewline ? 1 : 0), 0)
+        )
+        guard titleRange.length > 0 else { return }
+
+        let headingAttributes = theme.baseAttributes(for: .heading(level: 1))
+        suppressEditorChanges = true
+        storage.addAttributes(headingAttributes, range: titleRange)
+        suppressEditorChanges = false
     }
 
     private func normalizedMarkdownBody(_ body: String) -> String {
@@ -7080,8 +7134,6 @@ final class LibraryWindowController: NSWindowController,
             backgroundAutosaveNeedsLatest = true
             return
         }
-        let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = rawTitle.isEmpty ? "无标题" : rawTitle
         let editorSnapshot: LibraryBackgroundEditorSnapshot
         if isEditorShowingMarkdownSource {
             editorSnapshot = LibraryBackgroundEditorSnapshot(
@@ -7115,12 +7167,17 @@ final class LibraryWindowController: NSWindowController,
         autosavePersistenceQueue.async { [weak self] in
             willPersist()
             let result = Result {
+                let document = MarkdownEditorDocument.parse(
+                    editorText: editorSnapshot.markdown(),
+                    tags: tags
+                )
+                let title = document.title.isEmpty ? "无标题" : document.title
                 let snapshot = LibraryBackgroundSaveSnapshot(
                     generation: generation,
                     editorRevision: editorRevision,
                     previousURL: previousURL,
                     title: title,
-                    body: editorSnapshot.markdown().trimmingCharacters(in: .whitespacesAndNewlines),
+                    body: document.body,
                     tags: tags,
                     targetDirectory: targetDirectory,
                     updatesInPlace: updatesInPlace,
@@ -7302,11 +7359,22 @@ final class LibraryWindowController: NSWindowController,
             && backgroundAutosaveActivePreviousURL?.path == selectedURL?.path
     }
 
-    private func currentEditorMarkdownBody() -> String {
+    private func serializedEditorMarkdown() -> String {
         if isEditorShowingMarkdownSource {
             return editorTextView.string
         }
         return MarkdownRichTextCodec.serialize(editorTextView.attributedString(), theme: theme)
+    }
+
+    private func currentEditorDocument() -> MarkdownEditorDocument {
+        MarkdownEditorDocument.parse(
+            editorText: serializedEditorMarkdown(),
+            tags: selectedTags
+        )
+    }
+
+    private func currentEditorMarkdownBody() -> String {
+        currentEditorDocument().body
     }
 
     private func updateEditorStatus(
@@ -7338,10 +7406,9 @@ final class LibraryWindowController: NSWindowController,
         autosaveTask = nil
         cancelSourceSnapshotValidation()
 
-        let rawTitle = titleField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = currentEditorMarkdownBody()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = rawTitle.isEmpty ? "无标题" : rawTitle
+        let document = currentEditorDocument()
+        let body = document.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = document.title.isEmpty ? "无标题" : document.title
         guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return nil }
 
         let previousURL = selectedURL
@@ -10051,7 +10118,12 @@ final class LibraryWindowController: NSWindowController,
         let selection = editorTextView.selectedRange()
         let location = max(min(selection.location, storage.length), 0)
 
-        if storage.length == 0 || location == 0 {
+        if storage.length == 0 {
+            editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
+            return
+        }
+
+        if location == 0 {
             if storage.length > 0,
                storage.attribute(.qmTableID, at: 0, effectiveRange: nil) != nil {
                 var attributes = storage.attributes(at: 0, effectiveRange: nil)
@@ -10059,7 +10131,7 @@ final class LibraryWindowController: NSWindowController,
                 editorTextView.typingAttributes = attributes
                 return
             }
-            editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
+            editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
             return
         }
 
