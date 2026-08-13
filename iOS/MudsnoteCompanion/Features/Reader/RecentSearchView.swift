@@ -258,15 +258,9 @@ private final class DirectoryHapticFeedback {
 
 private extension View {
     @ViewBuilder
-    func notesTranslucentTopToolbar(
-        appearance: NotesTopBarAppearance = .notes
-    ) -> some View {
+    func notesTranslucentTopToolbar() -> some View {
         if #available(iOS 26.0, *) {
-            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(
-                    appearance.isToolbarBackgroundVisible ? .visible : .hidden,
-                    for: .navigationBar
-                )
+            self
         } else {
             toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
@@ -284,6 +278,16 @@ private extension View {
                     Color.clear
                         .frame(height: extensionHeight)
                         .accessibilityHidden(true)
+                }
+                .overlay(alignment: .top) {
+                    if isEnabled {
+                        Rectangle()
+                            .fill(MudsnoteColors.line.opacity(0.45))
+                            .frame(height: 0.5)
+                            .offset(y: NotesTopBarAppearance.notes.scrollEdgeBottom)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
         } else {
             self
