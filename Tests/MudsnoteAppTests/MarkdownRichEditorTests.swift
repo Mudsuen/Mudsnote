@@ -1419,7 +1419,7 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(
             firstController.editorTextView.attributedString(),
             theme: firstController.theme
-        ) == markdown)
+        ) == "# Resizable Image\n\n\(markdown)")
         #expect(try Data(contentsOf: imageURL) == pngData)
         firstController.close()
         controller = nil
@@ -3816,7 +3816,7 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
-        #expect(controller.editorTextView.string == "Initial body")
+        #expect(controller.editorTextView.string == "Selected\n\nInitial body")
         controller.editorTextView.setSelectedRange(NSRange(location: 7, length: 0))
 
         try "# Selected externally\n\nUpdated outside Mudsnote\n".write(
@@ -3832,12 +3832,12 @@ struct MarkdownRichEditorTests {
                 )
             )
         ])
-        #expect(controller.editorTextView.string == "Initial body")
+        #expect(controller.editorTextView.string == "Selected\n\nInitial body")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
         await controller.waitForExternalLibraryRefreshForTesting()
 
         #expect(controller.titleField.stringValue == "Selected externally")
-        #expect(controller.editorTextView.string == "Updated outside Mudsnote")
+        #expect(controller.editorTextView.string == "Selected externally\n\nUpdated outside Mudsnote")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 7, length: 0))
     }
 
@@ -3889,7 +3889,7 @@ struct MarkdownRichEditorTests {
         ])
 
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Local autosaved body",
+            markdown: "# Selected\n\nLocal autosaved body",
             theme: controller.theme,
             baseURL: selectedURL
         ))
@@ -3898,7 +3898,7 @@ struct MarkdownRichEditorTests {
         _ = try controller.flushPendingAutosaveForTesting()
         await controller.waitForExternalLibraryRefreshForTesting()
 
-        #expect(controller.editorTextView.string == "Local autosaved body")
+        #expect(controller.editorTextView.string == "Selected\n\nLocal autosaved body")
         #expect(controller.editorTextView.selectedRange() == NSRange(location: 8, length: 0))
         #expect(!controller.currentNoteHasUnsavedChangesForLibrary)
         #expect(try store.loadNote(at: selectedURL).body == "External body")
@@ -3940,8 +3940,12 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let originalURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        let originalTitle = controller.titleField.stringValue
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Local protected edit",
+            markdown: MarkdownEditorDocument.composeEditorText(
+                title: originalTitle,
+                body: "Local protected edit"
+            ),
             theme: controller.theme,
             baseURL: originalURL
         ))
@@ -4007,7 +4011,7 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Unsaved close edit",
+            markdown: "# Close Guard\n\nUnsaved close edit",
             theme: controller.theme,
             baseURL: noteURL
         ))
@@ -4061,8 +4065,12 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let originalURL = try #require(controller.selectedMarkdownFileURLForLibrary())
+        let originalTitle = controller.titleField.stringValue
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Local copy body",
+            markdown: MarkdownEditorDocument.composeEditorText(
+                title: originalTitle,
+                body: "Local copy body"
+            ),
             theme: controller.theme,
             baseURL: originalURL
         ))
@@ -4297,8 +4305,10 @@ struct MarkdownRichEditorTests {
         #expect(controller.noteListTitleLabel.stringValue == "Notes")
 
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
-            string: "Nested keyboard body updated",
-            attributes: controller.theme.baseAttributes(for: .paragraph)
+            attributedString: MarkdownRichTextCodec.render(
+                markdown: "# Client Keyboard Seed\n\nNested keyboard body updated",
+                theme: controller.theme
+            )
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         let projectsRow = try #require((0..<outline.numberOfRows).first { row in
@@ -4576,7 +4586,7 @@ struct MarkdownRichEditorTests {
             $0.stringValue == "Select or create a note"
         } == false)
         #expect(emptyController.statusLabel.stringValue != "新笔记")
-        #expect(emptyController.window?.firstResponder === emptyController.titleField.currentEditor())
+        #expect(emptyController.window?.firstResponder === emptyController.editorTextView)
         #expect(emptyController.validateToolbarItem(formatItem))
         #expect(emptyController.validateToolbarItem(checklistItem))
         #expect(emptyController.validateToolbarItem(editorToolsItem))
@@ -4812,10 +4822,16 @@ struct MarkdownRichEditorTests {
         })
         #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
         #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
-        #expect(controller.editorTextView.string == "plain")
+        #expect(controller.editorTextView.string == "# Editor Tools\n\nplain")
         #expect(sourceModeButton.toolTip == "显示渲染模式")
         #expect(NSApp.sendAction(try #require(sourceModeButton.action), to: sourceModeButton.target, from: sourceModeButton))
         #expect(sourceModeButton.toolTip == "显示 Markdown 源码")
+        let bodyRange = try #require(
+            (controller.editorTextView.string as NSString).range(of: "plain").location == NSNotFound
+                ? nil
+                : (controller.editorTextView.string as NSString).range(of: "plain")
+        )
+        controller.editorTextView.setSelectedRange(bodyRange)
 
         let contextMenu = NSMenu()
         let contextEvent = try #require(NSEvent.mouseEvent(
@@ -4847,24 +4863,24 @@ struct MarkdownRichEditorTests {
 
         let subtitleItem = try #require(initialFormatMenu.items.first { $0.title == "副标题" })
         #expect(NSApp.sendAction(try #require(subtitleItem.action), to: subtitleItem.target, from: subtitleItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "## plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n## plain")
         let subtitleMenu = controller.makeFormatMenuForLibrary()
         #expect(subtitleMenu.items.first { $0.title == "副标题" }?.state == .on)
         let selectedSubtitleItem = try #require(subtitleMenu.items.first { $0.title == "副标题" })
         #expect(NSApp.sendAction(try #require(selectedSubtitleItem.action), to: selectedSubtitleItem.target, from: selectedSubtitleItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "## plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n## plain")
 
         let bodyItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "正文" })
         #expect(NSApp.sendAction(try #require(bodyItem.action), to: bodyItem.target, from: bodyItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         let checklistItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "待办列表" })
         #expect(NSApp.sendAction(try #require(checklistItem.action), to: checklistItem.target, from: checklistItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "- [ ] plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n- [ ] plain")
         let resetBodyItem = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "正文" })
         #expect(NSApp.sendAction(try #require(resetBodyItem.action), to: resetBodyItem.target, from: resetBodyItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
 
-        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 5))
+        controller.editorTextView.setSelectedRange(bodyRange)
         let selectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
         #expect(selectionMenu.items.map(\.title) == [
             "加粗", "斜体", "下划线", "删除线", "高亮", "转换为"
@@ -4877,17 +4893,17 @@ struct MarkdownRichEditorTests {
         let highlightItem = try #require(selectionMenu.items.first { $0.title == "高亮" })
         controller.editorTextView.undoManager?.removeAllActions()
         #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n<mark>plain</mark>")
         #expect(controller.editorTextView.undoManager?.canUndo == true)
         controller.editorTextView.undoManager?.undo()
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         controller.editorTextView.undoManager?.redo()
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "<mark>plain</mark>")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n<mark>plain</mark>")
         let highlightedSelectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
         let activeHighlightItem = try #require(highlightedSelectionMenu.items.first { $0.title == "高亮" })
         #expect(activeHighlightItem.state == .on)
         #expect(NSApp.sendAction(try #require(activeHighlightItem.action), to: activeHighlightItem.target, from: activeHighlightItem))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
 
         controller.editorTextView.showSelectionMenuIfNeeded()
         #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
@@ -4914,27 +4930,27 @@ struct MarkdownRichEditorTests {
         let underlineButton = try #require(refreshedSelectionPanelButtons.first { $0.toolTip == "下划线" })
         underlineButton.performClick(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        #expect((controller.editorTextView.textStorage?.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
-        controller.editorTextView.textStorage?.addAttribute(.underlineColor, value: NSColor.controlAccentColor, range: NSRange(location: 0, length: 5))
+        #expect((controller.editorTextView.textStorage?.attribute(.underlineStyle, at: bodyRange.location, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
+        controller.editorTextView.textStorage?.addAttribute(.underlineColor, value: NSColor.controlAccentColor, range: bodyRange)
         underlineButton.performClick(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        #expect(controller.editorTextView.textStorage?.attribute(.underlineStyle, at: 0, effectiveRange: nil) == nil)
-        #expect(controller.editorTextView.textStorage?.attribute(.underlineColor, at: 0, effectiveRange: nil) == nil)
+        #expect(controller.editorTextView.textStorage?.attribute(.underlineStyle, at: bodyRange.location, effectiveRange: nil) == nil)
+        #expect(controller.editorTextView.textStorage?.attribute(.underlineColor, at: bodyRange.location, effectiveRange: nil) == nil)
         #expect(controller.editorTextView.typingAttributes[.underlineStyle] == nil)
 
         controller.editorTextView.undoManager?.removeAllActions()
         let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")
         #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n**plain**")
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         let undoShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command], characters: "z")
         #expect(controller.editorTextView.performKeyEquivalent(with: undoShortcut))
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "plain")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         controller.editorTextView.undoManager?.redo()
-        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "**plain**")
+        #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n**plain**")
 
         controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))
         let checklistButton = try #require(editorToolButtons.first {
