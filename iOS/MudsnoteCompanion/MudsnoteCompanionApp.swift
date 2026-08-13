@@ -58,6 +58,7 @@ private enum MudsnoteUITestLaunchConfiguration {
     private static let batchNotesArgument = "-ui-testing-batch-notes"
     private static let markdownStylesArgument = "-ui-testing-markdown-styles"
     private static let homeScrollNotesArgument = "-ui-testing-home-scroll-notes"
+    private static let nestedFolderNoteArgument = "-ui-testing-nested-folder-note"
     private static let ocrAttachmentArgument = "-ui-testing-ocr-attachment"
     private static let audioTranscriptArgument = "-ui-testing-audio-transcript"
     private static let attachmentErrorArgument = "-ui-testing-attachment-error"
@@ -80,6 +81,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                 || arguments.contains(batchNotesArgument)
                 || arguments.contains(markdownStylesArgument)
                 || arguments.contains(homeScrollNotesArgument)
+                || arguments.contains(nestedFolderNoteArgument)
                 || arguments.contains(ocrAttachmentArgument)
                 || arguments.contains(audioTranscriptArgument)
                 || arguments.contains(attachmentErrorArgument)
@@ -296,6 +298,25 @@ private enum MudsnoteUITestLaunchConfiguration {
                             encoding: .utf8
                         )
                     }
+                }
+                if arguments.contains(nestedFolderNoteArgument) {
+                    let launchFolder = projects.appendingPathComponent(
+                        "Launch",
+                        isDirectory: true
+                    )
+                    try FileManager.default.createDirectory(
+                        at: launchFolder,
+                        withIntermediateDirectories: true
+                    )
+                    try """
+                    # Nested Launch Brief
+
+                    This note belongs to a child folder.
+                    """.write(
+                        to: launchFolder.appendingPathComponent("Nested Launch Brief.md"),
+                        atomically: true,
+                        encoding: .utf8
+                    )
                 }
                 if arguments.contains(ocrAttachmentArgument) {
                     let image = UIGraphicsImageRenderer(

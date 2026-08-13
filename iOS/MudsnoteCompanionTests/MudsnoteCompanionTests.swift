@@ -186,6 +186,33 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testHomeFolderScopeIncludesNestedFoldersWithoutPrefixCollisions() {
+        XCTAssertTrue(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects/UI Lifecycle.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertTrue(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects/Launch/Brief.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertFalse(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects2/Unrelated.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertFalse(
+            HomeFolderScope.contains(
+                fileRelativePath: "Archive/Projects/Old.md",
+                folderRelativePath: "Projects"
+            )
+        )
+    }
+
     func testQuickCaptureLaunchPlanSharesComposerWhilePreservingEntryBehavior() {
         XCTAssertEqual(
             QuickCaptureLaunchPlan.make(for: .text),

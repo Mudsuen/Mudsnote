@@ -626,12 +626,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testFolderEditModeExposesManagementActionsAndRenamesFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
+        XCTAssertTrue(app.buttons["sidebar-settings-button"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["new-folder-button"].exists)
+
         let editButton = app.buttons["edit-folders-button"]
         XCTAssertTrue(editButton.waitForExistence(timeout: 8))
         XCTAssertEqual(editButton.label, "Edit")
 
         editButton.tap()
         XCTAssertEqual(editButton.label, "Done")
+        XCTAssertTrue(app.buttons["new-folder-button"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["sidebar-settings-button"].exists)
 
         let managementButton = app.buttons["folder-management-Projects"]
         XCTAssertTrue(managementButton.waitForExistence(timeout: 5))
@@ -703,6 +708,26 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Launch"].exists)
     }
 
+    func testSelectedFolderIncludesNotesFromChildFolders() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            nestedFolderNote: true
+        )
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/Launch/Nested Launch Brief.md"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func testFolderContextMenuMovesNestedFolderToTopLevel() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let projects = app.buttons["folder-row-Projects"]
@@ -732,8 +757,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testFolderDragCreatesNestedFolder() {
         let app = launchApp(reset: true, fixtureFolder: true)
+        let edit = app.buttons["edit-folders-button"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 8))
+        edit.tap()
+        XCTAssertEqual(edit.label, "Done")
+
         let newFolder = app.buttons["new-folder-button"]
-        XCTAssertTrue(newFolder.waitForExistence(timeout: 8))
+        XCTAssertTrue(newFolder.waitForExistence(timeout: 3))
         newFolder.tap()
 
         let alert = app.alerts["New Folder"]
@@ -741,14 +771,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         alert.textFields["Folder Name"].typeText("Archive")
         alert.buttons["Create"].tap()
 
-        let projects = app.buttons["folder-row-Projects"]
-        let archive = app.buttons["folder-row-Archive"]
+        let projects = app.buttons["folder-management-Projects"]
+        let archive = app.buttons["folder-management-Archive"]
         XCTAssertTrue(projects.waitForExistence(timeout: 5))
         XCTAssertTrue(archive.waitForExistence(timeout: 5))
-
-        let edit = app.buttons["edit-folders-button"]
-        edit.tap()
-        XCTAssertEqual(edit.label, "Done")
 
         let projectHandle = app.descendants(matching: .any)["folder-drag-handle-Projects"]
         let archiveHandle = app.descendants(matching: .any)["folder-drag-handle-Archive"]
@@ -776,7 +802,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         edit.tap()
         XCTAssertEqual(edit.label, "Edit")
-        archive.tap()
+        let archiveDisclosure = app.buttons["folder-disclosure-Archive"]
+        XCTAssertTrue(archiveDisclosure.waitForExistence(timeout: 5))
+        archiveDisclosure.tap()
 
         let nestedProjects = app.buttons["folder-row-Archive/Projects"]
         XCTAssertTrue(nestedProjects.waitForExistence(timeout: 5))
@@ -789,8 +817,13 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
     func testSmartFolderCreatesEditsAndDeletesWithoutMovingNotes() {
         let app = launchApp(reset: true, fixtureFolder: true, fileTag: true)
+        let folderEdit = app.buttons["edit-folders-button"]
+        XCTAssertTrue(folderEdit.waitForExistence(timeout: 8))
+        folderEdit.tap()
+        XCTAssertEqual(folderEdit.label, "Done")
+
         let newFolder = app.buttons["new-folder-button"]
-        XCTAssertTrue(newFolder.waitForExistence(timeout: 8))
+        XCTAssertTrue(newFolder.waitForExistence(timeout: 3))
         newFolder.tap()
 
         let folderAlert = app.alerts["New Folder"]
@@ -805,6 +838,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
         app.buttons["save-smart-folder"].tap()
+        XCTAssertTrue(folderEdit.waitForExistence(timeout: 5))
+        folderEdit.tap()
+        XCTAssertEqual(folderEdit.label, "Edit")
 
         let row = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "smart-folder-row-")
@@ -851,7 +887,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["Delete Smart Folder"].tap()
         XCTAssertTrue(waitForNonexistence(row))
 
-        app.buttons["all-notes-link"].tap()
+        app.buttons["all-notes-row"].tap()
         XCTAssertTrue(note.waitForExistence(timeout: 5))
     }
 
@@ -2860,6 +2896,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         fileTag: Bool = false,
         batchNotes: Bool = false,
         homeScrollNotes: Bool = false,
+        nestedFolderNote: Bool = false,
         ocrAttachment: Bool = false,
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
@@ -2887,6 +2924,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
             homeScrollNotes ? "-ui-testing-home-scroll-notes" : nil,
+            nestedFolderNote ? "-ui-testing-nested-folder-note" : nil,
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,

@@ -62,6 +62,18 @@ private struct HomeTimelineProjection {
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
+enum HomeFolderScope {
+    static func contains(
+        fileRelativePath: String,
+        folderRelativePath: String
+    ) -> Bool {
+        guard !folderRelativePath.isEmpty else { return true }
+        let parentPath = (fileRelativePath as NSString).deletingLastPathComponent
+        return parentPath == folderRelativePath
+            || parentPath.hasPrefix(folderRelativePath + "/")
+    }
+}
+
 struct NotesTopBarAppearance: Equatable {
     var isToolbarBackgroundVisible: Bool
     var usesSystemScrollEdgeBlur: Bool
@@ -269,26 +281,23 @@ private extension View {
 
     @ViewBuilder
     func notesTopScrollEdgeBlur(
-        isEnabled: Bool,
-        extensionHeight: CGFloat
+        isEnabled: Bool
     ) -> some View {
         if #available(iOS 26.0, *) {
-            scrollEdgeEffectStyle(isEnabled ? .soft : nil, for: .top)
-                .safeAreaBar(edge: .top, spacing: 0) {
-                    Color.clear
-                        .frame(height: extensionHeight)
-                        .accessibilityHidden(true)
-                }
-                .overlay(alignment: .top) {
-                    if isEnabled {
+            overlay(alignment: .top) {
+                if isEnabled {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: NotesTopBarAppearance.notes.scrollEdgeBottom)
+                        .overlay(alignment: .bottom) {
                         Rectangle()
                             .fill(MudsnoteColors.line.opacity(0.45))
                             .frame(height: 0.5)
-                            .offset(y: NotesTopBarAppearance.notes.scrollEdgeBottom)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
+            }
         } else {
             self
         }
@@ -491,14 +500,24 @@ struct LibraryHomeView: View {
 
                 if isDirectoryPresented {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            newFolderName = ""
-                            isCreatingFolder = true
-                        } label: {
-                            Image(systemName: "folder.badge.plus")
+                        if isManagingFolders {
+                            Button {
+                                newFolderName = ""
+                                isCreatingFolder = true
+                            } label: {
+                                Image(systemName: "folder.badge.plus")
+                            }
+                            .accessibilityLabel("New Folder")
+                            .accessibilityIdentifier("new-folder-button")
+                        } else {
+                            NavigationLink {
+                                SettingsRulesView(chooseFolder: chooseFolder)
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                            .accessibilityLabel("Settings")
+                            .accessibilityIdentifier("sidebar-settings-button")
                         }
-                        .accessibilityLabel("New Folder")
-                        .accessibilityIdentifier("new-folder-button")
                     }
 
                     if #available(iOS 26.0, *) {
@@ -635,10 +654,7 @@ struct LibraryHomeView: View {
                     .padding(.bottom, 110)
             }
             .scrollDismissesKeyboard(.interactively)
-            .notesTopScrollEdgeBlur(
-                isEnabled: !isDirectoryPresented,
-                extensionHeight: topScrollEdgeExtensionHeight
-            )
+            .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
             .simultaneousGesture(TapGesture().onEnded {
                 if isSearchFocused { isSearchFocused = false }
             })
@@ -696,10 +712,7 @@ struct LibraryHomeView: View {
             .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
-        .notesTopScrollEdgeBlur(
-            isEnabled: !isDirectoryPresented,
-            extensionHeight: topScrollEdgeExtensionHeight
-        )
+        .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
         .accessibilityIdentifier(homeContentIdentifier)
     }
 
@@ -708,7 +721,10 @@ struct LibraryHomeView: View {
         let visibleFiles = appModel.libraryFiles.filter { file in
             guard file.relativePath != "Inbox.md" else { return false }
             guard !folderPath.isEmpty else { return true }
-            return (file.relativePath as NSString).deletingLastPathComponent == folderPath
+            return HomeFolderScope.contains(
+                fileRelativePath: file.relativePath,
+                folderRelativePath: folderPath
+            )
         }
         let unsortedEntries = (
             visibleFiles.map(HomeTimelineEntry.file)
@@ -954,15 +970,8 @@ struct LibraryHomeView: View {
         return "\(base)-folder:\(selectedHomeFolderPath)"
     }
 
-    private var topScrollEdgeExtensionHeight: CGFloat {
-        guard #available(iOS 26.0, *) else { return 0 }
-        return NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(
-            chromeBottom: topChromeContentInset
-        )
-    }
-
     private var topContentPadding: CGFloat {
-        max(0, topChromeContentInset - topScrollEdgeExtensionHeight)
+        max(0, topChromeContentInset)
     }
 
     private var allHomeNoteCount: Int {
@@ -1025,10 +1034,7 @@ struct LibraryHomeView: View {
             .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
-        .notesTopScrollEdgeBlur(
-            isEnabled: isDirectoryPresented,
-            extensionHeight: topScrollEdgeExtensionHeight
-        )
+        .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(MudsnoteColors.canvas)
