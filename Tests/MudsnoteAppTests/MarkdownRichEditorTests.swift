@@ -7942,7 +7942,64 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowNoteListKeyboardOpensAndDeletesNotes() throws {
+    func libraryDeletionUpdatesProjectionBeforeBackgroundPersistenceCompletes() async throws {
+        let suiteName = "mudsnote.library-background-delete-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-background-delete-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Background Delete", body: "Body")
+        let allowPersistence = DispatchSemaphore(value: 0)
+        let threadRecorder = ThreadObservationRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundDeletionWillPersist: {
+                threadRecorder.recordCurrentThread()
+                _ = allowPersistence.wait(timeout: .now() + 2)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            allowPersistence.signal()
+            controller.close()
+        }
+
+        try controller.deleteSelectedNotesInBackgroundForLibrary()
+
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: noteURL.path))
+        let persistenceDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while threadRecorder.snapshot().callCount == 0,
+              ContinuousClock.now < persistenceDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(threadRecorder.snapshot().callCount == 1)
+        #expect(!threadRecorder.didObserveMainThread())
+
+        allowPersistence.signal()
+        await controller.waitForBackgroundDeletionsForLibrary()
+
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(store.listTrashedNotes(limit: 10).first?.title == "Background Delete")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowNoteListKeyboardOpensAndDeletesNotes() async throws {
         let suiteName = "mudsnote.library-keyboard-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -7976,6 +8033,7 @@ struct MarkdownRichEditorTests {
         #expect(openedURL?.standardizedFileURL.path == noteURL.standardizedFileURL.path)
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 51, modifiers: [], characters: "\u{7F}"))
+        await controller.waitForBackgroundDeletionsForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
@@ -7983,6 +8041,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.stringValue == "Keyboard Seed")
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
+        await controller.waitForBackgroundDeletionsForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
     }

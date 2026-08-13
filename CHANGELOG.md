@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 256. Immediate macOS library deletion
+- Problem: Note deletion waited for saving, filesystem moves, trash metadata, source-count recomputation, and sidebar reconstruction before showing an existing deletion animation, making even successful actions feel stalled.
+- Fix: Toolbar, menu, and keyboard deletion now remove clean notes from the visible projection immediately and animate that state, while a serialized background queue performs trash or permanent deletion. Counts refresh off the main thread, pending paths stay excluded from search refreshes, and a failed operation restores its note and reports the persistence error.
+- Lesson: A reversible filesystem action should publish an optimistic projection first, serialize durable work behind it, and retain enough snapshot state to reconcile partial success without rebuilding unrelated UI.
+
 ### 255. Stable macOS launch counts
 - Problem: The deferred macOS library launch treated its small recent-note shell as a complete library snapshot, so every sidebar folder briefly displayed `0` while a full iCloud-backed index validation competed with initial note loading.
 - Fix: Sidebar counts now remain in a loading state until a complete snapshot exists, reuse the persisted search snapshot without walking note roots when available, and validate the live filesystem at utility priority before publishing exact counts.

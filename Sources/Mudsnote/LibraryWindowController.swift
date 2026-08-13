@@ -233,6 +233,21 @@ private final class LibraryBackgroundSaveResultStore: @unchecked Sendable {
     }
 }
 
+private struct LibraryDeletedNote: Sendable {
+    let sourceURL: URL
+    let trashedURL: URL?
+}
+
+private struct LibraryDeletionFailure: Sendable {
+    let sourceURL: URL
+    let message: String
+}
+
+private struct LibraryDeletionPersistenceResult: Sendable {
+    let deletedNotes: [LibraryDeletedNote]
+    let failures: [LibraryDeletionFailure]
+}
+
 private final class LoadedLibraryNoteCacheEntry: NSObject {
     let loaded: LoadedLibraryNote
     let fileModifiedAt: Date
@@ -1295,6 +1310,7 @@ final class LibraryWindowController: NSWindowController,
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let backgroundAutosaveWillPersist: @Sendable () -> Void
     private let backgroundSourceCountWillLoad: @Sendable () -> Void
+    private let backgroundDeletionWillPersist: @Sendable () -> Void
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
@@ -1319,6 +1335,10 @@ final class LibraryWindowController: NSWindowController,
     private let autosavePersistenceQueue = DispatchQueue(
         label: "local.codex.mudsnote.library-autosave",
         qos: .utility
+    )
+    private let libraryMutationQueue = DispatchQueue(
+        label: "local.codex.mudsnote.library-mutations",
+        qos: .userInitiated
     )
     private let backgroundAutosaveResultStore = LibraryBackgroundSaveResultStore()
     private var backgroundAutosaveGeneration = 0
@@ -1346,6 +1366,9 @@ final class LibraryWindowController: NSWindowController,
     private var sourceCountRefreshTask: Task<Void, Never>?
     private var sourceCountRefreshGeneration = 0
     private var hasLoadedSourceCounts = false
+    private var pendingDeletionPaths = Set<String>()
+    private var pendingDeletionBatchCount = 0
+    private var pendingDeletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var sourceInboxDirectory: URL?
     private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
@@ -1448,6 +1471,7 @@ final class LibraryWindowController: NSWindowController,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
         backgroundSourceCountWillLoad: @escaping @Sendable () -> Void = {},
+        backgroundDeletionWillPersist: @escaping @Sendable () -> Void = {},
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
@@ -1477,6 +1501,7 @@ final class LibraryWindowController: NSWindowController,
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
         self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad
+        self.backgroundDeletionWillPersist = backgroundDeletionWillPersist
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
@@ -4370,7 +4395,9 @@ final class LibraryWindowController: NSWindowController,
             query: query,
             limit: limit,
             searchesAllNotes: searchScopeControl.selectedSegment == 1
-        )
+        ).filter {
+            !pendingDeletionPaths.contains($0.url.standardizedFileURL.path)
+        }
     }
 
     private func cachedTrashSearchResults(query: String, limit: Int) -> [NoteSearchResult] {
@@ -6089,7 +6116,7 @@ final class LibraryWindowController: NSWindowController,
         case .delete:
             guard selectedURL != nil else { return false }
             do {
-                try deleteSelectedNoteForLibrary()
+                try deleteSelectedNotesInBackgroundForLibrary()
                 return true
             } catch {
                 presentErrorAlert(message: selectedScope == .trash ? "永久删除失败" : "删除失败", details: error.localizedDescription)
@@ -6233,7 +6260,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func applySearchResults(_ results: [NoteSearchResult], query: String, selecting preferredURL: URL?) {
         isSearchResultReloading = false
-        notes = results
+        notes = results.filter {
+            !pendingDeletionPaths.contains($0.url.standardizedFileURL.path)
+        }
         listRows = buildGroupedRows(for: notes, preservesInputOrder: true)
         updateNoteListHeader(query: query)
 
@@ -6484,7 +6513,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func deleteSelectedNotePressed() {
         do {
-            try deleteSelectedNotesForLibrary()
+            try deleteSelectedNotesInBackgroundForLibrary()
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
         }
@@ -8019,6 +8048,160 @@ final class LibraryWindowController: NSWindowController,
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true, mutationAnimation: .deletion)
+    }
+
+    func deleteSelectedNotesInBackgroundForLibrary() throws {
+        let urls = selectedMarkdownFileURLsForLibrary().filter {
+            !pendingDeletionPaths.contains($0.standardizedFileURL.path)
+        }
+        guard !urls.isEmpty else { return }
+
+        // A dirty editor must be durably saved before its source can leave the
+        // library. Clean-note deletion can publish its UI transition immediately.
+        try saveCurrentNoteIfNeeded()
+
+        let deletesFromTrash = selectedScope == .trash
+        let snapshot = deletesFromTrash ? trashedNotesSnapshot : sourceCountSnapshot
+        let notesByPath = Dictionary(uniqueKeysWithValues: urls.compactMap { url in
+            let path = url.standardizedFileURL.path
+            return snapshot.first {
+                $0.url.standardizedFileURL.path == path
+            }.map { (path, $0) }
+        })
+        let paths = Set(urls.map { $0.standardizedFileURL.path })
+        pendingDeletionPaths.formUnion(paths)
+        pendingDeletionBatchCount += 1
+
+        if deletesFromTrash {
+            removeNotesFromTrashSnapshot(at: urls)
+        } else {
+            removeNotesFromSourceSnapshot(at: urls)
+        }
+        clearCurrentDocumentAfterRemoval()
+        reloadNotes(
+            loadFirstIfNeeded: true,
+            refreshCounts: false,
+            mutationAnimation: .deletion
+        )
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+
+        let noteStore = noteStore
+        let willPersist = backgroundDeletionWillPersist
+        libraryMutationQueue.async { [weak self] in
+            willPersist()
+            var deletedNotes: [LibraryDeletedNote] = []
+            var failures: [LibraryDeletionFailure] = []
+            for sourceURL in urls {
+                do {
+                    if deletesFromTrash {
+                        try noteStore.permanentlyDeleteTrashedNote(at: sourceURL)
+                        deletedNotes.append(LibraryDeletedNote(
+                            sourceURL: sourceURL,
+                            trashedURL: nil
+                        ))
+                    } else {
+                        let trashedURL = try noteStore.trashNote(at: sourceURL)
+                        deletedNotes.append(LibraryDeletedNote(
+                            sourceURL: sourceURL,
+                            trashedURL: trashedURL
+                        ))
+                    }
+                } catch {
+                    failures.append(LibraryDeletionFailure(
+                        sourceURL: sourceURL,
+                        message: error.localizedDescription
+                    ))
+                }
+            }
+            let result = LibraryDeletionPersistenceResult(
+                deletedNotes: deletedNotes,
+                failures: failures
+            )
+            DispatchQueue.main.async {
+                self?.finishBackgroundDeletion(
+                    result,
+                    notesByPath: notesByPath,
+                    deletesFromTrash: deletesFromTrash
+                )
+            }
+        }
+    }
+
+    private func finishBackgroundDeletion(
+        _ result: LibraryDeletionPersistenceResult,
+        notesByPath: [String: NoteSearchResult],
+        deletesFromTrash: Bool
+    ) {
+        let completedPaths = Set(
+            result.deletedNotes.map { $0.sourceURL.standardizedFileURL.path }
+                + result.failures.map { $0.sourceURL.standardizedFileURL.path }
+        )
+        pendingDeletionPaths.subtract(completedPaths)
+
+        var changedURLs: [URL] = []
+        for deletedNote in result.deletedNotes {
+            changedURLs.append(deletedNote.sourceURL)
+            if let trashedURL = deletedNote.trashedURL {
+                changedURLs.append(trashedURL)
+                if let note = notesByPath[deletedNote.sourceURL.standardizedFileURL.path] {
+                    trashedNotesSnapshot.append(
+                        note.replacingURL(trashedURL, modifiedAt: Date())
+                    )
+                }
+            }
+        }
+        if !changedURLs.isEmpty {
+            recordInternalFileSystemChanges(for: changedURLs)
+        }
+        sortAndTrimTrashSnapshot()
+
+        if !result.failures.isEmpty {
+            for failure in result.failures {
+                guard let note = notesByPath[failure.sourceURL.standardizedFileURL.path] else {
+                    continue
+                }
+                if deletesFromTrash {
+                    trashedNotesSnapshot.append(note)
+                } else {
+                    LibraryNoteListProjection.upsertByModifiedDate(
+                        note,
+                        into: &sourceCountSnapshot,
+                        replacingPaths: Set([failure.sourceURL.standardizedFileURL.path]),
+                        limit: Self.sourceCountSnapshotLimit
+                    )
+                }
+            }
+            if deletesFromTrash {
+                sortAndTrimTrashSnapshot()
+            }
+            reloadNotes(
+                loadFirstIfNeeded: selectedURL == nil,
+                refreshCounts: false,
+                mutationAnimation: .insertion
+            )
+            let details = result.failures.map(\.message).joined(separator: "\n")
+            presentErrorAlert(
+                message: deletesFromTrash ? "永久删除失败" : "删除失败，笔记已恢复",
+                details: details
+            )
+        }
+
+        activeSearchSession = nil
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+        updateToolbarActionState()
+        pendingDeletionBatchCount = max(0, pendingDeletionBatchCount - 1)
+        if pendingDeletionBatchCount == 0 {
+            let waiters = pendingDeletionWaiters
+            pendingDeletionWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func waitForBackgroundDeletionsForLibrary() async {
+        guard pendingDeletionBatchCount > 0 else { return }
+        await withCheckedContinuation { continuation in
+            pendingDeletionWaiters.append(continuation)
+        }
     }
 
     @discardableResult
