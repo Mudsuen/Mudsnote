@@ -2784,7 +2784,10 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorLineSpacing == 2.5)
         #expect(LibraryNotesLayout.editorParagraphSpacing == 6)
         #expect(controller.editorTextView.textContainerInset.width == LibraryNotesLayout.editorTextContainerHorizontalInset)
-        #expect(controller.editorTextView.textContainerInset.height == 4)
+        #expect(
+            controller.editorTextView.textContainerInset.height
+                == LibraryNotesLayout.editorScrollingHeaderHeight
+        )
         let editorScrollView = try #require(controller.editorTextView.enclosingScrollView)
         #expect(editorScrollView.hasHorizontalScroller == false)
         #expect(editorScrollView.horizontalScrollElasticity == .none)
@@ -2807,6 +2810,9 @@ struct MarkdownRichEditorTests {
         let editorDateRow = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibraryEditorDateRow"
         })
+        let editorHeader = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryEditorScrollingHeader"
+        })
         #expect(editorStack.spacing == 0)
         #expect(editorStack.alignment == .leading)
         #expect(editorStack.distribution == .fill)
@@ -2821,10 +2827,25 @@ struct MarkdownRichEditorTests {
                 && $0.constant == LibraryNotesLayout.editorStatusHorizontalOffset
         })
         #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
-        #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
+        #expect(editorDateRow.superview === editorHeader)
+        #expect(controller.titleField.superview === editorHeader)
+        #expect(editorHeader.superview === controller.editorTextView)
+        #expect(editorHeader.constraints.contains {
+            $0.firstItem === controller.titleField
+                && $0.firstAttribute == .top
+                && $0.secondItem === editorDateRow
+                && $0.secondAttribute == .bottom
+                && $0.constant == LibraryNotesLayout.editorDateToTitleSpacing
+        })
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
-        #expect(editorStack.customSpacing(after: controller.titleField) == LibraryNotesLayout.editorTitleToBodySpacing)
-        #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
+        #expect(editorHeader.constraints.contains {
+            $0.firstItem === controller.titleField
+                && $0.firstAttribute == .bottom
+                && $0.secondItem === editorHeader
+                && $0.secondAttribute == .bottom
+                && $0.constant == -LibraryNotesLayout.editorTitleToBodySpacing
+        })
+        #expect(editorStack.edgeInsets.top == 0)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
         #expect(LibraryNotesLayout.editorTopInset + LibraryNotesLayout.editorDateToTitleSpacing == 17)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)
@@ -2839,11 +2860,10 @@ struct MarkdownRichEditorTests {
                 && $0.secondItem === editorPane.safeAreaLayoutGuide
                 && $0.secondAttribute == .top
         })
-        #expect(editorStack.constraints.contains {
-            $0.firstAttribute == .width
-                && $0.firstItem === controller.titleField
-                && $0.secondItem === editorStack
-                && $0.constant == -(LibraryNotesLayout.editorHorizontalInset * 2)
+        #expect(editorHeader.constraints.contains {
+            $0.firstAttribute == .height
+                && $0.firstItem === editorHeader
+                && $0.constant == LibraryNotesLayout.editorScrollingHeaderHeight
         })
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "Body line")
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
@@ -2913,6 +2933,52 @@ struct MarkdownRichEditorTests {
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)
+    }
+
+    @MainActor
+    @Test
+    func libraryTitleScrollsByDefaultAndCanBeFrozen() throws {
+        let suiteName = "mudsnote.library-title-freeze-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-title-freeze-tests-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(
+            title: "Scrollable Title",
+            body: (0..<300).map { "Long body line \($0)" }.joined(separator: "\n\n")
+        )
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+
+        #expect(!controller.isLibraryTitleFrozenForLibrary)
+        controller.scrollEditorForLibrary(to: 160)
+        #expect(controller.editorHeaderOffsetForLibrary == 0)
+
+        store.libraryFreezesEditorTitle = true
+        controller.refreshTitleFreezePreferenceForLibrary()
+        #expect(controller.isLibraryTitleFrozenForLibrary)
+        #expect(controller.editorHeaderOffsetForLibrary > 0)
+
+        store.libraryFreezesEditorTitle = false
+        controller.refreshTitleFreezePreferenceForLibrary()
+        #expect(controller.editorHeaderOffsetForLibrary == 0)
     }
 
     @MainActor
@@ -9116,14 +9182,18 @@ struct MarkdownRichEditorTests {
         #expect(controller.contextMenuOptionButtons.count == EditorContextMenuOption.allCases.count)
         #expect(controller.selectionToolbarOptionButtons.count == SelectionToolbarOption.allCases.count)
         #expect(controller.themeColorPopUp.itemTitles.contains("经典黄"))
+        let freezeTitleButton = controller.freezeLibraryTitleButton
+        #expect(freezeTitleButton.state == .off)
         controller.contextMenuOptionButtons[.paste]?.state = .off
         controller.selectionToolbarOptionButtons[.highlight]?.state = .off
         controller.themeColorPopUp.selectItem(withTitle: "松石")
+        freezeTitleButton.state = .on
         let saveButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "保存" })
         saveButton.performClick(nil)
         #expect(savedSettings?.editorContextMenuOptions.contains(.paste) == false)
         #expect(savedSettings?.selectionToolbarOptions.contains(.highlight) == false)
         #expect(savedSettings?.themeColorIdentifier == "teal")
+        #expect(savedSettings?.libraryFreezesEditorTitle == true)
 
         controller.updatePanelOpacity(NoteStore.minimumPanelOpacity)
         #expect(window.alphaValue == 1)

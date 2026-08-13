@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 258. Configurable macOS title scrolling
+- Problem: The macOS library title lived outside the body scroll view, so it was always frozen and users could not choose a continuous document-style reading layout.
+- Fix: The date and editable title now share the body document's scroll coordinates and move away with content by default. An Editor setting can freeze that header; changing it applies immediately to the open library and persists without changing note data.
+- Lesson: A fixed header is a reading preference rather than a document invariant, so one canonical title control should support both coordinate behaviors instead of duplicating editable state.
+
 ### 257. Flicker-free macOS note switching
 - Problem: Selecting an uncached note replaced the current title and editor body with an empty loading shell before its background read completed, exposing a blank frame during otherwise responsive navigation.
 - Fix: Ordinary note switches now keep the last fully rendered document visible but read-only while the next note loads, then replace title, body, tags, status, and links together. Rapid selections still cancel stale work, cached notes remain immediate, failed loads restore the previous selection, and only the first launch uses the empty loading shell.

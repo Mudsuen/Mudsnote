@@ -1647,6 +1647,7 @@ struct MudsnoteCoreTests {
         #expect(store.libraryNoteSortOrderRawValue == 0)
         #expect(store.libraryNoteViewModeRawValue == 0)
         #expect(store.libraryGroupsNotesByDate)
+        #expect(!store.libraryFreezesEditorTitle)
         #expect(store.libraryCollapsedFolderPaths.isEmpty)
         #expect(store.libraryExpandedFolderPaths.isEmpty)
         #expect(!store.libraryFoldersSectionCollapsed)
@@ -1664,6 +1665,7 @@ struct MudsnoteCoreTests {
         store.libraryNoteSortOrderRawValue = 1
         store.libraryNoteViewModeRawValue = 1
         store.libraryGroupsNotesByDate = false
+        store.libraryFreezesEditorTitle = true
         store.libraryCollapsedFolderPaths = ["/tmp/Notes"]
         store.libraryExpandedFolderPaths = ["/tmp/Notes/Projects"]
         store.libraryFoldersSectionCollapsed = true
@@ -1681,6 +1683,7 @@ struct MudsnoteCoreTests {
         #expect(store.libraryNoteSortOrderRawValue == 1)
         #expect(store.libraryNoteViewModeRawValue == 1)
         #expect(!store.libraryGroupsNotesByDate)
+        #expect(store.libraryFreezesEditorTitle)
         #expect(store.libraryCollapsedFolderPaths == ["/tmp/Notes"])
         #expect(store.libraryExpandedFolderPaths == ["/tmp/Notes/Projects"])
         #expect(store.libraryFoldersSectionCollapsed)

@@ -941,6 +941,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
             currentThemeColorIdentifier: noteStore.themeColorIdentifier,
             libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
+            libraryFreezesEditorTitle: noteStore.libraryFreezesEditorTitle,
             editorContextMenuOptions: noteStore.enabledEditorContextMenuOptions,
             selectionToolbarOptions: noteStore.enabledSelectionToolbarOptions,
             aiEnabled: noteStore.aiEnabled,
@@ -972,6 +973,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
         noteStore.themeColorIdentifier = settings.themeColorIdentifier
         noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
+        noteStore.libraryFreezesEditorTitle = settings.libraryFreezesEditorTitle
         noteStore.enabledEditorContextMenuOptions = settings.editorContextMenuOptions
         noteStore.enabledSelectionToolbarOptions = settings.selectionToolbarOptions
         noteStore.aiEnabled = settings.aiEnabled
@@ -990,6 +992,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         updateFloatingNoteLevel()
         libraryWindowController?.refreshFolderNoteVisibilityForLibrary()
         libraryWindowController?.refreshThemeColorForLibrary()
+        libraryWindowController?.refreshTitleFreezePreferenceForLibrary()
     }
 
     private func updateOpenWindowOpacity(_ opacity: Double) {

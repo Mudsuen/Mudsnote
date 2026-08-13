@@ -1444,6 +1444,9 @@ final class LibraryWindowController: NSWindowController,
     private weak var noteListSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
     private weak var editorStackView: NSStackView?
+    private weak var editorHeaderView: NSView?
+    private weak var editorBodyScrollView: NSScrollView?
+    private var editorHeaderTopConstraint: NSLayoutConstraint?
     private weak var galleryScrollView: NSScrollView?
     static let sourceCountSnapshotLimit = Int.max
 
@@ -2392,6 +2395,13 @@ final class LibraryWindowController: NSWindowController,
         clipView.drawsBackground = false
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
+        clipView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(editorBodyClipViewBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: clipView
+        )
         scrollView.contentInsets = NSEdgeInsets(
             top: 0,
             left: 0,
@@ -2445,17 +2455,57 @@ final class LibraryWindowController: NSWindowController,
             self?.showKnowledgeGraphForLibrary()
         }
 
-        let stack = NSStackView(views: [dateRow, titleField, bodyContainer, noteLinksView])
+        let editorHeader = NSView()
+        editorHeader.identifier = NSUserInterfaceItemIdentifier("LibraryEditorScrollingHeader")
+        editorHeader.wantsLayer = true
+        editorHeader.layer?.backgroundColor = LibraryNotesPalette.editorBackground.cgColor
+        editorHeader.addSubview(dateRow)
+        editorHeader.addSubview(titleField)
+        editorHeader.translatesAutoresizingMaskIntoConstraints = false
+        dateRow.translatesAutoresizingMaskIntoConstraints = false
+        titleField.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            dateRow.leadingAnchor.constraint(equalTo: editorHeader.leadingAnchor),
+            dateRow.trailingAnchor.constraint(equalTo: editorHeader.trailingAnchor),
+            dateRow.topAnchor.constraint(
+                equalTo: editorHeader.topAnchor,
+                constant: LibraryNotesLayout.editorTopInset
+            ),
+            titleField.leadingAnchor.constraint(equalTo: editorHeader.leadingAnchor),
+            titleField.trailingAnchor.constraint(equalTo: editorHeader.trailingAnchor),
+            titleField.topAnchor.constraint(
+                equalTo: dateRow.bottomAnchor,
+                constant: LibraryNotesLayout.editorDateToTitleSpacing
+            ),
+            titleField.bottomAnchor.constraint(
+                lessThanOrEqualTo: editorHeader.bottomAnchor,
+                constant: -LibraryNotesLayout.editorTitleToBodySpacing
+            )
+        ])
+        editorTextView.addSubview(editorHeader)
+        let headerTopConstraint = editorHeader.topAnchor.constraint(equalTo: editorTextView.topAnchor)
+        NSLayoutConstraint.activate([
+            headerTopConstraint,
+            editorHeader.leadingAnchor.constraint(equalTo: editorTextView.leadingAnchor),
+            editorHeader.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            editorHeader.heightAnchor.constraint(
+                equalToConstant: LibraryNotesLayout.editorScrollingHeaderHeight
+            )
+        ])
+        editorTextView.textContainerInset = NSSize(
+            width: LibraryNotesLayout.editorTextContainerHorizontalInset,
+            height: LibraryNotesLayout.editorScrollingHeaderHeight
+        )
+
+        let stack = NSStackView(views: [bodyContainer, noteLinksView])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
         stack.spacing = 0
-        stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
-        stack.setCustomSpacing(LibraryNotesLayout.editorTitleToBodySpacing, after: titleField)
         stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
-            top: LibraryNotesLayout.editorTopInset,
+            top: 0,
             left: LibraryNotesLayout.editorHorizontalInset,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
@@ -2508,8 +2558,6 @@ final class LibraryWindowController: NSWindowController,
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
-            dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
-            titleField.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
             bodyContainer.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
@@ -2519,6 +2567,10 @@ final class LibraryWindowController: NSWindowController,
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
         editorStackView = stack
+        editorHeaderView = editorHeader
+        editorBodyScrollView = scrollView
+        editorHeaderTopConstraint = headerTopConstraint
+        updateEditorHeaderFreezePosition()
         self.galleryScrollView = galleryScrollView
         stack.isHidden = noteListViewMode == .gallery
         galleryScrollView.isHidden = noteListViewMode != .gallery
@@ -8611,6 +8663,41 @@ final class LibraryWindowController: NSWindowController,
     func refreshThemeColorForLibrary() {
         refreshVisibleSourceOutlinePresentation()
         window?.displayIfNeeded()
+    }
+
+    func refreshTitleFreezePreferenceForLibrary() {
+        updateEditorHeaderFreezePosition()
+    }
+
+    @objc
+    private func editorBodyClipViewBoundsDidChange(_ notification: Notification) {
+        guard notification.object as? NSClipView === editorBodyScrollView?.contentView else {
+            return
+        }
+        updateEditorHeaderFreezePosition()
+    }
+
+    private func updateEditorHeaderFreezePosition() {
+        guard let editorHeaderTopConstraint else { return }
+        editorHeaderTopConstraint.constant = noteStore.libraryFreezesEditorTitle
+            ? max(0, editorBodyScrollView?.contentView.bounds.origin.y ?? 0)
+            : 0
+        editorHeaderView?.superview?.layoutSubtreeIfNeeded()
+    }
+
+    var isLibraryTitleFrozenForLibrary: Bool {
+        noteStore.libraryFreezesEditorTitle
+    }
+
+    var editorHeaderOffsetForLibrary: CGFloat {
+        editorHeaderTopConstraint?.constant ?? 0
+    }
+
+    func scrollEditorForLibrary(to offset: CGFloat) {
+        guard let clipView = editorBodyScrollView?.contentView else { return }
+        clipView.scroll(to: NSPoint(x: 0, y: max(0, offset)))
+        editorBodyScrollView?.reflectScrolledClipView(clipView)
+        updateEditorHeaderFreezePosition()
     }
 
     func noteListSearchResultsForLibrary() -> [NoteSearchResult] {

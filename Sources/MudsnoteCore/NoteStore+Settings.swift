@@ -92,6 +92,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) }
     }
 
+    public var libraryFreezesEditorTitle: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.libraryFreezesEditorTitle) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryFreezesEditorTitle) }
+    }
+
     public func libraryImageDisplayWidth(for fileURL: URL) -> Double? {
         let path = fileURL.standardizedFileURL.path
         guard let widths = defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryImageDisplayWidths),

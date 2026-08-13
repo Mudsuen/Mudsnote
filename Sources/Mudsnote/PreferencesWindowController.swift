@@ -14,6 +14,7 @@ struct PreferencesSettings {
     let spellCheckingEnabled: Bool
     let themeColorIdentifier: String
     let libraryIncludesSubfolderNotes: Bool
+    let libraryFreezesEditorTitle: Bool
     let editorContextMenuOptions: Set<EditorContextMenuOption>
     let selectionToolbarOptions: Set<SelectionToolbarOption>
     let aiEnabled: Bool
@@ -66,6 +67,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
+    private(set) var freezeLibraryTitleButton = NSButton(
+        checkboxWithTitle: "滚动时冻结笔记标题",
+        target: nil,
+        action: nil
+    )
     private(set) var themeColorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let aiEnabledButton = NSButton(checkboxWithTitle: "启用 AI 命令", target: nil, action: nil)
     private let aiCodexPathLabel = NSTextField(labelWithString: "")
@@ -111,6 +117,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         spellCheckingEnabled: Bool,
         currentThemeColorIdentifier: String = "ocean",
         libraryIncludesSubfolderNotes: Bool = true,
+        libraryFreezesEditorTitle: Bool = false,
         editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
         selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
         aiEnabled: Bool,
@@ -169,6 +176,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         )
         folderNoteVisibilityPopUp.addItems(withTitles: ["包含子文件夹", "仅本文件夹"])
         folderNoteVisibilityPopUp.selectItem(at: libraryIncludesSubfolderNotes ? 0 : 1)
+        freezeLibraryTitleButton.state = libraryFreezesEditorTitle ? .on : .off
         refreshDirectoryControls()
     }
 
@@ -374,6 +382,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "",
                 control: spellCheckingButton,
                 help: "作用于快速笔记、悬浮笔记和普通笔记窗口的正文编辑器。"
+            ),
+            preferenceRow(
+                label: "",
+                control: freezeLibraryTitleButton,
+                help: "默认关闭；关闭时标题会随资料库正文一起滚动。"
             ),
             sectionDivider(),
             preferenceRow(
@@ -761,6 +774,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             spellCheckingEnabled: spellCheckingButton.state == .on,
             themeColorIdentifier: selectedThemeColorIdentifier,
             libraryIncludesSubfolderNotes: folderNoteVisibilityPopUp.indexOfSelectedItem == 0,
+            libraryFreezesEditorTitle: freezeLibraryTitleButton.state == .on,
             editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             aiEnabled: aiEnabledButton.state == .on,
