@@ -81,7 +81,7 @@ struct NotesTopBarAppearance: Equatable {
     var scrollEdgeBottom: CGFloat
 
     static let notes = NotesTopBarAppearance(
-        isToolbarBackgroundVisible: false,
+        isToolbarBackgroundVisible: true,
         usesSystemScrollEdgeBlur: true,
         usesAdaptiveCanvas: true,
         scrollEdgeBottom: 128
@@ -269,14 +269,9 @@ private final class DirectoryHapticFeedback {
 }
 
 private extension View {
-    @ViewBuilder
     func notesTranslucentTopToolbar() -> some View {
-        if #available(iOS 26.0, *) {
-            self
-        } else {
-            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-        }
+        toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder
@@ -286,13 +281,12 @@ private extension View {
         if #available(iOS 26.0, *) {
             overlay(alignment: .top) {
                 if isEnabled {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
+                    Color.clear
                         .frame(height: NotesTopBarAppearance.notes.scrollEdgeBottom)
                         .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(MudsnoteColors.line.opacity(0.45))
-                            .frame(height: 0.5)
+                            Rectangle()
+                                .fill(MudsnoteColors.line.opacity(0.45))
+                                .frame(height: 0.5)
                         }
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
@@ -653,6 +647,7 @@ struct LibraryHomeView: View {
                     .padding(.top, topContentPadding + 12)
                     .padding(.bottom, 110)
             }
+            .scrollClipDisabled()
             .scrollDismissesKeyboard(.interactively)
             .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
             .simultaneousGesture(TapGesture().onEnded {
@@ -712,6 +707,7 @@ struct LibraryHomeView: View {
             .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
+        .scrollClipDisabled()
         .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
         .accessibilityIdentifier(homeContentIdentifier)
     }
@@ -1034,6 +1030,7 @@ struct LibraryHomeView: View {
             .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
+        .scrollClipDisabled()
         .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
         .frame(width: width)
         .frame(maxHeight: .infinity)

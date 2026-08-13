@@ -162,9 +162,9 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testHomeTopBarUsesNativeTranslucentMaterialOverAdaptiveCanvas() {
-        XCTAssertFalse(
+        XCTAssertTrue(
             NotesTopBarAppearance.notes.isToolbarBackgroundVisible,
-            "The scroll edge should blur underlaid content without adding a tinted toolbar fill"
+            "The native navigation material should blur content across the full top chrome"
         )
         XCTAssertTrue(
             NotesTopBarAppearance.notes.usesSystemScrollEdgeBlur,
