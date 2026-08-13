@@ -173,7 +173,7 @@ public final class NoteSearchSession: @unchecked Sendable {
 extension NoteStore {
     public func knownSearchRoots() -> [URL] {
         let recentDirectories = listRecentFiles(limit: 50).map { $0.url.deletingLastPathComponent() }
-        return deduplicatedDirectories(preferredDirectories + recentDirectories)
+        return canonicalSearchRoots(preferredDirectories + recentDirectories)
     }
 
     @discardableResult
@@ -243,8 +243,8 @@ extension NoteStore {
     /// callers must treat it as a fast, possibly stale launch placeholder until a
     /// normal validating read completes.
     public func cachedNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult]? {
-        let searchRoots = roots ?? knownSearchRoots()
-        let rootsKey = deduplicatedDirectories(searchRoots).map {
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map {
             $0.standardizedFileURL.path
         }
 
@@ -538,8 +538,8 @@ extension NoteStore {
         ) != nil, !cancellationCheck() else {
             return nil
         }
-        let searchRoots = roots ?? knownSearchRoots()
-        let rootsKey = deduplicatedDirectories(searchRoots).map {
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map {
             $0.standardizedFileURL.path
         }
         searchIndexLock.lock()
@@ -568,8 +568,8 @@ extension NoteStore {
         cancellationCheck: @Sendable () -> Bool
     ) -> [NoteSearchIndexEntry]? {
         guard !cancellationCheck() else { return nil }
-        let searchRoots = roots ?? knownSearchRoots()
-        let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map { $0.standardizedFileURL.path }
 
         if !validatesMemorySnapshot {
             searchIndexLock.lock()
@@ -707,6 +707,19 @@ extension NoteStore {
             stateRevision: stateRevision
         ) else { return nil }
         return entries
+    }
+
+    private func canonicalSearchRoots(_ roots: [URL]) -> [URL] {
+        let standardized = deduplicatedDirectories(roots)
+        return standardized.filter { candidate in
+            let candidatePath = candidate.standardizedFileURL.path
+            return !standardized.contains { other in
+                let otherPath = other.standardizedFileURL.path
+                guard otherPath != candidatePath else { return false }
+                return otherPath == "/"
+                    || candidatePath.hasPrefix(otherPath + "/")
+            }
+        }
     }
 
     private func incrementallyRefreshing(

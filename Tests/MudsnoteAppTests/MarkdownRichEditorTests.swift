@@ -9012,6 +9012,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.stringValue == "Cached Selection")
         #expect(controller.editorTextView.string == "Cached body is immediate")
         #expect(!controller.editorTextView.isEditable)
+        #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
 
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline, controller.editorTextView.string != "Fresh source body" {
@@ -9019,6 +9020,51 @@ struct MarkdownRichEditorTests {
         }
         #expect(controller.editorTextView.string == "Fresh source body")
         #expect(controller.editorTextView.isEditable)
+        #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
+    }
+
+    @MainActor
+    @Test
+    func coldLibraryLaunchPrioritizesFirstNoteBeforeIndexAndFolderWork() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-launch-priority-tests-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "mudsnote.library-launch-priority-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Cold Priority", body: "First body wins")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.35)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindowAndFocus()
+
+        #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, controller.editorTextView.string != "First body wins" {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(controller.editorTextView.string == "First body wins")
+        #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
     }
 
     @MainActor

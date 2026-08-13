@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 260. Restore the macOS cold-launch critical path
+- Problem: Knowledge indexing started alongside the first iCloud note read, while nested knowledge-relation roots changed the persisted index identity and forced later cold launches to rescan the library.
+- Fix: The first note now finishes loading before folder, tag, and full-library background work begins. Search roots are canonicalized so a selected note's nested folder reuses its configured parent-library index instead of replacing the launch cache.
+- Lesson: Background work still competes for remote filesystem service capacity, and cache identity must describe canonical ownership rather than every redundant query scope.
+
 ### 259. Immediate cached note body on macOS relaunch
 - Problem: The macOS library could restore its note list quickly while leaving the editor body empty until an iCloud-backed source file finished opening.
 - Fix: The last successfully loaded note now has one bounded local launch snapshot. Relaunch restores that note and renders its cached body immediately in read-only mode, then refreshes from the source in the background before enabling edits.

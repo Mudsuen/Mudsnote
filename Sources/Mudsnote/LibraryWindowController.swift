@@ -1391,6 +1391,7 @@ final class LibraryWindowController: NSWindowController,
     private var hasCenteredWindow = false
     private var hasRequestedWindowPresentation = false
     private var hasHydratedInitialNoteList = false
+    private var hasReleasedDeferredLaunchWork = false
     private var selectedScope: LibraryScope = .all
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
@@ -1613,10 +1614,19 @@ final class LibraryWindowController: NSWindowController,
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
         }
+        hydrateInitialNoteListIfNeeded()
+        releaseDeferredLaunchWorkIfReady()
+        startLibraryFileSystemMonitorIfNeeded()
+    }
+
+    private func releaseDeferredLaunchWorkIfReady() {
+        guard hasRequestedWindowPresentation,
+              !hasReleasedDeferredLaunchWork,
+              !isLoadingInitialNote else { return }
+        hasReleasedDeferredLaunchWork = true
         scheduleDeferredSourceFolderLoad()
         scheduleDeferredSourceTagLoad()
-        hydrateInitialNoteListIfNeeded()
-        startLibraryFileSystemMonitorIfNeeded()
+        scheduleFullLibrarySnapshotReload()
     }
 
     private func hydrateInitialNoteListIfNeeded() {
@@ -1628,10 +1638,7 @@ final class LibraryWindowController: NSWindowController,
             let noteRow = cachedPath.flatMap(rowIndex(for:))
                 ?? listRows.firstIndex(where: { $0.note != nil })
             guard let noteRow,
-                  let noteToLoad = note(at: noteRow) else {
-                scheduleFullLibrarySnapshotReload()
-                return
-            }
+                  let noteToLoad = note(at: noteRow) else { return }
             suppressSelectionChanges = true
             tableView.selectRowIndexes(IndexSet(integer: noteRow), byExtendingSelection: false)
             suppressSelectionChanges = false
@@ -1644,7 +1651,6 @@ final class LibraryWindowController: NSWindowController,
             }
             loadInitialNoteAfterLaunch(noteToLoad)
         }
-        scheduleFullLibrarySnapshotReload()
     }
 
     private func showPersistedInitialNote(
@@ -1709,16 +1715,27 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyInitialNoteLoadResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
-        guard window?.isVisible == true else { return }
+        guard window?.isVisible == true else {
+            isLoadingInitialNote = false
+            hasHydratedInitialNoteList = false
+            return
+        }
         if case .failure(let error) = result,
            isMissingInitialNoteError(error) {
             persistedLaunchFallbackURL = nil
             noteStore.removeRecentFileReference(at: note.url)
-            guard selectedNoteStillMatchesInitialLoad(note) else { return }
+            guard selectedNoteStillMatchesInitialLoad(note) else {
+                releaseDeferredLaunchWorkIfReady()
+                return
+            }
             recoverFromMissingInitialNote(note)
+            releaseDeferredLaunchWorkIfReady()
             return
         }
-        guard selectedNoteStillMatchesInitialLoad(note) else { return }
+        guard selectedNoteStillMatchesInitialLoad(note) else {
+            releaseDeferredLaunchWorkIfReady()
+            return
+        }
         if case .failure(let error) = result,
            persistedLaunchFallbackURL?.standardizedFileURL.path
                 == note.url.standardizedFileURL.path {
@@ -1729,6 +1746,7 @@ final class LibraryWindowController: NSWindowController,
                 toolTip: error.localizedDescription
             )
             updateToolbarActionState()
+            releaseDeferredLaunchWorkIfReady()
             return
         }
         persistedLaunchFallbackURL = nil
@@ -6762,6 +6780,7 @@ final class LibraryWindowController: NSWindowController,
             noteLoadFallbackURL = nil
             applyLoadedNote(cached, for: note)
             scheduleCachedNoteValidation(cached, for: note)
+            releaseDeferredLaunchWorkIfReady()
             return
         }
 
@@ -6866,6 +6885,7 @@ final class LibraryWindowController: NSWindowController,
         fileModifiedAt: Date? = nil
     ) {
         isLoadingInitialNote = false
+        defer { releaseDeferredLaunchWorkIfReady() }
         switch result {
         case .success(let loaded):
             noteLoadFallbackURL = nil
@@ -7491,6 +7511,10 @@ final class LibraryWindowController: NSWindowController,
     func waitForActiveNoteLoadForLibrary() async {
         let task = noteLoadTask
         await task?.value
+    }
+
+    var hasReleasedDeferredLaunchWorkForLibrary: Bool {
+        hasReleasedDeferredLaunchWork
     }
 
     func waitForNoteLinksRefreshForLibrary() async {
@@ -8425,6 +8449,7 @@ final class LibraryWindowController: NSWindowController,
             allNotesSnapshot: sourceCountSnapshot
         )
         applyLoadedNote(cached, for: note)
+        releaseDeferredLaunchWorkIfReady()
         if let row = rowIndex(for: standardizedURL.path) {
             tableView.scrollRowToVisible(row)
         }
