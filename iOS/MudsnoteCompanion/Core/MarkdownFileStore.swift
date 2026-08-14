@@ -637,13 +637,13 @@ actor MarkdownFileStore {
 
     func loadMarkdownDocument(relativePath: String) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
-        guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
-              fileURL.pathExtension.lowercased() == "md" else {
-            throw MarkdownDocumentError.invalidPath
-        }
         let accessed = root.startAccessingSecurityScopedResource()
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        guard let fileURL = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              fileURL.pathExtension.lowercased() == "md" else {
+            throw MarkdownDocumentError.invalidPath
         }
 
         return MarkdownDocument(
@@ -1126,6 +1126,98 @@ actor MarkdownFileStore {
         )
     }
 
+    func createCapturedMarkdown(
+        from draft: CaptureDraft,
+        root: URL,
+        now: Date = Date()
+    ) throws -> RecentMarkdownFile {
+        guard draft.canSend else { throw CaptureDraftError.empty }
+        try CaptureAttachmentPolicy.validate(draft.attachments)
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+
+        let directory = try userFolderURL(
+            relativePath: draft.target.relativeFolderPath,
+            root: root,
+            allowRoot: true
+        )
+        let operationID = UUID()
+        let attachmentWrites = try attachmentWrites(
+            for: draft.attachments,
+            root: root,
+            now: now,
+            operationID: operationID
+        )
+        let markdownBlock = Self.markdownBlock(
+            body: draft.body,
+            tags: draft.tags,
+            attachmentReferences: zip(attachmentWrites, draft.attachments).map {
+                MarkdownAttachmentReference(relativePath: $0.0.relativePath, kind: $0.1.referenceKind)
+            },
+            attachmentTags: draft.attachments.map(\.markdownTag),
+            now: now
+        )
+        let preferredStem = Self.captureNoteFilenameStem(for: draft)
+        var createdAttachmentURLs: [URL] = []
+
+        do {
+            for attachment in attachmentWrites {
+                guard let attachmentURL = AuthorizedLibraryPath.resolve(
+                    attachment.relativePath,
+                    within: root,
+                    constrainedTo: "Attachments"
+                ) else {
+                    throw MarkdownDocumentError.invalidPath
+                }
+                try fileManager.createDirectory(
+                    at: attachmentURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try attachment.data.write(to: attachmentURL, options: .withoutOverwriting)
+                createdAttachmentURLs.append(attachmentURL)
+            }
+
+            let body = markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+            let (destination, note) = try createCapturedNoteExclusively(
+                in: directory,
+                preferredStem: preferredStem,
+                body: body
+            )
+
+            let relativePath = Self.relativeNotePath(
+                filename: destination.lastPathComponent,
+                targetFolder: draft.target.relativeFolderPath
+            )
+            let metadata = MarkdownListMetadata.extract(
+                from: note,
+                fallbackTitle: destination.deletingPathExtension().lastPathComponent
+            )
+            invalidateAfterMutation(relativePaths: [relativePath])
+            return RecentMarkdownFile(
+                id: relativePath,
+                relativePath: relativePath,
+                title: metadata.title,
+                modifiedAt: now,
+                createdAt: now,
+                preview: metadata.preview,
+                galleryImagePath: metadata.galleryImagePath,
+                galleryChecklistItems: metadata.galleryChecklistItems,
+                hasAttachments: metadata.hasAttachments,
+                hasChecklist: metadata.hasChecklist,
+                hasUncheckedChecklist: metadata.hasUncheckedChecklist,
+                tags: metadata.tags
+            )
+        } catch {
+            for attachmentURL in createdAttachmentURLs.reversed() {
+                try? fileManager.removeItem(at: attachmentURL)
+            }
+            throw error
+        }
+    }
+
     func saveMarkdownDocument(
         relativePath: String,
         markdown: String,
@@ -1321,14 +1413,14 @@ actor MarkdownFileStore {
         now: Date = Date()
     ) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard Self.isMutableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md",
               (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
             throw MarkdownLifecycleError.protectedNote
         }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard fileManager.fileExists(atPath: source.path) else {
             throw MarkdownLifecycleError.noteNotFound
         }
@@ -1356,13 +1448,13 @@ actor MarkdownFileStore {
         to name: String
     ) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard Self.isMutableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md" else {
             throw MarkdownLifecycleError.protectedNote
         }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard fileManager.fileExists(atPath: source.path) else {
             throw MarkdownLifecycleError.noteNotFound
         }
@@ -1434,13 +1526,13 @@ actor MarkdownFileStore {
         now: Date = Date()
     ) throws -> TrashedMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard Self.isTrashableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md" else {
             throw MarkdownLifecycleError.protectedNote
         }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard fileManager.fileExists(atPath: source.path) else {
             throw MarkdownLifecycleError.noteNotFound
         }
@@ -1633,13 +1725,13 @@ actor MarkdownFileStore {
         toFolder targetFolder: String?
     ) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard Self.isMutableNotePath(relativePath),
               let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
               source.pathExtension.lowercased() == "md" else {
             throw MarkdownLifecycleError.protectedNote
         }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard fileManager.fileExists(atPath: source.path) else {
             throw MarkdownLifecycleError.noteNotFound
         }
@@ -2726,27 +2818,22 @@ actor MarkdownFileStore {
         _ pending: PendingWrite,
         root expectedRoot: URL
     ) async throws -> RecentMarkdownFile {
-        try await performWrite(pending, root: expectedRoot, usesRecoveryMetadata: true)
-    }
-
-    @discardableResult
-    func performDirectCaptureWrite(
-        _ pending: PendingWrite,
-        root expectedRoot: URL
-    ) async throws -> RecentMarkdownFile {
-        try await performWrite(pending, root: expectedRoot, usesRecoveryMetadata: false)
+        try await performWrite(pending, root: expectedRoot)
     }
 
     private func performWrite(
         _ pending: PendingWrite,
-        root expectedRoot: URL,
-        usesRecoveryMetadata: Bool
+        root expectedRoot: URL
     ) async throws -> RecentMarkdownFile {
         let expectedLibraryID = LibraryIdentity.identifier(for: expectedRoot)
         guard pending.libraryID.isEmpty || pending.libraryID == expectedLibraryID else {
             throw PendingWriteValidationError.libraryMismatch
         }
         let root = expectedRoot
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
         guard let target = AuthorizedLibraryPath.resolve(pending.targetRelativePath, within: root),
               target.pathExtension.lowercased() == "md" else {
             throw PendingWriteValidationError.invalidTargetPath
@@ -2768,10 +2855,6 @@ actor MarkdownFileStore {
             }
             return (url: url, data: data)
         }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { root.stopAccessingSecurityScopedResource() }
-        }
 
         for attachment in validatedAttachments {
             let attachmentURL = attachment.url
@@ -2790,9 +2873,7 @@ actor MarkdownFileStore {
         }
 
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let writtenTarget = usesRecoveryMetadata
-            ? try writePendingNoteIfNeeded(pending, to: target, root: root)
-            : try writeDirectCapturedNote(pending, to: target)
+        let writtenTarget = try writePendingNoteIfNeeded(pending, to: target, root: root)
         let writtenRelativePath = Self.relativePath(for: writtenTarget, root: root)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [writtenRelativePath])
@@ -2800,21 +2881,6 @@ actor MarkdownFileStore {
             for: pending,
             relativePath: writtenRelativePath
         )
-    }
-
-    private func writeDirectCapturedNote(
-        _ pending: PendingWrite,
-        to requestedTarget: URL
-    ) throws -> URL {
-        let target = uniqueMarkdownURL(for: requestedTarget)
-        let title = target.deletingPathExtension().lastPathComponent
-        let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = "# \(title)\n\n\(body)\n"
-        guard let data = note.data(using: .utf8) else {
-            throw PendingWriteValidationError.invalidMarkdown
-        }
-        try data.write(to: target, options: .withoutOverwriting)
-        return target
     }
 
     static func projection(
@@ -3131,6 +3197,56 @@ actor MarkdownFileStore {
 
     private static func relativePath(for url: URL, root: URL) -> String {
         String(url.path.dropFirst(root.path.count + 1))
+    }
+
+    private static func relativeNotePath(filename: String, targetFolder: String?) -> String {
+        guard let targetFolder, !targetFolder.isEmpty else { return filename }
+        return "\(targetFolder)/\(filename)"
+    }
+
+    private static func isFileAlreadyExists(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == CocoaError.fileWriteFileExists.rawValue
+    }
+
+    private func createCapturedNoteExclusively(
+        in directory: URL,
+        preferredStem: String,
+        body: String
+    ) throws -> (url: URL, markdown: String) {
+        var suffix = 1
+        while true {
+            let stem = suffix == 1 ? preferredStem : "\(preferredStem) \(suffix)"
+            let candidate = directory.appendingPathComponent("\(stem).md")
+            let markdown = "# \(stem)\n\n\(body)\n"
+            guard let data = markdown.data(using: .utf8) else {
+                throw MarkdownDocumentError.invalidPath
+            }
+            do {
+                try data.write(to: candidate, options: .withoutOverwriting)
+                return (candidate, markdown)
+            } catch where Self.isFileAlreadyExists(error) {
+                suffix += 1
+            }
+        }
+    }
+
+    private static func captureNoteFilenameStem(for draft: CaptureDraft) -> String {
+        let titleSource = draft.body
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+            ?? draft.attachments.first.map {
+                switch $0 {
+                case .audio: return "Audio Note"
+                case .image: return "Image Note"
+                case .video: return "Video Note"
+                case .file: return "Attachment Note"
+                }
+            }
+            ?? "Untitled Note"
+        return portableNoteFilenameStem(from: "# \(titleSource)")
     }
 
     static func markdownBlock(

@@ -1286,6 +1286,123 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testForegroundTextCaptureNeverUsesPendingInfrastructure() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        let queueURL = root.appendingPathComponent(".mudsnote/queue.json")
+        let queueBytesBefore = try Data(contentsOf: queueURL)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let created = try await store.createCapturedMarkdown(
+            from: CaptureDraft(body: "Direct foreground capture"),
+            root: root,
+            now: Date(timeIntervalSince1970: 1_754_640_000)
+        )
+
+        XCTAssertEqual(created.relativePath, "Direct foreground capture.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(created.relativePath).path))
+        XCTAssertEqual(try Data(contentsOf: queueURL), queueBytesBefore)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(".mudsnote/write-claims").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(".mudsnote/completed-writes").path
+            )
+        )
+    }
+
+    func testTwoConcurrentDirectCapturesWithSameTitleAndContentCreateTwoFiles() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let firstStore = MarkdownFileStore()
+        let secondStore = MarkdownFileStore()
+        await firstStore.configure(root: root)
+        await secondStore.configure(root: root)
+        let draft = CaptureDraft(body: "Concurrent direct capture")
+        let now = Date(timeIntervalSince1970: 1_754_640_000)
+
+        async let first = firstStore.createCapturedMarkdown(from: draft, root: root, now: now)
+        async let second = secondStore.createCapturedMarkdown(from: draft, root: root, now: now)
+        let files = try await [first, second]
+
+        XCTAssertEqual(Set(files.map(\.relativePath)).count, 2)
+        XCTAssertTrue(files.allSatisfy {
+            FileManager.default.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
+        })
+    }
+
+    @MainActor
+    func testHistoricalFailedQueueArtifactDoesNotEmitStartupRecoveryToast() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let recoveryFilename = "queue-failed-5d63bd41-8cb9-4607-a719-83a5ef1a37a7.json"
+        try Data("preserved diagnostic".utf8).write(
+            to: root.appendingPathComponent(".mudsnote/\(recoveryFilename)")
+        )
+        let suiteName = "MudsnoteCompanionTests.historical-recovery.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+
+        model.selectFolder(root)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertNotEqual(
+            model.statusToast?.message,
+            String(localized: "Damaged pending captures were preserved")
+        )
+        XCTAssertTrue(model.conflictWarnings.contains { $0.contains(recoveryFilename) })
+    }
+
+    @MainActor
+    func testNewQueueQuarantineEmitsRecoveryToastOnDiscovery() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try Data("not valid queue json".utf8).write(
+            to: root.appendingPathComponent(".mudsnote/queue.json")
+        )
+        let suiteName = "MudsnoteCompanionTests.new-quarantine.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+
+        model.selectFolder(root)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertEqual(
+            model.statusToast?.message,
+            String(localized: "Damaged pending captures were preserved")
+        )
+        XCTAssertTrue(model.conflictWarnings.contains { $0.contains("queue-damaged-") })
+    }
+
     func testMarkdownBlockFormat() {
         let date = Date(timeIntervalSince1970: 1_717_747_920)
         let block = MarkdownFileStore.markdownBlock(

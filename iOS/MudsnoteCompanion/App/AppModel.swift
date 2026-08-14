@@ -97,6 +97,7 @@ final class AppModel: ObservableObject {
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
+    private var discoveredQueueRecoveryThisRun = false
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
     private let captureFolderPreferences: CaptureFolderPreferences
     private let libraryRefreshBarrier: @Sendable () async -> Void
@@ -233,7 +234,8 @@ final class AppModel: ObservableObject {
                 guard libraryConfigurationID == configurationID else { return }
                 try folderAccess.persistFolder(url)
                 guard try await configureFolder(url, configurationID: configurationID) else { return }
-                if libraryConfigurationID == configurationID {
+                if libraryConfigurationID == configurationID,
+                   !discoveredQueueRecoveryThisRun {
                     statusToast = .saved(String(localized: "Folder ready"))
                 }
             } catch {
@@ -826,6 +828,7 @@ final class AppModel: ObservableObject {
             guard libraryConfigurationID == configurationID else { return }
             if case .quarantined(let filename) = queueLoadResult {
                 queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
+                discoveredQueueRecoveryThisRun = true
                 statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
             }
 
@@ -2135,6 +2138,7 @@ final class AppModel: ObservableObject {
         completedSearchQuery = ""
         completedSearchScope = .all
         queueRecoveryWarning = nil
+        discoveredQueueRecoveryThisRun = false
         return configurationID
     }
 
@@ -2161,6 +2165,7 @@ final class AppModel: ObservableObject {
                 .map { Self.queueRecoveryWarning(filename: $0) }
         case .quarantined(let filename):
             queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
+            discoveredQueueRecoveryThisRun = true
         }
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
@@ -2196,7 +2201,7 @@ final class AppModel: ObservableObject {
         if replayFailed {
             syncStatus = .pending
             statusToast = .pending(String(localized: "Pending captures need attention"))
-        } else if queueRecoveryWarning != nil {
+        } else if discoveredQueueRecoveryThisRun {
             statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
         }
         return true
@@ -2213,6 +2218,7 @@ final class AppModel: ObservableObject {
     private func recordPreservedPendingWrites(_ result: PendingWriteReplayResult) {
         guard let filename = result.preservedFailureFilenames.first else { return }
         queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
+        discoveredQueueRecoveryThisRun = true
     }
 
     private func announceRecoveredDraftIfPossible() {
@@ -2227,9 +2233,8 @@ final class AppModel: ObservableObject {
             throw FolderAccessError.missingFolder
         }
 
-        let pending = try await fileStore.preparePendingWrite(for: draft, root: root)
         do {
-            let createdFile = try await fileStore.performDirectCaptureWrite(pending, root: root)
+            let createdFile = try await fileStore.createCapturedMarkdown(from: draft, root: root)
             recordSuccessfulCaptureFolder(for: draft.target)
             return createdFile
         } catch {
