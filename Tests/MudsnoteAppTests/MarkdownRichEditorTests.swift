@@ -2822,8 +2822,20 @@ struct MarkdownRichEditorTests {
         let editorUsedRect = editorLayoutManager.usedRect(for: editorTextContainer)
         #expect(
             controller.statusLabel.frame.minY
-                > controller.editorTextView.textContainerInset.height + editorUsedRect.maxY
+                >= controller.editorTextView.textContainerInset.height
+                    + editorUsedRect.maxY
+                    + LibraryNotesLayout.editorBottomInset
         )
+        editorScrollView.contentView.scroll(to: .zero)
+        editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
+        #expect(!editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
+        let bottomOriginY = max(
+            0,
+            controller.editorTextView.frame.height - editorScrollView.contentView.bounds.height
+        )
+        editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: bottomOriginY))
+        editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
+        #expect(editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))

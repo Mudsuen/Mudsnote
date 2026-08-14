@@ -7597,9 +7597,25 @@ final class LibraryWindowController: NSWindowController,
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let horizontalInset: CGFloat = 20
+        let contentBottom = editorTextView.textContainerInset.height + usedRect.maxY
+        let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
+        let statusTop = max(
+            contentBottom + LibraryNotesLayout.editorBottomInset,
+            viewportHeight + LibraryNotesLayout.editorBottomInset
+        )
+        let documentHeight = statusTop
+            + LibraryNotesLayout.editorDateRowHeight
+            + LibraryNotesLayout.editorBottomInset
+        editorTextView.minimumScrollableContentHeight = documentHeight
+        editorTextView.minSize = NSSize(width: 0, height: documentHeight)
+        if abs(editorTextView.frame.height - documentHeight) > 0.5 {
+            var frame = editorTextView.frame
+            frame.size.height = documentHeight
+            editorTextView.frame = frame
+        }
         statusLabel.frame = NSRect(
             x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
-            y: editorTextView.textContainerInset.height + usedRect.maxY + 6,
+            y: statusTop,
             width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
             height: LibraryNotesLayout.editorDateRowHeight
         )

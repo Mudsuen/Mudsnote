@@ -390,6 +390,14 @@ private final class SelectionFormattingPanelButton: NSButton {
 }
 
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
+    var minimumScrollableContentHeight: CGFloat = 0
+
+    override func setFrameSize(_ newSize: NSSize) {
+        var constrainedSize = newSize
+        constrainedSize.height = max(constrainedSize.height, minimumScrollableContentHeight)
+        super.setFrameSize(constrainedSize)
+    }
+
     private struct ImageResizeDragState {
         let characterIndex: Int
         let initialPointerX: CGFloat
