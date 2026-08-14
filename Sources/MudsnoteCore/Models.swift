@@ -18,11 +18,18 @@ public struct LibraryLaunchNoteSnapshot: Equatable, Sendable {
     public let url: URL
     public let document: LoadedNoteDocument
     public let modifiedAt: Date
+    public let createdAt: Date
 
-    public init(url: URL, document: LoadedNoteDocument, modifiedAt: Date) {
+    public init(
+        url: URL,
+        document: LoadedNoteDocument,
+        modifiedAt: Date,
+        createdAt: Date? = nil
+    ) {
         self.url = url
         self.document = document
         self.modifiedAt = modifiedAt
+        self.createdAt = createdAt ?? modifiedAt
     }
 }
 

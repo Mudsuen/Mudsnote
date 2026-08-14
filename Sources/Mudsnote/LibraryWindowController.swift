@@ -1255,6 +1255,7 @@ final class LibraryWindowController: NSWindowController,
     let editorTextView = MarkdownTextView(frame: .zero)
     let noteLinksView = NoteLinksView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
+    let createdDateLabel = NSTextField(labelWithString: "")
     let statusLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
 
@@ -1507,9 +1508,23 @@ final class LibraryWindowController: NSWindowController,
         buildUI()
         configureToolbar()
         if defersInitialNoteHydration {
+            let preferredRootPaths = noteStore.preferredDirectories.map {
+                $0.standardizedFileURL.path
+            }
+            let cachedPresentation = noteStore.cachedLibraryPresentationSnapshot(
+                limit: Self.sourceCountSnapshotLimit
+            ).filter { note in
+                let notePath = note.url.standardizedFileURL.path
+                return preferredRootPaths.contains {
+                    notePath == $0 || notePath.hasPrefix($0 + "/")
+                }
+            }
+            applyCachedSourceTags(from: cachedPresentation)
             reloadNotes(
                 loadFirstIfNeeded: false,
-                allNotesSnapshot: recentShellNoteResults(limit: 240),
+                allNotesSnapshot: cachedPresentation.isEmpty
+                    ? recentShellNoteResults(limit: 240)
+                    : cachedPresentation,
                 refreshCounts: true
             )
         } else {
@@ -1628,7 +1643,8 @@ final class LibraryWindowController: NSWindowController,
             tags: snapshot.document.tags
         )
         isDirty = false
-        updateEditorStatus(editorDateText(for: snapshot.modifiedAt))
+        updateEditorCreatedDate(snapshot.createdAt)
+        updateEditorStatus(editorEditedDateText(for: snapshot.modifiedAt))
         updateToolbarActionState()
     }
 
@@ -1641,7 +1657,8 @@ final class LibraryWindowController: NSWindowController,
         setEditorEditable(false)
         applyDocument(title: note.title, body: "", tags: note.tags)
         isDirty = false
-        updateEditorStatus(editorDateText(for: note.modifiedAt))
+        updateEditorCreatedDate(note.createdAt)
+        updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
         updateToolbarActionState()
     }
 
@@ -1768,6 +1785,7 @@ final class LibraryWindowController: NSWindowController,
                 limit: snapshotLimit,
                 roots: preferredDirectories
             )
+            noteStore.cacheLibraryPresentationSnapshot(allNotes)
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             let countIndex = LibrarySourceCountIndex(
                 notes: allNotes,
@@ -1783,6 +1801,7 @@ final class LibraryWindowController: NSWindowController,
                 self.sourceInboxDirectory = inboxDirectory
                 self.trashedNotesSnapshot = trashedNotes
                 let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
+                self.applySourceTagsFromValidatedSnapshot(mergedAllNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths
                     ? countIndex
                     : nil
@@ -2362,7 +2381,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.setAccessibilityElement(false)
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
-        statusLabel.setAccessibilityLabel("笔记状态")
+        statusLabel.setAccessibilityLabel("编辑时间或保存状态")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
@@ -2370,6 +2389,35 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureEditorTextView()
+        createdDateLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorCreatedDateLabel")
+        createdDateLabel.setAccessibilityLabel("创建时间")
+        createdDateLabel.font = .systemFont(
+            ofSize: LibraryNotesLayout.editorStatusFontSize,
+            weight: .semibold
+        )
+        createdDateLabel.textColor = panelTertiaryTextColor()
+        createdDateLabel.alignment = .center
+        createdDateLabel.lineBreakMode = .byTruncatingTail
+        createdDateLabel.translatesAutoresizingMaskIntoConstraints = false
+        editorTextView.addSubview(createdDateLabel)
+        NSLayoutConstraint.activate([
+            createdDateLabel.topAnchor.constraint(equalTo: editorTextView.topAnchor, constant: 4),
+            createdDateLabel.centerXAnchor.constraint(
+                equalTo: editorTextView.centerXAnchor,
+                constant: LibraryNotesLayout.editorStatusHorizontalOffset
+            ),
+            createdDateLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: editorTextView.leadingAnchor,
+                constant: 20
+            ),
+            createdDateLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: editorTextView.trailingAnchor,
+                constant: -20
+            ),
+            createdDateLabel.heightAnchor.constraint(
+                equalToConstant: LibraryNotesLayout.editorDateRowHeight
+            )
+        ])
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -2424,13 +2472,12 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        let stack = NSStackView(views: [dateRow, bodyContainer, noteLinksView])
+        let stack = NSStackView(views: [bodyContainer, noteLinksView, dateRow])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
         stack.spacing = 0
-        stack.setCustomSpacing(LibraryNotesLayout.editorDateToTitleSpacing, after: dateRow)
         stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
             top: LibraryNotesLayout.editorTopInset,
@@ -3235,7 +3282,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isHorizontallyResizable = false
         editorTextView.textContainerInset = NSSize(
             width: LibraryNotesLayout.editorTextContainerHorizontalInset,
-            height: 4
+            height: LibraryNotesLayout.editorDateRowHeight
+                + LibraryNotesLayout.editorDateToTitleSpacing
+                + 4
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
@@ -3542,6 +3591,48 @@ final class LibraryWindowController: NSWindowController,
                 self.applySourceTagsForLibrary(tags)
             }
         }
+    }
+
+    private func applyCachedSourceTags(from notes: [NoteSearchResult]) {
+        let tags = Self.mostFrequentTags(in: notes, limit: 12)
+        guard !tags.isEmpty else { return }
+        sourceTagLoadGeneration += 1
+        sourceTagsLoading = false
+        sourceTagsLoaded = true
+        sourceTagNames = tags
+        rebuildSourceRows(includeTags: true)
+    }
+
+    private func applySourceTagsFromValidatedSnapshot(_ notes: [NoteSearchResult]) {
+        let tags = Self.mostFrequentTags(in: notes, limit: 12)
+        guard tags != sourceTagNames || !sourceTagsLoaded else { return }
+        sourceTagLoadGeneration += 1
+        sourceTagsLoading = false
+        sourceTagsLoaded = true
+        sourceTagNames = tags
+        rebuildSourceRows(includeTags: true)
+    }
+
+    private static func mostFrequentTags(
+        in notes: [NoteSearchResult],
+        limit: Int
+    ) -> [String] {
+        var tagCounts: [String: (displayName: String, count: Int)] = [:]
+        for tag in notes.flatMap(\.tags) {
+            let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.folding(options: [.caseInsensitive], locale: .current)
+            let previous = tagCounts[key]
+            tagCounts[key] = (previous?.displayName ?? trimmed, (previous?.count ?? 0) + 1)
+        }
+        return tagCounts.values
+            .sorted {
+                $0.count == $1.count
+                    ? $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+                    : $0.count > $1.count
+            }
+            .prefix(limit)
+            .map(\.displayName)
     }
 
     func loadSourceTagsForLibrary() {
@@ -6041,12 +6132,13 @@ final class LibraryWindowController: NSWindowController,
             setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
             isDirty = true
+            updateEditorCreatedDate(Date())
             if backgroundAutosaveIsActive {
                 autosaveCurrentNote()
             } else {
                 _ = try saveCurrentNote(force: true)
             }
-            updateEditorStatus(editorDateText(for: Date()))
+            updateEditorStatus(editorEditedDateText(for: Date()))
             refreshSourceSelection()
             updateToolbarActionState()
             window?.makeFirstResponder(editorTextView)
@@ -6772,7 +6864,8 @@ final class LibraryWindowController: NSWindowController,
            selectedTags == cached.loaded.tags,
            normalizedEditorMarkdownBody() == normalizedMarkdownBody(cached.loaded.body) {
             isDirty = false
-            updateEditorStatus(editorDateText(for: note.modifiedAt))
+            updateEditorCreatedDate(note.createdAt)
+            updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
             updateToolbarActionState()
             return
         }
@@ -6804,7 +6897,8 @@ final class LibraryWindowController: NSWindowController,
             preservedSelection: preservedSelection
         )
         isDirty = false
-        updateEditorStatus(editorDateText(for: note.modifiedAt))
+        updateEditorCreatedDate(note.createdAt)
+        updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
         applyEditorSearchHighlightsForCurrentQuery()
         updateToolbarActionState()
         refreshNoteLinks(for: note.url, body: cached.loaded.body)
@@ -6977,8 +7071,14 @@ final class LibraryWindowController: NSWindowController,
         loadedNoteCache.insert(cached, forKey: loadedNoteCacheKey(for: note.url))
         let noteStore = noteStore
         let noteURL = note.url
+        let createdAt = note.createdAt
         launchNoteCacheQueue.async {
-            noteStore.cacheLibraryLaunchNote(loaded, at: noteURL, modifiedAt: modifiedAt)
+            noteStore.cacheLibraryLaunchNote(
+                loaded,
+                at: noteURL,
+                modifiedAt: modifiedAt,
+                createdAt: createdAt
+            )
         }
         return cached
     }
@@ -7411,7 +7511,7 @@ final class LibraryWindowController: NSWindowController,
                 announcesChange: true
             )
         } else if !isDirty {
-            updateEditorStatus(editorDateText(for: success.savedAt))
+            updateEditorStatus(editorEditedDateText(for: success.savedAt))
         }
         refreshNoteLinksAfterSave(
             for: success.savedURL,
@@ -7573,7 +7673,7 @@ final class LibraryWindowController: NSWindowController,
                 announcesChange: true
             )
         } else {
-            updateEditorStatus(editorDateText(for: savedAt))
+            updateEditorStatus(editorEditedDateText(for: savedAt))
         }
         refreshNoteLinksAfterSave(
             for: savedURL,
@@ -7615,6 +7715,7 @@ final class LibraryWindowController: NSWindowController,
             title: title,
             snippet: snippet,
             modifiedAt: modifiedAt,
+            createdAt: previousNote?.createdAt ?? modifiedAt,
             tags: tags,
             hasAttachments: hasAttachments,
             thumbnailURL: thumbnailURL
@@ -7634,6 +7735,7 @@ final class LibraryWindowController: NSWindowController,
             ].compactMap { $0 }),
             limit: Self.sourceCountSnapshotLimit
         )
+        persistCurrentLibraryPresentationCache()
         return sourceCountsChanged
     }
 
@@ -7677,6 +7779,7 @@ final class LibraryWindowController: NSWindowController,
     private func removeNotesFromSourceSnapshot(at urls: [URL]) {
         let removedPaths = Set(urls.map { $0.standardizedFileURL.path })
         sourceCountSnapshot.removeAll { removedPaths.contains($0.url.standardizedFileURL.path) }
+        persistCurrentLibraryPresentationCache()
     }
 
     private func remapSourceSnapshotNotes(from sourceURLs: [URL], to destinationURLs: [URL]) {
@@ -7692,6 +7795,7 @@ final class LibraryWindowController: NSWindowController,
             guard let destinationURL = destinationBySourcePath[note.url.standardizedFileURL.path] else { return note }
             return note.replacingURL(destinationURL)
         }
+        persistCurrentLibraryPresentationCache()
     }
 
     private func remapSourceSnapshotFolder(from sourceURL: URL, to destinationURL: URL) {
@@ -7703,12 +7807,22 @@ final class LibraryWindowController: NSWindowController,
             let relativePath = String(notePath.dropFirst(sourcePath.count + 1))
             return note.replacingURL(destination.appendingPathComponent(relativePath))
         }
+        persistCurrentLibraryPresentationCache()
     }
 
     private func removeSourceSnapshotNotes(in folderURL: URL) {
         let folderPath = folderURL.standardizedFileURL.path
         sourceCountSnapshot.removeAll {
             $0.url.standardizedFileURL.path.hasPrefix(folderPath + "/")
+        }
+        persistCurrentLibraryPresentationCache()
+    }
+
+    private func persistCurrentLibraryPresentationCache() {
+        let snapshot = sourceCountSnapshot
+        let noteStore = noteStore
+        launchNoteCacheQueue.async {
+            noteStore.cacheLibraryPresentationSnapshot(snapshot)
         }
     }
 
@@ -8904,6 +9018,8 @@ final class LibraryWindowController: NSWindowController,
         selectedURL = nil
         selectedTags = []
         isDirty = false
+        updateEditorCreatedDate(nil)
+        updateEditorStatus("")
         setEditorEditable(selectedScope != .trash)
         applyDocument(title: "", body: "", tags: [])
     }
@@ -8989,8 +9105,14 @@ final class LibraryWindowController: NSWindowController,
         return noteListShortDateFormatter.string(from: date)
     }
 
-    private func editorDateText(for date: Date) -> String {
-        dateFormatter.string(from: date)
+    private func editorEditedDateText(for date: Date) -> String {
+        "编辑于 \(dateFormatter.string(from: date))"
+    }
+
+    private func updateEditorCreatedDate(_ date: Date?) {
+        let text = date.map { "创建于 \(dateFormatter.string(from: $0))" } ?? ""
+        createdDateLabel.stringValue = text
+        createdDateLabel.setAccessibilityValue(text)
     }
 
     private func notesCountText(_ count: Int) -> String {

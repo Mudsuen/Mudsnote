@@ -2759,9 +2759,9 @@ struct MarkdownRichEditorTests {
         #expect(firstNoteCell.attachmentImageView.isHidden)
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(controller.statusLabel.identifier?.rawValue == "LibraryEditorStatusLabel")
-        #expect(controller.statusLabel.accessibilityLabel() == "笔记状态")
+        #expect(controller.statusLabel.accessibilityLabel() == "编辑时间或保存状态")
         #expect(controller.statusLabel.alignment == .center)
-        #expect(controller.statusLabel.stringValue == noteDateFormatter.string(from: noteModifiedAt))
+        #expect(controller.statusLabel.stringValue == "编辑于 \(noteDateFormatter.string(from: noteModifiedAt))")
         #expect(!controller.statusLabel.stringValue.contains("·"))
         #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
@@ -2769,7 +2769,10 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.accessibilityLabel() == "笔记标题")
         #expect(controller.editorTextView.accessibilityLabel() == "笔记内容")
-        #expect(controller.statusLabel.accessibilityLabel() == "笔记状态")
+        #expect(controller.statusLabel.accessibilityLabel() == "编辑时间或保存状态")
+        #expect(controller.createdDateLabel.accessibilityLabel() == "创建时间")
+        #expect(controller.createdDateLabel.superview === controller.editorTextView)
+        #expect(controller.createdDateLabel.stringValue.hasPrefix("创建于 "))
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
         #expect(controller.theme.bodyFont.pointSize == LibraryNotesLayout.editorBodyFontSize)
@@ -2784,7 +2787,12 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorLineSpacing == 2.5)
         #expect(LibraryNotesLayout.editorParagraphSpacing == 6)
         #expect(controller.editorTextView.textContainerInset.width == LibraryNotesLayout.editorTextContainerHorizontalInset)
-        #expect(controller.editorTextView.textContainerInset.height == 4)
+        #expect(
+            controller.editorTextView.textContainerInset.height
+                == LibraryNotesLayout.editorDateRowHeight
+                    + LibraryNotesLayout.editorDateToTitleSpacing
+                    + 4
+        )
         let editorScrollView = try #require(controller.editorTextView.enclosingScrollView)
         #expect(editorScrollView.hasHorizontalScroller == false)
         #expect(editorScrollView.horizontalScrollElasticity == .none)
@@ -2821,7 +2829,7 @@ struct MarkdownRichEditorTests {
                 && $0.constant == LibraryNotesLayout.editorStatusHorizontalOffset
         })
         #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
-        #expect(editorStack.customSpacing(after: editorDateRow) == LibraryNotesLayout.editorDateToTitleSpacing)
+        #expect(editorStack.arrangedSubviews.last === editorDateRow)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
@@ -8749,6 +8757,56 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowRestoresCountsAndTagsFromPresentationCacheBeforeShow() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-presentation-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let suiteName = "mudsnote.library-presentation-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let notes = [
+            NoteSearchResult(
+                url: store.notesDirectory.appendingPathComponent("One.md"),
+                title: "One",
+                snippet: "",
+                modifiedAt: Date(),
+                tags: ["cached-tag"]
+            ),
+            NoteSearchResult(
+                url: store.notesDirectory.appendingPathComponent("Two.md"),
+                title: "Two",
+                snippet: "",
+                modifiedAt: Date().addingTimeInterval(-60),
+                tags: ["cached-tag", "second-tag"]
+            )
+        ]
+        store.cacheLibraryPresentationSnapshot(notes)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
+        #expect(controller.sourceCountTextForLibrary(titled: "cached-tag") == "2")
+        #expect(controller.sourceCountTextForLibrary(titled: "second-tag") == "1")
     }
 
     @MainActor

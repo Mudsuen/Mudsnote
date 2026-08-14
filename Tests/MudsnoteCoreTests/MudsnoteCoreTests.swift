@@ -856,7 +856,13 @@ struct MudsnoteCoreTests {
         )
         let document = try harness.store.loadNoteDocument(at: noteURL)
         let modifiedAt = Date(timeIntervalSince1970: 1_786_612_800)
-        harness.store.cacheLibraryLaunchNote(document, at: noteURL, modifiedAt: modifiedAt)
+        let createdAt = Date(timeIntervalSince1970: 1_786_526_400)
+        harness.store.cacheLibraryLaunchNote(
+            document,
+            at: noteURL,
+            modifiedAt: modifiedAt,
+            createdAt: createdAt
+        )
 
         let reloadedStore = NoteStore(
             defaults: harness.defaults,
@@ -869,6 +875,36 @@ struct MudsnoteCoreTests {
         #expect(snapshot.url == noteURL.standardizedFileURL)
         #expect(snapshot.document == document)
         #expect(snapshot.modifiedAt == modifiedAt)
+        #expect(snapshot.createdAt == createdAt)
+    }
+
+    @Test
+    func libraryPresentationCacheRestoresCountsAndTagsWithoutScanningNotes() throws {
+        let harness = try TestHarness()
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = notesDirectory.appendingPathComponent("Cached.md")
+        let snapshot = [
+            NoteSearchResult(
+                url: noteURL,
+                title: "Cached",
+                snippet: "Launch projection",
+                modifiedAt: Date(timeIntervalSince1970: 1_786_612_800),
+                createdAt: Date(timeIntervalSince1970: 1_786_526_400),
+                tags: ["launch", "macOS"],
+                hasAttachments: true,
+                thumbnailURL: notesDirectory.appendingPathComponent("preview.png")
+            )
+        ]
+        harness.store.cacheLibraryPresentationSnapshot(snapshot)
+
+        let reloadedStore = NoteStore(
+            defaults: harness.defaults,
+            legacyDefaults: nil,
+            fileManager: FileManager.default,
+            appSupportDirectory: harness.store.appSupportDirectory
+        )
+
+        #expect(reloadedStore.cachedLibraryPresentationSnapshot() == snapshot)
     }
 
     @Test
