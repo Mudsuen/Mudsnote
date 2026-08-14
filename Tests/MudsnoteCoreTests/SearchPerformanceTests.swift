@@ -27,6 +27,97 @@ private func emitSearchPerformanceEvidence(_ message: @autoclosure () -> String)
 
 struct SearchPerformanceTests {
     @Test
+    func persistedSnapshotCanPopulateLaunchCountsWithoutScanningNoteRoots() throws {
+        let suiteName = "mudsnote.cached-launch-index-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-cached-launch-index-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let appSupport = root.appendingPathComponent("AppSupport", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: appSupport
+        )
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        _ = try store.saveNewNote(title: "Cached Launch", body: "cached body")
+        #expect(store.prewarmSearchIndex() == 1)
+
+        let relaunchedStore = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: appSupport
+        )
+        relaunchedStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        relaunchedStore.searchIndexSignatureReadCountForTesting = 0
+
+        #expect(relaunchedStore.cachedNotes(limit: 10, roots: [notesDirectory])?.map(\.title) == [
+            "Cached Launch"
+        ])
+        #expect(relaunchedStore.searchIndexSignatureReadCountForTesting == 0)
+        #expect(relaunchedStore.searchIndexSnapshot == nil)
+    }
+
+    @Test
+    func knowledgeRelationsReuseParentRootIndexInsteadOfReplacingLaunchCache() throws {
+        let suiteName = "mudsnote.knowledge-root-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-knowledge-root-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let nestedDirectory = notesDirectory.appendingPathComponent("Projects", isDirectory: true)
+        let appSupport = root.appendingPathComponent("AppSupport", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: appSupport
+        )
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let noteURL = try store.saveNewNote(
+            title: "Nested Knowledge",
+            body: "Relation body",
+            in: nestedDirectory
+        )
+        #expect(store.prewarmSearchIndex(roots: [notesDirectory]) == 1)
+
+        let builds = LockedSearchReadCounter()
+        store.searchIndexBuildWillReadForTesting = {
+            _ = builds.increment()
+        }
+        _ = store.knowledgeRelations(
+            for: noteURL,
+            currentBody: "Relation body",
+            roots: [notesDirectory, nestedDirectory],
+            suggestionLimit: 0
+        )
+
+        #expect(builds.snapshot() == 0)
+
+        let relaunchedStore = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: appSupport
+        )
+        relaunchedStore.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        #expect(relaunchedStore.cachedNotes(roots: [notesDirectory])?.map(\.title) == [
+            "Nested Knowledge"
+        ])
+    }
+
+    @Test
     func cancelledColdIndexBuildStopsPromptlyInsteadOfHoldingTheNextQuery() async throws {
         let suiteName = "mudsnote.search-cancellation-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -308,6 +399,8 @@ struct SearchPerformanceTests {
                 createdAt: now,
                 tags: [],
                 tagsLower: [],
+                knowledgeLayer: nil,
+                knowledgeLinkTargets: [],
                 hasAttachments: false,
                 thumbnailURL: nil
             )

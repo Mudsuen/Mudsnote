@@ -798,6 +798,27 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Launch"].exists)
     }
 
+    func testSelectedFolderIncludesNotesFromChildFoldersAndExposesSelection() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            nestedFolderNote: true
+        )
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+
+        XCTAssertEqual(projects.value as? String, "Selected")
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/Launch/Nested Launch Brief.md"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func testFolderContextMenuMovesNestedFolderToTopLevel() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let projects = app.buttons["folder-row-Projects"]
@@ -2955,6 +2976,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         fileTag: Bool = false,
         batchNotes: Bool = false,
         homeScrollNotes: Bool = false,
+        nestedFolderNote: Bool = false,
         ocrAttachment: Bool = false,
         audioTranscript: Bool = false,
         attachmentError: Bool = false,
@@ -2982,6 +3004,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             fileTag ? "-ui-testing-file-tag" : nil,
             batchNotes ? "-ui-testing-batch-notes" : nil,
             homeScrollNotes ? "-ui-testing-home-scroll-notes" : nil,
+            nestedFolderNote ? "-ui-testing-nested-folder-note" : nil,
             ocrAttachment ? "-ui-testing-ocr-attachment" : nil,
             audioTranscript ? "-ui-testing-audio-transcript" : nil,
             attachmentError ? "-ui-testing-attachment-error" : nil,

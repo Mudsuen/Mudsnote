@@ -84,16 +84,34 @@ private struct HomeTimelineProjection {
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
+enum HomeFolderScope {
+    static func contains(
+        fileRelativePath: String,
+        folderRelativePath: String
+    ) -> Bool {
+        guard !folderRelativePath.isEmpty else { return true }
+        let parentPath = (fileRelativePath as NSString).deletingLastPathComponent
+        return parentPath == folderRelativePath
+            || parentPath.hasPrefix(folderRelativePath + "/")
+    }
+}
+
 struct NotesTopBarAppearance: Equatable {
     var isToolbarBackgroundVisible: Bool
     var usesSystemScrollEdgeBlur: Bool
     var usesAdaptiveCanvas: Bool
+    var scrollEdgeBottom: CGFloat
 
     static let notes = NotesTopBarAppearance(
-        isToolbarBackgroundVisible: false,
+        isToolbarBackgroundVisible: true,
         usesSystemScrollEdgeBlur: true,
-        usesAdaptiveCanvas: true
+        usesAdaptiveCanvas: true,
+        scrollEdgeBottom: 128
     )
+
+    func scrollEdgeExtensionHeight(chromeBottom: CGFloat) -> CGFloat {
+        max(0, scrollEdgeBottom - chromeBottom)
+    }
 }
 
 struct HomeChromeMotion {
@@ -273,26 +291,29 @@ private final class DirectoryHapticFeedback {
 }
 
 private extension View {
-    @ViewBuilder
-    func notesTranslucentTopToolbar(
-        appearance: NotesTopBarAppearance = .notes
-    ) -> some View {
-        if #available(iOS 26.0, *) {
-            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(
-                    appearance.isToolbarBackgroundVisible ? .visible : .hidden,
-                    for: .navigationBar
-                )
-        } else {
-            toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-        }
+    func notesTranslucentTopToolbar() -> some View {
+        toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder
-    func notesTopScrollEdgeBlur(isEnabled: Bool) -> some View {
+    func notesTopScrollEdgeBlur(
+        isEnabled: Bool
+    ) -> some View {
         if #available(iOS 26.0, *) {
-            scrollEdgeEffectStyle(isEnabled ? .soft : nil, for: .top)
+            overlay(alignment: .top) {
+                if isEnabled {
+                    Color.clear
+                        .frame(height: NotesTopBarAppearance.notes.scrollEdgeBottom)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(MudsnoteColors.line.opacity(0.45))
+                                .frame(height: 0.5)
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
         } else {
             self
         }
@@ -496,14 +517,24 @@ struct LibraryHomeView: View {
 
                 if isDirectoryPresented {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            newFolderName = ""
-                            isCreatingFolder = true
-                        } label: {
-                            Image(systemName: "folder.badge.plus")
+                        if isManagingFolders {
+                            Button {
+                                newFolderName = ""
+                                isCreatingFolder = true
+                            } label: {
+                                Image(systemName: "folder.badge.plus")
+                            }
+                            .accessibilityLabel("New Folder")
+                            .accessibilityIdentifier("new-folder-button")
+                        } else {
+                            NavigationLink {
+                                SettingsRulesView(chooseFolder: chooseFolder)
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                            .accessibilityLabel("Settings")
+                            .accessibilityIdentifier("sidebar-settings-button")
                         }
-                        .accessibilityLabel("New Folder")
-                        .accessibilityIdentifier("new-folder-button")
                     }
 
                     if #available(iOS 26.0, *) {
@@ -646,9 +677,10 @@ struct LibraryHomeView: View {
                     searchSection
                 }
                     .padding(.horizontal, 18)
-                    .padding(.top, topChromeContentInset + 12)
+                    .padding(.top, topContentPadding + 12)
                     .padding(.bottom, 110)
             }
+            .scrollClipDisabled()
             .scrollDismissesKeyboard(.interactively)
             .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
             .simultaneousGesture(TapGesture().onEnded {
@@ -711,9 +743,10 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, topChromeContentInset + 8)
+            .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
+        .scrollClipDisabled()
         .notesTopScrollEdgeBlur(isEnabled: !isDirectoryPresented)
         .accessibilityIdentifier(homeContentIdentifier)
     }
@@ -723,7 +756,10 @@ struct LibraryHomeView: View {
         let visibleFiles = appModel.libraryFiles.filter { file in
             guard file.relativePath != "Inbox.md" else { return false }
             guard !folderPath.isEmpty else { return true }
-            return (file.relativePath as NSString).deletingLastPathComponent == folderPath
+            return HomeFolderScope.contains(
+                fileRelativePath: file.relativePath,
+                folderRelativePath: folderPath
+            )
         }
         let unsortedEntries = (
             visibleFiles.map(HomeTimelineEntry.file)
@@ -985,6 +1021,10 @@ struct LibraryHomeView: View {
         return "\(base)-folder:\(selectedHomeFolderPath)"
     }
 
+    private var topContentPadding: CGFloat {
+        max(0, topChromeContentInset)
+    }
+
     private var allHomeNoteCount: Int {
         appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
             + appModel.inboxItems.count
@@ -1042,9 +1082,10 @@ struct LibraryHomeView: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, topChromeContentInset + 8)
+            .padding(.top, topContentPadding + 8)
             .padding(.bottom, 110)
         }
+        .scrollClipDisabled()
         .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -1216,7 +1257,8 @@ struct LibraryHomeView: View {
                             title: String(localized: "Notes"),
                             systemImage: "note.text",
                             count: allHomeNoteCount,
-                            showsChevron: false
+                            showsChevron: false,
+                            isSelected: selectedHomeFolderPath.isEmpty
                         )
                     }
                     .buttonStyle(.plain)
@@ -1675,13 +1717,16 @@ private struct DirectoryFolderTree: View {
                 count: folder.totalNoteCount,
                 showsChevron: false,
                 trailingAccessoryWidth: trailingAccessoryWidth,
-                indentation: CGFloat(depth) * 18
+                indentation: CGFloat(depth) * 18,
+                isSelected: selectedPath == folder.relativePath
             )
             .contentShape(Rectangle())
             .onTapGesture { select(folder) }
-            .background(selectedPath == folder.relativePath ? MudsnoteColors.card : Color.clear)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(
+                selectedPath == folder.relativePath ? .isSelected : []
+            )
             .accessibilityAction {
                 select(folder)
             }
@@ -4497,6 +4542,7 @@ struct NotesFolderRow: View {
     var showsChevron = true
     var trailingAccessoryWidth: CGFloat = 0
     var indentation: CGFloat = 0
+    var isSelected = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -4536,6 +4582,23 @@ struct NotesFolderRow: View {
         .padding(.leading, 18 + indentation)
         .padding(.trailing, 18)
         .frame(minHeight: 58)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(MudsnoteColors.primary.opacity(0.14))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+        }
+        .overlay(alignment: .leading) {
+            if isSelected {
+                Capsule()
+                    .fill(MudsnoteColors.primary)
+                    .frame(width: 3, height: 28)
+                    .padding(.leading, 8)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(NotesCloneColors.separator)

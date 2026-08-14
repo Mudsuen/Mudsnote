@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 259. Restore reset-discarded project integrations
+- Problem: A local `main` reset moved the project from the previously integrated 2026-08-13 line onto a divergent macOS editing branch. The later branch retained newer title, launch-cache, iOS pagination, and capture-queue work, but silently dropped the accepted iOS top material and the macOS knowledge graph, knowledge relations, responsive deletion, and transition-stability work.
+- Fix: The discarded line is now forward-merged onto the latest project state. macOS regains its local hierarchical knowledge index, relation card, native graph, optimistic serialized deletion, and complete-frame note switching while keeping the newer unified title editor and presentation cache. iOS regains the continuous native top material, descendant folder scope, security-scoped capture preparation, and a visible selected-folder indicator while preserving folder-directed new notes, incremental list loading, and the current recovery queue.
+- Lesson: A task receipt that says “integrated” is not sufficient evidence after branch movement. Delivery must verify ancestry from the current `main`, and divergent UI work must be reconciled as a forward merge so newer replacements are not overwritten by an older tree.
+
 ### 258. File Provider-safe iOS pending-note creation and recovery
 - Problem: Quick capture coordinated a not-yet-created Markdown destination as an existing merge target. A File Provider-backed folder could reject that create even though local-directory tests passed, so every new capture stayed pending and launch replay repeated the same generic failure. Filename conflicts were also treated as terminal instead of selecting another destination.
 - Fix: New pending notes now use the same non-overwriting creation primitive as standalone notes, publish the actual created path immediately, and recover a raced filename to a deterministic alternate Markdown file without overwriting either note. The queue retries transient cleanup failures; only structurally invalid entries leave the active queue, and their preserved recovery warning remains visible across launches. A still-failing capture now includes the underlying write reason instead of hiding it behind a generic pending message.

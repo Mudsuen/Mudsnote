@@ -173,7 +173,7 @@ public final class NoteSearchSession: @unchecked Sendable {
 extension NoteStore {
     public func knownSearchRoots() -> [URL] {
         let recentDirectories = listRecentFiles(limit: 50).map { $0.url.deletingLastPathComponent() }
-        return deduplicatedDirectories(preferredDirectories + recentDirectories)
+        return canonicalSearchRoots(preferredDirectories + recentDirectories)
     }
 
     @discardableResult
@@ -232,6 +232,32 @@ extension NoteStore {
 
     public func listNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
         indexedEntries(roots: roots)
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+            .prefix(limit)
+            .map(\.result)
+    }
+
+    /// Returns the last persisted search snapshot without walking the note roots.
+    ///
+    /// The result is intentionally not installed as the live search index because
+    /// callers must treat it as a fast, possibly stale launch placeholder until a
+    /// normal validating read completes.
+    public func cachedNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult]? {
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map {
+            $0.standardizedFileURL.path
+        }
+
+        searchIndexLock.lock()
+        let memorySnapshot = searchIndexSnapshot?.rootsKey == rootsKey
+            ? searchIndexSnapshot
+            : nil
+        searchIndexLock.unlock()
+
+        guard let snapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey) else {
+            return nil
+        }
+        return snapshot.entries
             .sorted { $0.modifiedAt > $1.modifiedAt }
             .prefix(limit)
             .map(\.result)
@@ -492,14 +518,58 @@ extension NoteStore {
         ) ?? []
     }
 
+    func indexedEntries(
+        roots: [URL]? = nil,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchIndexEntry]? {
+        cancellableIndexedEntries(
+            roots: roots,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    func indexedReadView(
+        roots: [URL]? = nil,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> (entries: [NoteSearchIndexEntry], rootsKey: [String], revision: UInt64)? {
+        guard indexedEntries(
+            roots: roots,
+            cancellationCheck: cancellationCheck
+        ) != nil, !cancellationCheck() else {
+            return nil
+        }
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map {
+            $0.standardizedFileURL.path
+        }
+        searchIndexLock.lock()
+        defer { searchIndexLock.unlock() }
+        guard !searchIndexRequiresFullRefresh,
+              dirtySearchIndexPaths.isEmpty,
+              let snapshot = searchIndexSnapshot,
+              snapshot.rootsKey == rootsKey else {
+            return nil
+        }
+        return (snapshot.entries, rootsKey, searchIndexRevision)
+    }
+
+    func isCurrentIndexedReadView(rootsKey: [String], revision: UInt64) -> Bool {
+        searchIndexLock.lock()
+        defer { searchIndexLock.unlock() }
+        return searchIndexRevision == revision
+            && !searchIndexRequiresFullRefresh
+            && dirtySearchIndexPaths.isEmpty
+            && searchIndexSnapshot?.rootsKey == rootsKey
+    }
+
     private func cancellableIndexedEntries(
         roots: [URL]? = nil,
         validatesMemorySnapshot: Bool = false,
         cancellationCheck: @Sendable () -> Bool
     ) -> [NoteSearchIndexEntry]? {
         guard !cancellationCheck() else { return nil }
-        let searchRoots = roots ?? knownSearchRoots()
-        let rootsKey = deduplicatedDirectories(searchRoots).map { $0.standardizedFileURL.path }
+        let searchRoots = canonicalSearchRoots(roots ?? knownSearchRoots())
+        let rootsKey = searchRoots.map { $0.standardizedFileURL.path }
 
         if !validatesMemorySnapshot {
             searchIndexLock.lock()
@@ -552,12 +622,12 @@ extension NoteStore {
                 return nil
             }
             guard !cancellationCheck() else { return nil }
-            publishSearchIndexSnapshot(
+            guard publishSearchIndexSnapshot(
                 snapshot,
                 consuming: dirtyPaths,
                 fullRefresh: false,
                 stateRevision: stateRevision
-            )
+            ) else { return nil }
             return snapshot.entries
         }
 
@@ -589,13 +659,13 @@ extension NoteStore {
            dirtyPaths.isEmpty,
            let reusableSnapshot,
            reusableSnapshot.fileSignatures == signatures {
-            publishSearchIndexSnapshot(
+            guard publishSearchIndexSnapshot(
                 reusableSnapshot,
                 consuming: [],
                 fullRefresh: false,
                 stateRevision: stateRevision,
                 writesDiskCache: false
-            )
+            ) else { return nil }
             return reusableSnapshot.entries
         }
 
@@ -630,13 +700,26 @@ extension NoteStore {
             fileSignatures: signatures,
             entries: entries
         )
-        publishSearchIndexSnapshot(
+        guard publishSearchIndexSnapshot(
             snapshot,
             consuming: dirtyPaths,
             fullRefresh: requiresFullRefresh,
             stateRevision: stateRevision
-        )
+        ) else { return nil }
         return entries
+    }
+
+    private func canonicalSearchRoots(_ roots: [URL]) -> [URL] {
+        let standardized = deduplicatedDirectories(roots)
+        return standardized.filter { candidate in
+            let candidatePath = candidate.standardizedFileURL.path
+            return !standardized.contains { other in
+                let otherPath = other.standardizedFileURL.path
+                guard otherPath != candidatePath else { return false }
+                return otherPath == "/"
+                    || candidatePath.hasPrefix(otherPath + "/")
+            }
+        }
     }
 
     private func incrementallyRefreshing(
@@ -702,13 +785,14 @@ extension NoteStore {
         }
     }
 
+    @discardableResult
     private func publishSearchIndexSnapshot(
         _ snapshot: NoteSearchIndexSnapshot,
         consuming dirtyPaths: Set<String>,
         fullRefresh: Bool,
         stateRevision: UInt64,
         writesDiskCache: Bool = true
-    ) {
+    ) -> Bool {
         searchIndexLock.lock()
         let stateIsCurrent = searchIndexRevision == stateRevision
         if stateIsCurrent {
@@ -723,6 +807,7 @@ extension NoteStore {
         if stateIsCurrent, writesDiskCache {
             writeSearchIndexSnapshotToDisk(snapshot)
         }
+        return stateIsCurrent
     }
 
     func readSearchIndexSnapshotFromDisk(rootsKey: [String]) -> NoteSearchIndexSnapshot? {
@@ -780,6 +865,9 @@ extension NoteStore {
             size += UInt64(entry.bodyLower.utf8.count)
             size += UInt64(entry.snippet.utf8.count)
             size += UInt64(entry.tags.reduce(0) { $0 + $1.utf8.count })
+            size += UInt64(entry.knowledgeLinkTargets.reduce(0) {
+                $0 + $1.value.utf8.count + 8
+            })
             size += 256
             if size > Self.maximumSearchIndexDiskCacheSize {
                 return size
@@ -838,6 +926,11 @@ extension NoteStore {
             createdAt: createdAt,
             tags: note.tags,
             tagsLower: note.tags.map { $0.lowercased() },
+            knowledgeLayer: KnowledgeLayer.parse(sourceContents: text, tags: note.tags),
+            knowledgeLinkTargets: knowledgeLinkTargets(
+                in: note.body,
+                cancellationCheck: cancellationCheck
+            ),
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
         )

@@ -75,7 +75,7 @@ extension EditorWindowController {
 
         let previousStatus = statusLabel.stringValue
         statusLabel.stringValue = "AI 正在生成..."
-        let provider = CodexAIProvider(executableURL: executableURL, workingDirectory: noteStore.notesDirectory)
+        let provider = CodexAIProvider(executableURL: executableURL)
         let request = AIRequest(
             actionID: actionID,
             noteTitle: currentNoteTitleForAI(),

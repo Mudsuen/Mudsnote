@@ -233,6 +233,21 @@ private final class LibraryBackgroundSaveResultStore: @unchecked Sendable {
     }
 }
 
+private struct LibraryDeletedNote: Sendable {
+    let sourceURL: URL
+    let trashedURL: URL?
+}
+
+private struct LibraryDeletionFailure: Sendable {
+    let sourceURL: URL
+    let message: String
+}
+
+private struct LibraryDeletionPersistenceResult: Sendable {
+    let deletedNotes: [LibraryDeletedNote]
+    let failures: [LibraryDeletionFailure]
+}
+
 private final class LoadedLibraryNoteCacheEntry: NSObject {
     let loaded: LoadedLibraryNote
     let fileModifiedAt: Date
@@ -339,7 +354,7 @@ private final class LibrarySourceOutlineItem: NSObject {
     let kind: Kind
     weak var parent: LibrarySourceOutlineItem?
     var children: [LibrarySourceOutlineItem] = []
-    var count = 0
+    var count: Int?
 
     init(identifier: String, kind: Kind) {
         self.identifier = identifier
@@ -1275,6 +1290,7 @@ final class LibraryWindowController: NSWindowController,
     let createdDateLabel = NSTextField(labelWithString: "")
     let statusLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
+    private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1311,6 +1327,7 @@ final class LibraryWindowController: NSWindowController,
     private let thumbnailDecoder: @Sendable (URL) -> CGImage?
     private let backgroundAutosaveWillPersist: @Sendable () -> Void
     private let backgroundSourceCountWillLoad: @Sendable () -> Void
+    private let backgroundDeletionWillPersist: @Sendable () -> Void
     private let usesCanonicalWindowSize: Bool
     private let prefersExternalScreen: Bool
     private var notes: [NoteSearchResult] = []
@@ -1336,6 +1353,10 @@ final class LibraryWindowController: NSWindowController,
         label: "local.codex.mudsnote.library-autosave",
         qos: .utility
     )
+    private let libraryMutationQueue = DispatchQueue(
+        label: "local.codex.mudsnote.library-mutations",
+        qos: .userInitiated
+    )
     private let launchNoteCacheQueue = DispatchQueue(
         label: "local.codex.mudsnote.library-launch-note-cache",
         qos: .utility
@@ -1349,6 +1370,7 @@ final class LibraryWindowController: NSWindowController,
     private var deferredFileSystemChangesDuringAutosave = Set<LibraryFileSystemChange>()
     private var noteLoadTask: Task<Void, Never>?
     private var noteLoadGeneration = 0
+    private var noteLoadFallbackURL: URL?
     private var persistedLaunchFallbackURL: URL?
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
@@ -1356,12 +1378,20 @@ final class LibraryWindowController: NSWindowController,
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshGeneration = 0
+    private var knowledgeSynthesisTask: Task<Void, Never>?
+    private var knowledgeSynthesisGeneration = 0
+    private var knowledgeBackStack: [URL] = []
+    private var knowledgeForwardStack: [URL] = []
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
     private var sourceSnapshotValidationGeneration = 0
     private var sourceCountRefreshTask: Task<Void, Never>?
     private var sourceCountRefreshGeneration = 0
+    private var hasLoadedSourceCounts = false
+    private var pendingDeletionPaths = Set<String>()
+    private var pendingDeletionBatchCount = 0
+    private var pendingDeletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var sourceInboxDirectory: URL?
     private var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
     private var hasPendingSearchReload = false
@@ -1378,6 +1408,7 @@ final class LibraryWindowController: NSWindowController,
     private var hasCenteredWindow = false
     private var hasRequestedWindowPresentation = false
     private var hasHydratedInitialNoteList = false
+    private var hasReleasedDeferredLaunchWork = false
     private var selectedScope: LibraryScope = .all
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
@@ -1464,6 +1495,7 @@ final class LibraryWindowController: NSWindowController,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
         backgroundSourceCountWillLoad: @escaping @Sendable () -> Void = {},
+        backgroundDeletionWillPersist: @escaping @Sendable () -> Void = {},
         onOpenInSeparateWindow: @escaping (URL) -> Void,
         onSave: @escaping (URL) -> Void,
         onClose: @escaping () -> Void
@@ -1493,6 +1525,7 @@ final class LibraryWindowController: NSWindowController,
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
         self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad
+        self.backgroundDeletionWillPersist = backgroundDeletionWillPersist
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
@@ -1609,10 +1642,19 @@ final class LibraryWindowController: NSWindowController,
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
         }
+        hydrateInitialNoteListIfNeeded()
+        releaseDeferredLaunchWorkIfReady()
+        startLibraryFileSystemMonitorIfNeeded()
+    }
+
+    private func releaseDeferredLaunchWorkIfReady() {
+        guard hasRequestedWindowPresentation,
+              !hasReleasedDeferredLaunchWork,
+              !isLoadingInitialNote else { return }
+        hasReleasedDeferredLaunchWork = true
         scheduleDeferredSourceFolderLoad()
         scheduleDeferredSourceTagLoad()
-        hydrateInitialNoteListIfNeeded()
-        startLibraryFileSystemMonitorIfNeeded()
+        scheduleFullLibrarySnapshotReload()
     }
 
     private func hydrateInitialNoteListIfNeeded() {
@@ -1640,7 +1682,6 @@ final class LibraryWindowController: NSWindowController,
             }
             loadInitialNoteAfterLaunch(noteToLoad)
         }
-        scheduleFullLibrarySnapshotReload()
     }
 
     private func showPersistedInitialNote(
@@ -1650,7 +1691,7 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = true
         isCreatingNewNote = false
         persistedLaunchFallbackURL = note.url.standardizedFileURL
-        selectedURL = note.url
+        setSelectedURLForLibrary(note.url)
         selectedSourceContents = snapshot.document.sourceContents
         noteLinksView.update(.empty)
         setEditorEditable(false)
@@ -1668,7 +1709,7 @@ final class LibraryWindowController: NSWindowController,
     private func showInitialNoteLoadingShell(for note: NoteSearchResult) {
         isLoadingInitialNote = true
         isCreatingNewNote = false
-        selectedURL = note.url
+        setSelectedURLForLibrary(note.url)
         selectedSourceContents = nil
         noteLinksView.update(.empty)
         setEditorEditable(false)
@@ -1707,15 +1748,27 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyInitialNoteLoadResult(_ result: Result<LoadedLibraryNote, Error>, for note: NoteSearchResult) {
-        guard window?.isVisible == true else { return }
-        if case .failure(let error) = result,
-           isMissingInitialNoteError(error) {
-            noteStore.removeRecentFileReference(at: note.url)
-            guard selectedNoteStillMatchesInitialLoad(note) else { return }
-            recoverFromMissingInitialNote(note)
+        guard window?.isVisible == true else {
+            isLoadingInitialNote = false
+            hasHydratedInitialNoteList = false
             return
         }
-        guard selectedNoteStillMatchesInitialLoad(note) else { return }
+        if case .failure(let error) = result,
+           isMissingInitialNoteError(error) {
+            persistedLaunchFallbackURL = nil
+            noteStore.removeRecentFileReference(at: note.url)
+            guard selectedNoteStillMatchesInitialLoad(note) else {
+                releaseDeferredLaunchWorkIfReady()
+                return
+            }
+            recoverFromMissingInitialNote(note)
+            releaseDeferredLaunchWorkIfReady()
+            return
+        }
+        guard selectedNoteStillMatchesInitialLoad(note) else {
+            releaseDeferredLaunchWorkIfReady()
+            return
+        }
         if case .failure(let error) = result,
            persistedLaunchFallbackURL?.standardizedFileURL.path
                 == note.url.standardizedFileURL.path {
@@ -1726,6 +1779,7 @@ final class LibraryWindowController: NSWindowController,
                 toolTip: error.localizedDescription
             )
             updateToolbarActionState()
+            releaseDeferredLaunchWorkIfReady()
             return
         }
         persistedLaunchFallbackURL = nil
@@ -1790,7 +1844,7 @@ final class LibraryWindowController: NSWindowController,
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
         let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .utility) { [weak self] in
             let inboxDirectory = noteStore.preferredInboxDirectory
             let recentCount = Self.recentFilesVisibleInLibrary(
                 noteStore: noteStore,
@@ -1798,6 +1852,31 @@ final class LibraryWindowController: NSWindowController,
                 externalDocumentPaths: externalDocumentPaths,
                 limit: 80
             ).count
+            if let cachedNotes = noteStore.cachedNotes(
+                limit: snapshotLimit,
+                roots: preferredDirectories
+            ) {
+                let cachedCountIndex = LibrarySourceCountIndex(
+                    notes: cachedNotes,
+                    folderPaths: sourceFolderPaths,
+                    inboxDirectory: inboxDirectory
+                )
+                await MainActor.run {
+                    guard let self,
+                          generation == self.fullLibrarySnapshotReloadGeneration,
+                          self.isFullLibrarySnapshotLoading else { return }
+                    let mergedCachedNotes = self.includingExternallyOpenedDocuments(in: cachedNotes)
+                    self.sourceInboxDirectory = inboxDirectory
+                    self.sourceCountSnapshot = mergedCachedNotes
+                    self.refreshSourceCounts(
+                        using: mergedCachedNotes,
+                        countIndex: self.currentSourceFolderPaths() == sourceFolderPaths
+                            ? cachedCountIndex
+                            : nil,
+                        recentCount: recentCount
+                    )
+                }
+            }
             let allNotes = noteStore.listNotesRefreshingIndex(
                 limit: snapshotLimit,
                 roots: preferredDirectories
@@ -1884,6 +1963,8 @@ final class LibraryWindowController: NSWindowController,
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil
+        knowledgeGraphWindowController?.close()
+        knowledgeGraphWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -1892,6 +1973,9 @@ final class LibraryWindowController: NSWindowController,
         searchReloadWorkItem = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
+        knowledgeSynthesisTask?.cancel()
+        knowledgeSynthesisTask = nil
+        knowledgeSynthesisGeneration += 1
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
@@ -2000,6 +2084,7 @@ final class LibraryWindowController: NSWindowController,
                 URL(fileURLWithPath: $0)
             })
         }
+        knowledgeGraphWindowController?.reload()
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -2468,11 +2553,22 @@ final class LibraryWindowController: NSWindowController,
         ])
 
         noteLinksView.onOpen = { [weak self] url in
-            do {
-                try self?.openMarkdownDocumentForLibrary(at: url)
-            } catch {
-                self?.presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
-            }
+            self?.openKnowledgeRelation(at: url)
+        }
+        noteLinksView.onAcceptSuggestion = { [weak self] item in
+            self?.acceptKnowledgeSuggestion(item)
+        }
+        noteLinksView.onGoBack = { [weak self] in
+            self?.goBackInKnowledgeRelations()
+        }
+        noteLinksView.onGoForward = { [weak self] in
+            self?.goForwardInKnowledgeRelations()
+        }
+        noteLinksView.onGenerateHigherLayer = { [weak self] layer in
+            self?.generateHigherLayerDraft(targetLayer: layer)
+        }
+        noteLinksView.onShowGraph = { [weak self] in
+            self?.showKnowledgeGraphForLibrary()
         }
 
         let stack = NSStackView(views: [bodyContainer, noteLinksView])
@@ -2483,7 +2579,7 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 0
         stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
-            top: LibraryNotesLayout.editorTopInset,
+            top: 0,
             left: LibraryNotesLayout.editorHorizontalInset,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
@@ -3374,7 +3470,9 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineRootItems = roots
         sourceOutlineView.reloadData()
         restoreSourceOutlineExpansion()
-        refreshSourceCounts(using: sourceCountSnapshot)
+        if hasLoadedSourceCounts {
+            refreshSourceCounts(using: sourceCountSnapshot)
+        }
         refreshSourceSelection()
         focusInlineFolderEditField()
     }
@@ -4153,7 +4251,7 @@ final class LibraryWindowController: NSWindowController,
         trashCount: Int,
         countIndex: LibrarySourceCountIndex
     ) {
-
+        hasLoadedSourceCounts = true
         for item in sourceOutlineItemsByScopeIdentifier.values {
             guard let scope = item.scope else { continue }
             let count: Int
@@ -4179,7 +4277,8 @@ final class LibraryWindowController: NSWindowController,
         refreshVisibleSourceOutlinePresentation()
     }
 
-    private func sourceCountText(_ count: Int, for scope: LibraryScope) -> String {
+    private func sourceCountText(_ count: Int?, for scope: LibraryScope) -> String {
+        guard let count else { return "" }
         switch scope {
         case .folder:
             return String(count)
@@ -4463,7 +4562,9 @@ final class LibraryWindowController: NSWindowController,
             query: query,
             limit: limit,
             searchesAllNotes: searchScopeControl.selectedSegment == 1
-        )
+        ).filter {
+            !pendingDeletionPaths.contains($0.url.standardizedFileURL.path)
+        }
     }
 
     private func cachedTrashSearchResults(query: String, limit: Int) -> [NoteSearchResult] {
@@ -4862,7 +4963,9 @@ final class LibraryWindowController: NSWindowController,
             self?.activateSourceScope(scope) ?? false
         }
         cell.setAccessibilityLabel(title)
-        cell.setAccessibilityValue("\(item.count) 条笔记")
+        cell.setAccessibilityValue(
+            item.count.map { "\($0) 条笔记" } ?? "正在载入笔记数量"
+        )
     }
 
     private func isSourceOutlineItemVisuallySelected(_ item: LibrarySourceOutlineItem) -> Bool {
@@ -5282,7 +5385,11 @@ final class LibraryWindowController: NSWindowController,
 
         recordInternalFileSystemChanges(for: [source, destination])
         remapSourceSnapshotFolder(from: source, to: destination)
-        selectedURL = remappedLibraryURL(selectedURL, from: source, to: destination)
+        setSelectedURLForLibrary(remappedLibraryURL(
+            selectedURL,
+            from: source,
+            to: destination
+        ))
         if case .folder(let selectedFolder) = selectedScope,
            let remappedFolder = remappedLibraryURL(selectedFolder, from: source, to: destination) {
             selectedScope = .folder(remappedFolder)
@@ -6125,7 +6232,7 @@ final class LibraryWindowController: NSWindowController,
             cancelActiveNoteLoad()
             isLoadingInitialNote = false
             isCreatingNewNote = true
-            selectedURL = nil
+            setSelectedURLForLibrary(nil)
             selectedSourceContents = nil
             noteLinksView.update(.empty)
             selectedTags = []
@@ -6212,7 +6319,7 @@ final class LibraryWindowController: NSWindowController,
         case .delete:
             guard selectedURL != nil else { return false }
             do {
-                try deleteSelectedNoteForLibrary()
+                try deleteSelectedNotesInBackgroundForLibrary()
                 return true
             } catch {
                 presentErrorAlert(message: selectedScope == .trash ? "永久删除失败" : "删除失败", details: error.localizedDescription)
@@ -6356,7 +6463,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func applySearchResults(_ results: [NoteSearchResult], query: String, selecting preferredURL: URL?) {
         isSearchResultReloading = false
-        notes = results
+        notes = results.filter {
+            !pendingDeletionPaths.contains($0.url.standardizedFileURL.path)
+        }
         listRows = buildGroupedRows(for: notes, preservesInputOrder: true)
         updateNoteListHeader(query: query)
 
@@ -6607,7 +6716,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func deleteSelectedNotePressed() {
         do {
-            try deleteSelectedNotesForLibrary()
+            try deleteSelectedNotesInBackgroundForLibrary()
         } catch {
             presentErrorAlert(message: "删除失败", details: error.localizedDescription)
         }
@@ -6743,12 +6852,14 @@ final class LibraryWindowController: NSWindowController,
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
-        cancelActiveNoteLoad()
+        cancelActiveNoteLoad(preservingFallback: true)
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
         if let cached = cachedLoadedNote(for: note) {
+            noteLoadFallbackURL = nil
             applyLoadedNote(cached, for: note)
             scheduleCachedNoteValidation(cached, for: note)
+            releaseDeferredLaunchWorkIfReady()
             return
         }
 
@@ -6758,7 +6869,7 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        showInitialNoteLoadingShell(for: note)
+        beginNoteSwitchLoading(note)
         let generation = noteLoadGeneration
         let editorRevision = editorContentRevision
         let noteLoader = noteLoader
@@ -6827,10 +6938,24 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func cancelActiveNoteLoad() {
+    private func cancelActiveNoteLoad(preservingFallback: Bool = false) {
         noteLoadTask?.cancel()
         noteLoadTask = nil
         noteLoadGeneration += 1
+        if !preservingFallback {
+            noteLoadFallbackURL = nil
+        }
+    }
+
+    private func beginNoteSwitchLoading(_ note: NoteSearchResult) {
+        if noteLoadFallbackURL == nil {
+            noteLoadFallbackURL = selectedURL
+        }
+        isLoadingInitialNote = true
+        setSelectedURLForLibrary(note.url)
+        setEditorEditable(false)
+        updateEditorStatus("正在载入…")
+        updateToolbarActionState()
     }
 
     private func applyLoadedNoteResult(
@@ -6839,11 +6964,19 @@ final class LibraryWindowController: NSWindowController,
         fileModifiedAt: Date? = nil
     ) {
         isLoadingInitialNote = false
+        defer { releaseDeferredLaunchWorkIfReady() }
         switch result {
         case .success(let loaded):
+            noteLoadFallbackURL = nil
             let cached = cacheLoadedNote(loaded, for: note, fileModifiedAt: fileModifiedAt)
             applyLoadedNote(cached, for: note)
         case .failure(let error):
+            let fallbackURL = noteLoadFallbackURL
+            noteLoadFallbackURL = nil
+            setSelectedURLForLibrary(fallbackURL)
+            setEditorEditable(selectedScope != .trash)
+            restoreNoteBrowserSelection(to: fallbackURL)
+            updateToolbarActionState()
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
         }
     }
@@ -6857,7 +6990,7 @@ final class LibraryWindowController: NSWindowController,
         for note: NoteSearchResult,
         preservingEditorSelection: Bool
     ) {
-        selectedURL = note.url
+        setSelectedURLForLibrary(note.url)
         selectedSourceContents = cached.loaded.sourceContents
         setEditorEditable(selectedScope != .trash)
 
@@ -6870,6 +7003,7 @@ final class LibraryWindowController: NSWindowController,
             updateEditorCreatedDate(note.createdAt)
             updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
             updateToolbarActionState()
+            refreshNoteLinks(for: note.url, body: cached.loaded.body)
             return
         }
 
@@ -6915,10 +7049,12 @@ final class LibraryWindowController: NSWindowController,
         let noteStore = noteStore
         let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
         let task = Task.detached(priority: .utility) { [weak self] in
-            let relations = noteStore.linkRelations(
+            let relations = noteStore.knowledgeRelations(
                 for: noteURL,
                 currentBody: body,
-                roots: roots
+                roots: roots,
+                suggestionLimit: 3,
+                cancellationCheck: { Task.isCancelled }
             )
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -6929,6 +7065,7 @@ final class LibraryWindowController: NSWindowController,
                 }
                 self.noteLinksRefreshTask = nil
                 self.noteLinksView.update(relations)
+                self.updateKnowledgeNavigationControls()
             }
         }
         noteLinksRefreshTask = task
@@ -6939,33 +7076,347 @@ final class LibraryWindowController: NSWindowController,
         replacing previousURL: URL?,
         body: String
     ) {
-        guard previousURL?.path == noteURL.path else {
-            refreshNoteLinks(for: noteURL, body: body)
+        refreshNoteLinks(for: noteURL, body: body)
+        knowledgeGraphWindowController?.reload()
+    }
+
+    private func acceptKnowledgeSuggestion(_ item: KnowledgeRelationItem) {
+        guard selectedScope != .trash, let sourceURL = selectedURL else { return }
+        let link = noteStore.markdownKnowledgeLink(
+            from: sourceURL,
+            to: item.url,
+            title: item.title
+        )
+        let insertionLocation = editorTextView.string.utf16.count
+        editorTextView.setSelectedRange(NSRange(location: insertionLocation, length: 0))
+        let prefix = insertionLocation == 0 ? "" : "\n\n"
+        replaceSelectionWithRenderedMarkdown(
+            "\(prefix)- 关联：\(link)",
+            renderingBaseURL: sourceURL
+        )
+        refreshNoteLinks(for: sourceURL, body: normalizedEditorMarkdownBody())
+        NSAccessibility.post(
+            element: noteLinksView,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "已将 \(item.title) 加入明确关联",
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue
+            ]
+        )
+    }
+
+    private func openKnowledgeRelation(at url: URL) {
+        guard let currentURL = selectedURL?.standardizedFileURL,
+              currentURL != url.standardizedFileURL else {
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        do {
+            try openMarkdownDocumentForLibrary(at: url)
+            knowledgeBackStack.append(currentURL)
+            knowledgeForwardStack.removeAll()
+            updateKnowledgeNavigationControls()
+            announceKnowledgeNavigation(title: url.deletingPathExtension().lastPathComponent)
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } catch {
+            presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+        }
+    }
+
+    var canShowKnowledgeGraphForLibrary: Bool {
+        selectedURL != nil
+    }
+
+    func showKnowledgeGraphForLibrary() {
+        guard let selectedURL else { return }
+        let controller: KnowledgeGraphWindowController
+        if let existing = knowledgeGraphWindowController {
+            controller = existing
+        } else {
+            let noteStore = noteStore
+            let created = KnowledgeGraphWindowController(
+                noteStore: noteStore,
+                rootsProvider: {
+                    noteStore.preferredDirectories
+                }
+            )
+            created.onOpenNode = { [weak self] url in
+                self?.openKnowledgeRelation(at: url)
+            }
+            created.onClose = { [weak self, weak created] in
+                guard self?.knowledgeGraphWindowController === created else { return }
+                self?.knowledgeGraphWindowController = nil
+            }
+            knowledgeGraphWindowController = created
+            controller = created
+        }
+        controller.show(rootURL: selectedURL)
+    }
+
+    private func goBackInKnowledgeRelations() {
+        guard let targetURL = knowledgeBackStack.last,
+              let currentURL = selectedURL?.standardizedFileURL else {
+            return
+        }
+        do {
+            try openMarkdownDocumentForLibrary(at: targetURL)
+            knowledgeBackStack.removeLast()
+            knowledgeForwardStack.append(currentURL)
+            updateKnowledgeNavigationControls()
+            announceKnowledgeNavigation(title: targetURL.deletingPathExtension().lastPathComponent)
+        } catch {
+            presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+        }
+    }
+
+    private func goForwardInKnowledgeRelations() {
+        guard let targetURL = knowledgeForwardStack.last,
+              let currentURL = selectedURL?.standardizedFileURL else {
+            return
+        }
+        do {
+            try openMarkdownDocumentForLibrary(at: targetURL)
+            knowledgeForwardStack.removeLast()
+            knowledgeBackStack.append(currentURL)
+            updateKnowledgeNavigationControls()
+            announceKnowledgeNavigation(title: targetURL.deletingPathExtension().lastPathComponent)
+        } catch {
+            presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
+        }
+    }
+
+    private func updateKnowledgeNavigationControls() {
+        noteLinksView.updateNavigation(
+            canGoBack: !knowledgeBackStack.isEmpty,
+            canGoForward: !knowledgeForwardStack.isEmpty
+        )
+    }
+
+    private func announceKnowledgeNavigation(title: String) {
+        NSAccessibility.post(
+            element: noteLinksView,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "已打开 \(title)",
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue
+            ]
+        )
+    }
+
+    private func cancelKnowledgeSynthesisForSelectionChange(to nextURL: URL?) {
+        let currentPath = selectedURL?.standardizedFileURL.path
+        let nextPath = nextURL?.standardizedFileURL.path
+        guard currentPath != nextPath, knowledgeSynthesisTask != nil else { return }
+        knowledgeSynthesisTask?.cancel()
+        knowledgeSynthesisTask = nil
+        knowledgeSynthesisGeneration += 1
+        noteLinksView.setSynthesisInProgress(false)
+    }
+
+    private func setSelectedURLForLibrary(_ nextURL: URL?) {
+        cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
+        selectedURL = nextURL
+        knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
+    }
+
+    private func generateHigherLayerDraft(targetLayer: KnowledgeLayer) {
+        guard selectedScope != .trash,
+              targetLayer == .line || targetLayer == .plane else {
+            return
+        }
+        guard noteStore.aiEnabled else {
+            presentErrorAlert(message: "AI 功能未启用", details: AIError.disabled.localizedDescription)
+            return
+        }
+        guard let executableURL = CodexRuntimeLocator.resolve(
+            configuredPath: noteStore.aiCodexExecutablePath
+        ) else {
+            presentErrorAlert(
+                message: "未找到本机 Codex",
+                details: AIError.providerNotConfigured.localizedDescription
+            )
             return
         }
 
-        noteLinksRefreshTask?.cancel()
-        noteLinksRefreshGeneration += 1
-        let generation = noteLinksRefreshGeneration
+        do {
+            try saveCurrentNoteIfNeeded()
+        } catch {
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+            return
+        }
+        guard let currentURL = selectedURL?.standardizedFileURL else { return }
+
+        let currentBody: String
+        do {
+            currentBody = try noteStore.loadNote(at: currentURL).body
+        } catch {
+            presentErrorAlert(message: "无法读取当前笔记", details: error.localizedDescription)
+            return
+        }
+        let roots = noteStore.preferredDirectories + [currentURL.deletingLastPathComponent()]
+        let relations = noteStore.knowledgeRelations(
+            for: currentURL,
+            currentBody: currentBody,
+            roots: roots,
+            suggestionLimit: 0
+        )
+        let relationItems = relations.related
+            + relations.children
+        var sourceURLs = [currentURL]
+        var seenPaths = Set([currentURL.path])
+        for item in relationItems where seenPaths.insert(item.url.standardizedFileURL.path).inserted {
+            sourceURLs.append(item.url.standardizedFileURL)
+            if sourceURLs.count == 6 { break }
+        }
+        let synthesisSourceURLs = sourceURLs
+        let sourceNames = synthesisSourceURLs.map {
+            $0.deletingPathExtension().lastPathComponent
+        }.joined(separator: "、")
+        let confirmation = NSAlert()
+        confirmation.messageText = "将 \(synthesisSourceURLs.count) 篇笔记交给 Codex 生成草案？"
+        confirmation.informativeText = "发送范围：\(sourceNames)。只包含当前笔记和已明确关联的下层/同层笔记；Codex 进程会被系统限制在临时目录，不能读取知识库中的其他文件。"
+        confirmation.addButton(withTitle: "开始生成")
+        confirmation.addButton(withTitle: "取消")
+        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+
         let noteStore = noteStore
-        let incoming = noteLinksView.relations.incoming
-        let task = Task.detached(priority: .utility) { [weak self] in
-            let outgoing = noteStore.outgoingLinks(for: noteURL, currentBody: body)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self,
-                      generation == self.noteLinksRefreshGeneration,
-                      self.selectedURL?.path == noteURL.path else {
-                    return
-                }
-                self.noteLinksRefreshTask = nil
-                self.noteLinksView.update(NoteLinkRelations(
-                    incoming: incoming,
-                    outgoing: outgoing
+        let provider = CodexAIProvider(executableURL: executableURL)
+        knowledgeSynthesisTask?.cancel()
+        knowledgeSynthesisGeneration += 1
+        let generation = knowledgeSynthesisGeneration
+        let previousStatus = statusLabel.stringValue
+        noteLinksView.setSynthesisInProgress(true)
+        updateEditorStatus("正在生成\(targetLayer.displayName)层草案…")
+        knowledgeSynthesisTask = Task { [weak self] in
+            do {
+                let sources = try await Task.detached(priority: .userInitiated) {
+                    try synthesisSourceURLs.map { url -> KnowledgeSynthesisSource in
+                        let note = try noteStore.loadNote(at: url)
+                        return KnowledgeSynthesisSource(
+                            title: note.title.isEmpty
+                                ? url.deletingPathExtension().lastPathComponent
+                                : note.title,
+                            markdown: note.body
+                        )
+                    }
+                }.value
+                try Task.checkCancellation()
+                let output = try await provider.generate(request: KnowledgeSynthesisRequest(
+                    targetLayer: targetLayer,
+                    sources: sources
                 ))
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard let self,
+                          generation == self.knowledgeSynthesisGeneration,
+                          self.selectedURL?.standardizedFileURL == currentURL else {
+                        return
+                    }
+                    self.knowledgeSynthesisTask = nil
+                    self.noteLinksView.setSynthesisInProgress(false)
+                    self.updateEditorStatus(previousStatus)
+                    self.presentKnowledgeSynthesis(
+                        output,
+                        targetLayer: targetLayer,
+                        sourceURLs: synthesisSourceURLs
+                    )
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard let self,
+                          generation == self.knowledgeSynthesisGeneration else {
+                        return
+                    }
+                    self.knowledgeSynthesisTask = nil
+                    self.noteLinksView.setSynthesisInProgress(false)
+                    self.updateEditorStatus(previousStatus)
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          generation == self.knowledgeSynthesisGeneration,
+                          self.selectedURL?.standardizedFileURL == currentURL else {
+                        return
+                    }
+                    self.knowledgeSynthesisTask = nil
+                    self.noteLinksView.setSynthesisInProgress(false)
+                    self.updateEditorStatus("草案生成失败", kind: .failure)
+                    self.presentErrorAlert(message: "无法生成上层草案", details: error.localizedDescription)
+                }
             }
         }
-        noteLinksRefreshTask = task
+    }
+
+    private func presentKnowledgeSynthesis(
+        _ output: String,
+        targetLayer: KnowledgeLayer,
+        sourceURLs: [URL]
+    ) {
+        let document = MarkdownEditorDocument.parse(editorText: output)
+        guard !document.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !document.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            presentErrorAlert(message: "无法创建草案", details: AIError.invalidResponse.localizedDescription)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "生成\(targetLayer.displayName)层草案"
+        alert.informativeText = "AI 基于 \(sourceURLs.count) 篇笔记生成。只有点击“创建草案”后才会写入，原笔记不会被改动。"
+        alert.alertStyle = .informational
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 280))
+        let textView = NSTextView(frame: scrollView.bounds)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.string = output
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        alert.accessoryView = scrollView
+        alert.addButton(withTitle: "创建草案")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            window?.makeFirstResponder(editorTextView)
+            return
+        }
+
+        let referenceSourceURL = noteStore.notesDirectory
+            .appendingPathComponent("Knowledge-Synthesis.md")
+        let sourceLinks = sourceURLs.enumerated().map { index, url in
+            let title = (try? noteStore.loadNote(at: url).title)
+                .flatMap {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+                }
+                ?? url.deletingPathExtension().lastPathComponent
+            let link = noteStore.markdownKnowledgeLink(
+                from: referenceSourceURL,
+                to: url,
+                title: title
+            )
+            return "- S\(index + 1): \(link)"
+        }.joined(separator: "\n")
+        let body = """
+        \(document.body)
+
+        ## 来源笔记
+
+        \(sourceLinks)
+        """
+        do {
+            let savedURL = try noteStore.saveNewNote(
+                title: document.title,
+                body: body,
+                tags: ["层级/\(targetLayer.displayName)", "AI草案", "待审核"],
+                in: noteStore.notesDirectory
+            )
+            recordInternalFileSystemChanges(for: [savedURL])
+            onSave(savedURL)
+            try openMarkdownDocumentForLibrary(at: savedURL)
+            announceKnowledgeNavigation(title: document.title)
+        } catch {
+            presentErrorAlert(message: "无法创建草案", details: error.localizedDescription)
+        }
     }
 
     private func applyDocument(
@@ -7199,6 +7650,10 @@ final class LibraryWindowController: NSWindowController,
     func waitForActiveNoteLoadForLibrary() async {
         let task = noteLoadTask
         await task?.value
+    }
+
+    var hasReleasedDeferredLaunchWorkForLibrary: Bool {
+        hasReleasedDeferredLaunchWork
     }
 
     func waitForNoteLinksRefreshForLibrary() async {
@@ -7496,7 +7951,7 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        selectedURL = success.savedURL
+        setSelectedURLForLibrary(success.savedURL)
         selectedSourceContents = success.sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
@@ -7670,7 +8125,7 @@ final class LibraryWindowController: NSWindowController,
 
         let changedURLs = [previousURL, savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
-        selectedURL = savedURL
+        setSelectedURLForLibrary(savedURL)
         selectedSourceContents = sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
@@ -7951,6 +8406,160 @@ final class LibraryWindowController: NSWindowController,
         reloadNotes(loadFirstIfNeeded: true, mutationAnimation: .deletion)
     }
 
+    func deleteSelectedNotesInBackgroundForLibrary() throws {
+        let urls = selectedMarkdownFileURLsForLibrary().filter {
+            !pendingDeletionPaths.contains($0.standardizedFileURL.path)
+        }
+        guard !urls.isEmpty else { return }
+
+        // A dirty editor must be durably saved before its source can leave the
+        // library. Clean-note deletion can publish its UI transition immediately.
+        try saveCurrentNoteIfNeeded()
+
+        let deletesFromTrash = selectedScope == .trash
+        let snapshot = deletesFromTrash ? trashedNotesSnapshot : sourceCountSnapshot
+        let notesByPath = Dictionary(uniqueKeysWithValues: urls.compactMap { url in
+            let path = url.standardizedFileURL.path
+            return snapshot.first {
+                $0.url.standardizedFileURL.path == path
+            }.map { (path, $0) }
+        })
+        let paths = Set(urls.map { $0.standardizedFileURL.path })
+        pendingDeletionPaths.formUnion(paths)
+        pendingDeletionBatchCount += 1
+
+        if deletesFromTrash {
+            removeNotesFromTrashSnapshot(at: urls)
+        } else {
+            removeNotesFromSourceSnapshot(at: urls)
+        }
+        clearCurrentDocumentAfterRemoval()
+        reloadNotes(
+            loadFirstIfNeeded: true,
+            refreshCounts: false,
+            mutationAnimation: .deletion
+        )
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+
+        let noteStore = noteStore
+        let willPersist = backgroundDeletionWillPersist
+        libraryMutationQueue.async { [weak self] in
+            willPersist()
+            var deletedNotes: [LibraryDeletedNote] = []
+            var failures: [LibraryDeletionFailure] = []
+            for sourceURL in urls {
+                do {
+                    if deletesFromTrash {
+                        try noteStore.permanentlyDeleteTrashedNote(at: sourceURL)
+                        deletedNotes.append(LibraryDeletedNote(
+                            sourceURL: sourceURL,
+                            trashedURL: nil
+                        ))
+                    } else {
+                        let trashedURL = try noteStore.trashNote(at: sourceURL)
+                        deletedNotes.append(LibraryDeletedNote(
+                            sourceURL: sourceURL,
+                            trashedURL: trashedURL
+                        ))
+                    }
+                } catch {
+                    failures.append(LibraryDeletionFailure(
+                        sourceURL: sourceURL,
+                        message: error.localizedDescription
+                    ))
+                }
+            }
+            let result = LibraryDeletionPersistenceResult(
+                deletedNotes: deletedNotes,
+                failures: failures
+            )
+            DispatchQueue.main.async {
+                self?.finishBackgroundDeletion(
+                    result,
+                    notesByPath: notesByPath,
+                    deletesFromTrash: deletesFromTrash
+                )
+            }
+        }
+    }
+
+    private func finishBackgroundDeletion(
+        _ result: LibraryDeletionPersistenceResult,
+        notesByPath: [String: NoteSearchResult],
+        deletesFromTrash: Bool
+    ) {
+        let completedPaths = Set(
+            result.deletedNotes.map { $0.sourceURL.standardizedFileURL.path }
+                + result.failures.map { $0.sourceURL.standardizedFileURL.path }
+        )
+        pendingDeletionPaths.subtract(completedPaths)
+
+        var changedURLs: [URL] = []
+        for deletedNote in result.deletedNotes {
+            changedURLs.append(deletedNote.sourceURL)
+            if let trashedURL = deletedNote.trashedURL {
+                changedURLs.append(trashedURL)
+                if let note = notesByPath[deletedNote.sourceURL.standardizedFileURL.path] {
+                    trashedNotesSnapshot.append(
+                        note.replacingURL(trashedURL, modifiedAt: Date())
+                    )
+                }
+            }
+        }
+        if !changedURLs.isEmpty {
+            recordInternalFileSystemChanges(for: changedURLs)
+        }
+        sortAndTrimTrashSnapshot()
+
+        if !result.failures.isEmpty {
+            for failure in result.failures {
+                guard let note = notesByPath[failure.sourceURL.standardizedFileURL.path] else {
+                    continue
+                }
+                if deletesFromTrash {
+                    trashedNotesSnapshot.append(note)
+                } else {
+                    LibraryNoteListProjection.upsertByModifiedDate(
+                        note,
+                        into: &sourceCountSnapshot,
+                        replacingPaths: Set([failure.sourceURL.standardizedFileURL.path]),
+                        limit: Self.sourceCountSnapshotLimit
+                    )
+                }
+            }
+            if deletesFromTrash {
+                sortAndTrimTrashSnapshot()
+            }
+            reloadNotes(
+                loadFirstIfNeeded: selectedURL == nil,
+                refreshCounts: false,
+                mutationAnimation: .insertion
+            )
+            let details = result.failures.map(\.message).joined(separator: "\n")
+            presentErrorAlert(
+                message: deletesFromTrash ? "永久删除失败" : "删除失败，笔记已恢复",
+                details: details
+            )
+        }
+
+        activeSearchSession = nil
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+        updateToolbarActionState()
+        pendingDeletionBatchCount = max(0, pendingDeletionBatchCount - 1)
+        if pendingDeletionBatchCount == 0 {
+            let waiters = pendingDeletionWaiters
+            pendingDeletionWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func waitForBackgroundDeletionsForLibrary() async {
+        guard pendingDeletionBatchCount > 0 else { return }
+        await withCheckedContinuation { continuation in
+            pendingDeletionWaiters.append(continuation)
+        }
+    }
+
     @discardableResult
     func restoreSelectedNoteForLibrary() throws -> URL? {
         let urls = selectedMarkdownFileURLsForLibrary()
@@ -8037,6 +8646,7 @@ final class LibraryWindowController: NSWindowController,
             allNotesSnapshot: sourceCountSnapshot
         )
         applyLoadedNote(cached, for: note)
+        releaseDeferredLaunchWorkIfReady()
         if let row = rowIndex(for: standardizedURL.path) {
             tableView.scrollRowToVisible(row)
         }
@@ -8960,7 +9570,7 @@ final class LibraryWindowController: NSWindowController,
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         remapSourceSnapshotNotes(from: sourceURLs, to: movedURLs)
         activeSearchSession = nil
-        selectedURL = movedURLs.first
+        setSelectedURLForLibrary(movedURLs.first)
         selectedScope = .folder(targetDirectory)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(selecting: movedURLs.first, loadFirstIfNeeded: true)
@@ -9108,7 +9718,7 @@ final class LibraryWindowController: NSWindowController,
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
         isCreatingNewNote = false
-        selectedURL = nil
+        setSelectedURLForLibrary(nil)
         selectedTags = []
         isDirty = false
         updateEditorCreatedDate(nil)

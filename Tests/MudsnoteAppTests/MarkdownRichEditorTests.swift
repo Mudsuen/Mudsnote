@@ -5489,21 +5489,188 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func noteLinksViewHidesWhenCurrentNoteHasNoRelations() {
-        let view = NoteLinksView(frame: .zero)
-        #expect(view.isHidden)
+    func knowledgeRelationNavigationStaysInOneWindowAndSupportsBack() async throws {
+        let suiteName = "mudsnote.knowledge-navigation-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-knowledge-navigation-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
 
-        view.update(NoteLinkRelations(
-            incoming: [NoteLinkItem(
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let sourceURL = try store.saveNewNote(
+            title: "Source",
+            body: "Source body",
+            tags: ["层级/点"],
+            in: notesDirectory
+        )
+        let targetURL = try store.saveNewNote(
+            title: "Target",
+            body: "[Source](\(sourceURL.lastPathComponent))",
+            tags: ["层级/线"],
+            in: notesDirectory
+        )
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        try controller.openMarkdownDocumentForLibrary(at: targetURL)
+        await controller.waitForNoteLinksRefreshForLibrary()
+        let sourceButton = try #require(controller.noteLinksView.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "Source" })
+        sourceButton.performClick(nil)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == sourceURL.standardizedFileURL)
+
+        let backButton = try #require(controller.noteLinksView.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "‹" })
+        #expect(backButton.isEnabled)
+        backButton.performClick(nil)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeRelationsViewStaysAvailableWithoutExistingRelations() {
+        let view = NoteLinksView(frame: .zero)
+        #expect(!view.isHidden)
+        var requestedLayer: KnowledgeLayer?
+        var requestedGraph = false
+        view.onGenerateHigherLayer = { requestedLayer = $0 }
+        view.onShowGraph = { requestedGraph = true }
+
+        view.update(KnowledgeRelations(
+            currentLayer: .point,
+            parents: [],
+            children: [],
+            related: [KnowledgeRelationItem(
                 url: URL(fileURLWithPath: "/tmp/source.md"),
                 title: "Source"
             )],
-            outgoing: []
+            suggested: [KnowledgeRelationItem(
+                url: URL(fileURLWithPath: "/tmp/suggested.md"),
+                title: "Suggested",
+                reason: "共同标签：数据治理"
+            )]
         ))
         #expect(!view.isHidden)
+        let buttonTitles = view.allSubviews.compactMap { ($0 as? NSButton)?.title }
+        #expect(buttonTitles.contains("生成线层草案"))
+        let relationLabels = view.allSubviews
+            .compactMap { ($0 as? NSTextField)?.stringValue }
+        #expect(relationLabels.contains("共同标签：数据治理"))
+        view.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.title == "生成线层草案" }?
+            .performClick(nil)
+        #expect(requestedLayer == .line)
+        let graphButton = view.allSubviews
+            .compactMap { $0 as? NSButton }
+            .first { $0.accessibilityLabel() == "打开当前笔记知识图谱" }
+        graphButton?.performClick(nil)
+        #expect(requestedGraph)
 
         view.update(.empty)
-        #expect(view.isHidden)
+        #expect(!view.isHidden)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeGraphCanvasFiltersNavigationFromGraphPresentation() {
+        let pointURL = URL(fileURLWithPath: "/tmp/Point.md")
+        let lineURL = URL(fileURLWithPath: "/tmp/Line.md")
+        let canvas = KnowledgeGraphCanvasView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+        let window = NSWindow(
+            contentRect: canvas.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = canvas
+        canvas.update(KnowledgeGraphSnapshot(
+            nodes: [
+                KnowledgeGraphNode(url: pointURL, title: "Point", layer: .point, linkCount: 1),
+                KnowledgeGraphNode(url: lineURL, title: "Line", layer: .line, linkCount: 1)
+            ],
+            edges: [
+                KnowledgeGraphEdge(
+                    sourceURL: pointURL,
+                    targetURL: lineURL,
+                    kind: .hierarchy
+                )
+            ],
+            focusedURL: lineURL
+        ))
+
+        #expect(canvas.accessibilityLabel()?.contains("2 个节点") == true)
+        let accessibleNodes = canvas.accessibilityChildren()?
+            .compactMap { $0 as? NSAccessibilityElement } ?? []
+        #expect(accessibleNodes.count == 2)
+        #expect(accessibleNodes.allSatisfy { $0.accessibilityRole() == .button })
+        #expect(accessibleNodes.contains {
+            $0.accessibilityLabel()?.contains("Point，点层") == true
+        })
+        canvas.zoom(by: 100)
+        canvas.zoom(by: 0.0001)
+        canvas.fitGraph()
+        #expect(canvas.acceptsFirstResponder)
+    }
+
+    @MainActor
+    @Test
+    func knowledgeGraphWindowKeepsControlsAboveTheCanvasAtMinimumSize() throws {
+        let suiteName = "mudsnote.knowledge-graph-window-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-knowledge-graph-window-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let controller = KnowledgeGraphWindowController(noteStore: store, rootsProvider: { [] })
+        defer { controller.close() }
+        controller.window?.setContentSize(NSSize(width: 820, height: 460))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+
+        let content = try #require(controller.window?.contentView)
+        let scope = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphScopeControl"
+        })
+        let canvas = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphCanvas"
+        })
+        let toolbar = try #require(content.allSubviews.first {
+            $0.identifier?.rawValue == "KnowledgeGraphToolbar"
+        })
+        let scopeFrame = content.convert(scope.bounds, from: scope)
+        let canvasFrame = content.convert(canvas.bounds, from: canvas)
+        let toolbarFrame = content.convert(toolbar.bounds, from: toolbar)
+        #expect(toolbarFrame.height == 44)
+        #expect(!toolbarFrame.intersects(canvasFrame))
+        #expect(!scopeFrame.intersects(canvasFrame))
+        #expect(scopeFrame.minX >= content.bounds.minX)
+        #expect(scopeFrame.maxX <= content.bounds.maxX)
     }
 
     @MainActor
@@ -7893,7 +8060,64 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowNoteListKeyboardOpensAndDeletesNotes() throws {
+    func libraryDeletionUpdatesProjectionBeforeBackgroundPersistenceCompletes() async throws {
+        let suiteName = "mudsnote.library-background-delete-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-background-delete-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let noteURL = try store.saveNewNote(title: "Background Delete", body: "Body")
+        let allowPersistence = DispatchSemaphore(value: 0)
+        let threadRecorder = ThreadObservationRecorder()
+        let controller = LibraryWindowController(
+            noteStore: store,
+            backgroundDeletionWillPersist: {
+                threadRecorder.recordCurrentThread()
+                _ = allowPersistence.wait(timeout: .now() + 2)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer {
+            allowPersistence.signal()
+            controller.close()
+        }
+
+        try controller.deleteSelectedNotesInBackgroundForLibrary()
+
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: noteURL.path))
+        let persistenceDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while threadRecorder.snapshot().callCount == 0,
+              ContinuousClock.now < persistenceDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(threadRecorder.snapshot().callCount == 1)
+        #expect(!threadRecorder.didObserveMainThread())
+
+        allowPersistence.signal()
+        await controller.waitForBackgroundDeletionsForLibrary()
+
+        #expect(!FileManager.default.fileExists(atPath: noteURL.path))
+        #expect(store.listTrashedNotes(limit: 10).first?.title == "Background Delete")
+    }
+
+    @MainActor
+    @Test
+    func libraryWindowNoteListKeyboardOpensAndDeletesNotes() async throws {
         let suiteName = "mudsnote.library-keyboard-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -7927,6 +8151,7 @@ struct MarkdownRichEditorTests {
         #expect(openedURL?.standardizedFileURL.path == noteURL.standardizedFileURL.path)
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 51, modifiers: [], characters: "\u{7F}"))
+        await controller.waitForBackgroundDeletionsForLibrary()
         #expect(!FileManager.default.fileExists(atPath: noteURL.path))
         #expect(store.listTrashedNotes(limit: 10).first?.title == "Keyboard Seed")
 
@@ -7934,6 +8159,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.stringValue == "Keyboard Seed")
 
         controller.tableView.keyDown(with: try keyEvent(keyCode: 117, modifiers: [], characters: "\u{F728}"))
+        await controller.waitForBackgroundDeletionsForLibrary()
         #expect(store.listTrashedNotes(limit: 10).isEmpty)
         #expect(controller.tableView.numberOfRows == 0)
     }
@@ -8178,9 +8404,14 @@ struct MarkdownRichEditorTests {
 
         let delayedRow = try #require(row(for: delayedURL))
         let targetRow = try #require(row(for: targetURL))
+        let initialTitle = controller.titleField.stringValue
+        let initialBody = controller.editorTextView.string
         let selectionStart = Date()
         controller.tableView.selectRowIndexes(IndexSet(integer: delayedRow), byExtendingSelection: false)
         #expect(Date().timeIntervalSince(selectionStart) < 0.2)
+        #expect(controller.titleField.stringValue == initialTitle)
+        #expect(controller.editorTextView.string == initialBody)
+        #expect(!controller.editorTextView.isEditable)
 
         controller.tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
         await controller.waitForActiveNoteLoadForLibrary()
@@ -8761,19 +8992,131 @@ struct MarkdownRichEditorTests {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "")
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
-        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.editorTextView.string != "Deferred body" {
+        while Date() < deadline,
+              controller.editorTextView.string != "Deferred body"
+                || controller.sourceCountTextForLibrary(titled: "Notes") != "1" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
         #expect(controller.editorTextView.string == "Deferred body")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
+    }
+
+    @MainActor
+    @Test
+    func deferredLibraryLaunchShowsLastCachedBodyBeforeSlowSourceRefresh() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-launch-body-cache-tests-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "mudsnote.library-launch-body-cache-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let cachedURL = try store.saveNewNote(title: "Cached Selection", body: "Fresh source body")
+        _ = try store.saveNewNote(title: "Newer List Note", body: "Other body")
+        let modifiedAt = try #require(
+            (try FileManager.default.attributesOfItem(atPath: cachedURL.path)[.modificationDate]) as? Date
+        )
+        store.cacheLibraryLaunchNote(
+            LoadedNoteDocument(
+                title: "Cached Selection",
+                body: "Cached body is immediate",
+                tags: [],
+                sourceContents: "# Cached Selection\n\nCached body is immediate"
+            ),
+            at: cachedURL,
+            modifiedAt: modifiedAt
+        )
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.45)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindowAndFocus()
+
+        #expect(controller.selectedMarkdownFileURLForLibrary() == cachedURL.standardizedFileURL)
+        #expect(controller.titleField.stringValue == "Cached Selection")
+        #expect(controller.editorTextView.string == "Cached body is immediate")
+        #expect(!controller.editorTextView.isEditable)
+        #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, controller.editorTextView.string != "Fresh source body" {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(controller.editorTextView.string == "Fresh source body")
+        #expect(controller.editorTextView.isEditable)
+        #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
+    }
+
+    @MainActor
+    @Test
+    func coldLibraryLaunchPrioritizesFirstNoteBeforeIndexAndFolderWork() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-launch-priority-tests-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "mudsnote.library-launch-priority-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Cold Priority", body: "First body wins")
+        let controller = LibraryWindowController(
+            noteStore: store,
+            defersInitialNoteHydration: true,
+            noteLoader: { url in
+                Thread.sleep(forTimeInterval: 0.35)
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindowAndFocus()
+
+        #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, controller.editorTextView.string != "First body wins" {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(controller.editorTextView.string == "First body wins")
+        #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
     }
 
     @MainActor

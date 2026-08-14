@@ -162,9 +162,9 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testHomeTopBarUsesNativeTranslucentMaterialOverAdaptiveCanvas() {
-        XCTAssertFalse(
+        XCTAssertTrue(
             NotesTopBarAppearance.notes.isToolbarBackgroundVisible,
-            "The scroll edge should blur underlaid content without adding a tinted toolbar fill"
+            "The native navigation material should blur content across the full top chrome"
         )
         XCTAssertTrue(
             NotesTopBarAppearance.notes.usesSystemScrollEdgeBlur,
@@ -173,6 +173,43 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(
             NotesTopBarAppearance.notes.usesAdaptiveCanvas,
             "The navigation material must preserve the selected light or dark canvas"
+        )
+        XCTAssertEqual(NotesTopBarAppearance.notes.scrollEdgeBottom, 128)
+        XCTAssertEqual(
+            NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(chromeBottom: 116),
+            12,
+            "The system blur should extend to the former opaque header boundary"
+        )
+        XCTAssertEqual(
+            NotesTopBarAppearance.notes.scrollEdgeExtensionHeight(chromeBottom: 132),
+            0
+        )
+    }
+
+    func testHomeFolderScopeIncludesNestedFoldersWithoutPrefixCollisions() {
+        XCTAssertTrue(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects/UI Lifecycle.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertTrue(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects/Launch/Brief.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertFalse(
+            HomeFolderScope.contains(
+                fileRelativePath: "Projects2/Unrelated.md",
+                folderRelativePath: "Projects"
+            )
+        )
+        XCTAssertFalse(
+            HomeFolderScope.contains(
+                fileRelativePath: "Archive/Projects/Old.md",
+                folderRelativePath: "Projects"
+            )
         )
     }
 
