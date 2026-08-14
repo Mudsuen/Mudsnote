@@ -14,6 +14,7 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var hasUncheckedChecklist = false
     var isPinned = false
     var tags: [String] = []
+    var isContentLoaded = true
 }
 
 struct MarkdownGalleryChecklistItem: Equatable {

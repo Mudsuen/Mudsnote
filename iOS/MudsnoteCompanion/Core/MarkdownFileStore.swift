@@ -30,6 +30,15 @@ actor MarkdownFileStore {
         var metadata: MarkdownListMetadata
     }
 
+    private struct PendingListMetadata {
+        var fileIndex: Int
+        var url: URL
+        var relativePath: String
+        var modifiedAt: Date
+        var byteCount: Int
+        var fileIdentity: String
+    }
+
     private final class LibraryInventoryState {
         let enumerator: FileManager.DirectoryEnumerator?
         var markdownFiles: [RecentMarkdownFile] = []
@@ -37,6 +46,8 @@ actor MarkdownFileStore {
         var attachments: [LibraryAttachment] = []
         var attachmentCount = 0
         var conflictWarnings: [String] = []
+        var pendingListMetadata: [PendingListMetadata] = []
+        var didOrderPendingListMetadata = false
         var isComplete = false
 
         init(
@@ -175,9 +186,43 @@ actor MarkdownFileStore {
         return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
     }
 
+    func loadLibraryContentPage(
+        containing relativePath: String
+    ) throws -> MarkdownLibrarySnapshot {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let state = libraryInventoryState else {
+            return try loadLibrarySnapshot()
+        }
+        guard state.pendingListMetadata.contains(where: {
+            $0.relativePath == relativePath
+        }) else {
+            if let cachedLibrarySnapshot { return cachedLibrarySnapshot }
+            return try loadLibrarySnapshot()
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        let resourceKeys: Set<URLResourceKey> = [
+            .contentModificationDateKey,
+            .creationDateKey,
+            .fileSizeKey,
+            .fileResourceIdentifierKey,
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        return try loadNextLibraryPageWithinAccess(
+            root: root,
+            resourceKeys: resourceKeys,
+            contentTargetPath: relativePath
+        )
+    }
+
     private func loadNextLibraryPageWithinAccess(
         root: URL,
-        resourceKeys: Set<URLResourceKey>
+        resourceKeys: Set<URLResourceKey>,
+        contentTargetPath: String? = nil
     ) throws -> MarkdownLibrarySnapshot {
         guard let state = libraryInventoryState else {
             throw FolderAccessError.missingFolder
@@ -185,8 +230,7 @@ actor MarkdownFileStore {
         let inboxURL = root.appendingPathComponent("Inbox.md")
         let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
         let inboxItems = InboxParser.parse(inboxMarkdown)
-        var loadedNotes = 0
-        while !state.isComplete, loadedNotes < 40 {
+        while !state.isComplete {
             guard let url = state.enumerator?.nextObject() as? URL else {
                 state.isComplete = true
                 break
@@ -222,28 +266,78 @@ actor MarkdownFileStore {
             }
             let modifiedAt = values.contentModificationDate ?? .distantPast
             let byteCount = values.fileSize ?? 0
-            let listMetadata = try metadataForList(
-                relativePath: relativePath,
-                url: url,
-                modifiedAt: modifiedAt,
-                byteCount: byteCount,
-                fileIdentity: Self.fileIdentity(values.fileResourceIdentifier)
-            )
+            let fileIdentity = Self.fileIdentity(values.fileResourceIdentifier)
+            let fileIndex = state.markdownFiles.endIndex
             state.markdownFiles.append(RecentMarkdownFile(
                 id: relativePath,
                 relativePath: relativePath,
-                title: listMetadata.title,
+                title: url.deletingPathExtension().lastPathComponent,
                 modifiedAt: modifiedAt,
                 createdAt: values.creationDate ?? modifiedAt,
-                preview: listMetadata.preview,
-                galleryImagePath: listMetadata.galleryImagePath,
-                galleryChecklistItems: listMetadata.galleryChecklistItems,
-                hasAttachments: listMetadata.hasAttachments,
-                hasChecklist: listMetadata.hasChecklist,
-                hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
-                tags: listMetadata.tags
+                isContentLoaded: false
             ))
-            loadedNotes += 1
+            state.pendingListMetadata.append(PendingListMetadata(
+                fileIndex: fileIndex,
+                url: url,
+                relativePath: relativePath,
+                modifiedAt: modifiedAt,
+                byteCount: byteCount,
+                fileIdentity: fileIdentity
+            ))
+        }
+
+        if !state.didOrderPendingListMetadata {
+            state.pendingListMetadata.sort {
+                if $0.modifiedAt != $1.modifiedAt {
+                    return $0.modifiedAt > $1.modifiedAt
+                }
+                return $0.relativePath.localizedStandardCompare($1.relativePath)
+                    == .orderedAscending
+            }
+            state.didOrderPendingListMetadata = true
+        }
+
+        let contentStartIndex: Int
+        if let contentTargetPath,
+           let targetIndex = state.pendingListMetadata.firstIndex(where: {
+               $0.relativePath == contentTargetPath
+           }) {
+            contentStartIndex = targetIndex
+        } else {
+            contentStartIndex = 0
+        }
+        let contentEndIndex = min(
+            state.pendingListMetadata.count,
+            contentStartIndex + 40
+        )
+        if contentStartIndex < contentEndIndex {
+            let page = Array(
+                state.pendingListMetadata[contentStartIndex..<contentEndIndex]
+            )
+            for pending in page {
+                let listMetadata = try metadataForList(
+                    relativePath: pending.relativePath,
+                    url: pending.url,
+                    modifiedAt: pending.modifiedAt,
+                    byteCount: pending.byteCount,
+                    fileIdentity: pending.fileIdentity
+                )
+                state.markdownFiles[pending.fileIndex].title = listMetadata.title
+                state.markdownFiles[pending.fileIndex].preview = listMetadata.preview
+                state.markdownFiles[pending.fileIndex].galleryImagePath =
+                    listMetadata.galleryImagePath
+                state.markdownFiles[pending.fileIndex].galleryChecklistItems =
+                    listMetadata.galleryChecklistItems
+                state.markdownFiles[pending.fileIndex].hasAttachments =
+                    listMetadata.hasAttachments
+                state.markdownFiles[pending.fileIndex].hasChecklist =
+                    listMetadata.hasChecklist
+                state.markdownFiles[pending.fileIndex].hasUncheckedChecklist =
+                    listMetadata.hasUncheckedChecklist
+                state.markdownFiles[pending.fileIndex].tags = listMetadata.tags
+                state.markdownFiles[pending.fileIndex].isContentLoaded = true
+            }
+            state.pendingListMetadata.removeSubrange(contentStartIndex..<contentEndIndex)
         }
 
         var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
@@ -291,7 +385,7 @@ actor MarkdownFileStore {
             inboxItems: inboxItems,
             allFiles: allFiles,
             recentFiles: recentFiles,
-            hasMoreFiles: !state.isComplete,
+            hasMoreFiles: !state.pendingListMetadata.isEmpty,
             folders: LibraryFolderNode.makeTree(
                 directoryPaths: state.folderPaths,
                 files: state.markdownFiles
@@ -2632,6 +2726,22 @@ actor MarkdownFileStore {
         _ pending: PendingWrite,
         root expectedRoot: URL
     ) async throws -> RecentMarkdownFile {
+        try await performWrite(pending, root: expectedRoot, usesRecoveryMetadata: true)
+    }
+
+    @discardableResult
+    func performDirectCaptureWrite(
+        _ pending: PendingWrite,
+        root expectedRoot: URL
+    ) async throws -> RecentMarkdownFile {
+        try await performWrite(pending, root: expectedRoot, usesRecoveryMetadata: false)
+    }
+
+    private func performWrite(
+        _ pending: PendingWrite,
+        root expectedRoot: URL,
+        usesRecoveryMetadata: Bool
+    ) async throws -> RecentMarkdownFile {
         let expectedLibraryID = LibraryIdentity.identifier(for: expectedRoot)
         guard pending.libraryID.isEmpty || pending.libraryID == expectedLibraryID else {
             throw PendingWriteValidationError.libraryMismatch
@@ -2680,7 +2790,9 @@ actor MarkdownFileStore {
         }
 
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let writtenTarget = try writePendingNoteIfNeeded(pending, to: target, root: root)
+        let writtenTarget = usesRecoveryMetadata
+            ? try writePendingNoteIfNeeded(pending, to: target, root: root)
+            : try writeDirectCapturedNote(pending, to: target)
         let writtenRelativePath = Self.relativePath(for: writtenTarget, root: root)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [writtenRelativePath])
@@ -2688,6 +2800,21 @@ actor MarkdownFileStore {
             for: pending,
             relativePath: writtenRelativePath
         )
+    }
+
+    private func writeDirectCapturedNote(
+        _ pending: PendingWrite,
+        to requestedTarget: URL
+    ) throws -> URL {
+        let target = uniqueMarkdownURL(for: requestedTarget)
+        let title = target.deletingPathExtension().lastPathComponent
+        let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = "# \(title)\n\n\(body)\n"
+        guard let data = note.data(using: .utf8) else {
+            throw PendingWriteValidationError.invalidMarkdown
+        }
+        try data.write(to: target, options: .withoutOverwriting)
+        return target
     }
 
     static func projection(

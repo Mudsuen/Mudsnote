@@ -8,7 +8,7 @@ private struct NotesListSearchTaskID: Hashable {
 }
 
 struct NoteListPageWindow: Equatable {
-    static let pageSize = 40
+    static let pageSize = 300
     private(set) var visibleCount = pageSize
 
     mutating func reset() {
@@ -68,6 +68,13 @@ private enum HomeTimelineEntry: Identifiable {
             return firstLine?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
                 ?? String(localized: "Untitled memo")
         }
+    }
+
+    var fileNeedingContent: RecentMarkdownFile? {
+        guard case .file(let file) = self, !file.isContentLoaded else {
+            return nil
+        }
+        return file
     }
 }
 
@@ -721,12 +728,6 @@ struct LibraryHomeView: View {
                             )
                             .frame(maxWidth: .infinity)
                             .padding(.top, 60)
-                            if appModel.hasMoreLibraryFiles {
-                                NoteListPaginationFooter(
-                                    pageToken: homePageWindow.visibleCount,
-                                    loadMore: revealNextHomePage
-                                )
-                            }
                         }
                     } else {
                         ForEach(homeTimelineProjection.sections) { section in
@@ -840,8 +841,7 @@ struct LibraryHomeView: View {
         return HomeTimelineProjection(
             sections: sections,
             entryCount: entries.count,
-            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count)
-                || appModel.hasMoreLibraryFiles,
+            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count),
             smartFolderCounts: smartFolderCounts
         )
     }
@@ -854,17 +854,11 @@ struct LibraryHomeView: View {
     }
 
     private func revealNextHomePage() {
-        if homePageWindow.hasMore(totalCount: homeTimelineProjection.entryCount) {
-            homePageWindow.revealNext(totalCount: homeTimelineProjection.entryCount)
-            homeTimelineProjection = makeHomeTimelineProjection()
+        guard homePageWindow.hasMore(totalCount: homeTimelineProjection.entryCount) else {
             return
         }
-        guard appModel.hasMoreLibraryFiles else { return }
-        Task {
-            await appModel.loadNextLibraryPage()
-            homePageWindow.revealNext(totalCount: .max)
-            homeTimelineProjection = makeHomeTimelineProjection()
-        }
+        homePageWindow.revealNext(totalCount: homeTimelineProjection.entryCount)
+        homeTimelineProjection = makeHomeTimelineProjection()
     }
 
     private func updateDirectoryWidth(_ availableWidth: CGFloat) {
@@ -3549,6 +3543,7 @@ private struct NoteGallerySection: View {
 }
 
 private struct HomeTimelineCardSection: View {
+    @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
     var isSelecting: Bool
     var selectedIDs: Set<String>
@@ -3569,6 +3564,10 @@ private struct HomeTimelineCardSection: View {
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
                     )
+                    .task(id: entry.fileNeedingContent?.relativePath) {
+                        guard let file = entry.fileNeedingContent else { return }
+                        await appModel.loadLibraryContentIfNeeded(for: file)
+                    }
                 }
             }
         } header: {
@@ -3589,6 +3588,7 @@ private struct HomeTimelineCardSection: View {
 }
 
 private struct HomeTimelineListSection: View {
+    @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
     var isSelecting: Bool
     var selectedIDs: Set<String>
@@ -3596,7 +3596,7 @@ private struct HomeTimelineListSection: View {
 
     var body: some View {
         Section {
-            VStack(spacing: 10) {
+            LazyVStack(spacing: 10) {
                 ForEach(section.entries) { entry in
                     HomeTimelineListEntryButton(
                         entry: entry,
@@ -3611,6 +3611,10 @@ private struct HomeTimelineListSection: View {
                     .overlay {
                         RoundedRectangle(cornerRadius: 16)
                             .stroke(MudsnoteColors.line, lineWidth: 1)
+                    }
+                    .task(id: entry.fileNeedingContent?.relativePath) {
+                        guard let file = entry.fileNeedingContent else { return }
+                        await appModel.loadLibraryContentIfNeeded(for: file)
                     }
                 }
             }
@@ -4646,15 +4650,13 @@ struct NotesFolderRow: View {
             }
             .frame(width: max(28, trailingAccessoryWidth), height: 44, alignment: .trailing)
         }
-        .padding(.leading, 18 + indentation)
-        .padding(.trailing, 18)
-        .frame(minHeight: 58)
+        .padding(.leading, 10 + indentation)
+        .padding(.trailing, 10)
+        .frame(height: 50)
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(MudsnoteColors.primary.opacity(0.14))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
             }
         }
         .overlay(alignment: .leading) {
@@ -4662,10 +4664,11 @@ struct NotesFolderRow: View {
                 Capsule()
                     .fill(MudsnoteColors.primary)
                     .frame(width: 3, height: 28)
-                    .padding(.leading, 8)
                     .accessibilityHidden(true)
             }
         }
+        .padding(.horizontal, 8)
+        .frame(minHeight: 58)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(NotesCloneColors.separator)

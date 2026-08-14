@@ -1212,6 +1212,80 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(model.trashedFiles.first?.originalRelativePath, file.relativePath)
     }
 
+    @MainActor
+    func testNewCaptureIsDurableOpenableAndDeletableWithPendingSyncStatus() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-durable.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectFolder(root)
+
+        let libraryDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < libraryDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+
+        model.draft = CaptureDraft(
+            body: "Open After Create",
+            target: .folder(nil)
+        )
+        model.sendDraft(continueCapturing: false)
+        let captureDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < captureDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isSendingDraft)
+
+        let created = try XCTUnwrap(
+            model.libraryFiles.first { $0.title == "Open After Create" }
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(created.relativePath).path
+            )
+        )
+
+        model.openFile(created)
+        let openDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < openDeadline, model.selectedDocument == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.selectedDocument?.relativePath, created.relativePath)
+        XCTAssertTrue(model.selectedDocument?.markdown.contains("Open After Create") == true)
+
+        model.draft = CaptureDraft(
+            body: "Open After Create",
+            target: .folder(nil)
+        )
+        model.sendDraft(continueCapturing: false)
+        let duplicateDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < duplicateDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let matchingFiles = model.libraryFiles.filter {
+            $0.title.hasPrefix("Open After Create")
+        }
+        XCTAssertEqual(matchingFiles.count, 2)
+        XCTAssertEqual(Set(matchingFiles.map(\.relativePath)).count, 2)
+
+        model.syncStatus = .pending
+        let didTrash = await model.trashNote(created)
+        XCTAssertTrue(didTrash)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(created.relativePath).path
+            )
+        )
+    }
+
     func testMarkdownBlockFormat() {
         let date = Date(timeIntervalSince1970: 1_717_747_920)
         let block = MarkdownFileStore.markdownBlock(
@@ -4049,7 +4123,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testLibraryInventoryLoadsNotesInPagesAndExcludesMarkdownAttachments() async throws {
+    func testLibraryInventoryLoadsAllEntriesWhilePagingContent() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -4076,7 +4150,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
 
         var snapshot = try await store.loadLibrarySnapshot()
-        XCTAssertEqual(snapshot.allFiles.count, 40)
+        XCTAssertEqual(snapshot.allFiles.count, 96)
+        XCTAssertEqual(snapshot.allFiles.filter(\.isContentLoaded).count, 40)
         XCTAssertTrue(snapshot.hasMoreFiles)
         XCTAssertTrue(
             snapshot.folders.contains { $0.relativePath == "ZZZ Later" },
@@ -4087,6 +4162,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
 
         XCTAssertEqual(snapshot.allFiles.count, 96)
+        XCTAssertTrue(snapshot.allFiles.allSatisfy(\.isContentLoaded))
         XCTAssertFalse(snapshot.allFiles.contains { $0.relativePath == "Attachments/manual.md" })
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
     }
@@ -4134,7 +4210,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         measureAsync {
             var snapshot = try await store.loadLibrarySnapshot()
-            XCTAssertEqual(snapshot.allFiles.count, 40)
+            XCTAssertEqual(snapshot.allFiles.count, 1_001)
+            XCTAssertEqual(snapshot.allFiles.filter(\.isContentLoaded).count, 40)
             while snapshot.hasMoreFiles {
                 snapshot = try await store.loadNextLibraryPage()
             }
@@ -5150,21 +5227,28 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     func testNoteListPageWindowRevealsNotesInBoundedPages() {
-        let notes = Array(0..<95)
+        let ordinaryLibrary = Array(0..<300)
+        XCTAssertEqual(
+            NoteListPageWindow().visibleItems(from: ordinaryLibrary),
+            ordinaryLibrary,
+            "Libraries with at most 300 notes must show every entry immediately"
+        )
+
+        let notes = Array(0..<650)
         var window = NoteListPageWindow()
 
-        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<40))
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<300))
         XCTAssertTrue(window.hasMore(totalCount: notes.count))
 
         window.revealNext(totalCount: notes.count)
-        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<80))
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<600))
 
         window.revealNext(totalCount: notes.count)
         XCTAssertEqual(window.visibleItems(from: notes), notes)
         XCTAssertFalse(window.hasMore(totalCount: notes.count))
 
         window.reset()
-        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<40))
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<300))
     }
 
     func testLibraryFileScopeFiltersSearchResultsAndDerivesNewNoteFolder() {

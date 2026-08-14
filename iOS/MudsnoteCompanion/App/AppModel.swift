@@ -80,7 +80,6 @@ final class AppModel: ObservableObject {
     let audioRecorder = AudioCaptureService()
 
     private var queue: PendingWriteQueue?
-    private var pendingFileProjections: [UUID: RecentMarkdownFile] = [:]
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
     private var activeSearchScope = MarkdownSearchScope.all
@@ -452,13 +451,6 @@ final class AppModel: ObservableObject {
                 )
                 await refreshAfterWrite(canUseInboxDelta: canUseInboxDelta)
             } catch {
-                if let draftSaveError = error as? DraftSaveError,
-                   case .queuedForReplay = draftSaveError {
-                    _ = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
-                    syncStatus = .pending
-                    statusToast = .pending(draftSaveError.localizedDescription)
-                    return
-                }
                 if let draftSaveError = error as? DraftSaveError {
                     captureSubmissionIssue = draftSaveError.localizedDescription
                     return
@@ -789,7 +781,6 @@ final class AppModel: ObservableObject {
             do {
                 let replayResult = try await queue?.replay { [fileStore, weak self] item in
                     let createdFile = try await fileStore.performPendingWrite(item, root: root)
-                    self?.removePendingProjection(item.id)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
@@ -832,7 +823,6 @@ final class AppModel: ObservableObject {
         var replayResult = PendingWriteReplayResult()
         do {
             let queueLoadResult = try await queue.load()
-            rebuildPendingProjections(await queue.allItems())
             guard libraryConfigurationID == configurationID else { return }
             if case .quarantined(let filename) = queueLoadResult {
                 queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
@@ -843,7 +833,6 @@ final class AppModel: ObservableObject {
             if pendingCount > 0 {
                 replayResult = try await queue.replay { [fileStore, weak self] item in
                     let createdFile = try await fileStore.performPendingWrite(item, root: root)
-                    self?.removePendingProjection(item.id)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
@@ -1033,10 +1022,6 @@ final class AppModel: ObservableObject {
             statusToast = .error(String(localized: "Inbox cannot be deleted."))
             return false
         }
-        guard syncStatus != .pending else {
-            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
-            return false
-        }
         do {
             let trashed = try await fileStore.trashMarkdownDocument(
                 relativePath: file.relativePath
@@ -1060,10 +1045,6 @@ final class AppModel: ObservableObject {
         guard !files.isEmpty else { return false }
         guard files.allSatisfy(canMoveToRecentlyDeleted) else {
             statusToast = .error(String(localized: "Inbox cannot be deleted."))
-            return false
-        }
-        guard syncStatus != .pending else {
-            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
             return false
         }
         do {
@@ -2027,6 +2008,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func loadLibraryContentIfNeeded(for file: RecentMarkdownFile) async {
+        guard !file.isContentLoaded else { return }
+        let configurationID = libraryConfigurationID
+        do {
+            let snapshot = try await fileStore.loadLibraryContentPage(
+                containing: file.relativePath
+            )
+            guard libraryConfigurationID == configurationID else { return }
+            await apply(snapshot)
+            libraryRevision += 1
+        } catch {
+            guard libraryConfigurationID == configurationID else { return }
+            statusToast = .error(String(localized: "Could not load note previews"))
+        }
+    }
+
     private func refreshAfterWrite(canUseInboxDelta: Bool) async {
         if canUseInboxDelta {
             await refreshInboxDelta()
@@ -2052,10 +2049,7 @@ final class AppModel: ObservableObject {
 
     private func apply(_ snapshot: MarkdownLibrarySnapshot, pendingCount: Int) {
         inboxItems = snapshot.inboxItems
-        let pendingFiles = Array(pendingFileProjections.values)
-        let pendingPaths = Set(pendingFiles.map(\.relativePath))
-        libraryFiles = (snapshot.allFiles.filter { !pendingPaths.contains($0.relativePath) } + pendingFiles)
-            .sorted { $0.modifiedAt > $1.modifiedAt }
+        libraryFiles = snapshot.allFiles
         hasMoreLibraryFiles = snapshot.hasMoreFiles
         recentFiles = Array(libraryFiles.prefix(24))
         let directoryPaths = snapshot.folders
@@ -2160,7 +2154,6 @@ final class AppModel: ObservableObject {
         }
         let nextQueue = PendingWriteQueue(root: root)
         let queueLoadResult = try await nextQueue.load()
-        rebuildPendingProjections(await nextQueue.allItems())
         switch queueLoadResult {
         case .ready:
             queueRecoveryWarning = try await nextQueue.preservedFailureFilenames()
@@ -2174,7 +2167,6 @@ final class AppModel: ObservableObject {
         do {
             let replayResult = try await nextQueue.replay { [fileStore, weak self] item in
                 let createdFile = try await fileStore.performPendingWrite(item, root: root)
-                self?.removePendingProjection(item.id)
                 self?.applyCreatedProjection(createdFile)
                 self?.recordSuccessfulPendingWrite(item)
             }
@@ -2231,72 +2223,17 @@ final class AppModel: ObservableObject {
     }
 
     private func appendDraft(_ draft: CaptureDraft) async throws -> RecentMarkdownFile {
-        guard let root = folderAccess.currentRoot, let queue else {
+        guard let root = folderAccess.currentRoot else {
             throw FolderAccessError.missingFolder
         }
 
         let pending = try await fileStore.preparePendingWrite(for: draft, root: root)
         do {
-            try await queue.enqueue(pending)
-            applyPendingProjection(pending)
-        } catch {
-            throw DraftSaveError.pendingQueueRejected(error.localizedDescription)
-        }
-        do {
-            let createdFile = try await fileStore.performPendingWrite(pending, root: root)
+            let createdFile = try await fileStore.performDirectCaptureWrite(pending, root: root)
             recordSuccessfulCaptureFolder(for: draft.target)
-            do {
-                try await queue.remove(id: pending.id)
-            } catch {
-                // The note is already durable and can be shown immediately.
-                // Keep the queued item as an idempotent cleanup retry instead
-                // of reporting the completed write as a failed capture.
-                syncStatus = .pending
-            }
-            removePendingProjection(pending.id)
             return createdFile
         } catch {
-            throw DraftSaveError.queuedForReplay(error.localizedDescription)
-        }
-    }
-
-    private func rebuildPendingProjections(_ pendingItems: [PendingWrite]) {
-        let previousPaths = Set(pendingFileProjections.values.map(\.relativePath))
-        libraryFiles.removeAll { previousPaths.contains($0.relativePath) }
-        pendingFileProjections = Dictionary(
-            uniqueKeysWithValues: pendingItems.map {
-                ($0.id, MarkdownFileStore.projection(for: $0))
-            }
-        )
-        mergePendingProjectionsIntoCurrentLibrary()
-    }
-
-    private func applyPendingProjection(_ pending: PendingWrite) {
-        pendingFileProjections[pending.id] = MarkdownFileStore.projection(for: pending)
-        mergePendingProjectionsIntoCurrentLibrary()
-    }
-
-    private func removePendingProjection(_ id: UUID) {
-        guard let removed = pendingFileProjections.removeValue(forKey: id) else { return }
-        libraryFiles.removeAll { $0.relativePath == removed.relativePath }
-        mergePendingProjectionsIntoCurrentLibrary()
-    }
-
-    private func mergePendingProjectionsIntoCurrentLibrary() {
-        let previousFiles = libraryFiles
-        let pendingFiles = Array(pendingFileProjections.values)
-        let pendingPaths = Set(pendingFiles.map(\.relativePath))
-        libraryFiles = (libraryFiles.filter { !pendingPaths.contains($0.relativePath) } + pendingFiles)
-            .sorted { $0.modifiedAt > $1.modifiedAt }
-        recentFiles = Array(libraryFiles.prefix(24))
-        folders = LibraryFolderNode.makeTree(
-            directoryPaths: allFolders.map(\.relativePath),
-            files: libraryFiles
-        )
-        librarySummary.allNotesCount = libraryFiles.count
-        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
-        if libraryFiles != previousFiles {
-            libraryRevision += 1
+            throw DraftSaveError.directWriteFailed(error.localizedDescription)
         }
     }
 
@@ -2427,19 +2364,16 @@ final class AppModel: ObservableObject {
 }
 
 enum DraftSaveError: LocalizedError {
-    case pendingQueueRejected(String)
-    case queuedForReplay(String)
+    case directWriteFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .pendingQueueRejected(let reason):
+        case .directWriteFailed(let reason):
             return String(
                 format: String(localized: "draft.kept_open.format"),
                 locale: .current,
                 reason
             )
-        case .queuedForReplay(let reason):
-            return "\(String(localized: "Saved to pending queue")): \(reason)"
         }
     }
 }
