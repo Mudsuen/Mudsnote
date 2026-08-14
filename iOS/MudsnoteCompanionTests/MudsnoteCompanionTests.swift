@@ -4062,6 +4062,11 @@ final class MudsnoteCompanionTests: XCTestCase {
                 encoding: .utf8
             )
         }
+        let laterFolder = root.appendingPathComponent("ZZZ Later", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: laterFolder,
+            withIntermediateDirectories: true
+        )
         try "# Attachment metadata, not a note\n".write(
             to: root.appendingPathComponent("Attachments/manual.md"),
             atomically: true,
@@ -4073,6 +4078,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         var snapshot = try await store.loadLibrarySnapshot()
         XCTAssertEqual(snapshot.allFiles.count, 40)
         XCTAssertTrue(snapshot.hasMoreFiles)
+        XCTAssertTrue(
+            snapshot.folders.contains { $0.relativePath == "ZZZ Later" },
+            "The sidebar directory tree must be complete before note pagination finishes"
+        )
         while snapshot.hasMoreFiles {
             snapshot = try await store.loadNextLibraryPage()
         }

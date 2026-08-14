@@ -39,8 +39,12 @@ actor MarkdownFileStore {
         var conflictWarnings: [String] = []
         var isComplete = false
 
-        init(enumerator: FileManager.DirectoryEnumerator?) {
+        init(
+            enumerator: FileManager.DirectoryEnumerator?,
+            folderPaths: Set<String>
+        ) {
             self.enumerator = enumerator
+            self.folderPaths = folderPaths
             isComplete = enumerator == nil
         }
     }
@@ -110,12 +114,44 @@ actor MarkdownFileStore {
             .isRegularFileKey,
             .isSymbolicLinkKey,
         ]
-        libraryInventoryState = LibraryInventoryState(enumerator: fileManager.enumerator(
+        let folderPaths = loadLibraryFolderPaths(root: root)
+        libraryInventoryState = LibraryInventoryState(
+            enumerator: fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: [.skipsHiddenFiles]
+            ),
+            folderPaths: folderPaths
+        )
+        return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
+    }
+
+    private func loadLibraryFolderPaths(root: URL) -> Set<String> {
+        let resourceKeys: Set<URLResourceKey> = [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ]
+        guard let enumerator = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: Array(resourceKeys),
             options: [.skipsHiddenFiles]
-        ))
-        return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
+        ) else {
+            return []
+        }
+
+        var folderPaths = Set<String>()
+        while let url = enumerator.nextObject() as? URL {
+            guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
+                continue
+            }
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard values.isDirectory == true else { continue }
+            folderPaths.insert(Self.relativePath(for: url, root: root))
+        }
+        return folderPaths
     }
 
     func loadNextLibraryPage() throws -> MarkdownLibrarySnapshot {
