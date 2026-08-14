@@ -303,9 +303,13 @@ private extension View {
         if #available(iOS 26.0, *) {
             overlay(alignment: .top) {
                 if isEnabled {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
+                    Color.clear
                         .frame(height: NotesTopBarAppearance.notes.scrollEdgeBottom)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(MudsnoteColors.line.opacity(0.45))
+                                .frame(height: 0.5)
+                        }
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
