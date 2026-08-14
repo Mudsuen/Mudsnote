@@ -2521,7 +2521,35 @@ actor MarkdownFileStore {
         try writePendingNoteIfNeeded(pending, to: target)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [pending.targetRelativePath])
-        return try recentFile(at: target, root: root)
+        return Self.projection(for: pending)
+    }
+
+    private static func projection(for pending: PendingWrite) -> RecentMarkdownFile {
+        let relativePath = pending.targetRelativePath
+        let fallbackTitle = URL(fileURLWithPath: relativePath)
+            .deletingPathExtension()
+            .lastPathComponent
+        let markdown = "# \(fallbackTitle)\n\n"
+            + pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+            + "\n"
+        let metadata = MarkdownListMetadata.extract(
+            from: markdown,
+            fallbackTitle: fallbackTitle
+        )
+        return RecentMarkdownFile(
+            id: relativePath,
+            relativePath: relativePath,
+            title: metadata.title,
+            modifiedAt: pending.createdAt,
+            createdAt: pending.createdAt,
+            preview: metadata.preview,
+            galleryImagePath: metadata.galleryImagePath,
+            galleryChecklistItems: metadata.galleryChecklistItems,
+            hasAttachments: metadata.hasAttachments,
+            hasChecklist: metadata.hasChecklist,
+            hasUncheckedChecklist: metadata.hasUncheckedChecklist,
+            tags: metadata.tags
+        )
     }
 
     private func attachmentWrites(for attachments: [CaptureAttachment], root: URL, now: Date) throws -> [(relativePath: String, data: Data)] {

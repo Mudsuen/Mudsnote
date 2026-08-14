@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 257. Resilient iOS pending-note replay
+- Problem: A newly created note could be durably written but still be reported as pending when File Provider metadata or queue cleanup was not immediately available; the note then stayed absent from the current list and its retained queue entry could show a replay failure at launch.
+- Fix: Durable note writing now returns a deterministic in-memory list projection without a second filesystem metadata read. Successful captures and replays publish that projection immediately, while a transient queue-cleanup failure leaves only an idempotent retry instead of reclassifying the completed note write as failed.
+- Lesson: Cloud-backed persistence, presentation projection, and recovery-journal cleanup are separate success boundaries; a delay in either secondary boundary must not hide a note that is already durable.
+
 ### 256. Immediate iOS note creation and deletable Inbox folders
 - Problem: A successfully created iOS note could remain absent from the current list until a later filesystem refresh, folder-scoped capture could silently save into the configured default folder, and the merged `000-inbox` entry hid its backing folders and therefore offered no durable delete path.
 - Fix: Successful capture now publishes the created Markdown file into the active library projection before the full refresh, while preserving the folder from which capture was opened. The Notes page initially presents 40 entries and appends bounded pages as its loading footer reaches the viewport. The merged Inbox page exposes a confirmed folder deletion action that removes every backing Inbox-named folder, moves their Markdown notes to Recently Deleted, preserves `Inbox.md` quick notes, and records the deletion so initialization does not recreate the folder.

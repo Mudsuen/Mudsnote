@@ -1013,6 +1013,56 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchReplaysAlreadyWrittenIndependentNoteWithoutLeavingQueueFailure() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let pending = try await store.preparePendingWrite(
+            for: CaptureDraft(
+                body: "Recovered independent note",
+                target: .folder("Projects")
+            ),
+            root: root,
+            now: Date(timeIntervalSince1970: 1_754_640_000)
+        )
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.enqueue(pending)
+        try await store.performPendingWrite(pending)
+
+        let suiteName = "MudsnoteCompanionTests.launch-replay.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectFolder(root)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertTrue(
+            model.libraryFiles.contains { $0.relativePath == pending.targetRelativePath }
+        )
+        XCTAssertNotEqual(model.statusToast?.message, String(localized: "Queue replay failed"))
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let remainingCount = await verificationQueue.pendingCount()
+        XCTAssertEqual(remainingCount, 0)
+    }
+
+    @MainActor
     func testTrashRemovesNoteBeforeFullLibraryRefreshCompletes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1420,8 +1470,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(first.targetRelativePath, "000-inbox/Independent capture.md")
         XCTAssertEqual(second.targetRelativePath, "000-inbox/Independent capture 2.md")
 
-        try await store.performPendingWrite(first)
-        try await store.performPendingWrite(second)
+        let firstProjection = try await store.performPendingWrite(first)
+        let secondProjection = try await store.performPendingWrite(second)
+
+        XCTAssertEqual(firstProjection.relativePath, first.targetRelativePath)
+        XCTAssertEqual(firstProjection.title, "Independent capture")
+        XCTAssertEqual(firstProjection.modifiedAt, first.createdAt)
+        XCTAssertEqual(firstProjection.createdAt, first.createdAt)
+        XCTAssertEqual(firstProjection.preview, "Independent capture")
+        XCTAssertEqual(secondProjection.relativePath, second.targetRelativePath)
 
         XCTAssertEqual(
             try String(contentsOf: existing, encoding: .utf8),

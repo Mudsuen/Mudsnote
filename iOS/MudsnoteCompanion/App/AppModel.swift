@@ -776,7 +776,8 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 try await queue?.replay { [fileStore, weak self] item in
-                    try await fileStore.performPendingWrite(item)
+                    let createdFile = try await fileStore.performPendingWrite(item)
+                    self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
                 statusToast = .saved(String(localized: "Pending queue replayed"))
@@ -821,7 +822,8 @@ final class AppModel: ObservableObject {
             pendingCount = await queue.pendingCount()
             if pendingCount > 0 {
                 try await queue.replay { [fileStore, weak self] item in
-                    try await fileStore.performPendingWrite(item)
+                    let createdFile = try await fileStore.performPendingWrite(item)
+                    self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
             }
@@ -2116,7 +2118,8 @@ final class AppModel: ObservableObject {
         var replayFailed = false
         do {
             try await nextQueue.replay { [fileStore, weak self] item in
-                try await fileStore.performPendingWrite(item)
+                let createdFile = try await fileStore.performPendingWrite(item)
+                self?.applyCreatedProjection(createdFile)
                 self?.recordSuccessfulPendingWrite(item)
             }
         } catch {
@@ -2179,7 +2182,14 @@ final class AppModel: ObservableObject {
         do {
             let createdFile = try await fileStore.performPendingWrite(pending)
             recordSuccessfulCaptureFolder(for: draft.target)
-            try await queue.remove(id: pending.id)
+            do {
+                try await queue.remove(id: pending.id)
+            } catch {
+                // The note is already durable and can be shown immediately.
+                // Keep the queued item as an idempotent cleanup retry instead
+                // of reporting the completed write as a failed capture.
+                syncStatus = .pending
+            }
             return createdFile
         } catch {
             throw DraftSaveError.queuedForReplay
