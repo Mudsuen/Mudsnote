@@ -513,12 +513,15 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
 @MainActor
 final class LibrarySourceOutlineRowView: NSTableRowView {
     static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.42)
+    static let dropTargetColor = NSColor.systemYellow.withAlphaComponent(0.24)
+    static let dropTargetBorderColor = NSColor.systemYellow.withAlphaComponent(0.88)
     static let leadingInset: CGFloat = LibraryNotesLayout.sourceRowHighlightLeadingInset
     static let trailingInset: CGFloat = LibraryNotesLayout.sourceRowHighlightTrailingInset
     static let verticalInset: CGFloat = LibraryNotesLayout.sourceRowHighlightVerticalInset
     private var trackingAreaForHover: NSTrackingArea?
     private(set) var isPointerHovered = false
     private(set) var isVisuallySelected = false
+    private(set) var dropTargetFeedbackDrawCountForLibrary = 0
 
     override func updateTrackingAreas() {
         if let trackingAreaForHover {
@@ -578,6 +581,20 @@ final class LibrarySourceOutlineRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         // The row background uses the immediate preview selection so its
         // appearance stays in sync with the icon and title while clicking.
+    }
+
+    override func drawDraggingDestinationFeedback(in dirtyRect: NSRect) {
+        dropTargetFeedbackDrawCountForLibrary += 1
+        let path = NSBezierPath(
+            roundedRect: highlightBounds,
+            xRadius: LibraryNotesLayout.sourceRowCornerRadius,
+            yRadius: LibraryNotesLayout.sourceRowCornerRadius
+        )
+        Self.dropTargetColor.setFill()
+        path.fill()
+        path.lineWidth = 2
+        Self.dropTargetBorderColor.setStroke()
+        path.stroke()
     }
 
     private var highlightBounds: NSRect {
@@ -8977,17 +8994,75 @@ final class LibraryWindowController: NSWindowController,
             try saveCurrentNoteIfNeeded()
         }
 
+        let sourcePaths = Set(sourceURLs.map(\.path))
+        let scopeBeforeMove = selectedScope
+        let visibleNotesBeforeMove = notes
+        let noteListScrollOrigin = tableView.enclosingScrollView?.contentView.bounds.origin
+        let galleryScrollOrigin = galleryScrollView?.contentView.bounds.origin
         let movedURLs = try sourceURLs.map { sourceURL in
             try noteStore.moveNote(at: sourceURL, to: targetDirectory)
         }
         recordInternalFileSystemChanges(for: sourceURLs + movedURLs)
         remapSourceSnapshotNotes(from: sourceURLs, to: movedURLs)
         activeSearchSession = nil
-        selectedURL = movedURLs.first
-        selectedScope = .folder(targetDirectory)
+        selectedScope = scopeBeforeMove
+
+        let movedURLBySourcePath = Dictionary(uniqueKeysWithValues: zip(sourceURLs, movedURLs).map {
+            ($0.path, $1)
+        })
+        let currentSelectionAfterMove = selectedPath.flatMap {
+            movedURLBySourcePath[$0] ?? selectedURL
+        }
+        let visibleNotesAfterMove = notesForSelectedScope(
+            limit: 240,
+            allNotes: sourceCountSnapshot
+        )
+        let visiblePathsAfterMove = Set(visibleNotesAfterMove.map { $0.url.standardizedFileURL.path })
+        let selectionAnchorIndex = visibleNotesBeforeMove.firstIndex {
+            $0.url.standardizedFileURL.path == selectedPath
+        } ?? visibleNotesBeforeMove.firstIndex {
+            sourcePaths.contains($0.url.standardizedFileURL.path)
+        } ?? 0
+        let nearestRemainingURL = visibleNotesBeforeMove.enumerated()
+            .filter {
+                !sourcePaths.contains($0.element.url.standardizedFileURL.path)
+                    && visiblePathsAfterMove.contains($0.element.url.standardizedFileURL.path)
+            }
+            .min {
+                abs($0.offset - selectionAnchorIndex) < abs($1.offset - selectionAnchorIndex)
+            }?
+            .element.url
+        let preferredURL = [currentSelectionAfterMove, nearestRemainingURL]
+            .compactMap { $0 }
+            .first { visiblePathsAfterMove.contains($0.standardizedFileURL.path) }
+
+        selectedURL = preferredURL
+        if preferredURL == nil {
+            clearCurrentDocumentAfterRemoval()
+        }
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotes(selecting: movedURLs.first, loadFirstIfNeeded: true)
+        reloadNotes(selecting: preferredURL, loadFirstIfNeeded: preferredURL != nil)
+        restoreNoteBrowserScrollPosition(
+            noteListOrigin: noteListScrollOrigin,
+            galleryOrigin: galleryScrollOrigin
+        )
         return movedURLs
+    }
+
+    private func restoreNoteBrowserScrollPosition(
+        noteListOrigin: NSPoint?,
+        galleryOrigin: NSPoint?
+    ) {
+        if let noteListOrigin,
+           let scrollView = tableView.enclosingScrollView {
+            scrollView.contentView.scroll(to: noteListOrigin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        if let galleryOrigin,
+           let galleryScrollView {
+            galleryScrollView.contentView.scroll(to: galleryOrigin)
+            galleryScrollView.reflectScrolledClipView(galleryScrollView.contentView)
+        }
     }
 
     private func uniqueStandardizedFileURLs(from urls: [URL]) -> [URL] {

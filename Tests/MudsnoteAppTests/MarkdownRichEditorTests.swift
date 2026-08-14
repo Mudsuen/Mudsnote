@@ -2889,6 +2889,19 @@ struct MarkdownRichEditorTests {
         #expect(LibrarySourceOutlineRowView.trailingInset == LibraryNotesLayout.sourceRowHighlightTrailingInset)
         #expect(LibrarySourceOutlineRowView.verticalInset == LibraryNotesLayout.sourceRowHighlightVerticalInset)
         #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent < 0.5)
+        #expect(LibrarySourceOutlineRowView.dropTargetColor.alphaComponent > 0.2)
+        #expect(
+            LibrarySourceOutlineRowView.dropTargetBorderColor.alphaComponent
+                > LibrarySourceOutlineRowView.dropTargetColor.alphaComponent
+        )
+        let dropFeedbackRow = LibrarySourceOutlineRowView(
+            frame: NSRect(x: 0, y: 0, width: 220, height: LibraryNotesLayout.sourceRowHeight)
+        )
+        let dropFeedbackImage = NSImage(size: dropFeedbackRow.bounds.size)
+        dropFeedbackImage.lockFocus()
+        dropFeedbackRow.drawDraggingDestinationFeedback(in: dropFeedbackRow.bounds)
+        dropFeedbackImage.unlockFocus()
+        #expect(dropFeedbackRow.dropTargetFeedbackDrawCountForLibrary == 1)
         #expect(!allSourceRow.isPointerHovered)
         let selectedSourceRect = sourceOutline.rect(ofRow: sourceOutline.selectedRow)
         sourceOutline.reconcilePointerHover(at: NSPoint(
@@ -7405,10 +7418,8 @@ struct MarkdownRichEditorTests {
         })
         let newButton = try #require(newItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
         newButton.performClick(nil)
-        controller.titleField.stringValue = "Folder Seed"
-        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
-            string: "Folder body",
+            string: "Folder Seed\nFolder body",
             attributes: controller.theme.baseAttributes(for: .paragraph)
         ))
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
@@ -7452,8 +7463,10 @@ struct MarkdownRichEditorTests {
         let archiveTitles = store.listNotes(limit: 10, roots: [archiveFolder]).map(\.title)
         #expect(archiveTitles.contains("Folder Seed"))
         #expect(archiveTitles.contains("Second Drag Seed"))
-        #expect(controller.selectedSourceTitleForLibrary == "Archive")
+        #expect(controller.selectedSourceTitleForLibrary == "Projects")
+        #expect(controller.selectedMarkdownFileURLForLibrary() == nil)
 
+        #expect(controller.selectSourceForLibrary(titled: "Archive"))
         let renamedArchive = try controller.renameSelectedFolderForLibrary(to: "Renamed Archive")
         #expect(FileManager.default.fileExists(atPath: renamedArchive.path))
         #expect(!FileManager.default.fileExists(atPath: archiveFolder.path))
@@ -7464,10 +7477,7 @@ struct MarkdownRichEditorTests {
         let trashedTitles = store.listTrashedNotes(limit: 10).map(\.title)
         #expect(trashedTitles.contains("Folder Seed"))
         #expect(trashedTitles.contains("Second Drag Seed"))
-        let trashCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-3"
-        })
-        #expect(trashCount.stringValue == "2")
+        #expect(controller.sourceCountTextForLibrary(titled: "最近删除") == "2")
     }
 
     @MainActor
