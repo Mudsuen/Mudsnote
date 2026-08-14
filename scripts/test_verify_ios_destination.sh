@@ -68,7 +68,10 @@ focused_ui_tests="$(
     | focused_ui_tests_from_paths
 )"
 test "$focused_ui_tests" = \
-  "MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory"
+  "MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNewNoteFromSelectedFolderAppearsOnCurrentPage
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testSelectedFolderIncludesNotesFromChildFoldersAndExposesSelection
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNotesTopBarMaterialAcrossHomeAndDirectoryStates"
 
 focused_ui_tests="$(
   printf '%s\n' \
