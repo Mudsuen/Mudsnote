@@ -88,7 +88,7 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 | iOS Markdown storage and lifecycle | `MarkdownFileStore.swift`; `AuthorizedLibraryPath.swift`; `MarkdownLibraryModels.swift`; `MarkdownSearch.swift` | `AppModel` caller and focused tests |
 | iOS library, folders, tags, search, gallery | `RecentSearchView.swift`; `SmartFolder.swift`; `AppModel.swift` | Store query/mutation used by the flow |
 | iOS note reader/editor and attachments | `MarkdownPreviewView.swift`; `Features/Shared/`; focused Core helpers | `AppModel` and UI tests |
-| Build, package, CI, install | `scripts/verify`; platform verify script; `.devflow.yaml` | Package/device script for the selected platform |
+| Build, package, CI, install | `scripts/verify`; platform verify script; shared delivery policy | Package/device script for the selected platform |
 
 ## Large-file Boundaries
 

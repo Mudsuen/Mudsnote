@@ -96,6 +96,7 @@ jobs:
           if ! jq -e \
             '.schema_version == 2 and
              .workflow_version == 2 and
+             .delivery_mode == "local-first-main" and
              .merge_policy == "auto" and
              .hard_stop == "none" and
              .data_policy.production_read == false and
@@ -113,7 +114,7 @@ jobs:
           changed_files="$(gh api --paginate "repos/$REPOSITORY/pulls/$pr_number/files" --jq '.[].filename')"
           while IFS= read -r path; do
             case "$path" in
-              .github/workflows/*|.devflow.yaml|bin/devtask|scripts/verify*|scripts/detect_platform_scope.sh|scripts/agent_context.sh|scripts/test_verify_ios_destination.sh|scripts/validate_ios_app_store_metadata.py|scripts/device_smoke.sh|scripts/ios_signing_refresh.sh|scripts/package*|scripts/deploy*|scripts/release*|templates/auto-merge.yml|templates/main-ruleset.json|migrations/*|*/migrations/*|*Migration*|*.xcdatamodeld/*|*.entitlements)
+              .github/workflows/*|.github/actions/*|.devflow.yaml|bin/devtask|bin/gpt-pro-review|libexec/gpt_pro_review_contract.py|skills/gpt-pro-review/*|scripts/verify*|script/verify*|scripts/detect_platform_scope.sh|scripts/agent_context.sh|scripts/test_verify_ios_destination.sh|scripts/validate_ios_app_store_metadata.py|scripts/device_smoke.sh|scripts/package*|script/package*|script/build_and_run*|*/scripts/build-app*|scripts/build_patched*|scripts/*sign*|script/*sign*|*/scripts/*sign*|scripts/deploy*|script/deploy*|scripts/release*|script/release*|templates/ci.yml|templates/auto-merge.yml|templates/main-ruleset.json|templates/task.yaml|tests/test_devtask.py|tests/test_workflow_contract.py|tests/test_gpt_pro_review_contract.py|migrations/*|*/migrations/*|*Migration*|*.xcdatamodeld/*|*.entitlements)
                 echo "Control-plane path requires an independent merge decision: $path"
                 exit 0
                 ;;
@@ -167,8 +168,8 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "$pr_number" --repo "$REPOSITORY" --squash --delete-branch \
-            --match-head-commit "$TESTED_HEAD_SHA"
+          gh pr merge "$pr_number" --repo "$REPOSITORY" --merge \
+            --delete-branch --match-head-commit "$TESTED_HEAD_SHA"
           merged_sha="$(gh api "repos/$REPOSITORY/pulls/$pr_number" --jq '.merge_commit_sha // empty')"
           if [[ -z "$merged_sha" ]]; then
             echo 'Merge completed without an observable merge commit SHA; no smoke dispatch.'

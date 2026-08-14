@@ -188,7 +188,6 @@ load_topic() {
     delivery)
       DESCRIPTION="Platform scope detection, deterministic verification, packaging, install, and Devflow"
       FILES=(
-        .devflow.yaml
         scripts/verify
         scripts/detect_platform_scope.sh
         scripts/verify_macos.sh
@@ -262,12 +261,12 @@ check_context_contract() {
     echo "ERROR: default agent entry context exceeds 700 words ($entry_words)." >&2
     failures=1
   fi
-  if ! grep -q -- '--task' AGENTS.md || ! grep -q '^agent_interface:' .devflow.yaml; then
-    echo "ERROR: minimal task capsule routing is missing from AGENTS.md or .devflow.yaml." >&2
+  if ! grep -q -- '--task' AGENTS.md || ! grep -q '/Users/Donald/Code/Devflow/docs/workspace-delivery-policy.md' AGENTS.md; then
+    echo "ERROR: minimal task capsule routing or shared delivery policy is missing from AGENTS.md." >&2
     failures=1
   fi
-  if ! grep -q '^local_delivery:' .devflow.yaml || ! grep -q '  mode: local-first-main' .devflow.yaml || ! grep -q 'devtask commit' AGENTS.md || ! grep -q 'devtask reconcile' AGENTS.md; then
-    echo "ERROR: local-first main integration contract is incomplete." >&2
+  if [[ -e .devflow.yaml ]]; then
+    echo "ERROR: project-local Devflow configuration is forbidden; use the shared workspace delivery policy." >&2
     failures=1
   fi
   if ! grep -q 'devflow_full_reason:' .github/workflows/ci.yml || ! grep -q 'devflow_full_reason=none' .github/workflows/auto-merge.yml || ! grep -q 'devflow_full_reason=base-changed-after-candidate' .github/workflows/auto-merge.yml; then

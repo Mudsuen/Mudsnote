@@ -41,8 +41,8 @@ relative attachments are canonical across separate macOS and iPhone apps.
 ## Durable Contracts
 
 - Follow `docs/ARCHITECTURE.md` ownership and dependency direction.
-- Latest `origin/main` is the only daily integration baseline. Devflow v2 uses
-  Ready PRs, merge-candidate CI, independent control-plane checks, and Revert PRs.
+- Verified local `main` is the integration baseline and mirrors directly to
+  remote `main`; only independent-gate changes use PR/CI.
 - Paint from bounded snapshots; validate files off-main and reject stale results.
 - Reuse projections, caches, selection, and mutation paths—no parallel index or
   filesystem scan for another presentation.
