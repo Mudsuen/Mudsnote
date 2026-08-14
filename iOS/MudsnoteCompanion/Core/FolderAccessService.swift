@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum FolderAccessError: LocalizedError, Equatable {
@@ -100,6 +101,14 @@ final class FolderAccessService {
     }
 }
 
+enum LibraryIdentity {
+    static func identifier(for root: URL) -> String {
+        let canonicalPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let digest = SHA256.hash(data: Data(canonicalPath.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 enum FolderInitializer {
     static let deletedInboxMarkerPath = ".mudsnote/inbox-folder-deleted"
 
@@ -138,7 +147,12 @@ enum FolderInitializer {
     }
 
     private static func ensureFile(_ url: URL, contents: String) throws {
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
-        try contents.write(to: url, atomically: true, encoding: .utf8)
+        guard let data = contents.data(using: .utf8) else { return }
+        do {
+            try data.write(to: url, options: .withoutOverwriting)
+        } catch let error as CocoaError where error.code == .fileWriteFileExists {
+            // Initialization is idempotent across the app and App Intent
+            // processes. Another writer winning exclusive creation is success.
+        }
     }
 }

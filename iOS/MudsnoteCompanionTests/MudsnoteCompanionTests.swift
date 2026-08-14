@@ -1139,7 +1139,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertFalse(model.isInitialLibraryLoading)
         XCTAssertNotEqual(model.statusToast?.message, String(localized: "Queue replay failed"))
         XCTAssertEqual(try String(contentsOf: existingURL, encoding: .utf8), existingMarkdown)
-        let recoveredPath = "Projects/Conflict 4a680d7e.md"
+        let recoveredPath = "Projects/Conflict 4a680d7e-ef37-4cb4-9f7d-ff0704073294.md"
         let recoveredURL = root.appendingPathComponent(recoveredPath)
         XCTAssertEqual(
             try String(contentsOf: recoveredURL, encoding: .utf8),
@@ -1599,6 +1599,66 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertFalse(createdMarkdown.contains("2025-"))
     }
 
+    func testDistinctPendingCapturesWithSameTargetAndContentCreateDistinctNotes() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let first = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            libraryID: LibraryIdentity.identifier(for: root),
+            targetRelativePath: "Same.md",
+            markdownBlock: "Identical content",
+            attachments: []
+        )
+        var second = first
+        second.id = UUID()
+
+        let firstFile = try await store.performPendingWrite(first, root: root)
+        let secondFile = try await store.performPendingWrite(second, root: root)
+
+        XCTAssertNotEqual(firstFile.relativePath, secondFile.relativePath)
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(firstFile.relativePath), encoding: .utf8),
+            try String(contentsOf: root.appendingPathComponent(secondFile.relativePath), encoding: .utf8)
+        )
+    }
+
+    func testAttachmentNamesAndBytesStayDistinctForSameTimestamp() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let now = Date(timeIntervalSince1970: 1_754_640_000)
+        let first = try await store.preparePendingWrite(
+            for: CaptureDraft(
+                body: "First",
+                attachments: [.audio(data: Data([0x01]), preferredExtension: "m4a")]
+            ),
+            root: root,
+            now: now
+        )
+        let second = try await store.preparePendingWrite(
+            for: CaptureDraft(
+                body: "Second",
+                attachments: [.audio(data: Data([0x02]), preferredExtension: "m4a")]
+            ),
+            root: root,
+            now: now
+        )
+
+        XCTAssertNotEqual(first.attachments.first?.relativePath, second.attachments.first?.relativePath)
+        _ = try await store.performPendingWrite(first, root: root)
+        _ = try await store.performPendingWrite(second, root: root)
+        let firstPath = try XCTUnwrap(first.attachments.first?.relativePath)
+        let secondPath = try XCTUnwrap(second.attachments.first?.relativePath)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(firstPath)), Data([0x01]))
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(secondPath)), Data([0x02]))
+    }
+
     func testLocalAudioSaveUsesReadableNamesAndNeverOverwrites() throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1725,6 +1785,33 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
+    func testQuickCaptureRecoveryRestoresBodyAndHealthyAttachmentsWhenOneSidecarIsDamaged() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("CaptureDraft", isDirectory: true)
+        let store = CaptureDraftRecoveryStore(directory: directory)
+        try await store.save(CaptureDraft(
+            body: "Keep this recovered text",
+            attachments: [
+                .audio(data: Data([0x01, 0x02]), preferredExtension: "m4a"),
+                .file(data: Data("healthy".utf8), preferredExtension: "pdf", preferredBaseName: "Healthy"),
+            ]
+        ))
+        let sidecars = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.hasPrefix("attachment-") }
+        XCTAssertEqual(sidecars.count, 2)
+        try Data().write(to: sidecars[0], options: .atomic)
+
+        let loadedRecovery = try await store.loadRecovery()
+        let recovery = try XCTUnwrap(loadedRecovery)
+
+        XCTAssertEqual(recovery.draft.body, "Keep this recovered text")
+        XCTAssertEqual(recovery.draft.attachments.count, 1)
+        XCTAssertEqual(recovery.damagedAttachmentFilenames, [sidecars[0].lastPathComponent])
+    }
+
     func testEmptyDraftCannotPreparePendingWrite() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1777,6 +1864,51 @@ final class MudsnoteCompanionTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await store.performPendingWrite(damagedAttachment)) { error in
             XCTAssertEqual(error as? PendingWriteValidationError, .invalidAttachmentData)
         }
+    }
+
+    func testPendingWriteCannotReplayIntoAnotherLibrary() async throws {
+        let firstRoot = try temporaryRoot()
+        let secondRoot = try temporaryRoot()
+        defer {
+            try? FileManager.default.removeItem(at: firstRoot)
+            try? FileManager.default.removeItem(at: secondRoot)
+        }
+        try FolderInitializer.initialize(firstRoot)
+        try FolderInitializer.initialize(secondRoot)
+        let pending = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            libraryID: LibraryIdentity.identifier(for: firstRoot),
+            targetRelativePath: "Wrong Library.md",
+            markdownBlock: "Must stay with its original library",
+            attachments: []
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: secondRoot)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.performPendingWrite(pending, root: secondRoot)
+        ) { error in
+            XCTAssertEqual(error as? PendingWriteValidationError, .libraryMismatch)
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: secondRoot.appendingPathComponent("Wrong Library.md").path
+            )
+        )
+    }
+
+    func testFolderInitializationNeverReplacesAnExistingQueue() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let queueURL = root.appendingPathComponent(".mudsnote/queue.json")
+        let sentinel = Data("[{\"owned\":\"elsewhere\"}]".utf8)
+        try sentinel.write(to: queueURL, options: .atomic)
+
+        try FolderInitializer.initialize(root)
+
+        XCTAssertEqual(try Data(contentsOf: queueURL), sentinel)
     }
 
     func testImageAttachmentUsesDetectedContentTypeInsteadOfMisleadingSuffix() throws {
@@ -3917,6 +4049,63 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testLibraryInventoryLoadsNotesInPagesAndExcludesMarkdownAttachments() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let archive = root.appendingPathComponent("Archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        for index in 0..<95 {
+            try "# Paged \(index)\n".write(
+                to: archive.appendingPathComponent("note-\(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        try "# Attachment metadata, not a note\n".write(
+            to: root.appendingPathComponent("Attachments/manual.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.allFiles.count, 40)
+        XCTAssertTrue(snapshot.hasMoreFiles)
+        while snapshot.hasMoreFiles {
+            snapshot = try await store.loadNextLibraryPage()
+        }
+
+        XCTAssertEqual(snapshot.allFiles.count, 96)
+        XCTAssertFalse(snapshot.allFiles.contains { $0.relativePath == "Attachments/manual.md" })
+        XCTAssertEqual(snapshot.summary.attachmentCount, 1)
+    }
+
+    func testListCacheInvalidatesSameSizeSameDateReplacement() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let noteURL = root.appendingPathComponent("Replace.md")
+        try "# Old\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        let originalDate = try XCTUnwrap(
+            noteURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        var snapshot = try await store.loadLibrarySnapshot()
+        XCTAssertEqual(snapshot.allFiles.first { $0.relativePath == "Replace.md" }?.title, "Old")
+
+        try "# New\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: originalDate],
+            ofItemAtPath: noteURL.path
+        )
+        snapshot = try await store.loadLibrarySnapshot()
+
+        XCTAssertEqual(snapshot.allFiles.first { $0.relativePath == "Replace.md" }?.title, "New")
+    }
+
     func testPerformanceLargeLibrarySnapshot() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -3935,7 +4124,11 @@ final class MudsnoteCompanionTests: XCTestCase {
         let store = MarkdownFileStore()
         await store.configure(root: root)
         measureAsync {
-            let snapshot = try await store.loadLibrarySnapshot()
+            var snapshot = try await store.loadLibrarySnapshot()
+            XCTAssertEqual(snapshot.allFiles.count, 40)
+            while snapshot.hasMoreFiles {
+                snapshot = try await store.loadNextLibraryPage()
+            }
             XCTAssertEqual(snapshot.summary.allNotesCount, 1_001)
             XCTAssertEqual(snapshot.recentFiles.count, 24)
         }
@@ -3958,7 +4151,10 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let store = MarkdownFileStore()
         await store.configure(root: root)
-        _ = try await store.loadLibrarySnapshot()
+        var inventory = try await store.loadLibrarySnapshot()
+        while inventory.hasMoreFiles {
+            inventory = try await store.loadNextLibraryPage()
+        }
         let inbox = root.appendingPathComponent("Inbox.md")
         try (try String(contentsOf: inbox, encoding: .utf8) + """
         ## 2026-07-11 18:46

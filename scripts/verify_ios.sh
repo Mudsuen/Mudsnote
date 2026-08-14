@@ -122,7 +122,10 @@ focused_ui_tests_from_paths() {
 
   if [[ "$needs_directory_drawer_test" == "1" ]]; then
     printf '%s\n' \
-      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory'
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNewNoteFromSelectedFolderAppearsOnCurrentPage' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testSelectedFolderIncludesNotesFromChildFoldersAndExposesSelection' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNotesTopBarMaterialAcrossHomeAndDirectoryStates'
   fi
 }
 

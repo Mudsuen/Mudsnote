@@ -3,9 +3,45 @@ import Foundation
 struct PendingWrite: Codable, Identifiable, Equatable {
     var id: UUID
     var createdAt: Date
+    var libraryID: String
     var targetRelativePath: String
     var markdownBlock: String
     var attachments: [PendingAttachment]
+
+    init(
+        id: UUID,
+        createdAt: Date,
+        libraryID: String = "",
+        targetRelativePath: String,
+        markdownBlock: String,
+        attachments: [PendingAttachment]
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.libraryID = libraryID
+        self.targetRelativePath = targetRelativePath
+        self.markdownBlock = markdownBlock
+        self.attachments = attachments
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case libraryID
+        case targetRelativePath
+        case markdownBlock
+        case attachments
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        libraryID = try container.decodeIfPresent(String.self, forKey: .libraryID) ?? ""
+        targetRelativePath = try container.decode(String.self, forKey: .targetRelativePath)
+        markdownBlock = try container.decode(String.self, forKey: .markdownBlock)
+        attachments = try container.decode([PendingAttachment].self, forKey: .attachments)
+    }
 }
 
 struct PendingAttachment: Codable, Equatable {
@@ -17,11 +53,13 @@ actor PendingWriteQueue {
     private static let maximumQueueFileBytes = 128 * 1_024 * 1_024
     private let root: URL
     private let queueURL: URL
+    private let libraryID: String
     private var items: [PendingWrite] = []
 
     init(root: URL) {
         self.root = root
         self.queueURL = root.appendingPathComponent(".mudsnote/queue.json")
+        self.libraryID = LibraryIdentity.identifier(for: root)
     }
 
     @discardableResult
@@ -54,7 +92,14 @@ actor PendingWriteQueue {
                         guard byteCount <= Self.maximumQueueFileBytes else {
                             throw PendingWriteQueueLoadError.fileTooLarge
                         }
-                        let persisted = try loadItemsUnlocked(from: coordinatedURL)
+                        var persisted = try loadItemsUnlocked(from: coordinatedURL)
+                        let needsMigration = persisted.contains { $0.libraryID.isEmpty }
+                        if needsMigration {
+                            for index in persisted.indices where persisted[index].libraryID.isEmpty {
+                                persisted[index].libraryID = libraryID
+                            }
+                            try persistUnlocked(persisted, to: coordinatedURL)
+                        }
                         loadedItems = persisted
                         loadResult = .ready
                     } catch {
@@ -104,6 +149,10 @@ actor PendingWriteQueue {
 
     func pendingCount() -> Int {
         items.count
+    }
+
+    func allItems() -> [PendingWrite] {
+        items
     }
 
     func preservedFailureFilenames() throws -> [String] {

@@ -99,6 +99,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var floatingNoteBrowserController: FloatingNoteBrowserController?
 
     var fileURL: URL?
+    var sourceContentsAtLoad: String?
     var selectedDirectoryURL: URL
     var observers: [NSObjectProtocol] = []
     var autosaveTimer: Timer?

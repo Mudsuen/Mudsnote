@@ -69,8 +69,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var attachmentPresentationRevision = 0
     @Published private(set) var isLibrarySearchRequested = false
     @Published private(set) var isInitialLibraryLoading = true
+    @Published private(set) var hasMoreLibraryFiles = false
     @Published private(set) var defaultCaptureFolderPath: String?
     @Published private(set) var recentCaptureFolders: [LibraryFolderNode] = []
+    @Published private(set) var currentLibraryID = ""
 
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
@@ -78,6 +80,7 @@ final class AppModel: ObservableObject {
     let audioRecorder = AudioCaptureService()
 
     private var queue: PendingWriteQueue?
+    private var pendingFileProjections: [UUID: RecentMarkdownFile] = [:]
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
     private var activeSearchScope = MarkdownSearchScope.all
@@ -91,6 +94,7 @@ final class AppModel: ObservableObject {
     private var transcriptionID: UUID?
     private var isSceneRefreshRunning = false
     private var sceneRefreshRequested = false
+    private var isLoadingLibraryPage = false
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
     private var queueRecoveryWarning: String?
@@ -249,6 +253,7 @@ final class AppModel: ObservableObject {
         folderStatus = .missing
         inboxItems = []
         libraryFiles = []
+        hasMoreLibraryFiles = false
         recentFiles = []
         folders = []
         trashedFiles = []
@@ -262,6 +267,7 @@ final class AppModel: ObservableObject {
         isSearching = false
         libraryRevision += 1
         queue = nil
+        currentLibraryID = ""
         draft.target = .folder(nil)
         defaultCaptureFolderPath = nil
         recentCaptureFolders = []
@@ -297,7 +303,10 @@ final class AppModel: ObservableObject {
     }
 
     func setDefaultCaptureFolder(_ relativePath: String) {
-        captureFolderPreferences.setDefaultFolder(relativePath)
+        captureFolderPreferences.setDefaultFolder(
+            relativePath,
+            libraryRoot: folderAccess.currentRoot
+        )
         refreshCaptureFolderPreferences()
         if !draft.canSend, !isCapturePresented {
             captureTargetWasExplicitlySelected = false
@@ -707,13 +716,15 @@ final class AppModel: ObservableObject {
 
     private func restoreCaptureDraftIfNeeded() async {
         do {
-            guard let recovered = try await draftRecoveryStore.load(),
+            guard let recovery = try await draftRecoveryStore.loadRecovery(),
                   !draft.canSend else { return }
             draftRecoveryEnabled = false
-            draft = recovered
+            draft = recovery.draft
             draftRecoveryEnabled = true
             captureTargetWasExplicitlySelected = true
-            draftRecoveryIssue = nil
+            draftRecoveryIssue = recovery.damagedAttachmentFilenames.isEmpty
+                ? nil
+                : String(localized: "Some saved attachments were damaged. The note text and intact attachments were restored.")
             recoveredDraftNeedsAnnouncement = true
             announceRecoveredDraftIfPossible()
         } catch {
@@ -774,9 +785,11 @@ final class AppModel: ObservableObject {
 
     func replayQueue() {
         Task {
+            guard let root = folderAccess.currentRoot else { return }
             do {
                 let replayResult = try await queue?.replay { [fileStore, weak self] item in
-                    let createdFile = try await fileStore.performPendingWrite(item)
+                    let createdFile = try await fileStore.performPendingWrite(item, root: root)
+                    self?.removePendingProjection(item.id)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
@@ -802,7 +815,7 @@ final class AppModel: ObservableObject {
             sceneRefreshRequested = true
             return
         }
-        guard case .ready = folderStatus,
+        guard case .ready(let root) = folderStatus,
               let queue,
               !isSendingDraft else { return }
         let configurationID = libraryConfigurationID
@@ -819,6 +832,7 @@ final class AppModel: ObservableObject {
         var replayResult = PendingWriteReplayResult()
         do {
             let queueLoadResult = try await queue.load()
+            rebuildPendingProjections(await queue.allItems())
             guard libraryConfigurationID == configurationID else { return }
             if case .quarantined(let filename) = queueLoadResult {
                 queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
@@ -828,7 +842,8 @@ final class AppModel: ObservableObject {
             pendingCount = await queue.pendingCount()
             if pendingCount > 0 {
                 replayResult = try await queue.replay { [fileStore, weak self] item in
-                    let createdFile = try await fileStore.performPendingWrite(item)
+                    let createdFile = try await fileStore.performPendingWrite(item, root: root)
+                    self?.removePendingProjection(item.id)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
@@ -1996,6 +2011,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func loadNextLibraryPage() async {
+        guard hasMoreLibraryFiles, !isLoadingLibraryPage else { return }
+        isLoadingLibraryPage = true
+        defer { isLoadingLibraryPage = false }
+        let configurationID = libraryConfigurationID
+        do {
+            let snapshot = try await fileStore.loadNextLibraryPage()
+            guard libraryConfigurationID == configurationID else { return }
+            await apply(snapshot)
+            libraryRevision += 1
+        } catch {
+            guard libraryConfigurationID == configurationID else { return }
+            statusToast = .error(String(localized: "Could not load more notes"))
+        }
+    }
+
     private func refreshAfterWrite(canUseInboxDelta: Bool) async {
         if canUseInboxDelta {
             await refreshInboxDelta()
@@ -2021,14 +2052,25 @@ final class AppModel: ObservableObject {
 
     private func apply(_ snapshot: MarkdownLibrarySnapshot, pendingCount: Int) {
         inboxItems = snapshot.inboxItems
-        libraryFiles = snapshot.allFiles
-        recentFiles = snapshot.recentFiles
-        folders = snapshot.folders
+        let pendingFiles = Array(pendingFileProjections.values)
+        let pendingPaths = Set(pendingFiles.map(\.relativePath))
+        libraryFiles = (snapshot.allFiles.filter { !pendingPaths.contains($0.relativePath) } + pendingFiles)
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+        hasMoreLibraryFiles = snapshot.hasMoreFiles
+        recentFiles = Array(libraryFiles.prefix(24))
+        let directoryPaths = snapshot.folders
+            .flatMap(\.flattened)
+            .map(\.relativePath)
+        folders = LibraryFolderNode.makeTree(
+            directoryPaths: directoryPaths,
+            files: libraryFiles
+        )
         refreshCaptureFolderPreferences()
         trashedFiles = snapshot.trashedFiles
         attachments = snapshot.attachments
         smartFolders = snapshot.smartFolders
         librarySummary = snapshot.summary
+        librarySummary.allNotesCount = libraryFiles.count
         tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
         conflictWarnings = snapshot.conflictWarnings
         if let queueRecoveryWarning {
@@ -2109,6 +2151,7 @@ final class AppModel: ObservableObject {
         // navigation shell remain responsive on the main actor.
         try await fileStore.configureAndInitialize(root: root)
         guard libraryConfigurationID == configurationID else { return false }
+        currentLibraryID = LibraryIdentity.identifier(for: root)
         defaultCaptureFolderPath = captureFolderPreferences.resolveDefaultFolder(
             libraryRoot: root
         )
@@ -2117,6 +2160,7 @@ final class AppModel: ObservableObject {
         }
         let nextQueue = PendingWriteQueue(root: root)
         let queueLoadResult = try await nextQueue.load()
+        rebuildPendingProjections(await nextQueue.allItems())
         switch queueLoadResult {
         case .ready:
             queueRecoveryWarning = try await nextQueue.preservedFailureFilenames()
@@ -2129,7 +2173,8 @@ final class AppModel: ObservableObject {
         var replayFailed = false
         do {
             let replayResult = try await nextQueue.replay { [fileStore, weak self] item in
-                let createdFile = try await fileStore.performPendingWrite(item)
+                let createdFile = try await fileStore.performPendingWrite(item, root: root)
+                self?.removePendingProjection(item.id)
                 self?.applyCreatedProjection(createdFile)
                 self?.recordSuccessfulPendingWrite(item)
             }
@@ -2193,11 +2238,12 @@ final class AppModel: ObservableObject {
         let pending = try await fileStore.preparePendingWrite(for: draft, root: root)
         do {
             try await queue.enqueue(pending)
+            applyPendingProjection(pending)
         } catch {
             throw DraftSaveError.pendingQueueRejected(error.localizedDescription)
         }
         do {
-            let createdFile = try await fileStore.performPendingWrite(pending)
+            let createdFile = try await fileStore.performPendingWrite(pending, root: root)
             recordSuccessfulCaptureFolder(for: draft.target)
             do {
                 try await queue.remove(id: pending.id)
@@ -2207,9 +2253,50 @@ final class AppModel: ObservableObject {
                 // of reporting the completed write as a failed capture.
                 syncStatus = .pending
             }
+            removePendingProjection(pending.id)
             return createdFile
         } catch {
             throw DraftSaveError.queuedForReplay(error.localizedDescription)
+        }
+    }
+
+    private func rebuildPendingProjections(_ pendingItems: [PendingWrite]) {
+        let previousPaths = Set(pendingFileProjections.values.map(\.relativePath))
+        libraryFiles.removeAll { previousPaths.contains($0.relativePath) }
+        pendingFileProjections = Dictionary(
+            uniqueKeysWithValues: pendingItems.map {
+                ($0.id, MarkdownFileStore.projection(for: $0))
+            }
+        )
+        mergePendingProjectionsIntoCurrentLibrary()
+    }
+
+    private func applyPendingProjection(_ pending: PendingWrite) {
+        pendingFileProjections[pending.id] = MarkdownFileStore.projection(for: pending)
+        mergePendingProjectionsIntoCurrentLibrary()
+    }
+
+    private func removePendingProjection(_ id: UUID) {
+        guard let removed = pendingFileProjections.removeValue(forKey: id) else { return }
+        libraryFiles.removeAll { $0.relativePath == removed.relativePath }
+        mergePendingProjectionsIntoCurrentLibrary()
+    }
+
+    private func mergePendingProjectionsIntoCurrentLibrary() {
+        let previousFiles = libraryFiles
+        let pendingFiles = Array(pendingFileProjections.values)
+        let pendingPaths = Set(pendingFiles.map(\.relativePath))
+        libraryFiles = (libraryFiles.filter { !pendingPaths.contains($0.relativePath) } + pendingFiles)
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+        recentFiles = Array(libraryFiles.prefix(24))
+        folders = LibraryFolderNode.makeTree(
+            directoryPaths: allFolders.map(\.relativePath),
+            files: libraryFiles
+        )
+        librarySummary.allNotesCount = libraryFiles.count
+        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
+        if libraryFiles != previousFiles {
+            libraryRevision += 1
         }
     }
 
@@ -2232,7 +2319,9 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshCaptureFolderPreferences() {
-        let resolvedDefault = captureFolderPreferences.resolveDefaultFolder(in: folders)
+        let resolvedDefault = folderAccess.currentRoot.map {
+            captureFolderPreferences.resolveDefaultFolder(libraryRoot: $0)
+        } ?? captureFolderPreferences.resolveDefaultFolder(in: folders)
         defaultCaptureFolderPath = resolvedDefault
         recentCaptureFolders = captureFolderPreferences.recentFolders(
             in: folders,
@@ -2250,7 +2339,10 @@ final class AppModel: ObservableObject {
     }
 
     private func recordSuccessfulCaptureFolder(for target: CaptureTarget) {
-        captureFolderPreferences.recordSuccessfulSave(to: target.relativeFolderPath)
+        captureFolderPreferences.recordSuccessfulSave(
+            to: target.relativeFolderPath,
+            libraryRoot: folderAccess.currentRoot
+        )
         recentCaptureFolders = captureFolderPreferences.recentFolders(
             in: folders,
             libraryRoot: folderAccess.currentRoot
@@ -2260,7 +2352,11 @@ final class AppModel: ObservableObject {
     private func recordSuccessfulPendingWrite(_ pending: PendingWrite) {
         let rawParent = (pending.targetRelativePath as NSString).deletingLastPathComponent
         let parent = rawParent == "." || rawParent.isEmpty ? nil : rawParent
-        captureFolderPreferences.recordSuccessfulSave(to: parent, at: pending.createdAt)
+        captureFolderPreferences.recordSuccessfulSave(
+            to: parent,
+            at: pending.createdAt,
+            libraryRoot: folderAccess.currentRoot
+        )
         recentCaptureFolders = captureFolderPreferences.recentFolders(
             in: folders,
             libraryRoot: folderAccess.currentRoot

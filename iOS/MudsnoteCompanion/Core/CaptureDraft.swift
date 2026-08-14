@@ -262,6 +262,11 @@ struct MarkdownAttachmentReference: Equatable {
     var kind: MarkdownAttachmentKind
 }
 
+struct CaptureDraftRecoveryResult: Equatable {
+    var draft: CaptureDraft
+    var damagedAttachmentFilenames: [String]
+}
+
 actor CaptureDraftRecoveryStore {
     static let defaultDirectory = FileManager.default.urls(
         for: .applicationSupportDirectory,
@@ -311,6 +316,10 @@ actor CaptureDraftRecoveryStore {
     }
 
     func load() throws -> CaptureDraft? {
+        try loadRecovery()?.draft
+    }
+
+    func loadRecovery() throws -> CaptureDraftRecoveryResult? {
         guard FileManager.default.fileExists(atPath: metadataURL.path) else {
             lastAttachments = []
             lastMetadata = nil
@@ -326,9 +335,10 @@ actor CaptureDraftRecoveryStore {
             throw CaptureDraftRecoveryError.damaged
         }
         guard metadata.version == 1 else { throw CaptureDraftRecoveryError.unsupportedVersion }
-        let attachments: [CaptureAttachment]
-        do {
-            attachments = try metadata.attachments.map { entry -> CaptureAttachment in
+        var attachments: [CaptureAttachment] = []
+        var damagedAttachmentFilenames: [String] = []
+        for entry in metadata.attachments {
+            do {
                 guard entry.filename == URL(fileURLWithPath: entry.filename).lastPathComponent else {
                     throw CaptureDraftRecoveryError.damaged
                 }
@@ -336,31 +346,31 @@ actor CaptureDraftRecoveryStore {
                 let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                 switch entry.kind {
                 case .image:
-                    return try CaptureAttachment.validatedImage(
+                    attachments.append(try CaptureAttachment.validatedImage(
                         data: data,
                         suggestedExtension: entry.preferredExtension
-                    )
+                    ))
                 case .video:
-                    return try CaptureAttachment.validatedVideo(
+                    attachments.append(try CaptureAttachment.validatedVideo(
                         data: data,
                         suggestedName: "\(entry.preferredBaseName ?? "Video").\(entry.preferredExtension)"
-                    )
+                    ))
                 case .audio:
-                    return try CaptureAttachment.validatedAudio(
+                    attachments.append(try CaptureAttachment.validatedAudio(
                         data: data,
                         preferredExtension: entry.preferredExtension
-                    )
+                    ))
                 case .file:
-                    return try CaptureAttachment.validatedFile(
+                    attachments.append(try CaptureAttachment.validatedFile(
                         data: data,
                         suggestedName: "\(entry.preferredBaseName ?? "file").\(entry.preferredExtension)"
-                    )
+                    ))
                 }
+            } catch {
+                damagedAttachmentFilenames.append(entry.filename)
             }
-            try CaptureAttachmentPolicy.validate(attachments)
-        } catch {
-            throw CaptureDraftRecoveryError.damaged
         }
+        try CaptureAttachmentPolicy.validate(attachments)
         let draft = CaptureDraft(
             body: metadata.body,
             tags: metadata.tags,
@@ -369,12 +379,20 @@ actor CaptureDraftRecoveryStore {
             createdAt: metadata.createdAt
         )
         guard draft.canSend else {
-            try clear()
-            return nil
+            // Keep the recovery package intact when every attachment is
+            // damaged. The user may still recover the raw sidecars.
+            if damagedAttachmentFilenames.isEmpty {
+                try clear()
+                return nil
+            }
+            throw CaptureDraftRecoveryError.damaged
         }
         lastAttachments = attachments
         lastMetadata = metadata
-        return draft
+        return CaptureDraftRecoveryResult(
+            draft: draft,
+            damagedAttachmentFilenames: damagedAttachmentFilenames
+        )
     }
 
     func save(_ draft: CaptureDraft) throws {

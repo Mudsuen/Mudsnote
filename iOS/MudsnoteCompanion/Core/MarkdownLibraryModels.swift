@@ -172,6 +172,7 @@ struct MarkdownLibrarySnapshot: Equatable {
     var inboxItems: [MemoBlock]
     var allFiles: [RecentMarkdownFile]
     var recentFiles: [RecentMarkdownFile]
+    var hasMoreFiles: Bool = false
     var folders: [LibraryFolderNode]
     var trashedFiles: [TrashedMarkdownFile]
     var attachments: [LibraryAttachment]

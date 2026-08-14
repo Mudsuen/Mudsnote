@@ -303,13 +303,9 @@ private extension View {
         if #available(iOS 26.0, *) {
             overlay(alignment: .top) {
                 if isEnabled {
-                    Color.clear
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
                         .frame(height: NotesTopBarAppearance.notes.scrollEdgeBottom)
-                        .overlay(alignment: .bottom) {
-                            Rectangle()
-                                .fill(MudsnoteColors.line.opacity(0.45))
-                                .frame(height: 0.5)
-                        }
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -384,8 +380,7 @@ struct LibraryHomeView: View {
     @State private var directoryPanelWidth: CGFloat = 360
     @State private var topChromeContentInset: CGFloat = 116
     @State private var expandedDirectoryPaths = Set<String>()
-    @AppStorage("mudsnote.ios.selectedHomeFolderPath")
-    private var selectedHomeFolderPath = ""
+    @State private var selectedHomeFolderPath = ""
     @State private var homeTimelineProjection = HomeTimelineProjection()
     @State private var homePageWindow = NoteListPageWindow()
     @State private var homeTitleCollapseProgress: CGFloat = 0
@@ -666,6 +661,12 @@ struct LibraryHomeView: View {
         )
         .notesTranslucentTopToolbar()
         .notesGlassBottomToolbar()
+        .onChange(of: appModel.currentLibraryID, initial: true) {
+            restoreLibraryFolderSelection()
+        }
+        .onChange(of: appModel.libraryRevision) {
+            reconcileLibraryFolderSelection()
+        }
     }
 
     @ViewBuilder
@@ -704,17 +705,25 @@ struct LibraryHomeView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.top, 60)
                     } else if homeTimelineProjection.sections.isEmpty {
-                        ContentUnavailableView(
-                            "No Notes",
-                            systemImage: "note.text",
-                            description: Text(
-                                selectedHomeFolderPath.isEmpty
-                                    ? "Create a note or swipe right to open your folders."
-                                    : "This folder has no notes yet."
+                        VStack {
+                            ContentUnavailableView(
+                                "No Notes",
+                                systemImage: "note.text",
+                                description: Text(
+                                    selectedHomeFolderPath.isEmpty
+                                        ? "Create a note or swipe right to open your folders."
+                                        : "This folder has no notes yet."
+                                )
                             )
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 60)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
+                            if appModel.hasMoreLibraryFiles {
+                                NoteListPaginationFooter(
+                                    pageToken: homePageWindow.visibleCount,
+                                    loadMore: revealNextHomePage
+                                )
+                            }
+                        }
                     } else {
                         ForEach(homeTimelineProjection.sections) { section in
                             if viewStyle == .gallery {
@@ -827,7 +836,8 @@ struct LibraryHomeView: View {
         return HomeTimelineProjection(
             sections: sections,
             entryCount: entries.count,
-            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count),
+            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count)
+                || appModel.hasMoreLibraryFiles,
             smartFolderCounts: smartFolderCounts
         )
     }
@@ -840,8 +850,17 @@ struct LibraryHomeView: View {
     }
 
     private func revealNextHomePage() {
-        homePageWindow.revealNext(totalCount: homeTimelineProjection.entryCount)
-        homeTimelineProjection = makeHomeTimelineProjection()
+        if homePageWindow.hasMore(totalCount: homeTimelineProjection.entryCount) {
+            homePageWindow.revealNext(totalCount: homeTimelineProjection.entryCount)
+            homeTimelineProjection = makeHomeTimelineProjection()
+            return
+        }
+        guard appModel.hasMoreLibraryFiles else { return }
+        Task {
+            await appModel.loadNextLibraryPage()
+            homePageWindow.revealNext(totalCount: .max)
+            homeTimelineProjection = makeHomeTimelineProjection()
+        }
     }
 
     private func updateDirectoryWidth(_ availableWidth: CGFloat) {
@@ -1177,6 +1196,7 @@ struct LibraryHomeView: View {
 
     private func selectAllNotes() {
         selectedHomeFolderPath = ""
+        persistLibraryFolderSelection()
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
         Task { @MainActor in
@@ -1188,12 +1208,48 @@ struct LibraryHomeView: View {
 
     private func selectHomeFolder(_ folder: LibraryFolderNode) {
         selectedHomeFolderPath = folder.relativePath
+        persistLibraryFolderSelection()
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
         Task { @MainActor in
             await Task.yield()
             refreshHomeTimelineProjection(resetPagination: true)
             closeDirectory()
+        }
+    }
+
+    private var selectedFolderDefaultsKey: String? {
+        guard !appModel.currentLibraryID.isEmpty else { return nil }
+        return "mudsnote.ios.selectedHomeFolderPath.\(appModel.currentLibraryID)"
+    }
+
+    private func restoreLibraryFolderSelection() {
+        guard let key = selectedFolderDefaultsKey else {
+            selectedHomeFolderPath = ""
+            return
+        }
+        selectedHomeFolderPath = UserDefaults.standard.string(forKey: key) ?? ""
+        reconcileLibraryFolderSelection()
+    }
+
+    private func reconcileLibraryFolderSelection() {
+        guard !selectedHomeFolderPath.isEmpty else { return }
+        guard appModel.allFolders.contains(where: {
+            $0.relativePath == selectedHomeFolderPath
+        }) else {
+            selectedHomeFolderPath = ""
+            persistLibraryFolderSelection()
+            refreshHomeTimelineProjection(resetPagination: true)
+            return
+        }
+    }
+
+    private func persistLibraryFolderSelection() {
+        guard let key = selectedFolderDefaultsKey else { return }
+        if selectedHomeFolderPath.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(selectedHomeFolderPath, forKey: key)
         }
     }
 
@@ -1262,6 +1318,13 @@ struct LibraryHomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAddTraits(
+                        selectedHomeFolderPath.isEmpty ? .isSelected : []
+                    )
+                    .accessibilityValue(
+                        selectedHomeFolderPath.isEmpty ? String(localized: "Selected") : ""
+                    )
                     .accessibilityIdentifier("all-notes-row")
 
                     if appModel.showsMergedInbox {

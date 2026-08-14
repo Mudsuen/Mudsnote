@@ -27,6 +27,15 @@ struct CaptureFolderPreferences {
         defaults.set(path, forKey: Self.defaultFolderKey)
     }
 
+    func setDefaultFolder(_ relativePath: String, libraryRoot: URL?) {
+        guard let path = normalizedPath(relativePath) else { return }
+        guard let libraryRoot else {
+            setDefaultFolder(path)
+            return
+        }
+        defaults.set(path, forKey: defaultFolderKey(libraryRoot: libraryRoot))
+    }
+
     func resolveDefaultFolder(in folders: [LibraryFolderNode]) -> String? {
         let available = folders.flatMap(\.captureFlattened)
         if let storedDefaultFolder,
@@ -44,12 +53,15 @@ struct CaptureFolderPreferences {
         defer {
             if accessed { libraryRoot.stopAccessingSecurityScopedResource() }
         }
-        if let storedDefaultFolder,
-           isExistingWritableFolder(storedDefaultFolder, libraryRoot: libraryRoot) {
-            return storedDefaultFolder
+        let key = defaultFolderKey(libraryRoot: libraryRoot)
+        let stored = normalizedPath(defaults.string(forKey: key))
+            ?? migrateLegacyDefaultFolder(to: key)
+        if let stored,
+           isExistingWritableFolder(stored, libraryRoot: libraryRoot) {
+            return stored
         }
-        if defaults.object(forKey: Self.defaultFolderKey) != nil {
-            defaults.removeObject(forKey: Self.defaultFolderKey)
+        if defaults.object(forKey: key) != nil {
+            defaults.removeObject(forKey: key)
         }
         return isExistingWritableFolder("Inbox", libraryRoot: libraryRoot)
             ? "Inbox"
@@ -57,8 +69,17 @@ struct CaptureFolderPreferences {
     }
 
     func recordSuccessfulSave(to relativePath: String?, at date: Date = Date()) {
+        recordSuccessfulSave(to: relativePath, at: date, libraryRoot: nil)
+    }
+
+    func recordSuccessfulSave(
+        to relativePath: String?,
+        at date: Date = Date(),
+        libraryRoot: URL?
+    ) {
         guard let relativePath = normalizedPath(relativePath) else { return }
-        var records = loadRecentFolders()
+        let key = recentFoldersKey(libraryRoot: libraryRoot)
+        var records = loadRecentFolders(key: key, migratesLegacy: libraryRoot != nil)
         records.removeAll { $0.relativePath == relativePath }
         records.append(RecentFolder(relativePath: relativePath, lastUsedAt: date))
         records.sort {
@@ -67,7 +88,7 @@ struct CaptureFolderPreferences {
             }
             return $0.lastUsedAt > $1.lastUsedAt
         }
-        saveRecentFolders(Array(records.prefix(Self.maximumRecentFolderCount)))
+        saveRecentFolders(Array(records.prefix(Self.maximumRecentFolderCount)), key: key)
     }
 
     func recentFolders(
@@ -83,7 +104,10 @@ struct CaptureFolderPreferences {
         defer {
             if accessed { libraryRoot?.stopAccessingSecurityScopedResource() }
         }
-        return loadRecentFolders().compactMap { record in
+        return loadRecentFolders(
+            key: recentFoldersKey(libraryRoot: libraryRoot),
+            migratesLegacy: libraryRoot != nil
+        ).compactMap { record in
             guard let folder = available[record.relativePath] else { return nil }
             guard let libraryRoot else { return folder }
             guard isExistingWritableFolder(
@@ -96,8 +120,17 @@ struct CaptureFolderPreferences {
         }
     }
 
-    private func loadRecentFolders() -> [RecentFolder] {
-        guard let data = defaults.data(forKey: Self.recentFoldersKey),
+    private func loadRecentFolders(
+        key: String = Self.recentFoldersKey,
+        migratesLegacy: Bool = false
+    ) -> [RecentFolder] {
+        var data = defaults.data(forKey: key)
+        if data == nil, migratesLegacy, let legacy = defaults.data(forKey: Self.recentFoldersKey) {
+            data = legacy
+            defaults.set(legacy, forKey: key)
+            defaults.removeObject(forKey: Self.recentFoldersKey)
+        }
+        guard let data,
               let decoded = try? JSONDecoder().decode([RecentFolder].self, from: data) else {
             return []
         }
@@ -113,9 +146,28 @@ struct CaptureFolderPreferences {
             }
     }
 
-    private func saveRecentFolders(_ folders: [RecentFolder]) {
+    private func saveRecentFolders(
+        _ folders: [RecentFolder],
+        key: String = Self.recentFoldersKey
+    ) {
         guard let data = try? JSONEncoder().encode(folders) else { return }
-        defaults.set(data, forKey: Self.recentFoldersKey)
+        defaults.set(data, forKey: key)
+    }
+
+    private func defaultFolderKey(libraryRoot: URL) -> String {
+        "\(Self.defaultFolderKey).\(LibraryIdentity.identifier(for: libraryRoot))"
+    }
+
+    private func recentFoldersKey(libraryRoot: URL?) -> String {
+        guard let libraryRoot else { return Self.recentFoldersKey }
+        return "\(Self.recentFoldersKey).\(LibraryIdentity.identifier(for: libraryRoot))"
+    }
+
+    private func migrateLegacyDefaultFolder(to key: String) -> String? {
+        guard let legacy = storedDefaultFolder else { return nil }
+        defaults.set(legacy, forKey: key)
+        defaults.removeObject(forKey: Self.defaultFolderKey)
+        return legacy
     }
 
     private func normalizedPath(_ rawPath: String?) -> String? {

@@ -808,7 +808,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
         projects.tap()
 
-        XCTAssertEqual(projects.value as? String, "Selected")
         XCTAssertTrue(
             app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
                 .waitForExistence(timeout: 5)
@@ -817,6 +816,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
             app.buttons["markdown-file-row-Projects/Launch/Nested Launch Brief.md"]
                 .waitForExistence(timeout: 5)
         )
+        app.buttons["directory-button"].tap()
+        let selectedProjects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(selectedProjects.waitForExistence(timeout: 5))
+        XCTAssertEqual(selectedProjects.value as? String, "Selected")
     }
 
     func testFolderContextMenuMovesNestedFolderToTopLevel() {

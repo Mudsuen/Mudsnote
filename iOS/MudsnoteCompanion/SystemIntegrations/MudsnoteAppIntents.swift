@@ -118,12 +118,12 @@ enum IntentCaptureWriter {
         let queue = PendingWriteQueue(root: root)
         try await queue.load()
         try await queue.replay { item in
-            try await store.performPendingWrite(item)
+            try await store.performPendingWrite(item, root: root)
         }
 
         let pending = try await store.preparePendingWrite(for: draft, root: root)
         try await queue.enqueue(pending)
-        try await store.performPendingWrite(pending)
+        try await store.performPendingWrite(pending, root: root)
         try await queue.remove(id: pending.id)
     }
 }

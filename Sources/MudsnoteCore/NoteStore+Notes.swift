@@ -205,7 +205,8 @@ extension NoteStore {
         body: String,
         tags: [String] = [],
         expectedContents: String,
-        updatesInPlace: Bool
+        updatesInPlace: Bool,
+        in directory: URL? = nil
     ) throws -> NoteUpdateResult {
         let standardizedURL = url.standardizedFileURL
         let coordinator = NSFileCoordinator()
@@ -242,7 +243,8 @@ extension NoteStore {
                         at: coordinatedURL,
                         title: title,
                         body: body,
-                        tags: tags
+                        tags: tags,
+                        in: directory
                     )
                 }
                 return NoteUpdateResult(

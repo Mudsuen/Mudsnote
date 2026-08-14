@@ -583,9 +583,10 @@ extension EditorWindowController {
         var body = ""
         if let fileURL {
             do {
-                let note = try noteStore.loadNote(at: fileURL)
+                let note = try noteStore.loadNoteDocument(at: fileURL)
                 title = note.title
                 body = note.body
+                sourceContentsAtLoad = note.sourceContents
                 isDirty = false
             } catch {
                 presentErrorAlert(message: "无法加载笔记", details: error.localizedDescription)

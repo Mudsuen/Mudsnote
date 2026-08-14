@@ -2,16 +2,47 @@ import CryptoKit
 import Foundation
 
 actor MarkdownFileStore {
+    private struct PendingWriteReceipt: Codable {
+        var version: Int
+        var pendingID: UUID
+        var libraryID: String
+        var targetRelativePath: String
+        var noteDigest: String
+    }
+
+    private struct PendingWriteClaim: Codable {
+        var version: Int
+        var pendingID: UUID
+        var targetRelativePath: String
+    }
+
     private struct SearchCacheEntry {
         var modifiedAt: Date
         var byteCount: Int
+        var fileIdentity: String
         var markdown: String
     }
 
     private struct ListMetadataCacheEntry {
         var modifiedAt: Date
         var byteCount: Int
+        var fileIdentity: String
         var metadata: MarkdownListMetadata
+    }
+
+    private final class LibraryInventoryState {
+        let enumerator: FileManager.DirectoryEnumerator?
+        var markdownFiles: [RecentMarkdownFile] = []
+        var folderPaths = Set<String>()
+        var attachments: [LibraryAttachment] = []
+        var attachmentCount = 0
+        var conflictWarnings: [String] = []
+        var isComplete = false
+
+        init(enumerator: FileManager.DirectoryEnumerator?) {
+            self.enumerator = enumerator
+            isComplete = enumerator == nil
+        }
     }
 
     private struct MarkdownLinkRewriteBackup {
@@ -34,6 +65,7 @@ actor MarkdownFileStore {
 
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
+    private var libraryInventoryState: LibraryInventoryState?
     private var searchCache: [String: SearchCacheEntry] = [:]
     private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
     private var reservedPendingTargets = Set<String>()
@@ -47,6 +79,7 @@ actor MarkdownFileStore {
     func configure(root: URL) {
         self.root = root
         cachedLibrarySnapshot = nil
+        libraryInventoryState = nil
         searchCache = [:]
         listMetadataCache = [:]
         reservedPendingTargets = []
@@ -68,113 +101,151 @@ actor MarkdownFileStore {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
 
-        let inboxURL = root.appendingPathComponent("Inbox.md")
-        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
-        let inboxItems = InboxParser.parse(inboxMarkdown)
         let resourceKeys: Set<URLResourceKey> = [
             .contentModificationDateKey,
             .creationDateKey,
             .fileSizeKey,
+            .fileResourceIdentifierKey,
             .isDirectoryKey,
             .isRegularFileKey,
             .isSymbolicLinkKey,
         ]
-        var markdownFiles: [RecentMarkdownFile] = []
-        var folderPaths = Set<String>()
-        var attachments: [LibraryAttachment] = []
-        var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
-        var attachmentCount = 0
-        var conflictWarnings: [String] = []
-
-        if let enumerator = fileManager.enumerator(
+        libraryInventoryState = LibraryInventoryState(enumerator: fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: Array(resourceKeys),
             options: [.skipsHiddenFiles]
-        ) {
-            for case let url as URL in enumerator {
-                let relativePath = Self.relativePath(for: url, root: root)
-                guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
-                    continue
-                }
-                if values.isSymbolicLink == true {
-                    enumerator.skipDescendants()
-                    continue
-                }
-                if values.isDirectory == true {
-                    folderPaths.insert(relativePath)
-                    continue
-                }
-                guard values.isRegularFile == true else { continue }
+        ))
+        return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
+    }
 
-                if relativePath.hasPrefix("Attachments/") {
-                    attachmentCount += 1
-                    attachments.append(LibraryAttachment(
-                        id: relativePath,
-                        relativePath: relativePath,
-                        fileName: url.lastPathComponent,
-                        modifiedAt: values.contentModificationDate ?? .distantPast,
-                        byteCount: Int64(values.fileSize ?? 0),
-                        kind: LibraryAttachment.Kind(fileExtension: url.pathExtension)
-                    ))
-                }
-                guard url.pathExtension.lowercased() == "md" else { continue }
-                if Self.isConflictCopyPath(relativePath) {
-                    conflictWarnings.append(relativePath)
-                }
-                let modifiedAt = values.contentModificationDate ?? .distantPast
-                let byteCount = values.fileSize ?? 0
-                let listMetadata = try metadataForList(
-                    relativePath: relativePath,
-                    url: url,
-                    modifiedAt: modifiedAt,
-                    byteCount: byteCount
-                )
-                if relativePath != "Inbox.md" {
-                    let owner = LibraryAttachment.Owner(
-                        id: "file:\(relativePath)",
-                        title: listMetadata.title,
-                        destination: .file(relativePath)
-                    )
-                    for attachmentPath in listMetadata.attachmentPaths {
-                        attachmentOwners[attachmentPath, default: []].append(owner)
-                    }
-                }
-                markdownFiles.append(RecentMarkdownFile(
+    func loadNextLibraryPage() throws -> MarkdownLibrarySnapshot {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard libraryInventoryState != nil else {
+            return try loadLibrarySnapshot()
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
+        let resourceKeys: Set<URLResourceKey> = [
+            .contentModificationDateKey,
+            .creationDateKey,
+            .fileSizeKey,
+            .fileResourceIdentifierKey,
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ]
+        return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
+    }
+
+    private func loadNextLibraryPageWithinAccess(
+        root: URL,
+        resourceKeys: Set<URLResourceKey>
+    ) throws -> MarkdownLibrarySnapshot {
+        guard let state = libraryInventoryState else {
+            throw FolderAccessError.missingFolder
+        }
+        let inboxURL = root.appendingPathComponent("Inbox.md")
+        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
+        let inboxItems = InboxParser.parse(inboxMarkdown)
+        var loadedNotes = 0
+        while !state.isComplete, loadedNotes < 40 {
+            guard let url = state.enumerator?.nextObject() as? URL else {
+                state.isComplete = true
+                break
+            }
+            let relativePath = Self.relativePath(for: url, root: root)
+            guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
+                continue
+            }
+            if values.isSymbolicLink == true {
+                state.enumerator?.skipDescendants()
+                continue
+            }
+            if values.isDirectory == true {
+                state.folderPaths.insert(relativePath)
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
+            if relativePath.hasPrefix("Attachments/") {
+                state.attachmentCount += 1
+                state.attachments.append(LibraryAttachment(
                     id: relativePath,
                     relativePath: relativePath,
-                    title: listMetadata.title,
-                    modifiedAt: modifiedAt,
-                    createdAt: values.creationDate ?? modifiedAt,
-                    preview: listMetadata.preview,
-                    galleryImagePath: listMetadata.galleryImagePath,
-                    galleryChecklistItems: listMetadata.galleryChecklistItems,
-                    hasAttachments: listMetadata.hasAttachments,
-                    hasChecklist: listMetadata.hasChecklist,
-                    hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
-                    tags: listMetadata.tags
+                    fileName: url.lastPathComponent,
+                    modifiedAt: values.contentModificationDate ?? .distantPast,
+                    byteCount: Int64(values.fileSize ?? 0),
+                    kind: LibraryAttachment.Kind(fileExtension: url.pathExtension)
                 ))
+                continue
             }
+            guard url.pathExtension.lowercased() == "md" else { continue }
+            if Self.isConflictCopyPath(relativePath) {
+                state.conflictWarnings.append(relativePath)
+            }
+            let modifiedAt = values.contentModificationDate ?? .distantPast
+            let byteCount = values.fileSize ?? 0
+            let listMetadata = try metadataForList(
+                relativePath: relativePath,
+                url: url,
+                modifiedAt: modifiedAt,
+                byteCount: byteCount,
+                fileIdentity: Self.fileIdentity(values.fileResourceIdentifier)
+            )
+            state.markdownFiles.append(RecentMarkdownFile(
+                id: relativePath,
+                relativePath: relativePath,
+                title: listMetadata.title,
+                modifiedAt: modifiedAt,
+                createdAt: values.creationDate ?? modifiedAt,
+                preview: listMetadata.preview,
+                galleryImagePath: listMetadata.galleryImagePath,
+                galleryChecklistItems: listMetadata.galleryChecklistItems,
+                hasAttachments: listMetadata.hasAttachments,
+                hasChecklist: listMetadata.hasChecklist,
+                hasUncheckedChecklist: listMetadata.hasUncheckedChecklist,
+                tags: listMetadata.tags
+            ))
+            loadedNotes += 1
         }
 
+        var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
+        for file in state.markdownFiles where file.relativePath != "Inbox.md" {
+            guard let metadata = listMetadataCache[file.relativePath] else { continue }
+            let owner = LibraryAttachment.Owner(
+                id: "file:\(file.relativePath)",
+                title: file.title,
+                destination: .file(file.relativePath)
+            )
+            for attachmentPath in metadata.metadata.attachmentPaths {
+                attachmentOwners[attachmentPath, default: []].append(owner)
+            }
+        }
+        var attachments = state.attachments
         for index in attachments.indices {
             attachments[index].owners = attachmentOwners[attachments[index].relativePath] ?? []
         }
 
         let storedPinnedPaths = try loadPinnedPaths(root: root)
-        let activePaths = Set(markdownFiles.map(\.relativePath))
-        listMetadataCache = listMetadataCache.filter { activePaths.contains($0.key) }
+        let activePaths = Set(state.markdownFiles.map(\.relativePath))
+        if state.isComplete {
+            listMetadataCache = listMetadataCache.filter { activePaths.contains($0.key) }
+        }
         let pinnedPaths = storedPinnedPaths.intersection(activePaths)
-        if pinnedPaths != storedPinnedPaths {
+        if state.isComplete, pinnedPaths != storedPinnedPaths {
             try savePinnedPaths(pinnedPaths, root: root)
         }
-        for index in markdownFiles.indices {
-            markdownFiles[index].isPinned = pinnedPaths.contains(markdownFiles[index].relativePath)
+        for index in state.markdownFiles.indices {
+            state.markdownFiles[index].isPinned = pinnedPaths.contains(
+                state.markdownFiles[index].relativePath
+            )
         }
-        let recentFiles = markdownFiles
+        let recentFiles = state.markdownFiles
             .sorted(by: Self.notesOrder)
             .prefix(24)
             .map { $0 }
-        let allFiles = markdownFiles.sorted(by: Self.notesOrder)
+        let allFiles = state.markdownFiles.sorted(by: Self.notesOrder)
         let trashedFiles = try loadTrashedFiles(root: root)
         // Smart Folders are optional metadata. A damaged configuration must not
         // make the Markdown library unavailable; mutations still use the strict
@@ -184,20 +255,21 @@ actor MarkdownFileStore {
             inboxItems: inboxItems,
             allFiles: allFiles,
             recentFiles: recentFiles,
+            hasMoreFiles: !state.isComplete,
             folders: LibraryFolderNode.makeTree(
-                directoryPaths: folderPaths,
-                files: markdownFiles
+                directoryPaths: state.folderPaths,
+                files: state.markdownFiles
             ),
             trashedFiles: trashedFiles,
             attachments: attachments.sorted { $0.modifiedAt > $1.modifiedAt },
             smartFolders: smartFolders,
             summary: LibrarySummary(
-                allNotesCount: markdownFiles.count,
+                allNotesCount: state.markdownFiles.count,
                 inboxCount: inboxItems.count,
-                attachmentCount: attachmentCount,
+                attachmentCount: state.attachmentCount,
                 recentlyDeletedCount: trashedFiles.count
             ),
-            conflictWarnings: conflictWarnings.sorted()
+            conflictWarnings: state.conflictWarnings.sorted()
         )
         cachedLibrarySnapshot = snapshot
         return snapshot
@@ -461,12 +533,17 @@ actor MarkdownFileStore {
         guard let root else { throw FolderAccessError.missingFolder }
         let terms = MarkdownSearch.normalizedTerms(query)
         guard !terms.isEmpty else { return [] }
-        let files: [RecentMarkdownFile]
+        var searchSnapshot: MarkdownLibrarySnapshot
         if let cachedLibrarySnapshot {
-            files = cachedLibrarySnapshot.allFiles
+            searchSnapshot = cachedLibrarySnapshot
         } else {
-            files = try loadLibrarySnapshot().allFiles
+            searchSnapshot = try loadLibrarySnapshot()
         }
+        while searchSnapshot.hasMoreFiles {
+            try Task.checkCancellation()
+            searchSnapshot = try loadNextLibraryPage()
+        }
+        let files = searchSnapshot.allFiles
         let accessed = root.startAccessingSecurityScopedResource()
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
@@ -480,13 +557,17 @@ actor MarkdownFileStore {
             if scope == .notes, file.relativePath == "Inbox.md" { continue }
             if scope == .inbox, file.relativePath != "Inbox.md" { continue }
             guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
-            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let values = try? url.resourceValues(
+                forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey]
+            )
             let modifiedAt = values?.contentModificationDate ?? file.modifiedAt
             let byteCount = values?.fileSize ?? 0
+            let fileIdentity = Self.fileIdentity(values?.fileResourceIdentifier)
             let markdown: String
             if let cached = searchCache[file.relativePath],
                cached.modifiedAt == modifiedAt,
-               cached.byteCount == byteCount {
+               cached.byteCount == byteCount,
+               cached.fileIdentity == fileIdentity {
                 markdown = cached.markdown
             } else {
                 markdown = try boundedSearchText(from: url)
@@ -494,6 +575,7 @@ actor MarkdownFileStore {
                     searchCache[file.relativePath] = SearchCacheEntry(
                         modifiedAt: modifiedAt,
                         byteCount: byteCount,
+                        fileIdentity: fileIdentity,
                         markdown: markdown
                     )
                     trimSearchCacheIfNeeded()
@@ -861,7 +943,13 @@ actor MarkdownFileStore {
                 root.stopAccessingSecurityScopedResource()
             }
         }
-        let attachmentWrites = try attachmentWrites(for: draft.attachments, root: root, now: now)
+        let pendingID = UUID()
+        let attachmentWrites = try attachmentWrites(
+            for: draft.attachments,
+            root: root,
+            now: now,
+            operationID: pendingID
+        )
         let markdown = Self.markdownBlock(
             body: draft.body,
             tags: draft.tags,
@@ -872,7 +960,6 @@ actor MarkdownFileStore {
             now: now
         )
 
-        let pendingID = UUID()
         let directory = try userFolderURL(
             relativePath: draft.target.relativeFolderPath,
             root: root,
@@ -900,6 +987,7 @@ actor MarkdownFileStore {
         return PendingWrite(
             id: pendingID,
             createdAt: now,
+            libraryID: LibraryIdentity.identifier(for: root),
             targetRelativePath: Self.relativePath(for: target, root: root),
             markdownBlock: markdown,
             attachments: attachmentWrites.map {
@@ -960,7 +1048,12 @@ actor MarkdownFileStore {
     ) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
         try CaptureAttachmentPolicy.validate([attachment])
-        let requestedWrite = try attachmentWrites(for: [attachment], root: root, now: now)[0]
+        let month = Self.monthFormatter.string(from: now)
+        let timestamp = Self.attachmentFormatter.string(from: now)
+        let requestedWrite = (
+            relativePath: "Attachments/\(month)/\(attachment.filePrefix)-\(timestamp).\(attachment.preferredExtension)",
+            data: attachment.data
+        )
         guard let requestedURL = AuthorizedLibraryPath.resolve(
             requestedWrite.relativePath,
             within: root,
@@ -2433,11 +2526,13 @@ actor MarkdownFileStore {
         relativePath: String,
         url: URL,
         modifiedAt: Date,
-        byteCount: Int
+        byteCount: Int,
+        fileIdentity: String
     ) throws -> MarkdownListMetadata {
         if let cached = listMetadataCache[relativePath],
            cached.modifiedAt == modifiedAt,
-           cached.byteCount == byteCount {
+           cached.byteCount == byteCount,
+           cached.fileIdentity == fileIdentity {
             return cached.metadata
         }
 
@@ -2452,10 +2547,16 @@ actor MarkdownFileStore {
         listMetadataCache[relativePath] = ListMetadataCacheEntry(
             modifiedAt: modifiedAt,
             byteCount: byteCount,
+            fileIdentity: fileIdentity,
             metadata: metadata
         )
         trimListMetadataCacheIfNeeded()
         return metadata
+    }
+
+    private static func fileIdentity(_ resourceIdentifier: Any?) -> String {
+        guard let resourceIdentifier else { return "" }
+        return String(describing: resourceIdentifier)
     }
 
     private func trimListMetadataCacheIfNeeded() {
@@ -2487,6 +2588,19 @@ actor MarkdownFileStore {
     @discardableResult
     func performPendingWrite(_ pending: PendingWrite) async throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
+        return try await performPendingWrite(pending, root: root)
+    }
+
+    @discardableResult
+    func performPendingWrite(
+        _ pending: PendingWrite,
+        root expectedRoot: URL
+    ) async throws -> RecentMarkdownFile {
+        let expectedLibraryID = LibraryIdentity.identifier(for: expectedRoot)
+        guard pending.libraryID.isEmpty || pending.libraryID == expectedLibraryID else {
+            throw PendingWriteValidationError.libraryMismatch
+        }
+        let root = expectedRoot
         guard let target = AuthorizedLibraryPath.resolve(pending.targetRelativePath, within: root),
               target.pathExtension.lowercased() == "md" else {
             throw PendingWriteValidationError.invalidTargetPath
@@ -2519,12 +2633,18 @@ actor MarkdownFileStore {
                 at: attachmentURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            guard !fileManager.fileExists(atPath: attachmentURL.path) else { continue }
-            try attachment.data.write(to: attachmentURL, options: .atomic)
+            if fileManager.fileExists(atPath: attachmentURL.path) {
+                let existing = try Data(contentsOf: attachmentURL)
+                guard SHA256.hash(data: existing) == SHA256.hash(data: attachment.data) else {
+                    throw PendingWriteValidationError.attachmentAlreadyExists
+                }
+            } else {
+                try attachment.data.write(to: attachmentURL, options: .withoutOverwriting)
+            }
         }
 
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let writtenTarget = try writePendingNoteIfNeeded(pending, to: target)
+        let writtenTarget = try writePendingNoteIfNeeded(pending, to: target, root: root)
         let writtenRelativePath = Self.relativePath(for: writtenTarget, root: root)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [writtenRelativePath])
@@ -2534,7 +2654,7 @@ actor MarkdownFileStore {
         )
     }
 
-    private static func projection(
+    static func projection(
         for pending: PendingWrite,
         relativePath: String? = nil
     ) -> RecentMarkdownFile {
@@ -2565,12 +2685,18 @@ actor MarkdownFileStore {
         )
     }
 
-    private func attachmentWrites(for attachments: [CaptureAttachment], root: URL, now: Date) throws -> [(relativePath: String, data: Data)] {
+    private func attachmentWrites(
+        for attachments: [CaptureAttachment],
+        root: URL,
+        now: Date,
+        operationID: UUID
+    ) throws -> [(relativePath: String, data: Data)] {
         let month = Self.monthFormatter.string(from: now)
         let timestamp = Self.attachmentFormatter.string(from: now)
+        let operationSuffix = operationID.uuidString.lowercased()
         return attachments.enumerated().map { index, attachment in
             let suffix = attachments.count > 1 ? "-\(index + 1)" : ""
-            let fileName = "\(attachment.filePrefix)-\(timestamp)\(suffix).\(attachment.preferredExtension)"
+            let fileName = "\(attachment.filePrefix)-\(timestamp)-\(operationSuffix)\(suffix).\(attachment.preferredExtension)"
             return ("Attachments/\(month)/\(fileName)", attachment.data)
         }
     }
@@ -2652,7 +2778,11 @@ actor MarkdownFileStore {
         return false
     }
 
-    private func writePendingNoteIfNeeded(_ pending: PendingWrite, to target: URL) throws -> URL {
+    private func writePendingNoteIfNeeded(
+        _ pending: PendingWrite,
+        to target: URL,
+        root: URL
+    ) throws -> URL {
         if target.lastPathComponent == "Inbox.md" {
             try appendLegacyPendingWriteIfNeeded(pending, to: target)
             return target
@@ -2661,63 +2791,150 @@ actor MarkdownFileStore {
         let title = target.deletingPathExtension().lastPathComponent
         let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
         let note = "# \(title)\n\n\(body)\n"
-        let legacyMarker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
-        if try writeNewPendingNoteIfPossible(
-            note,
-            legacyMarker: legacyMarker,
-            to: target
-        ) {
-            return target
+        let noteDigest = Self.sha256Hex(Data(note.utf8))
+
+        if let receipt = try loadPendingWriteReceipt(pending.id, root: root) {
+            guard receipt.pendingID == pending.id,
+                  receipt.libraryID == LibraryIdentity.identifier(for: root),
+                  receipt.noteDigest == noteDigest,
+                  let ownedTarget = AuthorizedLibraryPath.resolve(
+                      receipt.targetRelativePath,
+                      within: root
+                  ) else {
+                throw PendingWriteValidationError.invalidReceipt
+            }
+            try writeOwnedPendingNote(note, pendingID: pending.id, to: ownedTarget)
+            return ownedTarget
         }
 
-        let recoveryTarget = deterministicPendingRecoveryURL(
-            for: target,
-            pendingID: pending.id
+        let ownedTarget = try reservePendingTarget(
+            requested: target,
+            pendingID: pending.id,
+            root: root
         )
-        guard try writeNewPendingNoteIfPossible(
-            note,
-            legacyMarker: legacyMarker,
-            to: recoveryTarget
-        ) else {
-            throw PendingWriteValidationError.targetAlreadyExists
-        }
-        return recoveryTarget
+        let receipt = PendingWriteReceipt(
+            version: 1,
+            pendingID: pending.id,
+            libraryID: LibraryIdentity.identifier(for: root),
+            targetRelativePath: Self.relativePath(for: ownedTarget, root: root),
+            noteDigest: noteDigest
+        )
+        try persistPendingWriteReceipt(receipt, root: root)
+        try writeOwnedPendingNote(note, pendingID: pending.id, to: ownedTarget)
+        return ownedTarget
     }
 
-    private func writeNewPendingNoteIfPossible(
+    private func writeOwnedPendingNote(
         _ note: String,
-        legacyMarker: String,
+        pendingID: UUID,
         to target: URL
-    ) throws -> Bool {
+    ) throws {
         if fileManager.fileExists(atPath: target.path) {
             let existing = try String(contentsOf: target, encoding: .utf8)
-            return existing == note || existing.contains(legacyMarker)
+            guard existing == note else {
+                throw PendingWriteValidationError.targetAlreadyExists
+            }
+            return
         }
 
         guard let data = note.data(using: .utf8) else {
             throw PendingWriteValidationError.invalidMarkdown
         }
         do {
-            // File Provider locations can reject NSFileCoordinator.forMerging
-            // when the coordinated item does not exist yet. Create the unique
-            // destination directly, matching the standalone-note path.
             try data.write(to: target, options: .withoutOverwriting)
-            return true
         } catch {
             guard fileManager.fileExists(atPath: target.path) else { throw error }
             let existing = try String(contentsOf: target, encoding: .utf8)
-            return existing == note || existing.contains(legacyMarker)
+            guard existing == note else {
+                throw PendingWriteValidationError.targetAlreadyExists
+            }
         }
     }
 
-    private func deterministicPendingRecoveryURL(
-        for requested: URL,
-        pendingID: UUID
-    ) -> URL {
+    private func reservePendingTarget(
+        requested: URL,
+        pendingID: UUID,
+        root: URL
+    ) throws -> URL {
         let directory = requested.deletingLastPathComponent()
         let stem = requested.deletingPathExtension().lastPathComponent
-        let suffix = pendingID.uuidString.lowercased().prefix(8)
-        return directory.appendingPathComponent("\(stem) \(suffix).md")
+        var candidate = requested
+        var suffix = 0
+
+        while true {
+            if !fileManager.fileExists(atPath: candidate.path),
+               try claimPendingTarget(candidate, pendingID: pendingID, root: root) {
+                return candidate
+            }
+            suffix += 1
+            let identity = pendingID.uuidString.lowercased()
+            let disambiguator = suffix == 1 ? identity : "\(identity)-\(suffix)"
+            candidate = directory.appendingPathComponent("\(stem) \(disambiguator).md")
+        }
+    }
+
+    private func claimPendingTarget(
+        _ target: URL,
+        pendingID: UUID,
+        root: URL
+    ) throws -> Bool {
+        let relativePath = Self.relativePath(for: target, root: root)
+        let claimsDirectory = root.appendingPathComponent(".mudsnote/write-claims", isDirectory: true)
+        try fileManager.createDirectory(at: claimsDirectory, withIntermediateDirectories: true)
+        let claimURL = claimsDirectory.appendingPathComponent(
+            "\(Self.sha256Hex(Data(relativePath.utf8))).json"
+        )
+        let claim = PendingWriteClaim(
+            version: 1,
+            pendingID: pendingID,
+            targetRelativePath: relativePath
+        )
+        let data = try JSONEncoder.pretty.encode(claim)
+        do {
+            try data.write(to: claimURL, options: .withoutOverwriting)
+            return true
+        } catch let error as CocoaError where error.code == .fileWriteFileExists {
+            let existing = try JSONDecoder.pendingWrites.decode(
+                PendingWriteClaim.self,
+                from: Data(contentsOf: claimURL)
+            )
+            return existing.pendingID == pendingID
+                && existing.targetRelativePath == relativePath
+        }
+    }
+
+    private func loadPendingWriteReceipt(
+        _ pendingID: UUID,
+        root: URL
+    ) throws -> PendingWriteReceipt? {
+        let url = pendingWriteReceiptURL(pendingID, root: root)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder.pendingWrites.decode(
+            PendingWriteReceipt.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private func persistPendingWriteReceipt(
+        _ receipt: PendingWriteReceipt,
+        root: URL
+    ) throws {
+        let url = pendingWriteReceiptURL(receipt.pendingID, root: root)
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONEncoder.pretty.encode(receipt)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func pendingWriteReceiptURL(_ pendingID: UUID, root: URL) -> URL {
+        root.appendingPathComponent(".mudsnote/completed-writes", isDirectory: true)
+            .appendingPathComponent("\(pendingID.uuidString.lowercased()).json")
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func appendLegacyPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
@@ -3005,12 +3222,17 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
     case invalidAttachmentPath
     case invalidAttachmentData
     case invalidMarkdown
+    case invalidReceipt
+    case libraryMismatch
+    case attachmentAlreadyExists
     case targetAlreadyExists
 
     var errorDescription: String? {
         switch self {
         case .targetAlreadyExists:
             String(localized: "A note with this name was created elsewhere. Try saving again.")
+        case .libraryMismatch:
+            String(localized: "This pending capture belongs to a different library.")
         default:
             String(localized: "A pending capture is damaged and was not written.")
         }
@@ -3020,7 +3242,13 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
 extension PendingWriteValidationError: IrrecoverablePendingWriteError {
     var shouldPreserveOutsideActiveQueue: Bool {
         switch self {
-        case .invalidTargetPath, .invalidMarkdown, .invalidAttachmentPath, .invalidAttachmentData:
+        case .invalidTargetPath,
+             .invalidMarkdown,
+             .invalidAttachmentPath,
+             .invalidAttachmentData,
+             .invalidReceipt,
+             .libraryMismatch,
+             .attachmentAlreadyExists:
             return true
         case .targetAlreadyExists:
             return false

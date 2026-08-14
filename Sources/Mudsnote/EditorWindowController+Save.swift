@@ -18,13 +18,29 @@ extension EditorWindowController {
             let savedURL: URL
 
             if let existingURL = activeFloatingNoteURL ?? fileURL {
-                savedURL = try noteStore.updateNote(
+                let expectedContents: String
+                if let sourceContentsAtLoad {
+                    expectedContents = sourceContentsAtLoad
+                } else {
+                    expectedContents = try String(contentsOf: existingURL, encoding: .utf8)
+                }
+                let result = try noteStore.updateNote(
                     at: existingURL,
                     title: document.title,
                     body: document.body,
                     tags: document.tags,
+                    expectedContents: expectedContents,
+                    updatesInPlace: false,
                     in: selectedDirectoryURL
                 )
+                savedURL = result.url
+                sourceContentsAtLoad = result.sourceContents
+                if let originalURL = result.conflictedOriginalURL {
+                    presentErrorAlert(
+                        message: "检测到外部修改",
+                        details: "外部版本保留在：\n\(originalURL.path)\n\n当前编辑另存为：\n\(savedURL.path)"
+                    )
+                }
             } else {
                 savedURL = try noteStore.saveNewNote(
                     title: document.title,
@@ -74,9 +90,10 @@ extension EditorWindowController {
         defer { suppressAutosave = false }
 
         do {
-            let note = try noteStore.loadNote(at: url)
+            let note = try noteStore.loadNoteDocument(at: url)
             activeFloatingNoteURL = url
             selectedDirectoryURL = url.deletingLastPathComponent()
+            sourceContentsAtLoad = note.sourceContents
             applyInitialContent(title: note.title, body: note.body)
 
             if let draft = noteStore.loadDraft(id: currentDraftID), draft.sourcePath == url.path {
