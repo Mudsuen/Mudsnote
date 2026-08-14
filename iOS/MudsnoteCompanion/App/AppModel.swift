@@ -447,7 +447,7 @@ final class AppModel: ObservableObject {
                    case .queuedForReplay = draftSaveError {
                     _ = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
                     syncStatus = .pending
-                    statusToast = .pending(String(localized: "Saved to pending queue"))
+                    statusToast = .pending(draftSaveError.localizedDescription)
                     return
                 }
                 if let draftSaveError = error as? DraftSaveError {
@@ -775,12 +775,17 @@ final class AppModel: ObservableObject {
     func replayQueue() {
         Task {
             do {
-                try await queue?.replay { [fileStore, weak self] item in
+                let replayResult = try await queue?.replay { [fileStore, weak self] item in
                     let createdFile = try await fileStore.performPendingWrite(item)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
-                statusToast = .saved(String(localized: "Pending queue replayed"))
+                if let replayResult {
+                    recordPreservedPendingWrites(replayResult)
+                }
+                statusToast = replayResult?.preservedFailureFilenames.isEmpty == false
+                    ? .pending(String(localized: "Damaged pending captures were preserved"))
+                    : .saved(String(localized: "Pending queue replayed"))
                 await refreshInbox()
             } catch {
                 statusToast = .error(String(localized: "Queue replay failed"))
@@ -811,6 +816,7 @@ final class AppModel: ObservableObject {
         }
 
         let pendingCount: Int
+        var replayResult = PendingWriteReplayResult()
         do {
             let queueLoadResult = try await queue.load()
             guard libraryConfigurationID == configurationID else { return }
@@ -821,11 +827,12 @@ final class AppModel: ObservableObject {
 
             pendingCount = await queue.pendingCount()
             if pendingCount > 0 {
-                try await queue.replay { [fileStore, weak self] item in
+                replayResult = try await queue.replay { [fileStore, weak self] item in
                     let createdFile = try await fileStore.performPendingWrite(item)
                     self?.applyCreatedProjection(createdFile)
                     self?.recordSuccessfulPendingWrite(item)
                 }
+                recordPreservedPendingWrites(replayResult)
             }
             guard libraryConfigurationID == configurationID else { return }
         } catch {
@@ -845,7 +852,9 @@ final class AppModel: ObservableObject {
             apply(snapshot, pendingCount: remainingCount)
             libraryRevision += 1
             await refreshActiveSearchIfNeeded()
-            if pendingCount > 0, remainingCount == 0 {
+            if replayResult.preservedFailureFilenames.isEmpty == false {
+                statusToast = .pending(String(localized: "Damaged pending captures were preserved"))
+            } else if pendingCount > 0, remainingCount == 0 {
                 statusToast = .saved(String(localized: "Pending queue replayed"))
             }
         } catch {
@@ -2110,18 +2119,21 @@ final class AppModel: ObservableObject {
         let queueLoadResult = try await nextQueue.load()
         switch queueLoadResult {
         case .ready:
-            queueRecoveryWarning = nil
+            queueRecoveryWarning = try await nextQueue.preservedFailureFilenames()
+                .first
+                .map { Self.queueRecoveryWarning(filename: $0) }
         case .quarantined(let filename):
             queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
         }
         guard libraryConfigurationID == configurationID else { return false }
         var replayFailed = false
         do {
-            try await nextQueue.replay { [fileStore, weak self] item in
+            let replayResult = try await nextQueue.replay { [fileStore, weak self] item in
                 let createdFile = try await fileStore.performPendingWrite(item)
                 self?.applyCreatedProjection(createdFile)
                 self?.recordSuccessfulPendingWrite(item)
             }
+            recordPreservedPendingWrites(replayResult)
         } catch {
             replayFailed = true
         }
@@ -2161,6 +2173,11 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private func recordPreservedPendingWrites(_ result: PendingWriteReplayResult) {
+        guard let filename = result.preservedFailureFilenames.first else { return }
+        queueRecoveryWarning = Self.queueRecoveryWarning(filename: filename)
+    }
+
     private func announceRecoveredDraftIfPossible() {
         guard recoveredDraftNeedsAnnouncement,
               case .ready = folderStatus else { return }
@@ -2192,7 +2209,7 @@ final class AppModel: ObservableObject {
             }
             return createdFile
         } catch {
-            throw DraftSaveError.queuedForReplay
+            throw DraftSaveError.queuedForReplay(error.localizedDescription)
         }
     }
 
@@ -2315,7 +2332,7 @@ final class AppModel: ObservableObject {
 
 enum DraftSaveError: LocalizedError {
     case pendingQueueRejected(String)
-    case queuedForReplay
+    case queuedForReplay(String)
 
     var errorDescription: String? {
         switch self {
@@ -2325,8 +2342,8 @@ enum DraftSaveError: LocalizedError {
                 locale: .current,
                 reason
             )
-        case .queuedForReplay:
-            return String(localized: "Saved to pending queue")
+        case .queuedForReplay(let reason):
+            return "\(String(localized: "Saved to pending queue")): \(reason)"
         }
     }
 }

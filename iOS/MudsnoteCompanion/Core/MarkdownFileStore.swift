@@ -2518,14 +2518,21 @@ actor MarkdownFileStore {
         }
 
         try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try writePendingNoteIfNeeded(pending, to: target)
+        let writtenTarget = try writePendingNoteIfNeeded(pending, to: target)
+        let writtenRelativePath = Self.relativePath(for: writtenTarget, root: root)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
-        invalidateAfterMutation(relativePaths: [pending.targetRelativePath])
-        return Self.projection(for: pending)
+        invalidateAfterMutation(relativePaths: [writtenRelativePath])
+        return Self.projection(
+            for: pending,
+            relativePath: writtenRelativePath
+        )
     }
 
-    private static func projection(for pending: PendingWrite) -> RecentMarkdownFile {
-        let relativePath = pending.targetRelativePath
+    private static func projection(
+        for pending: PendingWrite,
+        relativePath: String? = nil
+    ) -> RecentMarkdownFile {
+        let relativePath = relativePath ?? pending.targetRelativePath
         let fallbackTitle = URL(fileURLWithPath: relativePath)
             .deletingPathExtension()
             .lastPathComponent
@@ -2639,41 +2646,72 @@ actor MarkdownFileStore {
         return false
     }
 
-    private func writePendingNoteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
+    private func writePendingNoteIfNeeded(_ pending: PendingWrite, to target: URL) throws -> URL {
         if target.lastPathComponent == "Inbox.md" {
             try appendLegacyPendingWriteIfNeeded(pending, to: target)
-            return
+            return target
         }
 
         let title = target.deletingPathExtension().lastPathComponent
         let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
         let note = "# \(title)\n\n\(body)\n"
         let legacyMarker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        var writeError: Error?
-
-        coordinator.coordinate(writingItemAt: target, options: .forMerging, error: &coordinationError) { coordinatedURL in
-            do {
-                if fileManager.fileExists(atPath: coordinatedURL.path) {
-                    let existing = try String(contentsOf: coordinatedURL, encoding: .utf8)
-                    if existing == note || existing.contains(legacyMarker) {
-                        return
-                    }
-                    throw PendingWriteValidationError.targetAlreadyExists
-                }
-                try note.write(to: coordinatedURL, atomically: true, encoding: .utf8)
-            } catch {
-                writeError = error
-            }
+        if try writeNewPendingNoteIfPossible(
+            note,
+            legacyMarker: legacyMarker,
+            to: target
+        ) {
+            return target
         }
 
-        if let coordinationError {
-            throw coordinationError
+        let recoveryTarget = deterministicPendingRecoveryURL(
+            for: target,
+            pendingID: pending.id
+        )
+        guard try writeNewPendingNoteIfPossible(
+            note,
+            legacyMarker: legacyMarker,
+            to: recoveryTarget
+        ) else {
+            throw PendingWriteValidationError.targetAlreadyExists
         }
-        if let writeError {
-            throw writeError
+        return recoveryTarget
+    }
+
+    private func writeNewPendingNoteIfPossible(
+        _ note: String,
+        legacyMarker: String,
+        to target: URL
+    ) throws -> Bool {
+        if fileManager.fileExists(atPath: target.path) {
+            let existing = try String(contentsOf: target, encoding: .utf8)
+            return existing == note || existing.contains(legacyMarker)
         }
+
+        guard let data = note.data(using: .utf8) else {
+            throw PendingWriteValidationError.invalidMarkdown
+        }
+        do {
+            // File Provider locations can reject NSFileCoordinator.forMerging
+            // when the coordinated item does not exist yet. Create the unique
+            // destination directly, matching the standalone-note path.
+            try data.write(to: target, options: .withoutOverwriting)
+            return true
+        } catch {
+            guard fileManager.fileExists(atPath: target.path) else { throw error }
+            let existing = try String(contentsOf: target, encoding: .utf8)
+            return existing == note || existing.contains(legacyMarker)
+        }
+    }
+
+    private func deterministicPendingRecoveryURL(
+        for requested: URL,
+        pendingID: UUID
+    ) -> URL {
+        let directory = requested.deletingLastPathComponent()
+        let stem = requested.deletingPathExtension().lastPathComponent
+        let suffix = pendingID.uuidString.lowercased().prefix(8)
+        return directory.appendingPathComponent("\(stem) \(suffix).md")
     }
 
     private func appendLegacyPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
@@ -2969,6 +3007,17 @@ enum PendingWriteValidationError: LocalizedError, Equatable {
             String(localized: "A note with this name was created elsewhere. Try saving again.")
         default:
             String(localized: "A pending capture is damaged and was not written.")
+        }
+    }
+}
+
+extension PendingWriteValidationError: IrrecoverablePendingWriteError {
+    var shouldPreserveOutsideActiveQueue: Bool {
+        switch self {
+        case .invalidTargetPath, .invalidMarkdown, .invalidAttachmentPath, .invalidAttachmentData:
+            return true
+        case .targetAlreadyExists:
+            return false
         }
     }
 }

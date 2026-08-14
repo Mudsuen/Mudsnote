@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 258. File Provider-safe iOS pending-note creation and recovery
+- Problem: Quick capture coordinated a not-yet-created Markdown destination as an existing merge target. A File Provider-backed folder could reject that create even though local-directory tests passed, so every new capture stayed pending and launch replay repeated the same generic failure. Filename conflicts were also treated as terminal instead of selecting another destination.
+- Fix: New pending notes now use the same non-overwriting creation primitive as standalone notes, publish the actual created path immediately, and recover a raced filename to a deterministic alternate Markdown file without overwriting either note. The queue retries transient cleanup failures; only structurally invalid entries leave the active queue, and their preserved recovery warning remains visible across launches. A still-failing capture now includes the underlying write reason instead of hiding it behind a generic pending message.
+- Lesson: File Provider creation must be tested as creation, not inferred from local `NSFileCoordinator` behavior. A durable queue is a recovery mechanism, not permission to erase the underlying failure or the user's content.
+
 ### 257. Resilient iOS pending-note replay
 - Problem: A newly created note could be durably written but still be reported as pending when File Provider metadata or queue cleanup was not immediately available; the note then stayed absent from the current list and its retained queue entry could show a replay failure at launch.
 - Fix: Durable note writing now returns a deterministic in-memory list projection without a second filesystem metadata read. Successful captures and replays publish that projection immediately, while a transient queue-cleanup failure leaves only an idempotent retry instead of reclassifying the completed note write as failed.

@@ -1063,6 +1063,62 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchRecoversConflictedPendingNoteAsVisibleMarkdown() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let projects = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let existingURL = projects.appendingPathComponent("Conflict.md")
+        let existingMarkdown = "# Conflict\n\nExisting user content.\n"
+        try existingMarkdown.write(to: existingURL, atomically: true, encoding: .utf8)
+        let pending = PendingWrite(
+            id: UUID(uuidString: "4A680D7E-EF37-4CB4-9F7D-FF0704073294")!,
+            createdAt: Date(timeIntervalSince1970: 1_754_640_000),
+            targetRelativePath: "Projects/Conflict.md",
+            markdownBlock: "Pending content that must be preserved",
+            attachments: []
+        )
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.enqueue(pending)
+
+        let suiteName = "MudsnoteCompanionTests.launch-conflict.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectFolder(root)
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertNotEqual(model.statusToast?.message, String(localized: "Queue replay failed"))
+        XCTAssertEqual(try String(contentsOf: existingURL, encoding: .utf8), existingMarkdown)
+        let recoveredPath = "Projects/Conflict 4a680d7e.md"
+        let recoveredURL = root.appendingPathComponent(recoveredPath)
+        XCTAssertEqual(
+            try String(contentsOf: recoveredURL, encoding: .utf8),
+            "# Conflict\n\nPending content that must be preserved\n"
+        )
+        XCTAssertTrue(
+            model.libraryFiles.contains { $0.relativePath == recoveredPath }
+        )
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let remainingCount = await verificationQueue.pendingCount()
+        XCTAssertEqual(remainingCount, 0)
+        XCTAssertFalse(model.conflictWarnings.contains { $0.contains("queue-failed-") })
+    }
+
+    @MainActor
     func testTrashRemovesNoteBeforeFullLibraryRefreshCompletes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1942,6 +1998,85 @@ final class MudsnoteCompanionTests: XCTestCase {
         let markdown = try String(contentsOf: root.appendingPathComponent("Inbox.md"), encoding: .utf8)
         XCTAssertEqual(markdown.components(separatedBy: "Write once").count - 1, 1)
         XCTAssertEqual(markdown.components(separatedBy: "mudsnote-write:").count - 1, 1)
+    }
+
+    func testReplayPreservesIrrecoverableItemAndContinuesWithRemainingQueue() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let failed = PendingWrite(
+            id: UUID(uuidString: "5D63BD41-8CB9-4607-A719-83A5EF1A37A7")!,
+            createdAt: Date(timeIntervalSince1970: 1_754_640_000),
+            targetRelativePath: "Projects/Conflicted.md",
+            markdownBlock: "Preserve this capture",
+            attachments: []
+        )
+        let healthy = PendingWrite(
+            id: UUID(uuidString: "6489F8E9-2702-44CB-AF81-AEC7D549D2CD")!,
+            createdAt: Date(timeIntervalSince1970: 1_754_640_001),
+            targetRelativePath: "Projects/Healthy.md",
+            markdownBlock: "Replay this capture",
+            attachments: []
+        )
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.enqueue(failed)
+        try await queue.enqueue(healthy)
+        var replayedIDs: [UUID] = []
+
+        let result = try await queue.replay { item in
+            if item.id == failed.id {
+                throw PendingWriteValidationError.invalidMarkdown
+            }
+            replayedIDs.append(item.id)
+        }
+
+        XCTAssertEqual(result.replayedCount, 1)
+        XCTAssertEqual(replayedIDs, [healthy.id])
+        XCTAssertEqual(result.preservedFailureFilenames.count, 1)
+        let preservedURL = root
+            .appendingPathComponent(".mudsnote", isDirectory: true)
+            .appendingPathComponent(try XCTUnwrap(result.preservedFailureFilenames.first))
+        let preserved = try JSONDecoder.pendingWrites.decode(
+            [PendingWrite].self,
+            from: Data(contentsOf: preservedURL)
+        )
+        XCTAssertEqual(preserved, [failed])
+        let remainingCount = await queue.pendingCount()
+        XCTAssertEqual(remainingCount, 0)
+    }
+
+    func testReplayKeepsTransientFailureInActiveQueue() async throws {
+        enum TransientReplayError: Error {
+            case unavailable
+        }
+
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let pending = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Projects/Retry.md",
+            markdownBlock: "Retry later",
+            attachments: []
+        )
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.enqueue(pending)
+
+        await XCTAssertThrowsErrorAsync(
+            try await queue.replay { _ in throw TransientReplayError.unavailable }
+        ) { error in
+            XCTAssertTrue(error is TransientReplayError)
+        }
+
+        let remainingCount = await queue.pendingCount()
+        XCTAssertEqual(remainingCount, 1)
+        let recoveryFiles = try FileManager.default.contentsOfDirectory(
+            atPath: root.appendingPathComponent(".mudsnote", isDirectory: true).path
+        )
+        XCTAssertFalse(recoveryFiles.contains { $0.hasPrefix("queue-failed-") })
     }
 
     func testConcurrentQueueInstancesMergeInsteadOfClobberingPendingWrites() async throws {

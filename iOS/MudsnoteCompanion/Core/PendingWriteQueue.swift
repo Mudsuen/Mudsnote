@@ -106,6 +106,19 @@ actor PendingWriteQueue {
         items.count
     }
 
+    func preservedFailureFilenames() throws -> [String] {
+        try withRootAccess {
+            let directory = queueURL.deletingLastPathComponent()
+            return try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
+            .map(\.lastPathComponent)
+            .filter { $0.hasPrefix("queue-failed-") && $0.hasSuffix(".json") }
+            .sorted()
+        }
+    }
+
     func enqueue(_ item: PendingWrite) throws {
         try mutatePersistedItems { persisted in
             guard !persisted.contains(where: { $0.id == item.id }) else { return }
@@ -120,10 +133,60 @@ actor PendingWriteQueue {
         }
     }
 
-    func replay(_ writer: (PendingWrite) async throws -> Void) async throws {
+    @discardableResult
+    func replay(
+        _ writer: (PendingWrite) async throws -> Void
+    ) async throws -> PendingWriteReplayResult {
+        var result = PendingWriteReplayResult()
         for item in items {
-            try await writer(item)
-            try remove(id: item.id)
+            do {
+                try await writer(item)
+                result.replayedCount += 1
+            } catch {
+                guard let validationError = error as? any IrrecoverablePendingWriteError,
+                      validationError.shouldPreserveOutsideActiveQueue else {
+                    throw error
+                }
+                let filename = try preserveIrrecoverable(item)
+                result.preservedFailureFilenames.append(filename)
+            }
+            try await removeAfterReplay(id: item.id)
+        }
+        return result
+    }
+
+    private func removeAfterReplay(id: UUID) async throws {
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                try remove(id: id)
+                return
+            } catch {
+                lastError = error
+                guard attempt < 2 else { break }
+                try await Task.sleep(for: .milliseconds(100 * (attempt + 1)))
+            }
+        }
+        if let lastError { throw lastError }
+    }
+
+    private func preserveIrrecoverable(_ item: PendingWrite) throws -> String {
+        try withRootAccess {
+            let directory = queueURL.deletingLastPathComponent()
+            let stem = "queue-failed-\(item.id.uuidString.lowercased())"
+            var candidate = directory.appendingPathComponent("\(stem).json")
+            var suffix = 2
+
+            while FileManager.default.fileExists(atPath: candidate.path) {
+                if (try? loadItemsUnlocked(from: candidate)) == [item] {
+                    return candidate.lastPathComponent
+                }
+                candidate = directory.appendingPathComponent("\(stem)-\(suffix).json")
+                suffix += 1
+            }
+
+            try persistUnlocked([item], to: candidate)
+            return candidate.lastPathComponent
         }
     }
 
@@ -194,6 +257,15 @@ actor PendingWriteQueue {
 enum PendingWriteQueueLoadResult: Equatable {
     case ready
     case quarantined(filename: String)
+}
+
+struct PendingWriteReplayResult: Equatable {
+    var replayedCount = 0
+    var preservedFailureFilenames: [String] = []
+}
+
+protocol IrrecoverablePendingWriteError: Error {
+    var shouldPreserveOutsideActiveQueue: Bool { get }
 }
 
 private enum PendingWriteQueueLoadError: Error, Equatable {
