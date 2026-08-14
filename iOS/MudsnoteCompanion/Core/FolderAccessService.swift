@@ -101,13 +101,19 @@ final class FolderAccessService {
 }
 
 enum FolderInitializer {
+    static let deletedInboxMarkerPath = ".mudsnote/inbox-folder-deleted"
+
     static func initialize(_ root: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         try ensureDirectory(root.appendingPathComponent("Attachments"))
-        try ensureDirectory(root.appendingPathComponent("Inbox"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote"))
         try ensureDirectory(root.appendingPathComponent(".mudsnote/Trash"))
+        if !fileManager.fileExists(
+            atPath: root.appendingPathComponent(deletedInboxMarkerPath).path
+        ) {
+            try ensureDirectory(root.appendingPathComponent("Inbox"))
+        }
 
         try ensureFile(
             root.appendingPathComponent("Inbox.md"),

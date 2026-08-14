@@ -370,6 +370,51 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["markdown-file-row-Projects/UI Lifecycle.md"].exists)
     }
 
+    func testNewNoteFromSelectedFolderAppearsOnCurrentPage() {
+        let app = launchApp(reset: true, fixtureFolder: true)
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 8))
+        projects.tap()
+
+        let newNoteButton = app.buttons["new-note-button"]
+        XCTAssertTrue(newNoteButton.waitForExistence(timeout: 5))
+        newNoteButton.tap()
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText("Visible in selected folder")
+        app.buttons["save-memo-button"].tap()
+
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Projects/Visible in selected folder.md"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    func testMergedInboxFolderCanBeDeletedFromItsPage() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            inboxFolder: true
+        )
+        let inbox = app.buttons["inbox-link"]
+        XCTAssertTrue(inbox.waitForExistence(timeout: 8))
+        inbox.tap()
+        let filedNote = app.buttons["markdown-file-row-Inbox/Filed Note.md"]
+        XCTAssertTrue(filedNote.waitForExistence(timeout: 5))
+
+        app.buttons["inbox-folder-actions"].tap()
+        app.buttons["Delete Folder"].tap()
+        let confirmation = app.sheets["Delete 000-inbox Folder?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        confirmation.buttons["Delete Notes"].tap()
+
+        XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+        inbox.tap()
+        XCTAssertTrue(waitForNonexistence(filedNote))
+        XCTAssertFalse(app.buttons["inbox-folder-actions"].exists)
+    }
+
     func testSuccessfulCaptureDismissesComposer() {
         let app = launchApp(reset: true, fixtureFolder: true)
         let newNoteButton = app.buttons["new-note-button"]

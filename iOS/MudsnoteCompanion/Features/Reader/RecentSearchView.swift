@@ -7,6 +7,27 @@ private struct NotesListSearchTaskID: Hashable {
     var libraryRevision: Int
 }
 
+struct NoteListPageWindow: Equatable {
+    static let pageSize = 40
+    private(set) var visibleCount = pageSize
+
+    mutating func reset() {
+        visibleCount = Self.pageSize
+    }
+
+    mutating func revealNext(totalCount: Int) {
+        visibleCount = min(totalCount, visibleCount + Self.pageSize)
+    }
+
+    func visibleItems<Element>(from items: [Element]) -> [Element] {
+        Array(items.prefix(visibleCount))
+    }
+
+    func hasMore(totalCount: Int) -> Bool {
+        visibleCount < totalCount
+    }
+}
+
 private enum HomeTimelineEntry: Identifiable {
     case file(RecentMarkdownFile)
     case memo(MemoBlock)
@@ -59,6 +80,7 @@ private struct HomeTimelineSection: Identifiable {
 private struct HomeTimelineProjection {
     var sections: [HomeTimelineSection] = []
     var entryCount = 0
+    var hasMoreEntries = false
     var smartFolderCounts: [UUID: Int] = [:]
 }
 
@@ -344,6 +366,7 @@ struct LibraryHomeView: View {
     @AppStorage("mudsnote.ios.selectedHomeFolderPath")
     private var selectedHomeFolderPath = ""
     @State private var homeTimelineProjection = HomeTimelineProjection()
+    @State private var homePageWindow = NoteListPageWindow()
     @State private var homeTitleCollapseProgress: CGFloat = 0
     @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
@@ -397,7 +420,7 @@ struct LibraryHomeView: View {
                 finishSelectingHomeNotes()
             }
             .onAppear {
-                refreshHomeTimelineProjection()
+                refreshHomeTimelineProjection(resetPagination: true)
                 presentRequestedSearchIfNeeded()
                 if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
                     isDirectoryPresented = true
@@ -413,13 +436,13 @@ struct LibraryHomeView: View {
                 refreshHomeTimelineProjection()
             }
             .onChange(of: sortOrderRawValue) { _, _ in
-                refreshHomeTimelineProjection()
+                refreshHomeTimelineProjection(resetPagination: true)
             }
             .onChange(of: sortDirectionRawValue) { _, _ in
-                refreshHomeTimelineProjection()
+                refreshHomeTimelineProjection(resetPagination: true)
             }
             .onChange(of: groupByDate) { _, _ in
-                refreshHomeTimelineProjection()
+                refreshHomeTimelineProjection(resetPagination: true)
             }
             .task(id: SearchTaskID(
                 query: searchQuery,
@@ -570,11 +593,21 @@ struct LibraryHomeView: View {
                         searchFocused: $isSearchFocused,
                         voiceInput: {
                             isSearchFocused = false
-                            appModel.showCapture(.audio)
+                            appModel.showCapture(
+                                .audio,
+                                inFolder: selectedHomeFolderPath.isEmpty
+                                    ? nil
+                                    : selectedHomeFolderPath
+                            )
                         },
                         newNote: {
                             isSearchFocused = false
-                            appModel.showCapture(.text)
+                            appModel.showCapture(
+                                .text,
+                                inFolder: selectedHomeFolderPath.isEmpty
+                                    ? nil
+                                    : selectedHomeFolderPath
+                            )
                         }
                     )
                 }
@@ -668,6 +701,12 @@ struct LibraryHomeView: View {
                                 )
                             }
                         }
+                        if homeTimelineProjection.hasMoreEntries {
+                            NoteListPaginationFooter(
+                                pageToken: homePageWindow.visibleCount,
+                                loadMore: revealNextHomePage
+                            )
+                        }
                     }
                 }
             }
@@ -709,13 +748,20 @@ struct LibraryHomeView: View {
             return sortDirection == .standard ? standard : !standard
         }
 
+        let visibleEntries = homePageWindow.visibleItems(from: entries)
         var sections: [HomeTimelineSection] = []
         if !groupByDate || sortOrder == .title {
-            if !entries.isEmpty {
-                sections = [HomeTimelineSection(id: "notes", title: nil, entries: entries)]
+            if !visibleEntries.isEmpty {
+                sections = [
+                    HomeTimelineSection(
+                        id: "notes",
+                        title: nil,
+                        entries: visibleEntries
+                    )
+                ]
             }
         } else {
-            for entry in entries {
+            for entry in visibleEntries {
                 let bucket = NoteListPresentation.dateBucket(
                     for: entry.date,
                     now: Date(),
@@ -745,11 +791,20 @@ struct LibraryHomeView: View {
         return HomeTimelineProjection(
             sections: sections,
             entryCount: entries.count,
+            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count),
             smartFolderCounts: smartFolderCounts
         )
     }
 
-    private func refreshHomeTimelineProjection() {
+    private func refreshHomeTimelineProjection(resetPagination: Bool = false) {
+        if resetPagination {
+            homePageWindow.reset()
+        }
+        homeTimelineProjection = makeHomeTimelineProjection()
+    }
+
+    private func revealNextHomePage() {
+        homePageWindow.revealNext(totalCount: homeTimelineProjection.entryCount)
         homeTimelineProjection = makeHomeTimelineProjection()
     }
 
@@ -1085,7 +1140,7 @@ struct LibraryHomeView: View {
         homeTitleCollapseProgress = 0
         Task { @MainActor in
             await Task.yield()
-            refreshHomeTimelineProjection()
+            refreshHomeTimelineProjection(resetPagination: true)
             closeDirectory()
         }
     }
@@ -1096,7 +1151,7 @@ struct LibraryHomeView: View {
         homeTitleCollapseProgress = 0
         Task { @MainActor in
             await Task.yield()
-            refreshHomeTimelineProjection()
+            refreshHomeTimelineProjection(resetPagination: true)
             closeDirectory()
         }
     }
@@ -1167,16 +1222,18 @@ struct LibraryHomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("all-notes-row")
 
-                    NavigationLink {
-                        InboxStreamView()
-                    } label: {
-                        NotesFolderRow(
-                            title: "000-inbox",
-                            systemImage: "tray",
-                            count: appModel.mergedInboxCount
-                        )
+                    if appModel.showsMergedInbox {
+                        NavigationLink {
+                            InboxStreamView()
+                        } label: {
+                            NotesFolderRow(
+                                title: "000-inbox",
+                                systemImage: "tray",
+                                count: appModel.mergedInboxCount
+                            )
+                        }
+                        .accessibilityIdentifier("inbox-link")
                     }
-                    .accessibilityIdentifier("inbox-link")
 
                     ForEach(directoryFolders) { folder in
                         DirectoryFolderTree(
@@ -2202,6 +2259,24 @@ struct NotesListCountLabel: View {
     }
 }
 
+private struct NoteListPaginationFooter: View {
+    var pageToken: Int
+    var loadMore: () -> Void
+
+    var body: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .accessibilityLabel("Loading More Notes")
+            .accessibilityIdentifier("note-list-load-more")
+            .id(pageToken)
+            .task {
+                await Task.yield()
+                loadMore()
+            }
+    }
+}
+
 struct NotesListSectionHeader: View {
     var title: String
 
@@ -2413,11 +2488,11 @@ struct FolderNotesListView: View {
                 searchFocused: $isSearchFocused,
                 voiceInput: {
                     isSearchFocused = false
-                    appModel.showCapture(.audio)
+                    appModel.showCapture(.audio, inFolder: scope.newNoteFolder)
                 },
                 newNote: {
                     isSearchFocused = false
-                    appModel.showCapture(.text)
+                    appModel.showCapture(.text, inFolder: scope.newNoteFolder)
                 }
             )
         }
@@ -2872,11 +2947,11 @@ struct LibraryFolderView: View {
                 searchFocused: $isSearchFocused,
                 voiceInput: {
                     isSearchFocused = false
-                    appModel.showCapture(.audio)
+                    appModel.showCapture(.audio, inFolder: currentFolder.relativePath)
                 },
                 newNote: {
                     isSearchFocused = false
-                    appModel.showCapture(.text)
+                    appModel.showCapture(.text, inFolder: currentFolder.relativePath)
                 }
             )
         }
