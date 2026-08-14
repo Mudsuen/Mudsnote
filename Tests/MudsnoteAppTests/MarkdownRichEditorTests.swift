@@ -2770,6 +2770,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.accessibilityLabel() == "笔记标题")
         #expect(controller.editorTextView.accessibilityLabel() == "笔记内容")
         #expect(controller.statusLabel.accessibilityLabel() == "编辑时间或保存状态")
+        #expect(controller.statusLabel.superview === controller.editorTextView)
         #expect(controller.createdDateLabel.accessibilityLabel() == "创建时间")
         #expect(controller.createdDateLabel.superview === controller.editorTextView)
         #expect(controller.createdDateLabel.stringValue.hasPrefix("创建于 "))
@@ -2812,24 +2813,18 @@ struct MarkdownRichEditorTests {
         editorScrollView.tile()
         let editorVerticalScroller = try #require(editorScrollView.verticalScroller)
         #expect(abs(editorVerticalScroller.frame.maxX - editorScrollView.bounds.maxX) < 0.5)
-        let editorDateRow = try #require(window.contentView?.allSubviews.first {
-            $0.identifier?.rawValue == "LibraryEditorDateRow"
-        })
         #expect(editorStack.spacing == 0)
         #expect(editorStack.alignment == .leading)
         #expect(editorStack.distribution == .fill)
-        #expect(editorDateRow.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.editorDateRowHeight
-        })
-        #expect(editorDateRow.constraints.contains {
-            $0.firstItem === controller.statusLabel
-                && $0.firstAttribute == .centerX
-                && $0.secondItem === editorDateRow
-                && $0.secondAttribute == .centerX
-                && $0.constant == LibraryNotesLayout.editorStatusHorizontalOffset
-        })
         #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
-        #expect(editorStack.arrangedSubviews.last === editorDateRow)
+        let editorLayoutManager = try #require(controller.editorTextView.layoutManager)
+        let editorTextContainer = try #require(controller.editorTextView.textContainer)
+        let editorUsedRect = editorLayoutManager.usedRect(for: editorTextContainer)
+        #expect(
+            controller.statusLabel.frame.minY
+                > controller.editorTextView.textContainerInset.height + editorUsedRect.maxY
+        )
+        #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
         #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)

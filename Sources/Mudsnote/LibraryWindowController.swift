@@ -1917,6 +1917,7 @@ final class LibraryWindowController: NSWindowController,
 
     func windowDidResize(_ notification: Notification) {
         scheduleLibraryWindowFramePersistence()
+        layoutEditorStatusLabel()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
@@ -2403,7 +2404,6 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureEditorTextView()
         createdDateLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorCreatedDateLabel")
@@ -2435,6 +2435,7 @@ final class LibraryWindowController: NSWindowController,
                 equalToConstant: LibraryNotesLayout.editorDateRowHeight
             )
         ])
+        editorTextView.addSubview(statusLabel)
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -2466,21 +2467,6 @@ final class LibraryWindowController: NSWindowController,
             scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor)
         ])
 
-        let dateRow = NSView()
-        dateRow.identifier = NSUserInterfaceItemIdentifier("LibraryEditorDateRow")
-        dateRow.addSubview(statusLabel)
-        NSLayoutConstraint.activate([
-            statusLabel.centerXAnchor.constraint(
-                equalTo: dateRow.centerXAnchor,
-                constant: LibraryNotesLayout.editorStatusHorizontalOffset
-            ),
-            statusLabel.topAnchor.constraint(equalTo: dateRow.topAnchor),
-            statusLabel.bottomAnchor.constraint(equalTo: dateRow.bottomAnchor),
-            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: dateRow.leadingAnchor, constant: 20),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: dateRow.trailingAnchor, constant: -20),
-            dateRow.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.editorDateRowHeight)
-        ])
-
         noteLinksView.onOpen = { [weak self] url in
             do {
                 try self?.openMarkdownDocumentForLibrary(at: url)
@@ -2489,7 +2475,7 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        let stack = NSStackView(views: [bodyContainer, noteLinksView, dateRow])
+        let stack = NSStackView(views: [bodyContainer, noteLinksView])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -2550,7 +2536,6 @@ final class LibraryWindowController: NSWindowController,
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
-            dateRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset),
             bodyContainer.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
@@ -6015,6 +6000,7 @@ final class LibraryWindowController: NSWindowController,
         if let object = notification.object as AnyObject?, object === editorTextView {
             normalizeUnifiedTitleLineFormatting()
             titleField.stringValue = currentEditorDocument().title
+            layoutEditorStatusLabel()
             libraryUserDidEdit()
         } else {
             markDirty()
@@ -7013,6 +6999,7 @@ final class LibraryWindowController: NSWindowController,
         let length = min(requestedSelection.length, max(contentLength - location, 0))
         editorTextView.setSelectedRange(NSRange(location: location, length: length))
         suppressEditorChanges = false
+        layoutEditorStatusLabel()
     }
 
     private func normalizedEditorMarkdownBody() -> String {
@@ -7601,6 +7588,21 @@ final class LibraryWindowController: NSWindowController,
         if announcesChange {
             NSAccessibility.post(element: statusLabel, notification: .valueChanged)
         }
+        layoutEditorStatusLabel()
+    }
+
+    private func layoutEditorStatusLabel() {
+        guard let layoutManager = editorTextView.layoutManager,
+              let textContainer = editorTextView.textContainer else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let horizontalInset: CGFloat = 20
+        statusLabel.frame = NSRect(
+            x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
+            y: editorTextView.textContainerInset.height + usedRect.maxY + 6,
+            width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
+            height: LibraryNotesLayout.editorDateRowHeight
+        )
     }
 
     @discardableResult
