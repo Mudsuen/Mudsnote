@@ -1559,6 +1559,24 @@ actor MarkdownFileStore {
         invalidatePathPrefix(relativePath)
     }
 
+    func trashMergedInboxFolders(
+        relativePaths: [String],
+        now: Date = Date()
+    ) throws {
+        guard let root else { throw FolderAccessError.missingFolder }
+        let paths = Array(Set(relativePaths)).sorted()
+        guard !paths.isEmpty else { return }
+        for path in paths {
+            try trashFolder(relativePath: path, now: now)
+        }
+
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let marker = root.appendingPathComponent(FolderInitializer.deletedInboxMarkerPath)
+        try Data().write(to: marker, options: .atomic)
+        cachedLibrarySnapshot = nil
+    }
+
     func restoreTrashedMarkdownDocument(id: String) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -2460,7 +2478,8 @@ actor MarkdownFileStore {
         }
     }
 
-    func performPendingWrite(_ pending: PendingWrite) async throws {
+    @discardableResult
+    func performPendingWrite(_ pending: PendingWrite) async throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
         guard let target = AuthorizedLibraryPath.resolve(pending.targetRelativePath, within: root),
               target.pathExtension.lowercased() == "md" else {
@@ -2502,6 +2521,7 @@ actor MarkdownFileStore {
         try writePendingNoteIfNeeded(pending, to: target)
         reservedPendingTargets.remove(target.standardizedFileURL.path)
         invalidateAfterMutation(relativePaths: [pending.targetRelativePath])
+        return try recentFile(at: target, root: root)
     }
 
     private func attachmentWrites(for attachments: [CaptureAttachment], root: URL, now: Date) throws -> [(relativePath: String, data: Data)] {

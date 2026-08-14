@@ -1320,6 +1320,63 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(model.recentCaptureFolders.first?.relativePath, "Projects")
     }
 
+    @MainActor
+    func testCaptureOpenedFromFolderSavesAndRefreshesInsideThatFolder() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Projects", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let suiteName = "MudsnoteCompanionTests.capture-folder-scope.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (refreshBarrier, releaseRefresh) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            draftRecoveryStore: CaptureDraftRecoveryStore(
+                directory: root.appendingPathComponent(".test-draft", isDirectory: true)
+            ),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            libraryRefreshBarrier: {
+                for await _ in refreshBarrier { break }
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.allFolders.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        model.showCapture(.text, inFolder: "Projects")
+        model.draft.body = "Visible in current folder"
+        model.sendDraft(continueCapturing: false)
+
+        let expectedPath = "Projects/Visible in current folder.md"
+        let savedDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < savedDeadline,
+              !model.libraryFiles.contains(where: { $0.relativePath == expectedPath }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertNil(model.captureSubmissionIssue)
+        XCTAssertTrue(
+            model.libraryFiles.contains { $0.relativePath == expectedPath },
+            "The current list projection should update before the filesystem refresh completes"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(expectedPath).path
+            )
+        )
+        releaseRefresh.yield()
+        releaseRefresh.finish()
+    }
+
     func testCaptureCommandMetricsKeepLowSaveVisualInsideAccessibleHitTarget() {
         XCTAssertGreaterThan(CaptureCommandMetrics.saveVisualWidth, 36)
         XCTAssertLessThan(CaptureCommandMetrics.saveVisualHeight, 40)
@@ -2155,14 +2212,57 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: daily, encoding: .utf8), dailyMarkdown)
     }
 
-    func testFolderInitializationDoesNotCreateDailyArtifacts() throws {
+    func testFolderInitializationCreatesInboxButDoesNotCreateDailyArtifacts() throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 
         try FolderInitializer.initialize(root)
 
         let dailyDirectory = root.appendingPathComponent("Daily", isDirectory: true)
+        let inboxDirectory = root.appendingPathComponent("Inbox", isDirectory: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: dailyDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: inboxDirectory.path))
+    }
+
+    func testDeletingMergedInboxFoldersPreventsAutomaticRecreation() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("000-inbox", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "# Numbered inbox\n".write(
+            to: root.appendingPathComponent("000-inbox/Note.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let snapshot = try await store.loadLibrarySnapshot()
+        let inboxFolders = snapshot.folders.filter(\.isMergedInboxFolder)
+        XCTAssertEqual(Set(inboxFolders.map(\.relativePath)), ["000-inbox", "Inbox"])
+
+        try await store.trashMergedInboxFolders(
+            relativePaths: inboxFolders.map(\.relativePath)
+        )
+        try FolderInitializer.initialize(root)
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("000-inbox").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Inbox").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Inbox.md").path
+            )
+        )
     }
 
     func testBatchRecentlyDeletedLifecyclePrevalidatesRestoresPinsAndDeletes() async throws {
@@ -4613,6 +4713,24 @@ final class MudsnoteCompanionTests: XCTestCase {
             NoteListPresentation.sections(for: files, sortedBy: .title, groupByDate: true).count,
             1
         )
+    }
+
+    func testNoteListPageWindowRevealsNotesInBoundedPages() {
+        let notes = Array(0..<95)
+        var window = NoteListPageWindow()
+
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<40))
+        XCTAssertTrue(window.hasMore(totalCount: notes.count))
+
+        window.revealNext(totalCount: notes.count)
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<80))
+
+        window.revealNext(totalCount: notes.count)
+        XCTAssertEqual(window.visibleItems(from: notes), notes)
+        XCTAssertFalse(window.hasMore(totalCount: notes.count))
+
+        window.reset()
+        XCTAssertEqual(window.visibleItems(from: notes), Array(0..<40))
     }
 
     func testLibraryFileScopeFiltersSearchResultsAndDerivesNewNoteFolder() {

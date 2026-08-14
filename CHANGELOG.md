@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 256. Immediate iOS note creation and deletable Inbox folders
+- Problem: A successfully created iOS note could remain absent from the current list until a later filesystem refresh, folder-scoped capture could silently save into the configured default folder, and the merged `000-inbox` entry hid its backing folders and therefore offered no durable delete path.
+- Fix: Successful capture now publishes the created Markdown file into the active library projection before the full refresh, while preserving the folder from which capture was opened. The Notes page initially presents 40 entries and appends bounded pages as its loading footer reaches the viewport. The merged Inbox page exposes a confirmed folder deletion action that removes every backing Inbox-named folder, moves their Markdown notes to Recently Deleted, preserves `Inbox.md` quick notes, and records the deletion so initialization does not recreate the folder.
+- Lesson: A durable write needs an immediate local projection as well as eventual rescan reconciliation, long lists should grow with the reader's scroll instead of rendering every row up front, and a virtual merged folder must expose lifecycle actions for all physical folders it represents.
+
 ### 255. Instant macOS library restoration and release-committed sidebar feedback
 - Problem: Relaunching the macOS library still showed an empty editor while the selected iCloud note downloaded, and source rows changed selection color during mouse-down before the click had committed.
 - Fix: The library keeps one bounded local snapshot of the last successfully loaded document, restores it synchronously for the first frame, and validates the real Markdown file in the background. Source rows now preserve the prior selection appearance throughout mouse-down and switch color and content only after mouse-up commits the selection.

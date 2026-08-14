@@ -138,10 +138,25 @@ final class AppModel: ObservableObject {
         folders.filter { !$0.isMergedInboxFolder }
     }
 
+    var mergedInboxFolders: [LibraryFolderNode] {
+        folders.filter(\.isMergedInboxFolder)
+    }
+
+    var primaryMergedInboxFolder: LibraryFolderNode? {
+        mergedInboxFolders.first {
+            $0.name.compare(
+                "000-inbox",
+                options: [.caseInsensitive, .widthInsensitive]
+            ) == .orderedSame
+        } ?? mergedInboxFolders.first
+    }
+
+    var showsMergedInbox: Bool {
+        !mergedInboxFolders.isEmpty || !inboxItems.isEmpty
+    }
+
     var mergedInboxFiles: [RecentMarkdownFile] {
-        let roots = folders
-            .filter(\.isMergedInboxFolder)
-            .map(\.relativePath)
+        let roots = mergedInboxFolders.map(\.relativePath)
         guard !roots.isEmpty else { return [] }
         return libraryFiles.filter { file in
             roots.contains { root in
@@ -253,10 +268,16 @@ final class AppModel: ObservableObject {
         captureTargetWasExplicitlySelected = false
     }
 
-    func showCapture(_ route: CaptureRoute = .text) {
+    func showCapture(
+        _ route: CaptureRoute = .text,
+        inFolder relativeFolderPath: String? = nil
+    ) {
         endCaptureSession()
         captureSessionID = UUID()
-        if !draft.canSend {
+        if let relativeFolderPath {
+            captureTargetWasExplicitlySelected = true
+            draft.target = .folder(relativeFolderPath)
+        } else if !draft.canSend {
             captureTargetWasExplicitlySelected = false
             draft.target = .folder(defaultCaptureFolderPath)
         }
@@ -409,7 +430,8 @@ final class AppModel: ObservableObject {
         Task {
             defer { isSendingDraft = false }
             do {
-                try await appendDraft(submittedDraft)
+                let createdFile = try await appendDraft(submittedDraft)
+                applyCreatedProjection(createdFile)
                 captureSubmissionIssue = nil
                 let finished = finishSubmission(submittedDraft, continueCapturing: continueCapturing)
                 statusToast = .saved(
@@ -1305,6 +1327,35 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func deleteMergedInboxFolders() async -> Bool {
+        guard syncStatus != .pending else {
+            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
+            return false
+        }
+        let targets = mergedInboxFolders
+        guard !targets.isEmpty else { return false }
+        do {
+            try await fileStore.trashMergedInboxFolders(
+                relativePaths: targets.map(\.relativePath)
+            )
+            if let selectedDocument,
+               targets.contains(where: {
+                   selectedDocument.relativePath.hasPrefix($0.relativePath + "/")
+               }) {
+                self.selectedDocument = nil
+            }
+            statusToast = .saved(String(localized: "Folder Deleted"))
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            await refreshInbox()
+            return false
+        }
+    }
+
     func move(_ file: RecentMarkdownFile, to folder: LibraryFolderNode) {
         Task {
             _ = await moveNote(
@@ -2009,6 +2060,21 @@ final class AppModel: ObservableObject {
         libraryRevision += 1
     }
 
+    private func applyCreatedProjection(_ file: RecentMarkdownFile) {
+        libraryFiles.removeAll { $0.relativePath == file.relativePath }
+        libraryFiles.append(file)
+        recentFiles.removeAll { $0.relativePath == file.relativePath }
+        recentFiles.append(file)
+        recentFiles.sort { $0.modifiedAt > $1.modifiedAt }
+        folders = LibraryFolderNode.makeTree(
+            directoryPaths: allFolders.map(\.relativePath),
+            files: libraryFiles
+        )
+        librarySummary.allNotesCount = libraryFiles.count
+        tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
+        libraryRevision += 1
+    }
+
     private func beginLibraryConfiguration() -> UUID {
         let configurationID = UUID()
         libraryConfigurationID = configurationID
@@ -2099,7 +2165,7 @@ final class AppModel: ObservableObject {
         statusToast = .pending(String(localized: "Unsaved quick note restored"))
     }
 
-    private func appendDraft(_ draft: CaptureDraft) async throws {
+    private func appendDraft(_ draft: CaptureDraft) async throws -> RecentMarkdownFile {
         guard let root = folderAccess.currentRoot, let queue else {
             throw FolderAccessError.missingFolder
         }
@@ -2111,9 +2177,10 @@ final class AppModel: ObservableObject {
             throw DraftSaveError.pendingQueueRejected(error.localizedDescription)
         }
         do {
-            try await fileStore.performPendingWrite(pending)
+            let createdFile = try await fileStore.performPendingWrite(pending)
             recordSuccessfulCaptureFolder(for: draft.target)
             try await queue.remove(id: pending.id)
+            return createdFile
         } catch {
             throw DraftSaveError.queuedForReplay
         }

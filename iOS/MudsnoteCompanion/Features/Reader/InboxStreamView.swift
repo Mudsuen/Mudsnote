@@ -37,6 +37,8 @@ private struct InboxTimelineSection: Identifiable {
 
 struct InboxStreamView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var isConfirmingFolderDeletion = false
 
     private var timelineSections: [InboxTimelineSection] {
         let entries = (
@@ -108,6 +110,46 @@ struct InboxStreamView: View {
         }
         .background(MudsnoteColors.canvas)
         .navigationTitle("000-inbox")
+        .toolbar {
+            if let folder = appModel.primaryMergedInboxFolder {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            appModel.showCapture(.text, inFolder: folder.relativePath)
+                        } label: {
+                            Label("New Note", systemImage: "square.and.pencil")
+                        }
+
+                        Button(role: .destructive) {
+                            isConfirmingFolderDeletion = true
+                        } label: {
+                            Label("Delete Folder", systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("delete-inbox-folder")
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Folder Actions")
+                    .accessibilityIdentifier("inbox-folder-actions")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete 000-inbox Folder?",
+            isPresented: $isConfirmingFolderDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Notes", role: .destructive) {
+                Task {
+                    if await appModel.deleteMergedInboxFolders() {
+                        dismiss()
+                    }
+                }
+            }
+        } message: {
+            Text("Notes in this folder will move to Recently Deleted. Inbox.md quick notes are not affected.")
+        }
     }
 }
 
