@@ -834,6 +834,29 @@ actor MarkdownFileStore {
         )
     }
 
+    func prepareCaptureAttachmentPreview(
+        _ attachment: CaptureAttachment,
+        index: Int
+    ) throws -> PreparedAttachmentPreview {
+        try CaptureAttachmentPolicy.validate([attachment])
+        let previewDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MudsnoteCaptureAttachmentPreview", isDirectory: true)
+        try? fileManager.removeItem(at: previewDirectory)
+        try fileManager.createDirectory(
+            at: previewDirectory,
+            withIntermediateDirectories: true
+        )
+        let previewURL = previewDirectory.appendingPathComponent(
+            "attachment-\(index + 1).\(attachment.preferredExtension)"
+        )
+        try attachment.data.write(to: previewURL, options: .atomic)
+        return PreparedAttachmentPreview(
+            url: previewURL,
+            relativePath: "draft/attachment-\(index + 1)",
+            originalDigest: Data(SHA256.hash(data: attachment.data))
+        )
+    }
+
     func commitEditedAttachmentPreview(
         _ preview: PreparedAttachmentPreview,
         editedURL: URL
@@ -1081,13 +1104,16 @@ actor MarkdownFileStore {
             operationID: pendingID
         )
         let markdown = Self.markdownBlock(
-            body: draft.body,
+            body: Self.captureBodyExcludingTitle(from: draft.body),
             tags: draft.tags,
             attachmentReferences: zip(attachmentWrites, draft.attachments).map {
                 MarkdownAttachmentReference(relativePath: $0.0.relativePath, kind: $0.1.referenceKind)
             },
             attachmentTags: draft.attachments.map(\.markdownTag),
-            now: now
+            now: now,
+            createdAt: draft.createdAt,
+            locationStamp: draft.locationStamp,
+            weatherStamp: draft.weatherStamp
         )
 
         let directory = try userFolderURL(
@@ -1152,13 +1178,16 @@ actor MarkdownFileStore {
             operationID: operationID
         )
         let markdownBlock = Self.markdownBlock(
-            body: draft.body,
+            body: Self.captureBodyExcludingTitle(from: draft.body),
             tags: draft.tags,
             attachmentReferences: zip(attachmentWrites, draft.attachments).map {
                 MarkdownAttachmentReference(relativePath: $0.0.relativePath, kind: $0.1.referenceKind)
             },
             attachmentTags: draft.attachments.map(\.markdownTag),
-            now: now
+            now: now,
+            createdAt: draft.createdAt,
+            locationStamp: draft.locationStamp,
+            weatherStamp: draft.weatherStamp
         )
         let preferredStem = Self.captureNoteFilenameStem(for: draft)
         var createdAttachmentURLs: [URL] = []
@@ -1266,6 +1295,7 @@ actor MarkdownFileStore {
         markdown: String,
         expectedMarkdown: String,
         attachment: CaptureAttachment,
+        preservingNewState isNew: Bool = false,
         now: Date = Date()
     ) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
@@ -1300,10 +1330,18 @@ actor MarkdownFileStore {
         )
         try requestedWrite.data.write(to: destination, options: .withoutOverwriting)
         do {
-            return try saveMarkdownDocument(
+            let saved = try saveMarkdownDocument(
                 relativePath: relativePath,
                 markdown: updatedMarkdown,
                 expectedMarkdown: expectedMarkdown
+            )
+            return MarkdownDocument(
+                id: saved.id,
+                title: saved.title,
+                relativePath: saved.relativePath,
+                markdown: saved.markdown,
+                modifiedAt: saved.modifiedAt,
+                isNew: isNew
             )
         } catch {
             try? fileManager.removeItem(at: destination)
@@ -2891,9 +2929,10 @@ actor MarkdownFileStore {
         let fallbackTitle = URL(fileURLWithPath: relativePath)
             .deletingPathExtension()
             .lastPathComponent
-        let markdown = "# \(fallbackTitle)\n\n"
-            + pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
-            + "\n"
+        let markdown = capturedNoteMarkdown(
+            title: fallbackTitle,
+            body: pending.markdownBlock
+        )
         let metadata = MarkdownListMetadata.extract(
             from: markdown,
             fallbackTitle: fallbackTitle
@@ -3018,8 +3057,10 @@ actor MarkdownFileStore {
         }
 
         let title = target.deletingPathExtension().lastPathComponent
-        let body = pending.markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
-        let note = "# \(title)\n\n\(body)\n"
+        let note = Self.capturedNoteMarkdown(
+            title: title,
+            body: pending.markdownBlock
+        )
         let noteDigest = Self.sha256Hex(Data(note.utf8))
 
         if let receipt = try loadPendingWriteReceipt(pending.id, root: root) {
@@ -3219,7 +3260,7 @@ actor MarkdownFileStore {
         while true {
             let stem = suffix == 1 ? preferredStem : "\(preferredStem) \(suffix)"
             let candidate = directory.appendingPathComponent("\(stem).md")
-            let markdown = "# \(stem)\n\n\(body)\n"
+            let markdown = Self.capturedNoteMarkdown(title: stem, body: body)
             guard let data = markdown.data(using: .utf8) else {
                 throw MarkdownDocumentError.invalidPath
             }
@@ -3254,9 +3295,26 @@ actor MarkdownFileStore {
         tags: String,
         attachmentReferences: [MarkdownAttachmentReference],
         attachmentTags: [String],
-        now: Date
+        now: Date,
+        createdAt: Date? = nil,
+        locationStamp: String = "",
+        weatherStamp: String = ""
     ) -> String {
         var lines: [String] = []
+        if let createdAt {
+            lines.append("---")
+            lines.append("captured_at: \(Self.contextTimestampFormatter.string(from: createdAt))")
+            let location = locationStamp.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !location.isEmpty {
+                lines.append("location: \(Self.yamlQuoted(location))")
+            }
+            let weather = weatherStamp.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !weather.isEmpty {
+                lines.append("weather: \(Self.yamlQuoted(weather))")
+            }
+            lines.append("---")
+            lines.append("")
+        }
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedBody.isEmpty {
             lines.append(trimmedBody)
@@ -3281,6 +3339,41 @@ actor MarkdownFileStore {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    static func captureBodyExcludingTitle(from body: String) -> String {
+        var lines = body.components(separatedBy: .newlines)
+        guard let titleIndex = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else { return "" }
+        lines.remove(at: titleIndex)
+        return lines.joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func capturedNoteMarkdown(title: String, body: String) -> String {
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = trimmedBody.components(separatedBy: .newlines)
+        if lines.first == "---",
+           let closingIndex = lines.indices.dropFirst().first(where: {
+               lines[$0] == "---" || lines[$0] == "..."
+           }) {
+            let metadata = lines[...closingIndex].joined(separator: "\n")
+            let content = lines.dropFirst(closingIndex + 1)
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return metadata + "\n# \(title)"
+                + (content.isEmpty ? "\n" : "\n\n\(content)\n")
+        }
+        return "# \(title)" + (trimmedBody.isEmpty ? "\n" : "\n\n\(trimmedBody)\n")
+    }
+
+    private static func yamlQuoted(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
+    }
+
     private static let memoFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -3299,6 +3392,12 @@ actor MarkdownFileStore {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
+
+    private static let contextTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
 }

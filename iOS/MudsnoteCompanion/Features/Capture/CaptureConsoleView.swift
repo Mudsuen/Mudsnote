@@ -44,6 +44,8 @@ struct CaptureConsoleView: View {
     @State private var refocusAfterCamera = false
     @State private var refocusAfterScanner = false
     @State private var didStartInitialAudioRoute = false
+    @State private var attachmentPreview: PreparedAttachmentPreview?
+    @State private var isContextPresented = false
 
     init(initialRoute: CaptureRoute) {
         _selectedRoute = State(initialValue: initialRoute)
@@ -154,6 +156,32 @@ struct CaptureConsoleView: View {
                 }
             )
             .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $attachmentPreview) { preview in
+            AttachmentQuickLookPreview(
+                preview: preview,
+                onDismiss: {
+                    attachmentPreview = nil
+                    isBodyFocused = true
+                },
+                onSave: { _ in }
+            )
+            .ignoresSafeArea()
+        }
+        .sheet(isPresented: $isContextPresented) {
+            CaptureContextSheet(
+                capturedAt: appModel.draft.createdAt,
+                location: Binding(
+                    get: { appModel.draft.locationStamp },
+                    set: { appModel.draft.locationStamp = $0 }
+                ),
+                weather: Binding(
+                    get: { appModel.draft.weatherStamp },
+                    set: { appModel.draft.weatherStamp = $0 }
+                )
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .alert("Couldn’t Add Attachment", isPresented: Binding(
             get: { appModel.captureAttachmentIssue != nil },
@@ -340,6 +368,14 @@ struct CaptureConsoleView: View {
                 Button("List") { appendToken("\n- ") }
                 Button("Quote") { appendToken("\n> ") }
                 Button("Code") { appendToken(" `code`") }
+                Divider()
+                Button {
+                    isBodyFocused = false
+                    isContextPresented = true
+                } label: {
+                    Label("Note Context", systemImage: "mappin.and.ellipse")
+                }
+                .accessibilityIdentifier("capture-note-context")
             } label: {
                 Image(systemName: "ellipsis")
             }
@@ -482,7 +518,22 @@ struct CaptureConsoleView: View {
             HStack(spacing: 8) {
                 ForEach(Array(appModel.draft.attachments.enumerated()), id: \.offset) { index, attachment in
                     HStack(spacing: 6) {
-                        Label(attachmentLabel(attachment), systemImage: attachmentIcon(attachment))
+                        Button {
+                            Task {
+                                attachmentPreview = await appModel.prepareAttachmentPreview(
+                                    for: attachment,
+                                    index: index
+                                )
+                            }
+                        } label: {
+                            Label(
+                                attachmentLabel(attachment),
+                                systemImage: attachmentIcon(attachment)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Preview attachment")
+                        .accessibilityIdentifier("preview-capture-attachment-\(index)")
                         Button {
                             appModel.draft.attachments.remove(at: index)
                         } label: {
@@ -582,6 +633,40 @@ struct CaptureConsoleView: View {
             guard !didStartInitialAudioRoute else { return }
             didStartInitialAudioRoute = true
             appModel.startAudioRecording()
+        }
+    }
+}
+
+private struct CaptureContextSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var capturedAt: Date
+    @Binding var location: String
+    @Binding var weather: String
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Captured") {
+                        Text(capturedAt, format: .dateTime.year().month().day().hour().minute())
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                    TextField("Location or address", text: $location)
+                        .textContentType(.fullStreetAddress)
+                        .accessibilityIdentifier("capture-context-location")
+                    TextField("Weather", text: $weather)
+                        .accessibilityIdentifier("capture-context-weather")
+                } footer: {
+                    Text("Context is saved as metadata and stays hidden in the reading card by default.")
+                }
+            }
+            .navigationTitle("Note Context")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 }

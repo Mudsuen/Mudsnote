@@ -96,9 +96,9 @@ struct MarkdownListMetadata: Equatable {
             )
             guard !value.isEmpty, !value.hasPrefix("#") else { continue }
             previewParts.append(value)
-            if previewParts.joined(separator: " ").count >= 180 { break }
+            if previewParts.joined(separator: "\n").count >= 180 { break }
         }
-        let joinedPreview = previewParts.joined(separator: " ")
+        let joinedPreview = previewParts.joined(separator: "\n")
         let preview = String(joinedPreview.prefix(180))
         let galleryImagePath = MarkdownAttachmentSearch.relativePaths(in: markdown).first {
             LibraryAttachment.Kind(fileExtension: ($0 as NSString).pathExtension) == .image
@@ -146,10 +146,20 @@ struct MarkdownListMetadata: Equatable {
     }
 
     private static func visibleMarkdownLines(from markdown: String) -> [String] {
+        var sourceLines = markdown
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        if sourceLines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
+           let closingIndex = sourceLines.indices.dropFirst().first(where: {
+               let marker = sourceLines[$0]
+                   .trimmingCharacters(in: .whitespacesAndNewlines)
+               return marker == "---" || marker == "..."
+           }) {
+            sourceLines.removeFirst(closingIndex + 1)
+        }
         var visible: [String] = []
         var activeFence: Character?
-        for rawLine in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine)
+        for line in sourceLines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if let marker = trimmed.first,
                (marker == "`" || marker == "~"),

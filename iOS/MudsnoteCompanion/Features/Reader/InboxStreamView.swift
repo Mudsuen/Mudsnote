@@ -174,7 +174,7 @@ private struct InboxMemoRow: View {
     }
 
     private var preview: String {
-        contentLines.dropFirst().joined(separator: " ")
+        contentLines.dropFirst().joined(separator: "\n")
     }
 
     private var dateText: String {

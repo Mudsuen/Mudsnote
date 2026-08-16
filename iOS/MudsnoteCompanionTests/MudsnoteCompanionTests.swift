@@ -1318,6 +1318,42 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testCapturedNoteUsesFirstLineOnceAndHidesContextInFrontMatter() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let createdAt = Date(timeIntervalSince1970: 1_754_640_000)
+
+        let created = try await store.createCapturedMarkdown(
+            from: CaptureDraft(
+                body: "Trip plan\nBook the train\nPack a charger",
+                createdAt: createdAt,
+                locationStamp: "Shanghai Hongqiao",
+                weatherStamp: "Cloudy · 27°C"
+            ),
+            root: root,
+            now: createdAt
+        )
+        let markdown = try String(
+            contentsOf: root.appendingPathComponent(created.relativePath),
+            encoding: .utf8
+        )
+        let projection = MarkdownFrontMatterProjection(markdown)
+
+        XCTAssertTrue(markdown.hasPrefix("---\ncaptured_at:"))
+        XCTAssertTrue(markdown.contains("location: \"Shanghai Hongqiao\""))
+        XCTAssertTrue(markdown.contains("weather: \"Cloudy · 27°C\""))
+        XCTAssertEqual(markdown.components(separatedBy: "Trip plan").count - 1, 1)
+        XCTAssertEqual(created.title, "Trip plan")
+        XCTAssertEqual(
+            projection.body.trimmingCharacters(in: .whitespacesAndNewlines),
+            "# Trip plan\n\nBook the train\nPack a charger"
+        )
+        XCTAssertEqual(created.preview, "Book the train\nPack a charger")
+    }
+
     func testTwoConcurrentDirectCapturesWithSameTitleAndContentCreateTwoFiles() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1732,19 +1768,21 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let store = MarkdownFileStore()
         await store.configure(root: root)
+        let capturedAt = Date(timeIntervalSince1970: 1_754_640_000)
         let draft = CaptureDraft(
             body: "Independent capture",
-            target: .folder("000-inbox")
+            target: .folder("000-inbox"),
+            createdAt: capturedAt
         )
         let first = try await store.preparePendingWrite(
             for: draft,
             root: root,
-            now: Date(timeIntervalSince1970: 1_754_640_000)
+            now: capturedAt
         )
         let second = try await store.preparePendingWrite(
             for: draft,
             root: root,
-            now: Date(timeIntervalSince1970: 1_754_640_000)
+            now: capturedAt
         )
 
         XCTAssertTrue(first.targetRelativePath.hasPrefix("000-inbox/"))
@@ -1761,7 +1799,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(firstProjection.title, "Independent capture")
         XCTAssertEqual(firstProjection.modifiedAt, first.createdAt)
         XCTAssertEqual(firstProjection.createdAt, first.createdAt)
-        XCTAssertEqual(firstProjection.preview, "Independent capture")
+        XCTAssertEqual(firstProjection.preview, "")
         XCTAssertEqual(secondProjection.relativePath, second.targetRelativePath)
 
         XCTAssertEqual(
@@ -1782,12 +1820,13 @@ final class MudsnoteCompanionTests: XCTestCase {
             contentsOf: root.appendingPathComponent(first.targetRelativePath),
             encoding: .utf8
         )
+        XCTAssertTrue(createdMarkdown.hasPrefix("---\ncaptured_at:"))
+        XCTAssertTrue(createdMarkdown.hasSuffix("---\n# Independent capture\n"))
         XCTAssertEqual(
-            createdMarkdown,
-            "# Independent capture\n\nIndependent capture\n"
+            createdMarkdown.components(separatedBy: "Independent capture").count - 1,
+            1
         )
         XCTAssertFalse(createdMarkdown.contains("mudsnote-write:"))
-        XCTAssertFalse(createdMarkdown.contains("2025-"))
     }
 
     func testDistinctPendingCapturesWithSameTargetAndContentCreateDistinctNotes() async throws {
@@ -2814,6 +2853,18 @@ final class MudsnoteCompanionTests: XCTestCase {
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("Inbox.md").path
             )
+        )
+    }
+
+    func testCardPreviewPreservesParagraphLineBreaks() {
+        let metadata = MarkdownListMetadata.extract(
+            from: "# Title\n\nFirst paragraph\nSecond paragraph\nThird paragraph",
+            fallbackTitle: "Fallback"
+        )
+
+        XCTAssertEqual(
+            metadata.preview,
+            "First paragraph\nSecond paragraph\nThird paragraph"
         )
     }
 
@@ -3906,6 +3957,35 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: attachmentFolder.path).count, 2)
     }
 
+    func testAttachingToNewDocumentPreservesNewDocumentLifecycle() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let document = try await store.createMarkdownDocument()
+        let attachment = try CaptureAttachment.validatedImage(
+            data: try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        )
+
+        let updated = try await store.attachToMarkdownDocument(
+            relativePath: document.relativePath,
+            markdown: "# Attachment note\n",
+            expectedMarkdown: document.markdown,
+            attachment: attachment,
+            preservingNewState: document.isNew,
+            now: Date(timeIntervalSince1970: 1_754_640_000)
+        )
+
+        XCTAssertTrue(updated.isNew)
+        let finalized = try await store.finalizeNewMarkdownDocument(
+            relativePath: updated.relativePath,
+            markdown: updated.markdown,
+            expectedMarkdown: updated.markdown
+        )
+        XCTAssertEqual(finalized.relativePath, "Attachment note.md")
+    }
+
     func testMarkdownDocumentStoresPortableRecordedAudioAttachment() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -4392,7 +4472,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
 
         XCTAssertEqual(metadata.title, "Launch Plan")
-        XCTAssertEqual(metadata.preview, "Ship the iPhone build Publish the release notes Follow up with the release notes.")
+        XCTAssertEqual(
+            metadata.preview,
+            "Ship the iPhone build\nPublish the release notes\nFollow up with the release notes."
+        )
         XCTAssertTrue(metadata.hasAttachments)
         XCTAssertEqual(metadata.galleryImagePath, "Attachments/cover.png")
         XCTAssertEqual(

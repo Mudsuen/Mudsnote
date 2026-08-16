@@ -497,6 +497,8 @@ struct LibraryHomeView: View {
                         Button(allHomeEntriesSelected ? "Deselect All" : "Select All") {
                             toggleAllHomeEntries()
                         }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                         .accessibilityIdentifier("toggle-select-all-home-notes")
                     }
                 } else {
@@ -572,8 +574,37 @@ struct LibraryHomeView: View {
                         .accessibilityIdentifier("edit-folders-button")
                     }
                 } else if isSelectingNotes {
+                    ToolbarItem(placement: .principal) {
+                        VStack(spacing: 1) {
+                            Text(
+                                String(
+                                    format: String(localized: "notes.selected.format"),
+                                    locale: .current,
+                                    selectedHomeEntryIDs.count
+                                )
+                            )
+                            .font(.headline)
+                            Text(
+                                String(
+                                    format: String(localized: "notes.count.format"),
+                                    locale: .current,
+                                    allHomeSelectableEntries.count
+                                )
+                            )
+                            .font(.caption)
+                            .foregroundStyle(MudsnoteColors.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("home-note-selection-summary")
+                    }
+
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { finishSelectingHomeNotes() }
+                        Button { finishSelectingHomeNotes() } label: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(MudsnoteColors.primary)
+                        }
+                            .accessibilityLabel("Done")
                             .accessibilityIdentifier("finish-home-note-selection")
                     }
                 } else {
@@ -1051,8 +1082,22 @@ struct LibraryHomeView: View {
         appModel.visibleLibraryFolders.filter { !$0.isMergedInboxFolder }
     }
 
+    private var allHomeSelectableEntries: [HomeTimelineEntry] {
+        let folderPath = selectedHomeFolderPath
+        let files = appModel.libraryFiles.filter { file in
+            guard file.relativePath != "Inbox.md" else { return false }
+            guard !folderPath.isEmpty else { return true }
+            return HomeFolderScope.contains(
+                fileRelativePath: file.relativePath,
+                folderRelativePath: folderPath
+            )
+        }
+        return files.map(HomeTimelineEntry.file)
+            + (folderPath.isEmpty ? appModel.inboxItems.map(HomeTimelineEntry.memo) : [])
+    }
+
     private var allHomeEntryIDs: Set<String> {
-        Set(homeTimelineProjection.sections.flatMap(\.entries).map(\.id))
+        Set(allHomeSelectableEntries.map(\.id))
     }
 
     private var allHomeEntriesSelected: Bool {
@@ -1075,8 +1120,7 @@ struct LibraryHomeView: View {
     }
 
     private func deleteSelectedHomeEntries() {
-        let selected = homeTimelineProjection.sections
-            .flatMap(\.entries)
+        let selected = allHomeSelectableEntries
             .filter { selectedHomeEntryIDs.contains($0.id) }
         for entry in selected {
             switch entry {
@@ -3673,7 +3717,7 @@ private struct HomeTimelineGalleryEntryButton: View {
     private var selectionIndicator: some View {
         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
             .font(.title3)
-            .foregroundStyle(isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted)
+            .foregroundStyle(isSelected ? MudsnoteColors.primary : MudsnoteColors.muted)
     }
 }
 
@@ -3697,7 +3741,7 @@ private struct HomeTimelineListEntryButton: View {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundStyle(
-                            isSelected ? NotesCloneColors.folderYellow : MudsnoteColors.muted
+                            isSelected ? MudsnoteColors.primary : MudsnoteColors.muted
                         )
                         .padding(.top, 12)
                 }
@@ -3782,7 +3826,7 @@ private struct HomeMemoCard: View {
             ?? String(localized: "Untitled memo")
     }
 
-    private var preview: String { contentLines.dropFirst().joined(separator: " ") }
+    private var preview: String { contentLines.dropFirst().joined(separator: "\n") }
     private var dateText: String {
         memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText
     }
@@ -3839,7 +3883,7 @@ private struct HomeMemoListRow: View {
             title: lines.first?.trimmingCharacters(in: CharacterSet(charactersIn: "#>*+- "))
                 ?? String(localized: "Untitled memo"),
             dateText: memo.dateText.split(separator: " ").last.map(String.init) ?? memo.dateText,
-            preview: lines.dropFirst().joined(separator: " "),
+            preview: lines.dropFirst().joined(separator: "\n"),
             folderName: "000-inbox",
             hasAttachments: memo.hasAttachments,
             hasUncheckedChecklist: memo.hasUncheckedChecklist

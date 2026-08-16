@@ -1322,7 +1322,13 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            try await fileStore.trashFolder(relativePath: folder.relativePath)
+            if folder.isMergedInboxFolder {
+                try await fileStore.trashMergedInboxFolders(
+                    relativePaths: [folder.relativePath]
+                )
+            } else {
+                try await fileStore.trashFolder(relativePath: folder.relativePath)
+            }
             if let selectedDocument,
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 self.selectedDocument = nil
@@ -1745,7 +1751,8 @@ final class AppModel: ObservableObject {
                 relativePath: document.relativePath,
                 markdown: markdown,
                 expectedMarkdown: expectedMarkdown,
-                attachment: attachment
+                attachment: attachment,
+                preservingNewState: document.isNew
             )
             selectedDocument = updated
             statusToast = .saved(attachmentAttachedMessage(attachment))
@@ -1776,7 +1783,8 @@ final class AppModel: ObservableObject {
                 relativePath: document.relativePath,
                 markdown: markdown,
                 expectedMarkdown: expectedMarkdown,
-                attachment: attachment
+                attachment: attachment,
+                preservingNewState: document.isNew
             )
             selectedDocument = updated
             statusToast = .saved(String(localized: "Drawing attached"))
@@ -1804,7 +1812,8 @@ final class AppModel: ObservableObject {
                 relativePath: document.relativePath,
                 markdown: markdown,
                 expectedMarkdown: expectedMarkdown,
-                attachment: attachment
+                attachment: attachment,
+                preservingNewState: document.isNew
             )
             selectedDocument = updated
             statusToast = .saved(String(localized: "File attached"))
@@ -1855,7 +1864,8 @@ final class AppModel: ObservableObject {
                 relativePath: document.relativePath,
                 markdown: markdown,
                 expectedMarkdown: expectedMarkdown,
-                attachment: attachment
+                attachment: attachment,
+                preservingNewState: document.isNew
             )
             selectedDocument = updated
             statusToast = .saved(String(localized: "Audio attached"))
@@ -1938,6 +1948,21 @@ final class AppModel: ObservableObject {
 
     func prepareAttachmentPreview(for attachment: LibraryAttachment) async -> PreparedAttachmentPreview? {
         await prepareAttachmentPreview(relativePath: attachment.relativePath)
+    }
+
+    func prepareAttachmentPreview(
+        for attachment: CaptureAttachment,
+        index: Int
+    ) async -> PreparedAttachmentPreview? {
+        do {
+            return try await fileStore.prepareCaptureAttachmentPreview(
+                attachment,
+                index: index
+            )
+        } catch {
+            statusToast = .error(String(localized: "Could not open attachment"))
+            return nil
+        }
     }
 
     func commitEditedAttachmentPreview(

@@ -217,7 +217,10 @@ struct MarkdownPreviewView: View {
                     }
                 }
             }
-            .background(MudsnoteColors.panel.opacity(0.78))
+            .background {
+                MudsnoteColors.panel.opacity(0.78)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {

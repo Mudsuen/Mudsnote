@@ -9,6 +9,8 @@ struct CaptureDraft: Equatable {
     var target: CaptureTarget = .folder(nil)
     var attachments: [CaptureAttachment] = []
     var createdAt: Date = Date()
+    var locationStamp: String = ""
+    var weatherStamp: String = ""
 
     var canSend: Bool {
         !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
@@ -280,6 +282,8 @@ actor CaptureDraftRecoveryStore {
         var tags: String
         var target: Target
         var createdAt: Date
+        var locationStamp: String?
+        var weatherStamp: String?
         var attachments: [Attachment]
     }
 
@@ -376,7 +380,9 @@ actor CaptureDraftRecoveryStore {
             tags: metadata.tags,
             target: captureTarget(metadata.target),
             attachments: attachments,
-            createdAt: metadata.createdAt
+            createdAt: metadata.createdAt,
+            locationStamp: metadata.locationStamp ?? "",
+            weatherStamp: metadata.weatherStamp ?? ""
         )
         guard draft.canSend else {
             // Keep the recovery package intact when every attachment is
@@ -445,6 +451,8 @@ actor CaptureDraftRecoveryStore {
             tags: draft.tags,
             target: storedTarget(draft.target),
             createdAt: draft.createdAt,
+            locationStamp: draft.locationStamp,
+            weatherStamp: draft.weatherStamp,
             attachments: entries
         )
         let data = try JSONEncoder.captureDraftRecovery.encode(metadata)
