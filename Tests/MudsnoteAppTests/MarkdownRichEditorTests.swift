@@ -12,6 +12,16 @@ private extension NSView {
     }
 }
 
+@MainActor
+private final class DisplayInvalidationRecordingClipView: NSClipView {
+    private(set) var invalidatedRects: [NSRect] = []
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        invalidatedRects.append(invalidRect)
+        super.setNeedsDisplay(invalidRect)
+    }
+}
+
 private actor LibraryFileSystemChangeRecorder {
     private var changes: Set<LibraryFileSystemChange> = []
 
@@ -643,6 +653,31 @@ struct MarkdownRichEditorTests {
         ))
         #expect(refreshRange.length <= 8_192)
         #expect(veryLongLine.substring(with: refreshRange) == "https://example.com/final")
+    }
+
+    @MainActor
+    @Test
+    func replacingAllContentDropsLongerDocumentTailAndInvalidatesClipView() {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
+        textView.drawsBackground = false
+        let scrollView = NSScrollView(frame: textView.frame)
+        let clipView = DisplayInvalidationRecordingClipView(frame: textView.frame)
+        scrollView.contentView = clipView
+        scrollView.documentView = textView
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "Short note\nStale tail from the previous document",
+            theme: theme
+        ))
+        let invalidationCount = clipView.invalidatedRects.count
+
+        textView.replaceAllContent(with: MarkdownRichTextCodec.render(
+            markdown: "Short note",
+            theme: theme
+        ))
+
+        #expect(textView.string == "Short note")
+        #expect(clipView.invalidatedRects.count == invalidationCount + 1)
+        #expect(clipView.invalidatedRects.last == clipView.bounds)
     }
 
     @MainActor

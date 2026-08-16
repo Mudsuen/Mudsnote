@@ -2530,7 +2530,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
         scrollView.automaticallyAdjustsContentInsets = false
-        clipView.drawsBackground = false
+        clipView.drawsBackground = true
+        clipView.backgroundColor = LibraryNotesPalette.editorBackground
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
         scrollView.contentInsets = NSEdgeInsets(
@@ -7435,7 +7436,7 @@ final class LibraryWindowController: NSWindowController,
         titleField.stringValue = title
         selectedTags = tags
         let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(title: title, body: body)
-        editorTextView.textStorage?.setAttributedString(
+        editorTextView.replaceAllContent(with:
             renderedBody ?? MarkdownRichTextCodec.render(
                 markdown: unifiedMarkdown,
                 theme: theme,
@@ -7462,7 +7463,7 @@ final class LibraryWindowController: NSWindowController,
         let markdown = MarkdownEditorDocument.composeEditorText(title: title, body: document.body)
         let selection = editorTextView.selectedRange()
         suppressEditorChanges = true
-        editorTextView.textStorage?.setAttributedString(
+        editorTextView.replaceAllContent(with:
             MarkdownRichTextCodec.render(
                 markdown: markdown,
                 theme: theme,

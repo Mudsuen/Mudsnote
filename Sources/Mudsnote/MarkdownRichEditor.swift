@@ -392,6 +392,18 @@ private final class SelectionFormattingPanelButton: NSButton {
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var minimumScrollableContentHeight: CGFloat = 0
 
+    func replaceAllContent(with attributedString: NSAttributedString) {
+        textStorage?.setAttributedString(attributedString)
+
+        // This view is transparent. TextKit can invalidate only the new glyph
+        // range after a shorter replacement, leaving pixels from the previous
+        // document visible below it until another window redraw occurs.
+        setNeedsDisplay(bounds)
+        if let clipView = enclosingScrollView?.contentView {
+            clipView.setNeedsDisplay(clipView.bounds)
+        }
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         var constrainedSize = newSize
         constrainedSize.height = max(constrainedSize.height, minimumScrollableContentHeight)
