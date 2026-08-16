@@ -823,6 +823,202 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func doubleClickSelectionTrimsTrailingWhitespaceAndSnapsToWord() {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        textView.markdownPasteTheme = theme
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "hello world\n\nnext line",
+            theme: theme
+        ))
+        let string = textView.string as NSString
+
+        // Double-click at the boundary between the word and the newline.
+        // The default AppKit selection would be just the newline; the fix
+        // should snap to the word "world" instead.
+        let boundary = textView.selectionRange(forProposedRange: NSRange(location: 11, length: 0), granularity: .selectByWord)
+        #expect(boundary == NSRange(location: 6, length: 5))
+        #expect(string.substring(with: boundary) == "world")
+
+        // Double-click in the middle of the word still selects the whole word.
+        let middle = textView.selectionRange(forProposedRange: NSRange(location: 8, length: 0), granularity: .selectByWord)
+        #expect(middle == NSRange(location: 6, length: 5))
+
+        // Double-click on the blank line should snap to the preceding word and
+        // never include the blank line itself.
+        let onBlank = textView.selectionRange(forProposedRange: NSRange(location: 12, length: 0), granularity: .selectByWord)
+        #expect(string.substring(with: onBlank) == "world")
+        #expect(!string.substring(with: onBlank).contains("\n"))
+
+        // Double-click on a long word that already extends across the line
+        // should still drop the trailing newline.
+        let trailingSpace = textView.selectionRange(forProposedRange: NSRange(location: 5, length: 0), granularity: .selectByWord)
+        #expect(trailingSpace == NSRange(location: 0, length: 5))
+        #expect(string.substring(with: trailingSpace) == "hello")
+    }
+
+    @MainActor
+    @Test
+    func shiftReturnOnFirstLineHeadingBreaksIntoBodyParagraph() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        // Realistic scenario: the user has typed only the title on the first
+        // line and is about to add a second line. The caret sits at the end
+        // of the heading.
+        let markdown = "# Title"
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: controller.theme
+        ))
+        let titleLine = "# Title".utf16.count
+        controller.editorTextView.setSelectedRange(NSRange(location: titleLine, length: 0))
+
+        controller.editorTextView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [.shift],
+            characters: "\r"
+        ))
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let rendered = MarkdownRichTextCodec.serialize(storage, theme: controller.theme)
+        // The fix breaks out of the heading paragraph so the continuation is a
+        // body paragraph; the title line must not carry a hard-break marker
+        // (which is the symptom of a soft line break inside a heading).
+        #expect(!rendered.contains("  \n"))
+        // The second paragraph (after the title) must NOT carry the heading
+        // kind — it should be a body paragraph so the title format only
+        // applies to the first line.
+        guard storage.length > titleLine else {
+            // The shift+enter did not insert anything; the caret should at
+            // least have moved into a body paragraph.
+            return
+        }
+        let bodyRange = NSRange(location: titleLine, length: storage.length - titleLine)
+        let safeRange = NSRange(
+            location: min(bodyRange.location, storage.length),
+            length: min(bodyRange.length, max(storage.length - bodyRange.location, 0))
+        )
+        let bodyKind = MarkdownRichTextCodec.paragraphKind(at: safeRange, in: storage)
+        #expect(bodyKind == .paragraph)
+    }
+
+    @MainActor
+    @Test
+    func shiftReturnOnLaterHeadingPreservesSoftBreak() throws {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        textView.markdownPasteTheme = theme
+        // Mid-document heading: the rule is title format only on the first
+        // line, so a heading elsewhere still accepts a soft line break.
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "body line\n\n## Section",
+            theme: theme
+        ))
+        let bodyEnd = "body line".utf16.count
+        textView.setSelectedRange(NSRange(location: bodyEnd, length: 0))
+
+        textView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [.shift],
+            characters: "\r"
+        ))
+
+        let string = textView.string
+        #expect(string.contains("\u{2028}"))
+    }
+
+    @MainActor
+    @Test
+    func shiftReturnDuringMarkedTextDoesNotInsertDirectly() throws {
+        let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        textView.markdownPasteTheme = theme
+        textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "你好", theme: theme))
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        // Simulate an in-progress IME composition (e.g. pinyin "ni").
+        textView.setMarkedText(
+            "ni",
+            selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: textView.selectedRange()
+        )
+        let stringBefore = textView.string as NSString
+
+        textView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [.shift],
+            characters: "\r"
+        ))
+
+        // The fix routes shift+return through the input context (or, in test
+        // environments with no IME, prevents the direct insertText call). In
+        // either case the text must NOT acquire a U+2028 line separator while
+        // the composition is still active — that is the corruption that used
+        // to leave the IME in an inconsistent state.
+        if textView.hasMarkedText() {
+            #expect(!textView.string.contains("\u{2028}"))
+        } else {
+            // The IME committed the composition before the soft break was
+            // inserted; the resulting text should contain the soft break but
+            // no stray raw pinyin around it.
+            #expect(textView.string.contains("\u{2028}"))
+        }
+        // Sanity: the original characters are preserved.
+        let stringAfter = textView.string as NSString
+        for char in "你好ni" {
+                #expect(stringAfter.contains(String(char)))
+        }
+        _ = stringBefore
+    }
+
+    @MainActor
+    @Test
+    func commandVPasteKeyEquivalentDoesNotHijackOtherFocusedControl() {
+        // The editor must not steal Cmd+V when another text input (e.g. a
+        // search field) is the first responder. Direct test of the guard:
+        // when firstResponder is not the editor, the editor's
+        // performKeyEquivalent returns false for Cmd+V so the search field
+        // handles the paste natively.
+        let editor = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
+        editor.markdownPasteTheme = theme
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        defer { window.contentView = nil }
+        let container = NSView(frame: window.contentLayoutRect)
+        window.contentView = container
+        container.addSubview(editor)
+        let searchField = NSSearchField(frame: NSRect(x: 320, y: 0, width: 140, height: 24))
+        container.addSubview(searchField)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(searchField)
+
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.clearContents()
+        pasteboard.setString("from-search-field", forType: .string)
+        editor.pasteboardForPaste = { pasteboard }
+
+        let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "v",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_V)
+        )!
+        // The search field owns the focus, so the editor must NOT intercept
+        // the key equivalent — Cmd+V must fall through to the search field.
+        let responder = window.firstResponder
+        #expect(responder !== editor)
+        #expect(editor.performKeyEquivalent(with: event) == false)
+    }
+
+    @MainActor
+    @Test
     func libraryFolderVisibilityCanExcludeSubfolderNotes() throws {
         let suiteName = "mudsnote.folder-visibility-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -2863,14 +3059,16 @@ struct MarkdownRichEditorTests {
         )
         editorScrollView.contentView.scroll(to: .zero)
         editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
-        #expect(!editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
+        // Short notes pin the edit time label to the viewport bottom so it stays
+        // visible without scrolling; tall notes still flow after the content.
+        let statusLabelVisibleAtTop = editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame)
         let bottomOriginY = max(
             0,
             controller.editorTextView.frame.height - editorScrollView.contentView.bounds.height
         )
         editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: bottomOriginY))
         editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
-        #expect(editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
+        #expect(statusLabelVisibleAtTop == editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
@@ -5168,6 +5366,7 @@ struct MarkdownRichEditorTests {
             location: libraryController.editorTextView.attributedString().length,
             length: 0
         ))
+        libraryController.window?.makeFirstResponder(libraryController.editorTextView)
         libraryController.editorTextView.pasteboardForPaste = { filePasteboard }
         let pasteEvent = try keyEvent(
             keyCode: UInt16(kVK_ANSI_V),

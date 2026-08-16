@@ -410,6 +410,90 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         super.setFrameSize(constrainedSize)
     }
 
+    override func selectionRange(forProposedRange proposedCharRange: NSRange, granularity: NSSelectionGranularity) -> NSRange {
+        let resolved = super.selectionRange(forProposedRange: proposedCharRange, granularity: granularity)
+        guard granularity == .selectByWord else { return resolved }
+        return wordSelection(forProposedRange: proposedCharRange, appKitSelection: resolved)
+    }
+
+    private func wordSelection(forProposedRange proposedCharRange: NSRange, appKitSelection: NSRange) -> NSRange {
+        let trimmed = trimSelectionToWordBounds(appKitSelection)
+        if trimmed.length > 0 { return trimmed }
+        // AppKit returned a whitespace-only range (e.g. clicking on a newline
+        // or blank line). Snap to the word immediately to the left of the
+        // click point so the highlight stays on the word and does not extend
+        // into blank lines or trailing whitespace.
+        let snapped = wordLeftOf(proposedCharRange.location)
+        if snapped.length > 0 { return trimSelectionToWordBounds(snapped) }
+        return appKitSelection
+    }
+
+    private func trimSelectionToWordBounds(_ range: NSRange) -> NSRange {
+        let string = self.string as NSString
+        guard range.length > 0, string.length > 0 else { return range }
+        let start = max(range.location, 0)
+        var end = min(NSMaxRange(range), string.length)
+        guard start < end else { return range }
+        // Trim trailing spaces, tabs, hard newlines, and line separators so
+        // double-click selection does not extend onto blank lines or trailing
+        // whitespace. When the selection is entirely boundary whitespace we
+        // return a zero-length range so the caller can detect the all-
+        // whitespace case and snap to the enclosing word.
+        while end > start, Self.isWordBoundaryWhitespace(character: string.character(at: end - 1)) {
+            end -= 1
+        }
+        guard end > start else { return NSRange(location: start, length: 0) }
+        return NSRange(location: start, length: end - start)
+    }
+
+    private func wordLeftOf(_ index: Int) -> NSRange {
+        let string = self.string as NSString
+        let length = string.length
+        guard length > 0, index > 0 else { return NSRange(location: 0, length: 0) }
+        var pos = max(0, min(index, length))
+        // Walk left over boundary whitespace and newlines so the snap works
+        // when the click sits on a blank line past the previous word.
+        while pos > 0, Self.isWordBoundaryWhitespace(character: string.character(at: pos - 1)) {
+            pos -= 1
+        }
+        guard pos > 0, Self.isWordCharacter(character: string.character(at: pos - 1)) else {
+            return NSRange(location: 0, length: 0)
+        }
+        var wordStart = pos
+        while wordStart > 0, Self.isWordCharacter(character: string.character(at: wordStart - 1)) {
+            wordStart -= 1
+        }
+        var wordEnd = wordStart
+        while wordEnd < length, Self.isWordCharacter(character: string.character(at: wordEnd)) {
+            wordEnd += 1
+        }
+        return NSRange(location: wordStart, length: wordEnd - wordStart)
+    }
+
+    private static func isWordBoundaryWhitespace(character: unichar) -> Bool {
+        switch character {
+        case 0x20, 0x09, 0x0A, 0x0D, 0x2028, 0x2029:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isWordCharacter(character: unichar) -> Bool {
+        // ASCII letter, digit, underscore.
+        if character >= 0x41 && character <= 0x5A { return true }   // A-Z
+        if character >= 0x61 && character <= 0x7A { return true }   // a-z
+        if character >= 0x30 && character <= 0x39 { return true }   // 0-9
+        if character == 0x5F { return true }                       // _
+        // CJK Unified Ideographs (covers Chinese / Japanese kanji).
+        if character >= 0x4E00 && character <= 0x9FFF { return true }
+        // Hiragana and Katakana.
+        if character >= 0x3040 && character <= 0x30FF { return true }
+        // CJK Extension A.
+        if character >= 0x3400 && character <= 0x4DBF { return true }
+        return false
+    }
+
     private struct ImageResizeDragState {
         let characterIndex: Int
         let initialPointerX: CGFloat
@@ -507,15 +591,45 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         if handleFormattingShortcut(event) {
             return
         }
-        if [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)].contains(event.keyCode),
-           modifiers == [.shift] {
-            insertSoftLineBreak()
+        if isShiftReturnKey(event) {
+            if hasMarkedText() {
+                // Route through the input system so the IME commits its
+                // composition cleanly. Inserting directly via insertText
+                // while marked text is active leaves the IME in an
+                // inconsistent state, which some input methods (notably
+                // 搜狗 / native pinyin) resolve by switching their
+                // Chinese/English mode. The follow-up insertNewline command
+                // is intercepted in `doCommand(by:)` to insert the soft break.
+                super.keyDown(with: event)
+            } else {
+                insertSoftLineBreak()
+            }
             return
         }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
         super.keyDown(with: event)
+    }
+
+    private func isShiftReturnKey(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        return [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)].contains(event.keyCode)
+            && modifiers == [.shift]
+    }
+
+    override func doCommand(by selector: Selector) {
+        // When the IME passes shift+return through after committing its
+        // composition, we want a soft line break instead of the default
+        // hard newline. `currentEvent` is the keyDown being dispatched.
+        if selector == #selector(insertNewline(_:)),
+           let event = window?.currentEvent,
+           event.type == .keyDown,
+           isShiftReturnKey(event) {
+            insertSoftLineBreak()
+            return
+        }
+        super.doCommand(by: selector)
     }
 
     @discardableResult
@@ -573,7 +687,35 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     func insertSoftLineBreak() {
+        // Never insert directly while an IME composition is in progress; let
+        // the input context finish committing the marked text first. This
+        // avoids corrupting the IME state machine (some input methods
+        // interpret a direct insert during composition as a Chinese/English
+        // toggle).
+        if hasMarkedText() { return }
+        // The first line is the note title and renders with the heading (title)
+        // format. A soft line break inside it would carry the heading format
+        // onto the next visual line. The title format should only apply to the
+        // first line, so break out of the heading into a fresh body paragraph
+        // instead.
+        if isFirstLineHeadingParagraph() {
+            commandDelegate?.markdownTextViewInsertNewline(self)
+            return
+        }
         insertText("\u{2028}", replacementRange: selectedRange())
+    }
+
+    private func isFirstLineHeadingParagraph() -> Bool {
+        guard let storage = textStorage else { return false }
+        let string = storage.string as NSString
+        guard string.length > 0 else { return false }
+        let selection = selectedRange()
+        let caret = min(max(selection.location, 0), string.length)
+        let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
+        guard paragraphRange.location == 0 else { return false }
+        let kind = MarkdownRichTextCodec.paragraphKind(at: paragraphRange, in: storage)
+        if case .heading = kind { return true }
+        return false
     }
 
     private func handleFormattingShortcut(_ event: NSEvent) -> Bool {
@@ -619,6 +761,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return true
         }
         if modifiers == [.command], event.keyCode == 9,
+           (window == nil || window?.firstResponder === self),
            pasteContents(from: pasteboardForPaste()) {
             return true
         }

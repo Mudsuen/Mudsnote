@@ -111,6 +111,7 @@ enum LibraryNotesLayout {
     static let editorDateToTitleSpacing: CGFloat = 10.75
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusHorizontalOffset: CGFloat = -8.5
+    static let editorStatusBottomGap: CGFloat = 6
     static let editorStatusFontSize: CGFloat = 13
     static let editorTitleFontSize: CGFloat = 24
     static let editorBodyFontSize: CGFloat = 15

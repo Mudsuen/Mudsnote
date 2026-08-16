@@ -8055,13 +8055,21 @@ final class LibraryWindowController: NSWindowController,
         let horizontalInset: CGFloat = 20
         let contentBottom = editorTextView.textContainerInset.height + usedRect.maxY
         let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
-        let statusTop = max(
-            contentBottom + LibraryNotesLayout.editorBottomInset,
-            viewportHeight + LibraryNotesLayout.editorBottomInset
-        )
-        let documentHeight = statusTop
-            + LibraryNotesLayout.editorDateRowHeight
-            + LibraryNotesLayout.editorBottomInset
+        let rowHeight = LibraryNotesLayout.editorDateRowHeight
+        let topGap = LibraryNotesLayout.editorBottomInset
+        let bottomGap = LibraryNotesLayout.editorStatusBottomGap
+        // Pin the label to the bottom of the visible editor area when the
+        // content is short; otherwise let the label flow after the content.
+        let pinToBottom = viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
+        let statusTop: CGFloat
+        let documentHeight: CGFloat
+        if pinToBottom {
+            statusTop = viewportHeight - rowHeight - bottomGap
+            documentHeight = viewportHeight
+        } else {
+            statusTop = contentBottom + topGap
+            documentHeight = statusTop + rowHeight + bottomGap
+        }
         editorTextView.minimumScrollableContentHeight = documentHeight
         editorTextView.minSize = NSSize(width: 0, height: documentHeight)
         if abs(editorTextView.frame.height - documentHeight) > 0.5 {
@@ -8073,7 +8081,7 @@ final class LibraryWindowController: NSWindowController,
             x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
             y: statusTop,
             width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
-            height: LibraryNotesLayout.editorDateRowHeight
+            height: rowHeight
         )
     }
 
