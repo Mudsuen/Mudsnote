@@ -114,6 +114,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var activeToolbarActionSelection: NSRange?
     let suggestionController = SuggestionPopoverController()
     var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
+    var hasAutomaticTitleFormatting = false
     var inlineSuggestionContext: InlineSuggestionContext?
     var knownTagsForSuggestions: [String]?
     var tagSuggestionTask: Task<Void, Never>?
@@ -343,6 +344,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func markdownTextViewInsertNewline(_ textView: MarkdownTextView) {
         if commitPendingTagIfNeeded(insertingTrailingText: "\n") { return }
+        if demoteAutomaticTitleFormattingIfNeeded() {
+            textView.insertNewlineIgnoringFieldEditor(self)
+            updateTypingAttributesFromInsertionPoint()
+            return
+        }
         guard handleStructuredNewline() else {
             textView.insertNewlineIgnoringFieldEditor(self)
             updateTypingAttributesFromInsertionPoint()

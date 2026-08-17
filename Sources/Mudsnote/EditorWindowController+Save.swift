@@ -97,7 +97,7 @@ extension EditorWindowController {
             applyInitialContent(title: note.title, body: note.body)
 
             if let draft = noteStore.loadDraft(id: currentDraftID), draft.sourcePath == url.path {
-                applyBodyMarkdown(MarkdownEditorDocument(title: draft.title, body: draft.body).editorText)
+                applyInitialContent(title: draft.title, body: draft.body)
                 selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
                 isDirty = true
                 statusLabel.stringValue = "已恢复"

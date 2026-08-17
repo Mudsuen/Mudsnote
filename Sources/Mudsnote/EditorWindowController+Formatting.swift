@@ -38,6 +38,45 @@ extension EditorWindowController {
 
     // MARK: - Paragraph kind
 
+    func demoteAutomaticTitleFormattingIfNeeded() -> Bool {
+        guard isFloatingNoteMode,
+              hasAutomaticTitleFormatting,
+              let storage = editorTextView.textStorage,
+              storage.length > 0 else {
+            return false
+        }
+
+        let lineRange = visibleLineRangeForSelection()
+        guard lineRange.location == 0 else { return false }
+        let kind = MarkdownRichTextCodec.paragraphKind(at: lineRange, in: storage)
+        guard case .heading = kind else {
+            hasAutomaticTitleFormatting = false
+            return false
+        }
+
+        let contentRange = MarkdownRichTextCodec.visibleContentRange(for: lineRange, in: storage, kind: kind)
+        let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+            range: contentRange,
+            in: storage,
+            paragraphKind: kind,
+            theme: theme
+        )
+        let replacement = MarkdownRichTextCodec.renderLine(inlineMarkdown, theme: theme)
+        let selectionOffset = max(editorTextView.selectedRange().location - contentRange.location, 0)
+
+        suppressTextDidChange = true
+        storage.replaceCharacters(in: lineRange, with: replacement)
+        suppressTextDidChange = false
+        editorTextView.setSelectedRange(NSRange(
+            location: min(lineRange.location + selectionOffset, storage.length),
+            length: 0
+        ))
+        hasAutomaticTitleFormatting = false
+        updateTypingAttributesFromInsertionPoint()
+        userDidEdit()
+        return true
+    }
+
     func handleStructuredNewline() -> Bool {
         guard let storage = editorTextView.textStorage else { return false }
 
@@ -70,6 +109,9 @@ extension EditorWindowController {
 
     func toggleParagraphKind(_ target: MarkdownParagraphKind) {
         guard let storage = editorTextView.textStorage else { return }
+        if case .heading = target {
+            hasAutomaticTitleFormatting = false
+        }
 
         let undoSnapshot = formattingUndoSnapshot()
         let ranges = selectedLineRanges()

@@ -520,6 +520,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var selectionFormattingPanelFrame: NSRect? { selectionFormattingPanel?.frame }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
+    private var isInterpretingShiftReturn = false
 
     private func updateHoverCursor(with event: NSEvent) {
         if imageResizeDragState != nil {
@@ -592,19 +593,30 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return
         }
         if isShiftReturnKey(event) {
+            // Keep the complete chord inside AppKit's text-input path. If we
+            // insert directly and return here, the IME sees only the later
+            // Shift-up event and may interpret it as a Chinese/English toggle.
             if hasMarkedText() {
-                // Commit the active composition without forwarding
-                // Shift-Return to the input method. Some IMEs bind that key
-                // chord to a Chinese/English mode switch.
                 unmarkText()
             }
-            insertSoftLineBreak()
+            isInterpretingShiftReturn = true
+            defer { isInterpretingShiftReturn = false }
+            super.keyDown(with: event)
             return
         }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if isInterpretingShiftReturn,
+           selector == #selector(insertNewline(_:)) {
+            insertSoftLineBreak()
+            return
+        }
+        super.doCommand(by: selector)
     }
 
     private func isShiftReturnKey(_ event: NSEvent) -> Bool {

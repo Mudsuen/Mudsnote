@@ -870,6 +870,7 @@ struct MarkdownRichEditorTests {
             markdown: markdown,
             theme: controller.theme
         ))
+        controller.hasAutomaticTitleFormatting = true
         let titleLine = controller.editorTextView.string.utf16.count
         controller.editorTextView.setSelectedRange(NSRange(location: titleLine, length: 0))
 
@@ -885,6 +886,12 @@ struct MarkdownRichEditorTests {
         // body paragraph; the title line must not carry a hard-break marker
         // (which is the symptom of a soft line break inside a heading).
         #expect(!rendered.contains("  \n"))
+        #expect(!rendered.hasPrefix("# "))
+        let titleKind = MarkdownRichTextCodec.paragraphKind(
+            at: NSRange(location: 0, length: min(storage.length, 1)),
+            in: storage
+        )
+        #expect(titleKind == .paragraph)
         // The second paragraph (after the title) must NOT carry the heading
         // kind — it should be a body paragraph so the title format only
         // applies to the first line.
@@ -899,6 +906,36 @@ struct MarkdownRichEditorTests {
             in: storage
         )
         #expect(bodyKind == .paragraph)
+    }
+
+    @MainActor
+    @Test
+    func manuallyAppliedFirstLineHeadingRemainsHeadingAfterShiftReturn() throws {
+        let harness = try makeEditorControllerHarness(draftID: "floating-note", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+            markdown: "# Manual title",
+            theme: controller.theme
+        ))
+        controller.hasAutomaticTitleFormatting = false
+        controller.editorTextView.setSelectedRange(NSRange(
+            location: controller.editorTextView.string.utf16.count,
+            length: 0
+        ))
+
+        controller.editorTextView.keyDown(with: try keyEvent(
+            keyCode: UInt16(kVK_Return),
+            modifiers: [.shift],
+            characters: "\r"
+        ))
+
+        let storage = try #require(controller.editorTextView.textStorage)
+        let titleKind = MarkdownRichTextCodec.paragraphKind(
+            at: NSRange(location: 0, length: min(storage.length, 1)),
+            in: storage
+        )
+        #expect(titleKind == .heading(level: 1))
     }
 
     @MainActor

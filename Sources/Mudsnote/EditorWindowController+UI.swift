@@ -613,13 +613,26 @@ extension EditorWindowController {
 
     func applyInitialContent(title: String, body: String) {
         if isQuickCaptureMode {
+            hasAutomaticTitleFormatting = false
             applyBodyMarkdown(QuickCaptureDocumentState.unifiedMarkdown(
                 legacyTitle: title,
                 bodyMarkdown: body
             ))
             return
         }
-        applyBodyMarkdown(MarkdownEditorDocument(title: title, body: body).editorText)
+        guard isFloatingNoteMode else {
+            hasAutomaticTitleFormatting = false
+            applyBodyMarkdown(MarkdownEditorDocument(title: title, body: body).editorText)
+            return
+        }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        hasAutomaticTitleFormatting = !trimmedTitle.isEmpty && trimmedBody.isEmpty
+        if hasAutomaticTitleFormatting {
+            applyBodyMarkdown("# \(trimmedTitle)")
+        } else {
+            applyBodyMarkdown([trimmedTitle, trimmedBody].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+        }
     }
 
     func applyBodyMarkdown(_ markdown: String) {
