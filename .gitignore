@@ -8,3 +8,4 @@ dist/
 *.xcuserstate
 *.xcscmblueprint
 /.task
+.workbuddy/

@@ -179,9 +179,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         self.showsSaveButton = showsSaveButton
         self.remembersWindowFrame = remembersWindowFrame
         self.selectedDirectoryURL = fileURL?.deletingLastPathComponent()
-            ?? ((draftIDOverride == "floating-note" || draftIDOverride == "quick-capture")
-                ? noteStore.preferredInboxDirectory
-                : noteStore.notesDirectory)
+            ?? noteStore.notesDirectory
         self.onSave = onSave
         self.onClose = onClose
         self.onRequestSearch = onRequestSearch

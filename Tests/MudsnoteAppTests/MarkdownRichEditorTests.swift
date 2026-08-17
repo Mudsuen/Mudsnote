@@ -9984,8 +9984,8 @@ struct MarkdownRichEditorTests {
         let saveButton = try #require(harness.controller.saveButton as? HoverToolbarButton)
         let cancelButton = try #require(harness.controller.cancelButton as? HoverToolbarButton)
 
-        #expect(harness.controller.selectedDirectoryURL == harness.store.preferredInboxDirectory)
-        #expect(harness.controller.quickCaptureDestinationTitle() == "Inbox")
+        #expect(harness.controller.selectedDirectoryURL == harness.store.notesDirectory)
+        #expect(harness.controller.quickCaptureDestinationTitle() == "Notes")
         let directoryMenu = harness.controller.makeQuickCaptureDirectoryMenu()
         #expect(directoryMenu.items.compactMap { ($0.representedObject as? URL)?.lastPathComponent } == [
             "000-Inbox",
@@ -10071,7 +10071,7 @@ struct MarkdownRichEditorTests {
         #expect(saved.title == "Project / Alpha?")
         #expect(saved.body == "Project / Alpha? Keep this sentence.\nSecond line")
         #expect(!url.lastPathComponent.contains("/"))
-        #expect(url.deletingLastPathComponent() == harness.store.preferredInboxDirectory)
+        #expect(url.deletingLastPathComponent() == harness.store.notesDirectory)
     }
 
     @MainActor
@@ -10492,7 +10492,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func floatingNotesDefaultToExistingInboxAndHighlightDirectly() throws {
+    func floatingNotesDefaultToConfiguredFolderAndHighlightDirectly() throws {
         let harness = try makeEditorControllerHarness(
             draftID: "floating-note",
             showsSaveButton: false,
@@ -10505,7 +10505,9 @@ struct MarkdownRichEditorTests {
 
         let expectedInbox = harness.store.notesDirectory.appendingPathComponent("000-Inbox", isDirectory: true)
         #expect(harness.store.preferredInboxDirectory == expectedInbox.standardizedFileURL)
-        #expect(harness.controller.selectedDirectoryURL == expectedInbox.standardizedFileURL)
+        // A new floating note defaults to the configured default folder, not
+        // the auto-detected inbox.
+        #expect(harness.controller.selectedDirectoryURL == harness.store.notesDirectory)
 
         let controller = harness.controller
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(

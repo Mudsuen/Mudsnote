@@ -623,7 +623,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             let url = try noteStore.saveNewNote(
                 title: "",
                 body: "",
-                in: noteStore.preferredInboxDirectory
+                in: noteStore.notesDirectory
             )
             openEditor(for: url)
             rebuildMenu()
