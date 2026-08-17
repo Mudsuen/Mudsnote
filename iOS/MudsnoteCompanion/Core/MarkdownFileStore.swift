@@ -227,9 +227,6 @@ actor MarkdownFileStore {
         guard let state = libraryInventoryState else {
             throw FolderAccessError.missingFolder
         }
-        let inboxURL = root.appendingPathComponent("Inbox.md")
-        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
-        let inboxItems = InboxParser.parse(inboxMarkdown)
         while !state.isComplete {
             guard let url = state.enumerator?.nextObject() as? URL else {
                 state.isComplete = true
@@ -340,8 +337,8 @@ actor MarkdownFileStore {
             state.pendingListMetadata.removeSubrange(contentStartIndex..<contentEndIndex)
         }
 
-        var attachmentOwners = Self.inboxAttachmentOwners(in: inboxItems)
-        for file in state.markdownFiles where file.relativePath != "Inbox.md" {
+        var attachmentOwners: [String: [LibraryAttachment.Owner]] = [:]
+        for file in state.markdownFiles {
             guard let metadata = listMetadataCache[file.relativePath] else { continue }
             let owner = LibraryAttachment.Owner(
                 id: "file:\(file.relativePath)",
@@ -382,7 +379,7 @@ actor MarkdownFileStore {
         // loader below and preserve the unreadable file until the user repairs it.
         let smartFolders = (try? loadSmartFolders(root: root)) ?? []
         let snapshot = MarkdownLibrarySnapshot(
-            inboxItems: inboxItems,
+            inboxItems: [],
             allFiles: allFiles,
             recentFiles: recentFiles,
             hasMoreFiles: !state.pendingListMetadata.isEmpty,
@@ -395,7 +392,7 @@ actor MarkdownFileStore {
             smartFolders: smartFolders,
             summary: LibrarySummary(
                 allNotesCount: state.markdownFiles.count,
-                inboxCount: inboxItems.count,
+                inboxCount: 0,
                 attachmentCount: state.attachmentCount,
                 recentlyDeletedCount: trashedFiles.count
             ),
@@ -406,59 +403,7 @@ actor MarkdownFileStore {
     }
 
     func loadInboxDeltaSnapshot() throws -> MarkdownLibrarySnapshot {
-        guard let root else { throw FolderAccessError.missingFolder }
-        guard var snapshot = cachedLibrarySnapshot else {
-            return try loadLibrarySnapshot()
-        }
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { root.stopAccessingSecurityScopedResource() }
-        }
-
-        let inboxURL = root.appendingPathComponent("Inbox.md")
-        let inboxMarkdown = try String(contentsOf: inboxURL, encoding: .utf8)
-        let inboxItems = InboxParser.parse(inboxMarkdown)
-        let inboxValues = try inboxURL.resourceValues(
-            forKeys: [.contentModificationDateKey, .creationDateKey]
-        )
-        let modifiedAt = inboxValues.contentModificationDate ?? .distantPast
-        let metadata = MarkdownListMetadata.extract(
-            from: inboxMarkdown,
-            fallbackTitle: String(localized: "Inbox")
-        )
-        let inboxFile = RecentMarkdownFile(
-            id: "Inbox.md",
-            relativePath: "Inbox.md",
-            title: metadata.title,
-            modifiedAt: modifiedAt,
-            createdAt: inboxValues.creationDate ?? modifiedAt,
-            preview: metadata.preview,
-            galleryImagePath: metadata.galleryImagePath,
-            galleryChecklistItems: metadata.galleryChecklistItems,
-            hasAttachments: metadata.hasAttachments,
-            hasChecklist: metadata.hasChecklist,
-            hasUncheckedChecklist: metadata.hasUncheckedChecklist,
-            tags: metadata.tags
-        )
-
-        snapshot.inboxItems = inboxItems
-        let inboxOwners = Self.inboxAttachmentOwners(in: inboxItems)
-        for index in snapshot.attachments.indices {
-            let fileOwners = snapshot.attachments[index].owners.filter {
-                if case .file = $0.destination { return true }
-                return false
-            }
-            snapshot.attachments[index].owners = fileOwners
-                + (inboxOwners[snapshot.attachments[index].relativePath] ?? [])
-        }
-        snapshot.summary.inboxCount = inboxItems.count
-        snapshot.allFiles = (snapshot.allFiles.filter { $0.relativePath != "Inbox.md" } + [inboxFile])
-            .sorted(by: Self.notesOrder)
-        snapshot.recentFiles = snapshot.allFiles
-            .prefix(24)
-            .map { $0 }
-        cachedLibrarySnapshot = snapshot
-        return snapshot
+        try loadLibrarySnapshot()
     }
 
     func setPinned(_ isPinned: Bool, relativePath: String) throws {
@@ -684,8 +629,7 @@ actor MarkdownFileStore {
         for file in files {
             try Task.checkCancellation()
             activePaths.insert(file.relativePath)
-            if scope == .notes, file.relativePath == "Inbox.md" { continue }
-            if scope == .inbox, file.relativePath != "Inbox.md" { continue }
+            if scope == .inbox { continue }
             guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
             let values = try? url.resourceValues(
                 forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey]
@@ -714,25 +658,7 @@ actor MarkdownFileStore {
                 }
             }
 
-            if file.relativePath == "Inbox.md" {
-                for memo in InboxParser.parse(markdown) {
-                    if let result = MarkdownSearch.match(memo: memo, terms: terms) {
-                        matches.append(result)
-                        continue
-                    }
-                    let attachments = try await searchableAttachmentDocuments(
-                        in: memo.body,
-                        root: root
-                    )
-                    if let result = MarkdownSearch.match(
-                        memo: memo,
-                        terms: terms,
-                        attachmentDocuments: attachments
-                    ) {
-                        matches.append(result)
-                    }
-                }
-            } else if let result = MarkdownSearch.match(
+            if let result = MarkdownSearch.match(
                 file: file,
                 markdown: markdown,
                 terms: terms
@@ -1918,24 +1844,6 @@ actor MarkdownFileStore {
         invalidatePathPrefix(relativePath)
     }
 
-    func trashMergedInboxFolders(
-        relativePaths: [String],
-        now: Date = Date()
-    ) throws {
-        guard let root else { throw FolderAccessError.missingFolder }
-        let paths = Array(Set(relativePaths)).sorted()
-        guard !paths.isEmpty else { return }
-        for path in paths {
-            try trashFolder(relativePath: path, now: now)
-        }
-
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
-        let marker = root.appendingPathComponent(FolderInitializer.deletedInboxMarkerPath)
-        try Data().write(to: marker, options: .atomic)
-        cachedLibrarySnapshot = nil
-    }
-
     func restoreTrashedMarkdownDocument(id: String) throws -> RecentMarkdownFile {
         guard let root else { throw FolderAccessError.missingFolder }
         let accessed = root.startAccessingSecurityScopedResource()
@@ -2691,15 +2599,13 @@ actor MarkdownFileStore {
     }
 
     private static func isMutableNotePath(_ relativePath: String) -> Bool {
-        guard relativePath != "Inbox.md",
-              !relativePath.hasPrefix("Attachments/"),
+        guard !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return false }
         return true
     }
 
     private static func isTrashableNotePath(_ relativePath: String) -> Bool {
-        relativePath != "Inbox.md"
-            && !relativePath.hasPrefix("Attachments/")
+        !relativePath.hasPrefix("Attachments/")
             && !relativePath.hasPrefix(".mudsnote/")
             && relativePath.hasSuffix(".md")
     }
@@ -2768,8 +2674,7 @@ actor MarkdownFileStore {
     }
 
     private static func isPinnableNotePath(_ relativePath: String) -> Bool {
-        relativePath != "Inbox.md"
-            && !relativePath.hasPrefix("Attachments/")
+        !relativePath.hasPrefix("Attachments/")
             && !relativePath.hasPrefix(".mudsnote/")
             && relativePath.hasSuffix(".md")
     }
@@ -3051,11 +2956,6 @@ actor MarkdownFileStore {
         to target: URL,
         root: URL
     ) throws -> URL {
-        if target.lastPathComponent == "Inbox.md" {
-            try appendLegacyPendingWriteIfNeeded(pending, to: target)
-            return target
-        }
-
         let title = target.deletingPathExtension().lastPathComponent
         let note = Self.capturedNoteMarkdown(
             title: title,
@@ -3205,35 +3105,6 @@ actor MarkdownFileStore {
 
     private static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func appendLegacyPendingWriteIfNeeded(_ pending: PendingWrite, to target: URL) throws {
-        let marker = "<!-- mudsnote-write:\(pending.id.uuidString.lowercased()) -->"
-        let block = pending.markdownBlock + marker + "\n"
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        var writeError: Error?
-
-        coordinator.coordinate(writingItemAt: target, options: .forMerging, error: &coordinationError) { coordinatedURL in
-            do {
-                var existing = try Data(contentsOf: coordinatedURL)
-                if let markerData = marker.data(using: .utf8), existing.range(of: markerData) != nil {
-                    return
-                }
-                guard let blockData = block.data(using: .utf8) else { return }
-                existing.append(blockData)
-                try existing.write(to: coordinatedURL, options: .atomic)
-            } catch {
-                writeError = error
-            }
-        }
-
-        if let coordinationError {
-            throw coordinationError
-        }
-        if let writeError {
-            throw writeError
-        }
     }
 
     private static func relativePath(for url: URL, root: URL) -> String {
@@ -3425,20 +3296,6 @@ struct LibraryFolderNode: Identifiable, Equatable {
     var children: [LibraryFolderNode]
 
     var id: String { relativePath }
-
-    var isMergedInboxFolder: Bool {
-        let normalized = name
-            .folding(
-                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                locale: .current
-            )
-            .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let unprefixed = normalized.drop {
-            $0.isNumber || $0 == "-" || $0 == "_" || $0 == " "
-        }
-        return unprefixed == "inbox" || unprefixed == "收件箱" || unprefixed == "收件"
-    }
 
     static func makeTree(
         directoryPaths: some Sequence<String>,

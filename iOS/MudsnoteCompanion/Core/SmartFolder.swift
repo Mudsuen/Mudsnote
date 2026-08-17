@@ -131,7 +131,6 @@ enum NotesSearchSuggestion: String, CaseIterable, Identifiable {
         var results: [MarkdownSearchResult] = []
         if scope != .inbox {
             results += files.lazy
-                .filter { $0.relativePath != "Inbox.md" }
                 .filter { filter.matches(file: $0, now: now, calendar: calendar) }
                 .map { file in
                     MarkdownSearchResult(

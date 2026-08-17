@@ -45,7 +45,7 @@ struct CaptureFolderPreferences {
         if defaults.object(forKey: Self.defaultFolderKey) != nil {
             defaults.removeObject(forKey: Self.defaultFolderKey)
         }
-        return available.first(where: \.isMergedInboxFolder)?.relativePath
+        return nil
     }
 
     func resolveDefaultFolder(libraryRoot: URL) -> String? {
@@ -63,9 +63,7 @@ struct CaptureFolderPreferences {
         if defaults.object(forKey: key) != nil {
             defaults.removeObject(forKey: key)
         }
-        return isExistingWritableFolder("Inbox", libraryRoot: libraryRoot)
-            ? "Inbox"
-            : nil
+        return nil
     }
 
     func recordSuccessfulSave(to relativePath: String?, at date: Date = Date()) {

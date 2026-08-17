@@ -506,7 +506,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(deleted.markdown, "before after\n#keep\nend")
     }
 
-    func testTagMutationRenamesAndDeletesAcrossNotesAndInbox() async throws {
+    func testTagMutationRenamesAndDeletesAcrossOrdinaryNotes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -523,8 +523,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             encoding: .utf8
         )
         let inboxURL = root.appendingPathComponent("Inbox.md")
-        let inbox = try String(contentsOf: inboxURL, encoding: .utf8)
-        try (inbox + "\n## 2026-07-15 07:10\n\nQuick #project\n").write(
+        try "# Inbox\n\nQuick #project\n".write(
             to: inboxURL,
             atomically: true,
             encoding: .utf8
@@ -556,7 +555,10 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let snapshot = try await store.loadLibrarySnapshot()
         XCTAssertTrue(snapshot.allFiles.contains { $0.tags.contains("#client") })
-        XCTAssertTrue(snapshot.inboxItems.contains { $0.tags == ["#client"] })
+        XCTAssertEqual(
+            snapshot.allFiles.first { $0.relativePath == "Inbox.md" }?.tags,
+            ["#client"]
+        )
 
         let deleted = try await store.mutateTag("client", mutation: .delete)
         XCTAssertEqual(deleted.occurrenceCount, 3)
@@ -948,8 +950,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertEqual(selectedRoot, secondRoot)
         XCTAssertEqual(access.currentRoot, secondRoot)
-        XCTAssertEqual(model.draft.target, .folder("Inbox"))
-        XCTAssertEqual(model.libraryFiles.count, 1)
+        XCTAssertEqual(model.draft.target, .folder(nil))
+        XCTAssertEqual(model.libraryFiles.count, 0)
         XCTAssertEqual(model.libraryRevision, 1)
     }
 
@@ -993,7 +995,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
         XCTAssertFalse(model.isInitialLibraryLoading)
         XCTAssertEqual(model.libraryRevision, 1)
-        XCTAssertEqual(model.libraryFiles.count, 1)
+        XCTAssertEqual(model.libraryFiles.count, 0)
     }
 
     @MainActor
@@ -1558,7 +1560,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testCaptureFolderPreferencesDefaultToExistingInboxAndFallbackWhenStoredFolderDisappears() throws {
+    func testCaptureFolderPreferencesRequireAnExplicitExistingDefault() throws {
         let suiteName = "MudsnoteCompanionTests.capture-folders.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -1568,13 +1570,13 @@ final class MudsnoteCompanionTests: XCTestCase {
             files: []
         )
 
-        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Inbox")
+        XCTAssertNil(preferences.resolveDefaultFolder(in: folders))
 
         preferences.setDefaultFolder("Projects/Launch")
         XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Projects/Launch")
 
         preferences.setDefaultFolder("Deleted Folder")
-        XCTAssertEqual(preferences.resolveDefaultFolder(in: folders), "Inbox")
+        XCTAssertNil(preferences.resolveDefaultFolder(in: folders))
         XCTAssertEqual(preferences.storedDefaultFolder, nil)
     }
 
@@ -1667,7 +1669,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         while ContinuousClock.now < readyDeadline, model.allFolders.isEmpty {
             try await Task.sleep(for: .milliseconds(20))
         }
-        XCTAssertEqual(model.defaultCaptureFolderPath, "Inbox")
+        XCTAssertNil(model.defaultCaptureFolderPath)
 
         model.selectCaptureFolder("Missing")
         model.draft.body = "This save must fail"
@@ -2396,7 +2398,7 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         let markdown = try String(contentsOf: root.appendingPathComponent("Inbox.md"), encoding: .utf8)
         XCTAssertEqual(markdown.components(separatedBy: "Write once").count - 1, 1)
-        XCTAssertEqual(markdown.components(separatedBy: "mudsnote-write:").count - 1, 1)
+        XCTAssertFalse(markdown.contains("mudsnote-write:"))
     }
 
     func testReplayPreservesIrrecoverableItemAndContinuesWithRemainingQueue() async throws {
@@ -2520,16 +2522,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             root: root
         )
 
-        let inbox = try String(
-            contentsOf: root.appendingPathComponent("Inbox.md"),
-            encoding: .utf8
-        )
-        XCTAssertFalse(inbox.contains("Captured from Shortcuts"))
         let createdNotes = try FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: nil
         ).filter {
-            $0.pathExtension == "md" && $0.lastPathComponent != "Inbox.md"
+            $0.pathExtension == "md"
         }
         XCTAssertEqual(createdNotes.count, 1)
         XCTAssertTrue(
@@ -2570,17 +2567,17 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
 
-        XCTAssertEqual(snapshot.summary.allNotesCount, 32)
+        XCTAssertEqual(snapshot.summary.allNotesCount, 31)
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
         XCTAssertEqual(snapshot.attachments.count, 1)
         XCTAssertEqual(snapshot.attachments.first?.relativePath, "Attachments/image.png")
         XCTAssertEqual(snapshot.attachments.first?.kind, .image)
-        XCTAssertEqual(snapshot.allFiles.count, 32)
+        XCTAssertEqual(snapshot.allFiles.count, 31)
         XCTAssertEqual(snapshot.recentFiles.count, 24)
         XCTAssertEqual(snapshot.conflictWarnings, ["Projects/note conflicted copy.md"])
     }
 
-    func testAttachmentInventoryLinksFilesBackToNotesAndRefreshesInboxOwners() async throws {
+    func testAttachmentInventoryLinksFilesBackToOrdinaryNotes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -2618,7 +2615,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             $0.relativePath == "Attachments/voice.m4a"
         })
         XCTAssertEqual(voice.kind, .audio)
-        XCTAssertEqual(voice.owners.map(\.destination), [.memo("2026-07-15 09:00-0")])
+        XCTAssertEqual(voice.owners.map(\.destination), [.file("Inbox.md")])
 
         try "# Inbox\n\n## 2026-07-15 09:00\n\nVoice memo without attachment\n".write(
             to: root.appendingPathComponent("Inbox.md"),
@@ -2661,12 +2658,10 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
 
-        XCTAssertEqual(snapshot.folders.map(\.name), ["Archive", "Inbox", "Projects"])
+        XCTAssertEqual(snapshot.folders.map(\.name), ["Archive", "Projects"])
         let archive = try XCTUnwrap(snapshot.folders.first { $0.name == "Archive" })
         XCTAssertEqual(archive.totalNoteCount, 0)
         XCTAssertEqual(archive.children.map(\.name), ["Empty"])
-        let inbox = try XCTUnwrap(snapshot.folders.first { $0.name == "Inbox" })
-        XCTAssertEqual(inbox.totalNoteCount, 0)
         let projects = try XCTUnwrap(snapshot.folders.first { $0.name == "Projects" })
         XCTAssertEqual(projects.directNoteCount, 1)
         XCTAssertEqual(projects.totalNoteCount, 2)
@@ -2702,30 +2697,11 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(folders.last?.totalNoteCount, 1)
     }
 
-    func testInboxFolderRecognitionSupportsExistingAndNumberedNames() {
-        let inboxNames = ["Inbox", "000-inbox", "000 Inbox", "收件箱"]
-        for name in inboxNames {
-            XCTAssertTrue(
-                LibraryFolderNode(
-                    relativePath: name,
-                    name: name,
-                    directNoteCount: 0,
-                    totalNoteCount: 0,
-                    children: []
-                ).isMergedInboxFolder,
-                name
-            )
-        }
+    func testInboxNamedFoldersRemainOrdinaryFolders() {
+        let names = ["Inbox", "000-inbox", "000 Inbox", "收件箱", "Inbox Archive"]
+        let folders = LibraryFolderNode.makeTree(directoryPaths: names, files: [])
 
-        XCTAssertFalse(
-            LibraryFolderNode(
-                relativePath: "Inbox Archive",
-                name: "Inbox Archive",
-                directNoteCount: 0,
-                totalNoteCount: 0,
-                children: []
-            ).isMergedInboxFolder
-        )
+        XCTAssertEqual(Set(folders.map(\.relativePath)), Set(names))
     }
 
     func testMarkdownTrashRestoreAvoidsCollisionAndRefreshesInventory() async throws {
@@ -2789,11 +2765,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         let snapshot = try await store.loadLibrarySnapshot()
         XCTAssertTrue(snapshot.trashedFiles.isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: note.path))
-        await XCTAssertThrowsErrorAsync(
-            try await store.trashMarkdownDocument(relativePath: "Inbox.md")
-        ) { error in
-            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
-        }
+        let inbox = root.appendingPathComponent("Inbox.md")
+        try "# Ordinary inbox-named note\n".write(
+            to: inbox,
+            atomically: true,
+            encoding: .utf8
+        )
+        let trashedInbox = try await store.trashMarkdownDocument(relativePath: "Inbox.md")
+        XCTAssertEqual(trashedInbox.originalRelativePath, "Inbox.md")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inbox.path))
         let trashedDaily = try await store.trashMarkdownDocument(
             relativePath: "Daily/2026-07-30.md"
         )
@@ -2803,7 +2783,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: daily, encoding: .utf8), dailyMarkdown)
     }
 
-    func testFolderInitializationCreatesInboxButDoesNotCreateDailyArtifacts() throws {
+    func testFolderInitializationDoesNotCreateAnyRequiredNoteFolder() throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -2812,13 +2792,22 @@ final class MudsnoteCompanionTests: XCTestCase {
         let dailyDirectory = root.appendingPathComponent("Daily", isDirectory: true)
         let inboxDirectory = root.appendingPathComponent("Inbox", isDirectory: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: dailyDirectory.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: inboxDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inboxDirectory.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Inbox.md").path
+            )
+        )
     }
 
-    func testDeletingMergedInboxFoldersPreventsAutomaticRecreation() async throws {
+    func testInboxNamedFoldersDeleteNormallyAndDoNotReappear() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Inbox", isDirectory: true),
+            withIntermediateDirectories: true
+        )
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("000-inbox", isDirectory: true),
             withIntermediateDirectories: true
@@ -2831,12 +2820,13 @@ final class MudsnoteCompanionTests: XCTestCase {
         let store = MarkdownFileStore()
         await store.configure(root: root)
         let snapshot = try await store.loadLibrarySnapshot()
-        let inboxFolders = snapshot.folders.filter(\.isMergedInboxFolder)
-        XCTAssertEqual(Set(inboxFolders.map(\.relativePath)), ["000-inbox", "Inbox"])
-
-        try await store.trashMergedInboxFolders(
-            relativePaths: inboxFolders.map(\.relativePath)
+        XCTAssertEqual(
+            Set(snapshot.folders.map(\.relativePath)),
+            ["000-inbox", "Inbox"]
         )
+
+        try await store.trashFolder(relativePath: "000-inbox")
+        try await store.trashFolder(relativePath: "Inbox")
         try FolderInitializer.initialize(root)
 
         XCTAssertFalse(
@@ -2849,7 +2839,7 @@ final class MudsnoteCompanionTests: XCTestCase {
                 atPath: root.appendingPathComponent("Inbox").path
             )
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("Inbox.md").path
             )
@@ -3280,14 +3270,16 @@ final class MudsnoteCompanionTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? MarkdownLifecycleError, .invalidNoteName)
         }
-        await XCTAssertThrowsErrorAsync(
-            try await store.renameMarkdownDocument(
-                relativePath: "Inbox.md",
-                to: "Renamed"
-            )
-        ) { error in
-            XCTAssertEqual(error as? MarkdownLifecycleError, .protectedNote)
-        }
+        try "# Ordinary inbox name\n".write(
+            to: root.appendingPathComponent("Inbox.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let renamedInbox = try await store.renameMarkdownDocument(
+            relativePath: "Inbox.md",
+            to: "Renamed"
+        )
+        XCTAssertEqual(renamedInbox.relativePath, "Renamed.md")
     }
 
     func testDuplicateNotePreservesMarkdownWithoutCopyingPinState() async throws {
@@ -3477,7 +3469,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testFullTextSearchFindsFileContentAndIndividualInboxMemos() async throws {
+    func testFullTextSearchTreatsInboxNamedFileAsOrdinaryNote() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -3492,15 +3484,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             encoding: .utf8
         )
         let inbox = root.appendingPathComponent("Inbox.md")
-        try (try String(contentsOf: inbox, encoding: .utf8) + """
-
-        ## 2026-07-13 09:00
-
-        Unique inbox thought
-
-        #strategy
-
-        """).write(to: inbox, atomically: true, encoding: .utf8)
+        try "# Inbox\n\nUnique inbox thought\n\n#strategy\n".write(
+            to: inbox,
+            atomically: true,
+            encoding: .utf8
+        )
 
         let store = MarkdownFileStore()
         await store.configure(root: root)
@@ -3514,13 +3502,13 @@ final class MudsnoteCompanionTests: XCTestCase {
             XCTFail("Expected a file search result")
         }
 
-        let memoResults = try await store.search(query: "unique strategy")
-        XCTAssertEqual(memoResults.count, 1)
-        XCTAssertEqual(memoResults.first?.location, String(localized: "Inbox"))
-        if case .memo(let memo) = try XCTUnwrap(memoResults.first).destination {
-            XCTAssertTrue(memo.body.contains("Unique inbox thought"))
+        let inboxNamedFileResults = try await store.search(query: "unique strategy")
+        XCTAssertEqual(inboxNamedFileResults.count, 1)
+        XCTAssertEqual(inboxNamedFileResults.first?.location, "Inbox.md")
+        if case .file(let file) = try XCTUnwrap(inboxNamedFileResults.first).destination {
+            XCTAssertEqual(file.relativePath, "Inbox.md")
         } else {
-            XCTFail("Expected an individual Inbox memo result")
+            XCTFail("Expected an ordinary file search result")
         }
 
         let fileQueryInInbox = try await store.search(
@@ -3540,9 +3528,9 @@ final class MudsnoteCompanionTests: XCTestCase {
             scope: .inbox
         )
         XCTAssertEqual(fileQueryInInbox, [])
-        XCTAssertEqual(memoQueryInNotes, [])
+        XCTAssertEqual(memoQueryInNotes.map(\.location), ["Inbox.md"])
         XCTAssertEqual(fileQueryInNotes.map(\.location), ["Projects/Launch.md"])
-        XCTAssertEqual(memoQueryInInbox.map(\.location), [String(localized: "Inbox")])
+        XCTAssertEqual(memoQueryInInbox, [])
     }
 
     func testAttachmentReferenceSearchParserIgnoresCodeAndTraversal() {
@@ -4238,7 +4226,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
-    func testInboxDeltaRefreshAvoidsUnrelatedLibraryRescan() async throws {
+    func testLibraryRefreshIncludesNewOrdinaryNotes() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -4253,25 +4241,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
-        let inbox = root.appendingPathComponent("Inbox.md")
-        let inboxAppend = """
-        ## 2026-07-11 18:45
-
-        Incremental refresh memo
-
-        """
-        try (try String(contentsOf: inbox, encoding: .utf8) + inboxAppend).write(
-            to: inbox,
-            atomically: true,
-            encoding: .utf8
-        )
-
         let delta = try await store.loadInboxDeltaSnapshot()
-        XCTAssertEqual(delta.summary.allNotesCount, baseline.summary.allNotesCount)
-        XCTAssertEqual(delta.summary.inboxCount, 1)
-        XCTAssertEqual(delta.inboxItems.first?.body, "Incremental refresh memo")
-        XCTAssertEqual(delta.recentFiles.first?.relativePath, "Inbox.md")
-        XCTAssertFalse(delta.recentFiles.contains { $0.relativePath == "Projects/external.md" })
+        XCTAssertEqual(delta.summary.allNotesCount, baseline.summary.allNotesCount + 1)
+        XCTAssertEqual(delta.summary.inboxCount, 0)
+        XCTAssertTrue(delta.inboxItems.isEmpty)
+        XCTAssertTrue(delta.recentFiles.contains { $0.relativePath == "Projects/external.md" })
 
         let refreshed = try await store.loadLibrarySnapshot()
         XCTAssertEqual(refreshed.summary.allNotesCount, baseline.summary.allNotesCount + 1)
@@ -4347,7 +4321,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
 
         var snapshot = try await store.loadLibrarySnapshot()
-        XCTAssertEqual(snapshot.allFiles.count, 96)
+        XCTAssertEqual(snapshot.allFiles.count, 95)
         XCTAssertEqual(snapshot.allFiles.filter(\.isContentLoaded).count, 40)
         XCTAssertTrue(snapshot.hasMoreFiles)
         XCTAssertTrue(
@@ -4358,7 +4332,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             snapshot = try await store.loadNextLibraryPage()
         }
 
-        XCTAssertEqual(snapshot.allFiles.count, 96)
+        XCTAssertEqual(snapshot.allFiles.count, 95)
         XCTAssertTrue(snapshot.allFiles.allSatisfy(\.isContentLoaded))
         XCTAssertFalse(snapshot.allFiles.contains { $0.relativePath == "Attachments/manual.md" })
         XCTAssertEqual(snapshot.summary.attachmentCount, 1)
@@ -4407,17 +4381,17 @@ final class MudsnoteCompanionTests: XCTestCase {
         await store.configure(root: root)
         measureAsync {
             var snapshot = try await store.loadLibrarySnapshot()
-            XCTAssertEqual(snapshot.allFiles.count, 1_001)
+            XCTAssertEqual(snapshot.allFiles.count, 1_000)
             XCTAssertEqual(snapshot.allFiles.filter(\.isContentLoaded).count, 40)
             while snapshot.hasMoreFiles {
                 snapshot = try await store.loadNextLibraryPage()
             }
-            XCTAssertEqual(snapshot.summary.allNotesCount, 1_001)
+            XCTAssertEqual(snapshot.summary.allNotesCount, 1_000)
             XCTAssertEqual(snapshot.recentFiles.count, 24)
         }
     }
 
-    func testPerformanceInboxDeltaRefreshInLargeLibrary() async throws {
+    func testPerformanceLibraryRefreshAfterAddingOrdinaryNote() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -4439,12 +4413,11 @@ final class MudsnoteCompanionTests: XCTestCase {
             inventory = try await store.loadNextLibraryPage()
         }
         let inbox = root.appendingPathComponent("Inbox.md")
-        try (try String(contentsOf: inbox, encoding: .utf8) + """
-        ## 2026-07-11 18:46
-
-        Performance delta memo
-
-        """).write(to: inbox, atomically: true, encoding: .utf8)
+        try "# Performance note with ordinary inbox name\n".write(
+            to: inbox,
+            atomically: true,
+            encoding: .utf8
+        )
 
         measureAsync {
             let snapshot = try await store.loadInboxDeltaSnapshot()

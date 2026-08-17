@@ -139,44 +139,13 @@ final class AppModel: ObservableObject {
     }
 
     var visibleLibraryFolders: [LibraryFolderNode] {
-        folders.filter { !$0.isMergedInboxFolder }
-    }
-
-    var mergedInboxFolders: [LibraryFolderNode] {
-        folders.filter(\.isMergedInboxFolder)
-    }
-
-    var primaryMergedInboxFolder: LibraryFolderNode? {
-        mergedInboxFolders.first {
-            $0.name.compare(
-                "000-inbox",
-                options: [.caseInsensitive, .widthInsensitive]
-            ) == .orderedSame
-        } ?? mergedInboxFolders.first
-    }
-
-    var showsMergedInbox: Bool {
-        !mergedInboxFolders.isEmpty || !inboxItems.isEmpty
-    }
-
-    var mergedInboxFiles: [RecentMarkdownFile] {
-        let roots = mergedInboxFolders.map(\.relativePath)
-        guard !roots.isEmpty else { return [] }
-        return libraryFiles.filter { file in
-            roots.contains { root in
-                file.relativePath.hasPrefix(root + "/")
-            }
-        }
-    }
-
-    var mergedInboxCount: Int {
-        inboxItems.count + mergedInboxFiles.count
+        folders
     }
 
     var defaultCaptureFolderLabel: String {
         allFolders.first {
             $0.relativePath == defaultCaptureFolderPath
-        }?.name ?? String(localized: "Inbox")
+        }?.name ?? CaptureTarget.folder(nil).label
     }
 
     init(
@@ -1006,11 +975,11 @@ final class AppModel: ObservableObject {
     }
 
     func canMoveToRecentlyDeleted(_ file: RecentMarkdownFile) -> Bool {
-        file.relativePath != "Inbox.md"
+        true
     }
 
     func canReorganize(_ file: RecentMarkdownFile) -> Bool {
-        file.relativePath != "Inbox.md"
+        true
     }
 
     func moveToRecentlyDeleted(_ file: RecentMarkdownFile) {
@@ -1322,13 +1291,7 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            if folder.isMergedInboxFolder {
-                try await fileStore.trashMergedInboxFolders(
-                    relativePaths: [folder.relativePath]
-                )
-            } else {
-                try await fileStore.trashFolder(relativePath: folder.relativePath)
-            }
+            try await fileStore.trashFolder(relativePath: folder.relativePath)
             if let selectedDocument,
                selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
                 self.selectedDocument = nil
@@ -1339,35 +1302,6 @@ final class AppModel: ObservableObject {
             return true
         } catch {
             statusToast = .error(error.localizedDescription)
-            return false
-        }
-    }
-
-    @discardableResult
-    func deleteMergedInboxFolders() async -> Bool {
-        guard syncStatus != .pending else {
-            statusToast = .error(String(localized: "Finish pending captures before changing folders."))
-            return false
-        }
-        let targets = mergedInboxFolders
-        guard !targets.isEmpty else { return false }
-        do {
-            try await fileStore.trashMergedInboxFolders(
-                relativePaths: targets.map(\.relativePath)
-            )
-            if let selectedDocument,
-               targets.contains(where: {
-                   selectedDocument.relativePath.hasPrefix($0.relativePath + "/")
-               }) {
-                self.selectedDocument = nil
-            }
-            statusToast = .saved(String(localized: "Folder Deleted"))
-            await refreshInbox()
-            await refreshActiveSearchIfNeeded()
-            return true
-        } catch {
-            statusToast = .error(error.localizedDescription)
-            await refreshInbox()
             return false
         }
     }
@@ -1386,10 +1320,6 @@ final class AppModel: ObservableObject {
         relativePath: String,
         toFolder targetFolder: String?
     ) async -> MarkdownDocument? {
-        guard relativePath != "Inbox.md" else {
-            statusToast = .error(String(localized: "Inbox cannot be moved between folders."))
-            return nil
-        }
         guard syncStatus != .pending else {
             statusToast = .error(String(localized: "Finish pending captures before changing folders."))
             return nil
@@ -2378,7 +2308,7 @@ final class AppModel: ObservableObject {
         for memo in memos {
             countTags(memo.tags)
         }
-        for file in files where file.relativePath != "Inbox.md" {
+        for file in files {
             countTags(file.tags)
         }
 

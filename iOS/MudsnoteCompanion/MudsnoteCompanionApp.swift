@@ -210,8 +210,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                         encoding: .utf8
                     )
                     let inbox = root.appendingPathComponent("Inbox.md")
-                    let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
-                    try (existingInbox + "\n## 2026-07-18 19:00\n\nOriginal inbox memo\n").write(
+                    try "# Inbox\n\nOriginal inbox note\n".write(
                         to: inbox,
                         atomically: true,
                         encoding: .utf8
@@ -224,8 +223,7 @@ private enum MudsnoteUITestLaunchConfiguration {
                         encoding: .utf8
                     )
                     let inbox = root.appendingPathComponent("Inbox.md")
-                    let existingInbox = try String(contentsOf: inbox, encoding: .utf8)
-                    try (existingInbox + "\n## 2026-07-13 20:00\n\nTagged quick capture\n\n#project #quick\n").write(
+                    try "# Inbox\n\nTagged quick capture\n\n#project #quick\n".write(
                         to: inbox,
                         atomically: true,
                         encoding: .utf8

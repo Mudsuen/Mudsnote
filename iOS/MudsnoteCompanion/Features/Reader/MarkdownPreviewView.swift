@@ -507,7 +507,7 @@ struct MarkdownPreviewView: View {
     }
 
     private func canManage(_ document: MarkdownDocument) -> Bool {
-        document.relativePath != "Inbox.md"
+        true
     }
 
     private var currentFile: RecentMarkdownFile? {

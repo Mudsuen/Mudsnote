@@ -2317,16 +2317,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Library"].exists)
         XCTAssertTrue(app.buttons["settings-link"].exists)
 
-        let inboxCount = app.staticTexts["folder-count-000-inbox"]
         let projectsCount = app.staticTexts["folder-count-Projects"]
-        XCTAssertTrue(inboxCount.exists)
+        XCTAssertFalse(app.buttons["folder-row-000-inbox"].exists)
         XCTAssertTrue(projectsCount.exists)
-        XCTAssertEqual(
-            inboxCount.frame.maxX,
-            projectsCount.frame.maxX,
-            accuracy: 2,
-            "Folder counts must share one trailing alignment column"
-        )
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Home cards with left directory drawer"

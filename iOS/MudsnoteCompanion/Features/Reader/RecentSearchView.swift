@@ -799,7 +799,6 @@ struct LibraryHomeView: View {
     private func makeHomeTimelineProjection() -> HomeTimelineProjection {
         let folderPath = selectedHomeFolderPath
         let visibleFiles = appModel.libraryFiles.filter { file in
-            guard file.relativePath != "Inbox.md" else { return false }
             guard !folderPath.isEmpty else { return true }
             return HomeFolderScope.contains(
                 fileRelativePath: file.relativePath,
@@ -863,7 +862,7 @@ struct LibraryHomeView: View {
         }
         let smartFolderCounts = Dictionary(uniqueKeysWithValues: appModel.smartFolders.map { definition in
             let count = appModel.libraryFiles.lazy.filter {
-                $0.relativePath != "Inbox.md" && definition.matches(file: $0)
+                definition.matches(file: $0)
             }.count + appModel.inboxItems.lazy.filter {
                 definition.matches(memo: $0)
             }.count
@@ -1074,18 +1073,16 @@ struct LibraryHomeView: View {
     }
 
     private var allHomeNoteCount: Int {
-        appModel.libraryFiles.lazy.filter { $0.relativePath != "Inbox.md" }.count
-            + appModel.inboxItems.count
+        appModel.libraryFiles.count
     }
 
     private var directoryFolders: [LibraryFolderNode] {
-        appModel.visibleLibraryFolders.filter { !$0.isMergedInboxFolder }
+        appModel.visibleLibraryFolders
     }
 
     private var allHomeSelectableEntries: [HomeTimelineEntry] {
         let folderPath = selectedHomeFolderPath
         let files = appModel.libraryFiles.filter { file in
-            guard file.relativePath != "Inbox.md" else { return false }
             guard !folderPath.isEmpty else { return true }
             return HomeFolderScope.contains(
                 fileRelativePath: file.relativePath,
@@ -1368,19 +1365,6 @@ struct LibraryHomeView: View {
                         selectedHomeFolderPath.isEmpty ? String(localized: "Selected") : ""
                     )
                     .accessibilityIdentifier("all-notes-row")
-
-                    if appModel.showsMergedInbox {
-                        NavigationLink {
-                            InboxStreamView()
-                        } label: {
-                            NotesFolderRow(
-                                title: "000-inbox",
-                                systemImage: "tray",
-                                count: appModel.mergedInboxCount
-                            )
-                        }
-                        .accessibilityIdentifier("inbox-link")
-                    }
 
                     ForEach(directoryFolders) { folder in
                         DirectoryFolderTree(
@@ -5294,7 +5278,7 @@ struct SmartFolderNotesView: View {
         guard let definition else { return [] }
         let now = Date()
         return appModel.libraryFiles.filter {
-            $0.relativePath != "Inbox.md" && definition.matches(file: $0, now: now)
+            definition.matches(file: $0, now: now)
         }
     }
 
@@ -5357,7 +5341,7 @@ struct TagsBrowserView: View {
 
     private var files: [RecentMarkdownFile] {
         appModel.libraryFiles.filter { file in
-            file.relativePath != "Inbox.md" && filter.matches(tags: file.tags)
+            filter.matches(tags: file.tags)
         }
     }
 
@@ -5569,8 +5553,7 @@ struct TagNotesListView: View {
 
     private var files: [RecentMarkdownFile] {
         appModel.libraryFiles.filter { file in
-            file.relativePath != "Inbox.md"
-                && file.tags.contains(where: matchesTag)
+            file.tags.contains(where: matchesTag)
         }
     }
 
@@ -6177,7 +6160,7 @@ struct RecentSearchView: View {
                 if filteredFiles.isEmpty {
                     EmptyReaderStateView(
                         title: String(localized: "No Recent Files"),
-                        message: String(localized: "Inbox and recent files appear here after the folder is initialized.")
+                        message: String(localized: "Recent Markdown files appear here after the folder is initialized.")
                     )
                 } else {
                     List(filteredFiles) { file in
@@ -6189,6 +6172,42 @@ struct RecentSearchView: View {
             .searchable(text: $appModel.query, prompt: "Search recent Markdown")
             .navigationTitle("Recent")
             .background(MudsnoteColors.canvas)
+        }
+    }
+}
+
+struct MemoCardView: View {
+    var memo: MemoBlock
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(memo.dateText)
+                    .font(.system(.caption, design: .rounded, weight: .medium))
+                    .foregroundStyle(MudsnoteColors.muted)
+                Spacer()
+                if !memo.tags.isEmpty {
+                    Text(memo.tags.prefix(2).joined(separator: " "))
+                        .font(.caption2)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(1)
+                }
+            }
+            Text(memo.preview)
+                .font(.system(.body, design: .rounded))
+                .foregroundStyle(MudsnoteColors.text)
+                .lineLimit(4)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            MudsnoteColors.card,
+            in: RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: MudsnoteRadius.card)
+                .stroke(MudsnoteColors.line, lineWidth: 1)
         }
     }
 }
