@@ -26,6 +26,7 @@ public final class NoteStore: @unchecked Sendable {
     var searchIndexBuildWillReadForTesting: (() -> Void)?
     var searchIndexEntryWillReadForTesting: (() -> Void)?
     var searchIndexEntryWillMatchForTesting: (() -> Void)?
+    var searchIndexEntryContentAvailabilityForTesting: ((URL) -> Bool)?
     var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?
     var searchIndexCacheURL: URL {
         appSupportDirectory
@@ -110,6 +111,7 @@ struct NoteSearchIndexEntry: Codable {
     let knowledgeLinkTargets: [KnowledgeLinkTarget]
     let hasAttachments: Bool
     let thumbnailURL: URL?
+    let isContentIndexed: Bool
 
     var result: NoteSearchResult {
         NoteSearchResult(
@@ -126,7 +128,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 7
+    static let currentSchemaVersion = 8
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot

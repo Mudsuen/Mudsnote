@@ -593,17 +593,12 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
         if isShiftReturnKey(event) {
             if hasMarkedText() {
-                // Route through the input system so the IME commits its
-                // composition cleanly. Inserting directly via insertText
-                // while marked text is active leaves the IME in an
-                // inconsistent state, which some input methods (notably
-                // 搜狗 / native pinyin) resolve by switching their
-                // Chinese/English mode. The follow-up insertNewline command
-                // is intercepted in `doCommand(by:)` to insert the soft break.
-                super.keyDown(with: event)
-            } else {
-                insertSoftLineBreak()
+                // Commit the active composition without forwarding
+                // Shift-Return to the input method. Some IMEs bind that key
+                // chord to a Chinese/English mode switch.
+                unmarkText()
             }
+            insertSoftLineBreak()
             return
         }
         if commandDelegate?.markdownTextView(self, handleKeyDown: event) == true {
@@ -616,20 +611,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         return [UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter)].contains(event.keyCode)
             && modifiers == [.shift]
-    }
-
-    override func doCommand(by selector: Selector) {
-        // When the IME passes shift+return through after committing its
-        // composition, we want a soft line break instead of the default
-        // hard newline. `currentEvent` is the keyDown being dispatched.
-        if selector == #selector(insertNewline(_:)),
-           let event = window?.currentEvent,
-           event.type == .keyDown,
-           isShiftReturnKey(event) {
-            insertSoftLineBreak()
-            return
-        }
-        super.doCommand(by: selector)
     }
 
     @discardableResult
@@ -711,7 +692,14 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         guard string.length > 0 else { return false }
         let selection = selectedRange()
         let caret = min(max(selection.location, 0), string.length)
-        let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
+        let paragraphLocation = caret == string.length
+            && caret > 0
+            && !string.hasSuffix("\n")
+            ? caret - 1
+            : caret
+        let paragraphRange = string.paragraphRange(
+            for: NSRange(location: paragraphLocation, length: 0)
+        )
         guard paragraphRange.location == 0 else { return false }
         let kind = MarkdownRichTextCodec.paragraphKind(at: paragraphRange, in: storage)
         if case .heading = kind { return true }
@@ -3421,6 +3409,6 @@ extension Character {
             return true
         }
 
-        return self == "_" || self == "-"
+        return self == "_" || self == "-" || self == "/"
     }
 }

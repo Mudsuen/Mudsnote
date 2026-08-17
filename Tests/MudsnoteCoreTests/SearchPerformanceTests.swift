@@ -402,7 +402,8 @@ struct SearchPerformanceTests {
                 knowledgeLayer: nil,
                 knowledgeLinkTargets: [],
                 hasAttachments: false,
-                thumbnailURL: nil
+                thumbnailURL: nil,
+                isContentIndexed: true
             )
         }
         let snapshot = NoteSearchIndexSnapshot(
@@ -412,6 +413,48 @@ struct SearchPerformanceTests {
         )
         store.writeSearchIndexSnapshotToDisk(snapshot)
         #expect(!FileManager.default.fileExists(atPath: store.searchIndexCacheURL.path))
+    }
+
+    @Test
+    func unavailableCloudNotesRemainVisibleAndHydrateWhenContentBecomesAvailable() throws {
+        let suiteName = "mudsnote.cloud-placeholder-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-cloud-placeholder-tests-\(UUID().uuidString)", isDirectory: true)
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        for index in 0..<40 {
+            try "# Cloud \(index)\n\nbody #area/topic\n".write(
+                to: notesDirectory.appendingPathComponent("Cloud \(index).md"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        store.searchIndexEntryContentAvailabilityForTesting = { _ in false }
+
+        let placeholders = store.listNotesRefreshingIndex(limit: .max, roots: [notesDirectory])
+        #expect(placeholders.count == 40)
+        #expect(placeholders.allSatisfy { $0.tags.isEmpty })
+        #expect(placeholders.contains { $0.title == "Cloud 39" })
+        #expect(store.searchNotes(query: "Cloud 39", limit: 10, roots: [notesDirectory]).count == 1)
+
+        store.searchIndexEntryContentAvailabilityForTesting = { _ in true }
+        let hydrated = store.listNotesRefreshingIndex(limit: .max, roots: [notesDirectory])
+        #expect(hydrated.count == 40)
+        #expect(hydrated.allSatisfy { $0.tags == ["area/topic"] })
     }
 
     @Test

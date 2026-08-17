@@ -311,6 +311,33 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             .filter { seen.insert($0.lowercased()).inserted }
     }
 
+    public static func inlineTags(in text: String) -> [String] {
+        let characters = Array(text)
+        var tags: [String] = []
+        var index = 0
+
+        while index < characters.count {
+            if characters[index] == "#",
+               (index == 0 || characters[index - 1].isWhitespace) {
+                var end = index + 1
+                while end < characters.count, characters[end].isMarkdownTagCharacter {
+                    end += 1
+                }
+                while end > index + 1, characters[end - 1] == "/" {
+                    end -= 1
+                }
+                if end > index + 1 {
+                    tags.append(String(characters[(index + 1)..<end]))
+                    index = end
+                    continue
+                }
+            }
+            index += 1
+        }
+
+        return normalizedTags(tags)
+    }
+
     private static func extractedTitle(from line: String) -> String {
         let headingPattern = #"^#{1,6}\s+(.+)$"#
         if let regex = try? NSRegularExpression(pattern: headingPattern) {
@@ -322,5 +349,11 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         }
 
         return line.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension Character {
+    var isMarkdownTagCharacter: Bool {
+        isLetter || isNumber || self == "_" || self == "-" || self == "/"
     }
 }

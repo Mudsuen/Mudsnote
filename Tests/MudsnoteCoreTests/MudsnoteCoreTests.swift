@@ -1504,6 +1504,30 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func inlineAndHierarchicalTagsAreRecognizedAlongsideFrontMatter() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+        let noteURL = notesDirectory.appendingPathComponent("Tagged.md")
+        try """
+        ---
+        tags:
+          - frontmatter
+        ---
+
+        # Tagged
+
+        Body #area/topic and #中文/层级.
+        """.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let loaded = try store.loadNote(at: noteURL)
+        #expect(loaded.tags == ["frontmatter", "area/topic", "中文/层级"])
+        #expect(store.listNotesRefreshingIndex(limit: 10).first?.tags == loaded.tags)
+    }
+
+    @Test
     func draftsRoundTrip() throws {
         let harness = try TestHarness()
         let store = harness.store

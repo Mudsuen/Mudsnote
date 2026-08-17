@@ -601,7 +601,7 @@ extension NoteStore {
     func parseStoredDocument(_ text: String) -> (body: String, tags: [String]) {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         guard normalized.hasPrefix("---\n") else {
-            return (normalized, [])
+            return (normalized, MarkdownEditorDocument.inlineTags(in: normalized))
         }
 
         let lines = normalized.components(separatedBy: "\n")
@@ -612,7 +612,12 @@ extension NoteStore {
         let frontMatter = Array(lines[1..<closingIndex])
         let body = Array(lines[(closingIndex + 1)...]).joined(separator: "\n")
             .trimmingCharacters(in: .newlines)
-        return (body, frontMatterTags(in: frontMatter))
+        return (
+            body,
+            MarkdownEditorDocument.normalizedTags(
+                frontMatterTags(in: frontMatter) + MarkdownEditorDocument.inlineTags(in: body)
+            )
+        )
     }
 
     private func writeNote(

@@ -870,7 +870,7 @@ struct MarkdownRichEditorTests {
             markdown: markdown,
             theme: controller.theme
         ))
-        let titleLine = "# Title".utf16.count
+        let titleLine = controller.editorTextView.string.utf16.count
         controller.editorTextView.setSelectedRange(NSRange(location: titleLine, length: 0))
 
         controller.editorTextView.keyDown(with: try keyEvent(
@@ -889,16 +889,15 @@ struct MarkdownRichEditorTests {
         // kind — it should be a body paragraph so the title format only
         // applies to the first line.
         guard storage.length > titleLine else {
-            // The shift+enter did not insert anything; the caret should at
-            // least have moved into a body paragraph.
+            Issue.record("Shift+Return did not leave the title line")
             return
         }
-        let bodyRange = NSRange(location: titleLine, length: storage.length - titleLine)
-        let safeRange = NSRange(
-            location: min(bodyRange.location, storage.length),
-            length: min(bodyRange.length, max(storage.length - bodyRange.location, 0))
+        let insertion = controller.editorTextView.selectedRange().location
+        #expect(insertion > titleLine)
+        let bodyKind = MarkdownRichTextCodec.paragraphKind(
+            at: NSRange(location: min(insertion, storage.length), length: 0),
+            in: storage
         )
-        let bodyKind = MarkdownRichTextCodec.paragraphKind(at: safeRange, in: storage)
         #expect(bodyKind == .paragraph)
     }
 
@@ -913,8 +912,7 @@ struct MarkdownRichEditorTests {
             markdown: "body line\n\n## Section",
             theme: theme
         ))
-        let bodyEnd = "body line".utf16.count
-        textView.setSelectedRange(NSRange(location: bodyEnd, length: 0))
+        textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
 
         textView.keyDown(with: try keyEvent(
             keyCode: UInt16(kVK_Return),
@@ -947,19 +945,8 @@ struct MarkdownRichEditorTests {
             characters: "\r"
         ))
 
-        // The fix routes shift+return through the input context (or, in test
-        // environments with no IME, prevents the direct insertText call). In
-        // either case the text must NOT acquire a U+2028 line separator while
-        // the composition is still active — that is the corruption that used
-        // to leave the IME in an inconsistent state.
-        if textView.hasMarkedText() {
-            #expect(!textView.string.contains("\u{2028}"))
-        } else {
-            // The IME committed the composition before the soft break was
-            // inserted; the resulting text should contain the soft break but
-            // no stray raw pinyin around it.
-            #expect(textView.string.contains("\u{2028}"))
-        }
+        #expect(!textView.hasMarkedText())
+        #expect(textView.string.contains("\u{2028}"))
         // Sanity: the original characters are preserved.
         let stringAfter = textView.string as NSString
         for char in "你好ni" {
@@ -1852,6 +1839,18 @@ struct MarkdownRichEditorTests {
         #expect(state.document.body == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
         #expect(state.document.tags == ["ops"])
         #expect(state.hasMeaningfulContent == true)
+    }
+
+    @Test
+    func quickCaptureRecognizesHierarchicalInlineTags() {
+        #expect(
+            QuickCaptureDocumentState.extractedInlineTags(
+                from: "Body #area/topic #中文/层级 #trailing/"
+            ) == ["area/topic", "中文/层级", "trailing"]
+        )
+
+        let rendered = MarkdownRichTextCodec.renderLine("Body #area/topic", theme: theme)
+        #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == "Body #area/topic")
     }
 
     @Test
@@ -3072,7 +3071,10 @@ struct MarkdownRichEditorTests {
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
-        #expect(editorStack.edgeInsets.top == LibraryNotesLayout.editorTopInset)
+        // The date label now lives inside the text view, so the surrounding
+        // stack must start at the safe-area edge without adding a second top
+        // inset.
+        #expect(editorStack.edgeInsets.top == 0)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
         #expect(LibraryNotesLayout.editorTopInset + LibraryNotesLayout.editorDateToTitleSpacing == 17)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)

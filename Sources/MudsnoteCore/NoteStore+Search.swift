@@ -658,6 +658,7 @@ extension NoteStore {
         if !requiresFullRefresh,
            dirtyPaths.isEmpty,
            let reusableSnapshot,
+           reusableSnapshot.entries.allSatisfy(\.isContentIndexed),
            reusableSnapshot.fileSignatures == signatures {
             guard publishSearchIndexSnapshot(
                 reusableSnapshot,
@@ -681,7 +682,8 @@ extension NoteStore {
             if !requiresFullRefresh,
                !dirtyPaths.contains(path),
                reusableSignatures[path] == signatures[path],
-               let entry = reusableEntriesByPath[path] {
+               let entry = reusableEntriesByPath[path],
+               entry.isContentIndexed {
                 entries.append(entry)
                 continue
             }
@@ -893,12 +895,13 @@ extension NoteStore {
         signature: NoteSearchFileSignature?,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> NoteSearchIndexEntry? {
-        guard !cancellationCheck(),
-              let signature,
-              signature.fileSize <= Self.maximumSearchIndexedFileSize,
-              isLocallyAvailableForSearch(fileURL) else {
+        guard !cancellationCheck(), let signature else {
             return nil
         }
+        guard isLocallyAvailableForSearch(fileURL) else {
+            return unavailableSearchIndexEntry(for: fileURL, signature: signature)
+        }
+        guard signature.fileSize <= Self.maximumSearchIndexedFileSize else { return nil }
         searchIndexEntryReadCountForTesting += 1
         searchIndexEntryWillReadForTesting?()
         guard !cancellationCheck(),
@@ -932,11 +935,37 @@ extension NoteStore {
                 cancellationCheck: cancellationCheck
             ),
             hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: note.body),
-            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL)
+            thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: note.body, relativeTo: fileURL),
+            isContentIndexed: true
+        )
+    }
+
+    private func unavailableSearchIndexEntry(
+        for fileURL: URL,
+        signature: NoteSearchFileSignature
+    ) -> NoteSearchIndexEntry {
+        NoteSearchIndexEntry(
+            url: fileURL,
+            title: displayTitle(for: fileURL, loadedTitle: ""),
+            body: "",
+            bodyLower: "",
+            snippet: "",
+            modifiedAt: signature.modifiedAt,
+            createdAt: signature.createdAt,
+            tags: [],
+            tagsLower: [],
+            knowledgeLayer: nil,
+            knowledgeLinkTargets: [],
+            hasAttachments: false,
+            thumbnailURL: nil,
+            isContentIndexed: false
         )
     }
 
     private func isLocallyAvailableForSearch(_ fileURL: URL) -> Bool {
+        if let availability = searchIndexEntryContentAvailabilityForTesting {
+            return availability(fileURL)
+        }
         let keys: Set<URLResourceKey> = [
             .isUbiquitousItemKey,
             .ubiquitousItemDownloadingStatusKey

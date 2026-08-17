@@ -92,27 +92,7 @@ struct QuickCaptureDocumentState {
     }
 
     static func extractedInlineTags(from text: String) -> [String] {
-        let characters = Array(text)
-        var tags: [String] = []
-        var index = 0
-
-        while index < characters.count {
-            if characters[index] == "#",
-               (index == 0 || characters[index - 1].isWhitespace) {
-                var end = index + 1
-                while end < characters.count, characters[end].isTagCharacter {
-                    end += 1
-                }
-                if end > index + 1 {
-                    tags.append(String(characters[(index + 1)..<end]))
-                    index = end
-                    continue
-                }
-            }
-            index += 1
-        }
-
-        return MarkdownEditorDocument.normalizedTags(tags)
+        MarkdownEditorDocument.inlineTags(in: text)
     }
 
 }
