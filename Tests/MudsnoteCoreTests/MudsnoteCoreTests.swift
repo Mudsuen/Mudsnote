@@ -2008,6 +2008,13 @@ struct MudsnoteCoreTests {
         let noteURL = try store.saveNewNote(title: "Pinned Draft", body: "Body")
         store.setLibraryNotePinned(true, at: noteURL)
         #expect(store.isLibraryNotePinned(at: noteURL))
+        let sharedPins = try JSONDecoder().decode(
+            [String].self,
+            from: Data(
+                contentsOf: notesDirectory.appendingPathComponent(".mudsnote/pins.json")
+            )
+        )
+        #expect(sharedPins == [noteURL.lastPathComponent])
 
         let renamedURL = try store.updateNote(at: noteURL, title: "Pinned Final", body: "Body")
         #expect(!store.isLibraryNotePinned(at: noteURL))
@@ -2026,6 +2033,66 @@ struct MudsnoteCoreTests {
         _ = try store.trashNote(at: folderRenamedURL)
         #expect(!store.isLibraryNotePinned(at: folderRenamedURL))
         #expect(store.libraryPinnedNotePaths.isEmpty)
+    }
+
+    @Test
+    func pinnedNotePathsReadTheIOSSharedRelativePathSchema() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let metadataDirectory = notesDirectory.appendingPathComponent(".mudsnote", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: metadataDirectory,
+            withIntermediateDirectories: true
+        )
+        let noteURL = notesDirectory.appendingPathComponent("Projects/Shared Pin.md")
+        try FileManager.default.createDirectory(
+            at: noteURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "# Shared Pin\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        try JSONEncoder().encode(["Projects/Shared Pin.md"]).write(
+            to: metadataDirectory.appendingPathComponent("pins.json"),
+            options: .atomic
+        )
+
+        store.notesDirectory = notesDirectory
+
+        #expect(store.isLibraryNotePinned(at: noteURL))
+        #expect(store.libraryPinnedNotePaths == [noteURL.standardizedFileURL.path])
+    }
+
+    @Test
+    func localPinnedPathsMigrateToTheSharedSchemaWhenLibraryBecomesAvailable() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: notesDirectory,
+            withIntermediateDirectories: true
+        )
+        let noteURL = notesDirectory.appendingPathComponent("Legacy.md")
+        try "# Legacy\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        harness.defaults.set(
+            [noteURL.path],
+            forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+        )
+
+        store.notesDirectory = notesDirectory
+
+        #expect(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(
+                    contentsOf: notesDirectory.appendingPathComponent(".mudsnote/pins.json")
+                )
+            ) == ["Legacy.md"]
+        )
+        #expect(
+            harness.defaults.stringArray(
+                forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+            )?.isEmpty != false
+        )
     }
 
     @Test

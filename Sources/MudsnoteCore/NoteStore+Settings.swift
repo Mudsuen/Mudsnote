@@ -15,6 +15,7 @@ extension NoteStore {
         }
         set {
             defaults.set(newValue.path, forKey: NoteStoreDefaultsKey.notesDirectory)
+            migrateLegacyPinnedNotePathsIfPossible()
         }
     }
 
@@ -287,10 +288,22 @@ extension NoteStore {
     }
 
     public var libraryPinnedNotePaths: [String] {
-        let storedPaths = defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? []
-        return Array(Set(storedPaths.map {
+        let localPaths = defaults.stringArray(
+            forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+        ) ?? []
+        var paths = Set(localPaths.map {
             URL(fileURLWithPath: $0).standardizedFileURL.path
-        })).sorted()
+        })
+        for root in preferredDirectories {
+            for relativePath in loadSharedPinnedNotePaths(in: root) {
+                paths.insert(
+                    root.appendingPathComponent(relativePath)
+                        .standardizedFileURL
+                        .path
+                )
+            }
+        }
+        return paths.sorted()
     }
 
     public func isLibraryNotePinned(at url: URL) -> Bool {
@@ -298,41 +311,148 @@ extension NoteStore {
     }
 
     public func setLibraryNotePinned(_ isPinned: Bool, at url: URL) {
-        var paths = Set(libraryPinnedNotePaths)
-        let path = url.standardizedFileURL.path
-        if isPinned {
-            paths.insert(path)
-        } else {
-            paths.remove(path)
+        let standardizedURL = url.standardizedFileURL
+        let path = standardizedURL.path
+        if let root = owningPreferredDirectory(for: standardizedURL),
+           let relativePath = relativeNotePath(for: standardizedURL, in: root) {
+            do {
+                var paths = loadSharedPinnedNotePaths(in: root)
+                if isPinned {
+                    paths.insert(relativePath)
+                } else {
+                    paths.remove(relativePath)
+                }
+                try saveSharedPinnedNotePaths(paths, in: root)
+                removeLocalPinnedNotePath(path)
+                return
+            } catch {
+                // Preserve the existing local behavior if the shared library is
+                // temporarily unavailable.
+            }
         }
-        defaults.set(paths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+        var localPaths = localPinnedNotePaths()
+        if isPinned {
+            localPaths.insert(path)
+        } else {
+            localPaths.remove(path)
+        }
+        defaults.set(localPaths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
     }
 
     func replaceLibraryPinnedNotePath(_ oldURL: URL, with newURL: URL) {
-        let oldPath = oldURL.standardizedFileURL.path
-        guard libraryPinnedNotePaths.contains(oldPath) else { return }
-        var paths = Set(libraryPinnedNotePaths)
-        paths.remove(oldPath)
-        paths.insert(newURL.standardizedFileURL.path)
-        defaults.set(paths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+        guard isLibraryNotePinned(at: oldURL) else { return }
+        setLibraryNotePinned(false, at: oldURL)
+        setLibraryNotePinned(true, at: newURL)
     }
 
     func replaceLibraryPinnedNotePathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
         let oldPath = oldDirectory.standardizedFileURL.path
         let newPath = newDirectory.standardizedFileURL.path
-        let updatedPaths = libraryPinnedNotePaths.map { path in
-            guard path.hasPrefix(oldPath + "/") else { return path }
-            return newPath + String(path.dropFirst(oldPath.count))
+        let affectedPaths = libraryPinnedNotePaths.filter {
+            $0.hasPrefix(oldPath + "/")
         }
-        defaults.set(Array(Set(updatedPaths)).sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+        for path in affectedPaths {
+            setLibraryNotePinned(false, at: URL(fileURLWithPath: path))
+            setLibraryNotePinned(
+                true,
+                at: URL(
+                    fileURLWithPath: newPath + String(path.dropFirst(oldPath.count))
+                )
+            )
+        }
     }
 
     public func removeLibraryPinnedNotePaths(in directory: URL) {
         let directoryPath = directory.standardizedFileURL.path
-        let remainingPaths = libraryPinnedNotePaths.filter {
-            $0 != directoryPath && !$0.hasPrefix(directoryPath + "/")
+        let affectedPaths = libraryPinnedNotePaths.filter {
+            $0 == directoryPath || $0.hasPrefix(directoryPath + "/")
         }
-        defaults.set(remainingPaths, forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+        for path in affectedPaths {
+            setLibraryNotePinned(false, at: URL(fileURLWithPath: path))
+        }
+    }
+
+    private func localPinnedNotePaths() -> Set<String> {
+        Set(
+            (defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths) ?? [])
+                .map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        )
+    }
+
+    private func removeLocalPinnedNotePath(_ path: String) {
+        var paths = localPinnedNotePaths()
+        guard paths.remove(path) != nil else { return }
+        defaults.set(paths.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    private func owningPreferredDirectory(for url: URL) -> URL? {
+        let path = url.standardizedFileURL.path
+        return preferredDirectories
+            .filter {
+                let rootPath = $0.standardizedFileURL.path
+                return path.hasPrefix(rootPath + "/")
+            }
+            .max {
+                $0.standardizedFileURL.path.count
+                    < $1.standardizedFileURL.path.count
+            }
+    }
+
+    private func relativeNotePath(for url: URL, in root: URL) -> String? {
+        let path = url.standardizedFileURL.path
+        let rootPath = root.standardizedFileURL.path
+        guard path.hasPrefix(rootPath + "/") else { return nil }
+        let relativePath = String(path.dropFirst(rootPath.count + 1))
+        guard relativePath.hasSuffix(".md"),
+              !relativePath.hasPrefix("Attachments/"),
+              !relativePath.hasPrefix(".mudsnote/") else { return nil }
+        return relativePath
+    }
+
+    private func loadSharedPinnedNotePaths(in root: URL) -> Set<String> {
+        let url = root.appendingPathComponent(".mudsnote/pins.json")
+        guard fileManager.fileExists(atPath: url.path),
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= 1_048_576,
+              let data = try? Data(contentsOf: url),
+              let paths = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return Set(paths.filter {
+            $0.hasSuffix(".md")
+                && !$0.hasPrefix("Attachments/")
+                && !$0.hasPrefix(".mudsnote/")
+        })
+    }
+
+    private func saveSharedPinnedNotePaths(_ paths: Set<String>, in root: URL) throws {
+        let directory = root.appendingPathComponent(".mudsnote", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(paths.sorted()).write(
+            to: directory.appendingPathComponent("pins.json"),
+            options: .atomic
+        )
+    }
+
+    private func migrateLegacyPinnedNotePathsIfPossible() {
+        let legacyPaths = localPinnedNotePaths()
+        guard !legacyPaths.isEmpty else { return }
+        var remaining = legacyPaths
+        for path in legacyPaths {
+            let url = URL(fileURLWithPath: path)
+            guard let root = owningPreferredDirectory(for: url),
+                  let relativePath = relativeNotePath(for: url, in: root),
+                  fileManager.fileExists(atPath: root.path) else { continue }
+            do {
+                var paths = loadSharedPinnedNotePaths(in: root)
+                paths.insert(relativePath)
+                try saveSharedPinnedNotePaths(paths, in: root)
+                remaining.remove(path)
+            } catch {
+                continue
+            }
+        }
+        defaults.set(remaining.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
     }
 
     func replaceLibraryFolderDisclosurePathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
@@ -463,6 +583,7 @@ extension NoteStore {
             .filter { $0.standardizedFileURL.path != normalizedDefault.path }
             .map(\.path)
         defaults.set(extras, forKey: NoteStoreDefaultsKey.extraDirectories)
+        migrateLegacyPinnedNotePathsIfPossible()
     }
 
     public func addPreferredDirectory(_ directory: URL) {
