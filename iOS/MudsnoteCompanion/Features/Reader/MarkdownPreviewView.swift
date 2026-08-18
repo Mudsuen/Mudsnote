@@ -3339,6 +3339,117 @@ enum MarkdownListEditing {
         var kind: Kind
     }
 
+    static func prefixEdit(
+        in markdown: String,
+        selection: NSRange,
+        prefix: String
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+        let lineRange = source.lineRange(for: selection)
+        let block = source.substring(with: lineRange)
+        let endsWithNewline = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+        if selection.length == 0,
+           lines.allSatisfy({ $0.isEmpty }) {
+            let replacement = prefix + (endsWithNewline ? "\n" : "")
+            return MarkdownListEdit(
+                range: lineRange,
+                replacement: replacement,
+                selection: NSRange(
+                    location: lineRange.location + (prefix as NSString).length,
+                    length: 0
+                )
+            )
+        }
+
+        let contentLines = lines.filter { !$0.isEmpty }
+        let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy {
+            $0.hasPrefix(prefix)
+        }
+        lines = lines.map { line in
+            guard !line.isEmpty else { return line }
+            return shouldRemove ? String(line.dropFirst(prefix.count)) : prefix + line
+        }
+        var replacement = lines.joined(separator: "\n")
+        if endsWithNewline { replacement += "\n" }
+        return MarkdownListEdit(
+            range: lineRange,
+            replacement: replacement,
+            selection: NSRange(
+                location: lineRange.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
+
+    static func orderedEdit(
+        in markdown: String,
+        selection: NSRange
+    ) -> MarkdownListEdit? {
+        let source = markdown as NSString
+        guard selection.location >= 0,
+              NSMaxRange(selection) <= source.length else { return nil }
+        let lineRange = source.lineRange(for: selection)
+        let block = source.substring(with: lineRange)
+        let endsWithNewline = block.hasSuffix("\n")
+        var lines = block.components(separatedBy: "\n")
+        if endsWithNewline { lines.removeLast() }
+        if selection.length == 0,
+           lines.allSatisfy({ $0.isEmpty }) {
+            let prefix = "1. "
+            let replacement = prefix + (endsWithNewline ? "\n" : "")
+            return MarkdownListEdit(
+                range: lineRange,
+                replacement: replacement,
+                selection: NSRange(
+                    location: lineRange.location + (prefix as NSString).length,
+                    length: 0
+                )
+            )
+        }
+
+        let expression = try? NSRegularExpression(pattern: #"^([ \t]*)[0-9]+[.)] "#)
+        let contentLines = lines.filter { !$0.isEmpty }
+        let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy { line in
+            let value = line as NSString
+            return expression?.firstMatch(
+                in: line,
+                range: NSRange(location: 0, length: value.length)
+            ) != nil
+        }
+        var nextNumber = 1
+        lines = lines.map { line in
+            guard !line.isEmpty else { return line }
+            let value = line as NSString
+            if shouldRemove,
+               let match = expression?.firstMatch(
+                   in: line,
+                   range: NSRange(location: 0, length: value.length)
+               ) {
+                let prefix = value.substring(with: match.range)
+                let indentation = prefix.prefix { $0 == " " || $0 == "\t" }
+                return String(indentation) + value.substring(from: NSMaxRange(match.range))
+            }
+            let indentation = line.prefix { $0 == " " || $0 == "\t" }
+            let body = line.dropFirst(indentation.count)
+            defer { nextNumber += 1 }
+            return "\(indentation)\(nextNumber). \(body)"
+        }
+        var replacement = lines.joined(separator: "\n")
+        if endsWithNewline { replacement += "\n" }
+        return MarkdownListEdit(
+            range: lineRange,
+            replacement: replacement,
+            selection: NSRange(
+                location: lineRange.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
+
     static func returnEdit(in markdown: String, selection: NSRange) -> MarkdownListEdit? {
         let source = markdown as NSString
         guard selection.location >= 0,
@@ -4007,68 +4118,28 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
 
         private func toggleLinePrefix(_ prefix: String, in textView: UITextView) {
-            let source = textView.text as NSString
-            let lineRange = source.lineRange(for: textView.selectedRange)
-            let block = source.substring(with: lineRange)
-            let endsWithNewline = block.hasSuffix("\n")
-            var lines = block.components(separatedBy: "\n")
-            if endsWithNewline { lines.removeLast() }
-            let contentLines = lines.filter { !$0.isEmpty }
-            let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy { $0.hasPrefix(prefix) }
-            lines = lines.map { line in
-                guard !line.isEmpty else { return line }
-                return shouldRemove ? String(line.dropFirst(prefix.count)) : prefix + line
-            }
-            var replacement = lines.joined(separator: "\n")
-            if endsWithNewline { replacement += "\n" }
+            guard let edit = MarkdownListEditing.prefixEdit(
+                in: textView.text,
+                selection: textView.selectedRange,
+                prefix: prefix
+            ) else { return }
             replace(
-                lineRange,
-                with: replacement,
-                selecting: NSRange(location: lineRange.location, length: (replacement as NSString).length),
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
                 in: textView
             )
         }
 
         private func toggleOrderedList(in textView: UITextView) {
-            let source = textView.text as NSString
-            let lineRange = source.lineRange(for: textView.selectedRange)
-            let block = source.substring(with: lineRange)
-            let endsWithNewline = block.hasSuffix("\n")
-            var lines = block.components(separatedBy: "\n")
-            if endsWithNewline { lines.removeLast() }
-            let expression = try? NSRegularExpression(pattern: #"^([ \t]*)[0-9]+[.)] "#)
-            let contentLines = lines.filter { !$0.isEmpty }
-            let shouldRemove = !contentLines.isEmpty && contentLines.allSatisfy { line in
-                let value = line as NSString
-                return expression?.firstMatch(
-                    in: line,
-                    range: NSRange(location: 0, length: value.length)
-                ) != nil
-            }
-            var nextNumber = 1
-            lines = lines.map { line in
-                guard !line.isEmpty else { return line }
-                let value = line as NSString
-                if shouldRemove,
-                   let match = expression?.firstMatch(
-                    in: line,
-                    range: NSRange(location: 0, length: value.length)
-                   ) {
-                    let prefix = value.substring(with: match.range)
-                    let indentation = prefix.prefix { $0 == " " || $0 == "\t" }
-                    return String(indentation) + value.substring(from: NSMaxRange(match.range))
-                }
-                let indentation = line.prefix { $0 == " " || $0 == "\t" }
-                let body = line.dropFirst(indentation.count)
-                defer { nextNumber += 1 }
-                return "\(indentation)\(nextNumber). \(body)"
-            }
-            var replacement = lines.joined(separator: "\n")
-            if endsWithNewline { replacement += "\n" }
+            guard let edit = MarkdownListEditing.orderedEdit(
+                in: textView.text,
+                selection: textView.selectedRange
+            ) else { return }
             replace(
-                lineRange,
-                with: replacement,
-                selecting: NSRange(location: lineRange.location, length: (replacement as NSString).length),
+                edit.range,
+                with: edit.replacement,
+                selecting: edit.selection,
                 in: textView
             )
         }

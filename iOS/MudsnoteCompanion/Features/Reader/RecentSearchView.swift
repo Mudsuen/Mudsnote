@@ -28,7 +28,7 @@ struct NoteListPageWindow: Equatable {
     }
 }
 
-private enum HomeTimelineEntry: Identifiable {
+enum HomeTimelineEntry: Identifiable {
     case file(RecentMarkdownFile)
     case memo(MemoBlock)
 
@@ -76,9 +76,14 @@ private enum HomeTimelineEntry: Identifiable {
         }
         return file
     }
+
+    var isPinned: Bool {
+        guard case .file(let file) = self else { return false }
+        return file.isPinned
+    }
 }
 
-private struct HomeTimelineSection: Identifiable {
+struct HomeTimelineSection: Identifiable {
     var id: String
     var title: String?
     var entries: [HomeTimelineEntry]
@@ -89,6 +94,60 @@ private struct HomeTimelineProjection {
     var entryCount = 0
     var hasMoreEntries = false
     var smartFolderCounts: [UUID: Int] = [:]
+}
+
+enum HomeTimelinePresentation {
+    static func sections(
+        for entries: [HomeTimelineEntry],
+        sortedBy order: NoteSortOrder,
+        groupByDate: Bool,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [HomeTimelineSection] {
+        let pinnedEntries = entries.filter(\.isPinned)
+        let otherEntries = entries.filter { !$0.isPinned }
+        var sections: [HomeTimelineSection] = []
+        if !pinnedEntries.isEmpty {
+            sections.append(
+                HomeTimelineSection(
+                    id: "pinned",
+                    title: String(localized: "Pinned"),
+                    entries: pinnedEntries
+                )
+            )
+        }
+        guard !otherEntries.isEmpty else { return sections }
+        guard groupByDate, order != .title else {
+            sections.append(
+                HomeTimelineSection(
+                    id: "notes",
+                    title: pinnedEntries.isEmpty ? nil : String(localized: "Notes"),
+                    entries: otherEntries
+                )
+            )
+            return sections
+        }
+
+        for entry in otherEntries {
+            let bucket = NoteListPresentation.dateBucket(
+                for: entry.date,
+                now: now,
+                calendar: calendar
+            )
+            if sections.last?.id == bucket.id {
+                sections[sections.count - 1].entries.append(entry)
+            } else {
+                sections.append(
+                    HomeTimelineSection(
+                        id: bucket.id,
+                        title: bucket.title,
+                        entries: [entry]
+                    )
+                )
+            }
+        }
+        return sections
+    }
 }
 
 enum HomeFolderScope {
@@ -369,6 +428,8 @@ struct LibraryHomeView: View {
     private struct SearchTaskID: Hashable {
         var query: String
         var scope: MarkdownSearchScope
+        var folderRelativePath: String?
+        var dateFilterRawValue: String?
         var libraryRevision: Int
     }
 
@@ -378,6 +439,8 @@ struct LibraryHomeView: View {
     @State private var isSearchFocused = false
     @State private var searchQuery = ""
     @State private var searchScope = MarkdownSearchScope.all
+    @State private var searchFolderPath = ""
+    @State private var searchDateFilter: SmartFolderDateFilter?
     @State private var searchSuggestion: NotesSearchSuggestion?
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
@@ -474,6 +537,8 @@ struct LibraryHomeView: View {
             .task(id: SearchTaskID(
                 query: searchQuery,
                 scope: searchScope,
+                folderRelativePath: currentSearchFilter.folderRelativePath,
+                dateFilterRawValue: currentSearchFilter.dateFilter?.rawValue,
                 libraryRevision: appModel.libraryRevision
             )) {
                 let trimmed = normalizedSearchQuery
@@ -483,7 +548,11 @@ struct LibraryHomeView: View {
                 }
                 try? await Task.sleep(for: .milliseconds(180))
                 guard !Task.isCancelled else { return }
-                await appModel.searchLibrary(query: trimmed, scope: searchScope)
+                await appModel.searchLibrary(
+                    query: trimmed,
+                    scope: searchScope,
+                    filter: currentSearchFilter
+                )
             }
             .toolbar {
                 if !isSelectingNotes {
@@ -828,38 +897,13 @@ struct LibraryHomeView: View {
             return sortDirection == .standard ? standard : !standard
         }
 
-        let visibleEntries = homePageWindow.visibleItems(from: entries)
-        var sections: [HomeTimelineSection] = []
-        if !groupByDate || sortOrder == .title {
-            if !visibleEntries.isEmpty {
-                sections = [
-                    HomeTimelineSection(
-                        id: "notes",
-                        title: nil,
-                        entries: visibleEntries
-                    )
-                ]
-            }
-        } else {
-            for entry in visibleEntries {
-                let bucket = NoteListPresentation.dateBucket(
-                    for: entry.date,
-                    now: Date(),
-                    calendar: .autoupdatingCurrent
-                )
-                if sections.last?.id == bucket.id {
-                    sections[sections.count - 1].entries.append(entry)
-                } else {
-                    sections.append(
-                        HomeTimelineSection(
-                            id: bucket.id,
-                            title: bucket.title,
-                            entries: [entry]
-                        )
-                    )
-                }
-            }
-        }
+        let orderedEntries = entries.filter(\.isPinned) + entries.filter { !$0.isPinned }
+        let visibleEntries = homePageWindow.visibleItems(from: orderedEntries)
+        let sections = HomeTimelinePresentation.sections(
+            for: visibleEntries,
+            sortedBy: sortOrder,
+            groupByDate: groupByDate
+        )
         let smartFolderCounts = Dictionary(uniqueKeysWithValues: appModel.smartFolders.map { definition in
             let count = appModel.libraryFiles.lazy.filter {
                 definition.matches(file: $0)
@@ -870,8 +914,8 @@ struct LibraryHomeView: View {
         })
         return HomeTimelineProjection(
             sections: sections,
-            entryCount: entries.count,
-            hasMoreEntries: homePageWindow.hasMore(totalCount: entries.count),
+            entryCount: orderedEntries.count,
+            hasMoreEntries: homePageWindow.hasMore(totalCount: orderedEntries.count),
             smartFolderCounts: smartFolderCounts
         )
     }
@@ -1235,6 +1279,7 @@ struct LibraryHomeView: View {
 
     private func selectAllNotes() {
         selectedHomeFolderPath = ""
+        searchFolderPath = ""
         persistLibraryFolderSelection()
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
@@ -1247,6 +1292,7 @@ struct LibraryHomeView: View {
 
     private func selectHomeFolder(_ folder: LibraryFolderNode) {
         selectedHomeFolderPath = folder.relativePath
+        searchFolderPath = folder.relativePath
         persistLibraryFolderSelection()
         selectedHomeEntryIDs.removeAll()
         homeTitleCollapseProgress = 0
@@ -1265,9 +1311,11 @@ struct LibraryHomeView: View {
     private func restoreLibraryFolderSelection() {
         guard let key = selectedFolderDefaultsKey else {
             selectedHomeFolderPath = ""
+            searchFolderPath = ""
             return
         }
         selectedHomeFolderPath = UserDefaults.standard.string(forKey: key) ?? ""
+        searchFolderPath = selectedHomeFolderPath
         reconcileLibraryFolderSelection()
     }
 
@@ -1277,6 +1325,7 @@ struct LibraryHomeView: View {
             $0.relativePath == selectedHomeFolderPath
         }) else {
             selectedHomeFolderPath = ""
+            searchFolderPath = ""
             persistLibraryFolderSelection()
             refreshHomeTimelineProjection(resetPagination: true)
             return
@@ -1548,13 +1597,7 @@ struct LibraryHomeView: View {
 
     private var searchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("Search Scope", selection: $searchScope) {
-                ForEach(MarkdownSearchScope.allCases) { scope in
-                    Text(scope.label).tag(scope)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("search-scope-picker")
+            searchFilters
 
             if normalizedSearchQuery.isEmpty {
                 searchSuggestions
@@ -1598,6 +1641,46 @@ struct LibraryHomeView: View {
                 }
             }
         }
+    }
+
+    private var searchFilters: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("All Folders") { searchFolderPath = "" }
+                ForEach(appModel.visibleLibraryFolders) { folder in
+                    Button(folder.relativePath) {
+                        searchFolderPath = folder.relativePath
+                    }
+                }
+            } label: {
+                Label(searchFolderLabel, systemImage: "folder")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(MudsnoteColors.card, in: Capsule())
+                    .overlay { Capsule().stroke(MudsnoteColors.line, lineWidth: 1) }
+            }
+            .accessibilityIdentifier("search-folder-filter")
+
+            Menu {
+                Button("Any Time") { searchDateFilter = nil }
+                ForEach(SmartFolderDateFilter.allCases) { filter in
+                    Button(filter.label) { searchDateFilter = filter }
+                }
+            } label: {
+                Label(
+                    searchDateFilter?.label ?? String(localized: "Any Time"),
+                    systemImage: "calendar"
+                )
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(MudsnoteColors.card, in: Capsule())
+                .overlay { Capsule().stroke(MudsnoteColors.line, lineWidth: 1) }
+            }
+            .accessibilityIdentifier("search-date-filter")
+        }
+        .foregroundStyle(MudsnoteColors.text)
     }
 
     private var searchSuggestions: some View {
@@ -1684,13 +1767,37 @@ struct LibraryHomeView: View {
             files: appModel.libraryFiles,
             memos: appModel.inboxItems,
             scope: searchScope
-        )
+        ).filter(searchResultMatchesCurrentFilter)
     }
 
     private var searchIsPending: Bool {
         appModel.isSearching
             || appModel.completedSearchQuery != normalizedSearchQuery
             || appModel.completedSearchScope != searchScope
+            || appModel.completedSearchFilter != currentSearchFilter
+    }
+
+    private var currentSearchFilter: MarkdownSearchFilter {
+        MarkdownSearchFilter(
+            folderRelativePath: searchFolderPath,
+            dateFilter: searchDateFilter
+        )
+    }
+
+    private var searchFolderLabel: String {
+        guard !searchFolderPath.isEmpty else { return String(localized: "All Folders") }
+        return appModel.allFolders.first {
+            $0.relativePath == searchFolderPath
+        }?.name ?? (searchFolderPath as NSString).lastPathComponent
+    }
+
+    private func searchResultMatchesCurrentFilter(_ result: MarkdownSearchResult) -> Bool {
+        switch result.destination {
+        case .file(let file):
+            currentSearchFilter.matches(file)
+        case .memo:
+            currentSearchFilter.folderRelativePath == nil
+        }
     }
 
     private var smartFolderDeletePresented: Binding<Bool> {
@@ -3759,6 +3866,7 @@ private struct HomeTimelineListEntryButton: View {
 
 private struct HomeMemoCardButton: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var isTagPickerPresented = false
     var memo: MemoBlock
 
     var body: some View {
@@ -3781,7 +3889,7 @@ private struct HomeMemoCardButton: View {
                 Label("Pin", systemImage: "pin")
             }
             Button {
-                appModel.addDefaultTag(to: memo)
+                isTagPickerPresented = true
             } label: {
                 Label("Tag", systemImage: "number")
             }
@@ -3790,6 +3898,16 @@ private struct HomeMemoCardButton: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .sheet(isPresented: $isTagPickerPresented) {
+            NoteTagPickerView(
+                noteText: memo.body,
+                existingTags: memo.tags,
+                addTag: { tag in
+                    await appModel.addTag(tag, to: memo)
+                }
+            )
+            .environmentObject(appModel)
         }
     }
 }
@@ -3831,10 +3949,12 @@ private struct HomeMemoCard: View {
                     .font(.system(.body, design: .rounded, weight: .bold))
                     .foregroundStyle(MudsnoteColors.text)
                     .lineLimit(2)
-                Text(preview.isEmpty ? String(localized: "No additional text") : preview)
-                    .font(.subheadline)
-                    .foregroundStyle(MudsnoteColors.muted)
-                    .lineLimit(5)
+                if !preview.isEmpty {
+                    Text(preview)
+                        .font(.subheadline)
+                        .foregroundStyle(MudsnoteColors.muted)
+                        .lineLimit(5)
+                }
                 Spacer(minLength: 0)
             }
             .padding(12)
@@ -4040,8 +4160,8 @@ private struct NoteGalleryCard: View {
             }
         } else if !file.galleryChecklistItems.isEmpty {
             galleryChecklist(maximumItems: 4)
-        } else {
-            Text(file.preview.isEmpty ? String(localized: "No additional text") : file.preview)
+        } else if !file.preview.isEmpty {
+            Text(file.preview)
                 .font(.subheadline)
                 .foregroundStyle(MudsnoteColors.muted)
                 .lineLimit(5)
@@ -4099,6 +4219,7 @@ private struct NoteLifecycleActions: ViewModifier {
     @State private var noteName = ""
     @State private var isRenaming = false
     @State private var isMovePickerPresented = false
+    @State private var isTagPickerPresented = false
 
     private var currentFolder: String {
         (file.relativePath as NSString).deletingLastPathComponent
@@ -4165,6 +4286,12 @@ private struct NoteLifecycleActions: ViewModifier {
 
                 if appModel.canReorganize(file) {
                     Button {
+                        isTagPickerPresented = true
+                    } label: {
+                        Label("Tag", systemImage: "number")
+                    }
+                    .accessibilityIdentifier("tag-note-\(file.id)")
+                    Button {
                         appModel.togglePinned(file)
                     } label: {
                         Label(file.isPinned ? "Unpin" : "Pin", systemImage: file.isPinned ? "pin.slash" : "pin")
@@ -4228,6 +4355,16 @@ private struct NoteLifecycleActions: ViewModifier {
                 NoteMovePicker(file: file)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $isTagPickerPresented) {
+                NoteTagPickerView(
+                    noteText: "\(file.title)\n\(file.preview)",
+                    existingTags: file.tags,
+                    addTag: { tag in
+                        await appModel.addTag(tag, to: file)
+                    }
+                )
+                .environmentObject(appModel)
             }
     }
 }
@@ -4719,6 +4856,99 @@ struct TagChip: View {
             .overlay {
                 Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
             }
+    }
+}
+
+struct NoteTagPickerView: View {
+    @EnvironmentObject private var appModel: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var input = ""
+    @State private var isAdding = false
+
+    var noteText: String
+    var existingTags: [String]
+    var addTag: (String) async -> Bool
+
+    private var rankedTags: [TagSummary] {
+        TagSuggestionRanker.rank(
+            query: input,
+            noteText: noteText,
+            summaries: appModel.tagSummaries
+        )
+    }
+
+    private var existingTagKeys: Set<String> {
+        Set(existingTags.map(MarkdownTagSyntax.key))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("New Tag", text: $input)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit { submitInput() }
+                        .accessibilityIdentifier("new-tag-field")
+                } footer: {
+                    Text("Press Space or Return to add a new tag.")
+                }
+
+                Section("Recommended") {
+                    ForEach(rankedTags) { tag in
+                        Button {
+                            submit(tag.name)
+                        } label: {
+                            HStack {
+                                Text(tag.name)
+                                Spacer()
+                                Text("\(tag.count)")
+                                    .foregroundStyle(MudsnoteColors.muted)
+                                if existingTagKeys.contains(MarkdownTagSyntax.key(tag.name)) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(MudsnoteColors.primary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(
+                            isAdding
+                                || existingTagKeys.contains(MarkdownTagSyntax.key(tag.name))
+                        )
+                        .accessibilityIdentifier("tag-suggestion-\(tag.name)")
+                    }
+                }
+            }
+            .navigationTitle("Tags")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onChange(of: input) { _, value in
+                guard value.last?.isWhitespace == true else { return }
+                input = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                submitInput()
+            }
+        }
+    }
+
+    private func submitInput() {
+        submit(input)
+    }
+
+    private func submit(_ value: String) {
+        guard !isAdding,
+              let tag = MarkdownTagSyntax.normalizedTag(value) else { return }
+        isAdding = true
+        Task {
+            let succeeded = await addTag(tag)
+            isAdding = false
+            if succeeded { dismiss() }
+        }
     }
 }
 
@@ -5549,6 +5779,7 @@ struct TagsBrowserView: View {
 
 struct TagNotesListView: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var memoForTagging: MemoBlock?
     var tag: String
 
     private var files: [RecentMarkdownFile] {
@@ -5595,7 +5826,7 @@ struct TagNotesListView: View {
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: false) {
                             Button {
-                                appModel.addDefaultTag(to: memo)
+                                memoForTagging = memo
                             } label: {
                                 Label("Tag", systemImage: "number")
                             }
@@ -5628,6 +5859,16 @@ struct TagNotesListView: View {
         }
         .background(MudsnoteColors.canvas)
         .navigationTitle(tag)
+        .sheet(item: $memoForTagging) { memo in
+            NoteTagPickerView(
+                noteText: memo.body,
+                existingTags: memo.tags,
+                addTag: { tag in
+                    await appModel.addTag(tag, to: memo)
+                }
+            )
+            .environmentObject(appModel)
+        }
     }
 
     private func matchesTag(_ candidate: String) -> Bool {

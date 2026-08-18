@@ -61,6 +61,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isSearching = false
     @Published private(set) var completedSearchQuery = ""
     @Published private(set) var completedSearchScope = MarkdownSearchScope.all
+    @Published private(set) var completedSearchFilter = MarkdownSearchFilter()
     @Published private(set) var libraryRevision = 0
     @Published private(set) var draftRecoveryIssue: String?
     @Published private(set) var activeTagMutation: String?
@@ -83,6 +84,7 @@ final class AppModel: ObservableObject {
     private var pendingCaptureRoute: CaptureRoute?
     private var activeSearchQuery = ""
     private var activeSearchScope = MarkdownSearchScope.all
+    private var activeSearchFilter = MarkdownSearchFilter()
     private var searchGeneration = 0
     private var libraryConfigurationID = UUID()
     private var draftPersistenceTask: Task<Void, Never>?
@@ -862,15 +864,46 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func addDefaultTag(to memo: MemoBlock) {
-        Task {
-            do {
-                try await fileStore.applyInboxMutation(.addTag(memoID: memo.id, tag: "#tag"))
-                statusToast = .saved(String(localized: "Tagged"))
-                await refreshInboxDelta()
-            } catch {
-                statusToast = .error(String(localized: "Tag failed"))
+    @discardableResult
+    func addTag(_ input: String, to memo: MemoBlock) async -> Bool {
+        guard let tag = MarkdownTagSyntax.normalizedTag(input) else {
+            statusToast = .error(String(localized: "Enter a valid tag name."))
+            return false
+        }
+        do {
+            try await fileStore.applyInboxMutation(.addTag(memoID: memo.id, tag: tag))
+            statusToast = .saved(String(localized: "Tagged"))
+            await refreshInboxDelta()
+            await refreshActiveSearchIfNeeded()
+            return true
+        } catch {
+            statusToast = .error(String(localized: "Tag failed"))
+            return false
+        }
+    }
+
+    @discardableResult
+    func addTag(_ input: String, to file: RecentMarkdownFile) async -> Bool {
+        guard let tag = MarkdownTagSyntax.normalizedTag(input) else {
+            statusToast = .error(String(localized: "Enter a valid tag name."))
+            return false
+        }
+        do {
+            let document = try await fileStore.loadMarkdownDocument(
+                relativePath: file.relativePath
+            )
+            guard let markdown = MarkdownTagSyntax.adding(tag, to: document.markdown) else {
+                return false
             }
+            guard markdown != document.markdown else { return true }
+            return await saveDocument(
+                document,
+                markdown: markdown,
+                expectedMarkdown: document.markdown
+            ) != nil
+        } catch {
+            statusToast = .error(error.localizedDescription)
+            return false
         }
     }
 
@@ -1467,30 +1500,39 @@ final class AppModel: ObservableObject {
 
     func searchLibrary(
         query: String,
-        scope: MarkdownSearchScope = .all
+        scope: MarkdownSearchScope = .all,
+        filter: MarkdownSearchFilter = MarkdownSearchFilter()
     ) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searchGeneration += 1
         let generation = searchGeneration
         activeSearchQuery = trimmed
         activeSearchScope = scope
+        activeSearchFilter = filter
         guard !trimmed.isEmpty else {
             searchResults = []
             isSearching = false
             completedSearchQuery = ""
             completedSearchScope = scope
+            completedSearchFilter = filter
             return
         }
         isSearching = true
         do {
-            let results = try await fileStore.search(query: trimmed, scope: scope)
+            let results = try await fileStore.search(
+                query: trimmed,
+                scope: scope,
+                filter: filter
+            )
             guard !Task.isCancelled,
                   searchGeneration == generation,
                   activeSearchQuery == trimmed,
-                  activeSearchScope == scope else { return }
+                  activeSearchScope == scope,
+                  activeSearchFilter == filter else { return }
             searchResults = results
             completedSearchQuery = trimmed
             completedSearchScope = scope
+            completedSearchFilter = filter
         } catch is CancellationError {
             if searchGeneration == generation { isSearching = false }
             return
@@ -1499,6 +1541,7 @@ final class AppModel: ObservableObject {
             searchResults = []
             completedSearchQuery = trimmed
             completedSearchScope = scope
+            completedSearchFilter = filter
             statusToast = .error(String(localized: "Search could not be completed"))
         }
         if searchGeneration == generation { isSearching = false }
@@ -1508,10 +1551,12 @@ final class AppModel: ObservableObject {
         searchGeneration += 1
         activeSearchQuery = ""
         activeSearchScope = .all
+        activeSearchFilter = MarkdownSearchFilter()
         searchResults = []
         isSearching = false
         completedSearchQuery = ""
         completedSearchScope = .all
+        completedSearchFilter = MarkdownSearchFilter()
     }
 
     func openSearchResult(_ result: MarkdownSearchResult) {
@@ -1862,7 +1907,11 @@ final class AppModel: ObservableObject {
 
     private func refreshActiveSearchIfNeeded() async {
         guard !activeSearchQuery.isEmpty else { return }
-        await searchLibrary(query: activeSearchQuery, scope: activeSearchScope)
+        await searchLibrary(
+            query: activeSearchQuery,
+            scope: activeSearchScope,
+            filter: activeSearchFilter
+        )
     }
 
     func prepareAttachmentPreview(relativePath: String) async -> PreparedAttachmentPreview? {
@@ -2088,10 +2137,12 @@ final class AppModel: ObservableObject {
         searchGeneration += 1
         activeSearchQuery = ""
         activeSearchScope = .all
+        activeSearchFilter = MarkdownSearchFilter()
         searchResults = []
         isSearching = false
         completedSearchQuery = ""
         completedSearchScope = .all
+        completedSearchFilter = MarkdownSearchFilter()
         queueRecoveryWarning = nil
         discoveredQueueRecoveryThisRun = false
         return configurationID
@@ -2289,8 +2340,9 @@ final class AppModel: ObservableObject {
         files: [RecentMarkdownFile]
     ) -> [TagSummary] {
         var summaries: [String: TagSummary] = [:]
-        func countTags(_ tags: [String]) {
+        func countTags(_ tags: [String], semanticText: String) {
             var countedInNote = Set<String>()
+            let semanticTerms = TagSuggestionRanker.terms(in: semanticText)
             for tag in tags {
                 let key = tag.folding(
                     options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
@@ -2299,17 +2351,24 @@ final class AppModel: ObservableObject {
                 guard countedInNote.insert(key).inserted else { continue }
                 if var summary = summaries[key] {
                     summary.count += 1
+                    summary.semanticTerms = Array(
+                        Set(summary.semanticTerms).union(semanticTerms)
+                    ).sorted()
                     summaries[key] = summary
                 } else {
-                    summaries[key] = TagSummary(name: tag, count: 1)
+                    summaries[key] = TagSummary(
+                        name: tag,
+                        count: 1,
+                        semanticTerms: semanticTerms.sorted()
+                    )
                 }
             }
         }
         for memo in memos {
-            countTags(memo.tags)
+            countTags(memo.tags, semanticText: memo.body)
         }
         for file in files {
-            countTags(file.tags)
+            countTags(file.tags, semanticText: "\(file.title)\n\(file.preview)")
         }
 
         return summaries.values
@@ -2341,8 +2400,71 @@ enum DraftSaveError: LocalizedError {
 struct TagSummary: Equatable, Identifiable {
     var name: String
     var count: Int
+    var semanticTerms: [String] = []
 
     var id: String { name }
+}
+
+enum TagSuggestionRanker {
+    static func rank(
+        query: String,
+        noteText: String,
+        summaries: [TagSummary]
+    ) -> [TagSummary] {
+        let normalizedQuery = normalized(query)
+        let noteTerms = terms(in: noteText)
+        return summaries.sorted { lhs, rhs in
+            let lhsScore = score(
+                lhs,
+                normalizedQuery: normalizedQuery,
+                noteTerms: noteTerms
+            )
+            let rhsScore = score(
+                rhs,
+                normalizedQuery: normalizedQuery,
+                noteTerms: noteTerms
+            )
+            if lhsScore != rhsScore { return lhsScore > rhsScore }
+            if lhs.count != rhs.count { return lhs.count > rhs.count }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    static func terms(in value: String) -> Set<String> {
+        Set(
+            normalized(value)
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    private static func score(
+        _ summary: TagSummary,
+        normalizedQuery: String,
+        noteTerms: Set<String>
+    ) -> Int {
+        let tagName = normalized(String(summary.name.drop(while: { $0 == "#" })))
+        var total = summary.count * 10
+        if !normalizedQuery.isEmpty {
+            if tagName == normalizedQuery {
+                total += 10_000
+            } else if tagName.hasPrefix(normalizedQuery) {
+                total += 5_000
+            } else if tagName.contains(normalizedQuery) {
+                total += 2_500
+            }
+        }
+        total += noteTerms.intersection(Set(summary.semanticTerms)).count * 250
+        return total
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
+    }
 }
 
 private extension LibraryFolderNode {

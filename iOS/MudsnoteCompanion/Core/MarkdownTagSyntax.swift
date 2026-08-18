@@ -45,6 +45,15 @@ enum MarkdownTagSyntax {
         }
     }
 
+    static func adding(_ input: String, to markdown: String) -> String? {
+        guard let tag = normalizedTag(input) else { return nil }
+        if tags(in: markdown).contains(where: { key($0) == key(tag) }) {
+            return markdown
+        }
+        let body = markdown.trimmingCharacters(in: .newlines)
+        return body.isEmpty ? "\(tag)\n" : "\(body)\n\n\(tag)\n"
+    }
+
     static func rewriting(
         _ markdown: String,
         tag sourceTag: String,

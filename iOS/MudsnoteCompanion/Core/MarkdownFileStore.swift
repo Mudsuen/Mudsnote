@@ -603,6 +603,7 @@ actor MarkdownFileStore {
     func search(
         query: String,
         scope: MarkdownSearchScope = .all,
+        filter: MarkdownSearchFilter = MarkdownSearchFilter(),
         limit: Int = 80
     ) async throws -> [MarkdownSearchResult] {
         guard let root else { throw FolderAccessError.missingFolder }
@@ -629,7 +630,7 @@ actor MarkdownFileStore {
         for file in files {
             try Task.checkCancellation()
             activePaths.insert(file.relativePath)
-            if scope == .inbox { continue }
+            guard filter.matches(file) else { continue }
             guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
             let values = try? url.resourceValues(
                 forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey]

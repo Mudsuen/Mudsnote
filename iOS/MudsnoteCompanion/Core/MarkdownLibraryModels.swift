@@ -41,32 +41,7 @@ struct MarkdownListMetadata: Equatable {
             let heading = String(value.dropFirst(2)).trimmingCharacters(in: .whitespaces)
             return heading.isEmpty ? nil : (index, heading)
         }.first
-        let plainTitle = lines.enumerated().lazy.compactMap { index, line -> (Int, String)? in
-            var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty,
-                  !value.hasPrefix("#"),
-                  !value.hasPrefix("<!--"),
-                  !value.hasPrefix("!["),
-                  !(value.hasPrefix("[") && value.contains("](Attachments/")),
-                  !value.hasPrefix("---") else { return nil }
-            value = value.replacingOccurrences(
-                of: #"^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|>\s*|\d+[.)]\s+)"#,
-                with: "",
-                options: .regularExpression
-            )
-            value = value.replacingOccurrences(
-                of: #"</?(?:u|mark)>"#,
-                with: "",
-                options: .regularExpression
-            )
-            value = value.replacingOccurrences(
-                of: #"[*_`~]"#,
-                with: "",
-                options: .regularExpression
-            )
-            return value.isEmpty ? nil : (index, String(value.prefix(120)))
-        }.first
-        let titleMatch = headingTitle ?? plainTitle
+        let titleMatch = headingTitle
         let title = titleMatch?.1 ?? fallbackTitle
 
         var previewParts: [String] = []

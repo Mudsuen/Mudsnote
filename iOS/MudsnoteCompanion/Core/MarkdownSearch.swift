@@ -18,7 +18,6 @@ struct MarkdownSearchResult: Identifiable, Equatable {
 enum MarkdownSearchScope: String, CaseIterable, Identifiable, Equatable {
     case all
     case notes
-    case inbox
 
     var id: String { rawValue }
 
@@ -26,8 +25,47 @@ enum MarkdownSearchScope: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .all: String(localized: "All")
         case .notes: String(localized: "Notes")
-        case .inbox: String(localized: "Inbox")
         }
+    }
+}
+
+struct MarkdownSearchFilter: Equatable {
+    var folderRelativePath: String?
+    var dateFilter: SmartFolderDateFilter?
+
+    init(
+        folderRelativePath: String? = nil,
+        dateFilter: SmartFolderDateFilter? = nil
+    ) {
+        let trimmedFolder = folderRelativePath?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.folderRelativePath = trimmedFolder?.isEmpty == false ? trimmedFolder : nil
+        self.dateFilter = dateFilter
+    }
+
+    func matches(
+        _ file: RecentMarkdownFile,
+        now: Date = Date(),
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Bool {
+        if let folderRelativePath {
+            let parent = (file.relativePath as NSString).deletingLastPathComponent
+            guard parent == folderRelativePath
+                    || parent.hasPrefix(folderRelativePath + "/") else {
+                return false
+            }
+        }
+        guard let dateFilter else { return true }
+        let date = dateFilter.usesCreationDate
+            ? (file.createdAt == .distantPast ? file.modifiedAt : file.createdAt)
+            : file.modifiedAt
+        let today = calendar.startOfDay(for: now)
+        let start = calendar.date(
+            byAdding: .day,
+            value: -(dateFilter.dayCount - 1),
+            to: today
+        ) ?? today
+        return date >= start && date <= now
     }
 }
 

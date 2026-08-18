@@ -213,6 +213,37 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
     }
 
+    func testHomeTimelineKeepsPinnedNotesInASectionBesideDateSections() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-18T10:00:00Z"))
+        let pinned = RecentMarkdownFile(
+            id: "Pinned.md",
+            relativePath: "Pinned.md",
+            title: "Pinned",
+            modifiedAt: now.addingTimeInterval(-30 * 24 * 60 * 60),
+            isPinned: true
+        )
+        let recent = RecentMarkdownFile(
+            id: "Recent.md",
+            relativePath: "Recent.md",
+            title: "Recent",
+            modifiedAt: now
+        )
+
+        let sections = HomeTimelinePresentation.sections(
+            for: [.file(recent), .file(pinned)],
+            sortedBy: .modified,
+            groupByDate: true,
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(sections.map(\.id), ["pinned", "today"])
+        XCTAssertEqual(sections.first?.title, String(localized: "Pinned"))
+        XCTAssertEqual(sections.first?.entries.map(\.id), ["file:Pinned.md"])
+    }
+
     func testQuickCaptureLaunchPlanSharesComposerWhilePreservingEntryBehavior() {
         XCTAssertEqual(
             QuickCaptureLaunchPlan.make(for: .text),
@@ -302,6 +333,16 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertNil(projection.metadata)
         XCTAssertEqual(projection.body, markdown)
+    }
+
+    func testPlainBodyTextIsNotStoredAsAnImplicitTitle() {
+        let metadata = MarkdownListMetadata.extract(
+            from: "Ship the release.\n\nCoordinate launch.",
+            fallbackTitle: "Release Plan"
+        )
+
+        XCTAssertEqual(metadata.title, "Release Plan")
+        XCTAssertEqual(metadata.preview, "Ship the release.\nCoordinate launch.")
     }
 
     func testEditingReaderUsesOneDirectDismissDetent() {
@@ -496,6 +537,14 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(renamed.markdown.contains("`#project` and ``#project``"))
         XCTAssertTrue(renamed.markdown.contains("https://example.com/#project and (#project)"))
         XCTAssertTrue(renamed.markdown.contains("~~~text\n#project\n~~~"))
+        XCTAssertEqual(
+            MarkdownTagSyntax.adding("launch", to: "# Heading\n\nBody\n"),
+            "# Heading\n\nBody\n\n#launch\n"
+        )
+        XCTAssertEqual(
+            MarkdownTagSyntax.adding("#PROJECT", to: markdown),
+            markdown
+        )
 
         let deleted = try XCTUnwrap(MarkdownTagSyntax.rewriting(
             "before #project after\n#project #keep\nend #PROJECT",
@@ -504,6 +553,35 @@ final class MudsnoteCompanionTests: XCTestCase {
         ))
         XCTAssertEqual(deleted.occurrenceCount, 3)
         XCTAssertEqual(deleted.markdown, "before after\n#keep\nend")
+    }
+
+    func testTagSuggestionsReactToInputThenUseSemanticContextAndFrequency() {
+        let summaries = [
+            TagSummary(name: "#archive", count: 12, semanticTerms: ["finished", "history"]),
+            TagSummary(name: "#product", count: 8, semanticTerms: ["roadmap"]),
+            TagSummary(
+                name: "#project",
+                count: 3,
+                semanticTerms: ["launch", "client", "roadmap"]
+            ),
+        ]
+
+        XCTAssertEqual(
+            TagSuggestionRanker.rank(
+                query: "pro",
+                noteText: "Client launch roadmap",
+                summaries: summaries
+            ).map(\.name),
+            ["#project", "#product", "#archive"]
+        )
+        XCTAssertEqual(
+            TagSuggestionRanker.rank(
+                query: "arch",
+                noteText: "Client launch roadmap",
+                summaries: summaries
+            ).first?.name,
+            "#archive"
+        )
     }
 
     func testTagMutationRenamesAndDeletesAcrossOrdinaryNotes() async throws {
@@ -713,15 +791,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             ).map(\.id),
             ["file:Projects/Attached.md"]
         )
-        XCTAssertEqual(
-            NotesSearchSuggestion.attachments.results(
-                files: files,
-                memos: [memo],
-                scope: .inbox,
-                now: now
-            ).map(\.id),
-            ["memo:attachment-memo"]
-        )
+        XCTAssertEqual(MarkdownSearchScope.allCases, [.all, .notes])
         XCTAssertEqual(
             NotesSearchSuggestion.pinned.results(
                 files: files,
@@ -749,6 +819,33 @@ final class MudsnoteCompanionTests: XCTestCase {
             ).map(\.id)),
             ["file:Projects/Attached.md", "file:Checklist.md", "memo:attachment-memo"]
         )
+    }
+
+    func testSearchFilterMatchesSelectedFolderAndDateBeforeLimiting() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-18T10:00:00Z"))
+        let filter = MarkdownSearchFilter(
+            folderRelativePath: "Projects",
+            dateFilter: .editedPast7Days
+        )
+        let matching = RecentMarkdownFile(
+            id: "Projects/Launch.md",
+            relativePath: "Projects/Launch.md",
+            title: "Launch",
+            modifiedAt: now.addingTimeInterval(-2 * 24 * 60 * 60)
+        )
+        var outsideFolder = matching
+        outsideFolder.id = "Archive/Launch.md"
+        outsideFolder.relativePath = "Archive/Launch.md"
+        var tooOld = matching
+        tooOld.id = "Projects/Old.md"
+        tooOld.relativePath = "Projects/Old.md"
+        tooOld.modifiedAt = now.addingTimeInterval(-8 * 24 * 60 * 60)
+
+        XCTAssertTrue(filter.matches(matching, now: now, calendar: calendar))
+        XCTAssertFalse(filter.matches(outsideFolder, now: now, calendar: calendar))
+        XCTAssertFalse(filter.matches(tooOld, now: now, calendar: calendar))
     }
 
     func testSmartFolderStorePersistsLifecycleWithoutMovingNotes() async throws {
@@ -3511,10 +3608,6 @@ final class MudsnoteCompanionTests: XCTestCase {
             XCTFail("Expected an ordinary file search result")
         }
 
-        let fileQueryInInbox = try await store.search(
-            query: "commercial architecture",
-            scope: .inbox
-        )
         let memoQueryInNotes = try await store.search(
             query: "unique strategy",
             scope: .notes
@@ -3523,14 +3616,8 @@ final class MudsnoteCompanionTests: XCTestCase {
             query: "commercial architecture",
             scope: .notes
         )
-        let memoQueryInInbox = try await store.search(
-            query: "unique strategy",
-            scope: .inbox
-        )
-        XCTAssertEqual(fileQueryInInbox, [])
         XCTAssertEqual(memoQueryInNotes.map(\.location), ["Inbox.md"])
         XCTAssertEqual(fileQueryInNotes.map(\.location), ["Projects/Launch.md"])
-        XCTAssertEqual(memoQueryInInbox, [])
     }
 
     func testAttachmentReferenceSearchParserIgnoresCodeAndTraversal() {
@@ -4469,7 +4556,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(unchecked.hasUncheckedChecklist)
         XCTAssertEqual(
             MarkdownListMetadata.extract(from: "Plain body", fallbackTitle: "File Name").title,
-            "Plain body"
+            "File Name"
         )
     }
 
@@ -4701,8 +4788,8 @@ final class MudsnoteCompanionTests: XCTestCase {
             from: "<mark>Important title</mark>\n\nKeep <u>this preview</u> <mark>clean</mark>",
             fallbackTitle: "Fallback"
         )
-        XCTAssertEqual(metadata.title, "Important title")
-        XCTAssertEqual(metadata.preview, "Keep this preview clean")
+        XCTAssertEqual(metadata.title, "Fallback")
+        XCTAssertEqual(metadata.preview, "Important title\nKeep this preview clean")
     }
 
     func testRenderedMarkdownDetectsActionableContentWithoutOverridingExplicitLinks() throws {
@@ -5246,6 +5333,52 @@ final class MudsnoteCompanionTests: XCTestCase {
             )?.replacement,
             "\n- [ ] "
         )
+    }
+
+    func testListToolbarInsertsMarkersAtAnEmptyCaret() {
+        XCTAssertEqual(
+            MarkdownListEditing.prefixEdit(
+                in: "Before\n\nAfter",
+                selection: NSRange(location: 7, length: 0),
+                prefix: "- "
+            ),
+            MarkdownListEdit(
+                range: NSRange(location: 7, length: 1),
+                replacement: "- \n",
+                selection: NSRange(location: 9, length: 0)
+            )
+        )
+        XCTAssertEqual(
+            MarkdownListEditing.orderedEdit(
+                in: "",
+                selection: NSRange(location: 0, length: 0)
+            ),
+            MarkdownListEdit(
+                range: NSRange(location: 0, length: 0),
+                replacement: "1. ",
+                selection: NSRange(location: 3, length: 0)
+            )
+        )
+    }
+
+    @MainActor
+    func testNewListMarkersRenderImmediatelyAsRichEditorGlyphs() throws {
+        let edit = try XCTUnwrap(
+            MarkdownListEditing.prefixEdit(
+                in: "",
+                selection: NSRange(location: 0, length: 0),
+                prefix: "- "
+            )
+        )
+        let view = MarkdownRichTextView()
+        view.text = edit.replacement
+        view.selectedRange = edit.selection
+
+        MarkdownEditorPresentation.apply(to: view, displaysSource: false)
+
+        XCTAssertEqual(view.text, "- ")
+        XCTAssertEqual(view.selectedRange, NSRange(location: 2, length: 0))
+        XCTAssertEqual(view.bulletMarkers.map(\.range), [NSRange(location: 0, length: 2)])
     }
 
     func testReturnOnEmptyMarkdownListItemExitsList() {

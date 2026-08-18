@@ -35,14 +35,14 @@ enum SmartFolderDateFilter: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    fileprivate var usesCreationDate: Bool {
+    var usesCreationDate: Bool {
         switch self {
         case .createdToday, .createdPast7Days, .createdPast30Days: true
         default: false
         }
     }
 
-    fileprivate var dayCount: Int {
+    var dayCount: Int {
         switch self {
         case .editedToday, .createdToday: 1
         case .editedPast7Days, .createdPast7Days: 7
@@ -129,21 +129,19 @@ enum NotesSearchSuggestion: String, CaseIterable, Identifiable {
         limit: Int = 80
     ) -> [MarkdownSearchResult] {
         var results: [MarkdownSearchResult] = []
-        if scope != .inbox {
-            results += files.lazy
-                .filter { filter.matches(file: $0, now: now, calendar: calendar) }
-                .map { file in
-                    MarkdownSearchResult(
-                        id: "file:\(file.relativePath)",
-                        title: file.title,
-                        context: file.preview,
-                        location: file.relativePath,
-                        score: 0,
-                        modifiedAt: file.modifiedAt,
-                        destination: .file(file)
-                    )
-                }
-        }
+        results += files.lazy
+            .filter { filter.matches(file: $0, now: now, calendar: calendar) }
+            .map { file in
+                MarkdownSearchResult(
+                    id: "file:\(file.relativePath)",
+                    title: file.title,
+                    context: file.preview,
+                    location: file.relativePath,
+                    score: 0,
+                    modifiedAt: file.modifiedAt,
+                    destination: .file(file)
+                )
+            }
         if scope != .notes {
             results += memos.lazy
                 .filter { filter.matches(memo: $0, now: now, calendar: calendar) }
