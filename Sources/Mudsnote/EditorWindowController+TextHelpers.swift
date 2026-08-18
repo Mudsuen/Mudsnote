@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MudsnoteCore
 
 extension EditorWindowController {
 
@@ -9,10 +10,17 @@ extension EditorWindowController {
             interpretTypedMarkdownIfNeeded()
         }
         updateTypingAttributesFromInsertionPoint()
+        updateWordCount()
         updateToolbarSelectionState()
         updateInlineSuggestions()
         refreshChrome()
         markDocumentDirty()
+    }
+
+    func updateWordCount() {
+        let count = MarkdownEditorDocument.wordCount(in: serializedBodyMarkdown())
+        wordCountLabel.stringValue = "\(count) 字"
+        wordCountLabel.setAccessibilityValue(wordCountLabel.stringValue)
     }
 
     func interpretTypedMarkdownIfNeeded() {

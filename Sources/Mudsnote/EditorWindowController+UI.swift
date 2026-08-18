@@ -187,6 +187,14 @@ extension EditorWindowController {
         }
 
         if let footerBar {
+            wordCountLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            wordCountLabel.textColor = panelTertiaryTextColor()
+            wordCountLabel.alignment = .right
+            wordCountLabel.setAccessibilityLabel("字数")
+            wordCountLabel.translatesAutoresizingMaskIntoConstraints = false
+            footerBar.addSubview(wordCountLabel)
+            wordCountLabel.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor).isActive = true
+            wordCountLabel.widthAnchor.constraint(equalToConstant: 54).isActive = true
             if showsSaveButton {
                 let saveButton = makePrimarySaveButton()
                 let saveButtonWidth = ceil(saveButton.intrinsicContentSize.width) + 6
@@ -200,14 +208,16 @@ extension EditorWindowController {
                     toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
                     saveButton.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -footerEdgeInset),
                     saveButton.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                    saveButton.leadingAnchor.constraint(greaterThanOrEqualTo: toolbarStack.trailingAnchor, constant: footerGapToSave)
+                    wordCountLabel.trailingAnchor.constraint(equalTo: saveButton.leadingAnchor, constant: -8),
+                    wordCountLabel.leadingAnchor.constraint(greaterThanOrEqualTo: toolbarStack.trailingAnchor, constant: 8)
                 ])
             } else {
                 footerBar.addSubview(toolbarStack)
                 NSLayoutConstraint.activate([
                     toolbarStack.leadingAnchor.constraint(equalTo: footerBar.leadingAnchor, constant: footerEdgeInset),
                     toolbarStack.centerYAnchor.constraint(equalTo: footerBar.centerYAnchor),
-                    toolbarStack.trailingAnchor.constraint(lessThanOrEqualTo: footerBar.trailingAnchor, constant: -footerEdgeInset)
+                    wordCountLabel.trailingAnchor.constraint(equalTo: footerBar.trailingAnchor, constant: -footerEdgeInset),
+                    wordCountLabel.leadingAnchor.constraint(greaterThanOrEqualTo: toolbarStack.trailingAnchor, constant: 8)
                 ])
             }
         }
@@ -605,6 +615,7 @@ extension EditorWindowController {
         }
 
         refreshChrome()
+        updateWordCount()
         overlayScrollIndicator?.updateIndicator()
         updateTypingAttributesFromInsertionPoint()
         updateToolbarSelectionState()

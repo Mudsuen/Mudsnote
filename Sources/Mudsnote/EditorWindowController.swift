@@ -85,6 +85,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let editorTextView = MarkdownTextView(frame: .zero)
     let attachmentQuickLookController = AttachmentQuickLookController()
     let statusLabel = NSTextField(labelWithString: "")
+    let wordCountLabel = NSTextField(labelWithString: "")
     var toolbarButtons: [HoverToolbarButton] = []
     var toolbarButtonsByAction: [ToolbarAction: HoverToolbarButton] = [:]
     weak var saveButton: NSButton?

@@ -43,6 +43,8 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private let onClose: () -> Void
 
     let searchField = NSSearchField(string: "")
+    let scopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    let filterPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let infoLabel = NSTextField(labelWithString: "")
     private let tableView = NSTableView()
     private var results: [NoteSearchResult] = []
@@ -114,6 +116,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
 
         searchField.placeholderString = "搜索标题或正文"
         searchField.font = .systemFont(ofSize: 18)
+        searchField.focusRingType = .none
         searchField.target = self
         searchField.action = #selector(openSelectedResult)
         searchField.delegate = self
@@ -125,6 +128,18 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
             alpha: primarySurfaceAlpha(for: currentPanelOpacity)
         )
         searchSurfaceView = searchSurface
+
+        configureSearchOptions()
+        let optionsRow = NSStackView(views: [
+            NSTextField(labelWithString: "文件夹"),
+            scopePopUp,
+            NSTextField(labelWithString: "筛选"),
+            filterPopUp,
+            NSView()
+        ])
+        optionsRow.orientation = .horizontal
+        optionsRow.alignment = .centerY
+        optionsRow.spacing = 8
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("result"))
         column.width = 760
@@ -166,12 +181,14 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         badge.translatesAutoresizingMaskIntoConstraints = false
         title.translatesAutoresizingMaskIntoConstraints = false
         searchSurface.translatesAutoresizingMaskIntoConstraints = false
+        optionsRow.translatesAutoresizingMaskIntoConstraints = false
         resultSurface.translatesAutoresizingMaskIntoConstraints = false
         footer.translatesAutoresizingMaskIntoConstraints = false
 
         shellContent.addSubview(badge)
         shellContent.addSubview(title)
         shellContent.addSubview(searchSurface)
+        shellContent.addSubview(optionsRow)
         shellContent.addSubview(resultSurface)
         shellContent.addSubview(footer)
 
@@ -189,7 +206,11 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
 
             resultSurface.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
             resultSurface.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
-            resultSurface.topAnchor.constraint(equalTo: searchSurface.bottomAnchor, constant: 14),
+            optionsRow.leadingAnchor.constraint(equalTo: searchSurface.leadingAnchor, constant: 4),
+            optionsRow.trailingAnchor.constraint(equalTo: searchSurface.trailingAnchor, constant: -4),
+            optionsRow.topAnchor.constraint(equalTo: searchSurface.bottomAnchor, constant: 10),
+
+            resultSurface.topAnchor.constraint(equalTo: optionsRow.bottomAnchor, constant: 10),
 
             footer.leadingAnchor.constraint(equalTo: shellContent.leadingAnchor, constant: 18),
             footer.trailingAnchor.constraint(equalTo: shellContent.trailingAnchor, constant: -18),
@@ -198,6 +219,64 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         ])
 
         updatePanelOpacity(currentPanelOpacity)
+    }
+
+    private func configureSearchOptions() {
+        scopePopUp.removeAllItems()
+        scopePopUp.addItem(withTitle: "所有资料库")
+        scopePopUp.lastItem?.representedObject = ""
+        for directory in noteStore.preferredDirectories {
+            scopePopUp.addItem(withTitle: directory.lastPathComponent)
+            scopePopUp.lastItem?.representedObject = directory.standardizedFileURL.path
+            scopePopUp.lastItem?.toolTip = directory.path
+        }
+        if noteStore.searchDefaultScope == .defaultDirectory,
+           let index = scopePopUp.itemArray.firstIndex(where: {
+               ($0.representedObject as? String) == noteStore.notesDirectory.standardizedFileURL.path
+           }) {
+            scopePopUp.selectItem(at: index)
+        } else {
+            scopePopUp.selectItem(at: 0)
+        }
+        scopePopUp.target = self
+        scopePopUp.action = #selector(searchOptionsChanged(_:))
+
+        let filters: [(String, NoteSearchFilter)] = [
+            ("全部", .all),
+            ("标题", .title),
+            ("正文", .body),
+            ("标签", .tags),
+            ("含附件", .attachments)
+        ]
+        filterPopUp.removeAllItems()
+        for (title, filter) in filters {
+            filterPopUp.addItem(withTitle: title)
+            filterPopUp.lastItem?.representedObject = filter.rawValue
+        }
+        filterPopUp.selectItem(at: 0)
+        filterPopUp.target = self
+        filterPopUp.action = #selector(searchOptionsChanged(_:))
+    }
+
+    @objc
+    private func searchOptionsChanged(_ sender: Any?) {
+        searchController.cancel(invalidateSession: true)
+        scheduleSearch(delay: .zero)
+    }
+
+    private var selectedSearchRoots: [URL] {
+        guard let path = scopePopUp.selectedItem?.representedObject as? String,
+              !path.isEmpty else {
+            return noteStore.knownSearchRoots()
+        }
+        return [URL(fileURLWithPath: path, isDirectory: true)]
+    }
+
+    private var selectedSearchFilter: NoteSearchFilter {
+        guard let rawValue = filterPopUp.selectedItem?.representedObject as? String else {
+            return .all
+        }
+        return NoteSearchFilter(rawValue: rawValue) ?? .all
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -243,6 +322,8 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         let query = searchField.stringValue
         searchController.submit(
             query: query,
+            roots: selectedSearchRoots,
+            filter: selectedSearchFilter,
             delay: delay,
             onStart: { [weak self] in
                 guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }

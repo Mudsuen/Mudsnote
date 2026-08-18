@@ -274,6 +274,11 @@ extension EditorWindowController {
         }
 
         guard let storage = editorTextView.textStorage else { return }
+        let removesTrait = selectionEntirelyHasFontTrait(
+            trait,
+            selection: selection,
+            storage: storage
+        )
         let undoSnapshot = formattingUndoSnapshot()
         suppressTextDidChange = true
         storage.beginEditing()
@@ -283,7 +288,10 @@ extension EditorWindowController {
             var effectiveRange = NSRange(location: 0, length: 0)
             let font = (storage.attribute(.font, at: location, effectiveRange: &effectiveRange) as? NSFont) ?? theme.bodyFont
             let clippedRange = NSIntersectionRange(selection, effectiveRange)
-            storage.addAttribute(.font, value: toggledFont(from: font, trait: trait), range: clippedRange)
+            let updatedFont = removesTrait
+                ? NSFontManager.shared.convert(font, toNotHaveTrait: trait)
+                : NSFontManager.shared.convert(font, toHaveTrait: trait)
+            storage.addAttribute(.font, value: updatedFont, range: clippedRange)
             location = NSMaxRange(clippedRange)
         }
 
@@ -313,6 +321,10 @@ extension EditorWindowController {
         }
 
         guard let storage = editorTextView.textStorage else { return }
+        let removesItalic = selectionEntirelyUsesItalic(
+            selection: selection,
+            storage: storage
+        )
         let undoSnapshot = formattingUndoSnapshot()
         suppressTextDidChange = true
         storage.beginEditing()
@@ -324,7 +336,7 @@ extension EditorWindowController {
             let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
             let clippedRange = NSIntersectionRange(selection, effectiveRange)
 
-            if isItalicActive(font: font, obliqueness: attributes[.obliqueness]) {
+            if removesItalic {
                 storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask), range: clippedRange)
                 storage.removeAttribute(.obliqueness, range: clippedRange)
             } else {
@@ -350,6 +362,39 @@ extension EditorWindowController {
         return NSFontManager.shared.convert(font, toHaveTrait: trait)
     }
 
+    private func selectionEntirelyHasFontTrait(
+        _ trait: NSFontTraitMask,
+        selection: NSRange,
+        storage: NSTextStorage
+    ) -> Bool {
+        var allMatch = true
+        storage.enumerateAttribute(.font, in: selection) { value, _, stop in
+            let font = (value as? NSFont) ?? theme.bodyFont
+            guard NSFontManager.shared.traits(of: font).contains(trait) else {
+                allMatch = false
+                stop.pointee = true
+                return
+            }
+        }
+        return allMatch
+    }
+
+    private func selectionEntirelyUsesItalic(
+        selection: NSRange,
+        storage: NSTextStorage
+    ) -> Bool {
+        var allMatch = true
+        storage.enumerateAttributes(in: selection) { attributes, _, stop in
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            guard isItalicActive(font: font, obliqueness: attributes[.obliqueness]) else {
+                allMatch = false
+                stop.pointee = true
+                return
+            }
+        }
+        return allMatch
+    }
+
     // MARK: - Strikethrough / underline
 
     func applyStrikethrough() {
@@ -363,7 +408,14 @@ extension EditorWindowController {
     func toggleHighlightFormatting() {
         let selection = formattingSelection()
         guard selection.length > 0, let storage = editorTextView.textStorage else { return }
-        let isHighlighted = (storage.attribute(.qmHighlight, at: selection.location, effectiveRange: nil) as? Bool) == true
+        var isHighlighted = true
+        storage.enumerateAttribute(.qmHighlight, in: selection) { value, _, stop in
+            guard (value as? Bool) == true else {
+                isHighlighted = false
+                stop.pointee = true
+                return
+            }
+        }
         if isHighlighted {
             applyAttribute([:], removing: [.qmHighlight, .backgroundColor], actionName: "高亮")
         } else {
@@ -406,7 +458,14 @@ extension EditorWindowController {
         }
 
         guard let storage = editorTextView.textStorage else { return }
-        let enabled = (storage.attribute(key, at: selection.location, effectiveRange: nil) as? Int) == enabledValue
+        var enabled = true
+        storage.enumerateAttribute(key, in: selection) { value, _, stop in
+            guard (value as? Int) == enabledValue else {
+                enabled = false
+                stop.pointee = true
+                return
+            }
+        }
 
         let actionName = key == .underlineStyle ? "下划线" : "删除线"
         if enabled {

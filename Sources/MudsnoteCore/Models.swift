@@ -92,6 +92,14 @@ public struct NoteSearchResult: Equatable, Sendable {
     }
 }
 
+public enum NoteSearchFilter: String, CaseIterable, Sendable {
+    case all
+    case title
+    case body
+    case tags
+    case attachments
+}
+
 public struct DraftSnapshot: Codable, Equatable, Sendable {
     public let id: String
     public let sourcePath: String?
@@ -179,6 +187,33 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         }
 
         return "# \(trimmedTitle)\n\n\(trimmedBody)"
+    }
+
+    public static func wordCount(in text: String) -> Int {
+        var count = 0
+        var isInsideLatinWord = false
+
+        for character in text {
+            let isCJK = character.unicodeScalars.allSatisfy { scalar in
+                let value = Int(scalar.value)
+                return (0x3400...0x4DBF).contains(value)
+                    || (0x4E00...0x9FFF).contains(value)
+                    || (0x3040...0x30FF).contains(value)
+                    || (0xAC00...0xD7AF).contains(value)
+            }
+            if isCJK {
+                count += 1
+                isInsideLatinWord = false
+            } else if character.isLetter || character.isNumber {
+                if !isInsideLatinWord {
+                    count += 1
+                    isInsideLatinWord = true
+                }
+            } else {
+                isInsideLatinWord = false
+            }
+        }
+        return count
     }
 
     public static func parse(editorText: String, tags: [String] = []) -> MarkdownEditorDocument {

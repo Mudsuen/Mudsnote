@@ -241,7 +241,7 @@ extension NoteStore {
               ) else {
             return .empty
         }
-        let entries = readView.entries
+        let entries = knowledgeEligibleEntries(readView.entries)
 
         let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.url.standardizedFileURL.path, $0)
@@ -354,12 +354,13 @@ extension NoteStore {
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> KnowledgeRelations {
         guard !cancellationCheck() else { return .empty }
-        guard let entries = indexedEntries(
+        guard let indexedEntries = indexedEntries(
             roots: roots,
             cancellationCheck: cancellationCheck
         ) else {
             return .empty
         }
+        let entries = knowledgeEligibleEntries(indexedEntries)
         let currentURL = noteURL.standardizedFileURL
         let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.url.standardizedFileURL.path, $0)
@@ -717,7 +718,25 @@ extension NoteStore {
         guard limit > 0 else { return [] }
         let currentTitle = currentEntry?.title ?? ""
         let currentTags = meaningfulKnowledgeTags(currentEntry?.tags ?? [])
-        let currentTokens = knowledgeTokens(in: "\(currentTitle)\n\(body)")
+        var tokensByPath: [String: Set<String>] = [:]
+        var tokenDocumentFrequency: [String: Int] = [:]
+        for entry in entries {
+            guard !cancellationCheck() else { return [] }
+            let tokens = knowledgeTokens(in: "\(entry.title)\n\(entry.body)")
+            tokensByPath[entry.url.standardizedFileURL.path] = tokens
+            for token in tokens {
+                tokenDocumentFrequency[token, default: 0] += 1
+            }
+        }
+        let commonTokenThreshold = max(2, entries.count / 2)
+        func distinctiveTokens(_ tokens: Set<String>) -> Set<String> {
+            tokens.filter {
+                tokenDocumentFrequency[$0, default: 0] <= commonTokenThreshold
+            }
+        }
+        let currentTokens = distinctiveTokens(
+            knowledgeTokens(in: "\(currentTitle)\n\(body)")
+        )
         guard !currentTags.isEmpty || currentTokens.count >= 2 else { return [] }
 
         var candidates: [KnowledgeRelationItem] = []
@@ -725,18 +744,21 @@ extension NoteStore {
             guard !cancellationCheck() else { return [] }
             let candidateTags = meaningfulKnowledgeTags(entry.tags)
             let sharedTags = currentTags.intersection(candidateTags)
-            let candidateTokens = knowledgeTokens(in: "\(entry.title)\n\(entry.body)")
+            let candidateTokens = distinctiveTokens(
+                tokensByPath[entry.url.standardizedFileURL.path] ?? []
+            )
             let sharedTokens = currentTokens.intersection(candidateTokens)
-            let tokenContainment: Double
-            let smallerTokenCount = min(currentTokens.count, candidateTokens.count)
-            if smallerTokenCount == 0 {
-                tokenContainment = 0
+            let tokenSimilarity: Double
+            let unionTokenCount = currentTokens.union(candidateTokens).count
+            if unionTokenCount == 0 {
+                tokenSimilarity = 0
             } else {
-                tokenContainment = Double(sharedTokens.count) / Double(smallerTokenCount)
+                tokenSimilarity = Double(sharedTokens.count) / Double(unionTokenCount)
             }
-            let tagScore = min(Double(sharedTags.count) * 0.28, 0.56)
-            let score = tagScore + min(tokenContainment * 0.72, 0.72)
-            guard score >= 0.22 else { continue }
+            guard !sharedTags.isEmpty || sharedTokens.count >= 2 else { continue }
+            let tagScore = min(Double(sharedTags.count) * 0.34, 0.68)
+            let score = tagScore + min(tokenSimilarity * 0.55, 0.55)
+            guard score >= 0.25 else { continue }
 
             let reason: String
             if !sharedTags.isEmpty {
@@ -773,6 +795,13 @@ extension NoteStore {
             let normalized = $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return normalized.isEmpty || ignored.contains(normalized) ? nil : normalized
         })
+    }
+
+    private func knowledgeEligibleEntries(
+        _ entries: [NoteSearchIndexEntry]
+    ) -> [NoteSearchIndexEntry] {
+        guard !includesArchivedNotesInSearchAndKnowledge else { return entries }
+        return entries.filter { !isArchivedNote(at: $0.url) }
     }
 
     private func knowledgeTokens(in text: String) -> Set<String> {

@@ -8,6 +8,8 @@ enum MudsnoteThemeColor: String, CaseIterable {
     case teal
     case coral
     case rose
+    case gray
+    case black
 
     init(identifier: String) {
         self = Self(rawValue: identifier) ?? .ocean
@@ -21,6 +23,8 @@ enum MudsnoteThemeColor: String, CaseIterable {
         case .teal: return "松石"
         case .coral: return "珊瑚"
         case .rose: return "玫瑰"
+        case .gray: return "石墨灰"
+        case .black: return "炭黑"
         }
     }
 
@@ -38,6 +42,22 @@ enum MudsnoteThemeColor: String, CaseIterable {
             return NSColor(calibratedRed: 1.0, green: 0.58, blue: 0.50, alpha: 1)
         case .rose:
             return NSColor(calibratedRed: 0.97, green: 0.61, blue: 0.78, alpha: 1)
+        case .gray:
+            return NSColor(calibratedWhite: 0.62, alpha: 1)
+        case .black:
+            return NSColor(calibratedWhite: 0.24, alpha: 1)
+        }
+    }
+
+    var noteSelectionColor: NSColor {
+        switch self {
+        case .classicYellow:
+            return NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
+        case .black:
+            return NSColor(calibratedWhite: 0.115, alpha: 0.98)
+        default:
+            return foregroundColor.blended(withFraction: 0.48, of: .black)?
+                .withAlphaComponent(0.94) ?? foregroundColor.withAlphaComponent(0.78)
         }
     }
 

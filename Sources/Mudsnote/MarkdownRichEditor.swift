@@ -819,6 +819,22 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
     }
 
+    override func deleteBackward(_ sender: Any?) {
+        let removedSelection = selectedRange().length > 0
+        super.deleteBackward(sender)
+        if removedSelection {
+            resetInlineTypingAttributesAfterSelectionDeletion()
+        }
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        let removedSelection = selectedRange().length > 0
+        super.deleteForward(sender)
+        if removedSelection {
+            resetInlineTypingAttributesAfterSelectionDeletion()
+        }
+    }
+
     @discardableResult
     func pasteContents(from pasteboard: NSPasteboard) -> Bool {
         if commandDelegate?.markdownTextView(self, pasteAttachmentsFrom: pasteboard) == true {
@@ -826,7 +842,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
         if let markdownPasteTheme,
            let importedMarkdown = MarkdownRichPasteNormalizer.markdown(from: pasteboard, theme: markdownPasteTheme) {
-            let markdown = markdownWithInsertionBoundaries(importedMarkdown)
+            let markdown = importedMarkdown.contains("\n")
+                ? markdownWithInsertionBoundaries(importedMarkdown)
+                : importedMarkdown
             let rendered = MarkdownRichTextCodec.render(markdown: markdown, theme: markdownPasteTheme)
             insertText(rendered, replacementRange: selectedRange())
             return true
@@ -851,6 +869,29 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             result += "\n"
         }
         return result
+    }
+
+    private func resetInlineTypingAttributesAfterSelectionDeletion() {
+        guard let theme = markdownPasteTheme else { return }
+        var attributes = typingAttributes
+        let paragraphKind = MarkdownParagraphKind.decode(attributes[.qmParagraphKind]) ?? .paragraph
+        let paragraphAttributes = theme.baseAttributes(for: paragraphKind)
+        attributes[.font] = paragraphAttributes[.font]
+        attributes[.foregroundColor] = paragraphAttributes[.foregroundColor]
+        attributes[.paragraphStyle] = paragraphAttributes[.paragraphStyle]
+        [
+            .obliqueness,
+            .underlineStyle,
+            .underlineColor,
+            .strikethroughStyle,
+            .strikethroughColor,
+            .backgroundColor,
+            .qmHighlight,
+            .qmCode,
+            .qmLinkURL,
+            .qmAutomaticLink
+        ].forEach { attributes.removeValue(forKey: $0) }
+        typingAttributes = attributes
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
