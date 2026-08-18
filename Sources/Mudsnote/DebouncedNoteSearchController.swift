@@ -14,6 +14,7 @@ final class DebouncedNoteSearchController {
     private let noteStore: NoteStore
     private let limit: Int
     private var searchSession: NoteSearchSession?
+    private var searchSessionRootsKey: [String]?
     private var searchTask: Task<Void, Never>?
     private var generation = 0
 
@@ -24,6 +25,8 @@ final class DebouncedNoteSearchController {
 
     func submit(
         query: String,
+        roots: [URL]? = nil,
+        filter: NoteSearchFilter = .all,
         delay: Duration = defaultDelay,
         onStart: () -> Void = {},
         completion: @escaping @MainActor (DebouncedNoteSearchResults) -> Void
@@ -35,7 +38,9 @@ final class DebouncedNoteSearchController {
 
         let noteStore = noteStore
         let limit = limit
-        let existingSession = searchSession
+        let requestedRoots = roots ?? noteStore.knownSearchRoots()
+        let rootsKey = requestedRoots.map { $0.standardizedFileURL.path }.sorted()
+        let existingSession = searchSessionRootsKey == rootsKey ? searchSession : nil
         searchTask = Task.detached(priority: .userInitiated) { [weak self] in
             if delay > .zero {
                 do {
@@ -51,7 +56,7 @@ final class DebouncedNoteSearchController {
                 session = existingSession
             } else {
                 guard let builtSession = noteStore.makeSearchSession(
-                    roots: noteStore.knownSearchRoots(),
+                    roots: requestedRoots,
                     cancellationCheck: { Task.isCancelled }
                 ) else {
                     return
@@ -62,13 +67,14 @@ final class DebouncedNoteSearchController {
             let results = session.searchNotes(
                 query: query,
                 limit: limit,
+                filter: filter,
                 cancellationCheck: { Task.isCancelled }
             )
             guard !Task.isCancelled else { return }
             let payload = DebouncedNoteSearchResults(
                 query: query,
                 results: results,
-                searchRootCount: noteStore.knownSearchRoots().count
+                searchRootCount: requestedRoots.count
             )
 
             await MainActor.run {
@@ -78,6 +84,7 @@ final class DebouncedNoteSearchController {
                     return
                 }
                 self.searchSession = session
+                self.searchSessionRootsKey = rootsKey
                 self.searchTask = nil
                 completion(payload)
             }
@@ -90,6 +97,7 @@ final class DebouncedNoteSearchController {
         searchTask = nil
         if invalidateSession {
             searchSession = nil
+            searchSessionRootsKey = nil
         }
     }
 

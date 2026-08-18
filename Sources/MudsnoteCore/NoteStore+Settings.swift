@@ -1,6 +1,11 @@
 import Foundation
 
 extension NoteStore {
+    public enum SearchDefaultScope: String, CaseIterable, Sendable {
+        case allDirectories
+        case defaultDirectory
+    }
+
     public var notesDirectory: URL {
         get {
             if let raw = defaults.string(forKey: NoteStoreDefaultsKey.notesDirectory), !raw.isEmpty {
@@ -60,6 +65,43 @@ extension NoteStore {
     public var themeColorIdentifier: String {
         get { defaults.string(forKey: NoteStoreDefaultsKey.themeColorIdentifier) ?? "ocean" }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.themeColorIdentifier) }
+    }
+
+    public var searchDefaultScope: SearchDefaultScope {
+        get {
+            guard let rawValue = defaults.string(forKey: NoteStoreDefaultsKey.searchDefaultScope) else {
+                return .allDirectories
+            }
+            return SearchDefaultScope(rawValue: rawValue) ?? .allDirectories
+        }
+        set { defaults.set(newValue.rawValue, forKey: NoteStoreDefaultsKey.searchDefaultScope) }
+    }
+
+    public var includesArchivedNotesInSearchAndKnowledge: Bool {
+        get {
+            defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearchAndKnowledge) as? Bool
+                ?? false
+        }
+        set {
+            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearchAndKnowledge)
+        }
+    }
+
+    public var aiMemoryDailySyncEnabled: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.aiMemoryDailySyncEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiMemoryDailySyncEnabled) }
+    }
+
+    public var aiMemoryLastSyncDate: Date? {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.aiMemoryLastSyncDate) as? Date }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiMemoryLastSyncDate) }
+    }
+
+    public func isArchivedNote(at url: URL) -> Bool {
+        let archiveNames = Set(["archive", "archives", "归档"])
+        return url.standardizedFileURL.pathComponents.contains {
+            archiveNames.contains($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
     }
 
     public var editorContextMenuItemIdentifiers: [String]? {

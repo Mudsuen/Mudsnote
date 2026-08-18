@@ -961,7 +961,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let selectionTopInset: CGFloat = 6
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
-    static let selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
+    static var selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
@@ -1289,6 +1289,7 @@ final class LibraryWindowController: NSWindowController,
     let attachmentQuickLookController = AttachmentQuickLookController()
     let createdDateLabel = NSTextField(labelWithString: "")
     let statusLabel = NSTextField(labelWithString: "")
+    let wordCountLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
     private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
@@ -1554,6 +1555,7 @@ final class LibraryWindowController: NSWindowController,
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
+        LibraryNoteRowView.selectionFillColor = selectedThemeColor.noteSelectionColor
         window.delegate = self
         buildUI()
         configureToolbar()
@@ -2489,6 +2491,13 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
+        wordCountLabel.setAccessibilityLabel("字数")
+        wordCountLabel.font = .monospacedDigitSystemFont(
+            ofSize: LibraryNotesLayout.editorStatusFontSize,
+            weight: .medium
+        )
+        wordCountLabel.textColor = panelTertiaryTextColor()
+        wordCountLabel.alignment = .right
 
         configureEditorTextView()
         createdDateLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorCreatedDateLabel")
@@ -2521,6 +2530,7 @@ final class LibraryWindowController: NSWindowController,
             )
         ])
         editorTextView.addSubview(statusLabel)
+        editorTextView.addSubview(wordCountLabel)
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -2666,6 +2676,7 @@ final class LibraryWindowController: NSWindowController,
         searchField.delegate = self
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
+        searchField.focusRingType = .none
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.frame = NSRect(
             x: 0,
@@ -6108,6 +6119,7 @@ final class LibraryWindowController: NSWindowController,
         if let object = notification.object as AnyObject?, object === editorTextView {
             normalizeUnifiedTitleLineFormatting()
             titleField.stringValue = currentEditorDocument().title
+            updateWordCount()
             layoutEditorStatusLabel()
             libraryUserDidEdit()
         } else {
@@ -7451,7 +7463,14 @@ final class LibraryWindowController: NSWindowController,
         let length = min(requestedSelection.length, max(contentLength - location, 0))
         editorTextView.setSelectedRange(NSRange(location: location, length: length))
         suppressEditorChanges = false
+        updateWordCount()
         layoutEditorStatusLabel()
+    }
+
+    private func updateWordCount() {
+        let count = MarkdownEditorDocument.wordCount(in: currentEditorDocument().body)
+        wordCountLabel.stringValue = "\(count) 字"
+        wordCountLabel.setAccessibilityValue(wordCountLabel.stringValue)
     }
 
     private func normalizedEditorMarkdownBody() -> String {
@@ -7820,7 +7839,7 @@ final class LibraryWindowController: NSWindowController,
                     editorText: editorSnapshot.markdown(),
                     tags: tags
                 )
-                let title = document.title.isEmpty ? "无标题" : document.title
+                let title = document.title
                 let snapshot = LibraryBackgroundSaveSnapshot(
                     generation: generation,
                     editorRevision: editorRevision,
@@ -8083,6 +8102,12 @@ final class LibraryWindowController: NSWindowController,
             width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
             height: rowHeight
         )
+        wordCountLabel.frame = NSRect(
+            x: max(horizontalInset, editorTextView.bounds.width - 112),
+            y: statusTop,
+            width: 88,
+            height: rowHeight
+        )
     }
 
     @discardableResult
@@ -8096,8 +8121,8 @@ final class LibraryWindowController: NSWindowController,
 
         let document = currentEditorDocument()
         let body = document.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = document.title.isEmpty ? "无标题" : document.title
-        guard selectedURL != nil || !title.isEmpty || !body.isEmpty else { return nil }
+        let title = document.title
+        guard selectedURL != nil || isCreatingNewNote || !title.isEmpty || !body.isEmpty else { return nil }
 
         let previousURL = selectedURL
         let savedURL: URL
@@ -8952,7 +8977,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func refreshThemeColorForLibrary() {
+        LibraryNoteRowView.selectionFillColor = selectedThemeColor.noteSelectionColor
         refreshVisibleSourceOutlinePresentation()
+        tableView.reloadData()
         window?.displayIfNeeded()
     }
 
@@ -11390,6 +11417,11 @@ final class LibraryWindowController: NSWindowController,
         }
 
         guard let storage = editorTextView.textStorage else { return }
+        let removesTrait = selectionEntirelyHasFontTrait(
+            trait,
+            selection: selection,
+            storage: storage
+        )
         suppressEditorChanges = true
         storage.beginEditing()
         var location = selection.location
@@ -11397,7 +11429,10 @@ final class LibraryWindowController: NSWindowController,
             var effectiveRange = NSRange(location: 0, length: 0)
             let font = (storage.attribute(.font, at: location, effectiveRange: &effectiveRange) as? NSFont) ?? theme.bodyFont
             let clippedRange = NSIntersectionRange(selection, effectiveRange)
-            storage.addAttribute(.font, value: toggledFont(from: font, trait: trait), range: clippedRange)
+            let updatedFont = removesTrait
+                ? NSFontManager.shared.convert(font, toNotHaveTrait: trait)
+                : NSFontManager.shared.convert(font, toHaveTrait: trait)
+            storage.addAttribute(.font, value: updatedFont, range: clippedRange)
             location = NSMaxRange(clippedRange)
         }
         storage.endEditing()
@@ -11423,6 +11458,10 @@ final class LibraryWindowController: NSWindowController,
         }
 
         guard let storage = editorTextView.textStorage else { return }
+        let removesItalic = selectionEntirelyUsesItalic(
+            selection: selection,
+            storage: storage
+        )
         suppressEditorChanges = true
         storage.beginEditing()
         var location = selection.location
@@ -11431,7 +11470,7 @@ final class LibraryWindowController: NSWindowController,
             let attributes = storage.attributes(at: location, effectiveRange: &effectiveRange)
             let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
             let clippedRange = NSIntersectionRange(selection, effectiveRange)
-            if isItalicActive(font: font, obliqueness: attributes[.obliqueness]) {
+            if removesItalic {
                 storage.addAttribute(.font, value: NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask), range: clippedRange)
                 storage.removeAttribute(.obliqueness, range: clippedRange)
             } else {
@@ -11444,6 +11483,39 @@ final class LibraryWindowController: NSWindowController,
         suppressEditorChanges = false
         editorTextView.setSelectedRange(selection)
         markDirty()
+    }
+
+    private func selectionEntirelyHasFontTrait(
+        _ trait: NSFontTraitMask,
+        selection: NSRange,
+        storage: NSTextStorage
+    ) -> Bool {
+        var allMatch = true
+        storage.enumerateAttribute(.font, in: selection) { value, _, stop in
+            let font = (value as? NSFont) ?? theme.bodyFont
+            guard NSFontManager.shared.traits(of: font).contains(trait) else {
+                allMatch = false
+                stop.pointee = true
+                return
+            }
+        }
+        return allMatch
+    }
+
+    private func selectionEntirelyUsesItalic(
+        selection: NSRange,
+        storage: NSTextStorage
+    ) -> Bool {
+        var allMatch = true
+        storage.enumerateAttributes(in: selection) { attributes, _, stop in
+            let font = (attributes[.font] as? NSFont) ?? theme.bodyFont
+            guard isItalicActive(font: font, obliqueness: attributes[.obliqueness]) else {
+                allMatch = false
+                stop.pointee = true
+                return
+            }
+        }
+        return allMatch
     }
 
     private func toggleIntAttribute(_ key: NSAttributedString.Key, enabledValue: Int, actionName: String) {

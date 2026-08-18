@@ -2927,11 +2927,10 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteRowView.selectionTopInset == 6)
         #expect(LibraryNoteRowView.selectionBottomInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
-        let selectionFill = try #require(LibraryNoteRowView.selectionFillColor.usingColorSpace(.genericRGB))
-        #expect(abs(selectionFill.redComponent - 0.492) < 0.001)
-        #expect(abs(selectionFill.greenComponent - 0.377) < 0.001)
-        #expect(abs(selectionFill.blueComponent - 0.09) < 0.001)
-        #expect(abs(selectionFill.alphaComponent - 0.96) < 0.001)
+        #expect(
+            LibraryNoteRowView.selectionFillColor
+                == MudsnoteThemeColor(identifier: store.themeColorIdentifier).noteSelectionColor
+        )
         #expect(LibraryNoteRowView.hoverLeadingInset == LibraryNoteRowView.selectionLeadingInset)
         #expect(LibraryNoteRowView.hoverTrailingInset == LibraryNoteRowView.selectionTrailingInset)
         #expect(LibraryNoteRowView.hoverVerticalInset < LibraryNoteRowView.selectionBottomInset)
@@ -4724,18 +4723,12 @@ struct MarkdownRichEditorTests {
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
         let originalSourceBackground = NSColor(calibratedWhite: 0.16, alpha: 0.86)
         let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
-        let originalNoteBackground = NSColor(
-            calibratedRed: 0.492,
-            green: 0.377,
-            blue: 0.09,
-            alpha: 0.96
-        )
         store.themeColorIdentifier = MudsnoteThemeColor.teal.rawValue
         controller.refreshThemeColorForLibrary()
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.teal.foregroundColor)
         #expect(rootCell.countLabel.textColor == originalCountColor)
         #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
-        #expect(LibraryNoteRowView.selectionFillColor == originalNoteBackground)
+        #expect(LibraryNoteRowView.selectionFillColor == MudsnoteThemeColor.teal.noteSelectionColor)
 
         store.themeColorIdentifier = MudsnoteThemeColor.classicYellow.rawValue
         controller.refreshThemeColorForLibrary()

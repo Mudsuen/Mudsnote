@@ -55,6 +55,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         setupMainMenu()
         setupStatusItem()
         registerHotKeysIfNeeded()
+        synchronizeAIMemoryIfNeeded()
         hasFinishedLaunching = true
 
         if opensExternalMarkdown {
@@ -941,10 +942,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             spellCheckingEnabled: noteStore.spellCheckingEnabled,
             currentThemeColorIdentifier: noteStore.themeColorIdentifier,
             libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
+            searchDefaultScope: noteStore.searchDefaultScope,
+            includesArchivedNotesInSearchAndKnowledge: noteStore.includesArchivedNotesInSearchAndKnowledge,
             editorContextMenuOptions: noteStore.enabledEditorContextMenuOptions,
             selectionToolbarOptions: noteStore.enabledSelectionToolbarOptions,
             aiEnabled: noteStore.aiEnabled,
             aiCodexExecutablePath: noteStore.aiCodexExecutablePath,
+            aiMemoryDailySyncEnabled: noteStore.aiMemoryDailySyncEnabled,
             onPreviewOpacity: { [weak self] opacity in
                 self?.updateOpenWindowOpacity(opacity)
             },
@@ -972,10 +976,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.spellCheckingEnabled = settings.spellCheckingEnabled
         noteStore.themeColorIdentifier = settings.themeColorIdentifier
         noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
+        noteStore.searchDefaultScope = settings.searchDefaultScope
+        noteStore.includesArchivedNotesInSearchAndKnowledge = settings.includesArchivedNotesInSearchAndKnowledge
         noteStore.enabledEditorContextMenuOptions = settings.editorContextMenuOptions
         noteStore.enabledSelectionToolbarOptions = settings.selectionToolbarOptions
         noteStore.aiEnabled = settings.aiEnabled
         noteStore.aiCodexExecutablePath = settings.aiCodexExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteStore.aiMemoryDailySyncEnabled = settings.aiMemoryDailySyncEnabled
 
         do {
             try noteStore.ensureNotesDirectory()
@@ -990,6 +997,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         updateFloatingNoteLevel()
         libraryWindowController?.refreshFolderNoteVisibilityForLibrary()
         libraryWindowController?.refreshThemeColorForLibrary()
+        synchronizeAIMemoryIfNeeded()
+    }
+
+    private func synchronizeAIMemoryIfNeeded(force: Bool = false) {
+        guard noteStore.aiMemoryDailySyncEnabled else { return }
+        let memoryDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/memories", isDirectory: true)
+        let service = AIMemorySyncService(
+            memoryDirectory: memoryDirectory,
+            destinationRoot: noteStore.notesDirectory
+        )
+        let lastSyncDate = noteStore.aiMemoryLastSyncDate
+        let noteStore = noteStore
+        Task.detached(priority: .utility) {
+            let result = try? service.sync(
+                lastSyncDate: lastSyncDate,
+                force: force
+            )
+            guard let result else { return }
+            noteStore.aiMemoryLastSyncDate = result.syncedAt
+            if result.didWrite {
+                noteStore.markSearchIndexDirty(at: [result.destinationURL])
+            }
+        }
     }
 
     private func updateOpenWindowOpacity(_ opacity: Double) {

@@ -14,10 +14,13 @@ struct PreferencesSettings {
     let spellCheckingEnabled: Bool
     let themeColorIdentifier: String
     let libraryIncludesSubfolderNotes: Bool
+    let searchDefaultScope: NoteStore.SearchDefaultScope
+    let includesArchivedNotesInSearchAndKnowledge: Bool
     let editorContextMenuOptions: Set<EditorContextMenuOption>
     let selectionToolbarOptions: Set<SelectionToolbarOption>
     let aiEnabled: Bool
     let aiCodexExecutablePath: String
+    let aiMemoryDailySyncEnabled: Bool
 }
 
 @MainActor
@@ -64,6 +67,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let removeDirectoryButton = NSButton(title: "移除", target: nil, action: nil)
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
     private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let searchDefaultScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let includesArchivedNotesButton = NSButton(
+        checkboxWithTitle: "搜索和知识关联包含 Archive",
+        target: nil,
+        action: nil
+    )
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private(set) var themeColorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -71,6 +80,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let aiCodexPathLabel = NSTextField(labelWithString: "")
     private let aiChooseCodexButton = NSButton(title: "选择…", target: nil, action: nil)
     private let aiTestConnectionButton = NSButton(title: "重新检测", target: nil, action: nil)
+    private let aiMemoryDailySyncButton = NSButton(
+        checkboxWithTitle: "每日同步本机 AI 核心记忆",
+        target: nil,
+        action: nil
+    )
     private let opacitySlider = NSSlider(
         value: NoteStore.defaultPanelOpacity,
         minValue: NoteStore.minimumPanelOpacity,
@@ -111,10 +125,13 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         spellCheckingEnabled: Bool,
         currentThemeColorIdentifier: String = "ocean",
         libraryIncludesSubfolderNotes: Bool = true,
+        searchDefaultScope: NoteStore.SearchDefaultScope = .allDirectories,
+        includesArchivedNotesInSearchAndKnowledge: Bool = false,
         editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
         selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
         aiEnabled: Bool,
         aiCodexExecutablePath: String,
+        aiMemoryDailySyncEnabled: Bool = false,
         onPreviewOpacity: @escaping (Double) -> Void,
         onResetWindowFrames: @escaping () -> Void,
         onSave: @escaping (PreferencesSettings) -> Void
@@ -169,6 +186,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         )
         folderNoteVisibilityPopUp.addItems(withTitles: ["包含子文件夹", "仅本文件夹"])
         folderNoteVisibilityPopUp.selectItem(at: libraryIncludesSubfolderNotes ? 0 : 1)
+        searchDefaultScopePopUp.addItems(withTitles: ["所有资料库文件夹", "默认笔记文件夹"])
+        searchDefaultScopePopUp.selectItem(at: searchDefaultScope == .allDirectories ? 0 : 1)
+        includesArchivedNotesButton.state = includesArchivedNotesInSearchAndKnowledge ? .on : .off
+        aiMemoryDailySyncButton.state = aiMemoryDailySyncEnabled ? .on : .off
         refreshDirectoryControls()
     }
 
@@ -363,6 +384,16 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "文件夹显示:",
                 control: folderNoteVisibilityPopUp,
                 help: "选择资料库中的文件夹时，可包含所有子文件夹，或只显示直接存放在该文件夹中的笔记。"
+            ),
+            preferenceRow(
+                label: "默认搜索范围:",
+                control: searchDefaultScopePopUp,
+                help: "打开独立搜索窗口时，默认搜索所有资料库文件夹或仅默认笔记文件夹。"
+            ),
+            preferenceRow(
+                label: "",
+                control: includesArchivedNotesButton,
+                help: "默认关闭；关闭时 Archive、Archives 或归档文件夹不参与搜索、标签建议和知识关联。"
             )
         ])
     }
@@ -478,6 +509,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "运行时:",
                 control: runtimeStack,
                 help: "默认自动查找 Codex.app、ChatGPT.app、Homebrew 和当前 PATH；也可手动选择。"
+            ),
+            preferenceRow(
+                label: "",
+                control: aiMemoryDailySyncButton,
+                help: "每天最多一次，只导入本机 Codex 记忆中属于 Mudsnote 的章节到 AI-memory 文件夹；不会导入其他项目内容。"
             )
         ])
     }
@@ -761,10 +797,15 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             spellCheckingEnabled: spellCheckingButton.state == .on,
             themeColorIdentifier: selectedThemeColorIdentifier,
             libraryIncludesSubfolderNotes: folderNoteVisibilityPopUp.indexOfSelectedItem == 0,
+            searchDefaultScope: searchDefaultScopePopUp.indexOfSelectedItem == 1
+                ? .defaultDirectory
+                : .allDirectories,
+            includesArchivedNotesInSearchAndKnowledge: includesArchivedNotesButton.state == .on,
             editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             aiEnabled: aiEnabledButton.state == .on,
-            aiCodexExecutablePath: aiCodexExecutablePath
+            aiCodexExecutablePath: aiCodexExecutablePath,
+            aiMemoryDailySyncEnabled: aiMemoryDailySyncButton.state == .on
         ))
         if shouldResetWindowFrames {
             onResetWindowFrames()

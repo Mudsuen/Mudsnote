@@ -20,6 +20,46 @@ public final class NoteSearchSession: @unchecked Sendable {
     public func searchNotes(
         query: String,
         limit: Int = 30,
+        filter: NoteSearchFilter,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> [NoteSearchResult] {
+        let filteredEntries: [NoteSearchIndexEntry]
+        switch filter {
+        case .all:
+            filteredEntries = entries
+        case .title:
+            filteredEntries = entries.filter {
+                $0.title.localizedCaseInsensitiveContains(query)
+            }
+        case .body:
+            filteredEntries = entries.filter {
+                $0.body.localizedCaseInsensitiveContains(query)
+            }
+        case .tags:
+            filteredEntries = entries.filter { entry in
+                entry.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+        case .attachments:
+            filteredEntries = entries.filter(\.hasAttachments)
+        }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedQuery.isEmpty {
+            return filteredEntries
+                .sorted { $0.modifiedAt > $1.modifiedAt }
+                .prefix(limit)
+                .map(\.result)
+        }
+        return noteStore.rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: filteredEntries,
+            cancellationCheck: cancellationCheck
+        ) ?? []
+    }
+
+    public func searchNotes(
+        query: String,
+        limit: Int = 30,
         cancellationCheck: @Sendable () -> Bool
     ) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,11 +222,11 @@ extension NoteStore {
     }
 
     public func makeSearchSession() -> NoteSearchSession {
-        NoteSearchSession(noteStore: self, entries: indexedEntries())
+        NoteSearchSession(noteStore: self, entries: searchEligibleEntries(indexedEntries()))
     }
 
     public func makeSearchSession(roots: [URL]) -> NoteSearchSession {
-        NoteSearchSession(noteStore: self, entries: indexedEntries(roots: roots))
+        NoteSearchSession(noteStore: self, entries: searchEligibleEntries(indexedEntries(roots: roots)))
     }
 
     public func makeSearchSession(
@@ -199,7 +239,7 @@ extension NoteStore {
         ) else {
             return nil
         }
-        return NoteSearchSession(noteStore: self, entries: entries)
+        return NoteSearchSession(noteStore: self, entries: searchEligibleEntries(entries))
     }
 
     public func knownTags(limit: Int = 200) -> [String] {
@@ -211,23 +251,33 @@ extension NoteStore {
     }
 
     private func knownTags(limit: Int, roots: [URL]?) -> [String] {
-        var counts: [String: Int] = [:]
+        var summaries: [String: (name: String, count: Int)] = [:]
 
-        for entry in indexedEntries(roots: roots) {
+        for entry in searchEligibleEntries(indexedEntries(roots: roots)) {
+            var countedInNote = Set<String>()
             for tag in entry.tags {
-                counts[tag, default: 0] += 1
+                let key = tag.folding(
+                    options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                    locale: .current
+                )
+                guard countedInNote.insert(key).inserted else { continue }
+                if let existing = summaries[key] {
+                    summaries[key] = (existing.name, existing.count + 1)
+                } else {
+                    summaries[key] = (tag, 1)
+                }
             }
         }
 
-        return counts
+        return summaries.values
             .sorted {
-                if $0.value == $1.value {
-                    return $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+                if $0.count == $1.count {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
-                return $0.value > $1.value
+                return $0.count > $1.count
             }
             .prefix(limit)
-            .map(\.key)
+            .map(\.name)
     }
 
     public func listNotes(limit: Int = 200, roots: [URL]? = nil) -> [NoteSearchResult] {
@@ -274,13 +324,19 @@ extension NoteStore {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
             return recentSearchResults(limit: limit)
+                .filter { includesArchivedNotesInSearchAndKnowledge || !isArchivedNote(at: $0.url) }
         }
 
         return rankedSearchResults(
             query: trimmedQuery,
             limit: limit,
-            entries: indexedEntries(roots: roots)
+            entries: searchEligibleEntries(indexedEntries(roots: roots))
         )
+    }
+
+    private func searchEligibleEntries(_ entries: [NoteSearchIndexEntry]) -> [NoteSearchIndexEntry] {
+        guard !includesArchivedNotesInSearchAndKnowledge else { return entries }
+        return entries.filter { !isArchivedNote(at: $0.url) }
     }
 
     public func searchNotes(
@@ -330,7 +386,8 @@ extension NoteStore {
         }
 
         let recentPaths = Set(listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
-        let recentEntries = indexedEntries().filter { recentPaths.contains($0.url.standardizedFileURL.path) }
+        let recentEntries = searchEligibleEntries(indexedEntries())
+            .filter { recentPaths.contains($0.url.standardizedFileURL.path) }
         return rankedSearchResults(query: trimmedQuery, limit: limit, entries: recentEntries)
     }
 
