@@ -18,7 +18,7 @@ extension EditorWindowController {
     }
 
     func updateWordCount() {
-        let count = MarkdownEditorDocument.wordCount(in: serializedBodyMarkdown())
+        let count = MarkdownEditorDocument.wordCount(in: editorTextView.string)
         wordCountLabel.stringValue = "\(count) 字"
         wordCountLabel.setAccessibilityValue(wordCountLabel.stringValue)
     }

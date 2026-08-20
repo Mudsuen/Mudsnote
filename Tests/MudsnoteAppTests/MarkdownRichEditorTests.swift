@@ -798,6 +798,48 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func wordCountScansVisibleEditorTextWithoutSerializingHiddenMarkdownTargets() throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "visible-word-count",
+            showsSaveButton: false
+        )
+        defer { harness.tearDown() }
+        let markdown = "[Visible](https://example.com/hidden/path) 中文"
+        let editorController = harness.controller
+        editorController.editorTextView.textStorage?.setAttributedString(
+            MarkdownRichTextCodec.render(markdown: markdown, theme: editorController.theme)
+        )
+        editorController.updateWordCount()
+        #expect(editorController.wordCountLabel.stringValue == "3 字")
+
+        _ = try harness.store.saveNewNote(title: "Title", body: markdown)
+        let libraryController = LibraryWindowController(
+            noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { libraryController.close() }
+
+        #expect(libraryController.titleField.stringValue == "Title")
+        #expect(libraryController.wordCountLabel.stringValue == "3 字")
+        libraryController.editorTextView.setSelectedRange(
+            NSRange(location: libraryController.editorTextView.string.utf16.count, length: 0)
+        )
+        libraryController.editorTextView.insertText(
+            " Added",
+            replacementRange: libraryController.editorTextView.selectedRange()
+        )
+        libraryController.textDidChange(Notification(
+            name: NSText.didChangeNotification,
+            object: libraryController.editorTextView
+        ))
+        #expect(libraryController.titleField.stringValue == "Title")
+        #expect(libraryController.wordCountLabel.stringValue == "4 字")
+    }
+
+    @MainActor
+    @Test
     func shiftReturnCreatesPersistentShortSpacedLineBreak() throws {
         let textView = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 120))
         textView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "First", theme: theme))

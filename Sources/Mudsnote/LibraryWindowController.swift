@@ -6118,8 +6118,9 @@ final class LibraryWindowController: NSWindowController,
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
             normalizeUnifiedTitleLineFormatting()
-            titleField.stringValue = currentEditorDocument().title
-            updateWordCount()
+            let metadata = visibleEditorMetadata()
+            titleField.stringValue = metadata.title
+            updateWordCount(in: metadata.body)
             layoutEditorStatusLabel()
             libraryUserDidEdit()
         } else {
@@ -7468,9 +7469,33 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateWordCount() {
-        let count = MarkdownEditorDocument.wordCount(in: currentEditorDocument().body)
+        updateWordCount(in: visibleEditorMetadata().body)
+    }
+
+    private func updateWordCount(in body: String) {
+        let count = MarkdownEditorDocument.wordCount(in: body)
         wordCountLabel.stringValue = "\(count) 字"
         wordCountLabel.setAccessibilityValue(wordCountLabel.stringValue)
+    }
+
+    private func visibleEditorMetadata() -> (title: String, body: String) {
+        let visibleText = editorTextView.string
+        if isEditorShowingMarkdownSource {
+            let document = MarkdownEditorDocument.parse(
+                editorText: visibleText,
+                tags: selectedTags
+            )
+            return (document.title, document.body)
+        }
+
+        let text = visibleText as NSString
+        guard text.length > 0 else { return ("", "") }
+        let titleParagraph = text.paragraphRange(for: NSRange(location: 0, length: 0))
+        let title = text.substring(with: titleParagraph)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let bodyStart = NSMaxRange(titleParagraph)
+        let body = bodyStart < text.length ? text.substring(from: bodyStart) : ""
+        return (title, body)
     }
 
     private func normalizedEditorMarkdownBody() -> String {
