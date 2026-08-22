@@ -35,5 +35,8 @@ Mudsnote adds only these project checks:
   worktrees share `/Applications/Mudsnote.app` and the connected iPhone.
 - CI must not access iCloud, Keychain, real note folders, personal settings,
   credentials, or other user data.
-- Keep UI tuning coherent until stable. Install a reversible candidate only
-  when the user explicitly requests local experience.
+- Keep UI tuning coherent until stable. After verification succeeds,
+  automatically install a reversible candidate for every explicitly requested
+  platform. For iOS, install only when signing and a tested recovery path can
+  protect the working app; otherwise stop before installation and report the
+  blocker.
