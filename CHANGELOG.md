@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 263. Canonical pin metadata for overlapping library roots
+- Problem: macOS could configure both a library folder and one of its descendants, then write pins into the descendant's `.mudsnote/pins.json`. iOS reading the outer library saw only the outer pin file, so macOS displayed more pinned notes than iOS.
+- Fix: Shared pin reads now consolidate descendant pin files into the outermost configured library root, rewrite their paths relative to that root, and clear the migrated descendant list only after the outer write succeeds. Future pin and unpin operations also choose the outermost owning root.
+- Lesson: Metadata shared through a folder tree needs one canonical ownership boundary; choosing the most specific matching directory fragments cross-device state when configured roots overlap.
+
 ### 262. Cross-platform note mentions, home navigation, and metadata cleanup
 - Problem: macOS and iOS could not insert links to relevant notes from the editor, macOS hid its all-notes home scope, legacy macOS pins could remain absent on iOS, and tags lacked a complete cross-platform deletion path. iOS also exposed capture front matter while rich-editing and left a visible gap below its half-height reader, while showing the macOS floating note could reveal the main window.
 - Fix: Both editors now offer ranked note suggestions after `@` and insert portable relative Markdown links. macOS exposes a Home source alongside folders, retries migration into the shared pin file whenever pins are read, and can remove a tag from front matter and visible inline Markdown across the library. iOS editing projects only the note body in both rich-text and Markdown-source modes while preserving all front matter, and its half-height reader fills the bottom safe-area seam. Floating-note activation now keeps unrelated macOS windows ordered out when the application was hidden.

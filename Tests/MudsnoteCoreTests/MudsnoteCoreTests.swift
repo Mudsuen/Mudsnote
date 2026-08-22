@@ -2124,6 +2124,60 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func pinnedNotePathsConsolidateOverlappingLibraryRoots() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let libraryRoot = harness.root.appendingPathComponent("Library", isDirectory: true)
+        let inputRoot = libraryRoot.appendingPathComponent("input", isDirectory: true)
+        let metadataDirectory = inputRoot.appendingPathComponent(".mudsnote", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: metadataDirectory,
+            withIntermediateDirectories: true
+        )
+        let noteURL = inputRoot.appendingPathComponent("Pinned.md")
+        try "# Pinned\n".write(to: noteURL, atomically: true, encoding: .utf8)
+        try JSONEncoder().encode(["Pinned.md"]).write(
+            to: metadataDirectory.appendingPathComponent("pins.json"),
+            options: .atomic
+        )
+
+        store.configurePreferredDirectories(
+            [inputRoot, libraryRoot],
+            defaultDirectory: inputRoot
+        )
+
+        #expect(store.libraryPinnedNotePaths == [noteURL.standardizedFileURL.path])
+        #expect(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(
+                    contentsOf: libraryRoot.appendingPathComponent(".mudsnote/pins.json")
+                )
+            ) == ["input/Pinned.md"]
+        )
+        #expect(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(
+                    contentsOf: inputRoot.appendingPathComponent(".mudsnote/pins.json")
+                )
+            ).isEmpty
+        )
+
+        store.setLibraryNotePinned(false, at: noteURL)
+        #expect(store.libraryPinnedNotePaths.isEmpty)
+        store.setLibraryNotePinned(true, at: noteURL)
+        #expect(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(
+                    contentsOf: libraryRoot.appendingPathComponent(".mudsnote/pins.json")
+                )
+            ) == ["input/Pinned.md"]
+        )
+    }
+
+    @Test
     func noteMentionsUseRankedSearchAndExcludeTheCurrentNote() throws {
         let harness = try TestHarness()
         let store = harness.store

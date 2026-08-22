@@ -288,6 +288,7 @@ extension NoteStore {
     }
 
     public var libraryPinnedNotePaths: [String] {
+        consolidateNestedSharedPinnedNotePathsIfPossible()
         migrateLegacyPinnedNotePathsIfPossible()
         let localPaths = defaults.stringArray(
             forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
@@ -312,6 +313,7 @@ extension NoteStore {
     }
 
     public func setLibraryNotePinned(_ isPinned: Bool, at url: URL) {
+        consolidateNestedSharedPinnedNotePathsIfPossible()
         let standardizedURL = url.standardizedFileURL
         let path = standardizedURL.path
         if let root = owningPreferredDirectory(for: standardizedURL),
@@ -393,7 +395,7 @@ extension NoteStore {
                 let rootPath = $0.standardizedFileURL.path
                 return path.hasPrefix(rootPath + "/")
             }
-            .max {
+            .min {
                 $0.standardizedFileURL.path.count
                     < $1.standardizedFileURL.path.count
             }
@@ -454,6 +456,40 @@ extension NoteStore {
             }
         }
         defaults.set(remaining.sorted(), forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths)
+    }
+
+    private func consolidateNestedSharedPinnedNotePathsIfPossible() {
+        let roots = preferredDirectories.map(\.standardizedFileURL)
+        for nestedRoot in roots {
+            let nestedPath = nestedRoot.path
+            let outerRoot = roots
+                .filter {
+                    let outerPath = $0.path
+                    return nestedPath.hasPrefix(outerPath + "/")
+                }
+                .min(by: { $0.path.count < $1.path.count })
+            guard let outerRoot else { continue }
+
+            let nestedPins = loadSharedPinnedNotePaths(in: nestedRoot)
+            guard !nestedPins.isEmpty else { continue }
+            var outerPins = loadSharedPinnedNotePaths(in: outerRoot)
+            var migratedAllPins = true
+            for relativePath in nestedPins {
+                let noteURL = nestedRoot.appendingPathComponent(relativePath)
+                guard let outerRelativePath = relativeNotePath(for: noteURL, in: outerRoot) else {
+                    migratedAllPins = false
+                    continue
+                }
+                outerPins.insert(outerRelativePath)
+            }
+            guard migratedAllPins else { continue }
+            do {
+                try saveSharedPinnedNotePaths(outerPins, in: outerRoot)
+                try saveSharedPinnedNotePaths([], in: nestedRoot)
+            } catch {
+                continue
+            }
+        }
     }
 
     func replaceLibraryFolderDisclosurePathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
@@ -584,6 +620,7 @@ extension NoteStore {
             .filter { $0.standardizedFileURL.path != normalizedDefault.path }
             .map(\.path)
         defaults.set(extras, forKey: NoteStoreDefaultsKey.extraDirectories)
+        consolidateNestedSharedPinnedNotePathsIfPossible()
         migrateLegacyPinnedNotePathsIfPossible()
     }
 
