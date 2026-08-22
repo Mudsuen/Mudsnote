@@ -23,6 +23,14 @@ assert_script_contract 'CHECK_INTERVAL_SECONDS' \
   "LaunchAgent must have an explicit bounded check interval"
 assert_script_contract 'NEEDS_INSTALL_PATH' \
   "a skipped device install must remain pending for a later retry"
+assert_script_contract 'ATTENTION_PATH' \
+  "signing or account failures must remain visible until renewal succeeds"
+assert_script_contract 'isolate_renewal_profiles' \
+  "near-expiry Mudsnote profiles must be isolated before requesting renewal"
+assert_script_contract 'restore_isolated_profiles' \
+  "failed renewal must restore the previous cached profiles"
+assert_script_contract 'available_xcode_iphone_id' \
+  "renewal must prefer the connected iPhone over a generic destination"
 assert_script_contract 'notify_failure' \
   "background failures must produce a user notification"
 assert_script_contract 'redact_build_output' \
@@ -35,6 +43,8 @@ assert_script_contract 'chmod 600 "\$LOG_FILE"' \
 dry_run_output="$("$SCRIPT" --dry-run --auto-install --auto-launch)"
 grep -Fq "would inspect the cached embedded profiles" <<<"$dry_run_output" \
   || fail "dry-run must describe threshold inspection"
+grep -Fq "would isolate only near-expiry Mudsnote profiles" <<<"$dry_run_output" \
+  || fail "dry-run must describe scoped profile isolation"
 grep -Fq "would overwrite-install only after renewal or a pending retry" <<<"$dry_run_output" \
   || fail "dry-run must describe conditional overwrite installation"
 

@@ -9,6 +9,7 @@ LABEL="com.mudsnote.ios-signing-refresh"
 PROJECT_RELATIVE_PATH="iOS/MudsnoteCompanion.xcodeproj"
 SCHEME="MudsnoteCompanion"
 BUNDLE_ID="app.mudsnote.companion"
+WIDGET_BUNDLE_ID="app.mudsnote.companion.widget"
 CONFIGURATION="${MUDSNOTE_IOS_SIGNING_CONFIGURATION:-Debug}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA_PATH="${MUDSNOTE_IOS_SIGNING_DERIVED_DATA_PATH:-$ROOT_DIR/build/IOSAutoSigningRefreshDerivedData}"
@@ -19,6 +20,9 @@ PLIST_PATH="${HOME:-/tmp}/Library/LaunchAgents/$LABEL.plist"
 STATE_DIR="${MUDSNOTE_IOS_SIGNING_STATE_DIR:-${HOME:-/tmp}/Library/Application Support/Mudsnote}"
 NEEDS_INSTALL_PATH="$STATE_DIR/ios-signing-refresh-needs-install"
 LAST_SUCCESS_PATH="$STATE_DIR/ios-signing-refresh-last-success"
+ATTENTION_PATH="$STATE_DIR/ios-signing-refresh-attention-required"
+PROFILE_CACHE_DIR="${MUDSNOTE_IOS_PROFILE_CACHE_DIR:-${HOME:-/tmp}/Library/Developer/Xcode/UserData/Provisioning Profiles}"
+PROFILE_BACKUP_DIR="${MUDSNOTE_IOS_PROFILE_BACKUP_DIR:-$STATE_DIR/signing-profile-backups}"
 RENEWAL_THRESHOLD_SECONDS="${MUDSNOTE_IOS_SIGNING_RENEWAL_THRESHOLD_SECONDS:-172800}"
 CHECK_INTERVAL_SECONDS="${MUDSNOTE_IOS_SIGNING_CHECK_INTERVAL_SECONDS:-21600}"
 LAUNCHCTL_BIN="${MUDSNOTE_IOS_SIGNING_LAUNCHCTL:-launchctl}"
@@ -77,8 +81,15 @@ notify_failure() {
     return
   fi
   "$OSASCRIPT_BIN" -e \
-    'display notification "Automatic renewal needs attention. Check the redacted Mudsnote log." with title "Mudsnote signing refresh failed"' \
+    'display notification "Open Xcode Apple Accounts, sign in, then run the Mudsnote signing refresh." with title "Mudsnote signing refresh failed" sound name "Basso"' \
     >/dev/null 2>&1 || true
+}
+
+record_attention() {
+  local reason="$1"
+  mkdir -p "$STATE_DIR"
+  printf '%s\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$reason" >"$ATTENTION_PATH"
+  chmod 600 "$ATTENTION_PATH"
 }
 
 cleanup() {
@@ -163,6 +174,12 @@ available_iphone_id() {
     | awk 'NR > 2 && /iPhone/ && ($4 == "connected" || $4 == "available") { print $3; exit }'
 }
 
+available_xcode_iphone_id() {
+  xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
+    | sed -nE 's/.*platform:iOS,.*id:([^,}]+).*/\1/p' \
+    | head -n 1
+}
+
 iphone_state_summary() {
   local device_list
   device_list="$(xcrun devicectl list devices 2>&1 || true)"
@@ -209,6 +226,54 @@ signing_refresh_required() {
   return 1
 }
 
+profile_matches_mudsnote() {
+  local profile_path="$1"
+  local application_identifier
+  application_identifier="$(profile_value "$profile_path" Entitlements.application-identifier)"
+  case "$application_identifier" in
+    *."$BUNDLE_ID"|*."$WIDGET_BUNDLE_ID")
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+isolate_renewal_profiles() {
+  local profile_path backup_path
+  ISOLATED_PROFILE_BACKUP=""
+  [[ -d "$PROFILE_CACHE_DIR" ]] || return 0
+
+  backup_path="$PROFILE_BACKUP_DIR/$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+  while IFS= read -r -d '' profile_path; do
+    if profile_matches_mudsnote "$profile_path" \
+      && profile_requires_renewal "$profile_path"; then
+      if [[ -z "$ISOLATED_PROFILE_BACKUP" ]]; then
+        mkdir -p "$backup_path"
+        ISOLATED_PROFILE_BACKUP="$backup_path"
+      fi
+      mv "$profile_path" "$backup_path/"
+    fi
+  done < <(find "$PROFILE_CACHE_DIR" -maxdepth 1 -type f -name '*.mobileprovision' -print0)
+
+  if [[ -n "$ISOLATED_PROFILE_BACKUP" ]]; then
+    log "Temporarily isolated near-expiry Mudsnote profiles before renewal."
+  fi
+}
+
+restore_isolated_profiles() {
+  local profile_path destination
+  [[ -n "${ISOLATED_PROFILE_BACKUP:-}" && -d "$ISOLATED_PROFILE_BACKUP" ]] || return 0
+  mkdir -p "$PROFILE_CACHE_DIR"
+  while IFS= read -r -d '' profile_path; do
+    destination="$PROFILE_CACHE_DIR/$(basename "$profile_path")"
+    if [[ ! -e "$destination" ]]; then
+      mv "$profile_path" "$destination"
+    fi
+  done < <(find "$ISOLATED_PROFILE_BACKUP" -maxdepth 1 -type f -name '*.mobileprovision' -print0)
+  rmdir "$ISOLATED_PROFILE_BACKUP" 2>/dev/null || true
+  ISOLATED_PROFILE_BACKUP=""
+}
+
 redact_build_output() {
   sed -E \
     -e 's/[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}/<redacted-email>/g' \
@@ -221,49 +286,77 @@ redact_build_output() {
 
 refresh_signing() {
   local -a provisioning_flags
+  local xcode_device_id destination
   provisioning_flags=(-allowProvisioningUpdates)
   if [[ "$ALLOW_DEVICE_REGISTRATION" == "1" ]]; then
     provisioning_flags+=(-allowProvisioningDeviceRegistration)
   fi
 
-  log "Refreshing Xcode-managed iOS signing."
+  xcode_device_id="$(available_xcode_iphone_id)"
+  if [[ -n "$xcode_device_id" ]]; then
+    destination="id=$xcode_device_id"
+  else
+    destination="generic/platform=iOS"
+  fi
+
+  isolate_renewal_profiles
+  log "Refreshing Xcode-managed iOS signing for destination $destination."
   BUILD_OUTPUT_PATH="$(mktemp "${TMPDIR:-/tmp}/mudsnote-ios-signing-build.XXXXXX")"
   if ! xcodebuild \
     -quiet \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -configuration "$CONFIGURATION" \
-    -destination 'generic/platform=iOS' \
+    -destination "$destination" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
     "${provisioning_flags[@]}" \
     CODE_SIGNING_ALLOWED=YES \
     COMPILER_INDEX_STORE_ENABLE=NO \
-    build >"$BUILD_OUTPUT_PATH" 2>&1; then
+    clean build >"$BUILD_OUTPUT_PATH" 2>&1; then
+    restore_isolated_profiles
+    if grep -Eiq 'No Accounts|no account|account.*(unavailable|expired|sign)|authentication|credentials' "$BUILD_OUTPUT_PATH"; then
+      log "Xcode Apple Account authentication is unavailable. Open Xcode > Settings > Apple Accounts and sign in again."
+      record_attention "xcode-account-authentication"
+    else
+      record_attention "signing-build-failed"
+    fi
     log "Xcode signing refresh failed. Redacted diagnostic tail follows."
     tail -n 40 "$BUILD_OUTPUT_PATH" | redact_build_output
     return 1
   fi
 
   if [[ ! -d "$APP_PATH" ]]; then
+    restore_isolated_profiles
+    record_attention "signed-app-missing"
     log "Signed app was not produced at $APP_PATH"
-    exit 1
+    return 1
   fi
-  codesign --verify --deep --strict "$APP_PATH"
+  if ! codesign --verify --deep --strict "$APP_PATH"; then
+    restore_isolated_profiles
+    record_attention "codesign-verification-failed"
+    log "Signed app failed local code-signature verification."
+    return 1
+  fi
 
   local expiration widget_expiration
   expiration="$(profile_value "$APP_PATH/embedded.mobileprovision" ExpirationDate)"
   widget_expiration="$(profile_value "$APP_PATH/PlugIns/MudsnoteCompanionWidget.appex/embedded.mobileprovision" ExpirationDate)"
   if [[ -z "$expiration" || -z "$widget_expiration" ]]; then
+    restore_isolated_profiles
+    record_attention "profile-expiration-unreadable"
     log "Embedded development profile expiration could not be read for every signed bundle."
     return 1
   fi
   if profile_requires_renewal "$APP_PATH/embedded.mobileprovision" \
     || profile_requires_renewal "$APP_PATH/PlugIns/MudsnoteCompanionWidget.appex/embedded.mobileprovision"; then
+    restore_isolated_profiles
+    record_attention "profile-renewal-failed"
     log "Xcode did not produce profiles beyond the configured renewal threshold."
     return 1
   fi
   mkdir -p "$STATE_DIR"
   touch "$NEEDS_INSTALL_PATH"
+  rm -f "$ATTENTION_PATH"
   log "Signing refresh passed for $BUNDLE_ID."
   log "Main profile expiration: $expiration"
   log "Widget profile expiration: $widget_expiration"
@@ -327,7 +420,7 @@ run_refresh() {
 
   if [[ "$DRY_RUN" == "1" ]]; then
     log "Dry run: would inspect the cached embedded profiles against the renewal threshold."
-    log "Dry run: would rebuild with -allowProvisioningUpdates only when renewal is due."
+    log "Dry run: would isolate only near-expiry Mudsnote profiles and rebuild with -allowProvisioningUpdates when renewal is due."
     if [[ "$AUTO_INSTALL" == "1" ]]; then
       log "Dry run: would overwrite-install only after renewal or a pending retry."
     fi
@@ -422,6 +515,12 @@ show_status() {
     log "A renewed build is waiting for a safe overwrite install."
   else
     log "No overwrite install is pending."
+  fi
+  if [[ -f "$ATTENTION_PATH" ]]; then
+    log "Signing refresh needs attention: $(<"$ATTENTION_PATH")"
+    status=1
+  else
+    log "No signing attention is pending."
   fi
   return "$status"
 }

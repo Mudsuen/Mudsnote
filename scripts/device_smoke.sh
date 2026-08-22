@@ -64,6 +64,9 @@ if ! xcrun devicectl device info ddiServices --device "$DEVICECTL_DEVICE_ID" >"$
 fi
 rm -f "$DDI_OUTPUT"
 
+echo "Refreshing near-expiry signing before any overwrite install"
+./scripts/ios_signing_refresh.sh --run
+
 echo "Building $SCHEME for Xcode destination $XCODE_DEVICE_ID"
 xcodebuild \
   -project "$PROJECT" \
