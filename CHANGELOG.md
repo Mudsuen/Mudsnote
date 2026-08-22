@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 262. Cross-platform note mentions, home navigation, and metadata cleanup
+- Problem: macOS and iOS could not insert links to relevant notes from the editor, macOS hid its all-notes home scope, legacy macOS pins could remain absent on iOS, and tags lacked a complete cross-platform deletion path. iOS also exposed capture front matter while rich-editing and left a visible gap below its half-height reader, while showing the macOS floating note could reveal the main window.
+- Fix: Both editors now offer ranked note suggestions after `@` and insert portable relative Markdown links. macOS exposes a Home source alongside folders, retries migration into the shared pin file whenever pins are read, and can remove a tag from front matter and visible inline Markdown across the library. iOS rich editing projects only the note body while preserving capture metadata, and its half-height reader fills the bottom safe-area seam. Floating-note activation now keeps unrelated macOS windows ordered out when the application was hidden.
+- Lesson: Cross-device state should converge through one shared schema at every read boundary, while editor presentation may hide storage metadata only if writes reconstruct the original document contract.
+
 ### 261. Direct iOS foreground capture and event-scoped recovery warnings
 - Problem: Foreground Quick Note still converted a File Provider destination into pending-queue path metadata before writing, so a valid draft could be rejected as a damaged pending capture on iPhone. Historical preserved recovery files also triggered the same warning again on every launch.
 - Fix: Foreground capture now creates attachments and a collision-safe Markdown file directly inside one security-scoped access window, without queue entries, pending target reservations, write claims, or receipts. Note open, rename, move, duplicate, and delete resolve their paths after security-scoped access begins. Preserved recovery files remain visible as diagnostics, while the warning toast is reserved for damage newly discovered during the current run.

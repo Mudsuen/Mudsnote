@@ -42,6 +42,13 @@ struct RootView: View {
             }
 
             if isHalfReaderPresented {
+                MudsnoteColors.panel.opacity(0.96)
+                    .frame(height: 14)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()

@@ -591,7 +591,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             if controller.window?.isVisible == true {
                 controller.hideWindowForToggle()
             } else {
-                controller.showWindowAndFocus()
+                showFloatingWindowWithoutRevealingOtherWindows(controller)
             }
             return
         }
@@ -600,7 +600,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let controller = makeFloatingNoteWindowController()
         floatingNoteController = controller
         controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
+        showFloatingWindowWithoutRevealingOtherWindows(controller)
+    }
+
+    private func showFloatingWindowWithoutRevealingOtherWindows(
+        _ controller: EditorWindowController
+    ) {
+        let wasApplicationHidden = NSApp.isHidden
         controller.showWindowAndFocus()
+        guard wasApplicationHidden else { return }
+        for window in NSApp.windows where window !== controller.window {
+            window.orderOut(nil)
+        }
     }
 
     private func openEditor(for url: URL) {

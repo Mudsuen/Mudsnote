@@ -335,6 +335,55 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(projection.body, markdown)
     }
 
+    func testEditingFrontMatterBodyPreservesCapturedMetadataWithoutShowingMarkers() {
+        let markdown = """
+        ---
+        captured_at: 2026-08-22T15:00:00+08:00
+        ---
+        # Captured Note
+
+        Original
+        """
+        let projection = MarkdownFrontMatterProjection(markdown)
+
+        XCTAssertFalse(projection.body.contains("---"))
+        XCTAssertEqual(
+            projection.replacingBody(with: "# Captured Note\n\nUpdated"),
+            """
+            ---
+            captured_at: 2026-08-22T15:00:00+08:00
+            ---
+            # Captured Note
+
+            Updated
+            """
+        )
+    }
+
+    func testNoteMentionRankingPrefersExactTitleOverBodyAndPathMatches() {
+        let now = Date()
+        let notes = [
+            RecentMarkdownFile(
+                id: "body",
+                relativePath: "Notes/Weekly.md",
+                title: "Weekly",
+                modifiedAt: now,
+                preview: "Project Atlas details"
+            ),
+            RecentMarkdownFile(
+                id: "title",
+                relativePath: "Projects/Atlas.md",
+                title: "Project Atlas",
+                modifiedAt: now.addingTimeInterval(-100)
+            ),
+        ]
+
+        XCTAssertEqual(
+            NoteMentionRanker.rank(notes, query: "Project Atlas").map(\.id),
+            ["title", "body"]
+        )
+    }
+
     func testPlainBodyTextIsNotStoredAsAnImplicitTitle() {
         let metadata = MarkdownListMetadata.extract(
             from: "Ship the release.\n\nCoordinate launch.",

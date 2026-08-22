@@ -1,6 +1,7 @@
 import Foundation
 
 enum LibraryCopy {
+    static let home = "首页"
     static let allICloudNotes = "所有 iCloud 笔记"
     static let inbox = "收件箱"
     static let notes = "笔记"

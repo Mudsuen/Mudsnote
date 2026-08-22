@@ -2096,6 +2096,80 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func pinnedNotePathsRetryDeferredLocalMigrationWhenRead() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        let noteURL = try store.saveNewNote(title: "Deferred Pin", body: "Body")
+        harness.defaults.set(
+            [noteURL.path],
+            forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+        )
+
+        #expect(store.libraryPinnedNotePaths == [noteURL.standardizedFileURL.path])
+        #expect(
+            try JSONDecoder().decode(
+                [String].self,
+                from: Data(
+                    contentsOf: notesDirectory.appendingPathComponent(".mudsnote/pins.json")
+                )
+            ) == [noteURL.lastPathComponent]
+        )
+        #expect(
+            harness.defaults.stringArray(
+                forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+            )?.isEmpty != false
+        )
+    }
+
+    @Test
+    func noteMentionsUseRankedSearchAndExcludeTheCurrentNote() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        let currentURL = try store.saveNewNote(title: "Current Project", body: "Body")
+        let bodyMatch = try store.saveNewNote(
+            title: "Weekly Notes",
+            body: "Project Atlas details"
+        )
+        let titleMatch = try store.saveNewNote(
+            title: "Project Atlas",
+            body: "Unrelated"
+        )
+
+        let suggestions = store.noteMentionSuggestions(
+            query: "Project Atlas",
+            sourceURL: currentURL
+        )
+
+        #expect(suggestions.first?.url == titleMatch)
+        #expect(suggestions.map(\.url).contains(bodyMatch))
+        #expect(!suggestions.map(\.url).contains(currentURL))
+    }
+
+    @Test
+    func deletingTagRemovesFrontMatterAndInlineOccurrencesButPreservesCode() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        let noteURL = try store.saveNewNote(
+            title: "Tagged",
+            body: "Keep #active text.\n\n`#active`\n\n```\n#active\n```",
+            tags: ["active", "other"]
+        )
+
+        #expect(try store.deleteTag("#active") == 1)
+        let loaded = try store.loadNoteDocument(at: noteURL)
+        #expect(loaded.tags == ["other"])
+        #expect(loaded.body.contains("Keep text."))
+        #expect(loaded.body.contains("`#active`"))
+        #expect(loaded.body.contains("```\n#active\n```"))
+    }
+
+    @Test
     func aiPromptBuilderKeepsSelectionScopeExplicit() throws {
         let request = AIRequest(
             actionID: .fix,

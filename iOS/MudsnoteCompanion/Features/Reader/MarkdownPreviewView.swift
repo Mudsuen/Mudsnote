@@ -43,6 +43,71 @@ struct MarkdownFrontMatterProjection: Equatable {
         metadata = lines[...closingIndex].joined(separator: "\n")
         body = lines.dropFirst(closingIndex + 1).joined(separator: "\n")
     }
+
+    func replacingBody(with updatedBody: String) -> String {
+        guard let metadata else { return updatedBody }
+        return "\(metadata)\n\(updatedBody)"
+    }
+}
+
+struct MarkdownNoteMentionDraft: Equatable {
+    var query: String
+    var replacementRange: NSRange
+}
+
+enum NoteMentionRanker {
+    static func rank(
+        _ notes: [RecentMarkdownFile],
+        query: String
+    ) -> [RecentMarkdownFile] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else {
+            return notes.sorted {
+                if $0.isPinned != $1.isPinned { return $0.isPinned }
+                if $0.modifiedAt != $1.modifiedAt { return $0.modifiedAt > $1.modifiedAt }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        }
+        let foldedTerm = folded(term)
+        return notes.compactMap { note -> (RecentMarkdownFile, Int)? in
+            let title = folded(note.title)
+            let path = folded(note.relativePath)
+            let preview = folded(note.preview)
+            let tags = note.tags.map(folded)
+            let score: Int
+            if title == foldedTerm {
+                score = 1_000
+            } else if title.hasPrefix(foldedTerm) {
+                score = 900 - max(title.count - foldedTerm.count, 0)
+            } else if title.contains(foldedTerm) {
+                score = 760
+            } else if tags.contains(where: { $0.contains(foldedTerm) }) {
+                score = 680
+            } else if path.contains(foldedTerm) {
+                score = 560
+            } else if preview.contains(foldedTerm) {
+                score = 420
+            } else {
+                return nil
+            }
+            return (note, score + (note.isPinned ? 20 : 0))
+        }
+        .sorted {
+            if $0.1 != $1.1 { return $0.1 > $1.1 }
+            if $0.0.modifiedAt != $1.0.modifiedAt {
+                return $0.0.modifiedAt > $1.0.modifiedAt
+            }
+            return $0.0.title.localizedStandardCompare($1.0.title) == .orderedAscending
+        }
+        .map(\.0)
+    }
+
+    private static func folded(_ value: String) -> String {
+        value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
+    }
 }
 
 struct MarkdownPreviewView: View {
@@ -95,6 +160,7 @@ struct MarkdownPreviewView: View {
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var linkDraft: MarkdownLinkDraft?
+    @State private var noteMentionDraft: MarkdownNoteMentionDraft?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
     @State private var isCameraPresented = false
@@ -166,14 +232,28 @@ struct MarkdownPreviewView: View {
                 if isEditing {
                     VStack(alignment: .leading, spacing: 12) {
                         metadataLabel
-                        MarkdownTextEditor(
-                            text: $draftMarkdown,
-                            isFocused: $editorFocused,
-                            command: $editingCommand,
-                            linkDraft: $linkDraft,
-                            displaysSource: editorDisplayMode == .source
-                        )
-                        .accessibilityIdentifier("markdown-editor")
+                        ZStack(alignment: .bottomLeading) {
+                            MarkdownTextEditor(
+                                text: editableMarkdown,
+                                isFocused: $editorFocused,
+                                command: $editingCommand,
+                                linkDraft: $linkDraft,
+                                noteMentionDraft: $noteMentionDraft,
+                                displaysSource: editorDisplayMode == .source
+                            )
+                            .accessibilityIdentifier("markdown-editor")
+
+                            if let noteMentionDraft,
+                               !rankedMentionNotes(for: noteMentionDraft.query).isEmpty {
+                                MarkdownNoteMentionSuggestions(
+                                    notes: Array(
+                                        rankedMentionNotes(for: noteMentionDraft.query).prefix(6)
+                                    ),
+                                    select: acceptNoteMention
+                                )
+                                .padding(.bottom, 8)
+                            }
+                        }
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
                 } else {
@@ -231,6 +311,9 @@ struct MarkdownPreviewView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .background {
+            MudsnoteReaderSheetBackground()
         }
         .interactiveDismissDisabled(
             (isEditing && draftMarkdown != originalMarkdown)
@@ -576,8 +659,49 @@ struct MarkdownPreviewView: View {
         MarkdownFrontMatterProjection(draftMarkdown)
     }
 
+    private var editableMarkdown: Binding<String> {
+        Binding(
+            get: {
+                editorDisplayMode == .source
+                    ? draftMarkdown
+                    : frontMatterProjection.body
+            },
+            set: { updated in
+                if editorDisplayMode == .source {
+                    draftMarkdown = updated
+                } else {
+                    draftMarkdown = frontMatterProjection.replacingBody(with: updated)
+                }
+            }
+        )
+    }
+
     private var renderedMarkdown: String {
         showsFrontMatter ? draftMarkdown : frontMatterProjection.body
+    }
+
+    private func rankedMentionNotes(for query: String) -> [RecentMarkdownFile] {
+        NoteMentionRanker.rank(
+            linkableNotes,
+            query: query
+        )
+    }
+
+    private func acceptNoteMention(_ note: RecentMarkdownFile) {
+        guard let noteMentionDraft,
+              let destination = MarkdownNoteLink.relativeDestination(
+                from: currentSourceRelativePath,
+                to: note.relativePath
+              ) else { return }
+        self.noteMentionDraft = nil
+        editingCommand = MarkdownEditingCommand(
+            kind: .applyNoteMention(
+                range: noteMentionDraft.replacementRange,
+                label: note.title,
+                destination: destination
+            )
+        )
+        editorFocused = true
     }
 
     private var presentationPreferenceNotePath: String {
@@ -2432,6 +2556,49 @@ private struct MarkdownNoteLinkPicker: View {
     }
 }
 
+private struct MarkdownNoteMentionSuggestions: View {
+    let notes: [RecentMarkdownFile]
+    let select: (RecentMarkdownFile) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(notes) { note in
+                Button {
+                    select(note)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "note.text")
+                            .foregroundStyle(MudsnoteColors.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(note.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.text)
+                                .lineLimit(1)
+                            Text(note.relativePath)
+                                .font(.caption)
+                                .foregroundStyle(MudsnoteColors.muted)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("note-mention-\(note.relativePath)")
+            }
+        }
+        .frame(maxWidth: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+    }
+}
+
 struct MarkdownEditingCommand: Identifiable, Equatable {
     enum Kind: Equatable {
         case title
@@ -2453,6 +2620,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case link
         case applyLink(draft: MarkdownLinkDraft, label: String, destination: String)
         case removeLink(draft: MarkdownLinkDraft)
+        case applyNoteMention(range: NSRange, label: String, destination: String)
         case table
         case undo
         case redo
@@ -2478,6 +2646,7 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .link: "link"
             case .applyLink: "apply-link"
             case .removeLink: "remove-link"
+            case .applyNoteMention: "apply-note-mention"
             case .table: "table"
             case .undo: "undo"
             case .redo: "redo"
@@ -3853,6 +4022,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var isFocused: Bool
     @Binding var command: MarkdownEditingCommand?
     @Binding var linkDraft: MarkdownLinkDraft?
+    @Binding var noteMentionDraft: MarkdownNoteMentionDraft?
     var displaysSource: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -3941,6 +4111,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             )
             lastPresentedText = textView.text
             lastDisplaysSource = parent.displaysSource
+            updateNoteMentionDraft(in: textView)
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -3949,6 +4120,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.isFocused = false
+            parent.noteMentionDraft = nil
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            updateNoteMentionDraft(in: textView)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -4058,6 +4235,20 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 if let edit = MarkdownLinkEditing.removalEdit(for: draft) {
                     replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
                 }
+            case .applyNoteMention(let range, let label, let destination):
+                let draft = MarkdownLinkDraft(
+                    range: range,
+                    label: "",
+                    destination: "",
+                    isExisting: false
+                )
+                if let edit = MarkdownLinkEditing.insertionEdit(
+                    for: draft,
+                    label: label,
+                    destination: destination
+                ) {
+                    replace(edit.range, with: edit.replacement, selecting: edit.selection, in: textView)
+                }
             case .table:
                 if let edit = MarkdownTableEditing.insertionEdit(
                     in: textView.text,
@@ -4077,6 +4268,47 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             )
             lastPresentedText = textView.text
             lastDisplaysSource = parent.displaysSource
+        }
+
+        private func updateNoteMentionDraft(in textView: UITextView) {
+            let selection = textView.selectedRange
+            guard selection.length == 0 else {
+                parent.noteMentionDraft = nil
+                return
+            }
+            let source = textView.text as NSString
+            let caret = min(selection.location, source.length)
+            let paragraphRange = source.paragraphRange(
+                for: NSRange(location: caret, length: 0)
+            )
+            let prefixRange = NSRange(
+                location: paragraphRange.location,
+                length: max(caret - paragraphRange.location, 0)
+            )
+            let prefix = source.substring(with: prefixRange)
+            guard let match = prefix.range(
+                of: #"(^|\s)@([^@\n]*)$"#,
+                options: .regularExpression
+            ) else {
+                parent.noteMentionDraft = nil
+                return
+            }
+            let matched = String(prefix[match])
+            guard let atIndex = matched.firstIndex(of: "@") else {
+                parent.noteMentionDraft = nil
+                return
+            }
+            let token = String(matched[atIndex...])
+            let matchRange = NSRange(match, in: prefix)
+            parent.noteMentionDraft = MarkdownNoteMentionDraft(
+                query: String(token.dropFirst()),
+                replacementRange: NSRange(
+                    location: prefixRange.location
+                        + matchRange.location
+                        + matched[..<atIndex].utf16.count,
+                    length: token.utf16.count
+                )
+            )
         }
 
         private func toggleInlineStyle(

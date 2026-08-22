@@ -1139,7 +1139,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryCreatesNotesImmediatelyAndSupportsSlashCommands() throws {
+    func libraryCreatesNotesImmediatelyAndSupportsSlashCommands() async throws {
         let suiteName = "mudsnote.library-immediate-slash-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -1155,7 +1155,7 @@ struct MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
-        _ = try store.saveNewNote(title: "Seed", body: "Body")
+        let seedURL = try store.saveNewNote(title: "Seed", body: "Body")
         let controller = LibraryWindowController(
             noteStore: store,
             onOpenInSeparateWindow: { _ in },
@@ -1201,6 +1201,24 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.insertText("/", replacementRange: controller.editorTextView.selectedRange())
         #expect(controller.editorSlashSuggestionInspectionLengthForLibrary <= 128)
         #expect(!controller.editorSlashSuggestionTitlesForLibrary.isEmpty)
+
+        controller.editorTextView.textStorage?.setAttributedString(
+            MarkdownRichTextCodec.render(markdown: "@Seed", theme: controller.theme)
+        )
+        controller.editorTextView.setSelectedRange(NSRange(location: 5, length: 0))
+        controller.editorTextView.onTextInputStateChanged?()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(controller.editorSlashSuggestionTitlesForLibrary.first == "Seed")
+        controller.acceptEditorSlashSuggestionForLibrary(at: 0)
+        let mentionMarkdown = MarkdownRichTextCodec.serialize(
+            controller.editorTextView.attributedString(),
+            theme: controller.theme
+        )
+        #expect(mentionMarkdown.hasPrefix("[Seed]("))
+        #expect(MarkdownLocalLinkResolver.fileURL(
+            for: String(mentionMarkdown.split(separator: "(")[1].dropLast()),
+            relativeTo: createdURL
+        ) == seedURL)
     }
 
     @MainActor
@@ -1992,6 +2010,44 @@ struct MarkdownRichEditorTests {
         }
         #expect(query == "al")
         #expect(items == ["alpha"])
+    }
+
+    @MainActor
+    @Test
+    func quickCaptureAtMentionRanksNotesAndInsertsRelativeMarkdownLink() async throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true
+        )
+        defer { harness.tearDown() }
+        let target = try harness.store.saveNewNote(
+            title: "Project Atlas",
+            body: "Target"
+        )
+        _ = try harness.store.saveNewNote(
+            title: "Weekly Notes",
+            body: "Project Atlas is mentioned in the body"
+        )
+
+        let controller = harness.controller
+        controller.editorTextView.string = "@Project Atlas"
+        controller.editorTextView.setSelectedRange(NSRange(location: 14, length: 0))
+        controller.updateInlineSuggestions()
+        try await Task.sleep(for: .milliseconds(100))
+
+        guard case .notes(let query, _, let items) = controller.inlineSuggestionContext else {
+            Issue.record("Expected note suggestions after typing @")
+            return
+        }
+        #expect(query == "Project Atlas")
+        #expect(items.first?.url == target)
+        controller.acceptInlineSuggestion(at: 0)
+        let markdown = MarkdownRichTextCodec.serialize(
+            controller.editorTextView.attributedString(),
+            theme: controller.theme
+        )
+        #expect(markdown.hasPrefix("[Project Atlas]("))
+        #expect(!markdown.contains("@Project Atlas"))
     }
 
     @MainActor
@@ -2906,6 +2962,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceOutline.enclosingScrollView is LibrarySourceScrollView)
         let sourceTitles = controller.sourceTitlesForLibrary()
         #expect(!sourceTitles.contains("所有 iCloud 笔记"))
+        #expect(sourceTitles.contains("首页"))
         #expect(sourceTitles.contains("Notes"))
         #expect(sourceTitles.contains("最近删除"))
         #expect(!sourceTitles.contains("最近"))
@@ -2929,7 +2986,7 @@ struct MarkdownRichEditorTests {
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
-        #expect(noteListTitle.stringValue == "Notes")
+        #expect(noteListTitle.stringValue == "首页")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
         #expect(noteListCount.stringValue == "1 条笔记")
@@ -3175,7 +3232,7 @@ struct MarkdownRichEditorTests {
             ) == "# Library Seed\n\nBody line"
         )
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-10"
+            $0.identifier?.rawValue == "LibrarySourceCount-0"
         })
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
@@ -3188,10 +3245,10 @@ struct MarkdownRichEditorTests {
         let allSourceCell = try #require(window.contentView?.allSubviews.compactMap {
             $0 as? LibrarySourceOutlineCellView
         }.first {
-            $0.identifier?.rawValue == "LibrarySourceRow-10"
+            $0.identifier?.rawValue == "LibrarySourceRow-0"
         })
         #expect(allSourceCell.textField?.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
-        #expect(allSourceCell.accessibilityLabel() == "Notes")
+        #expect(allSourceCell.accessibilityLabel() == "首页")
         #expect(allSourceCell.accessibilityValue() as? String == "1 条笔记")
         #expect(allSourceCell.imageView?.contentTintColor == nil)
         #expect(allSourceCell.imageView?.image?.isTemplate == false)
@@ -4762,6 +4819,7 @@ struct MarkdownRichEditorTests {
             row: rootRow,
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
+        #expect(rootCell.accessibilityPerformPress())
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
         let originalSourceBackground = NSColor(calibratedWhite: 0.16, alpha: 0.86)
         let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
@@ -7038,7 +7096,7 @@ struct MarkdownRichEditorTests {
         let allTitles = Set(controller.noteListSearchResultsForLibrary().map(\.title))
         #expect(allTitles == Set(["Alpha Project", "Archive Note"]))
         #expect(scopeControl.selectedSegment == 1)
-        #expect(controller.noteListTitleLabel.stringValue == "所有 iCloud 笔记")
+        #expect(controller.noteListTitleLabel.stringValue == "首页")
         #expect(controller.noteListCountLabel.stringValue == "2 条结果")
 
         controller.searchForLibrary(query: "not-present-anywhere", allNotes: true)

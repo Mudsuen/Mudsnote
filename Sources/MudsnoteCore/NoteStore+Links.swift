@@ -69,6 +69,49 @@ public enum MarkdownLocalLinkResolver {
 }
 
 extension NoteStore {
+    public func noteMentionSuggestions(
+        query: String,
+        sourceURL: URL?,
+        currentBody: String? = nil,
+        limit: Int = 8
+    ) -> [NoteLinkItem] {
+        guard limit > 0 else { return [] }
+        let currentURL = sourceURL?.standardizedFileURL
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        var itemsByPath: [String: NoteLinkItem] = [:]
+        var orderedPaths: [String] = []
+
+        if trimmedQuery.isEmpty, let currentURL {
+            let relations = knowledgeRelations(
+                for: currentURL,
+                currentBody: currentBody,
+                suggestionLimit: limit
+            )
+            for relation in relations.suggested {
+                let path = relation.url.standardizedFileURL.path
+                itemsByPath[path] = NoteLinkItem(
+                    url: relation.url.standardizedFileURL,
+                    title: relation.title
+                )
+                orderedPaths.append(path)
+            }
+        }
+
+        let fallbackLimit = max(limit * 3, limit)
+        for result in searchNotes(query: trimmedQuery, limit: fallbackLimit) {
+            let url = result.url.standardizedFileURL
+            guard url != currentURL else { continue }
+            if itemsByPath[url.path] == nil {
+                itemsByPath[url.path] = NoteLinkItem(url: url, title: result.title)
+                orderedPaths.append(url.path)
+            }
+        }
+
+        return orderedPaths.compactMap { itemsByPath[$0] }
+        .prefix(limit)
+        .map { $0 }
+    }
+
     public func linkRelations(
         for noteURL: URL,
         currentBody: String? = nil,

@@ -347,27 +347,54 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
     }
 
     public static func inlineTags(in text: String) -> [String] {
-        let characters = Array(text)
         var tags: [String] = []
-        var index = 0
+        var activeFence: Character?
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let marker = trimmed.first,
+               (marker == "`" || marker == "~"),
+               trimmed.prefix(3).allSatisfy({ $0 == marker }) {
+                activeFence = activeFence == nil ? marker : (activeFence == marker ? nil : activeFence)
+                continue
+            }
+            guard activeFence == nil else { continue }
 
-        while index < characters.count {
-            if characters[index] == "#",
-               (index == 0 || characters[index - 1].isWhitespace) {
-                var end = index + 1
-                while end < characters.count, characters[end].isMarkdownTagCharacter {
-                    end += 1
-                }
-                while end > index + 1, characters[end - 1] == "/" {
-                    end -= 1
-                }
-                if end > index + 1 {
-                    tags.append(String(characters[(index + 1)..<end]))
-                    index = end
+            let characters = Array(line)
+            var index = 0
+            var inlineCodeMarkerLength: Int?
+            while index < characters.count {
+                if characters[index] == "`" {
+                    var runLength = 1
+                    while index + runLength < characters.count,
+                          characters[index + runLength] == "`" {
+                        runLength += 1
+                    }
+                    if inlineCodeMarkerLength == nil {
+                        inlineCodeMarkerLength = runLength
+                    } else if inlineCodeMarkerLength == runLength {
+                        inlineCodeMarkerLength = nil
+                    }
+                    index += runLength
                     continue
                 }
+                if inlineCodeMarkerLength == nil,
+                   characters[index] == "#",
+                   (index == 0 || characters[index - 1].isWhitespace) {
+                    var end = index + 1
+                    while end < characters.count, characters[end].isMarkdownTagCharacter {
+                        end += 1
+                    }
+                    while end > index + 1, characters[end - 1] == "/" {
+                        end -= 1
+                    }
+                    if end > index + 1 {
+                        tags.append(String(characters[(index + 1)..<end]))
+                        index = end
+                        continue
+                    }
+                }
+                index += 1
             }
-            index += 1
         }
 
         return normalizedTags(tags)

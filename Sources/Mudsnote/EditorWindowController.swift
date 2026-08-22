@@ -10,6 +10,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     enum InlineSuggestionContext {
         case tags(query: String, replacementRange: NSRange, items: [String])
+        case notes(query: String, replacementRange: NSRange, items: [NoteLinkItem])
         case slash(query: String, replacementRange: NSRange, items: [SlashCommand])
     }
 
@@ -119,6 +120,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var inlineSuggestionContext: InlineSuggestionContext?
     var knownTagsForSuggestions: [String]?
     var tagSuggestionTask: Task<Void, Never>?
+    var noteSuggestionTask: Task<Void, Never>?
+    var noteSuggestionQuery: String?
+    var noteSuggestions: [NoteLinkItem] = []
     var linkEditorSheetController: LinkEditorSheetController?
     weak var backdropView: GradientBackdropView?
     weak var shellContentView: NSView?
@@ -313,6 +317,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         didCloseWindow = true
         tagSuggestionTask?.cancel()
         tagSuggestionTask = nil
+        noteSuggestionTask?.cancel()
+        noteSuggestionTask = nil
         attachmentQuickLookController.dismiss()
         rememberCurrentWindowFrame()
         observers.forEach(NotificationCenter.default.removeObserver)

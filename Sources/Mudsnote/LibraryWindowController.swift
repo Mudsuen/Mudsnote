@@ -16,7 +16,7 @@ private enum LibraryScope: Equatable, Sendable {
     var buttonTitle: String {
         switch self {
         case .all:
-            return LibraryCopy.allICloudNotes
+            return LibraryCopy.home
         case .recent:
             return "最近"
         case .inbox:
@@ -42,7 +42,7 @@ private enum LibraryScope: Equatable, Sendable {
     var symbolName: String {
         switch self {
         case .all:
-            return "folder"
+            return "house"
         case .recent:
             return "clock"
         case .inbox:
@@ -1456,6 +1456,10 @@ final class LibraryWindowController: NSWindowController,
     private var linkEditorSheetController: LinkEditorSheetController?
     private let editorSuggestionController = SuggestionPopoverController()
     private var editorSlashSuggestion: (replacementRange: NSRange, commands: [SlashCommand])?
+    private var editorNoteSuggestion: (replacementRange: NSRange, items: [NoteLinkItem])?
+    private var editorNoteSuggestionQuery: String?
+    private var editorNoteSuggestions: [NoteLinkItem] = []
+    private var editorNoteSuggestionTask: Task<Void, Never>?
     private var editorSlashSuggestionLastInput: (caret: Int, prefixStart: Int, prefix: String)?
     var slashCommandInputSourceSession: any SlashCommandInputSourceSessioning = SlashCommandInputSourceSession()
     private(set) var editorSlashSuggestionInspectionLengthForLibrary = 0
@@ -1952,6 +1956,8 @@ final class LibraryWindowController: NSWindowController,
         }
         autosaveTask?.cancel()
         autosaveTask = nil
+        editorNoteSuggestionTask?.cancel()
+        editorNoteSuggestionTask = nil
         cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
@@ -3432,20 +3438,12 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
-        let libraryRoots = Self.rootPreferredDirectories(from: noteStore.preferredDirectories)
         let previewFolders = externalPreviewFolderURLs()
-        if selectedScope == .all,
-           let visibleFolder = preferredVisibleSourceFolder(
-               libraryRoots: libraryRoots,
-               previewFolders: previewFolders
-           ) {
-            selectedScope = .folder(visibleFolder)
-        }
-
         let iCloudGroup = makeSourceOutlineItem(
             identifier: "group:icloud",
             kind: .group(title: "iCloud", section: .folders)
         )
+        iCloudGroup.append(makeSourceOutlineScopeItem(.all))
         for folderRoot in makeSourceFolderOutlineRoots() {
             iCloudGroup.append(folderRoot)
         }
@@ -3576,26 +3574,6 @@ final class LibraryWindowController: NSWindowController,
             .map { $0.url.deletingLastPathComponent().standardizedFileURL }
             .filter { seenPaths.insert($0.path).inserted }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-    }
-
-    private func preferredVisibleSourceFolder(
-        libraryRoots: [URL],
-        previewFolders: [URL]
-    ) -> URL? {
-        if let selectedURL {
-            let selectedPath = selectedURL.standardizedFileURL.path
-            if let previewFolder = previewFolders.first(where: {
-                selectedPath.hasPrefix($0.standardizedFileURL.path + "/")
-            }) {
-                return previewFolder
-            }
-            if let libraryRoot = libraryRoots.first(where: {
-                selectedPath.hasPrefix($0.standardizedFileURL.path + "/")
-            }) {
-                return libraryRoot
-            }
-        }
-        return libraryRoots.first ?? previewFolders.first
     }
 
     private func restoreSourceOutlineExpansion() {
@@ -4055,7 +4033,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     var editorSlashSuggestionTitlesForLibrary: [String] {
-        editorSlashSuggestion?.commands.map(\.title) ?? []
+        if let editorNoteSuggestion {
+            return editorNoteSuggestion.items.map(\.title)
+        }
+        return editorSlashSuggestion?.commands.map(\.title) ?? []
     }
 
     func acceptEditorSlashSuggestionForLibrary(at index: Int) {
@@ -10149,8 +10130,54 @@ final class LibraryWindowController: NSWindowController,
             menu.addItem(addItem)
             return menu
         }
+        if case .tag(let tag)? = item.scope {
+            let menu = NSMenu()
+            let deleteItem = NSMenuItem(
+                title: "删除标签",
+                action: #selector(deleteLibraryTagMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            deleteItem.target = self
+            deleteItem.representedObject = tag
+            menu.addItem(deleteItem)
+            return menu
+        }
         guard case .folder(let folderURL)? = item.scope else { return nil }
         return makeFolderContextMenu(for: folderURL)
+    }
+
+    @objc
+    private func deleteLibraryTagMenuItemPressed(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "删除 \(libraryDisplayTag(tag))？"
+        alert.informativeText = "该标签会从所有笔记中移除，此操作无法撤销。"
+        alert.addButton(withTitle: "删除标签")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let noteStore = self.noteStore
+        Task { [weak self] in
+            do {
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try noteStore.deleteTag(tag)
+                }.value
+                guard let self else { return }
+                if case .tag(let selectedTag) = selectedScope,
+                   selectedTag.localizedCaseInsensitiveCompare(tag) == .orderedSame {
+                    selectedScope = .all
+                }
+                invalidateSourceTagsForLibrary()
+                forceFullLibrarySnapshotReload()
+                scheduleDeferredSourceTagLoad()
+            } catch {
+                self?.presentErrorAlert(
+                    message: "无法删除标签",
+                    details: error.localizedDescription
+                )
+            }
+        }
     }
 
     private func makeFolderContextMenu(for folderURL: URL) -> NSMenu {
@@ -12581,6 +12608,58 @@ final class LibraryWindowController: NSWindowController,
         let prefixRange = NSRange(location: prefixStart, length: caret - prefixStart)
         let prefix = string.substring(with: prefixRange)
         editorSlashSuggestionInspectionLengthForLibrary = prefixRange.length
+
+        let mentionPattern = startsAtParagraphBoundary
+            ? #"(^|\s)@([^@\n]*)$"#
+            : #"\s@([^@\n]*)$"#
+        if let match = prefix.range(of: mentionPattern, options: .regularExpression) {
+            let matchedText = String(prefix[match])
+            if let atIndex = matchedText.firstIndex(of: "@") {
+                let token = String(matchedText[atIndex...])
+                let query = String(token.dropFirst())
+                let matchRange = NSRange(match, in: prefix)
+                let tokenOffset = matchedText[..<atIndex].utf16.count
+                let replacementRange = NSRange(
+                    location: prefixStart + matchRange.location + tokenOffset,
+                    length: token.utf16.count
+                )
+                if editorNoteSuggestionQuery != query {
+                    scheduleEditorNoteSuggestions(query: query)
+                    dismissEditorSlashSuggestions()
+                    return
+                }
+                guard !editorNoteSuggestions.isEmpty else {
+                    dismissEditorSlashSuggestions()
+                    return
+                }
+                editorSlashSuggestion = nil
+                editorNoteSuggestion = (
+                    replacementRange,
+                    editorNoteSuggestions
+                )
+                hostEditorSuggestionView(in: host)
+                editorSuggestionController.updateItems(editorNoteSuggestions.map {
+                    SuggestionItem(
+                        title: $0.title,
+                        subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
+                        symbolName: "note.text"
+                    )
+                })
+                let size = editorSuggestionController.preferredContentSize
+                let tokenRect = editorTextView.convert(
+                    caretRectInWindow(for: editorTextView, at: replacementRange.location),
+                    to: host
+                )
+                var origin = NSPoint(x: tokenRect.minX, y: tokenRect.minY - size.height - 6)
+                origin.x = min(max(origin.x, 4), max(host.bounds.width - size.width - 4, 4))
+                origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
+                editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
+                editorSuggestionController.view.isHidden = false
+                slashCommandInputSourceSession.end()
+                return
+            }
+        }
+
         if let previousInput = editorSlashSuggestionLastInput,
            previousInput.caret == caret,
            previousInput.prefixStart == prefixStart,
@@ -12612,6 +12691,7 @@ final class LibraryWindowController: NSWindowController,
             length: token.utf16.count
         )
         editorSlashSuggestion = (replacementRange, commands)
+        editorNoteSuggestion = nil
         let items = commands.isEmpty
             ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
             : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
@@ -12643,11 +12723,27 @@ final class LibraryWindowController: NSWindowController,
 
     private func dismissEditorSlashSuggestions() {
         editorSlashSuggestion = nil
+        editorNoteSuggestion = nil
         editorSuggestionController.view.isHidden = true
         slashCommandInputSourceSession.end()
     }
 
     private func acceptEditorSlashSuggestion(at index: Int) {
+        if let suggestion = editorNoteSuggestion,
+           suggestion.items.indices.contains(index) {
+            let item = suggestion.items[index]
+            let sourceURL = selectedURL
+                ?? targetDirectoryForNewNote().appendingPathComponent("Untitled.md")
+            let markdown = noteStore.markdownKnowledgeLink(
+                from: sourceURL,
+                to: item.url,
+                title: item.title
+            )
+            editorTextView.setSelectedRange(suggestion.replacementRange)
+            dismissEditorSlashSuggestions()
+            replaceSelectionWithRenderedMarkdown(markdown, renderingBaseURL: sourceURL)
+            return
+        }
         guard let suggestion = editorSlashSuggestion,
               suggestion.commands.indices.contains(index),
               let storage = editorTextView.textStorage else { return }
@@ -12669,6 +12765,32 @@ final class LibraryWindowController: NSWindowController,
             libraryUserDidEdit()
         case .aiSummarize, .aiFix, .aiTodos:
             break
+        }
+    }
+
+    private func scheduleEditorNoteSuggestions(query: String) {
+        editorNoteSuggestionTask?.cancel()
+        editorNoteSuggestionQuery = query
+        editorNoteSuggestions = []
+        let noteStore = self.noteStore
+        let sourceURL = selectedURL
+            ?? targetDirectoryForNewNote().appendingPathComponent("Untitled.md")
+        let currentBody = normalizedEditorMarkdownBody()
+        editorNoteSuggestionTask = Task { [weak self] in
+            let suggestions = await Task.detached(priority: .userInitiated) {
+                noteStore.noteMentionSuggestions(
+                    query: query,
+                    sourceURL: sourceURL,
+                    currentBody: currentBody
+                )
+            }.value
+            guard !Task.isCancelled,
+                  let self,
+                  editorNoteSuggestionQuery == query else { return }
+            editorNoteSuggestions = suggestions
+            editorNoteSuggestionTask = nil
+            editorSlashSuggestionLastInput = nil
+            updateEditorSlashSuggestions()
         }
     }
 

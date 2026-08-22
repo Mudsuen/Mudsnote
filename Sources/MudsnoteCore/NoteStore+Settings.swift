@@ -288,6 +288,7 @@ extension NoteStore {
     }
 
     public var libraryPinnedNotePaths: [String] {
+        migrateLegacyPinnedNotePathsIfPossible()
         let localPaths = defaults.stringArray(
             forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
         ) ?? []

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MudsnoteCore
 
 extension EditorWindowController {
 
@@ -49,6 +50,35 @@ extension EditorWindowController {
         return (query, replacementRange)
     }
 
+    func currentNoteMentionToken() -> (query: String, replacementRange: NSRange)? {
+        let selection = editorTextView.selectedRange()
+        guard selection.length == 0 else { return nil }
+
+        let string = editorTextView.string as NSString
+        let caret = min(selection.location, string.length)
+        let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
+        let linePrefix = string.substring(with: NSRange(
+            location: paragraphRange.location,
+            length: max(caret - paragraphRange.location, 0)
+        ))
+        guard let match = linePrefix.range(
+            of: #"(^|\s)@([^@\n]*)$"#,
+            options: .regularExpression
+        ) else { return nil }
+
+        let token = String(linePrefix[match])
+        let trimmedToken = token.trimmingCharacters(in: .whitespaces)
+        return (
+            String(trimmedToken.dropFirst()),
+            NSRange(
+                location: paragraphRange.location
+                    + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound)
+                    + (token.hasPrefix(" ") ? 1 : 0),
+                length: trimmedToken.utf16.count
+            )
+        )
+    }
+
     func rankedMatchingTags(for query: String) -> [String] {
         let known = (knownTagsForSuggestions ?? [])
             .filter { candidate in
@@ -90,6 +120,12 @@ extension EditorWindowController {
             dismissInlineSuggestions()
             return
         }
+        if let token = currentNoteMentionToken(),
+           noteSuggestionQuery != token.query {
+            scheduleNoteSuggestionLoad(for: token.query)
+            dismissInlineSuggestions()
+            return
+        }
         guard let context = currentInlineSuggestionContext() else {
             dismissInlineSuggestions()
             return
@@ -100,6 +136,14 @@ extension EditorWindowController {
         switch context {
         case .tags(_, _, let tags):
             items = tags.map { SuggestionItem(title: "#\($0)", subtitle: nil, symbolName: nil) }
+        case .notes(_, _, let notes):
+            items = notes.map {
+                SuggestionItem(
+                    title: $0.title,
+                    subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
+                    symbolName: "note.text"
+                )
+            }
         case .slash(_, _, let commands):
             items = commands.isEmpty
                 ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
@@ -144,6 +188,16 @@ extension EditorWindowController {
             }
         }
 
+        if let noteToken = currentNoteMentionToken(),
+           noteSuggestionQuery == noteToken.query,
+           !noteSuggestions.isEmpty {
+            return .notes(
+                query: noteToken.query,
+                replacementRange: noteToken.replacementRange,
+                items: noteSuggestions
+            )
+        }
+
         let string = editorTextView.string as NSString
         let caret = min(selection.location, string.length)
         let paragraphRange = string.paragraphRange(for: NSRange(location: caret, length: 0))
@@ -170,6 +224,9 @@ extension EditorWindowController {
         case .tags(_, let replacementRange, let items):
             guard items.indices.contains(index) else { return }
             applyTag(items[index], replacementRange: replacementRange)
+        case .notes(_, let replacementRange, let items):
+            guard items.indices.contains(index) else { return }
+            applyNoteMention(items[index], replacementRange: replacementRange)
         case .slash(_, let replacementRange, let items):
             guard items.indices.contains(index) else { return }
             applySlashCommand(items[index], replacementRange: replacementRange)
@@ -189,7 +246,7 @@ extension EditorWindowController {
         var origin = NSPoint(x: anchorRect.maxX + 4, y: anchorRect.maxY - size.height + 14)
 
         switch context {
-        case .tags:
+        case .tags, .notes:
             origin.x = anchorRect.maxX + 4
             origin.y = anchorRect.maxY - size.height + 12
         case .slash(_, let replacementRange, _):
@@ -225,10 +282,48 @@ extension EditorWindowController {
         }
     }
 
+    private func scheduleNoteSuggestionLoad(for query: String) {
+        noteSuggestionTask?.cancel()
+        noteSuggestionQuery = query
+        noteSuggestions = []
+        let noteStore = self.noteStore
+        let sourceURL = fileURL
+            ?? activeFloatingNoteURL
+            ?? selectedDirectoryURL.appendingPathComponent("Untitled.md")
+        let currentBody = currentDocument().body
+        noteSuggestionTask = Task { [weak self] in
+            let suggestions = await Task.detached(priority: .userInitiated) {
+                noteStore.noteMentionSuggestions(
+                    query: query,
+                    sourceURL: sourceURL,
+                    currentBody: currentBody
+                )
+            }.value
+            guard !Task.isCancelled, let self, noteSuggestionQuery == query else { return }
+            noteSuggestions = suggestions
+            noteSuggestionTask = nil
+            updateInlineSuggestions()
+        }
+    }
+
     // MARK: - Tag / slash application
 
     func applyTag(_ tag: String, replacementRange: NSRange) {
         replaceText(in: replacementRange, with: "#\(tag)")
+        refreshChrome()
+        userDidEdit()
+    }
+
+    func applyNoteMention(_ note: NoteLinkItem, replacementRange: NSRange) {
+        let sourceURL = fileURL
+            ?? activeFloatingNoteURL
+            ?? selectedDirectoryURL.appendingPathComponent("Untitled.md")
+        let link = noteStore.markdownKnowledgeLink(
+            from: sourceURL,
+            to: note.url,
+            title: note.title
+        )
+        replaceText(in: replacementRange, with: link)
         refreshChrome()
         userDidEdit()
     }
