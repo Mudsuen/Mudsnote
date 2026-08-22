@@ -85,8 +85,8 @@ scope_fixture="$(mktemp -d)"
 trap 'rm -rf "$scope_fixture"' EXIT
 
 git -C "$scope_fixture" init -q -b main
-git -C "$scope_fixture" config user.email devflow-test@example.invalid
-git -C "$scope_fixture" config user.name "Devflow Test"
+git -C "$scope_fixture" config user.email mudsnote-test@example.invalid
+git -C "$scope_fixture" config user.name "Mudsnote Test"
 printf 'fixture\n' >"$scope_fixture/README.md"
 git -C "$scope_fixture" add README.md
 git -C "$scope_fixture" commit -qm fixture
@@ -104,24 +104,24 @@ git -C "$scope_fixture" commit -qm macos
 mac_sha="$(git -C "$scope_fixture" rev-parse HEAD)"
 
 platform_scope="$(
-  DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD="$ios_sha" \
+  MUDSNOTE_DIFF_BASE="$base_sha" MUDSNOTE_DIFF_HEAD="$ios_sha" \
     "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
 )"
 test "$platform_scope" = ios
 
 platform_scope="$(
-  DEVFLOW_DIFF_BASE="$ios_sha" DEVFLOW_DIFF_HEAD="$mac_sha" \
+  MUDSNOTE_DIFF_BASE="$ios_sha" MUDSNOTE_DIFF_HEAD="$mac_sha" \
     "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
 )"
 test "$platform_scope" = macos
 
 platform_scope="$(
-  DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD="$mac_sha" \
+  MUDSNOTE_DIFF_BASE="$base_sha" MUDSNOTE_DIFF_HEAD="$mac_sha" \
     "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture"
 )"
 test "$platform_scope" = both
 
-if DEVFLOW_DIFF_BASE="$base_sha" DEVFLOW_DIFF_HEAD=missing \
+if MUDSNOTE_DIFF_BASE="$base_sha" MUDSNOTE_DIFF_HEAD=missing \
   "$ROOT_DIR/scripts/detect_platform_scope.sh" "$scope_fixture" >/dev/null 2>&1; then
   echo "ERROR: invalid push range was accepted." >&2
   exit 1

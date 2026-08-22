@@ -16,8 +16,8 @@ case "${1:-}" in
     ;;
   pr|full|live)
     MODE="$1"
-    if [[ -n "${DEVFLOW_PLATFORM_SCOPE:-${MUDSNOTE_PLATFORM_SCOPE:-}}" ]]; then
-      PLATFORM_SCOPE="${DEVFLOW_PLATFORM_SCOPE:-$MUDSNOTE_PLATFORM_SCOPE}"
+    if [[ -n "${MUDSNOTE_PLATFORM_SCOPE:-}" ]]; then
+      PLATFORM_SCOPE="$MUDSNOTE_PLATFORM_SCOPE"
       EXPLICIT_SCOPE=1
     else
       PLATFORM_SCOPE="$(./scripts/detect_platform_scope.sh)"

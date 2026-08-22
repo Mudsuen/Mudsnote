@@ -8,11 +8,11 @@ if ! git -C "$ROOT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 0
 fi
 
-DIFF_BASE="${DEVFLOW_DIFF_BASE:-}"
-DIFF_HEAD="${DEVFLOW_DIFF_HEAD:-}"
+DIFF_BASE="${MUDSNOTE_DIFF_BASE:-}"
+DIFF_HEAD="${MUDSNOTE_DIFF_HEAD:-}"
 if [[ -n "$DIFF_BASE" || -n "$DIFF_HEAD" ]]; then
   if [[ -z "$DIFF_BASE" || -z "$DIFF_HEAD" ]]; then
-    echo "ERROR: DEVFLOW_DIFF_BASE and DEVFLOW_DIFF_HEAD must be provided together." >&2
+    echo "ERROR: MUDSNOTE_DIFF_BASE and MUDSNOTE_DIFF_HEAD must be provided together." >&2
     exit 2
   fi
   git -C "$ROOT_DIR" rev-parse --verify "$DIFF_BASE^{commit}" >/dev/null
