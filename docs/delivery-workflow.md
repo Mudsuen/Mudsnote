@@ -1,8 +1,7 @@
 # Mudsnote Delivery Exceptions
 
-The shared lifecycle is
-`/Users/Donald/Code/Devflow/docs/workspace-delivery-policy.md`. This document
-contains only Mudsnote-specific exceptions.
+The shared default is `/Users/Donald/Code/AGENTS.md`. This document contains
+only Mudsnote-specific verification and safety requirements.
 
 ## Platform scope
 
@@ -28,5 +27,5 @@ contains only Mudsnote-specific exceptions.
 
 Migration, irreversible data, production/App Store release, signing, secrets,
 entitlements, permissions, packaging, and verification-controller changes
-require the shared PR/CI gate. Git rollback cannot claim to reverse an external
-side effect.
+require an explicit risk review; use a PR/CI gate when the project or user
+requires it. Git rollback cannot claim to reverse an external side effect.

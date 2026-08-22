@@ -52,7 +52,9 @@ Live verification is also platform-scoped:
 ./scripts/verify both live   # explicit dual-platform install
 ```
 
-The one-argument `./scripts/verify pr|full` form remains available for Devflow and safely detects the changed platform. The one-argument `live` form is rejected because installation targets must be explicit.
+The one-argument `./scripts/verify pr|full` form remains available as a
+convenience and safely detects the changed platform. The one-argument `live`
+form is rejected because installation targets must be explicit.
 
 Run the isolated installed-app library smoke:
 
@@ -64,9 +66,11 @@ This launches `/Applications/Mudsnote.app` against a temporary library and verif
 
 ## Development Notes
 
-- In a Devflow task, start with `./scripts/agent_context.sh --task`, then route directly with `./scripts/agent_context.sh <topic> '<regex>'`.
+- Before editing, record the Git checkpoint, then route directly with
+  `./scripts/agent_context.sh <topic> '<regex>'`.
 - Read `docs/ARCHITECTURE.md`, `docs/AI_HANDOFF.md`, memory, and workflow docs only when the focused task or an exception needs them.
-- See `docs/delivery-workflow.md` for the automatic PR/CI/merge lifecycle, hard stops, evidence, and rollback flow.
+- See `docs/delivery-workflow.md` for platform checks, explicit installs,
+  risk-based review, evidence, and rollback.
 - See `CHANGELOG.md` for iteration history, known issues, and lessons learned.
 
 ## License

@@ -32,21 +32,14 @@ USAGE
 }
 
 print_task_capsule() {
-  if [[ ! -L .task ]]; then
-    echo "ERROR: .task is missing; create the worktree with devtask start." >&2
-    return 2
-  fi
-  local task_id devflow_bin
-  task_id="$(basename "$(readlink .task)")"
-  devflow_bin="${DEVFLOW_BIN:-$(command -v devtask || true)}"
-  if [[ -z "$devflow_bin" ]]; then
-    devflow_bin="/Users/Donald/Code/Devflow/bin/devtask"
-  fi
-  if [[ ! -x "$devflow_bin" ]]; then
-    echo "ERROR: devtask is unavailable; set DEVFLOW_BIN to the executable." >&2
-    return 2
-  fi
-  "$devflow_bin" context Mudsnote "$task_id"
+  echo "Legacy task capsule retired; using a local Git checkpoint."
+  printf 'Repository: %s\n' "$ROOT_DIR"
+  printf 'Branch: '
+  git branch --show-current
+  printf 'HEAD: '
+  git rev-parse --short HEAD
+  echo "Status:"
+  git status --short
 }
 
 load_topic() {
@@ -186,7 +179,7 @@ load_topic() {
       SEARCH_HINT='MarkdownPreviewView|MarkdownEditingCommand|NoteFind|MarkdownTable|Attachment'
       ;;
     delivery)
-      DESCRIPTION="Platform scope detection, deterministic verification, packaging, install, and Devflow"
+      DESCRIPTION="Platform scope detection, deterministic verification, packaging, and install"
       FILES=(
         scripts/verify
         scripts/detect_platform_scope.sh
@@ -261,16 +254,8 @@ check_context_contract() {
     echo "ERROR: default agent entry context exceeds 700 words ($entry_words)." >&2
     failures=1
   fi
-  if ! grep -q -- '--task' AGENTS.md || ! grep -q '/Users/Donald/Code/Devflow/docs/workspace-delivery-policy.md' AGENTS.md; then
-    echo "ERROR: minimal task capsule routing or shared delivery policy is missing from AGENTS.md." >&2
-    failures=1
-  fi
-  if [[ -e .devflow.yaml ]]; then
-    echo "ERROR: project-local Devflow configuration is forbidden; use the shared workspace delivery policy." >&2
-    failures=1
-  fi
-  if ! grep -q 'devflow_full_reason:' .github/workflows/ci.yml || ! grep -q 'devflow_full_reason=none' .github/workflows/auto-merge.yml || ! grep -q 'devflow_full_reason=base-changed-after-candidate' .github/workflows/auto-merge.yml; then
-    echo "ERROR: post-merge full-verification exception contract is incomplete." >&2
+  if ! grep -q -- 'agent_context.sh' AGENTS.md; then
+    echo "ERROR: focused agent context routing is missing from AGENTS.md." >&2
     failures=1
   fi
   if grep -En '^## Latest iteration' docs/AI_HANDOFF.md >/dev/null; then

@@ -5,8 +5,8 @@ memory, and Git history.
 
 ## Route
 
-This file is exception context, not a default prerequisite. Start from the
-Devflow task capsule and a routed source search; read this only when current
+This file is exception context, not a default prerequisite. Start from a clean
+Git checkpoint and a routed source search; read this only when current
 constraints are relevant. Use `docs/ARCHITECTURE.md` only for boundary changes.
 
 ## Product State
@@ -41,8 +41,8 @@ relative attachments are canonical across separate macOS and iPhone apps.
 ## Durable Contracts
 
 - Follow `docs/ARCHITECTURE.md` ownership and dependency direction.
-- Verified local `main` is the integration baseline and mirrors directly to
-  remote `main`; only independent-gate changes use PR/CI.
+- A verified local checkpoint is the ordinary integration baseline; only
+  independent-gate changes use PR/CI.
 - Paint from bounded snapshots; validate files off-main and reject stale results.
 - Reuse projections, caches, selection, and mutation paths—no parallel index or
   filesystem scan for another presentation.

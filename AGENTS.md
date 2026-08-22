@@ -2,7 +2,8 @@
 
 When working in this repo:
 
-1. In a Devflow worktree, start with `./scripts/agent_context.sh --task`; this JSON capsule is the default task context.
+1. Before editing, inspect the branch, HEAD, and dirty state, then use
+   `./scripts/agent_context.sh --list` and a focused topic route as needed.
 2. Then run `./scripts/agent_context.sh <topic> [regex]` and expand only after a miss. Do not pre-read `README.md`, `docs/AI_HANDOFF.md`, Skill docs, memory, changelog, or historical tasks.
 3. Load the owning document only when the capsule/code is insufficient, a gate fails, rules conflict, or the task changes that process. Read `docs/ARCHITECTURE.md` only for boundary changes and `docs/delivery-workflow.md` only for delivery exceptions.
 4. `CHANGELOG.md` is user-visible history, not the only technical truth.
@@ -25,7 +26,7 @@ When working in this repo:
 - `ARCHITECTURE`: stable boundaries; `AI_HANDOFF`: current constraints; `CHANGELOG`: user-visible history.
 - `agent-memory/decisions/` and `incidents/`: rationale and failures. Never copy iteration logs into handoff.
 
-Delivery follows `/Users/Donald/Code/Devflow/docs/workspace-delivery-policy.md`.
+Delivery follows `/Users/Donald/Code/AGENTS.md` and the project checks below.
 Mudsnote adds only these project checks:
 
 - `./scripts/verify pr|full` detects a single-platform diff; `live` always

@@ -15,7 +15,7 @@ Historical changes do not belong here.
 | User-visible iteration history | `CHANGELOG.md` |
 | Durable decisions and concrete incidents | `agent-memory/decisions/`; `agent-memory/incidents/` |
 | Old implementation evidence | `agent-memory/iterations/`; `agent-memory/archive/` |
-| Delivery lifecycle | `docs/delivery-workflow.md`; Devflow task contract |
+| Delivery lifecycle | `docs/delivery-workflow.md`; `/Users/Donald/Code/AGENTS.md` |
 
 Do not copy the same fact into several owners. Link to the owner instead.
 
