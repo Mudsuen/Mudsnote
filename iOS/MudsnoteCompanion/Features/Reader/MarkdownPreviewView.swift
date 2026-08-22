@@ -661,17 +661,9 @@ struct MarkdownPreviewView: View {
 
     private var editableMarkdown: Binding<String> {
         Binding(
-            get: {
-                editorDisplayMode == .source
-                    ? draftMarkdown
-                    : frontMatterProjection.body
-            },
+            get: { frontMatterProjection.body },
             set: { updated in
-                if editorDisplayMode == .source {
-                    draftMarkdown = updated
-                } else {
-                    draftMarkdown = frontMatterProjection.replacingBody(with: updated)
-                }
+                draftMarkdown = frontMatterProjection.replacingBody(with: updated)
             }
         )
     }

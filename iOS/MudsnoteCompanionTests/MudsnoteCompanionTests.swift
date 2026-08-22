@@ -335,10 +335,13 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(projection.body, markdown)
     }
 
-    func testEditingFrontMatterBodyPreservesCapturedMetadataWithoutShowingMarkers() {
+    func testEditingBodyPreservesAllFrontMatterWithoutShowingMarkers() {
         let markdown = """
         ---
         captured_at: 2026-08-22T15:00:00+08:00
+        aliases:
+          - inbox
+        status: active
         ---
         # Captured Note
 
@@ -352,6 +355,9 @@ final class MudsnoteCompanionTests: XCTestCase {
             """
             ---
             captured_at: 2026-08-22T15:00:00+08:00
+            aliases:
+              - inbox
+            status: active
             ---
             # Captured Note
 
