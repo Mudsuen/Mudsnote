@@ -42,8 +42,8 @@ struct RootView: View {
             }
 
             if isHalfReaderPresented {
-                MudsnoteColors.panel.opacity(0.96)
-                    .frame(height: 14)
+                MudsnoteColors.panel
+                    .frame(height: 72)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -175,6 +175,10 @@ struct RootView: View {
         isReaderEditing = isEditing
         if isEditing {
             expandReaderForEditing()
+        } else if appModel.selectedMemo != nil || appModel.selectedDocument != nil {
+            appModel.noteOpenMode = .read
+            readerDetent = .medium
+            appModel.isReaderExpanded = false
         }
     }
 }

@@ -98,10 +98,15 @@ extension EditorWindowController {
 
     func currentDocument() -> MarkdownEditorDocument {
         if isQuickCaptureMode {
-            return QuickCaptureDocumentState(
+            let state = QuickCaptureDocumentState(
                 title: "",
                 bodyMarkdown: serializedBodyMarkdown()
-            ).document
+            )
+            return MarkdownEditorDocument(
+                title: state.normalizedTitle,
+                body: state.normalizedBody,
+                tags: activeTags
+            )
         }
         let markdown = serializedBodyMarkdown()
         return MarkdownEditorDocument.parse(editorText: markdown, tags: mergedDocumentTags(from: markdown))

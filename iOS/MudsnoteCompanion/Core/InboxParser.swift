@@ -42,6 +42,8 @@ struct MemoBlock: Identifiable, Equatable {
 }
 
 enum InboxParser {
+    private static let tagsMarkerPrefix = "<!-- mudsnote-tags:"
+
     static func parse(_ markdown: String) -> [MemoBlock] {
         let lines = markdown.components(separatedBy: .newlines)
         var blocks: [MemoBlock] = []
@@ -51,8 +53,22 @@ enum InboxParser {
 
         func flush() {
             guard let currentDate else { return }
-            let body = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            let tags = MarkdownTagSyntax.tags(in: body)
+            var bodyLines = currentLines
+            var tags: [String] = []
+            if let index = bodyLines.firstIndex(where: {
+                $0.trimmingCharacters(in: .whitespaces).hasPrefix(tagsMarkerPrefix)
+            }) {
+                let marker = bodyLines.remove(at: index)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = marker
+                    .dropFirst(tagsMarkerPrefix.count)
+                    .dropLast(marker.hasSuffix("-->") ? 3 : 0)
+                tags = value.split(separator: ",").compactMap {
+                    MarkdownTagSyntax.normalizedTag(String($0))
+                }
+            }
+            let body = bodyLines.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let id = "\(currentDate)-\(blocks.count)"
             blocks.append(MemoBlock(
                 id: id,
@@ -83,6 +99,9 @@ enum InboxParser {
         var output = "# Inbox\n\n"
         for memo in items.reversed() {
             output += "## \(memo.dateText)\n\n"
+            if !memo.tags.isEmpty {
+                output += "\(tagsMarkerPrefix) \(memo.tags.joined(separator: ", ")) -->\n\n"
+            }
             output += memo.body.trimmingCharacters(in: .whitespacesAndNewlines)
             output += "\n\n"
             if let writeMarker = memo.writeMarker {

@@ -10,6 +10,7 @@ extension NSAttributedString.Key {
     static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
     static let qmAutomaticLink = NSAttributedString.Key("MudsnoteAutomaticLink")
     static let qmTag = NSAttributedString.Key("MudsnoteTag")
+    static let qmMetadataTagReserve = NSAttributedString.Key("MudsnoteMetadataTagReserve")
     static let qmImageMarkdown = NSAttributedString.Key("MudsnoteImageMarkdown")
     static let qmImageFilePath = NSAttributedString.Key("MudsnoteImageFilePath")
     static let qmAttachmentMarkdown = NSAttributedString.Key("MudsnoteAttachmentMarkdown")
@@ -256,6 +257,35 @@ extension MarkdownTextViewCommands {
     }
 }
 
+private final class MetadataTagButton: NSButton {
+    private let tagName: String
+    private let onRemove: ((String) -> Void)?
+
+    init(tag: String, onRemove: ((String) -> Void)?) {
+        self.tagName = tag
+        self.onRemove = onRemove
+        super.init(frame: .zero)
+        title = onRemove == nil ? "#\(tag)" : "#\(tag)  ×"
+        font = .systemFont(ofSize: 11, weight: .semibold)
+        bezelStyle = .rounded
+        isBordered = true
+        contentTintColor = .controlAccentColor
+        target = self
+        action = #selector(removeTag)
+        isEnabled = onRemove != nil
+        setAccessibilityLabel(onRemove == nil ? "#\(tag)" : "删除标签 #\(tag)")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func removeTag() {
+        onRemove?(tagName)
+    }
+}
+
 private final class ConciseEditorContextMenu: NSMenu {
     var isSealed = false
 
@@ -391,9 +421,14 @@ private final class SelectionFormattingPanelButton: NSButton {
 
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var minimumScrollableContentHeight: CGFloat = 0
+    private var metadataTags: [String] = []
+    private var metadataTagScrollView: NSScrollView?
 
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
+        metadataTags = []
+        metadataTagScrollView?.removeFromSuperview()
+        metadataTagScrollView = nil
 
         // This view is transparent. TextKit can invalidate only the new glyph
         // range after a shorter replacement, leaving pixels from the previous
@@ -408,6 +443,95 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         var constrainedSize = newSize
         constrainedSize.height = max(constrainedSize.height, minimumScrollableContentHeight)
         super.setFrameSize(constrainedSize)
+        layoutMetadataTagBar()
+    }
+
+    func setMetadataTags(_ tags: [String], onRemove: ((String) -> Void)? = nil) {
+        let normalized = MarkdownEditorDocument.normalizedTags(tags)
+        guard normalized != metadataTags || metadataTagScrollView == nil else {
+            layoutMetadataTagBar()
+            return
+        }
+        metadataTags = normalized
+        metadataTagScrollView?.removeFromSuperview()
+        metadataTagScrollView = nil
+        updateMetadataTagSpacing(hasTags: !normalized.isEmpty)
+        guard !normalized.isEmpty else { return }
+
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 6
+        for tag in normalized {
+            let button = MetadataTagButton(tag: tag, onRemove: onRemove)
+            stack.addArrangedSubview(button)
+        }
+        stack.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: stack.fittingSize.width,
+            height: 26
+        )
+
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.hasHorizontalScroller = false
+        scroll.hasVerticalScroller = false
+        scroll.documentView = stack
+        addSubview(scroll)
+        metadataTagScrollView = scroll
+        layoutMetadataTagBar()
+    }
+
+    private func updateMetadataTagSpacing(hasTags: Bool) {
+        guard let storage = textStorage, storage.length > 0 else { return }
+        let paragraphRange = (storage.string as NSString).paragraphRange(
+            for: NSRange(location: 0, length: 0)
+        )
+        let existingReserve = storage.attribute(
+            .qmMetadataTagReserve,
+            at: 0,
+            effectiveRange: nil
+        ) as? CGFloat ?? 0
+        let style = (storage.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+            ?? NSMutableParagraphStyle()
+        let reserve: CGFloat = hasTags ? 36 : 0
+        style.paragraphSpacing = max(0, style.paragraphSpacing - existingReserve) + reserve
+        storage.addAttributes([
+            .paragraphStyle: style,
+            .qmMetadataTagReserve: reserve,
+        ], range: paragraphRange)
+    }
+
+    private func layoutMetadataTagBar() {
+        guard let scroll = metadataTagScrollView,
+              let layoutManager,
+              let textContainer,
+              let storage = textStorage,
+              storage.length > 0 else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let paragraphRange = (storage.string as NSString).paragraphRange(
+            for: NSRange(location: 0, length: 0)
+        )
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: paragraphRange,
+            actualCharacterRange: nil
+        )
+        let titleRect = layoutManager.boundingRect(
+            forGlyphRange: glyphRange,
+            in: textContainer
+        )
+        scroll.frame = NSRect(
+            x: textContainerInset.width,
+            y: textContainerInset.height + titleRect.maxY + 5,
+            width: max(0, bounds.width - textContainerInset.width * 2),
+            height: 26
+        )
     }
 
     override func selectionRange(forProposedRange proposedCharRange: NSRange, granularity: NSSelectionGranularity) -> NSRange {
@@ -2937,20 +3061,6 @@ enum MarkdownRichTextCodec {
                 ]))
                 index = source.index(after: closeParen)
                 continue
-            }
-
-            if source[index] == "#",
-               (index == source.startIndex || source[source.index(before: index)].isWhitespace) {
-                let tagEnd = source[index...].dropFirst().firstIndex(where: { !$0.isTagCharacter }) ?? source.endIndex
-                if tagEnd > source.index(after: index) {
-                let token = String(source[index..<tagEnd])
-                output.append(attributed(token, base: baseAttributes, extra: [
-                    .foregroundColor: NSColor.systemBlue.withAlphaComponent(0.96),
-                    .qmTag: true
-                ]))
-                index = tagEnd
-                continue
-                }
             }
 
             output.append(attributed(String(source[index]), base: baseAttributes))

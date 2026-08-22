@@ -7,11 +7,13 @@ extension EditorWindowController {
     // MARK: - Tag state
 
     func refreshTrackedTags() {
-        activeTags = QuickCaptureDocumentState.extractedInlineTags(from: editorTextView.string)
+        editorTextView.setMetadataTags(activeTags) { [weak self] tag in
+            self?.removeMetadataTag(tag)
+        }
     }
 
     func mergedDocumentTags(from markdown: String) -> [String] {
-        QuickCaptureDocumentState.extractedInlineTags(from: markdown)
+        activeTags
     }
 
     // MARK: - Inline suggestion visibility
@@ -309,7 +311,20 @@ extension EditorWindowController {
     // MARK: - Tag / slash application
 
     func applyTag(_ tag: String, replacementRange: NSRange) {
-        replaceText(in: replacementRange, with: "#\(tag)")
+        let normalized = tag.trimmingCharacters(in: CharacterSet(
+            charactersIn: "# \t\r\n"
+        ))
+        guard !normalized.isEmpty else { return }
+        replaceText(in: replacementRange, with: "")
+        activeTags = MarkdownEditorDocument.normalizedTags(activeTags + [normalized])
+        refreshChrome()
+        userDidEdit()
+    }
+
+    private func removeMetadataTag(_ tag: String) {
+        activeTags.removeAll {
+            $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
+        }
         refreshChrome()
         userDidEdit()
     }

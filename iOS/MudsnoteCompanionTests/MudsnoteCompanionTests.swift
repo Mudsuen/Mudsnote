@@ -563,8 +563,15 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(attachment.filePrefix, "Camera Clip")
     }
 
-    func testMarkdownTagSyntaxRewritesOnlyVisibleExactTags() throws {
+    func testMarkdownTagSyntaxReadsAndRewritesOnlyFrontMatterTags() throws {
         let markdown = """
+        ---
+        author: Donald
+        tags:
+          - #Project
+          - #work
+        ---
+
         # Heading
 
         Visible #Project and #project.
@@ -580,21 +587,22 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#项目_2"), "#项目_2")
         XCTAssertNil(MarkdownTagSyntax.normalizedTag("two words"))
         XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad/tag"))
-        XCTAssertEqual(MarkdownTagSyntax.tags(in: markdown), ["#Project"])
+        XCTAssertEqual(MarkdownTagSyntax.tags(in: markdown), ["#Project", "#work"])
 
         let renamed = try XCTUnwrap(MarkdownTagSyntax.rewriting(
             markdown,
             tag: "#PROJECT",
             mutation: .rename(to: "#client")
         ))
-        XCTAssertEqual(renamed.occurrenceCount, 2)
-        XCTAssertTrue(renamed.markdown.contains("Visible #client and #client."))
+        XCTAssertEqual(renamed.occurrenceCount, 1)
+        XCTAssertTrue(renamed.markdown.contains("  - #client"))
+        XCTAssertTrue(renamed.markdown.contains("Visible #Project and #project."))
         XCTAssertTrue(renamed.markdown.contains("`#project` and ``#project``"))
         XCTAssertTrue(renamed.markdown.contains("https://example.com/#project and (#project)"))
         XCTAssertTrue(renamed.markdown.contains("~~~text\n#project\n~~~"))
         XCTAssertEqual(
             MarkdownTagSyntax.adding("launch", to: "# Heading\n\nBody\n"),
-            "# Heading\n\nBody\n\n#launch\n"
+            "---\ntags:\n  - #launch\n---\n\n# Heading\n\nBody\n"
         )
         XCTAssertEqual(
             MarkdownTagSyntax.adding("#PROJECT", to: markdown),
@@ -602,12 +610,13 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
 
         let deleted = try XCTUnwrap(MarkdownTagSyntax.rewriting(
-            "before #project after\n#project #keep\nend #PROJECT",
+            "---\ntags: [project, keep]\n---\n\nbefore #project after",
             tag: "project",
             mutation: .delete
         ))
-        XCTAssertEqual(deleted.occurrenceCount, 3)
-        XCTAssertEqual(deleted.markdown, "before after\n#keep\nend")
+        XCTAssertEqual(deleted.occurrenceCount, 1)
+        XCTAssertTrue(deleted.markdown.contains("  - #keep"))
+        XCTAssertTrue(deleted.markdown.contains("before #project after"))
     }
 
     func testTagSuggestionsReactToInputThenUseSemanticContextAndFrequency() {
@@ -645,18 +654,18 @@ final class MudsnoteCompanionTests: XCTestCase {
         try FolderInitializer.initialize(root)
         let projects = root.appendingPathComponent("Projects", isDirectory: true)
         try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-        try "# Alpha\n\n#project #work\n`#project`\n".write(
+        try "---\ntags: [project, work]\n---\n\n# Alpha\n\n#project #work\n`#project`\n".write(
             to: projects.appendingPathComponent("Alpha.md"),
             atomically: true,
             encoding: .utf8
         )
-        try "# Beta\n\nReview #PROJECT.\n".write(
+        try "---\ntags: [PROJECT]\n---\n\n# Beta\n\nReview #PROJECT.\n".write(
             to: projects.appendingPathComponent("Beta.md"),
             atomically: true,
             encoding: .utf8
         )
         let inboxURL = root.appendingPathComponent("Inbox.md")
-        try "# Inbox\n\nQuick #project\n".write(
+        try "---\ntags: [project]\n---\n\n# Inbox\n\nQuick #project\n".write(
             to: inboxURL,
             atomically: true,
             encoding: .utf8
@@ -675,15 +684,15 @@ final class MudsnoteCompanionTests: XCTestCase {
             "Projects/Alpha.md",
             "Projects/Beta.md",
         ])
-        XCTAssertTrue(
-            try String(contentsOf: projects.appendingPathComponent("Alpha.md"), encoding: .utf8)
-                .contains("#client #work\n`#project`")
-        )
+        XCTAssertTrue(try String(
+            contentsOf: projects.appendingPathComponent("Alpha.md"),
+            encoding: .utf8
+        ).contains("  - #client\n  - #work"))
         XCTAssertTrue(
             try String(contentsOf: projects.appendingPathComponent("Beta.md"), encoding: .utf8)
-                .contains("Review #client.")
+                .contains("Review #PROJECT.")
         )
-        XCTAssertTrue(try String(contentsOf: inboxURL, encoding: .utf8).contains("Quick #client"))
+        XCTAssertTrue(try String(contentsOf: inboxURL, encoding: .utf8).contains("  - #client"))
         XCTAssertEqual(try String(contentsOf: trashNote, encoding: .utf8), "#project\n")
 
         let snapshot = try await store.loadLibrarySnapshot()
@@ -908,7 +917,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
         let noteURL = root.appendingPathComponent("Project.md")
-        let markdown = "# Project\n\nShip it. #project\n"
+        let markdown = "---\ntags: [project]\n---\n\n# Project\n\nShip it. #project\n"
         try markdown.write(to: noteURL, atomically: true, encoding: .utf8)
 
         let store = MarkdownFileStore()
@@ -1662,9 +1671,9 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         ## 2026-06-07 14:32
 
-        第一条
+        <!-- mudsnote-tags: #闪念 -->
 
-        #闪念
+        第一条
 
         ## 2026-06-07 14:35
 
@@ -4429,7 +4438,8 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(memos.count, 2)
         XCTAssertTrue(memos.contains { $0.body.contains("Added outside the app") })
         let originalMemo = try XCTUnwrap(memos.first { $0.body.contains("Original memo") })
-        XCTAssertTrue(originalMemo.body.contains("#review"))
+        XCTAssertEqual(originalMemo.tags, ["#review"])
+        XCTAssertFalse(originalMemo.body.contains("#review"))
         XCTAssertEqual(
             originalMemo.writeMarker,
             "<!-- mudsnote-write:1e989c6a-2aae-47c5-a8e7-4c7d854cb2d8 -->"
@@ -4571,6 +4581,10 @@ final class MudsnoteCompanionTests: XCTestCase {
     func testMarkdownListMetadataExtractsHeadingPreviewAndAttachments() {
         let metadata = MarkdownListMetadata.extract(
             from: """
+            ---
+            tags: [release, 发布]
+            ---
+
             # Launch Plan
 
             ![Cover](Attachments/cover.png)
@@ -4623,7 +4637,7 @@ final class MudsnoteCompanionTests: XCTestCase {
             at: root.appendingPathComponent("Projects", isDirectory: true),
             withIntermediateDirectories: true
         )
-        try "# Tagged Plan\n\nShip it. #project #发布\n".write(
+        try "---\ntags: [project, 发布]\n---\n\n# Tagged Plan\n\nShip it. #project #发布\n".write(
             to: root.appendingPathComponent("Projects/Tagged Plan.md"),
             atomically: true,
             encoding: .utf8

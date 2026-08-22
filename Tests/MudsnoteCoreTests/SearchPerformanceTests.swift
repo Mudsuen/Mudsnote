@@ -430,7 +430,7 @@ struct SearchPerformanceTests {
         }
 
         for index in 0..<40 {
-            try "# Cloud \(index)\n\nbody #area/topic\n".write(
+            try "---\ntags:\n  - area/topic\n---\n\n# Cloud \(index)\n\nbody #area/topic\n".write(
                 to: notesDirectory.appendingPathComponent("Cloud \(index).md"),
                 atomically: true,
                 encoding: .utf8

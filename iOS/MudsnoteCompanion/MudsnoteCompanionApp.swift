@@ -217,13 +217,13 @@ private enum MudsnoteUITestLaunchConfiguration {
                     )
                 }
                 if arguments.contains(fileTagArgument) {
-                    try "# UI Lifecycle\n\nRestore this note end to end.\n\n#project #work\n".write(
+                    try "---\ntags: [project, work]\n---\n\n# UI Lifecycle\n\nRestore this note end to end.\n".write(
                         to: projects.appendingPathComponent("UI Lifecycle.md"),
                         atomically: true,
                         encoding: .utf8
                     )
                     let inbox = root.appendingPathComponent("Inbox.md")
-                    try "# Inbox\n\nTagged quick capture\n\n#project #quick\n".write(
+                    try "---\ntags: [project, quick]\n---\n\n# Inbox\n\nTagged quick capture\n".write(
                         to: inbox,
                         atomically: true,
                         encoding: .utf8

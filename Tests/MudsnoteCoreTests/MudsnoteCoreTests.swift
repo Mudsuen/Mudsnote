@@ -1504,7 +1504,7 @@ struct MudsnoteCoreTests {
     }
 
     @Test
-    func inlineAndHierarchicalTagsAreRecognizedAlongsideFrontMatter() throws {
+    func onlyFrontMatterTagsAreRecognized() throws {
         let harness = try TestHarness()
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
@@ -1515,6 +1515,8 @@ struct MudsnoteCoreTests {
         ---
         tags:
           - frontmatter
+          - area/topic
+          - 中文/层级
         ---
 
         # Tagged
@@ -2204,7 +2206,7 @@ struct MudsnoteCoreTests {
     }
 
     @Test
-    func deletingTagRemovesFrontMatterAndInlineOccurrencesButPreservesCode() throws {
+    func deletingTagRemovesOnlyFrontMatterAndPreservesBodyText() throws {
         let harness = try TestHarness()
         let store = harness.store
         let notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
@@ -2218,7 +2220,7 @@ struct MudsnoteCoreTests {
         #expect(try store.deleteTag("#active") == 1)
         let loaded = try store.loadNoteDocument(at: noteURL)
         #expect(loaded.tags == ["other"])
-        #expect(loaded.body.contains("Keep text."))
+        #expect(loaded.body.contains("Keep #active text."))
         #expect(loaded.body.contains("`#active`"))
         #expect(loaded.body.contains("```\n#active\n```"))
     }

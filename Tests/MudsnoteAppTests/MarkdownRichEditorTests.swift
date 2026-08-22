@@ -1833,7 +1833,7 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
-    func richCodecRendersInlineTagsInBlueWithoutChangingMarkdown() {
+    func richCodecKeepsBodyHashtagsAsOrdinaryText() {
         let rendered = MarkdownRichTextCodec.renderLine("hello #alpha world", theme: theme)
         let visible = rendered.string as NSString
         let tagRange = visible.range(of: "#alpha")
@@ -1841,8 +1841,8 @@ struct MarkdownRichEditorTests {
         let isTag = rendered.attribute(.qmTag, at: tagRange.location, effectiveRange: nil) as? Bool
 
         #expect(tagRange.location != NSNotFound)
-        #expect(isTag == true)
-        #expect(color == NSColor.systemBlue.withAlphaComponent(0.96))
+        #expect(isTag == nil)
+        #expect(color == theme.textColor)
         #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == "hello #alpha world")
     }
 
@@ -1934,16 +1934,16 @@ struct MarkdownRichEditorTests {
         #expect(state.normalizedBody == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
         #expect(state.document.title == "这是第一句。")
         #expect(state.document.body == "这是第一句。第二句仍在正文\n- [ ] Finish report\n#ops")
-        #expect(state.document.tags == ["ops"])
+        #expect(state.document.tags.isEmpty)
         #expect(state.hasMeaningfulContent == true)
     }
 
     @Test
-    func quickCaptureRecognizesHierarchicalInlineTags() {
+    func quickCaptureDoesNotTreatBodyHashtagsAsMetadataTags() {
         #expect(
             QuickCaptureDocumentState.extractedInlineTags(
                 from: "Body #area/topic #中文/层级 #trailing/"
-            ) == ["area/topic", "中文/层级", "trailing"]
+            ).isEmpty
         )
 
         let rendered = MarkdownRichTextCodec.renderLine("Body #area/topic", theme: theme)

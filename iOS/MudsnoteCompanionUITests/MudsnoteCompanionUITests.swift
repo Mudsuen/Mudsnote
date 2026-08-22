@@ -1460,7 +1460,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testReaderKeepsTimestampVisibleAtBothDetentsStaysReadOnlyAndOffersTextCopy() {
-        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            fileTag: true,
+            halfScreenReader: true
+        )
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
         projects.tap()
@@ -1500,7 +1505,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let grabberY = max(
             0.05,
-            min(0.9, (rendered.frame.minY - 48) / app.frame.height)
+            min(0.9, (metadata.frame.minY - 32) / app.frame.height)
         )
         let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: grabberY))
         let expandedPosition = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
@@ -1520,7 +1525,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testHalfScreenNoteDismissesFromUpperBackground() {
-        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            fileTag: true,
+            halfScreenReader: true
+        )
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
         projects.tap()
@@ -1530,6 +1540,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["note-tag-bar"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["#project"].exists)
+        XCTAssertTrue(app.staticTexts["#work"].exists)
         let background = app.otherElements["note-reader-background-dismiss"]
         XCTAssertTrue(background.waitForExistence(timeout: 3))
         background.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
@@ -1538,7 +1551,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testHalfScreenReaderDoubleTapExpandsAndStartsEditing() {
-        let app = launchApp(reset: true, fixtureFolder: true, halfScreenReader: true)
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            fileTag: true,
+            halfScreenReader: true
+        )
         let projects = app.buttons["folder-row-Projects"]
         XCTAssertTrue(projects.waitForExistence(timeout: 8))
         projects.tap()
@@ -1554,7 +1572,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
         rendered.doubleTap()
 
         XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["note-title-editor"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["#project"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["#work"].exists)
         XCTAssertTrue(waitForNonexistence(background))
+
+        app.buttons["save-markdown-button"].tap()
+        XCTAssertTrue(rendered.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            background.waitForExistence(timeout: 5),
+            "Finishing an edit should return the reader to its half-screen detent"
+        )
     }
 
     func testLongPressNoteCanOpenDirectlyInEditMode() {

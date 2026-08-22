@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 265. Title-level metadata tags and consistent iOS reader editing
+- Problem: Tags were still rendered and persisted as ordinary body hashtags, iOS rich editing left an extra visual line between the title and body, finishing an edit kept the reader expanded, and the half-height sheet exposed home controls through its lower corners.
+- Fix: macOS and iOS now treat front-matter tags as the canonical note tags, collect newly completed tag tokens into a dedicated removable tag bar directly below the title, and leave hashtags elsewhere as ordinary text. iOS uses the same separated title, tag, and body hierarchy while reading and editing, hides all front matter, returns to the medium detent after saving, and covers the full lower corner area behind the half-height sheet. Inbox memo tags use a hidden per-memo metadata marker instead of visible body lines.
+- Lesson: Metadata should have one storage boundary and one visual home; embedding it in content creates inconsistent editing, indexing, and cross-platform behavior.
+
 ### 264. Compact iOS sidebar utilities and readable tags
 - Problem: Attachments, Recently Deleted, and a duplicate Settings entry occupied a full Library section in the iPhone folder drawer, while All Tags sat in a separate card above low-contrast chips and made the tag area feel fragmented.
 - Fix: The iOS drawer now keeps Attachments and Recently Deleted as two icon-only actions in one compact row, removes the Library heading and duplicate Settings row, and folds the all-tags destination into the Tags heading. Individual tags use full-width rows with a distinct tag mark, readable names, note counts, chevrons, and a complete tap target.

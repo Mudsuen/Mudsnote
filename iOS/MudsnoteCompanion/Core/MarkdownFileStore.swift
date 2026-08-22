@@ -887,9 +887,11 @@ actor MarkdownFileStore {
                     let item = items.remove(at: index)
                     items.insert(item, at: 0)
                 case .addTag(_, let tag):
-                    let normalizedTag = tag.hasPrefix("#") ? tag : "#\(tag)"
-                    if items[index].body.split(whereSeparator: \.isWhitespace).contains(Substring(normalizedTag)) == false {
-                        items[index].body += items[index].body.isEmpty ? normalizedTag : "\n\n\(normalizedTag)"
+                    if let normalizedTag = MarkdownTagSyntax.normalizedTag(tag),
+                       !items[index].tags.contains(where: {
+                           MarkdownTagSyntax.key($0) == MarkdownTagSyntax.key(normalizedTag)
+                       }) {
+                        items[index].tags.append(normalizedTag)
                     }
                 case .replaceBody(_, let expectedBody, let newBody):
                     guard items[index].body == expectedBody else {

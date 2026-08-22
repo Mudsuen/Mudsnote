@@ -17,7 +17,7 @@ struct QuickCaptureDocumentState {
     }
 
     var tags: [String] {
-        Self.extractedInlineTags(from: normalizedBody)
+        []
     }
 
     var document: MarkdownEditorDocument {
@@ -92,7 +92,7 @@ struct QuickCaptureDocumentState {
     }
 
     static func extractedInlineTags(from text: String) -> [String] {
-        MarkdownEditorDocument.inlineTags(in: text)
+        []
     }
 
 }

@@ -7438,6 +7438,9 @@ final class LibraryWindowController: NSWindowController,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
         )
+        editorTextView.setMetadataTags(tags) { [weak self] tag in
+            self?.removeSelectedMetadataTag(tag)
+        }
         editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
         let requestedSelection = preservedSelection ?? NSRange(location: 0, length: 0)
         let contentLength = editorTextView.textStorage?.length ?? 0
@@ -7496,6 +7499,9 @@ final class LibraryWindowController: NSWindowController,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
         )
+        editorTextView.setMetadataTags(selectedTags) { [weak self] tag in
+            self?.removeSelectedMetadataTag(tag)
+        }
         suppressEditorChanges = false
         let contentLength = editorTextView.textStorage?.length ?? 0
         editorTextView.setSelectedRange(NSRange(location: min(selection.location, contentLength), length: 0))
@@ -12532,6 +12538,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func markdownTextViewInsertNewline(_ textView: MarkdownTextView) {
+        if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "\n") { return }
         guard handleStructuredNewline() else {
             textView.insertNewlineIgnoringFieldEditor(self)
             updateTypingAttributesFromInsertionPoint()
@@ -12540,7 +12547,59 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool {
-        false
+        guard text == " " || text == "\t" else { return false }
+        return commitSelectedMetadataTagIfNeeded(insertingTrailingText: text)
+    }
+
+    private func commitSelectedMetadataTagIfNeeded(
+        insertingTrailingText trailingText: String
+    ) -> Bool {
+        let selection = editorTextView.selectedRange()
+        guard selection.length == 0 else { return false }
+        let source = editorTextView.string as NSString
+        let caret = min(selection.location, source.length)
+        let paragraph = source.paragraphRange(
+            for: NSRange(location: caret, length: 0)
+        )
+        let prefix = source.substring(with: NSRange(
+            location: paragraph.location,
+            length: max(0, caret - paragraph.location)
+        ))
+        guard let match = prefix.range(
+            of: #"(^|\s)#([^\s#]+)$"#,
+            options: .regularExpression
+        ) else { return false }
+        let token = String(prefix[match]).trimmingCharacters(in: .whitespaces)
+        let tag = String(token.dropFirst())
+        guard !tag.isEmpty, !tag.contains("/") else { return false }
+        let leadingWhitespace = String(prefix[match]).hasPrefix(" ") ? 1 : 0
+        let range = NSRange(
+            location: paragraph.location
+                + prefix.distance(from: prefix.startIndex, to: match.lowerBound)
+                + leadingWhitespace,
+            length: token.utf16.count
+        )
+        editorTextView.textStorage?.replaceCharacters(in: range, with: trailingText)
+        editorTextView.setSelectedRange(NSRange(
+            location: range.location + trailingText.utf16.count,
+            length: 0
+        ))
+        selectedTags = MarkdownEditorDocument.normalizedTags(selectedTags + [tag])
+        editorTextView.setMetadataTags(selectedTags) { [weak self] removed in
+            self?.removeSelectedMetadataTag(removed)
+        }
+        markDirty()
+        return true
+    }
+
+    private func removeSelectedMetadataTag(_ tag: String) {
+        selectedTags.removeAll {
+            $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
+        }
+        editorTextView.setMetadataTags(selectedTags) { [weak self] removed in
+            self?.removeSelectedMetadataTag(removed)
+        }
+        markDirty()
     }
 
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {

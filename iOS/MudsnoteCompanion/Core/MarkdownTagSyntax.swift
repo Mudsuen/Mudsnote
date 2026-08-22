@@ -30,28 +30,19 @@ enum MarkdownTagSyntax {
     }
 
     static func tags(in markdown: String) -> [String] {
-        var seen = Set<String>()
-        var tags: [String] = []
-        forVisibleLine(in: markdown) { line in
-            for match in visibleTagMatches(in: line) {
-                let tag = (line as NSString).substring(with: match.range)
-                if seen.insert(key(tag)).inserted {
-                    tags.append(tag)
-                }
-            }
-        }
-        return tags.sorted {
+        normalizedTags(frontMatterTags(in: markdown)).sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
     }
 
     static func adding(_ input: String, to markdown: String) -> String? {
         guard let tag = normalizedTag(input) else { return nil }
-        if tags(in: markdown).contains(where: { key($0) == key(tag) }) {
+        var updatedTags = tags(in: markdown)
+        if updatedTags.contains(where: { key($0) == key(tag) }) {
             return markdown
         }
-        let body = markdown.trimmingCharacters(in: .newlines)
-        return body.isEmpty ? "\(tag)\n" : "\(body)\n\n\(tag)\n"
+        updatedTags.append(tag)
+        return replacingFrontMatterTags(in: markdown, with: updatedTags)
     }
 
     static func rewriting(
@@ -69,41 +60,24 @@ enum MarkdownTagSyntax {
             replacement = nil
         }
 
-        var occurrenceCount = 0
-        let rewritten = mapVisibleLines(in: markdown) { line in
-            let source = line as NSString
-            let matches = visibleTagMatches(in: line).filter {
-                key(source.substring(with: $0.range)) == key(sourceTag)
-            }
-            guard !matches.isEmpty else { return line }
-            occurrenceCount += matches.count
-
-            var output = ""
-            var cursor = 0
-            for match in matches {
-                if match.range.location > cursor {
-                    output += source.substring(
-                        with: NSRange(location: cursor, length: match.range.location - cursor)
-                    )
-                }
-                cursor = NSMaxRange(match.range)
-                if let replacement {
-                    output += replacement
-                } else if cursor < source.length,
-                          isHorizontalWhitespace(source.character(at: cursor)) {
-                    cursor += 1
-                } else if output.last == " " || output.last == "\t" {
-                    output.removeLast()
-                }
-            }
-            if cursor < source.length {
-                output += source.substring(
-                    with: NSRange(location: cursor, length: source.length - cursor)
-                )
-            }
-            return output
+        let existing = tags(in: markdown)
+        let matching = existing.filter { key($0) == key(sourceTag) }
+        let updated = existing.compactMap { tag -> String? in
+            guard key(tag) == key(sourceTag) else { return tag }
+            return replacement
         }
-        return MarkdownTagRewrite(markdown: rewritten, occurrenceCount: occurrenceCount)
+        let frontMatterRewritten = matching.isEmpty
+            ? markdown
+            : replacingFrontMatterTags(in: markdown, with: updated)
+        let markerRewrite = rewritingMemoTagMarkers(
+            in: frontMatterRewritten,
+            sourceTag: sourceTag,
+            replacement: replacement
+        )
+        return MarkdownTagRewrite(
+            markdown: markerRewrite.markdown,
+            occurrenceCount: matching.count + markerRewrite.count
+        )
     }
 
     static func key(_ tag: String) -> String {
@@ -111,6 +85,114 @@ enum MarkdownTagSyntax {
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: .current
         )
+    }
+
+    private static func normalizedTags(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.compactMap(normalizedTag).filter {
+            seen.insert(key($0)).inserted
+        }
+    }
+
+    private static func frontMatterTags(in markdown: String) -> [String] {
+        let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+              let closing = lines.indices.dropFirst().first(where: {
+                  let marker = lines[$0].trimmingCharacters(in: .whitespaces)
+                  return marker == "---" || marker == "..."
+              })
+        else { return [] }
+        let metadata = Array(lines[1..<closing])
+        guard let tagLine = metadata.firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("tags:")
+        }) else { return [] }
+        let line = metadata[tagLine]
+        let value = line.drop(while: { $0 != ":" }).dropFirst()
+            .trimmingCharacters(in: .whitespaces)
+        if value.hasPrefix("["), value.hasSuffix("]") {
+            return value.dropFirst().dropLast().split(separator: ",").map {
+                String($0).trimmingCharacters(in: CharacterSet.whitespaces.union(
+                    CharacterSet(charactersIn: "\"'")
+                ))
+            }
+        }
+        var values: [String] = []
+        for candidate in metadata.dropFirst(tagLine + 1) {
+            let trimmed = candidate.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("- ") else { break }
+            values.append(String(trimmed.dropFirst(2)))
+        }
+        return values
+    }
+
+    private static func replacingFrontMatterTags(
+        in markdown: String,
+        with tags: [String]
+    ) -> String {
+        let normalizedMarkdown = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        var lines = normalizedMarkdown.components(separatedBy: "\n")
+        let normalized = normalizedTags(tags)
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+           let closing = lines.indices.dropFirst().first(where: {
+               let marker = lines[$0].trimmingCharacters(in: .whitespaces)
+               return marker == "---" || marker == "..."
+           }) {
+            var metadata = Array(lines[1..<closing])
+            if let start = metadata.firstIndex(where: {
+                $0.trimmingCharacters(in: .whitespaces).hasPrefix("tags:")
+            }) {
+                var end = start + 1
+                while end < metadata.count,
+                      metadata[end].trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
+                    end += 1
+                }
+                metadata.removeSubrange(start..<end)
+                if !normalized.isEmpty {
+                    metadata.insert(contentsOf: tagLines(normalized), at: start)
+                }
+            } else if !normalized.isEmpty {
+                metadata.append(contentsOf: tagLines(normalized))
+            }
+            lines.replaceSubrange(1..<closing, with: metadata)
+            return lines.joined(separator: "\n")
+        }
+        guard !normalized.isEmpty else { return normalizedMarkdown }
+        return "---\n\(tagLines(normalized).joined(separator: "\n"))\n---\n\n\(normalizedMarkdown)"
+    }
+
+    private static func tagLines(_ tags: [String]) -> [String] {
+        ["tags:"] + tags.map { "  - \($0)" }
+    }
+
+    private static func rewritingMemoTagMarkers(
+        in markdown: String,
+        sourceTag: String,
+        replacement: String?
+    ) -> (markdown: String, count: Int) {
+        let prefix = "<!-- mudsnote-tags:"
+        var count = 0
+        let lines = markdown.components(separatedBy: "\n").map { line -> String in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix(prefix), trimmed.hasSuffix("-->") else {
+                return line
+            }
+            let values = trimmed.dropFirst(prefix.count).dropLast(3)
+                .split(separator: ",")
+                .compactMap { normalizedTag(String($0)) }
+            var lineCount = 0
+            let updated = values.compactMap { tag -> String? in
+                guard key(tag) == key(sourceTag) else { return tag }
+                count += 1
+                lineCount += 1
+                return replacement
+            }
+            guard lineCount > 0 else { return line }
+            let indentation = line.prefix { $0 == " " || $0 == "\t" }
+            guard !updated.isEmpty else { return "" }
+            return "\(indentation)\(prefix) \(updated.joined(separator: ", ")) -->"
+        }
+        return (lines.joined(separator: "\n"), count)
     }
 
     private static func mapVisibleLines(

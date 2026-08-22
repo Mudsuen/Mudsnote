@@ -596,6 +596,7 @@ extension EditorWindowController {
                 let note = try noteStore.loadNoteDocument(at: fileURL)
                 title = note.title
                 body = note.body
+                activeTags = note.tags
                 sourceContentsAtLoad = note.sourceContents
                 isDirty = false
             } catch {
@@ -607,6 +608,7 @@ extension EditorWindowController {
 
         if let draft = noteStore.loadDraft(id: currentDraftID) {
             applyInitialContent(title: draft.title, body: draft.body)
+            activeTags = draft.tags
             selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
             isDirty = true
             statusLabel.stringValue = "已恢复"

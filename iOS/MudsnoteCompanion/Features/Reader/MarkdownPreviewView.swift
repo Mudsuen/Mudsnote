@@ -50,6 +50,36 @@ struct MarkdownFrontMatterProjection: Equatable {
     }
 }
 
+struct MarkdownTitleBodyProjection: Equatable {
+    var title: String?
+    var body: String
+
+    init(_ markdown: String) {
+        var lines = markdown.components(separatedBy: "\n")
+        guard let titleIndex = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }), lines[titleIndex].hasPrefix("# "), !lines[titleIndex].hasPrefix("## ")
+        else {
+            title = nil
+            body = markdown
+            return
+        }
+        title = String(lines[titleIndex].dropFirst(2))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.remove(at: titleIndex)
+        while lines.first?.isEmpty == true { lines.removeFirst() }
+        body = lines.joined(separator: "\n")
+    }
+
+    func replacing(title: String?, body updatedBody: String) -> String {
+        let trimmedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedBody = updatedBody.trimmingCharacters(in: .newlines)
+        guard !trimmedTitle.isEmpty else { return trimmedBody }
+        guard !trimmedBody.isEmpty else { return "# \(trimmedTitle)\n" }
+        return "# \(trimmedTitle)\n\n\(trimmedBody)"
+    }
+}
+
 struct MarkdownNoteMentionDraft: Equatable {
     var query: String
     var replacementRange: NSRange
@@ -189,7 +219,6 @@ struct MarkdownPreviewView: View {
     @State private var includesAttachmentsInFind = false
     @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
     @State private var isLoadingFindAttachments = false
-    @State private var showsFrontMatter = false
     @State private var linkedSourceHistory: [Source] = []
     @State private var exportedPDF: ExportedNotePDF?
     @State private var isExportingPDF = false
@@ -230,11 +259,12 @@ struct MarkdownPreviewView: View {
         NavigationStack {
             Group {
                 if isEditing {
-                    VStack(alignment: .leading, spacing: 12) {
-                        metadataLabel
+                    VStack(alignment: .leading, spacing: 0) {
+                        noteHeader(isEditing: true, showsMetadata: true)
+                            .padding(.bottom, 8)
                         ZStack(alignment: .bottomLeading) {
                             MarkdownTextEditor(
-                                text: editableMarkdown,
+                                text: editableBodyMarkdown,
                                 isFocused: $editorFocused,
                                 command: $editingCommand,
                                 linkDraft: $linkDraft,
@@ -261,17 +291,21 @@ struct MarkdownPreviewView: View {
                         metadataLabel
                             .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
                             .padding(.top, MudsnoteSpacing.safeHorizontal)
-                            .padding(.bottom, 18)
+                            .padding(.bottom, 8)
 
                         ScrollViewReader { proxy in
                             ScrollView {
-                                markdownBody
-                                    .environment(\.openURL, OpenURLAction { url in
-                                        handleMarkdownURL(url)
-                                    })
-                                    .accessibilityElement(children: .contain)
-                                    .accessibilityIdentifier("rendered-markdown")
+                                VStack(alignment: .leading, spacing: 12) {
+                                    noteHeader(isEditing: false, showsMetadata: false)
+                                    markdownBody
+                                        .environment(\.openURL, OpenURLAction { url in
+                                            handleMarkdownURL(url)
+                                        })
+                                        .accessibilityElement(children: .contain)
+                                        .accessibilityIdentifier("rendered-markdown")
+                                }
                                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                                    .padding(.top, MudsnoteSpacing.safeHorizontal)
                                     .padding(.bottom, MudsnoteSpacing.safeHorizontal)
                             }
                             .onChange(of: findQuery) { _, _ in
@@ -659,17 +693,91 @@ struct MarkdownPreviewView: View {
         MarkdownFrontMatterProjection(draftMarkdown)
     }
 
-    private var editableMarkdown: Binding<String> {
+    private var titleBodyProjection: MarkdownTitleBodyProjection {
+        MarkdownTitleBodyProjection(frontMatterProjection.body)
+    }
+
+    private var editableBodyMarkdown: Binding<String> {
         Binding(
-            get: { frontMatterProjection.body },
+            get: { titleBodyProjection.body },
             set: { updated in
-                draftMarkdown = frontMatterProjection.replacingBody(with: updated)
+                let body = titleBodyProjection.replacing(
+                    title: titleBodyProjection.title,
+                    body: updated
+                )
+                draftMarkdown = frontMatterProjection.replacingBody(with: body)
+            }
+        )
+    }
+
+    private var editableTitle: Binding<String> {
+        Binding(
+            get: { titleBodyProjection.title ?? "" },
+            set: { updated in
+                let body = titleBodyProjection.replacing(
+                    title: updated,
+                    body: titleBodyProjection.body
+                )
+                draftMarkdown = frontMatterProjection.replacingBody(with: body)
             }
         )
     }
 
     private var renderedMarkdown: String {
-        showsFrontMatter ? draftMarkdown : frontMatterProjection.body
+        titleBodyProjection.body
+    }
+
+    private var noteTags: [String] {
+        switch source {
+        case .memo(let memo): memo.tags
+        case .document: MarkdownTagSyntax.tags(in: draftMarkdown)
+        }
+    }
+
+    @ViewBuilder
+    private func noteHeader(isEditing: Bool, showsMetadata: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showsMetadata {
+                metadataLabel
+            }
+
+            if titleBodyProjection.title != nil {
+                if isEditing {
+                    TextField("Title", text: editableTitle, axis: .vertical)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .textFieldStyle(.plain)
+                        .accessibilityIdentifier("note-title-editor")
+                } else {
+                    Text(titleBodyProjection.title ?? "")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(MudsnoteColors.text)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("note-title")
+                }
+            }
+
+            if !noteTags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(noteTags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.primary)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(
+                                    MudsnoteColors.primary.opacity(0.13),
+                                    in: Capsule()
+                                )
+                        }
+                    }
+                }
+                .frame(height: 28)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("note-tag-bar")
+            }
+        }
     }
 
     private func rankedMentionNotes(for query: String) -> [RecentMarkdownFile] {
@@ -1015,18 +1123,6 @@ struct MarkdownPreviewView: View {
         }
         .disabled(draftMarkdown.isEmpty)
         .accessibilityIdentifier("copy-note")
-
-        if frontMatterProjection.metadata != nil {
-            Button {
-                showsFrontMatter.toggle()
-            } label: {
-                Label(
-                    showsFrontMatter ? "Hide Metadata" : "Show Metadata",
-                    systemImage: showsFrontMatter ? "eye.slash" : "eye"
-                )
-            }
-            .accessibilityIdentifier("toggle-note-metadata")
-        }
 
         if case .document(let document) = source {
             Button {
