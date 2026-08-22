@@ -1393,7 +1393,7 @@ struct LibraryHomeView: View {
 
     @ViewBuilder
     private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
                 notesCard {
                     Button(action: selectAllNotes) {
@@ -1429,37 +1429,36 @@ struct LibraryHomeView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                NotesSectionHeader(title: String(localized: "Library"))
-
-                notesCard {
+            notesCard {
+                HStack(spacing: 0) {
                     NavigationLink {
                         AttachmentLibraryView()
                     } label: {
-                        NotesFolderRow(title: String(localized: "Attachments"), systemImage: "paperclip", count: appModel.librarySummary.attachmentCount)
+                        LibraryUtilityButton(
+                            systemImage: "paperclip",
+                            count: appModel.librarySummary.attachmentCount
+                        )
                     }
+                    .accessibilityLabel("Attachments")
+                    .accessibilityValue("\(appModel.librarySummary.attachmentCount)")
                     .accessibilityIdentifier("attachments-link")
+
+                    Rectangle()
+                        .fill(NotesCloneColors.separator)
+                        .frame(width: 1, height: 30)
+                        .accessibilityHidden(true)
 
                     NavigationLink {
                         RecentlyDeletedView()
                     } label: {
-                        NotesFolderRow(
-                            title: String(localized: "Recently Deleted"),
+                        LibraryUtilityButton(
                             systemImage: "trash",
                             count: appModel.librarySummary.recentlyDeletedCount
                         )
                     }
+                    .accessibilityLabel("Recently Deleted")
+                    .accessibilityValue("\(appModel.librarySummary.recentlyDeletedCount)")
                     .accessibilityIdentifier("recently-deleted-link")
-
-                    NavigationLink {
-                        SettingsRulesView(chooseFolder: chooseFolder)
-                    } label: {
-                        NotesFolderRow(
-                            title: String(localized: "Settings"),
-                            systemImage: "gearshape"
-                        )
-                    }
-                    .accessibilityIdentifier("settings-link")
                 }
             }
         }
@@ -1557,40 +1556,45 @@ struct LibraryHomeView: View {
     @ViewBuilder
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            NotesSectionHeader(title: String(localized: "Tags"))
-            NavigationLink {
-                TagsBrowserView()
-            } label: {
-                NotesFolderRow(
-                    title: String(localized: "All Tags"),
-                    systemImage: "number",
-                    count: appModel.tagSummaries.count
-                )
-            }
-            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
-            .overlay {
-                RoundedRectangle(cornerRadius: MudsnoteRadius.card)
-                    .stroke(MudsnoteColors.line, lineWidth: 1)
-            }
-            .accessibilityIdentifier("all-tags-link")
+            HStack(spacing: 8) {
+                Text(String(localized: "Tags"))
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .foregroundStyle(MudsnoteColors.text)
 
-            FlowLayout(spacing: 10, rowSpacing: 10) {
+                Spacer()
+
+                NavigationLink {
+                    TagsBrowserView()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("\(appModel.tagSummaries.count)")
+                            .font(.system(.subheadline, design: .rounded))
+                            .monospacedDigit()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(MudsnoteColors.muted)
+                    .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("All Tags")
+                .accessibilityValue("\(appModel.tagSummaries.count)")
+                .accessibilityIdentifier("all-tags-link")
+            }
+            .padding(.horizontal, 2)
+
+            notesCard {
                 ForEach(appModel.tagSummaries) { tag in
                     NavigationLink {
                         TagNotesListView(tag: tag.name)
                     } label: {
-                        TagChip(title: tag.name)
+                        TagDirectoryRow(tag: tag)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(tag.name)
+                    .accessibilityValue("\(tag.count)")
                     .accessibilityIdentifier("tag-link-\(tag.name)")
                 }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
-            .overlay {
-                RoundedRectangle(cornerRadius: MudsnoteRadius.card)
-                    .stroke(MudsnoteColors.line, lineWidth: 1)
             }
         }
     }
@@ -4839,6 +4843,86 @@ struct NotesFolderRow: View {
                 .fill(NotesCloneColors.separator)
                 .frame(height: 1)
                 .padding(.leading, 72 + indentation)
+        }
+    }
+}
+
+struct LibraryUtilityButton: View {
+    var systemImage: String
+    var count: Int
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(systemName: systemImage)
+                .font(.system(size: 21, weight: .semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(MudsnoteColors.text)
+                .frame(width: 38, height: 38)
+                .background(
+                    MudsnoteColors.text.opacity(0.07),
+                    in: RoundedRectangle(cornerRadius: 11)
+                )
+
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(MudsnoteColors.canvas)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(MudsnoteColors.text, in: Capsule())
+                    .offset(x: 6, y: -5)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 58)
+        .contentShape(Rectangle())
+    }
+}
+
+struct TagDirectoryRow: View {
+    var tag: TagSummary
+
+    private var displayName: String {
+        tag.name.hasPrefix("#") ? String(tag.name.dropFirst()) : tag.name
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "number")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(NotesCloneColors.folderYellow)
+                .frame(width: 34, height: 34)
+                .background(
+                    NotesCloneColors.folderYellow.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+
+            Text(displayName)
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .foregroundStyle(MudsnoteColors.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text("\(tag.count)")
+                .font(.system(.subheadline, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(MudsnoteColors.muted)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(MudsnoteColors.muted.opacity(0.7))
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 54)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(NotesCloneColors.separator)
+                .frame(height: 1)
+                .padding(.leading, 48)
         }
     }
 }

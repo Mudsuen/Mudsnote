@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 264. Compact iOS sidebar utilities and readable tags
+- Problem: Attachments, Recently Deleted, and a duplicate Settings entry occupied a full Library section in the iPhone folder drawer, while All Tags sat in a separate card above low-contrast chips and made the tag area feel fragmented.
+- Fix: The iOS drawer now keeps Attachments and Recently Deleted as two icon-only actions in one compact row, removes the Library heading and duplicate Settings row, and folds the all-tags destination into the Tags heading. Individual tags use full-width rows with a distinct tag mark, readable names, note counts, chevrons, and a complete tap target.
+- Lesson: Secondary library tools should stay compact, while frequently scanned metadata benefits from one continuous hierarchy instead of separate summary and content cards.
+
 ### 263. Canonical pin metadata for overlapping library roots
 - Problem: macOS could configure both a library folder and one of its descendants, then write pins into the descendant's `.mudsnote/pins.json`. iOS reading the outer library saw only the outer pin file, so macOS displayed more pinned notes than iOS.
 - Fix: Shared pin reads now consolidate descendant pin files into the outermost configured library root, rewrite their paths relative to that root, and clear the migrated descendant list only after the outer write succeeds. Future pin and unpin operations also choose the outermost owning root.

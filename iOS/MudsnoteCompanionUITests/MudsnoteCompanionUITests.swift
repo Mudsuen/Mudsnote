@@ -199,12 +199,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["#project"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Notes"].exists)
-        XCTAssertTrue(app.staticTexts["Quick Notes"].exists)
         XCTAssertTrue(
             app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.staticTexts["Tagged quick capture #project #quick"].exists)
+        XCTAssertTrue(
+            app.buttons["markdown-file-row-Inbox.md"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     func testAllTagsBrowserCombinesAndExcludesTags() {
@@ -215,9 +217,9 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["All Tags"].waitForExistence(timeout: 5))
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        let quickNote = app.staticTexts["Tagged quick capture #project #quick"]
+        let quickNote = app.buttons["markdown-file-row-Inbox.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
-        XCTAssertTrue(quickNote.exists)
+        XCTAssertTrue(quickNote.waitForExistence(timeout: 5))
 
         let work = app.buttons["tag-filter-#work"]
         XCTAssertTrue(work.exists)
@@ -276,7 +278,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let renamed = app.buttons["tag-filter-#project-client"]
         XCTAssertTrue(renamed.waitForExistence(timeout: 8))
         XCTAssertTrue(waitForNonexistence(project))
-        XCTAssertTrue(app.staticTexts["Tagged quick capture #project-client #quick"].exists)
+        XCTAssertTrue(app.buttons["markdown-file-row-Inbox.md"].exists)
 
         let quick = app.buttons["tag-filter-#quick"]
         quick.press(forDuration: 1)
@@ -291,9 +293,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         app.buttons["Remove Tag"].tap()
 
         XCTAssertTrue(waitForNonexistence(quick))
-        XCTAssertTrue(
-            app.staticTexts["Tagged quick capture #project-client"].waitForExistence(timeout: 8)
-        )
+        XCTAssertTrue(app.buttons["markdown-file-row-Inbox.md"].waitForExistence(timeout: 8))
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Notes-style tag rename and delete"
@@ -934,7 +934,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Project Notes"].waitForExistence(timeout: 5))
         let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        let quickNote = app.staticTexts["Tagged quick capture #project #quick"]
+        let quickNote = app.buttons["markdown-file-row-Inbox.md"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         XCTAssertTrue(quickNote.exists)
 
@@ -2316,8 +2316,17 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(projectsFolder.waitForExistence(timeout: 8))
         XCTAssertTrue(projectsFolder.isHittable)
         XCTAssertTrue(app.staticTexts["Folders"].exists)
-        XCTAssertTrue(app.staticTexts["Library"].exists)
-        XCTAssertTrue(app.buttons["settings-link"].exists)
+        XCTAssertFalse(app.staticTexts["Library"].exists)
+        XCTAssertTrue(app.buttons["sidebar-settings-button"].exists)
+
+        let attachments = app.buttons["attachments-link"]
+        let recentlyDeleted = app.buttons["recently-deleted-link"]
+        XCTAssertTrue(attachments.exists)
+        XCTAssertTrue(recentlyDeleted.exists)
+        XCTAssertEqual(attachments.frame.midY, recentlyDeleted.frame.midY, accuracy: 2)
+        XCTAssertFalse(app.staticTexts["Attachments"].exists)
+        XCTAssertFalse(app.staticTexts["Recently Deleted"].exists)
+        XCTAssertFalse(app.staticTexts["All Tags"].exists)
 
         let projectsCount = app.staticTexts["folder-count-Projects"]
         XCTAssertFalse(app.buttons["folder-row-000-inbox"].exists)
