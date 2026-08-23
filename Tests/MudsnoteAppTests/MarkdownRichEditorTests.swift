@@ -4836,21 +4836,25 @@ struct MarkdownRichEditorTests {
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
         #expect(rootCell.accessibilityPerformPress())
-        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
         let originalSourceBackground = NSColor(calibratedWhite: 0.16, alpha: 0.86)
+        let originalSourceHover = LibrarySourceOutlineRowView.hoverColor
         let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
         store.themeColorIdentifier = MudsnoteThemeColor.teal.rawValue
         controller.refreshThemeColorForLibrary()
-        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(rootCell.textField?.textColor == MudsnoteThemeColor.teal.foregroundColor)
         #expect(rootCell.countLabel.textColor == originalCountColor)
         #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
+        #expect(LibrarySourceOutlineRowView.hoverColor == originalSourceHover)
         #expect(LibraryNoteRowView.selectionFillColor == MudsnoteThemeColor.teal.noteSelectionColor)
 
         store.themeColorIdentifier = MudsnoteThemeColor.classicYellow.rawValue
         controller.refreshThemeColorForLibrary()
-        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
+        #expect(rootCell.textField?.textColor == MudsnoteThemeColor.classicYellow.foregroundColor)
         #expect(rootCell.countLabel.textColor == originalCountColor)
         #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
+        #expect(LibrarySourceOutlineRowView.hoverColor == originalSourceHover)
+        #expect(LibraryNoteRowView.selectionFillColor == MudsnoteThemeColor.classicYellow.noteSelectionColor)
 
         let rootMenu = try #require(controller.sourceContextMenuForLibrary(row: rootRow))
         let iconMenu = try #require(rootMenu.items.first { $0.title == "更改图标" }?.submenu)

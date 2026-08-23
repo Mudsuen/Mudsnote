@@ -4911,6 +4911,7 @@ final class LibraryWindowController: NSWindowController,
         for item: LibrarySourceOutlineItem
     ) {
         guard let scope = item.scope else { return }
+        let themeColor = selectedThemeColor
         let title = sourceTitle(for: scope)
         let row = sourceOutlineView.row(forItem: item)
         let isSelected = isSourceOutlineItemVisuallySelected(item)
@@ -4926,10 +4927,10 @@ final class LibraryWindowController: NSWindowController,
                 : LibraryNotesLayout.sourceUnselectedButtonFontWeight
         )
         cell.textField?.textColor = isSelected
-            ? LibrarySourceSelectionPalette.foregroundColor
+            ? themeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
         let foregroundColor = isSelected
-            ? LibrarySourceSelectionPalette.foregroundColor
+            ? themeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
         let sourceImageConfiguration = NSImage.SymbolConfiguration(
             pointSize: LibraryNotesLayout.sourceSymbolPointSize,
