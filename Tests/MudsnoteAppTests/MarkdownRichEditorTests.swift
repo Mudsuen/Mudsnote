@@ -2579,7 +2579,7 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.export"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.more"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.search"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.save"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.move"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.delete"))
@@ -2600,9 +2600,8 @@ struct MarkdownRichEditorTests {
         ))
         #expect(defaultToolbarItems[defaultNewNoteIndex + 1] == .space)
         #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.editor-tools")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.reveal")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 4] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 5] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
             "mudsnote.library.toolbar.toggle-sidebar"
@@ -2725,19 +2724,7 @@ struct MarkdownRichEditorTests {
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
-        let visibleToolbarItemValues = try #require(window.toolbar?.visibleItems).map(\.itemIdentifier.rawValue)
-        let visibleEditorToolsIndex = try #require(visibleToolbarItemValues.firstIndex(
-            of: "mudsnote.library.toolbar.editor-tools"
-        ))
-        #expect(visibleToolbarItemValues[visibleEditorToolsIndex + 1] == "mudsnote.library.toolbar.reveal")
-        let revealToolbarItem = try #require(window.toolbar?.visibleItems?.first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.reveal"
-        })
-        #expect(revealToolbarItem.label == "打开文件位置")
-        #expect(revealToolbarItem.toolTip == "打开文件位置")
-        #expect(revealToolbarItem.target === controller)
-        #expect(revealToolbarItem.action != nil)
-        #expect(revealToolbarItem.isEnabled)
+        #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
         let noteListTitleToolbarItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.note-list-title"
         })
@@ -2767,9 +2754,10 @@ struct MarkdownRichEditorTests {
         let editorToolsSlot = try #require(editorToolsItem.view)
         #expect(editorToolsSlot.identifier?.rawValue == "LibraryToolbarEditorToolsSlot")
         #expect(editorToolsSlot.frame.width == LibraryNotesLayout.toolbarEditorToolsSlotWidth)
-        #expect(LibraryNotesLayout.toolbarEditorToolsSlotWidth == 131)
+        #expect(LibraryNotesLayout.toolbarEditorToolsSlotWidth == 162)
         let editorToolsGlass = try #require(editorToolsSlot.allSubviews.compactMap { $0 as? NSGlassEffectView }.first)
         #expect(editorToolsGlass.frame.width == LibraryNotesLayout.toolbarEditorToolsWidth)
+        #expect(LibraryNotesLayout.toolbarEditorToolsWidth == 155)
         #expect(editorToolsGlass.frame.height == LibraryNotesLayout.toolbarEditorToolsHeight)
         #expect(editorToolsGlass.cornerRadius == LibraryNotesLayout.toolbarEditorToolsHeight / 2)
         #expect(editorToolsGlass.style == .regular)
@@ -2778,12 +2766,21 @@ struct MarkdownRichEditorTests {
             "mudsnote.library.toolbar.format",
             "mudsnote.library.toolbar.checklist",
             "mudsnote.library.toolbar.link",
-            "mudsnote.library.toolbar.source-mode"
+            "mudsnote.library.toolbar.source-mode",
+            "mudsnote.library.toolbar.reveal"
         ])
-        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set(["格式", "待办列表", "插入链接", "显示 Markdown 源码"]))
+        #expect(Set(editorToolButtons.compactMap(\.toolTip)) == Set([
+            "格式", "待办列表", "插入链接", "显示 Markdown 源码", "打开文件位置"
+        ]))
         #expect(editorToolButtons.allSatisfy { $0.bezelStyle == .toolbar })
         #expect(editorToolButtons.allSatisfy { $0.isBordered })
         #expect(editorToolButtons.allSatisfy { $0.showsBorderOnlyWhileMouseInside })
+        let revealButton = try #require(editorToolButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.reveal"
+        })
+        #expect(revealButton.target === controller)
+        #expect(revealButton.action != nil)
+        #expect(revealButton.isEnabled)
         let formatButton = try #require(editorToolButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.format"
         })
@@ -5034,13 +5031,19 @@ struct MarkdownRichEditorTests {
 
         #expect(!selectedController.validateToolbarItem(formatItem))
         #expect(!selectedController.validateToolbarItem(checklistItem))
-        #expect(!selectedController.validateToolbarItem(editorToolsItem))
+        #expect(selectedController.validateToolbarItem(editorToolsItem))
         #expect(!selectedController.validateToolbarItem(saveItem))
         #expect(!selectedController.validateToolbarItem(exportItem))
         #expect(selectedController.validateToolbarItem(moreItem))
         #expect(selectedController.validateToolbarItem(deleteItem))
         #expect(selectedController.validateToolbarItem(restoreItem))
-        #expect(try visibleEditorToolButtons(in: selectedController).allSatisfy { !$0.isEnabled })
+        let trashEditorToolButtons = try visibleEditorToolButtons(in: selectedController)
+        #expect(trashEditorToolButtons.first {
+            $0.identifier?.rawValue == "mudsnote.library.toolbar.reveal"
+        }?.isEnabled == true)
+        #expect(trashEditorToolButtons.filter {
+            $0.identifier?.rawValue != "mudsnote.library.toolbar.reveal"
+        }.allSatisfy { !$0.isEnabled })
         let trashMoreMenu = selectedController.makeMoreActionsMenuForLibrary()
         #expect(trashMoreMenu.items.first { $0.title == "保存" }?.isEnabled == false)
         #expect(trashMoreMenu.items.first { $0.title == "分享..." } == nil)
@@ -5221,7 +5224,7 @@ struct MarkdownRichEditorTests {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
         }?.view)
         let editorToolButtons = editorToolsView.allSubviews.compactMap { $0 as? NSButton }
-        #expect(editorToolButtons.count == 4)
+        #expect(editorToolButtons.count == 5)
         let sourceModeButton = try #require(editorToolButtons.first {
             $0.identifier?.rawValue == "mudsnote.library.toolbar.source-mode"
         })

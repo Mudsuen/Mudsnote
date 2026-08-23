@@ -2739,7 +2739,6 @@ final class LibraryWindowController: NSWindowController,
             Self.newNoteToolbarItemIdentifier,
             .space,
             Self.editorToolsToolbarItemIdentifier,
-            Self.revealToolbarItemIdentifier,
             .flexibleSpace,
             Self.searchToolbarItemIdentifier
         ]
@@ -2966,8 +2965,9 @@ final class LibraryWindowController: NSWindowController,
             return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:
             return canUseSingleSelectedNote
-        case Self.editorToolsToolbarItemIdentifier,
-             Self.formatToolbarItemIdentifier,
+        case Self.editorToolsToolbarItemIdentifier:
+            return canEditCurrentDocument || canUseSelectedNote
+        case Self.formatToolbarItemIdentifier,
              Self.checklistToolbarItemIdentifier,
              Self.linkToolbarItemIdentifier,
              Self.sourceModeToolbarItemIdentifier:
@@ -3112,6 +3112,12 @@ final class LibraryWindowController: NSWindowController,
                 label: "显示 Markdown 源码",
                 symbolName: "chevron.left.forwardslash.chevron.right",
                 action: #selector(toggleEditorSourceModePressed)
+            ),
+            toolbarEditorToolButton(
+                identifier: Self.revealToolbarItemIdentifier,
+                label: "打开文件位置",
+                symbolName: "folder",
+                action: #selector(revealSelectedNoteInFinderPressed)
             )
         ]
         buttons.forEach { stack.addArrangedSubview($0) }
@@ -3137,7 +3143,7 @@ final class LibraryWindowController: NSWindowController,
         ])
 
         item.view = slot
-        setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+        updateEditorToolsToolbarGroupState(in: item)
         return item
     }
 
@@ -9928,7 +9934,7 @@ final class LibraryWindowController: NSWindowController,
                 let label = noteActionTitle(single: "恢复", multiple: "恢复 %d 条笔记", count: selectionCount)
                 updateToolbarItemPresentation(item, label: label, symbolName: "arrow.uturn.backward")
             case Self.editorToolsToolbarItemIdentifier:
-                setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+                updateEditorToolsToolbarGroupState(in: item)
                 updateSourceModeToolbarButton(in: item)
             default:
                 continue
@@ -10030,23 +10036,35 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateVisibleEditorToolsToolbarGroupEnabled() {
         for item in window?.toolbar?.items ?? [] where item.itemIdentifier == Self.editorToolsToolbarItemIdentifier {
-            setEditorToolsToolbarGroupEnabled(canEditCurrentDocument, in: item)
+            updateEditorToolsToolbarGroupState(in: item)
         }
     }
 
-    private func setEditorToolsToolbarGroupEnabled(_ isEnabled: Bool, in item: NSToolbarItem) {
-        item.isEnabled = isEnabled
+    private func updateEditorToolsToolbarGroupState(in item: NSToolbarItem) {
+        let hasEnabledAction = canEditCurrentDocument || canUseSelectedNote
+        item.isEnabled = hasEnabledAction
         guard let view = item.view else { return }
-        view.alphaValue = isEnabled
+        view.alphaValue = hasEnabledAction
             ? LibraryNotesLayout.toolbarEditorToolsEnabledAlpha
             : LibraryNotesLayout.toolbarEditorToolsDisabledAlpha
-        setEditorToolControls(in: view, enabled: isEnabled)
-        if isEnabled, isEditorShowingMarkdownSource {
-            for button in editorToolButtons(in: view) {
-                let isSourceToggle = button.identifier?.rawValue == Self.sourceModeToolbarItemIdentifier.rawValue
-                button.isEnabled = isSourceToggle
-                button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isSourceToggle)
+        for button in editorToolButtons(in: view) {
+            let identifier = button.identifier?.rawValue
+            let isEnabled: Bool
+            if identifier == Self.revealToolbarItemIdentifier.rawValue {
+                isEnabled = canUseSelectedNote
+            } else if identifier == Self.sourceModeToolbarItemIdentifier.rawValue {
+                isEnabled = canEditCurrentDocument
+            } else {
+                isEnabled = canEditCurrentDocument && !isEditorShowingMarkdownSource
             }
+            button.isEnabled = isEnabled
+            button.alphaValue = 1
+            button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isEnabled)
+            updateToolbarEditorTextButtonAppearance(
+                button,
+                isEnabled: isEnabled,
+                isWindowFocused: window?.isKeyWindow == true
+            )
         }
     }
 
@@ -10068,22 +10086,6 @@ final class LibraryWindowController: NSWindowController,
             buttons.append(contentsOf: editorToolButtons(in: subview))
         }
         return buttons
-    }
-
-    private func setEditorToolControls(in view: NSView, enabled isEnabled: Bool) {
-        if let control = view as? NSControl {
-            control.isEnabled = isEnabled
-        }
-        if let button = view as? NSButton {
-            button.alphaValue = 1
-            button.contentTintColor = toolbarEditorToolIconTintColor(isEnabled: isEnabled)
-            updateToolbarEditorTextButtonAppearance(
-                button,
-                isEnabled: isEnabled,
-                isWindowFocused: window?.isKeyWindow == true
-            )
-        }
-        view.subviews.forEach { setEditorToolControls(in: $0, enabled: isEnabled) }
     }
 
     private func updateToolbarEditorTextButtonAppearance(
