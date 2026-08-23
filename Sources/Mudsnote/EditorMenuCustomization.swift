@@ -3,7 +3,6 @@ import MudsnoteCore
 
 enum EditorContextMenuOption: String, CaseIterable {
     case undo
-    case translate
     case cut
     case copy
     case paste
@@ -14,7 +13,6 @@ enum EditorContextMenuOption: String, CaseIterable {
     var title: String {
         switch self {
         case .undo: return "撤销"
-        case .translate: return "翻译"
         case .cut: return "剪切"
         case .copy: return "拷贝"
         case .paste: return "粘贴"

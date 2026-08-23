@@ -1280,7 +1280,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         return containerPoint.x > usedRect.maxX + 1
     }
 
-    func conciseEditingMenu(from nativeMenu: NSMenu) -> NSMenu {
+    func conciseEditingMenu(from _: NSMenu) -> NSMenu {
         let menu = ConciseEditorContextMenu()
         menu.allowsContextMenuPlugIns = false
         let options = contextMenuOptionsProvider?() ?? Set(EditorContextMenuOption.allCases)
@@ -1292,14 +1292,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             undoItem.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
             groups.append([undoItem])
         }
-        if options.contains(.translate), let translationItem = nativeMenu.items.first(where: {
-            let title = $0.title.lowercased()
-            return title.hasPrefix("translate") || title.hasPrefix("翻译")
-        }), let copiedItem = translationItem.copy() as? NSMenuItem {
-            copiedItem.title = "翻译"
-            groups.append([copiedItem])
-        }
-
         let commands: [(EditorContextMenuOption, String, Selector, String)] = [
             (.cut, "剪切", #selector(NSText.cut(_:)), "x"),
             (.copy, "拷贝", #selector(NSText.copy(_:)), "c"),

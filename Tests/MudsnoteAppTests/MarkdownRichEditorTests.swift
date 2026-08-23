@@ -792,7 +792,7 @@ struct MarkdownRichEditorTests {
             pressure: 1
         ))
         libraryController.editorTextView.configureContextMenu?(contextMenu, contextEvent)
-        #expect(contextMenu.items.first?.title == "拷贝")
+        #expect(contextMenu.items.first?.title == "插入")
         #expect(contextMenu.items.last { $0.title == "插入" }?.submenu?.items.map(\.title) == ["链接…"])
     }
 
@@ -1873,7 +1873,7 @@ struct MarkdownRichEditorTests {
 
         let conciseMenu = textView.conciseEditingMenu(from: nativeMenu)
         #expect(!conciseMenu.allowsContextMenuPlugIns)
-        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "剪切", "拷贝", "粘贴"])
         #expect(conciseMenu.items.first?.keyEquivalent == "z")
         #expect(conciseMenu.items.first?.keyEquivalentModifierMask == [.command])
         #expect(conciseMenu.items.first?.image != nil)
@@ -1881,7 +1881,7 @@ struct MarkdownRichEditorTests {
         textView.sealContextMenu(conciseMenu)
         conciseMenu.addItem(NSMenuItem(title: "自动填充", action: nil, keyEquivalent: ""))
         conciseMenu.addItem(NSMenuItem(title: "服务", action: nil, keyEquivalent: ""))
-        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "翻译", "", "剪切", "拷贝", "粘贴"])
+        #expect(conciseMenu.items.map(\.title) == ["撤销", "", "剪切", "拷贝", "粘贴"])
     }
 
     @Test
@@ -2709,6 +2709,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchField.placeholderString == "搜索")
         #expect(toolbarSearchField.toolTip == "搜索笔记")
         #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
+        #expect(toolbarSearchField.focusRingType == .default)
         #expect(LibraryNotesLayout.toolbarSymbolPointSize == 19)
         let toolbarSearchWrapper = try #require(toolbarSearchField.superview)
         #expect(toolbarSearchWrapper.frame.width == LibraryNotesLayout.toolbarSearchWrapperWidth)
@@ -5237,6 +5238,7 @@ struct MarkdownRichEditorTests {
             pressure: 1
         ))
         controller.editorTextView.configureContextMenu?(contextMenu, contextEvent)
+        #expect(contextMenu.items.first?.title == "插入")
         let insertMenu = try #require(contextMenu.items.last { $0.title == "插入" }?.submenu)
         #expect(insertMenu.items.map(\.title) == ["表格", "链接…", "附件…"])
         #expect(insertMenu.items.allSatisfy { $0.image != nil })

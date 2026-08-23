@@ -2682,7 +2682,7 @@ final class LibraryWindowController: NSWindowController,
         searchField.delegate = self
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
-        searchField.focusRingType = .none
+        searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.frame = NSRect(
             x: 0,
@@ -10679,7 +10679,6 @@ final class LibraryWindowController: NSWindowController,
         ]
         let visibleCommands = commands.filter { enabled.contains($0.0) }
         guard !visibleCommands.isEmpty else { return }
-        if !menu.items.isEmpty { menu.addItem(.separator()) }
         let insertItem = NSMenuItem(title: "插入", action: nil, keyEquivalent: "")
         insertItem.image = selectionMenuImage(symbolName: "plus", title: "插入")
         insertItem.isEnabled = canEditCurrentDocument && !isEditorShowingMarkdownSource
@@ -10692,7 +10691,10 @@ final class LibraryWindowController: NSWindowController,
             insertMenu.addItem(item)
         }
         insertItem.submenu = insertMenu
-        menu.addItem(insertItem)
+        if !menu.items.isEmpty {
+            menu.insertItem(.separator(), at: 0)
+        }
+        menu.insertItem(insertItem, at: 0)
     }
 
     private func selectionMenuImage(symbolName: String, title: String) -> NSImage? {
