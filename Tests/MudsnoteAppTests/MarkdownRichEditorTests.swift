@@ -2600,9 +2600,9 @@ struct MarkdownRichEditorTests {
         ))
         #expect(defaultToolbarItems[defaultNewNoteIndex + 1] == .space)
         #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.editor-tools")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 5] == "mudsnote.library.toolbar.reveal")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.reveal")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 4] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 5] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.add-folder",
             "mudsnote.library.toolbar.toggle-sidebar"
@@ -2725,8 +2725,14 @@ struct MarkdownRichEditorTests {
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
-        #expect(window.toolbar?.visibleItems?.last?.itemIdentifier.rawValue == "mudsnote.library.toolbar.reveal")
-        let revealToolbarItem = try #require(window.toolbar?.visibleItems?.last)
+        let visibleToolbarItemValues = try #require(window.toolbar?.visibleItems).map(\.itemIdentifier.rawValue)
+        let visibleEditorToolsIndex = try #require(visibleToolbarItemValues.firstIndex(
+            of: "mudsnote.library.toolbar.editor-tools"
+        ))
+        #expect(visibleToolbarItemValues[visibleEditorToolsIndex + 1] == "mudsnote.library.toolbar.reveal")
+        let revealToolbarItem = try #require(window.toolbar?.visibleItems?.first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.reveal"
+        })
         #expect(revealToolbarItem.label == "打开文件位置")
         #expect(revealToolbarItem.toolTip == "打开文件位置")
         #expect(revealToolbarItem.target === controller)
@@ -4833,24 +4839,19 @@ struct MarkdownRichEditorTests {
             makeIfNecessary: true
         ) as? LibrarySourceOutlineCellView)
         #expect(rootCell.accessibilityPerformPress())
-        #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
+        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
         let originalSourceBackground = NSColor(calibratedWhite: 0.16, alpha: 0.86)
         let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
         store.themeColorIdentifier = MudsnoteThemeColor.teal.rawValue
         controller.refreshThemeColorForLibrary()
-        #expect(rootCell.textField?.textColor == MudsnoteThemeColor.teal.foregroundColor)
+        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(rootCell.countLabel.textColor == originalCountColor)
         #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
         #expect(LibraryNoteRowView.selectionFillColor == MudsnoteThemeColor.teal.noteSelectionColor)
 
         store.themeColorIdentifier = MudsnoteThemeColor.classicYellow.rawValue
         controller.refreshThemeColorForLibrary()
-        #expect(rootCell.textField?.textColor == NSColor(
-            calibratedRed: 1.0,
-            green: 0.72,
-            blue: 0.16,
-            alpha: 1
-        ))
+        #expect(rootCell.textField?.textColor == LibrarySourceSelectionPalette.foregroundColor)
         #expect(rootCell.countLabel.textColor == originalCountColor)
         #expect(LibrarySourceSelectionPalette.backgroundColor == originalSourceBackground)
 
