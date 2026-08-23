@@ -22,10 +22,11 @@ enum LibraryNotesLayout {
     static let noteTableMinimumWidth: CGFloat = 174
     static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
-    static let toolbarSearchWrapperWidth: CGFloat = 160
+    static let toolbarSearchHorizontalFocusRingInset: CGFloat = 4
+    static let toolbarSearchWrapperWidth: CGFloat = toolbarSearchWidth + toolbarSearchHorizontalFocusRingInset * 2
     static let toolbarSearchWrapperHeight: CGFloat = 36
-    static let toolbarEditorToolsWidth: CGFloat = 155
-    static let toolbarEditorToolsSlotWidth: CGFloat = 162
+    static let toolbarEditorToolsWidth: CGFloat = 124
+    static let toolbarEditorToolsSlotWidth: CGFloat = 131
     static let toolbarEditorToolsHeight: CGFloat = 32
     static let toolbarEditorToolButtonWidth: CGFloat = 31
     static let toolbarEditorToolButtonHeight: CGFloat = 26

@@ -1308,9 +1308,9 @@ final class LibraryWindowController: NSWindowController,
     private static let editorToolsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.editor-tools")
     private static let formatToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.format")
     private static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
-    private static let tableToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.table")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
     private static let sourceModeToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-mode")
+    private static let revealToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.reveal")
     private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
     private static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
     private static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
@@ -2740,7 +2740,8 @@ final class LibraryWindowController: NSWindowController,
             .space,
             Self.editorToolsToolbarItemIdentifier,
             .flexibleSpace,
-            Self.searchToolbarItemIdentifier
+            Self.searchToolbarItemIdentifier,
+            Self.revealToolbarItemIdentifier
         ]
     }
 
@@ -2755,7 +2756,6 @@ final class LibraryWindowController: NSWindowController,
             Self.restoreToolbarItemIdentifier,
             Self.formatToolbarItemIdentifier,
             Self.checklistToolbarItemIdentifier,
-            Self.tableToolbarItemIdentifier,
             Self.linkToolbarItemIdentifier,
             Self.sourceModeToolbarItemIdentifier
         ]
@@ -2820,12 +2820,12 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "checklist",
                 action: #selector(checklistPressed)
             )
-        case Self.tableToolbarItemIdentifier:
+        case Self.revealToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
-                label: "插入表格",
-                symbolName: "tablecells",
-                action: #selector(tablePressed)
+                label: "打开文件位置",
+                symbolName: "folder",
+                action: #selector(revealSelectedNoteInFinderPressed)
             )
         case Self.linkToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -2969,10 +2969,11 @@ final class LibraryWindowController: NSWindowController,
         case Self.editorToolsToolbarItemIdentifier,
              Self.formatToolbarItemIdentifier,
              Self.checklistToolbarItemIdentifier,
-             Self.tableToolbarItemIdentifier,
              Self.linkToolbarItemIdentifier,
              Self.sourceModeToolbarItemIdentifier:
             return canEditCurrentDocument
+        case Self.revealToolbarItemIdentifier:
+            return canUseSelectedNote
         case Self.moveToolbarItemIdentifier:
             return canMoveSelectedNote
         case Self.saveToolbarItemIdentifier:
@@ -3099,12 +3100,6 @@ final class LibraryWindowController: NSWindowController,
                 label: "待办列表",
                 symbolName: "checklist",
                 action: #selector(checklistPressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.tableToolbarItemIdentifier,
-                label: "插入表格",
-                symbolName: "tablecells",
-                action: #selector(tablePressed)
             ),
             toolbarEditorToolButton(
                 identifier: Self.linkToolbarItemIdentifier,
