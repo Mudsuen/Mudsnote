@@ -1627,12 +1627,24 @@ final class AppModel: ObservableObject {
         _ memo: MemoBlock,
         body: String,
         expectedBody: String,
+        tags: [String]? = nil,
         announce: Bool = true
     ) async -> MemoBlock? {
         do {
-            try await fileStore.applyInboxMutation(
-                .replaceBody(memoID: memo.id, expectedBody: expectedBody, newBody: body)
-            )
+            if let tags {
+                try await fileStore.applyInboxMutation(
+                    .replaceBodyAndTags(
+                        memoID: memo.id,
+                        expectedBody: expectedBody,
+                        newBody: body,
+                        tags: tags
+                    )
+                )
+            } else {
+                try await fileStore.applyInboxMutation(
+                    .replaceBody(memoID: memo.id, expectedBody: expectedBody, newBody: body)
+                )
+            }
             await refreshInboxDelta()
             guard let updated = inboxItems.first(where: { $0.id == memo.id }) else {
                 throw InboxMutationError.memoNotFound

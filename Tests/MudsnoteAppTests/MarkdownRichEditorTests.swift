@@ -2027,7 +2027,7 @@ struct MarkdownRichEditorTests {
             return
         }
         #expect(query == "al")
-        #expect(items == ["alpha"])
+        #expect(items == ["al", "alpha"])
     }
 
     @MainActor
@@ -3470,6 +3470,21 @@ struct MarkdownRichEditorTests {
             titleLineCount += 1
         }
         #expect(titleLineCount > 1)
+    }
+
+    @MainActor
+    @Test
+    func inlineMarkdownTagsMigrateIntoDocumentMetadata() {
+        let migration = MarkdownEditorDocument.extractingInlineTags(
+            from: "Body #project and #work\n\n`#code`\n\n```\n#fence\n```"
+        )
+
+        #expect(migration.tags == ["project", "work"])
+        #expect(migration.occurrenceCount == 2)
+        #expect(migration.body.contains("Body and"))
+        #expect(migration.body.contains("`#code`"))
+        #expect(migration.body.contains("#fence"))
+        #expect(!migration.body.contains("Body #project"))
     }
 
     @MainActor

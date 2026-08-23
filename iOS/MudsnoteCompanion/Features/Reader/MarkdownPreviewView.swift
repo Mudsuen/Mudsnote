@@ -85,6 +85,14 @@ struct MarkdownNoteMentionDraft: Equatable {
     var replacementRange: NSRange
 }
 
+private struct EditorHeaderHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 enum NoteMentionRanker {
     static func rank(
         _ notes: [RecentMarkdownFile],
@@ -190,7 +198,10 @@ struct MarkdownPreviewView: View {
     @State private var editorFocused = false
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var linkDraft: MarkdownLinkDraft?
+    @State private var tagDraft: MarkdownInlineTagDraft?
     @State private var noteMentionDraft: MarkdownNoteMentionDraft?
+    @State private var editorHeaderHeight: CGFloat = 0
+    @State private var editorScrollOffset: CGFloat = 0
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
     @State private var isCameraPresented = false
@@ -233,8 +244,14 @@ struct MarkdownPreviewView: View {
         requestEditing: @escaping () -> Void = {},
         editingChanged: @escaping (Bool) -> Void = { _ in }
     ) {
-        _source = State(initialValue: .memo(memo))
-        _draftMarkdown = State(initialValue: memo.body)
+        let migration = MarkdownTagSyntax.extractingInlineTags(from: memo.body)
+        var seen = Set<String>()
+        var migratedMemo = memo
+        migratedMemo.tags = (memo.tags + migration.tags).filter {
+            seen.insert(MarkdownTagSyntax.key($0)).inserted
+        }
+        _source = State(initialValue: .memo(migratedMemo))
+        _draftMarkdown = State(initialValue: migration.body)
         _originalMarkdown = State(initialValue: memo.body)
         _isEditing = State(initialValue: startsEditing)
         self.requestEditing = requestEditing
@@ -247,8 +264,11 @@ struct MarkdownPreviewView: View {
         requestEditing: @escaping () -> Void = {},
         editingChanged: @escaping (Bool) -> Void = { _ in }
     ) {
+        let migration = MarkdownTagSyntax.migratingInlineTagsToFrontMatter(
+            in: document.markdown
+        )
         _source = State(initialValue: .document(document))
-        _draftMarkdown = State(initialValue: document.markdown)
+        _draftMarkdown = State(initialValue: migration.body)
         _originalMarkdown = State(initialValue: document.markdown)
         _isEditing = State(initialValue: document.isNew || startsEditing)
         self.requestEditing = requestEditing
@@ -259,22 +279,45 @@ struct MarkdownPreviewView: View {
         NavigationStack {
             Group {
                 if isEditing {
-                    VStack(alignment: .leading, spacing: 0) {
+                    ZStack(alignment: .topLeading) {
+                        MarkdownTextEditor(
+                            text: editableBodyMarkdown,
+                            isFocused: $editorFocused,
+                            command: $editingCommand,
+                            linkDraft: $linkDraft,
+                            tagDraft: $tagDraft,
+                            noteMentionDraft: $noteMentionDraft,
+                            contentTopInset: editorHeaderHeight + 8,
+                            scrollOffset: $editorScrollOffset,
+                            displaysSource: editorDisplayMode == .source,
+                            onCommitTag: commitInlineTag
+                        )
+                        .accessibilityIdentifier("markdown-editor")
+
                         noteHeader(isEditing: true, showsMetadata: true)
                             .padding(.bottom, 8)
-                        ZStack(alignment: .bottomLeading) {
-                            MarkdownTextEditor(
-                                text: editableBodyMarkdown,
-                                isFocused: $editorFocused,
-                                command: $editingCommand,
-                                linkDraft: $linkDraft,
-                                noteMentionDraft: $noteMentionDraft,
-                                displaysSource: editorDisplayMode == .source
-                            )
-                            .accessibilityIdentifier("markdown-editor")
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(
+                                        key: EditorHeaderHeightPreferenceKey.self,
+                                        value: geometry.size.height
+                                    )
+                                }
+                            }
+                            .offset(y: -max(editorScrollOffset, 0))
 
-                            if let noteMentionDraft,
-                               !rankedMentionNotes(for: noteMentionDraft.query).isEmpty {
+                        VStack {
+                            Spacer()
+                            if let tagDraft,
+                               !rankedTagSuggestions(for: tagDraft.query).isEmpty {
+                                MarkdownTagSuggestions(
+                                    tags: Array(rankedTagSuggestions(for: tagDraft.query).prefix(6)),
+                                    knownTags: Set(knownTagSuggestions.map(MarkdownTagSyntax.key)),
+                                    select: acceptInlineTag
+                                )
+                                .padding(.bottom, 8)
+                            } else if let noteMentionDraft,
+                                      !rankedMentionNotes(for: noteMentionDraft.query).isEmpty {
                                 MarkdownNoteMentionSuggestions(
                                     notes: Array(
                                         rankedMentionNotes(for: noteMentionDraft.query).prefix(6)
@@ -286,6 +329,10 @@ struct MarkdownPreviewView: View {
                         }
                     }
                     .padding(MudsnoteSpacing.safeHorizontal)
+                    .clipped()
+                    .onPreferenceChange(EditorHeaderHeightPreferenceKey.self) {
+                        editorHeaderHeight = $0
+                    }
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         metadataLabel
@@ -734,6 +781,19 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private var knownTagSuggestions: [String] {
+        appModel.tagSummaries.map(\.name)
+            + appModel.libraryFiles.flatMap(\.tags)
+    }
+
+    private func rankedTagSuggestions(for query: String) -> [String] {
+        MarkdownTagSyntax.rankedInlineSuggestions(
+            query: query,
+            knownTags: knownTagSuggestions,
+            activeTags: noteTags
+        )
+    }
+
     @ViewBuilder
     private func noteHeader(isEditing: Bool, showsMetadata: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -759,21 +819,31 @@ struct MarkdownPreviewView: View {
 
             if !noteTags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 7) {
+                        Label("Tags", systemImage: "number")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
                         ForEach(noteTags, id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(MudsnoteColors.primary)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(
-                                    MudsnoteColors.primary.opacity(0.13),
-                                    in: Capsule()
+                            Label {
+                                Text(String(tag.dropFirst()))
+                            } icon: {
+                                Image(systemName: "number")
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(MudsnoteColors.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(MudsnoteColors.card, in: Capsule())
+                            .overlay {
+                                Capsule().stroke(
+                                    MudsnoteColors.primary.opacity(0.28),
+                                    lineWidth: 1
                                 )
+                            }
                         }
                     }
                 }
-                .frame(height: 28)
+                .frame(height: 34)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("note-tag-bar")
             }
@@ -802,6 +872,37 @@ struct MarkdownPreviewView: View {
             )
         )
         editorFocused = true
+    }
+
+    private func acceptInlineTag(_ tag: String) {
+        guard let tagDraft else { return }
+        self.tagDraft = nil
+        editingCommand = MarkdownEditingCommand(
+            kind: .applyTag(range: tagDraft.replacementRange, tag: tag)
+        )
+        editorFocused = true
+    }
+
+    private func commitInlineTag(_ input: String) {
+        guard let tag = MarkdownTagSyntax.normalizedTag(input),
+              !noteTags.contains(where: {
+                  MarkdownTagSyntax.key($0) == MarkdownTagSyntax.key(tag)
+              })
+        else { return }
+
+        switch source {
+        case .document:
+            if let updated = MarkdownTagSyntax.adding(tag, to: draftMarkdown) {
+                draftMarkdown = updated
+            }
+        case .memo(var memo):
+            memo.tags.append(tag)
+            var seen = Set<String>()
+            memo.tags = memo.tags.filter {
+                seen.insert(MarkdownTagSyntax.key($0)).inserted
+            }
+            source = .memo(memo)
+        }
     }
 
     private var presentationPreferenceNotePath: String {
@@ -1248,7 +1349,16 @@ struct MarkdownPreviewView: View {
                 .disabled(isSaving || appModel.isPreparingAttachment)
                 .accessibilityLabel("Add Attachment")
                 .accessibilityIdentifier("markdown-attachment-menu")
+            }
 
+            editorTriggerButton("#", accessibilityLabel: "Tag", text: "#")
+            editorTriggerButton("@", accessibilityLabel: "Link to note", text: "@")
+            formatButton("checklist", .checklist)
+            formatButton("arrow.uturn.backward", .undo)
+            formatButton("arrow.uturn.forward", .redo)
+
+            Spacer(minLength: 4)
+            if case .document = source {
                 Button {
                     Task { await toggleDocumentAudioRecording() }
                 } label: {
@@ -1265,12 +1375,6 @@ struct MarkdownPreviewView: View {
                 .accessibilityIdentifier("markdown-record-audio")
             }
 
-            editorFormatMenu
-            formatButton("checklist", .checklist)
-            formatButton("arrow.uturn.backward", .undo)
-            formatButton("arrow.uturn.forward", .redo)
-
-            Spacer(minLength: 4)
             Button {
                 Task { await finishEditingAfterPendingAutosave() }
             } label: {
@@ -1296,53 +1400,21 @@ struct MarkdownPreviewView: View {
         .foregroundStyle(MudsnoteColors.text)
     }
 
-    private var editorFormatMenu: some View {
-        Menu {
-            formatMenuButton("Title", systemImage: "textformat.size.larger", command: .title)
-            formatMenuButton("Heading", systemImage: "textformat.size", command: .heading)
-            formatMenuButton("Subheading", systemImage: "textformat.size.smaller", command: .subheading)
-            formatMenuButton("Body", systemImage: "textformat", command: .body)
-            Divider()
-            formatMenuButton("Bold", systemImage: "bold", command: .bold)
-            formatMenuButton("Italic", systemImage: "italic", command: .italic)
-            formatMenuButton("Underline", systemImage: "underline", command: .underline)
-            formatMenuButton("Highlight", systemImage: "highlighter", command: .highlight)
-            formatMenuButton("Strikethrough", systemImage: "strikethrough", command: .strikethrough)
-            Divider()
-            formatMenuButton("Bulleted List", systemImage: "list.bullet", command: .bullet)
-            formatMenuButton("Numbered List", systemImage: "list.number", command: .ordered)
-            formatMenuButton("Decrease Indent", systemImage: "decrease.indent", command: .outdent)
-            formatMenuButton("Increase Indent", systemImage: "increase.indent", command: .indent)
-            Divider()
-            formatMenuButton("Quote", systemImage: "text.quote", command: .quote)
-            formatMenuButton("Code", systemImage: "chevron.left.forwardslash.chevron.right", command: .code)
-            formatMenuButton("Insert Link", systemImage: "link", command: .link)
-            Divider()
-            formatMenuButton("Undo", systemImage: "arrow.uturn.backward", command: .undo)
-            formatMenuButton("Redo", systemImage: "arrow.uturn.forward", command: .redo)
-            Divider()
-            Button {
-                editorDisplayMode = .rich
-            } label: {
-                Label("Rich Text", systemImage: editorDisplayMode == .rich ? "checkmark" : "textformat")
-            }
-            Button {
-                editorDisplayMode = .source
-            } label: {
-                Label(
-                    "Markdown Source",
-                    systemImage: editorDisplayMode == .source
-                        ? "checkmark"
-                        : "chevron.left.forwardslash.chevron.right"
-                )
-            }
+    private func editorTriggerButton(
+        _ title: String,
+        accessibilityLabel: LocalizedStringKey,
+        text: String
+    ) -> some View {
+        Button {
+            editingCommand = MarkdownEditingCommand(kind: .insertText(text))
         } label: {
-            Text("Aa")
-                .fontWeight(.medium)
+            Text(title)
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .frame(width: 42, height: 44)
         }
-        .accessibilityLabel("Formatting")
-        .accessibilityIdentifier("markdown-format-menu")
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(text == "#" ? "markdown-insert-tag" : "markdown-insert-mention")
     }
 
     private func formatButton(_ systemImage: String, _ kind: MarkdownEditingCommand.Kind) -> some View {
@@ -1354,19 +1426,6 @@ struct MarkdownPreviewView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
-    }
-
-    private func formatMenuButton(
-        _ title: LocalizedStringKey,
-        systemImage: String,
-        command: MarkdownEditingCommand.Kind
-    ) -> some View {
-        Button {
-            editingCommand = MarkdownEditingCommand(kind: command)
-        } label: {
-            Label(title, systemImage: systemImage)
-        }
-        .accessibilityIdentifier("markdown-format-\(command.identifier)")
     }
 
     private func handleMarkdownURL(_ url: URL) -> OpenURLAction.Result {
@@ -1978,6 +2037,9 @@ struct MarkdownPreviewView: View {
     @MainActor
     private func persistDraft(finishEditing: Bool, announce: Bool) async {
         if finishEditing { editorFocused = false }
+        if finishEditing {
+            migrateRemainingInlineTags()
+        }
         guard !isSaving else { return }
         let requiresNewDocumentFinalization: Bool
         if case .document(let document) = source {
@@ -2022,15 +2084,41 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    private func migrateRemainingInlineTags() {
+        switch source {
+        case .document:
+            let migration = MarkdownTagSyntax.migratingInlineTagsToFrontMatter(
+                in: draftMarkdown
+            )
+            guard migration.occurrenceCount > 0 else { return }
+            draftMarkdown = migration.body
+        case .memo(var memo):
+            let migration = MarkdownTagSyntax.extractingInlineTags(
+                from: draftMarkdown
+            )
+            guard migration.occurrenceCount > 0 else { return }
+            draftMarkdown = migration.body
+            var seen = Set<String>()
+            memo.tags = (memo.tags + migration.tags).filter {
+                seen.insert(MarkdownTagSyntax.key($0)).inserted
+            }
+            source = .memo(memo)
+        }
+        tagDraft = nil
+    }
+
     private func save(_ markdown: String, announce: Bool) async -> Bool {
         switch source {
         case .memo(let memo):
-            return await appModel.saveMemo(
+            guard let updated = await appModel.saveMemo(
                 memo,
                 body: markdown,
                 expectedBody: originalMarkdown,
+                tags: memo.tags,
                 announce: announce
-            ) != nil
+            ) else { return false }
+            source = .memo(updated)
+            return true
         case .document(let document):
             guard let updated = await appModel.saveDocument(
                 document,
@@ -2644,7 +2732,70 @@ private struct MarkdownNoteLinkPicker: View {
     }
 }
 
-private struct MarkdownNoteMentionSuggestions: View {
+struct MarkdownTagSuggestions: View {
+    let tags: [String]
+    let knownTags: Set<String>
+    let select: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: "number")
+                Text("Tags")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("Space or Return to confirm")
+                    .font(.caption2)
+            }
+            .foregroundStyle(MudsnoteColors.muted)
+            .padding(.horizontal, 12)
+            .padding(.top, 9)
+            .padding(.bottom, 5)
+
+            ForEach(tags, id: \.self) { tag in
+                Button {
+                    select(tag)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "number.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(MudsnoteColors.primary)
+                        Text(tag)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(MudsnoteColors.text)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if !knownTags.contains(MarkdownTagSyntax.key(tag)) {
+                            Text("New")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.primary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    MudsnoteColors.primary.opacity(0.12),
+                                    in: Capsule()
+                                )
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tag-suggestion-\(tag)")
+            }
+        }
+        .frame(maxWidth: 360)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(MudsnoteColors.line, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 16, y: 6)
+    }
+}
+
+struct MarkdownNoteMentionSuggestions: View {
     let notes: [RecentMarkdownFile]
     let select: (RecentMarkdownFile) -> Void
 
@@ -2712,6 +2863,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
         case table
         case undo
         case redo
+        case insertText(String)
+        case applyTag(range: NSRange, tag: String)
 
         var identifier: String {
             switch self {
@@ -2738,6 +2891,8 @@ struct MarkdownEditingCommand: Identifiable, Equatable {
             case .table: "table"
             case .undo: "undo"
             case .redo: "redo"
+            case .insertText: "insert-text"
+            case .applyTag: "apply-tag"
             }
         }
     }
@@ -3858,15 +4013,9 @@ final class MarkdownRichTextView: UITextView {
     override func draw(_ rect: CGRect) {
         super.draw(rect)
         for marker in checklistMarkers {
-            let markerRect = renderedRect(for: marker.range)
-            let symbolRect = CGRect(
-                x: markerRect.minX + 1,
-                y: markerRect.midY - 10,
-                width: 20,
-                height: 20
-            )
-            let configuration = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-            let name = marker.checked ? "checkmark.circle.fill" : "circle"
+            let symbolRect = checklistSymbolRect(for: marker)
+            let configuration = UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+            let name = marker.checked ? "checkmark.square.fill" : "square"
             UIColor(MudsnoteColors.primary).set()
             UIImage(systemName: name, withConfiguration: configuration)?
                 .withTintColor(UIColor(MudsnoteColors.primary), renderingMode: .alwaysOriginal)
@@ -3888,8 +4037,30 @@ final class MarkdownRichTextView: UITextView {
 
     func checklistMarker(at point: CGPoint) -> MarkdownEditorPresentation.ChecklistMarker? {
         checklistMarkers.first { marker in
-            renderedRect(for: marker.range).insetBy(dx: -8, dy: -8).contains(point)
+            checklistSymbolRect(for: marker).insetBy(dx: -8, dy: -8).contains(point)
         }
+    }
+
+    private func checklistSymbolRect(
+        for marker: MarkdownEditorPresentation.ChecklistMarker
+    ) -> CGRect {
+        let markerRect = renderedRect(for: marker.range)
+        let glyphIndex = layoutManager.glyphIndexForCharacter(
+            at: min(marker.range.location, max(textStorage.length - 1, 0))
+        )
+        var lineRect = layoutManager.lineFragmentUsedRect(
+            forGlyphAt: glyphIndex,
+            effectiveRange: nil
+        )
+        lineRect.origin.x += textContainerInset.left
+        lineRect.origin.y += textContainerInset.top
+        let side: CGFloat = 20
+        return CGRect(
+            x: markerRect.minX,
+            y: lineRect.midY - side / 2,
+            width: side,
+            height: side
+        )
     }
 
     private func renderedRect(for range: NSRange) -> CGRect {
@@ -4110,8 +4281,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     @Binding var isFocused: Bool
     @Binding var command: MarkdownEditingCommand?
     @Binding var linkDraft: MarkdownLinkDraft?
+    @Binding var tagDraft: MarkdownInlineTagDraft?
     @Binding var noteMentionDraft: MarkdownNoteMentionDraft?
+    var contentTopInset: CGFloat
+    @Binding var scrollOffset: CGFloat
     var displaysSource: Bool
+    var onCommitTag: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -4124,7 +4299,12 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.textColor = UIColor(MudsnoteColors.text)
         view.tintColor = UIColor(MudsnoteColors.primary)
         view.font = .monospacedSystemFont(ofSize: 17, weight: .regular)
-        view.textContainerInset = .zero
+        view.textContainerInset = UIEdgeInsets(
+            top: contentTopInset,
+            left: 0,
+            bottom: 0,
+            right: 0
+        )
         view.textContainer.lineFragmentPadding = 0
         view.alwaysBounceVertical = true
         view.keyboardDismissMode = .interactive
@@ -4148,6 +4328,9 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
+        if abs(view.textContainerInset.top - contentTopInset) > 0.5 {
+            view.textContainerInset.top = contentTopInset
+        }
         let isComposingText = view.markedTextRange != nil
         if !isComposingText, view.text != text {
             let selection = view.selectedRange
@@ -4199,6 +4382,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             )
             lastPresentedText = textView.text
             lastDisplaysSource = parent.displaysSource
+            updateTagDraft(in: textView)
             updateNoteMentionDraft(in: textView)
         }
 
@@ -4208,12 +4392,40 @@ private struct MarkdownTextEditor: UIViewRepresentable {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.isFocused = false
+            parent.tagDraft = nil
             parent.noteMentionDraft = nil
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard textView.markedTextRange == nil else { return }
+            updateTagDraft(in: textView)
             updateNoteMentionDraft(in: textView)
+        }
+
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard range.length > 0 else {
+                return UIMenu(children: suggestedActions)
+            }
+            let bold = UIAction(
+                title: String(localized: "Bold"),
+                image: UIImage(systemName: "bold")
+            ) { [weak self, weak textView] _ in
+                guard let self, let textView else { return }
+                self.apply(.bold, to: textView)
+            }
+            return UIMenu(
+                children: suggestedActions + [
+                    UIMenu(options: .displayInline, children: [bold])
+                ]
+            )
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            parent.scrollOffset = max(scrollView.contentOffset.y, 0)
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -4234,6 +4446,26 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText text: String
         ) -> Bool {
+            if !parent.displaysSource,
+               (text == " " || text == "\n" || text == "\t"),
+               let draft = MarkdownTagSyntax.inlineDraft(
+                   in: textView.text,
+                   selection: range
+               ),
+               let tag = MarkdownTagSyntax.normalizedTag(draft.query) {
+                replace(
+                    draft.replacementRange,
+                    with: text == "\n" ? "\n" : "",
+                    selecting: NSRange(
+                        location: draft.replacementRange.location + (text == "\n" ? 1 : 0),
+                        length: 0
+                    ),
+                    in: textView
+                )
+                parent.tagDraft = nil
+                parent.onCommitTag(tag)
+                return false
+            }
             guard !parent.displaysSource else { return true }
             let edit: MarkdownListEdit?
             if text == "\n" {
@@ -4348,6 +4580,29 @@ private struct MarkdownTextEditor: UIViewRepresentable {
                 textView.undoManager?.undo()
             case .redo:
                 textView.undoManager?.redo()
+            case .insertText(let text):
+                let insertion = triggerAwareInsertion(
+                    text,
+                    in: textView
+                )
+                replace(
+                    textView.selectedRange,
+                    with: insertion,
+                    selecting: NSRange(
+                        location: textView.selectedRange.location + insertion.utf16.count,
+                        length: 0
+                    ),
+                    in: textView
+                )
+            case .applyTag(let range, let tag):
+                replace(
+                    range,
+                    with: "",
+                    selecting: NSRange(location: range.location, length: 0),
+                    in: textView
+                )
+                parent.tagDraft = nil
+                parent.onCommitTag(tag)
             }
             parent.text = textView.text
             MarkdownEditorPresentation.apply(
@@ -4356,6 +4611,30 @@ private struct MarkdownTextEditor: UIViewRepresentable {
             )
             lastPresentedText = textView.text
             lastDisplaysSource = parent.displaysSource
+        }
+
+        private func triggerAwareInsertion(
+            _ text: String,
+            in textView: UITextView
+        ) -> String {
+            guard text == "#" || text == "@",
+                  textView.selectedRange.length == 0,
+                  textView.selectedRange.location > 0
+            else { return text }
+            let source = textView.text as NSString
+            let previous = source.substring(
+                with: NSRange(location: textView.selectedRange.location - 1, length: 1)
+            )
+            return previous.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+                ? " \(text)"
+                : text
+        }
+
+        private func updateTagDraft(in textView: UITextView) {
+            parent.tagDraft = MarkdownTagSyntax.inlineDraft(
+                in: textView.text,
+                selection: textView.selectedRange
+            )
         }
 
         private func updateNoteMentionDraft(in textView: UITextView) {

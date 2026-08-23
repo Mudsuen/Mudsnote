@@ -464,6 +464,11 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
+        let label = NSTextField(labelWithString: "标签")
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = panelSecondaryTextColor()
+        label.setAccessibilityLabel("标签")
+        stack.addArrangedSubview(label)
         for tag in normalized {
             let button = MetadataTagButton(tag: tag, onRemove: onRemove)
             stack.addArrangedSubview(button)

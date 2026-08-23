@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 269. Unified Markdown tags, note mentions, and iOS editing chrome
+- Problem: Existing inline Markdown tags remained mixed into note prose, iOS quick capture and document editing exposed different toolbars, the iOS title stayed pinned while the body scrolled, and checklist markers could render off the text baseline.
+- Fix: macOS and iOS now migrate eligible inline `#tag` tokens out of visible prose into canonical note-tag metadata while preserving Markdown storage, code spans, fenced code, headings, and link fragments. Typing `#` presents a prominent live tag chooser; Space, Return, or a chosen result confirms the tag and renders it in a dedicated tag bar. Typing `@` presents ranked notes and inserts a portable relative Markdown link. iOS quick capture and document editing now share `#`, `@`, checklist, attachment, recording, and save actions without standalone Bold, More, or `Aa` buttons; selected text exposes Bold from the native edit menu. The title and tag header scroll with the body, and checklist icons align to their actual text line.
+- Lesson: Tags can remain real Markdown metadata without occupying prose, while capture and editing should share one completion model and one visible metadata home.
+
 ### 268. Safe external HTML links
 - Problem: A `file://` HTML link could be treated as an internal Markdown document, and deleting that unsupported document moved it into Mudsnote's Trash even though Recently Deleted only displays note files.
 - Fix: Existing local HTML and other non-note file links now open through macOS in their default application instead of entering Mudsnote's document lifecycle.

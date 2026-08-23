@@ -153,6 +153,12 @@ public struct StoredWindowFrame: Codable, Equatable, Sendable {
 }
 
 public struct MarkdownEditorDocument: Equatable, Sendable {
+    public struct InlineTagMigration: Equatable, Sendable {
+        public let body: String
+        public let tags: [String]
+        public let occurrenceCount: Int
+    }
+
     private static let previewListPrefixRegex = try! NSRegularExpression(
         pattern: #"^\s*(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+\.\s+|(?:\[\s?\]|【】)\s*)"#
     )
@@ -398,6 +404,80 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         }
 
         return normalizedTags(tags)
+    }
+
+    public static func extractingInlineTags(from text: String) -> InlineTagMigration {
+        var tags: [String] = []
+        var activeFence: Character?
+        var occurrenceCount = 0
+        let migratedLines = text.components(separatedBy: "\n").map { line -> String in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let marker = trimmed.first,
+               (marker == "`" || marker == "~"),
+               trimmed.prefix(3).allSatisfy({ $0 == marker }) {
+                activeFence = activeFence == nil ? marker : (activeFence == marker ? nil : activeFence)
+                return line
+            }
+            guard activeFence == nil else { return line }
+
+            var characters = Array(line)
+            var ranges: [Range<Int>] = []
+            var index = 0
+            var inlineCodeMarkerLength: Int?
+            while index < characters.count {
+                if characters[index] == "`" {
+                    var runLength = 1
+                    while index + runLength < characters.count,
+                          characters[index + runLength] == "`" {
+                        runLength += 1
+                    }
+                    if inlineCodeMarkerLength == nil {
+                        inlineCodeMarkerLength = runLength
+                    } else if inlineCodeMarkerLength == runLength {
+                        inlineCodeMarkerLength = nil
+                    }
+                    index += runLength
+                    continue
+                }
+                if inlineCodeMarkerLength == nil,
+                   characters[index] == "#",
+                   (index == 0 || characters[index - 1].isWhitespace) {
+                    var end = index + 1
+                    while end < characters.count, characters[end].isMarkdownTagCharacter {
+                        end += 1
+                    }
+                    while end > index + 1, characters[end - 1] == "/" {
+                        end -= 1
+                    }
+                    if end > index + 1 {
+                        tags.append(String(characters[(index + 1)..<end]))
+                        ranges.append(index..<end)
+                        occurrenceCount += 1
+                        index = end
+                        continue
+                    }
+                }
+                index += 1
+            }
+            guard !ranges.isEmpty else { return line }
+            for range in ranges.reversed() {
+                characters.removeSubrange(range)
+            }
+            let indentation = characters.prefix { $0 == " " || $0 == "\t" }
+            let content = String(characters.dropFirst(indentation.count))
+                .replacingOccurrences(
+                    of: #"[ \t]{2,}"#,
+                    with: " ",
+                    options: .regularExpression
+                )
+                .trimmingCharacters(in: .whitespaces)
+            return content.isEmpty ? "" : String(indentation) + content
+        }
+        return InlineTagMigration(
+            body: migratedLines.joined(separator: "\n"),
+            tags: normalizedTags(tags),
+            occurrenceCount: occurrenceCount
+        )
     }
 
     private static func extractedTitle(from line: String) -> String {

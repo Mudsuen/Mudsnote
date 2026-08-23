@@ -598,10 +598,13 @@ extension EditorWindowController {
             do {
                 let note = try noteStore.loadNoteDocument(at: fileURL)
                 title = note.title
-                body = note.body
-                activeTags = note.tags
+                let migration = MarkdownEditorDocument.extractingInlineTags(from: note.body)
+                body = migration.body
+                activeTags = MarkdownEditorDocument.normalizedTags(
+                    note.tags + migration.tags
+                )
                 sourceContentsAtLoad = note.sourceContents
-                isDirty = false
+                isDirty = migration.occurrenceCount > 0
             } catch {
                 presentErrorAlert(message: "无法加载笔记", details: error.localizedDescription)
             }
@@ -610,8 +613,11 @@ extension EditorWindowController {
         applyInitialContent(title: title, body: body)
 
         if let draft = noteStore.loadDraft(id: currentDraftID) {
-            applyInitialContent(title: draft.title, body: draft.body)
-            activeTags = draft.tags
+            let migration = MarkdownEditorDocument.extractingInlineTags(from: draft.body)
+            applyInitialContent(title: draft.title, body: migration.body)
+            activeTags = MarkdownEditorDocument.normalizedTags(
+                draft.tags + migration.tags
+            )
             selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
             isDirty = true
             statusLabel.stringValue = "已恢复"

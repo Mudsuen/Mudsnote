@@ -619,6 +619,43 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(deleted.markdown.contains("before #project after"))
     }
 
+    func testInlineTagCompletionTracksCaretAndOffersNewOrExistingTags() throws {
+        let text = "Body text #pro"
+        let draft = try XCTUnwrap(MarkdownTagSyntax.inlineDraft(
+            in: text,
+            selection: NSRange(location: (text as NSString).length, length: 0)
+        ))
+
+        XCTAssertEqual(draft.query, "pro")
+        XCTAssertEqual((text as NSString).substring(with: draft.replacementRange), "#pro")
+        XCTAssertEqual(
+            MarkdownTagSyntax.rankedInlineSuggestions(
+                query: draft.query,
+                knownTags: ["#archive", "#project", "#product", "#Project"],
+                activeTags: ["#archive"]
+            ),
+            ["#pro", "#product", "#project"]
+        )
+        XCTAssertNil(MarkdownTagSyntax.inlineDraft(
+            in: "Body#pro",
+            selection: NSRange(location: 8, length: 0)
+        ))
+        XCTAssertNil(MarkdownTagSyntax.inlineDraft(
+            in: text,
+            selection: NSRange(location: 0, length: 4)
+        ))
+
+        let migration = MarkdownTagSyntax.migratingInlineTagsToFrontMatter(
+            in: "# Heading\n\nBody #project and #work.\n\n`#code`\n\n```\n#fence\n```\n"
+        )
+        XCTAssertEqual(migration.tags, ["#project", "#work"])
+        XCTAssertEqual(migration.occurrenceCount, 2)
+        XCTAssertTrue(migration.body.contains("Body and ."))
+        XCTAssertTrue(migration.body.contains("`#code`"))
+        XCTAssertTrue(migration.body.contains("#fence"))
+        XCTAssertFalse(migration.body.contains("Body #project"))
+    }
+
     func testTagSuggestionsReactToInputThenUseSemanticContextAndFrequency() {
         let summaries = [
             TagSummary(name: "#archive", count: 12, semanticTerms: ["finished", "history"]),

@@ -90,7 +90,7 @@ extension EditorWindowController {
         guard !query.isEmpty else { return known }
 
         let loweredQuery = query.lowercased()
-        return known
+        let ranked = known
             .compactMap { tag -> (tag: String, score: Int)? in
                 let loweredTag = tag.lowercased()
                 if loweredTag == loweredQuery { return (tag, 1000) }
@@ -108,6 +108,18 @@ extension EditorWindowController {
                 return lhs.score > rhs.score
             }
             .map(\.tag)
+        let normalizedQuery = query.trimmingCharacters(in: CharacterSet(
+            charactersIn: "# \t\r\n"
+        ))
+        guard !normalizedQuery.isEmpty,
+              !known.contains(where: {
+                  $0.localizedCaseInsensitiveCompare(normalizedQuery) == .orderedSame
+              }),
+              !activeTags.contains(where: {
+                  $0.localizedCaseInsensitiveCompare(normalizedQuery) == .orderedSame
+              })
+        else { return ranked }
+        return [normalizedQuery] + ranked
     }
 
     // MARK: - Inline suggestion lifecycle
@@ -137,7 +149,16 @@ extension EditorWindowController {
         let items: [SuggestionItem]
         switch context {
         case .tags(_, _, let tags):
-            items = tags.map { SuggestionItem(title: "#\($0)", subtitle: nil, symbolName: nil) }
+            items = tags.map { tag in
+                let exists = knownTagsForSuggestions?.contains(where: {
+                    $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
+                }) == true
+                return SuggestionItem(
+                    title: "#\(tag)",
+                    subtitle: exists ? "标签" : "新建标签",
+                    symbolName: "number"
+                )
+            }
         case .notes(_, _, let notes):
             items = notes.map {
                 SuggestionItem(
@@ -366,9 +387,9 @@ extension EditorWindowController {
         let normalized = token.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
         applyTag(normalized, replacementRange: token.replacementRange)
-        if let trailingText {
+        if trailingText == "\n" {
             let neutralAttributes = neutralTypingAttributesForCurrentLine()
-            insertTextAtSelection(trailingText, attributes: neutralAttributes)
+            insertTextAtSelection("\n", attributes: neutralAttributes)
             editorTextView.typingAttributes = neutralAttributes
         }
         return true

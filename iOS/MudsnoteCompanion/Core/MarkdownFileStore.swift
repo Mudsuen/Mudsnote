@@ -898,6 +898,14 @@ actor MarkdownFileStore {
                         throw InboxMutationError.memoChanged
                     }
                     items[index].body = newBody.trimmingCharacters(in: .whitespacesAndNewlines)
+                case .replaceBodyAndTags(_, let expectedBody, let newBody, let tags):
+                    guard items[index].body == expectedBody else {
+                        throw InboxMutationError.memoChanged
+                    }
+                    items[index].body = newBody.trimmingCharacters(in: .whitespacesAndNewlines)
+                    var seen = Set<String>()
+                    items[index].tags = tags.compactMap(MarkdownTagSyntax.normalizedTag)
+                        .filter { seen.insert(MarkdownTagSyntax.key($0)).inserted }
                 }
 
                 let updatedMarkdown = InboxParser.markdown(forDisplayItems: items)
@@ -3611,10 +3619,21 @@ enum InboxMutation: Equatable {
     case pin(memoID: String)
     case addTag(memoID: String, tag: String)
     case replaceBody(memoID: String, expectedBody: String, newBody: String)
+    case replaceBodyAndTags(
+        memoID: String,
+        expectedBody: String,
+        newBody: String,
+        tags: [String]
+    )
 
     var memoID: String {
         switch self {
-        case .delete(let memoID), .pin(let memoID), .addTag(let memoID, _), .replaceBody(let memoID, _, _): memoID
+        case .delete(let memoID),
+             .pin(let memoID),
+             .addTag(let memoID, _),
+             .replaceBody(let memoID, _, _),
+             .replaceBodyAndTags(let memoID, _, _, _):
+            memoID
         }
     }
 }

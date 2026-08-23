@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import VisionKit
 
@@ -34,7 +35,7 @@ struct QuickCaptureLaunchPlan: Equatable {
 
 struct CaptureConsoleView: View {
     @EnvironmentObject private var appModel: AppModel
-    @FocusState private var isBodyFocused: Bool
+    @State private var isBodyFocused = false
     @State private var selectedRoute: CaptureRoute
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPhotoPickerPresented = false
@@ -46,6 +47,9 @@ struct CaptureConsoleView: View {
     @State private var didStartInitialAudioRoute = false
     @State private var attachmentPreview: PreparedAttachmentPreview?
     @State private var isContextPresented = false
+    @State private var editingCommand: MarkdownEditingCommand?
+    @State private var tagDraft: MarkdownInlineTagDraft?
+    @State private var noteMentionDraft: MarkdownNoteMentionDraft?
 
     init(initialRoute: CaptureRoute) {
         _selectedRoute = State(initialValue: initialRoute)
@@ -74,6 +78,7 @@ struct CaptureConsoleView: View {
         .background(MudsnoteColors.panel)
         .animation(.snappy(duration: 0.24), value: appModel.captureSubmissionIssue != nil)
         .onAppear {
+            migrateCaptureInlineTags()
             activateInitialRoute(selectedRoute)
         }
         .onChange(of: appModel.captureRoute) { _, route in
@@ -330,44 +335,7 @@ struct CaptureConsoleView: View {
                 }
                 .disabled(!CameraTextCapture.isAvailable)
                 .accessibilityIdentifier("capture-scan-text")
-            } label: {
-                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
-            }
-            .buttonStyle(CompactCaptureButtonStyle(isActive: selectedRoute == .image))
-            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("Add Attachment")
-            .accessibilityIdentifier("capture-attachment-menu")
 
-            Button("#") { appendToken(" #tag") }
-                .buttonStyle(CompactCaptureButtonStyle())
-                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-                .accessibilityLabel("Tag")
-                .accessibilityIdentifier("capture-insert-tag")
-
-            Button {
-                appendToken("**bold**")
-            } label: {
-                Image(systemName: "bold")
-            }
-            .buttonStyle(CompactCaptureButtonStyle())
-            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("Bold")
-            .accessibilityIdentifier("capture-insert-bold")
-
-            Button {
-                appendToken("\n- [ ] ")
-            } label: {
-                Image(systemName: "checklist")
-            }
-            .buttonStyle(CompactCaptureButtonStyle())
-            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("Checklist")
-            .accessibilityIdentifier("capture-insert-checklist")
-
-            Menu {
-                Button("List") { appendToken("\n- ") }
-                Button("Quote") { appendToken("\n> ") }
-                Button("Code") { appendToken(" `code`") }
                 Divider()
                 Button {
                     isBodyFocused = false
@@ -377,12 +345,38 @@ struct CaptureConsoleView: View {
                 }
                 .accessibilityIdentifier("capture-note-context")
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: appModel.isPreparingAttachment ? "hourglass" : "paperclip")
+            }
+            .buttonStyle(CompactCaptureButtonStyle(isActive: selectedRoute == .image))
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+            .accessibilityLabel("Add Attachment")
+            .accessibilityIdentifier("capture-attachment-menu")
+
+            Button("#") {
+                editingCommand = MarkdownEditingCommand(kind: .insertText("#"))
+            }
+                .buttonStyle(CompactCaptureButtonStyle())
+                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+                .accessibilityLabel("Tag")
+                .accessibilityIdentifier("capture-insert-tag")
+
+            Button("@") {
+                editingCommand = MarkdownEditingCommand(kind: .insertText("@"))
             }
             .buttonStyle(CompactCaptureButtonStyle())
             .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-            .accessibilityLabel("More Formatting")
-            .accessibilityIdentifier("capture-more-formatting")
+            .accessibilityLabel("Link to note")
+            .accessibilityIdentifier("capture-insert-mention")
+
+            Button {
+                editingCommand = MarkdownEditingCommand(kind: .insertText("\n- [ ] "))
+            } label: {
+                Image(systemName: "checklist")
+            }
+            .buttonStyle(CompactCaptureButtonStyle())
+            .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
+            .accessibilityLabel("Checklist")
+            .accessibilityIdentifier("capture-insert-checklist")
 
             TargetMenuView()
                 .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
@@ -415,6 +409,7 @@ struct CaptureConsoleView: View {
 
             Button {
                 isBodyFocused = false
+                migrateCaptureInlineTags()
                 appModel.sendDraft(continueCapturing: false)
                 selectedRoute = .text
                 selectedPhotoItem = nil
@@ -477,37 +472,97 @@ struct CaptureConsoleView: View {
     }
 
     private var editor: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: $appModel.draft.body)
-                .focused($isBodyFocused)
-                .scrollContentBackground(.hidden)
-                .foregroundStyle(MudsnoteColors.text)
-                .font(.body)
-                .lineSpacing(2)
-                .padding(.horizontal, 2)
-                .padding(.vertical, 4)
-                .background(MudsnoteColors.panel)
+        VStack(alignment: .leading, spacing: 8) {
+            if !captureTags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Label("Tags", systemImage: "number")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(MudsnoteColors.muted)
+                        ForEach(captureTags, id: \.self) { tag in
+                            Button {
+                                removeCaptureTag(tag)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(tag)
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(MudsnoteColors.card, in: Capsule())
+                                .overlay {
+                                    Capsule().stroke(
+                                        MudsnoteColors.primary.opacity(0.28),
+                                        lineWidth: 1
+                                    )
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(tag)")
+                        }
+                    }
+                }
+                .frame(height: 34)
+                .accessibilityIdentifier("capture-tag-bar")
+            }
+
+            ZStack(alignment: .topLeading) {
+                CaptureTextEditor(
+                    text: $appModel.draft.body,
+                    isFocused: $isBodyFocused,
+                    command: $editingCommand,
+                    tagDraft: $tagDraft,
+                    noteMentionDraft: $noteMentionDraft,
+                    onCommitTag: addCaptureTag
+                )
                 .disabled(appModel.isSendingDraft)
                 .accessibilityIdentifier("capture-body-editor")
 
-            if appModel.draft.body.isEmpty {
-                HStack(spacing: 9) {
-                    Rectangle()
-                        .fill(MudsnoteColors.primary)
-                        .frame(width: 3, height: 28)
-                    Text(LocalizedStringKey(
-                        appModel.isTranscribingAudio
-                            ? "Transcribing..."
-                            : selectedRoute == .audio
-                            ? "Transcription appears here..."
-                            : "What's on your mind?"
-                    ))
-                        .font(.body)
-                        .foregroundStyle(MudsnoteColors.muted)
+                if appModel.draft.body.isEmpty {
+                    HStack(spacing: 9) {
+                        Rectangle()
+                            .fill(MudsnoteColors.primary)
+                            .frame(width: 3, height: 28)
+                        Text(LocalizedStringKey(
+                            appModel.isTranscribingAudio
+                                ? "Transcribing..."
+                                : selectedRoute == .audio
+                                ? "Transcription appears here..."
+                                : "What's on your mind?"
+                        ))
+                            .font(.body)
+                            .foregroundStyle(MudsnoteColors.muted)
+                    }
+                    .padding(.top, 10)
+                    .padding(.leading, 5)
+                    .allowsHitTesting(false)
                 }
-                .padding(.top, 10)
-                .padding(.leading, 5)
-                .allowsHitTesting(false)
+
+                VStack {
+                    Spacer()
+                    if let tagDraft,
+                       !captureTagSuggestions(for: tagDraft.query).isEmpty {
+                        MarkdownTagSuggestions(
+                            tags: Array(captureTagSuggestions(for: tagDraft.query).prefix(5)),
+                            knownTags: Set(
+                                appModel.tagSummaries.map(\.name).map(MarkdownTagSyntax.key)
+                            ),
+                            select: acceptCaptureTag
+                        )
+                    } else if let noteMentionDraft,
+                              !captureMentionSuggestions(for: noteMentionDraft.query).isEmpty {
+                        MarkdownNoteMentionSuggestions(
+                            notes: Array(
+                                captureMentionSuggestions(for: noteMentionDraft.query).prefix(5)
+                            ),
+                            select: acceptCaptureMention
+                        )
+                    }
+                }
+                .padding(.bottom, 6)
             }
         }
         .frame(minHeight: 156)
@@ -583,12 +638,81 @@ struct CaptureConsoleView: View {
         }
     }
 
-    private func appendToken(_ token: String) {
-        if appModel.draft.body.isEmpty || token.hasPrefix("\n") {
-            appModel.draft.body += token.trimmingCharacters(in: .whitespaces)
-        } else {
-            appModel.draft.body += token
+    private var captureTags: [String] {
+        var seen = Set<String>()
+        return appModel.draft.tags
+            .split(whereSeparator: \.isWhitespace)
+            .compactMap { MarkdownTagSyntax.normalizedTag(String($0)) }
+            .filter { seen.insert(MarkdownTagSyntax.key($0)).inserted }
+    }
+
+    private func captureTagSuggestions(for query: String) -> [String] {
+        MarkdownTagSyntax.rankedInlineSuggestions(
+            query: query,
+            knownTags: appModel.tagSummaries.map(\.name)
+                + appModel.libraryFiles.flatMap(\.tags),
+            activeTags: captureTags
+        )
+    }
+
+    private func captureMentionSuggestions(for query: String) -> [RecentMarkdownFile] {
+        NoteMentionRanker.rank(appModel.libraryFiles, query: query)
+    }
+
+    private func addCaptureTag(_ input: String) {
+        guard let tag = MarkdownTagSyntax.normalizedTag(input),
+              !captureTags.contains(where: {
+                  MarkdownTagSyntax.key($0) == MarkdownTagSyntax.key(tag)
+              })
+        else { return }
+        appModel.draft.tags = (captureTags + [tag]).joined(separator: " ")
+    }
+
+    private func migrateCaptureInlineTags() {
+        let migration = MarkdownTagSyntax.extractingInlineTags(
+            from: appModel.draft.body
+        )
+        guard migration.occurrenceCount > 0 else { return }
+        appModel.draft.body = migration.body
+        var seen = Set<String>()
+        appModel.draft.tags = (captureTags + migration.tags)
+            .filter { seen.insert(MarkdownTagSyntax.key($0)).inserted }
+            .joined(separator: " ")
+    }
+
+    private func removeCaptureTag(_ tag: String) {
+        appModel.draft.tags = captureTags.filter {
+            MarkdownTagSyntax.key($0) != MarkdownTagSyntax.key(tag)
         }
+        .joined(separator: " ")
+    }
+
+    private func acceptCaptureTag(_ tag: String) {
+        guard let tagDraft else { return }
+        self.tagDraft = nil
+        editingCommand = MarkdownEditingCommand(
+            kind: .applyTag(range: tagDraft.replacementRange, tag: tag)
+        )
+        isBodyFocused = true
+    }
+
+    private func acceptCaptureMention(_ note: RecentMarkdownFile) {
+        guard let noteMentionDraft else { return }
+        let sourcePath = appModel.draft.target.relativeFolderPath.map {
+            "\($0)/Untitled.md"
+        } ?? "Untitled.md"
+        guard let destination = MarkdownNoteLink.relativeDestination(
+            from: sourcePath,
+            to: note.relativePath
+        ) else { return }
+        self.noteMentionDraft = nil
+        editingCommand = MarkdownEditingCommand(
+            kind: .applyNoteMention(
+                range: noteMentionDraft.replacementRange,
+                label: note.title,
+                destination: destination
+            )
+        )
         isBodyFocused = true
     }
 
@@ -633,6 +757,243 @@ struct CaptureConsoleView: View {
             guard !didStartInitialAudioRoute else { return }
             didStartInitialAudioRoute = true
             appModel.startAudioRecording()
+        }
+    }
+}
+
+private struct CaptureTextEditor: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    @Binding var command: MarkdownEditingCommand?
+    @Binding var tagDraft: MarkdownInlineTagDraft?
+    @Binding var noteMentionDraft: MarkdownNoteMentionDraft?
+    var onCommitTag: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.textColor = UIColor(MudsnoteColors.text)
+        view.tintColor = UIColor(MudsnoteColors.primary)
+        view.font = .preferredFont(forTextStyle: .body)
+        view.textContainerInset = UIEdgeInsets(top: 8, left: 2, bottom: 8, right: 2)
+        view.textContainer.lineFragmentPadding = 0
+        view.keyboardDismissMode = .interactive
+        view.autocorrectionType = .yes
+        view.smartDashesType = .no
+        view.smartQuotesType = .no
+        view.text = text
+        view.accessibilityIdentifier = "capture-body-editor"
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.parent = self
+        if view.markedTextRange == nil, view.text != text {
+            let selection = view.selectedRange
+            view.text = text
+            view.selectedRange = NSRange(
+                location: min(selection.location, (text as NSString).length),
+                length: 0
+            )
+        }
+        if isFocused, !view.isFirstResponder {
+            view.becomeFirstResponder()
+        } else if !isFocused, view.isFirstResponder {
+            view.resignFirstResponder()
+        }
+        if let command, context.coordinator.lastCommandID != command.id {
+            context.coordinator.lastCommandID = command.id
+            context.coordinator.apply(command.kind, to: view)
+            DispatchQueue.main.async { self.command = nil }
+        }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: CaptureTextEditor
+        var lastCommandID: UUID?
+
+        init(parent: CaptureTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            parent.isFocused = true
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            parent.isFocused = false
+            parent.tagDraft = nil
+            parent.noteMentionDraft = nil
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            publish(textView)
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            updateDrafts(in: textView)
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldChangeTextIn range: NSRange,
+            replacementText replacement: String
+        ) -> Bool {
+            if (replacement == " " || replacement == "\n" || replacement == "\t"),
+               let draft = MarkdownTagSyntax.inlineDraft(
+                   in: textView.text,
+                   selection: range
+               ),
+               let tag = MarkdownTagSyntax.normalizedTag(draft.query) {
+                replace(
+                    draft.replacementRange,
+                    with: replacement == "\n" ? "\n" : "",
+                    in: textView
+                )
+                parent.tagDraft = nil
+                parent.onCommitTag(tag)
+                return false
+            }
+            return true
+        }
+
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard range.length > 0 else {
+                return UIMenu(children: suggestedActions)
+            }
+            let bold = UIAction(
+                title: String(localized: "Bold"),
+                image: UIImage(systemName: "bold")
+            ) { [weak self, weak textView] _ in
+                guard let self, let textView else { return }
+                self.apply(.bold, to: textView)
+            }
+            return UIMenu(
+                children: suggestedActions + [
+                    UIMenu(options: .displayInline, children: [bold])
+                ]
+            )
+        }
+
+        func apply(_ command: MarkdownEditingCommand.Kind, to textView: UITextView) {
+            switch command {
+            case .insertText(let text):
+                replace(
+                    textView.selectedRange,
+                    with: triggerAwareInsertion(text, in: textView),
+                    in: textView
+                )
+            case .applyTag(let range, let tag):
+                replace(range, with: "", in: textView)
+                parent.tagDraft = nil
+                parent.onCommitTag(tag)
+            case .applyNoteMention(let range, let label, let destination):
+                replace(range, with: "[\(label)](\(destination))", in: textView)
+                parent.noteMentionDraft = nil
+            case .bold:
+                guard let edit = MarkdownInlineEditing.toggleEdit(
+                    in: textView.text,
+                    selection: textView.selectedRange,
+                    prefix: "**",
+                    suffix: "**",
+                    placeholder: "bold"
+                ) else { return }
+                replace(edit.range, with: edit.replacement, selection: edit.selection, in: textView)
+            default:
+                return
+            }
+        }
+
+        private func triggerAwareInsertion(
+            _ text: String,
+            in textView: UITextView
+        ) -> String {
+            guard text == "#" || text == "@",
+                  textView.selectedRange.length == 0,
+                  textView.selectedRange.location > 0
+            else { return text }
+            let source = textView.text as NSString
+            let previous = source.substring(
+                with: NSRange(location: textView.selectedRange.location - 1, length: 1)
+            )
+            return previous.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+                ? " \(text)"
+                : text
+        }
+
+        private func replace(
+            _ range: NSRange,
+            with replacement: String,
+            selection: NSRange? = nil,
+            in textView: UITextView
+        ) {
+            guard range.location >= 0,
+                  NSMaxRange(range) <= (textView.text as NSString).length
+            else { return }
+            let updated = NSMutableString(string: textView.text)
+            updated.replaceCharacters(in: range, with: replacement)
+            textView.text = updated as String
+            textView.selectedRange = selection ?? NSRange(
+                location: range.location + replacement.utf16.count,
+                length: 0
+            )
+            publish(textView)
+        }
+
+        private func publish(_ textView: UITextView) {
+            parent.text = textView.text
+            updateDrafts(in: textView)
+        }
+
+        private func updateDrafts(in textView: UITextView) {
+            parent.tagDraft = MarkdownTagSyntax.inlineDraft(
+                in: textView.text,
+                selection: textView.selectedRange
+            )
+            parent.noteMentionDraft = noteMentionDraft(in: textView)
+        }
+
+        private func noteMentionDraft(in textView: UITextView) -> MarkdownNoteMentionDraft? {
+            let selection = textView.selectedRange
+            guard selection.length == 0 else { return nil }
+            let source = textView.text as NSString
+            let caret = min(selection.location, source.length)
+            let paragraphRange = source.paragraphRange(
+                for: NSRange(location: caret, length: 0)
+            )
+            let prefixRange = NSRange(
+                location: paragraphRange.location,
+                length: max(caret - paragraphRange.location, 0)
+            )
+            let prefix = source.substring(with: prefixRange)
+            guard let match = prefix.range(
+                of: #"(^|\s)@([^@\n]*)$"#,
+                options: .regularExpression
+            ) else { return nil }
+            let matched = String(prefix[match])
+            guard let markerIndex = matched.firstIndex(of: "@") else { return nil }
+            let token = String(matched[markerIndex...])
+            let matchRange = NSRange(match, in: prefix)
+            return MarkdownNoteMentionDraft(
+                query: String(token.dropFirst()),
+                replacementRange: NSRange(
+                    location: prefixRange.location
+                        + matchRange.location
+                        + matched[..<markerIndex].utf16.count,
+                    length: token.utf16.count
+                )
+            )
         }
     }
 }

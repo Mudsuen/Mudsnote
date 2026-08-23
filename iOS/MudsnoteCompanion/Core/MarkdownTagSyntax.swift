@@ -10,6 +10,17 @@ struct MarkdownTagRewrite: Equatable {
     var occurrenceCount: Int
 }
 
+struct MarkdownInlineTagDraft: Equatable {
+    var query: String
+    var replacementRange: NSRange
+}
+
+struct MarkdownInlineTagMigration: Equatable {
+    var body: String
+    var tags: [String]
+    var occurrenceCount: Int
+}
+
 enum MarkdownTagSyntax {
     private static let tagExpression = try! NSRegularExpression(
         pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)"#
@@ -84,6 +95,144 @@ enum MarkdownTagSyntax {
         tag.folding(
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: .current
+        )
+    }
+
+    static func inlineDraft(in text: String, selection: NSRange) -> MarkdownInlineTagDraft? {
+        guard selection.length == 0 else { return nil }
+        let source = text as NSString
+        let caret = min(max(selection.location, 0), source.length)
+        let paragraphRange = source.paragraphRange(
+            for: NSRange(location: caret, length: 0)
+        )
+        let prefixRange = NSRange(
+            location: paragraphRange.location,
+            length: max(caret - paragraphRange.location, 0)
+        )
+        let prefix = source.substring(with: prefixRange)
+        guard let match = prefix.range(
+            of: #"(^|\s)#([\p{L}\p{N}_-]*)$"#,
+            options: .regularExpression
+        ) else { return nil }
+        let matched = String(prefix[match])
+        guard let markerIndex = matched.firstIndex(of: "#") else { return nil }
+        let token = String(matched[markerIndex...])
+        let matchRange = NSRange(match, in: prefix)
+        return MarkdownInlineTagDraft(
+            query: String(token.dropFirst()),
+            replacementRange: NSRange(
+                location: prefixRange.location
+                    + matchRange.location
+                    + matched[..<markerIndex].utf16.count,
+                length: token.utf16.count
+            )
+        )
+    }
+
+    static func rankedInlineSuggestions(
+        query: String,
+        knownTags: [String],
+        activeTags: [String]
+    ) -> [String] {
+        let activeKeys = Set(activeTags.compactMap(normalizedTag).map(key))
+        var seen = Set<String>()
+        let known = knownTags.compactMap(normalizedTag).filter {
+            let candidateKey = key($0)
+            return !activeKeys.contains(candidateKey) && seen.insert(candidateKey).inserted
+        }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ranked: [String]
+        if trimmedQuery.isEmpty {
+            ranked = known
+        } else {
+            let foldedQuery = key(trimmedQuery)
+            ranked = known.compactMap { tag -> (String, Int)? in
+                let name = String(tag.dropFirst())
+                let foldedName = key(name)
+                if foldedName == foldedQuery { return (tag, 1_000) }
+                if foldedName.hasPrefix(foldedQuery) {
+                    return (tag, 850 - max(foldedName.count - foldedQuery.count, 0))
+                }
+                if let range = foldedName.range(of: foldedQuery) {
+                    return (
+                        tag,
+                        650 - foldedName.distance(from: foldedName.startIndex, to: range.lowerBound)
+                    )
+                }
+                return nil
+            }
+            .sorted {
+                if $0.1 == $1.1 {
+                    return $0.0.localizedStandardCompare($1.0) == .orderedAscending
+                }
+                return $0.1 > $1.1
+            }
+            .map(\.0)
+        }
+
+        guard let newTag = normalizedTag(trimmedQuery),
+              !activeKeys.contains(key(newTag)),
+              !known.contains(where: { key($0) == key(newTag) })
+        else { return ranked }
+        return [newTag] + ranked
+    }
+
+    static func extractingInlineTags(from markdown: String) -> MarkdownInlineTagMigration {
+        var foundTags: [String] = []
+        var occurrenceCount = 0
+        let body = mapVisibleLines(in: markdown) { line in
+            let matches = visibleTagMatches(in: line)
+            guard !matches.isEmpty else { return line }
+            let source = line as NSString
+            let updated = NSMutableString(string: line)
+            for match in matches.reversed() {
+                if let tag = normalizedTag(source.substring(with: match.range)) {
+                    foundTags.append(tag)
+                    occurrenceCount += 1
+                    updated.replaceCharacters(in: match.range, with: "")
+                }
+            }
+            return cleanedLineAfterInlineTagRemoval(updated as String)
+        }
+        return MarkdownInlineTagMigration(
+            body: body,
+            tags: normalizedTags(foundTags),
+            occurrenceCount: occurrenceCount
+        )
+    }
+
+    static func migratingInlineTagsToFrontMatter(
+        in markdown: String
+    ) -> MarkdownInlineTagMigration {
+        let normalizedMarkdown = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        var metadata = ""
+        var body = normalizedMarkdown
+        let lines = normalizedMarkdown.components(separatedBy: "\n")
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+           let closing = lines.indices.dropFirst().first(where: {
+               let marker = lines[$0].trimmingCharacters(in: .whitespaces)
+               return marker == "---" || marker == "..."
+           }) {
+            metadata = lines[...closing].joined(separator: "\n") + "\n"
+            body = lines.dropFirst(closing + 1).joined(separator: "\n")
+        }
+        let extracted = extractingInlineTags(from: body)
+        guard extracted.occurrenceCount > 0 else {
+            return MarkdownInlineTagMigration(
+                body: normalizedMarkdown,
+                tags: tags(in: normalizedMarkdown),
+                occurrenceCount: 0
+            )
+        }
+        let withoutInlineTags = metadata + extracted.body
+        let updated = replacingFrontMatterTags(
+            in: withoutInlineTags,
+            with: tags(in: normalizedMarkdown) + extracted.tags
+        )
+        return MarkdownInlineTagMigration(
+            body: updated,
+            tags: tags(in: updated),
+            occurrenceCount: extracted.occurrenceCount
         )
     }
 
@@ -271,6 +420,18 @@ enum MarkdownTagSyntax {
             cursor = NSMaxRange(codeRange)
         }
         return ranges
+    }
+
+    private static func cleanedLineAfterInlineTagRemoval(_ line: String) -> String {
+        let indentation = line.prefix { $0 == " " || $0 == "\t" }
+        let content = String(line.dropFirst(indentation.count))
+        let compact = content.replacingOccurrences(
+            of: #"[ \t]{2,}"#,
+            with: " ",
+            options: .regularExpression
+        )
+        .trimmingCharacters(in: .whitespaces)
+        return compact.isEmpty ? "" : String(indentation) + compact
     }
 
     private static func isHorizontalWhitespace(_ character: unichar) -> Bool {

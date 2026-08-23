@@ -24,6 +24,7 @@ final class SuggestionListView: NSView {
     var iconWidth: CGFloat = 15
     var iconTitleGap: CGFloat = 5
     var titleFont: NSFont = .systemFont(ofSize: 12, weight: .semibold)
+    var subtitleFont: NSFont = .systemFont(ofSize: 10, weight: .regular)
 
     override var isFlipped: Bool { true }
 
@@ -153,13 +154,29 @@ final class SuggestionListView: NSView {
             .paragraphStyle: paragraphStyle
         ]
         let titleHeight = ceil(titleFont.boundingRectForFont.height) + 2
+        let subtitleHeight = ceil(subtitleFont.boundingRectForFont.height) + 1
+        let hasSubtitle = item.subtitle?.isEmpty == false
         let titleRect = NSRect(
             x: textX,
-            y: rowRect.midY - (titleHeight / 2) - 1,
+            y: hasSubtitle ? rowRect.midY - titleHeight + 1 : rowRect.midY - (titleHeight / 2) - 1,
             width: max(rowRect.width - textX - titleTrailing, 1),
             height: titleHeight
         )
         (item.title as NSString).draw(in: titleRect, withAttributes: attributes)
+        if let subtitle = item.subtitle, !subtitle.isEmpty {
+            let subtitleAttributes: [NSAttributedString.Key: Any] = [
+                .font: subtitleFont,
+                .foregroundColor: panelSecondaryTextColor(),
+                .paragraphStyle: paragraphStyle
+            ]
+            let subtitleRect = NSRect(
+                x: textX,
+                y: rowRect.midY + 1,
+                width: max(rowRect.width - textX - titleTrailing, 1),
+                height: subtitleHeight
+            )
+            (subtitle as NSString).draw(in: subtitleRect, withAttributes: subtitleAttributes)
+        }
     }
 }
 
@@ -167,6 +184,7 @@ final class SuggestionListView: NSView {
 final class SuggestionPopoverController: NSViewController {
     private enum Metrics {
         static let rowHeight: CGFloat = 24
+        static let detailedRowHeight: CGFloat = 38
         static let outerInset: CGFloat = 0
         static let maxHeight: CGFloat = 120
         static let selectionInset: CGFloat = 1
@@ -230,13 +248,17 @@ final class SuggestionPopoverController: NSViewController {
     func updateItems(_ items: [SuggestionItem]) {
         self.items = items
         selectedIndex = min(selectedIndex, max(items.count - 1, 0))
+        let rowHeight = items.contains { $0.subtitle?.isEmpty == false }
+            ? Metrics.detailedRowHeight
+            : Metrics.rowHeight
+        listView.rowHeight = rowHeight
         contentWidth = preferredContentWidth(for: items)
         scrollView.hasVerticalScroller = false
         listView.update(items: items, selectedIndex: selectedIndex, width: contentWidth)
         preferredContentSize = NSSize(
             width: contentWidth,
             height: min(
-                CGFloat(max(items.count, 1)) * Metrics.rowHeight + (Metrics.outerInset * 2),
+                CGFloat(max(items.count, 1)) * rowHeight + (Metrics.outerInset * 2),
                 Metrics.maxHeight
             )
         )
@@ -247,11 +269,19 @@ final class SuggestionPopoverController: NSViewController {
         let maxTitleWidth = items
             .map { ceil(($0.title as NSString).size(withAttributes: [.font: Metrics.titleFont()]).width) }
             .max() ?? 0
+        let maxSubtitleWidth = items
+            .compactMap(\.subtitle)
+            .map {
+                ceil(($0 as NSString).size(withAttributes: [
+                    .font: NSFont.systemFont(ofSize: 10, weight: .regular)
+                ]).width)
+            }
+            .max() ?? 0
         let leadingSpace = items.contains { $0.symbolName != nil }
             ? Metrics.iconLeading + Metrics.iconWidth + Metrics.iconTitleGap
             : Metrics.titleLeading
         let horizontalPadding = leadingSpace + Metrics.titleTrailing
-        let contentWidth = maxTitleWidth + horizontalPadding
+        let contentWidth = max(maxTitleWidth, maxSubtitleWidth) + horizontalPadding
         return min(max(ceil(contentWidth), Metrics.fallbackWidth), Metrics.maxWidth)
     }
 

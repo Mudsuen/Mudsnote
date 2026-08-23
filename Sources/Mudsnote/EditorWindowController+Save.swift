@@ -5,7 +5,14 @@ import MudsnoteCore
 extension EditorWindowController {
 
     @objc func savePressed() {
-        let document = currentDocument()
+        _ = commitPendingTagIfNeeded()
+        let current = currentDocument()
+        let migration = MarkdownEditorDocument.extractingInlineTags(from: current.body)
+        let document = MarkdownEditorDocument(
+            title: current.title,
+            body: migration.body,
+            tags: MarkdownEditorDocument.normalizedTags(current.tags + migration.tags)
+        )
 
         if document.title.isEmpty && document.body.isEmpty {
             noteStore.deleteDraft(id: currentDraftID)
