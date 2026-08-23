@@ -1487,20 +1487,6 @@ struct MudsnoteCoreTests {
     }
 
     @Test
-    func trashNoteRejectsNonNoteFilesWithoutMovingThem() throws {
-        let harness = try TestHarness()
-        let store = harness.store
-        let htmlURL = harness.root.appendingPathComponent("Dashboard.html")
-        try "<html></html>".write(to: htmlURL, atomically: true, encoding: .utf8)
-
-        #expect(throws: CocoaError.self) {
-            _ = try store.trashNote(at: htmlURL)
-        }
-        #expect(FileManager.default.fileExists(atPath: htmlURL.path))
-        #expect(store.trashedNoteCount() == 0)
-    }
-
-    @Test
     func tagsRoundTripAndKnownTagsAreCollected() throws {
         let harness = try TestHarness()
         let store = harness.store
