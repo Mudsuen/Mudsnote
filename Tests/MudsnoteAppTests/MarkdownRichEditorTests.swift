@@ -5677,6 +5677,32 @@ struct MarkdownRichEditorTests {
             onDismiss: { dismissCount += 1 }
         )
 
+        let window = try #require(controller.window)
+        let surface = try #require(window.contentView)
+        let material = try #require(surface.allSubviews.first {
+            $0.identifier?.rawValue == "LinkEditorMaterial"
+        } as? NSVisualEffectView)
+        #expect(window.frame.size == LinkEditorSheetController.compactContentSize)
+        #expect(surface.frame.size == LinkEditorSheetController.compactContentSize)
+        #expect(window.styleMask.contains(.borderless))
+        #expect(!window.styleMask.contains(.titled))
+        #expect(window.canBecomeKey)
+        #expect(window.canBecomeMain)
+        #expect(!window.isOpaque)
+        #expect(window.backgroundColor.alphaComponent == 0)
+        #expect(surface.identifier?.rawValue == "LinkEditorCompactSurface")
+        #expect(material.material == .underWindowBackground)
+        #expect(material.blendingMode == .behindWindow)
+        #expect(material.alphaValue == 0.62)
+        #expect(surface.layer?.cornerRadius == 12)
+        surface.layoutSubtreeIfNeeded()
+        let titleLabel = try #require(surface.allSubviews.first {
+            $0.identifier?.rawValue == "LinkEditorTitle"
+        } as? NSTextField)
+        #expect(titleLabel.alignment == .left)
+        #expect(abs(titleLabel.frame.minX - controller.destinationField.frame.minX) <= 2)
+        #expect(controller.destinationField.frame.height == 28)
+        #expect(controller.nameField.frame.height == 28)
         #expect(controller.window?.contentView?.allSubviews.compactMap { $0.identifier?.rawValue }.contains("LinkEditorDestinationField") == true)
         #expect(controller.window?.contentView?.allSubviews.compactMap { $0.identifier?.rawValue }.contains("LinkEditorNameField") == true)
         #expect(controller.nameField.stringValue == "Selected text")

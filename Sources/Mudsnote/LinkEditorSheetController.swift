@@ -1,7 +1,14 @@
 import AppKit
 
+private final class LinkEditorWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 @MainActor
 final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
+    static let compactContentSize = NSSize(width: 332, height: 156)
+
     let destinationField = NSTextField(string: "")
     let nameField = NSTextField(string: "")
     let confirmButton = NSButton(title: "确定", target: nil, action: nil)
@@ -21,17 +28,19 @@ final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
         self.onSubmit = onSubmit
         self.onDismiss = onDismiss
 
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled],
+        let window = LinkEditorWindow(
+            contentRect: NSRect(origin: .zero, size: Self.compactContentSize),
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
         window.isMovable = false
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.contentView = makeCompactSurface()
 
         destinationField.stringValue = destination
         nameField.stringValue = name
@@ -81,28 +90,31 @@ final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
         guard let contentView = window?.contentView else { return }
 
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.alignment = .center
+        titleLabel.identifier = NSUserInterfaceItemIdentifier("LinkEditorTitle")
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.alignment = .left
 
         let destinationLabel = NSTextField(labelWithString: "链接到")
         destinationLabel.font = .systemFont(ofSize: 12, weight: .regular)
         destinationLabel.textColor = .secondaryLabelColor
+        destinationLabel.alignment = .right
 
         destinationField.identifier = NSUserInterfaceItemIdentifier("LinkEditorDestinationField")
         destinationField.placeholderString = "输入 URL"
         destinationField.delegate = self
         destinationField.setAccessibilityLabel("链接到")
-        destinationField.cell?.wraps = true
-        destinationField.cell?.isScrollable = false
+        configureCompactField(destinationField)
 
         let nameLabel = NSTextField(labelWithString: "名称")
         nameLabel.font = .systemFont(ofSize: 12, weight: .regular)
         nameLabel.textColor = .secondaryLabelColor
+        nameLabel.alignment = .right
 
         nameField.identifier = NSUserInterfaceItemIdentifier("LinkEditorNameField")
         nameField.placeholderString = "可选"
         nameField.delegate = self
         nameField.setAccessibilityLabel("名称")
+        configureCompactField(nameField)
 
         confirmButton.identifier = NSUserInterfaceItemIdentifier("LinkEditorConfirmButton")
         confirmButton.target = self
@@ -110,12 +122,14 @@ final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
         confirmButton.keyEquivalent = "\r"
         confirmButton.bezelStyle = .rounded
         confirmButton.bezelColor = panelAccentColor()
+        confirmButton.controlSize = .small
 
         cancelButton.identifier = NSUserInterfaceItemIdentifier("LinkEditorCancelButton")
         cancelButton.target = self
         cancelButton.action = #selector(cancelPressed)
         cancelButton.keyEquivalent = "\u{1b}"
         cancelButton.bezelStyle = .rounded
+        cancelButton.controlSize = .small
 
         let buttonStack = NSStackView(views: [cancelButton, confirmButton])
         buttonStack.orientation = .horizontal
@@ -127,31 +141,67 @@ final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
         }
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 18),
-            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 13),
+            titleLabel.leadingAnchor.constraint(equalTo: destinationField.leadingAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: destinationField.trailingAnchor),
 
-            destinationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
-            destinationLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            destinationField.topAnchor.constraint(equalTo: destinationLabel.bottomAnchor, constant: 5),
-            destinationField.leadingAnchor.constraint(equalTo: destinationLabel.leadingAnchor),
-            destinationField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            destinationField.heightAnchor.constraint(equalToConstant: 62),
+            destinationLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
+            destinationLabel.widthAnchor.constraint(equalToConstant: 42),
+            destinationLabel.centerYAnchor.constraint(equalTo: destinationField.centerYAnchor),
+            destinationField.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 13),
+            destinationField.leadingAnchor.constraint(equalTo: destinationLabel.trailingAnchor, constant: 8),
+            destinationField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -18),
+            destinationField.heightAnchor.constraint(equalToConstant: 28),
 
-            nameLabel.topAnchor.constraint(equalTo: destinationField.bottomAnchor, constant: 12),
-            nameLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            nameField.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 5),
-            nameField.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            nameLabel.leadingAnchor.constraint(equalTo: destinationLabel.leadingAnchor),
+            nameLabel.trailingAnchor.constraint(equalTo: destinationLabel.trailingAnchor),
+            nameLabel.centerYAnchor.constraint(equalTo: nameField.centerYAnchor),
+            nameField.topAnchor.constraint(equalTo: destinationField.bottomAnchor, constant: 9),
+            nameField.leadingAnchor.constraint(equalTo: destinationField.leadingAnchor),
             nameField.trailingAnchor.constraint(equalTo: destinationField.trailingAnchor),
             nameField.heightAnchor.constraint(equalToConstant: 28),
 
-            buttonStack.topAnchor.constraint(equalTo: nameField.bottomAnchor, constant: 14),
+            buttonStack.topAnchor.constraint(equalTo: nameField.bottomAnchor, constant: 12),
             buttonStack.trailingAnchor.constraint(equalTo: destinationField.trailingAnchor),
-            buttonStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -14)
+            buttonStack.heightAnchor.constraint(equalToConstant: 24),
+            buttonStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
         ])
 
         window?.defaultButtonCell = confirmButton.cell as? NSButtonCell
         updateConfirmState()
+    }
+
+    private func makeCompactSurface() -> NSView {
+        let surface = NSView(frame: NSRect(origin: .zero, size: Self.compactContentSize))
+        surface.identifier = NSUserInterfaceItemIdentifier("LinkEditorCompactSurface")
+        surface.wantsLayer = true
+        surface.layer?.cornerRadius = 12
+        surface.layer?.masksToBounds = true
+        surface.layer?.borderWidth = 1
+        surface.layer?.borderColor = panelSeparatorColor(alpha: 0.22).cgColor
+
+        let material = NSVisualEffectView()
+        material.identifier = NSUserInterfaceItemIdentifier("LinkEditorMaterial")
+        material.material = .underWindowBackground
+        material.blendingMode = .behindWindow
+        material.state = .active
+        material.alphaValue = 0.62
+        surface.addSubview(material)
+        pin(material, to: surface)
+        return surface
+    }
+
+    private func configureCompactField(_ field: NSTextField) {
+        field.isBezeled = false
+        field.drawsBackground = true
+        field.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.42)
+        field.wantsLayer = true
+        field.layer?.cornerRadius = 6
+        field.layer?.borderWidth = 1
+        field.layer?.borderColor = panelSeparatorColor(alpha: 0.30).cgColor
+        field.focusRingType = .exterior
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
     }
 
     private func updateConfirmState() {

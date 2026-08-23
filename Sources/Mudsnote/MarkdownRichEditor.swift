@@ -1558,7 +1558,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         }
     }
 
-    private func dismissSelectionFormattingPanel() {
+    func dismissSelectionFormattingPanel() {
         guard let panel = selectionFormattingPanel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)

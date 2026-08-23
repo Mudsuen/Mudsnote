@@ -498,6 +498,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         onSubmit: @escaping (String, String) -> Void
     ) {
         guard linkEditorSheetController == nil, let window else { return }
+        editorTextView.dismissSelectionFormattingPanel()
         let controller = LinkEditorSheetController(
             title: title,
             destination: destination,

@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 267. Compact translucent macOS link editor
+- Problem: The add/edit-link sheet used a large opaque 420-by-260 layout that visually overwhelmed both the library editor and floating notes.
+- Fix: The shared macOS link editor now uses a compact 332-by-156 focus-capable borderless transparent window with an independently faded under-window material, a left-aligned title sharing the input column, two single-line form rows, restrained translucent input fills, and smaller controls while preserving reliable typing, Return-to-confirm, Escape-to-cancel, and existing link behavior. Opening it from selected text also dismisses the selection toolbar behind the sheet.
+- Lesson: A short contextual form should read as a lightweight extension of the editor, not as a separate full-size document window.
+
 ### 266. Aligned macOS selection toolbars with persistent highlight visibility
 - Problem: The floating-note selection toolbar diverged from the library editor, exposed underline and strikethrough instead of link creation, and macOS selection painting visually covered an applied text highlight.
 - Fix: Both macOS editors now present the same conversion-first (Aa), bold, italic, highlight, and add-link controls. Floating notes use the library-style conversion submenu, link creation opens the shared link editor, underline and strikethrough are removed from the selection toolbar, and the selection tint is translucent so the underlying highlight remains visible.
