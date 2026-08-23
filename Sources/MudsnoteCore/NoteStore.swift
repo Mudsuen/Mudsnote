@@ -5,6 +5,7 @@ import Foundation
 /// split across focused extensions (Settings, Migration, Drafts, Notes, Search)
 /// so that each responsibility lives in its own file.
 public final class NoteStore: @unchecked Sendable {
+    public static let supportedNoteFileExtensions = Set(["md", "markdown", "txt"])
     public static let minimumPanelOpacity = 0.62
     public static let maximumPanelOpacity = 0.96
     public static let defaultPanelOpacity = 0.78
@@ -56,6 +57,10 @@ public final class NoteStore: @unchecked Sendable {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
         return appSupport.appendingPathComponent("Mudsnote", isDirectory: true)
+    }
+
+    public static func isSupportedNoteFileURL(_ url: URL) -> Bool {
+        supportedNoteFileExtensions.contains(url.pathExtension.lowercased())
     }
 
     @_spi(Testing)

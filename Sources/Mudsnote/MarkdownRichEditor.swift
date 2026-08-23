@@ -87,7 +87,9 @@ func markdownLinkDestination(_ rawValue: String, relativeTo sourceURL: URL?) -> 
     if let sourceURL,
        let localURL = MarkdownLocalLinkResolver.fileURL(for: trimmed, relativeTo: sourceURL) {
         guard FileManager.default.fileExists(atPath: localURL.path) else { return nil }
-        return .localMarkdown(localURL)
+        return NoteStore.isSupportedNoteFileURL(localURL)
+            ? .localMarkdown(localURL)
+            : .external(localURL)
     }
 
     guard let externalURL = openableMarkdownLinkURL(trimmed) else { return nil }

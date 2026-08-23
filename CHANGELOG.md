@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 268. Safe external HTML links and note-only deletion
+- Problem: A `file://` HTML link could be treated as an internal Markdown document, and deleting that unsupported document moved it into Mudsnote's Trash even though Recently Deleted only displays note files.
+- Fix: Existing local HTML and other non-note file links now open through macOS in their default application, while Mudsnote's note deletion pipeline rejects unsupported file extensions before moving anything.
+- Lesson: Link routing and destructive file operations must share the same explicit note-type boundary.
+
 ### 267. Compact translucent macOS link editor
 - Problem: The add/edit-link sheet used a large opaque 420-by-260 layout that visually overwhelmed both the library editor and floating notes.
 - Fix: The shared macOS link editor now uses a compact 332-by-156 focus-capable borderless transparent window with an independently faded under-window material, a left-aligned title sharing the input column, two single-line form rows, restrained translucent input fills, and smaller controls while preserving reliable typing, Return-to-confirm, Escape-to-cancel, and existing link behavior. Opening it from selected text also dismisses the selection toolbar behind the sheet.

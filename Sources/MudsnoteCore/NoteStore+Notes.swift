@@ -502,6 +502,9 @@ extension NoteStore {
 
     public func trashNote(at url: URL) throws -> URL {
         let standardizedURL = url.standardizedFileURL
+        guard Self.isSupportedNoteFileURL(standardizedURL) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let trashDirectory = trashDirectory()
         try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
 

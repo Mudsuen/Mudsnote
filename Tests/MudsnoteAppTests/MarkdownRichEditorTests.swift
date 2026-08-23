@@ -5729,6 +5729,24 @@ struct MarkdownRichEditorTests {
         #expect(dismissCount == 2)
     }
 
+    @Test
+    func localHTMLLinkUsesItsDefaultExternalApplicationInsteadOfMudsnote() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-html-link-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appendingPathComponent("Source.md")
+        let htmlURL = root.appendingPathComponent("Dashboard.html")
+        try "# Source".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "<html></html>".write(to: htmlURL, atomically: true, encoding: .utf8)
+
+        #expect(
+            markdownLinkDestination(htmlURL.absoluteString, relativeTo: sourceURL)
+                == .external(htmlURL.standardizedFileURL)
+        )
+    }
+
     @MainActor
     @Test
     func libraryAndFloatingEditorsManageMarkdownLinks() throws {
