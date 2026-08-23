@@ -6,6 +6,16 @@ private struct FormattingUndoSnapshot {
     let selection: NSRange
 }
 
+private enum SelectionConversionCommand: Int {
+    case paragraph
+    case heading1
+    case heading2
+    case heading3
+    case checklist
+    case bulletList
+    case orderedList
+}
+
 extension EditorWindowController {
 
     func makeSelectionFormattingMenu() -> NSMenu? {
@@ -15,12 +25,7 @@ extension EditorWindowController {
         let items: [(SelectionToolbarOption, String, String, ToolbarAction)] = [
             (.bold, "加粗", "bold", .bold),
             (.italic, "斜体", "italic", .italic),
-            (.underline, "下划线", "underline", .underline),
-            (.strikethrough, "删除线", "strikethrough", .strikethrough),
-            (.highlight, "高亮", "highlighter", .highlight),
-            (.checklist, "待办列表", "checkmark.square", .checklist),
-            (.bulletList, "项目符号列表", "list.bullet", .bulletList),
-            (.orderedList, "编号列表", "list.number", .orderedList)
+            (.highlight, "高亮", "highlighter", .highlight)
         ]
         for (option, title, symbolName, action) in items where enabled.contains(option) {
             let item = NSMenuItem(
@@ -33,7 +38,59 @@ extension EditorWindowController {
             item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
             menu.addItem(item)
         }
+
+        if enabled.contains(.link) {
+            let item = NSMenuItem(
+                title: "添加链接",
+                action: #selector(selectionLinkMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.image = NSImage(systemSymbolName: "link", accessibilityDescription: "添加链接")
+            menu.addItem(item)
+        }
+
+        let conversionOptions: Set<SelectionToolbarOption> = [.conversion, .checklist, .bulletList, .orderedList]
+        if !enabled.isDisjoint(with: conversionOptions) {
+            let conversionItem = NSMenuItem(title: "转换为", action: nil, keyEquivalent: "")
+            conversionItem.image = selectionMenuTextImage("Aa")
+            let conversionMenu = NSMenu(title: "转换为")
+            let commands: [(SelectionToolbarOption, String, String, SelectionConversionCommand)] = [
+                (.conversion, "正文", "textformat", .paragraph),
+                (.conversion, "标题", "textformat.size.larger", .heading1),
+                (.conversion, "副标题", "textformat.size", .heading2),
+                (.conversion, "小标题", "textformat.size.smaller", .heading3),
+                (.bulletList, "项目符号列表", "list.bullet", .bulletList),
+                (.orderedList, "编号列表", "list.number", .orderedList),
+                (.checklist, "待办列表", "checkmark.square", .checklist)
+            ]
+            for (option, title, symbolName, command) in commands where enabled.contains(option) {
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(selectionConversionMenuItemPressed(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.tag = command.rawValue
+                item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+                conversionMenu.addItem(item)
+            }
+            conversionItem.submenu = conversionMenu
+            menu.insertItem(conversionItem, at: 0)
+        }
         return menu
+    }
+
+    private func selectionMenuTextImage(_ text: String) -> NSImage {
+        let image = NSImage(size: NSSize(width: 20, height: 16))
+        image.lockFocus()
+        (text as NSString).draw(at: .zero, withAttributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor.labelColor
+        ])
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - Paragraph kind
@@ -551,6 +608,81 @@ extension EditorWindowController {
     @objc private func selectionFormattingMenuItemPressed(_ sender: NSMenuItem) {
         guard let action = ToolbarAction(rawValue: sender.tag) else { return }
         performToolbarAction(action)
+    }
+
+    @objc private func selectionConversionMenuItemPressed(_ sender: NSMenuItem) {
+        guard let command = SelectionConversionCommand(rawValue: sender.tag) else { return }
+        focusEditorForToolbarAction()
+        switch command {
+        case .paragraph: toggleParagraphKind(.paragraph)
+        case .heading1: toggleParagraphKind(.heading(level: 1))
+        case .heading2: toggleParagraphKind(.heading(level: 2))
+        case .heading3: toggleParagraphKind(.heading(level: 3))
+        case .checklist: toggleParagraphKind(.checklist(checked: false))
+        case .bulletList: toggleParagraphKind(.bullet)
+        case .orderedList: toggleParagraphKind(.ordered(index: 1))
+        }
+        rememberEditorSelectionForToolbarActions()
+    }
+
+    @objc private func selectionLinkMenuItemPressed(_ sender: NSMenuItem) {
+        let selection = editorTextView.selectedRange()
+        guard selection.length > 0,
+              NSMaxRange(selection) <= (editorTextView.string as NSString).length else { return }
+
+        if let link = editorTextView.linkReference(for: selection) {
+            presentLinkEditor(
+                title: "编辑链接",
+                destination: link.url,
+                name: link.label
+            ) { [weak self] destination, name in
+                self?.applyLinkURL(
+                    destination,
+                    label: name.isEmpty ? destination : name,
+                    to: link
+                )
+            }
+            return
+        }
+
+        let selectedText = (editorTextView.string as NSString).substring(with: selection)
+        presentLinkEditor(
+            title: "添加链接",
+            destination: "",
+            name: selectedText
+        ) { [weak self] destination, name in
+            self?.applyNewLinkURL(destination, label: name.isEmpty ? destination : name, to: selection)
+        }
+    }
+
+    private func applyNewLinkURL(_ url: String, label: String, to selection: NSRange) {
+        guard let storage = editorTextView.textStorage,
+              selection.length > 0,
+              NSMaxRange(selection) <= storage.length else { return }
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else { return }
+        let resolvedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let linkLabel = resolvedLabel.isEmpty ? trimmedURL : resolvedLabel
+        let undoSnapshot = formattingUndoSnapshot()
+
+        suppressTextDidChange = true
+        storage.beginEditing()
+        storage.replaceCharacters(in: selection, with: linkLabel)
+        let linkRange = NSRange(location: selection.location, length: linkLabel.utf16.count)
+        storage.removeAttribute(.qmAutomaticLink, range: linkRange)
+        storage.addAttributes([
+            .qmLinkURL: trimmedURL,
+            .foregroundColor: theme.accentColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ], range: linkRange)
+        storage.endEditing()
+        suppressTextDidChange = false
+
+        editorTextView.setSelectedRange(linkRange)
+        updateTypingAttributesFromInsertionPoint()
+        rememberEditorSelectionForToolbarActions()
+        registerFormattingUndoIfNeeded(before: undoSnapshot, actionName: "添加链接")
+        userDidEdit()
     }
 
     private func performToolbarAction(_ action: ToolbarAction) {

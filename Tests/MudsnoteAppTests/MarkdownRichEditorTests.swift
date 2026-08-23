@@ -736,10 +736,23 @@ struct MarkdownRichEditorTests {
         ))
         controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
 
-        let titles = controller.editorTextView.selectionMenuProvider?()?.items.map(\.title) ?? []
-        #expect(titles.contains("加粗"))
-        #expect(titles.contains("待办列表"))
-        #expect(titles.contains("编号列表"))
+        let menu = try #require(controller.editorTextView.selectionMenuProvider?())
+        #expect(menu.items.map(\.title) == ["转换为", "加粗", "斜体", "高亮", "添加链接"])
+        #expect(menu.items.first { $0.title == "下划线" } == nil)
+        #expect(menu.items.first { $0.title == "删除线" } == nil)
+        #expect(menu.items.first?.submenu?.items.map(\.title) == [
+            "正文", "标题", "副标题", "小标题", "项目符号列表", "编号列表", "待办列表"
+        ])
+
+        let linkItem = try #require(menu.items.first { $0.title == "添加链接" })
+        #expect(NSApp.sendAction(try #require(linkItem.action), to: linkItem.target, from: linkItem))
+        let linkEditor = try #require(controller.linkEditorSheetController)
+        linkEditor.destinationField.stringValue = "https://muds.top"
+        linkEditor.submitForTesting()
+        #expect(MarkdownRichTextCodec.serialize(
+            controller.editorTextView.attributedString(),
+            theme: controller.theme
+        ) == "[Selected](https://muds.top) text")
     }
 
     @MainActor
@@ -762,7 +775,9 @@ struct MarkdownRichEditorTests {
         ))
         floatingController.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
         #expect(floatingController.editorTextView.conciseEditingMenu(from: NSMenu()).items.map(\.title) == ["拷贝"])
-        #expect(floatingController.makeSelectionFormattingMenu()?.items.map(\.title) == ["加粗", "编号列表"])
+        let floatingSelectionMenu = try #require(floatingController.makeSelectionFormattingMenu())
+        #expect(floatingSelectionMenu.items.map(\.title) == ["转换为", "加粗"])
+        #expect(floatingSelectionMenu.items.first?.submenu?.items.map(\.title) == ["编号列表"])
         #expect(harness.store.editorContextMenuItemIdentifiers == ["copy", "insertLink"])
         #expect(harness.store.selectionToolbarItemIdentifiers == ["bold", "orderedList"])
 
@@ -776,8 +791,8 @@ struct MarkdownRichEditorTests {
         defer { libraryController.close() }
         libraryController.editorTextView.setSelectedRange(NSRange(location: 0, length: 8))
         let selectionMenu = try #require(libraryController.makeSelectionFormattingMenuForLibrary())
-        #expect(selectionMenu.items.map(\.title) == ["加粗", "转换为"])
-        #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == ["编号列表"])
+        #expect(selectionMenu.items.map(\.title) == ["转换为", "加粗"])
+        #expect(selectionMenu.items.first?.submenu?.items.map(\.title) == ["编号列表"])
 
         let contextMenu = libraryController.editorTextView.conciseEditingMenu(from: NSMenu())
         let contextEvent = try #require(NSEvent.mouseEvent(
@@ -794,6 +809,9 @@ struct MarkdownRichEditorTests {
         libraryController.editorTextView.configureContextMenu?(contextMenu, contextEvent)
         #expect(contextMenu.items.first?.title == "插入")
         #expect(contextMenu.items.last { $0.title == "插入" }?.submenu?.items.map(\.title) == ["链接…"])
+
+        harness.store.selectionToolbarItemIdentifiers = ["bold", "underline", "strikethrough"]
+        #expect(harness.store.enabledSelectionToolbarOptions == [.bold, .link])
     }
 
     @MainActor
@@ -5296,18 +5314,27 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(bodyRange)
         let selectionMenu = try #require(controller.makeSelectionFormattingMenuForLibrary())
         #expect(selectionMenu.items.map(\.title) == [
-            "加粗", "斜体", "下划线", "删除线", "高亮", "转换为"
+            "转换为", "加粗", "斜体", "高亮", "添加链接"
         ])
         #expect(selectionMenu.items.allSatisfy { $0.image != nil })
-        #expect(selectionMenu.items.last?.submenu?.items.map(\.title) == [
+        #expect(selectionMenu.items.first?.submenu?.items.map(\.title) == [
             "正文", "标题", "副标题", "小标题", "项目符号列表", "编号列表", "待办列表"
         ])
-        #expect(selectionMenu.items.last?.submenu?.items.allSatisfy { $0.image != nil } == true)
+        #expect(selectionMenu.items.first?.submenu?.items.allSatisfy { $0.image != nil } == true)
         let highlightItem = try #require(selectionMenu.items.first { $0.title == "高亮" })
         controller.editorTextView.undoManager?.removeAllActions()
         #expect(NSApp.sendAction(try #require(highlightItem.action), to: highlightItem.target, from: highlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n<mark>plain</mark>")
         #expect(controller.editorTextView.undoManager?.canUndo == true)
+        #expect(controller.editorTextView.textStorage?.attribute(
+            .backgroundColor,
+            at: bodyRange.location,
+            effectiveRange: nil
+        ) != nil)
+        let selectionColor = try #require(
+            controller.editorTextView.selectedTextAttributes[.backgroundColor] as? NSColor
+        )
+        #expect(selectionColor.alphaComponent < 1)
         controller.editorTextView.undoManager?.undo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         controller.editorTextView.undoManager?.redo()
@@ -5340,16 +5367,9 @@ struct MarkdownRichEditorTests {
         }
         #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "加粗" } === formattingButton)
 
-        let underlineButton = try #require(refreshedSelectionPanelButtons.first { $0.toolTip == "下划线" })
-        underlineButton.performClick(nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        #expect((controller.editorTextView.textStorage?.attribute(.underlineStyle, at: bodyRange.location, effectiveRange: nil) as? Int) == NSUnderlineStyle.single.rawValue)
-        controller.editorTextView.textStorage?.addAttribute(.underlineColor, value: NSColor.controlAccentColor, range: bodyRange)
-        underlineButton.performClick(nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        #expect(controller.editorTextView.textStorage?.attribute(.underlineStyle, at: bodyRange.location, effectiveRange: nil) == nil)
-        #expect(controller.editorTextView.textStorage?.attribute(.underlineColor, at: bodyRange.location, effectiveRange: nil) == nil)
-        #expect(controller.editorTextView.typingAttributes[.underlineStyle] == nil)
+        #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "下划线" } == nil)
+        #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "删除线" } == nil)
+        #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "添加链接" } != nil)
 
         controller.editorTextView.undoManager?.removeAllActions()
         let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")

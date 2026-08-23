@@ -3395,6 +3395,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.drawsBackground = false
         editorTextView.textColor = theme.textColor
         editorTextView.insertionPointColor = theme.accentColor
+        editorTextView.selectedTextAttributes = [
+            .backgroundColor: theme.accentColor.withAlphaComponent(0.24)
+        ]
         editorTextView.isVerticallyResizable = true
         editorTextView.isHorizontallyResizable = false
         editorTextView.textContainerInset = NSSize(
@@ -10616,9 +10619,7 @@ final class LibraryWindowController: NSWindowController,
         let enabled = noteStore.enabledSelectionToolbarOptions
         let inlineCommands: [(SelectionToolbarOption, String, String, LibraryFormatCommand)] = [
             (.bold, "加粗", "bold", .bold),
-            (.italic, "斜体", "italic", .italic),
-            (.underline, "下划线", "underline", .underline),
-            (.strikethrough, "删除线", "strikethrough", .strikethrough)
+            (.italic, "斜体", "italic", .italic)
         ]
         for (option, title, symbolName, command) in inlineCommands where enabled.contains(option) {
             let item = NSMenuItem(title: title, action: #selector(formatMenuItemPressed(_:)), keyEquivalent: "")
@@ -10637,6 +10638,13 @@ final class LibraryWindowController: NSWindowController,
             highlightItem.state = isHighlighted ? .on : .off
             highlightItem.image = selectionMenuImage(symbolName: "highlighter", title: "高亮")
             menu.addItem(highlightItem)
+        }
+
+        if enabled.contains(.link) {
+            let linkItem = NSMenuItem(title: "添加链接", action: #selector(linkPressed), keyEquivalent: "")
+            linkItem.target = self
+            linkItem.image = selectionMenuImage(symbolName: "link", title: "添加链接")
+            menu.addItem(linkItem)
         }
 
         let conversionOptions: Set<SelectionToolbarOption> = [.conversion, .checklist, .bulletList, .orderedList]
@@ -10662,7 +10670,7 @@ final class LibraryWindowController: NSWindowController,
                 conversionMenu.addItem(item)
             }
             conversionItem.submenu = conversionMenu
-            menu.addItem(conversionItem)
+            menu.insertItem(conversionItem, at: 0)
         }
         return menu
     }

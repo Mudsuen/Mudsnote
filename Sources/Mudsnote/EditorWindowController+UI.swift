@@ -57,6 +57,9 @@ extension EditorWindowController {
         editorTextView.backgroundColor = .clear
         editorTextView.textColor = theme.textColor
         editorTextView.insertionPointColor = theme.accentColor
+        editorTextView.selectedTextAttributes = [
+            .backgroundColor: theme.accentColor.withAlphaComponent(0.24)
+        ]
         editorTextView.drawsBackground = false
         editorTextView.isVerticallyResizable = true
         editorTextView.isHorizontallyResizable = false

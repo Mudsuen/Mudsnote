@@ -491,7 +491,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         fileURL ?? selectedDirectoryURL.appendingPathComponent(".mudsnote-unsaved.md")
     }
 
-    private func presentLinkEditor(
+    func presentLinkEditor(
         title: String,
         destination: String,
         name: String,

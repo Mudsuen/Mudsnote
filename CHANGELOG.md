@@ -17,6 +17,11 @@ As of 2026-03-23, this prototype has gone through 26 implementation iterations i
 
 ## Iterations
 
+### 266. Aligned macOS selection toolbars with persistent highlight visibility
+- Problem: The floating-note selection toolbar diverged from the library editor, exposed underline and strikethrough instead of link creation, and macOS selection painting visually covered an applied text highlight.
+- Fix: Both macOS editors now present the same conversion-first (Aa), bold, italic, highlight, and add-link controls. Floating notes use the library-style conversion submenu, link creation opens the shared link editor, underline and strikethrough are removed from the selection toolbar, and the selection tint is translucent so the underlying highlight remains visible.
+- Lesson: Shared editing surfaces should expose one formatting contract, and transient selection feedback must preserve meaningful document formatting beneath it.
+
 ### 265. Title-level metadata tags and consistent iOS reader editing
 - Problem: Tags were still rendered and persisted as ordinary body hashtags, iOS rich editing left an extra visual line between the title and body, finishing an edit kept the reader expanded, and the half-height sheet exposed home controls through its lower corners.
 - Fix: macOS and iOS now treat front-matter tags as the canonical note tags, collect newly completed tag tokens into a dedicated removable tag bar directly below the title, and leave hashtags elsewhere as ordinary text. iOS uses the same separated title, tag, and body hierarchy while reading and editing, hides all front matter, returns to the medium detent after saving, and covers the full lower corner area behind the half-height sheet. Inbox memo tags use a hidden per-memo metadata marker instead of visible body lines.

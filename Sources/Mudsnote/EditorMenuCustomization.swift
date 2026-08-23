@@ -26,9 +26,8 @@ enum EditorContextMenuOption: String, CaseIterable {
 enum SelectionToolbarOption: String, CaseIterable {
     case bold
     case italic
-    case underline
-    case strikethrough
     case highlight
+    case link
     case conversion
     case checklist
     case bulletList
@@ -38,9 +37,8 @@ enum SelectionToolbarOption: String, CaseIterable {
         switch self {
         case .bold: return "加粗"
         case .italic: return "斜体"
-        case .underline: return "下划线"
-        case .strikethrough: return "删除线"
         case .highlight: return "高亮"
+        case .link: return "添加链接"
         case .conversion: return "正文与标题（Aa）"
         case .checklist: return "待办列表"
         case .bulletList: return "项目符号列表"
@@ -65,7 +63,12 @@ extension NoteStore {
             guard let stored = selectionToolbarItemIdentifiers else {
                 return Set(SelectionToolbarOption.allCases)
             }
-            return Set(stored.compactMap(SelectionToolbarOption.init(rawValue:)))
+            var options = Set(stored.compactMap(SelectionToolbarOption.init(rawValue:)))
+            if !options.contains(.link),
+               stored.contains(where: { $0 == "underline" || $0 == "strikethrough" }) {
+                options.insert(.link)
+            }
+            return options
         }
         set { selectionToolbarItemIdentifiers = SelectionToolbarOption.allCases.filter(newValue.contains).map(\.rawValue) }
     }
