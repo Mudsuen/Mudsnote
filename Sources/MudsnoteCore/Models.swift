@@ -181,6 +181,14 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
     }
 
     public static func composeEditorText(title: String, body: String) -> String {
+        composeEditorText(title: title, body: body, hasMetadataTags: false)
+    }
+
+    public static func composeEditorText(
+        title: String,
+        body: String,
+        hasMetadataTags: Bool
+    ) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -192,7 +200,8 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             return "# \(trimmedTitle)"
         }
 
-        return "# \(trimmedTitle)\n\n\(trimmedBody)"
+        let separator = hasMetadataTags ? "\n" : "\n\n"
+        return "# \(trimmedTitle)\(separator)\(trimmedBody)"
     }
 
     public static func wordCount(in text: String) -> Int {

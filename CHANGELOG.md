@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-24, this prototype records 273 implementation iterations, including the initial MVP.
+As of 2026-08-24, this prototype records 274 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 274. Compact macOS tag layout and reversible library migration
+- Problem: The macOS metadata tag bar depended on an empty editor paragraph for vertical clearance, so the body sat one line too low; deleting that paragraph could instead place the first body line underneath the tag chips. Historical notes also retained inline `#tags` in their prose even after front matter became the canonical tag location.
+- Fix: Tagged macOS notes now use the tag bar itself as the only title-to-body spacer and reapply its measured paragraph reserve after every text mutation. A dry-run-capable batch migration scans configured note roots, atomically moves eligible inline tags into deduplicated front matter, preserves surrounding source structure, skips code spans and fenced code, and rolls back already-written files if any write fails.
+- Lesson: Overlay metadata must own real layout space instead of borrowing a blank content line, and a library-wide format transition needs preview, source-preserving writes, idempotence, and an external recovery copy before touching user files.
 
 ### 273. Hardware-accountable performance gates
 - Problem: the hosted macOS runner still measured 220 ms for the strict 100 ms projection contract even in Release, while the same optimized test passes on the controlled delivery machine. Absolute wall-clock microbenchmarks are not portable across contended shared hardware.

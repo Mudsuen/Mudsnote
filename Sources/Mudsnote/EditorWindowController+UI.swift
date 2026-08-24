@@ -614,10 +614,10 @@ extension EditorWindowController {
 
         if let draft = noteStore.loadDraft(id: currentDraftID) {
             let migration = MarkdownEditorDocument.extractingInlineTags(from: draft.body)
-            applyInitialContent(title: draft.title, body: migration.body)
             activeTags = MarkdownEditorDocument.normalizedTags(
                 draft.tags + migration.tags
             )
+            applyInitialContent(title: draft.title, body: migration.body)
             selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
             isDirty = true
             statusLabel.stringValue = "已恢复"
@@ -644,7 +644,11 @@ extension EditorWindowController {
         }
         guard isFloatingNoteMode else {
             hasAutomaticTitleFormatting = false
-            applyBodyMarkdown(MarkdownEditorDocument(title: title, body: body).editorText)
+            applyBodyMarkdown(MarkdownEditorDocument.composeEditorText(
+                title: title,
+                body: body,
+                hasMetadataTags: !activeTags.isEmpty
+            ))
             return
         }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -653,7 +657,12 @@ extension EditorWindowController {
         if hasAutomaticTitleFormatting {
             applyBodyMarkdown("# \(trimmedTitle)")
         } else {
-            applyBodyMarkdown([trimmedTitle, trimmedBody].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+            let separator = activeTags.isEmpty ? "\n\n" : "\n"
+            applyBodyMarkdown(
+                [trimmedTitle, trimmedBody]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: separator)
+            )
         }
     }
 

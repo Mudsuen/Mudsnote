@@ -2356,6 +2356,59 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func metadataTagEditorTextUsesTagBarAsTheOnlyTitleBodySpacer() {
+        #expect(
+            MarkdownEditorDocument.composeEditorText(
+                title: "Inbox",
+                body: "body line",
+                hasMetadataTags: true
+            ) == "# Inbox\nbody line"
+        )
+        #expect(
+            MarkdownEditorDocument.composeEditorText(
+                title: "Inbox",
+                body: "body line",
+                hasMetadataTags: false
+            ) == "# Inbox\n\nbody line"
+        )
+    }
+
+    @Test
+    func batchInlineTagMigrationUpdatesOriginalFilesAndIsIdempotent() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let root = harness.root.appendingPathComponent("Library", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let noteURL = root.appendingPathComponent("Tagged.md")
+        try """
+        ---
+        aliases: [Sample]
+        tags:
+          - existing
+        ---
+
+        # Tagged
+
+        Body #project and #area/topic.
+        `#code`
+        """.write(to: noteURL, atomically: true, encoding: .utf8)
+
+        let preview = try store.inlineTagMigrationPreview(in: [root, root])
+        #expect(preview.fileCount == 1)
+        #expect(preview.occurrenceCount == 2)
+
+        let migrated = try store.migrateInlineTags(in: [root])
+        #expect(migrated == preview)
+        let loaded = try store.loadNote(at: noteURL)
+        #expect(loaded.tags == ["existing", "project", "area/topic"])
+        #expect(loaded.body == "Body and.\n`#code`")
+        #expect(try store.inlineTagMigrationPreview(in: [root]).fileCount == 0)
+        let updated = try String(contentsOf: noteURL, encoding: .utf8)
+        #expect(updated.contains("aliases: [Sample]"))
+        #expect(updated.hasSuffix("# Tagged\n\nBody and.\n`#code`"))
+    }
+
+    @Test
     func migratesLegacyDefaultsIntoMudsnoteDomain() throws {
         let suiteSuffix = UUID().uuidString
         let currentSuite = "mudsnote.tests.current.\(suiteSuffix)"

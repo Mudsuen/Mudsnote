@@ -1869,6 +1869,56 @@ struct MarkdownRichEditorTests {
         #expect(MarkdownRichTextCodec.serialize(rendered, theme: theme) == "hello #alpha world")
     }
 
+    @MainActor
+    @Test
+    func metadataTagBarReservesBodySpaceWithoutAnEmptyParagraph() throws {
+        let textView = MarkdownTextView(
+            frame: NSRect(x: 0, y: 0, width: 480, height: 240)
+        )
+        let markdown = MarkdownEditorDocument.composeEditorText(
+            title: "信念",
+            body: "正文首行",
+            hasMetadataTags: true
+        )
+        textView.replaceAllContent(with: MarkdownRichTextCodec.render(
+            markdown: markdown,
+            theme: theme
+        ))
+        textView.setMetadataTags(["个人感悟", "知识管理"])
+
+        let layoutManager = try #require(textView.layoutManager)
+        let textContainer = try #require(textView.textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+        let bodyRange = (textView.string as NSString).range(of: "正文首行")
+        let bodyGlyphRange = layoutManager.glyphRange(
+            forCharacterRange: bodyRange,
+            actualCharacterRange: nil
+        )
+        let bodyRect = layoutManager.boundingRect(
+            forGlyphRange: bodyGlyphRange,
+            in: textContainer
+        )
+        let tagBar = try #require(
+            textView.subviews.compactMap { $0 as? NSScrollView }.first
+        )
+
+        #expect(textView.string == "信念\n正文首行")
+        #expect(tagBar.frame.maxY <= textView.textContainerInset.height + bodyRect.minY)
+
+        textView.textStorage?.addAttribute(
+            .paragraphStyle,
+            value: theme.paragraphStyle(for: .heading(level: 1)),
+            range: NSRange(location: 0, length: 2)
+        )
+        textView.didChangeText()
+        let reserve = textView.textStorage?.attribute(
+            .qmMetadataTagReserve,
+            at: 0,
+            effectiveRange: nil
+        ) as? CGFloat
+        #expect(reserve == 36)
+    }
+
     @Test
     func richCodecRoundTripsPortableHighlightedFormatting() throws {
         let markdown = "Keep <mark>**important**</mark> text"
@@ -3268,7 +3318,7 @@ struct MarkdownRichEditorTests {
             MarkdownRichTextCodec.serialize(
                 controller.editorTextView.attributedString(),
                 theme: controller.theme
-            ) == "# Library Seed\n\nBody line"
+            ) == "# Library Seed\nBody line"
         )
         let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceCount-0"

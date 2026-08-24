@@ -7017,7 +7017,8 @@ final class LibraryWindowController: NSWindowController,
             let rendered = MarkdownRichTextCodec.render(
                 markdown: MarkdownEditorDocument.composeEditorText(
                     title: cached.loaded.title,
-                    body: cached.loaded.body
+                    body: cached.loaded.body,
+                    hasMetadataTags: !cached.loaded.tags.isEmpty
                 ),
                 theme: theme,
                 baseURL: note.url,
@@ -7437,7 +7438,11 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
         selectedTags = tags
-        let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(title: title, body: body)
+        let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(
+            title: title,
+            body: body,
+            hasMetadataTags: !tags.isEmpty
+        )
         editorTextView.replaceAllContent(with:
             renderedBody ?? MarkdownRichTextCodec.render(
                 markdown: unifiedMarkdown,
@@ -7496,7 +7501,11 @@ final class LibraryWindowController: NSWindowController,
 
     private func replaceUnifiedEditorTitle(_ title: String) {
         let document = currentEditorDocument()
-        let markdown = MarkdownEditorDocument.composeEditorText(title: title, body: document.body)
+        let markdown = MarkdownEditorDocument.composeEditorText(
+            title: title,
+            body: document.body,
+            hasMetadataTags: !selectedTags.isEmpty
+        )
         let selection = editorTextView.selectedRange()
         suppressEditorChanges = true
         editorTextView.replaceAllContent(with:

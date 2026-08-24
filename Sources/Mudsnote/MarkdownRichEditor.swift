@@ -451,6 +451,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func setMetadataTags(_ tags: [String], onRemove: ((String) -> Void)? = nil) {
         let normalized = MarkdownEditorDocument.normalizedTags(tags)
         guard normalized != metadataTags || metadataTagScrollView == nil else {
+            updateMetadataTagSpacing(hasTags: !normalized.isEmpty)
             layoutMetadataTagBar()
             return
         }
@@ -700,6 +701,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func didChangeText() {
         super.didChangeText()
+        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty)
+        layoutMetadataTagBar()
         window?.invalidateCursorRects(for: self)
     }
 

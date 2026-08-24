@@ -672,7 +672,7 @@ extension NoteStore {
         return Array(lines[1..<closingIndex])
     }
 
-    private func frontMatterTags(in lines: [String]) -> [String] {
+    func frontMatterTags(in lines: [String]) -> [String] {
         guard let range = frontMatterTagBlockRange(in: lines) else { return [] }
         let firstLine = lines[range.lowerBound]
         let colon = firstLine.firstIndex(of: ":")!
@@ -693,7 +693,7 @@ extension NoteStore {
         return MarkdownEditorDocument.normalizedTags(tags)
     }
 
-    private func updatingFrontMatterTags(_ lines: [String], tags: [String]) -> [String] {
+    func updatingFrontMatterTags(_ lines: [String], tags: [String]) -> [String] {
         var updated = lines
         let replacement = tags.isEmpty ? [] : ["tags:"] + tags.map { "  - \($0)" }
         if let range = frontMatterTagBlockRange(in: lines) {
