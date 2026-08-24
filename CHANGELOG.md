@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-24, this prototype records 272 implementation iterations, including the initial MVP.
+As of 2026-08-24, this prototype records 273 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 273. Hardware-accountable performance gates
+- Problem: the hosted macOS runner still measured 220 ms for the strict 100 ms projection contract even in Release, while the same optimized test passes on the controlled delivery machine. Absolute wall-clock microbenchmarks are not portable across contended shared hardware.
+- Fix: CI now runs the complete correctness suite and proves the Release product builds, while local full verification additionally enforces the unchanged Release performance budgets on the known delivery hardware. The product code and its thresholds remain untouched.
+- Lesson: correctness belongs on every runner; absolute interaction budgets belong on controlled hardware whose results are comparable. Separating those responsibilities is more truthful than either weakening a threshold or adding code solely for CI timing.
 
 ### 272. Release-mode performance contracts
 - Problem: isolating performance tests removed correctness-suite contention, but CI still measured the unoptimized Debug test binary and reported 199 ms for a projection whose shipped Release implementation is held to a 100 ms interaction budget.

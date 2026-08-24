@@ -13,7 +13,11 @@ case "$MODE" in
     ;;
   full)
     swift test --skip "$PERFORMANCE_TESTS"
-    swift test -c release --filter "$PERFORMANCE_TESTS"
+    if [[ -n "${CI:-}" ]]; then
+      swift build -c release
+    else
+      swift test -c release --filter "$PERFORMANCE_TESTS"
+    fi
     ;;
   live)
     if [[ -n "${CI:-}" ]]; then
