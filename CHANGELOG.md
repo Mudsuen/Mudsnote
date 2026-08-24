@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-24, this prototype records 271 implementation iterations, including the initial MVP.
+As of 2026-08-24, this prototype records 272 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 272. Release-mode performance contracts
+- Problem: isolating performance tests removed correctness-suite contention, but CI still measured the unoptimized Debug test binary and reported 199 ms for a projection whose shipped Release implementation is held to a 100 ms interaction budget.
+- Fix: the full macOS gate now runs correctness tests in Debug and the unchanged performance thresholds against an optimized Release test bundle, which also proves the production configuration builds. No product algorithm or threshold was changed to accommodate the runner.
+- Lesson: performance automation must measure the artifact users receive; optimizing code solely to satisfy Debug instrumentation would add complexity without improving the shipped experience.
 
 ### 271. Deterministic concurrency and performance verification
 - Problem: Once CI consumed the real push base/head range, shared-runner scheduling exposed tests that measured queue-start delay instead of the operation under test, cancellation checks that counted work completed before cancellation, a fixed sleep that could observe note suggestions before their task finished, and performance baselines competing with the full parallel correctness suite.
