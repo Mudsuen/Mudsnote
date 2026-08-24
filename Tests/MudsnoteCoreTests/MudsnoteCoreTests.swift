@@ -760,22 +760,31 @@ struct MudsnoteCoreTests {
         let buildStarted = DispatchSemaphore(value: 0)
         let allowBuildToContinue = DispatchSemaphore(value: 0)
         let buildFinished = DispatchSemaphore(value: 0)
+        let dirtyMarkStarted = DispatchSemaphore(value: 0)
         let dirtyMarkFinished = DispatchSemaphore(value: 0)
         store.searchIndexBuildWillReadForTesting = {
             buildStarted.signal()
             allowBuildToContinue.wait()
         }
 
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue(
+            label: "app.mudsnote.tests.search-index-build",
+            qos: .userInitiated
+        ).async {
             _ = store.prewarmSearchIndex()
             buildFinished.signal()
         }
-        try #require(buildStarted.wait(timeout: .now() + 2) == .success)
+        try #require(buildStarted.wait(timeout: .now() + 10) == .success)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue(
+            label: "app.mudsnote.tests.search-index-dirty-mark",
+            qos: .userInitiated
+        ).async {
+            dirtyMarkStarted.signal()
             store.markSearchIndexDirty(at: [noteURL])
             dirtyMarkFinished.signal()
         }
+        try #require(dirtyMarkStarted.wait(timeout: .now() + 10) == .success)
         let dirtyMarkCompletedWithoutWaiting = dirtyMarkFinished.wait(timeout: .now() + 1)
         allowBuildToContinue.signal()
         #expect(buildFinished.wait(timeout: .now() + 2) == .success)
@@ -799,22 +808,31 @@ struct MudsnoteCoreTests {
         let validationStarted = DispatchSemaphore(value: 0)
         let allowValidationToContinue = DispatchSemaphore(value: 0)
         let validationFinished = DispatchSemaphore(value: 0)
+        let cleanReadStarted = DispatchSemaphore(value: 0)
         let cleanReadFinished = DispatchSemaphore(value: 0)
         store.searchIndexBuildWillReadForTesting = {
             validationStarted.signal()
             allowValidationToContinue.wait()
         }
 
-        DispatchQueue.global(qos: .utility).async {
+        DispatchQueue(
+            label: "app.mudsnote.tests.search-index-validation",
+            qos: .userInitiated
+        ).async {
             _ = store.listNotesRefreshingIndex()
             validationFinished.signal()
         }
-        try #require(validationStarted.wait(timeout: .now() + 2) == .success)
+        try #require(validationStarted.wait(timeout: .now() + 10) == .success)
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue(
+            label: "app.mudsnote.tests.clean-search-read",
+            qos: .userInitiated
+        ).async {
+            cleanReadStarted.signal()
             _ = store.listNotes()
             cleanReadFinished.signal()
         }
+        try #require(cleanReadStarted.wait(timeout: .now() + 10) == .success)
         let cleanReadCompletedWithoutWaiting = cleanReadFinished.wait(timeout: .now() + 1)
         allowValidationToContinue.signal()
         #expect(validationFinished.wait(timeout: .now() + 2) == .success)

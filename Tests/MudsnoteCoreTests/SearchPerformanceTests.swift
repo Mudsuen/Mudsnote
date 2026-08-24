@@ -152,9 +152,11 @@ struct SearchPerformanceTests {
         store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
 
         let reads = LockedSearchReadCounter()
+        let allowFirstReadToReturn = DispatchSemaphore(value: 0)
         store.searchIndexEntryWillReadForTesting = {
-            _ = reads.increment()
-            Thread.sleep(forTimeInterval: 0.004)
+            if reads.increment() == 1 {
+                allowFirstReadToReturn.wait()
+            }
         }
 
         let build = Task.detached {
@@ -163,7 +165,7 @@ struct SearchPerformanceTests {
                 cancellationCheck: { Task.isCancelled }
             )
         }
-        let readDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        let readDeadline = ContinuousClock.now.advanced(by: .seconds(10))
         while reads.snapshot() == 0, ContinuousClock.now < readDeadline {
             try await Task.sleep(for: .milliseconds(5))
         }
@@ -171,16 +173,18 @@ struct SearchPerformanceTests {
 
         let clock = ContinuousClock()
         let cancellationStarted = clock.now
+        let readsAtCancellation = reads.snapshot()
         build.cancel()
+        allowFirstReadToReturn.signal()
         _ = await build.value
         let cancellationLatency = cancellationStarted.duration(to: clock.now)
         let completedReads = reads.snapshot()
 
         emitSearchPerformanceEvidence(
-            "cold-cancel latency=\(cancellationLatency) reads=\(completedReads)"
+            "cold-cancel latency=\(cancellationLatency) reads-before=\(readsAtCancellation) reads-after=\(completedReads)"
         )
         #expect(cancellationLatency < .milliseconds(250))
-        #expect(completedReads < 50)
+        #expect(completedReads == readsAtCancellation)
     }
 
     @Test
@@ -213,9 +217,11 @@ struct SearchPerformanceTests {
         store.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
         let session = store.makeSearchSession(roots: [notesDirectory])
         let reads = LockedSearchReadCounter()
+        let allowFirstReadToReturn = DispatchSemaphore(value: 0)
         store.searchIndexEntryWillMatchForTesting = {
-            _ = reads.increment()
-            Thread.sleep(forTimeInterval: 0.002)
+            if reads.increment() == 1 {
+                allowFirstReadToReturn.wait()
+            }
         }
 
         let search = Task.detached {
@@ -225,7 +231,7 @@ struct SearchPerformanceTests {
                 cancellationCheck: { Task.isCancelled }
             )
         }
-        let readDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        let readDeadline = ContinuousClock.now.advanced(by: .seconds(10))
         while reads.snapshot() == 0, ContinuousClock.now < readDeadline {
             try await Task.sleep(for: .milliseconds(5))
         }
@@ -233,16 +239,18 @@ struct SearchPerformanceTests {
 
         let clock = ContinuousClock()
         let cancellationStarted = clock.now
+        let readsAtCancellation = reads.snapshot()
         search.cancel()
+        allowFirstReadToReturn.signal()
         _ = await search.value
         let cancellationLatency = cancellationStarted.duration(to: clock.now)
         let completedReads = reads.snapshot()
 
         emitSearchPerformanceEvidence(
-            "warm-cancel latency=\(cancellationLatency) reads=\(completedReads)"
+            "warm-cancel latency=\(cancellationLatency) reads-before=\(readsAtCancellation) reads-after=\(completedReads)"
         )
         #expect(cancellationLatency < .milliseconds(250))
-        #expect(completedReads < 50)
+        #expect(completedReads == readsAtCancellation)
     }
 
     @Test

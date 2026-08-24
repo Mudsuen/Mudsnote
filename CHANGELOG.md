@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-24, this prototype records 270 implementation iterations, including the initial MVP.
+As of 2026-08-24, this prototype records 271 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 271. Deterministic concurrency and performance verification
+- Problem: Once CI consumed the real push base/head range, shared-runner scheduling exposed tests that measured queue-start delay instead of the operation under test, cancellation checks that counted work completed before cancellation, a fixed sleep that could observe note suggestions before their task finished, and performance baselines competing with the full parallel correctness suite.
+- Fix: concurrency tests now signal from dedicated queues before starting latency assertions, cancellation tests pause at the first indexed read and verify that no additional work occurs after cancellation, note-suggestion tests await their owning task and fail at structural preconditions instead of indexing missing output, and the full macOS gate runs unchanged performance budgets in a separate measured batch.
+- Lesson: deterministic automation synchronizes on semantic boundaries; it does not infer readiness from elapsed sleep, conflate scheduler delay with product latency, or weaken a performance contract to accommodate shared infrastructure.
 
 ### 270. Lossless hierarchical tags and accountable release verification
 - Problem: iOS treated a hierarchical tag such as `#area/topic` as `#area` plus visible `/topic`, which could silently alter the note title and filename during capture. Removing inline tags also left spaces before punctuation, the one-note home count read “1 Notes,” the compact capture destination clipped “Top Level,” and CI compared iOS changes against `origin/main` after landing on `main`, so relevant focused UI tests were skipped. The optimized macOS app could also outlive its unowned application delegate and remain running without opening a window.

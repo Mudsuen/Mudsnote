@@ -1225,16 +1225,21 @@ struct MarkdownRichEditorTests {
         )
         controller.editorTextView.setSelectedRange(NSRange(location: 5, length: 0))
         controller.editorTextView.onTextInputStateChanged?()
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(controller.editorSlashSuggestionTitlesForLibrary.first == "Seed")
-        controller.acceptEditorSlashSuggestionForLibrary(at: 0)
+        await controller.waitForEditorNoteSuggestionsForTesting()
+        let seedIndex = try #require(
+            controller.editorSlashSuggestionTitlesForLibrary.firstIndex(of: "Seed")
+        )
+        controller.acceptEditorSlashSuggestionForLibrary(at: seedIndex)
         let mentionMarkdown = MarkdownRichTextCodec.serialize(
             controller.editorTextView.attributedString(),
             theme: controller.theme
         )
-        #expect(mentionMarkdown.hasPrefix("[Seed]("))
+        try #require(mentionMarkdown.hasPrefix("[Seed]("))
+        let openingParen = try #require(mentionMarkdown.firstIndex(of: "("))
+        let closingParen = try #require(mentionMarkdown.lastIndex(of: ")"))
+        try #require(openingParen < closingParen)
         #expect(MarkdownLocalLinkResolver.fileURL(
-            for: String(mentionMarkdown.split(separator: "(")[1].dropLast()),
+            for: String(mentionMarkdown[mentionMarkdown.index(after: openingParen)..<closingParen]),
             relativeTo: createdURL
         ) == seedURL)
     }

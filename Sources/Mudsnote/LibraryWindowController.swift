@@ -4043,6 +4043,10 @@ final class LibraryWindowController: NSWindowController,
         return editorSlashSuggestion?.commands.map(\.title) ?? []
     }
 
+    func waitForEditorNoteSuggestionsForTesting() async {
+        await editorNoteSuggestionTask?.value
+    }
+
     func acceptEditorSlashSuggestionForLibrary(at index: Int) {
         acceptEditorSlashSuggestion(at: index)
     }
