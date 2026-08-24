@@ -2581,6 +2581,12 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "已选择 %lld 项" } }
       }
     },
+    "note.count.format": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld Note" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "%lld 条笔记" } }
+      }
+    },
     "notes.count.format": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%lld Notes" } },

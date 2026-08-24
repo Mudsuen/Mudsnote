@@ -95,85 +95,51 @@ on run arguments
       end repeat
       if (count windows) = 0 then error "Mudsnote library window did not appear"
 
-      set titleIndex to 0
-      set bodyIndex to 0
-      repeat 30 times
-        set elements to entire contents of window 1
-        set titleIndex to 0
-        set bodyIndex to 0
-        set textFieldCount to 0
-        repeat with index from 1 to count elements
-          set candidate to item index of elements
-          try
-            set candidateRole to role of candidate as text
-            if candidateRole = "AXTextField" then
-              set textFieldCount to textFieldCount + 1
-              if textFieldCount = 1 then set titleIndex to index
-            end if
-            if candidateRole = "AXTextArea" then
-              if bodyIndex = 0 then set bodyIndex to index
-            end if
-          end try
-        end repeat
-        if titleIndex > 0 then
-          if bodyIndex > 0 then exit repeat
-        end if
-        delay 0.2
-      end repeat
-      if titleIndex = 0 then error "Notes editor did not finish loading"
-      if bodyIndex = 0 then error "Notes editor did not finish loading"
-
       keystroke "n" using command down
       delay 0.5
 
       repeat 15 times
         set elements to entire contents of window 1
-        set titleIndex to 0
-        set bodyIndex to 0
-        set textFieldCount to 0
+        set editorIndex to 0
         repeat with index from 1 to count elements
           set candidate to item index of elements
           try
             set candidateRole to role of candidate as text
-            if candidateRole = "AXTextField" then
-              set textFieldCount to textFieldCount + 1
-              if textFieldCount = 1 then set titleIndex to index
-            end if
             if candidateRole = "AXTextArea" then
-              if bodyIndex = 0 then set bodyIndex to index
+              set editorIndex to index
+              exit repeat
             end if
           end try
         end repeat
-        if titleIndex > 0 then
-          if bodyIndex > 0 then exit repeat
-        end if
+        if editorIndex > 0 then exit repeat
         delay 0.2
       end repeat
-      if titleIndex = 0 then error "Could not locate the Notes editor fields"
-      if bodyIndex = 0 then error "Could not locate the Notes editor fields"
+      if editorIndex = 0 then error "Could not locate the unified Notes editor"
 
-      set titleField to item titleIndex of elements
-      set bodyArea to item bodyIndex of elements
-      set focused of titleField to true
-      set value of titleField to noteTitle
+      set editorArea to item editorIndex of elements
+      set focused of editorArea to true
+      set value of editorArea to ""
+      set the clipboard to noteTitle
+      keystroke "v" using command down
       key code 36
       delay 0.2
-      if focused of bodyArea is not true then error "Return from the note title did not focus the body"
-      set value of bodyArea to noteBody
+      if focused of editorArea is not true then error "Return left the unified Notes editor"
+      set the clipboard to noteBody
+      keystroke "v" using command down
       delay 2
 
       keystroke "f" using command down
       delay 0.3
       set elements to entire contents of window 1
       set searchIndex to 0
-      set textFieldCount to 0
       repeat with index from 1 to count elements
         set candidate to item index of elements
         try
-          set candidateRole to role of candidate as text
-          if candidateRole = "AXTextField" then
-            set textFieldCount to textFieldCount + 1
-            if textFieldCount = 2 then set searchIndex to index
+          if (role of candidate as text) = "AXTextField" then
+            if (value of attribute "AXIdentifier" of candidate as text) = "LibraryToolbarSearchField" then
+              set searchIndex to index
+              exit repeat
+            end if
           end if
         end try
       end repeat
@@ -279,7 +245,9 @@ tell application "System Events" to tell process "Mudsnote"
       set candidateRole to role of candidate as text
       set candidateDescription to description of candidate as text
       if candidateRole = "AXCell" then
-        if candidateDescription = "Recently Deleted" then set trashCellIndex to index
+        if candidateDescription = "Recently Deleted" or candidateDescription = "最近删除" then
+          set trashCellIndex to index
+        end if
       end if
     end try
   end repeat
@@ -425,39 +393,29 @@ on run arguments
 
     repeat 30 times
       set elements to entire contents of window 1
-      set titleValue to ""
-      set textFieldCount to 0
+      set editorValue to ""
       repeat with candidate in elements
         try
-          if (role of candidate as text) = "AXTextField" then
-            set textFieldCount to textFieldCount + 1
-            if textFieldCount = 1 then set titleValue to value of candidate as text
-          end if
+          if (role of candidate as text) = "AXTextArea" then set editorValue to value of candidate as text
         end try
       end repeat
-      if titleValue = noteTitle then exit repeat
+      if editorValue starts with noteTitle then exit repeat
       delay 0.2
     end repeat
 
-    set bodyValue to ""
-    set titleValue to ""
+    set editorValue to ""
     set hasAttachmentIndicator to false
     set elements to entire contents of window 1
-    set textFieldCount to 0
     repeat with candidate in elements
       try
         set candidateRole to role of candidate as text
-        if candidateRole = "AXTextField" then
-          set textFieldCount to textFieldCount + 1
-          if textFieldCount = 1 then set titleValue to value of candidate as text
-        end if
-        if candidateRole = "AXTextArea" then set bodyValue to value of candidate as text
+        if candidateRole = "AXTextArea" then set editorValue to value of candidate as text
         if candidateRole = "AXImage" then
           if (description of candidate as text) = "有附件" then set hasAttachmentIndicator to true
         end if
       end try
     end repeat
-    return titleValue & linefeed & bodyValue & linefeed & hasAttachmentIndicator
+    return editorValue & linefeed & hasAttachmentIndicator
   end tell
 end run
 APPLESCRIPT

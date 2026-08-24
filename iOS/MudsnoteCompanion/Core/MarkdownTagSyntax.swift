@@ -23,10 +23,10 @@ struct MarkdownInlineTagMigration: Equatable {
 
 enum MarkdownTagSyntax {
     private static let tagExpression = try! NSRegularExpression(
-        pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*)"#
+        pattern: #"(?<![\p{L}\p{N}_/#(])#([\p{L}\p{N}_][\p{L}\p{N}_-]*(?:/[\p{L}\p{N}_][\p{L}\p{N}_-]*)*)(?![\p{L}\p{N}_/-])"#
     )
     private static let tagNameExpression = try! NSRegularExpression(
-        pattern: #"^[\p{L}\p{N}_][\p{L}\p{N}_-]*$"#
+        pattern: #"^[\p{L}\p{N}_][\p{L}\p{N}_-]*(?:/[\p{L}\p{N}_][\p{L}\p{N}_-]*)*$"#
     )
 
     static func normalizedTag(_ input: String) -> String? {
@@ -111,7 +111,7 @@ enum MarkdownTagSyntax {
         )
         let prefix = source.substring(with: prefixRange)
         guard let match = prefix.range(
-            of: #"(^|\s)#([\p{L}\p{N}_-]*)$"#,
+            of: #"(^|\s)#((?:[\p{L}\p{N}_][\p{L}\p{N}_-]*(?:/[\p{L}\p{N}_][\p{L}\p{N}_-]*)*/?)?)$"#,
             options: .regularExpression
         ) else { return nil }
         let matched = String(prefix[match])
@@ -428,6 +428,11 @@ enum MarkdownTagSyntax {
         let compact = content.replacingOccurrences(
             of: #"[ \t]{2,}"#,
             with: " ",
+            options: .regularExpression
+        )
+        .replacingOccurrences(
+            of: #"[ \t]+(?=[,.;:!?\)\]\}，。；：！？、])"#,
+            with: "",
             options: .regularExpression
         )
         .trimmingCharacters(in: .whitespaces)

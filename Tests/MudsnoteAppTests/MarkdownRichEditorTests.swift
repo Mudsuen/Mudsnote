@@ -3476,12 +3476,13 @@ struct MarkdownRichEditorTests {
     @Test
     func inlineMarkdownTagsMigrateIntoDocumentMetadata() {
         let migration = MarkdownEditorDocument.extractingInlineTags(
-            from: "Body #project and #work\n\n`#code`\n\n```\n#fence\n```"
+            from: "Body #project and #work.\nArea #area/topic.\n\n`#code`\n\n```\n#fence\n```"
         )
 
-        #expect(migration.tags == ["project", "work"])
-        #expect(migration.occurrenceCount == 2)
-        #expect(migration.body.contains("Body and"))
+        #expect(migration.tags == ["project", "work", "area/topic"])
+        #expect(migration.occurrenceCount == 3)
+        #expect(migration.body.contains("Body and."))
+        #expect(migration.body.contains("Area."))
         #expect(migration.body.contains("`#code`"))
         #expect(migration.body.contains("#fence"))
         #expect(!migration.body.contains("Body #project"))

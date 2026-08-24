@@ -87,35 +87,61 @@ simulator_destination() {
 }
 
 changed_paths_against_base() {
+  local root="${1:-.}"
+  local diff_base="${MUDSNOTE_DIFF_BASE:-}"
+  local diff_head="${MUDSNOTE_DIFF_HEAD:-}"
   local base_ref=""
+
+  if [[ -n "$diff_base" || -n "$diff_head" ]]; then
+    if [[ -z "$diff_base" || -z "$diff_head" ]]; then
+      echo "ERROR: MUDSNOTE_DIFF_BASE and MUDSNOTE_DIFF_HEAD must be provided together." >&2
+      return 2
+    fi
+    git -C "$root" rev-parse --verify "$diff_base^{commit}" >/dev/null
+    git -C "$root" rev-parse --verify "$diff_head^{commit}" >/dev/null
+    git -C "$root" diff --name-only "$diff_base" "$diff_head" | sort -u
+    return
+  fi
+
   if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
     base_ref="origin/$GITHUB_BASE_REF"
-  elif git show-ref --verify --quiet refs/remotes/origin/main; then
+  elif git -C "$root" show-ref --verify --quiet refs/remotes/origin/main; then
     base_ref="origin/main"
   fi
 
   if [[ -n "$base_ref" ]]; then
     {
-      git diff --name-only "$(git merge-base HEAD "$base_ref")..HEAD"
-      git diff --name-only
-      git diff --cached --name-only
+      git -C "$root" diff --name-only "$(git -C "$root" merge-base HEAD "$base_ref")..HEAD"
+      git -C "$root" diff --name-only
+      git -C "$root" diff --cached --name-only
     } | sort -u
   else
     {
-      git diff --name-only HEAD
-      git diff --cached --name-only
+      git -C "$root" diff --name-only HEAD
+      git -C "$root" diff --cached --name-only
     } | sort -u
   fi
 }
 
 focused_ui_tests_from_paths() {
   local needs_directory_drawer_test=0
+  local needs_capture_test=0
+  local needs_editor_test=0
   local path
 
   while IFS= read -r path; do
     case "$path" in
       iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift)
         needs_directory_drawer_test=1
+        ;;
+      iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift|\
+      iOS/MudsnoteCompanion/Features/Capture/TargetMenuView.swift|\
+      iOS/MudsnoteCompanion/Core/MarkdownTagSyntax.swift|\
+      iOS/MudsnoteCompanion/Design/MudsnoteTokens.swift)
+        needs_capture_test=1
+        ;;
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift)
+        needs_editor_test=1
         ;;
     esac
   done
@@ -126,6 +152,16 @@ focused_ui_tests_from_paths() {
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNewNoteFromSelectedFolderAppearsOnCurrentPage' \
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testSelectedFolderIncludesNotesFromChildFoldersAndExposesSelection' \
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNotesTopBarMaterialAcrossHomeAndDirectoryStates'
+  fi
+  if [[ "$needs_capture_test" == "1" ]]; then
+    printf '%s\n' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testCaptureCommandsStayInSingleRow' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHierarchicalCaptureTagStaysWholeAndOutOfTitle'
+  fi
+  if [[ "$needs_editor_test" == "1" ]]; then
+    printf '%s\n' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorToolbarAndHeaderScrollMatchTheUnifiedEditingModel' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorMentionLinksToAnotherNote'
   fi
 }
 

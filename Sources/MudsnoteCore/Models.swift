@@ -386,14 +386,7 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
                 if inlineCodeMarkerLength == nil,
                    characters[index] == "#",
                    (index == 0 || characters[index - 1].isWhitespace) {
-                    var end = index + 1
-                    while end < characters.count, characters[end].isMarkdownTagCharacter {
-                        end += 1
-                    }
-                    while end > index + 1, characters[end - 1] == "/" {
-                        end -= 1
-                    }
-                    if end > index + 1 {
+                    if let end = inlineTagEnd(in: characters, markerIndex: index) {
                         tags.append(String(characters[(index + 1)..<end]))
                         index = end
                         continue
@@ -442,14 +435,7 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
                 if inlineCodeMarkerLength == nil,
                    characters[index] == "#",
                    (index == 0 || characters[index - 1].isWhitespace) {
-                    var end = index + 1
-                    while end < characters.count, characters[end].isMarkdownTagCharacter {
-                        end += 1
-                    }
-                    while end > index + 1, characters[end - 1] == "/" {
-                        end -= 1
-                    }
-                    if end > index + 1 {
+                    if let end = inlineTagEnd(in: characters, markerIndex: index) {
                         tags.append(String(characters[(index + 1)..<end]))
                         ranges.append(index..<end)
                         occurrenceCount += 1
@@ -463,21 +449,59 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             for range in ranges.reversed() {
                 characters.removeSubrange(range)
             }
-            let indentation = characters.prefix { $0 == " " || $0 == "\t" }
-            let content = String(characters.dropFirst(indentation.count))
-                .replacingOccurrences(
-                    of: #"[ \t]{2,}"#,
-                    with: " ",
-                    options: .regularExpression
-                )
-                .trimmingCharacters(in: .whitespaces)
-            return content.isEmpty ? "" : String(indentation) + content
+            return cleanedLineAfterInlineTagRemoval(String(characters))
         }
         return InlineTagMigration(
             body: migratedLines.joined(separator: "\n"),
             tags: normalizedTags(tags),
             occurrenceCount: occurrenceCount
         )
+    }
+
+    private static func inlineTagEnd(
+        in characters: [Character],
+        markerIndex: Int
+    ) -> Int? {
+        var index = markerIndex + 1
+        guard index < characters.count,
+              characters[index].isMarkdownTagSegmentStartCharacter else {
+            return nil
+        }
+
+        while index < characters.count,
+              characters[index].isMarkdownTagSegmentCharacter {
+            index += 1
+        }
+        while index < characters.count, characters[index] == "/" {
+            let segmentStart = index + 1
+            guard segmentStart < characters.count,
+                  characters[segmentStart].isMarkdownTagSegmentStartCharacter else {
+                return nil
+            }
+            index = segmentStart
+            while index < characters.count,
+                  characters[index].isMarkdownTagSegmentCharacter {
+                index += 1
+            }
+        }
+        return index
+    }
+
+    private static func cleanedLineAfterInlineTagRemoval(_ line: String) -> String {
+        let indentation = line.prefix { $0 == " " || $0 == "\t" }
+        let content = String(line.dropFirst(indentation.count))
+            .replacingOccurrences(
+                of: #"[ \t]{2,}"#,
+                with: " ",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"[ \t]+(?=[,.;:!?\)\]\}，。；：！？、])"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespaces)
+        return content.isEmpty ? "" : String(indentation) + content
     }
 
     private static func extractedTitle(from line: String) -> String {
@@ -495,7 +519,11 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
 }
 
 private extension Character {
-    var isMarkdownTagCharacter: Bool {
-        isLetter || isNumber || self == "_" || self == "-" || self == "/"
+    var isMarkdownTagSegmentStartCharacter: Bool {
+        isLetter || isNumber || self == "_"
+    }
+
+    var isMarkdownTagSegmentCharacter: Bool {
+        isMarkdownTagSegmentStartCharacter || self == "-"
     }
 }

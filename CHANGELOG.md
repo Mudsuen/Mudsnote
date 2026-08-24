@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-03-23, this prototype has gone through 26 implementation iterations in this chat, including the initial MVP.
+As of 2026-08-24, this prototype records 270 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 270. Lossless hierarchical tags and accountable release verification
+- Problem: iOS treated a hierarchical tag such as `#area/topic` as `#area` plus visible `/topic`, which could silently alter the note title and filename during capture. Removing inline tags also left spaces before punctuation, the one-note home count read “1 Notes,” the compact capture destination clipped “Top Level,” and CI compared iOS changes against `origin/main` after landing on `main`, so relevant focused UI tests were skipped. The optimized macOS app could also outlive its unowned application delegate and remain running without opening a window.
+- Fix: macOS and iOS now share a segment-validating hierarchical-tag contract, keep invalid partial paths visible, remove migrated tags without damaging punctuation spacing, and cover the complete capture-to-reader flow. The iOS count uses correct singular grammar, the destination control keeps its full label in the one-row toolbar, and verification consumes the workflow's exact base/head range while routing capture, tag, reader, and design-token changes to their owning UI regressions. The macOS entry point explicitly owns its delegate for the full event-loop lifetime.
+- Lesson: Cross-platform Markdown syntax must be one lossless data contract, optimized release ownership must be explicit, and a focused verification gate is trustworthy only when both its diff range and source-to-test routing are executable tests of the real workflow.
 
 ### 269. Unified Markdown tags, note mentions, and iOS editing chrome
 - Problem: Existing inline Markdown tags remained mixed into note prose, iOS quick capture and document editing exposed different toolbars, the iOS title stayed pinned while the body scrolled, and checklist markers could render off the text baseline.

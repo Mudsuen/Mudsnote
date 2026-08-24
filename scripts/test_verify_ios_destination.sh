@@ -81,6 +81,19 @@ focused_ui_tests="$(
 )"
 test -z "$focused_ui_tests"
 
+focused_ui_tests="$(
+  printf '%s\n' \
+    "iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift" \
+    "iOS/MudsnoteCompanion/Core/MarkdownTagSyntax.swift" \
+    "iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift" \
+    | focused_ui_tests_from_paths
+)"
+test "$focused_ui_tests" = \
+  "MudsnoteCompanionUITests/MudsnoteCompanionUITests/testCaptureCommandsStayInSingleRow
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHierarchicalCaptureTagStaysWholeAndOutOfTitle
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorToolbarAndHeaderScrollMatchTheUnifiedEditingModel
+MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorMentionLinksToAnotherNote"
+
 scope_fixture="$(mktemp -d)"
 trap 'rm -rf "$scope_fixture"' EXIT
 
@@ -97,6 +110,12 @@ printf 'struct IOSFixture {}\n' >"$scope_fixture/iOS/Fixture/IOSFixture.swift"
 git -C "$scope_fixture" add iOS/Fixture/IOSFixture.swift
 git -C "$scope_fixture" commit -qm ios
 ios_sha="$(git -C "$scope_fixture" rev-parse HEAD)"
+
+changed_paths="$(
+  MUDSNOTE_DIFF_BASE="$base_sha" MUDSNOTE_DIFF_HEAD="$ios_sha" \
+    changed_paths_against_base "$scope_fixture"
+)"
+test "$changed_paths" = "iOS/Fixture/IOSFixture.swift"
 
 printf 'struct MacFixture {}\n' >"$scope_fixture/MacFixture.swift"
 git -C "$scope_fixture" add MacFixture.swift

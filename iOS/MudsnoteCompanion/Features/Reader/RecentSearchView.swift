@@ -654,11 +654,7 @@ struct LibraryHomeView: View {
                             )
                             .font(.headline)
                             Text(
-                                String(
-                                    format: String(localized: "notes.count.format"),
-                                    locale: .current,
-                                    allHomeSelectableEntries.count
-                                )
+                                localizedNoteCount(allHomeSelectableEntries.count)
                             )
                             .font(.caption)
                             .foregroundStyle(MudsnoteColors.muted)
@@ -1090,11 +1086,7 @@ struct LibraryHomeView: View {
     }
 
     private var homeNoteCountText: String {
-        String(
-            format: String(localized: "notes.count.format"),
-            locale: .current,
-            homeTimelineProjection.entryCount
-        )
+        localizedNoteCount(homeTimelineProjection.entryCount)
     }
 
     private var homeDisplayTitle: String {
@@ -2486,16 +2478,18 @@ private struct NoteListSearchResultsView: View {
     }
 }
 
+func localizedNoteCount(_ count: Int) -> String {
+    let format = count == 1
+        ? String(localized: "note.count.format")
+        : String(localized: "notes.count.format")
+    return String(format: format, locale: .current, count)
+}
+
 struct NotesListCountLabel: View {
     var count: Int
 
     var body: some View {
-        Text(
-            String.localizedStringWithFormat(
-                String(localized: "notes.count.format"),
-                count
-            )
-        )
+        Text(localizedNoteCount(count))
         .font(.subheadline)
         .foregroundStyle(MudsnoteColors.muted)
         .padding(.horizontal, 18)

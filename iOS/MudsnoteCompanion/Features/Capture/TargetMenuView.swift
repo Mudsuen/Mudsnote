@@ -39,16 +39,14 @@ struct TargetMenuView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "folder")
-                Text(appModel.draft.target.compactLabel)
-                    .lineLimit(1)
-            }
-            .font(.system(.caption, design: .default, weight: .semibold))
-            .foregroundStyle(MudsnoteColors.text)
-            .padding(.horizontal, 5)
-            .frame(width: 72, height: 40)
-            .contentShape(Rectangle())
+            Text(appModel.draft.target.compactLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .font(.system(.caption, design: .default, weight: .semibold))
+                .foregroundStyle(MudsnoteColors.text)
+                .padding(.horizontal, 5)
+                .frame(width: 84, height: 40)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(

@@ -1530,6 +1530,29 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func inlineTagMigrationKeepsHierarchicalTagsWholeAndRepairsPunctuationSpacing() {
+        let migration = MarkdownEditorDocument.extractingInlineTags(
+            from: """
+            Plan #area/topic.
+            Body #project and #中文/层级。
+            Invalid #trailing/ stays visible.
+            Invalid #-leading stays visible.
+            """
+        )
+
+        #expect(migration.tags == ["area/topic", "project", "中文/层级"])
+        #expect(migration.occurrenceCount == 3)
+        #expect(
+            migration.body == """
+            Plan.
+            Body and。
+            Invalid #trailing/ stays visible.
+            Invalid #-leading stays visible.
+            """
+        )
+    }
+
+    @Test
     func draftsRoundTrip() throws {
         let harness = try TestHarness()
         let store = harness.store

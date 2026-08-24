@@ -585,8 +585,12 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertEqual(MarkdownTagSyntax.normalizedTag(" client-work "), "#client-work")
         XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#项目_2"), "#项目_2")
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#area/topic"), "#area/topic")
+        XCTAssertEqual(MarkdownTagSyntax.normalizedTag("#中文/层级"), "#中文/层级")
         XCTAssertNil(MarkdownTagSyntax.normalizedTag("two words"))
-        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad/tag"))
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#-leading"))
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad/"))
+        XCTAssertNil(MarkdownTagSyntax.normalizedTag("#bad//tag"))
         XCTAssertEqual(MarkdownTagSyntax.tags(in: markdown), ["#Project", "#work"])
 
         let renamed = try XCTUnwrap(MarkdownTagSyntax.rewriting(
@@ -644,16 +648,54 @@ final class MudsnoteCompanionTests: XCTestCase {
             in: text,
             selection: NSRange(location: 0, length: 4)
         ))
+        let hierarchicalText = "Body #area/to"
+        XCTAssertEqual(
+            MarkdownTagSyntax.inlineDraft(
+                in: hierarchicalText,
+                selection: NSRange(
+                    location: (hierarchicalText as NSString).length,
+                    length: 0
+                )
+            )?.query,
+            "area/to"
+        )
 
         let migration = MarkdownTagSyntax.migratingInlineTagsToFrontMatter(
-            in: "# Heading\n\nBody #project and #work.\n\n`#code`\n\n```\n#fence\n```\n"
+            in: """
+            ---
+            tags:
+              - #archive/path
+            ---
+
+            # Heading
+
+            Plan #area/topic.
+            Body #project and #work.
+
+            `#code`
+
+            ```
+            #fence
+            ```
+
+            """
         )
-        XCTAssertEqual(migration.tags, ["#project", "#work"])
-        XCTAssertEqual(migration.occurrenceCount, 2)
-        XCTAssertTrue(migration.body.contains("Body and ."))
+        XCTAssertEqual(
+            migration.tags,
+            ["#archive/path", "#area/topic", "#project", "#work"]
+        )
+        XCTAssertEqual(migration.occurrenceCount, 3)
+        XCTAssertTrue(migration.body.contains("Plan."))
+        XCTAssertTrue(migration.body.contains("Body and."))
         XCTAssertTrue(migration.body.contains("`#code`"))
         XCTAssertTrue(migration.body.contains("#fence"))
+        XCTAssertFalse(migration.body.contains("Plan #area/topic"))
         XCTAssertFalse(migration.body.contains("Body #project"))
+    }
+
+    func testLocalizedNoteCountUsesSingularEnglishGrammar() {
+        XCTAssertEqual(localizedNoteCount(1), "1 Note")
+        XCTAssertEqual(localizedNoteCount(2), "2 Notes")
     }
 
     func testTagSuggestionsReactToInputThenUseSemanticContextAndFrequency() {
@@ -3343,13 +3385,13 @@ final class MudsnoteCompanionTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? MarkdownLifecycleError, .invalidFolder)
         }
-        try await store.createFolder(named: "Daily")
+        _ = try await store.createFolder(named: "Daily")
         try "# Existing content\n".write(
             to: root.appendingPathComponent("Daily/Existing.md"),
             atomically: true,
             encoding: .utf8
         )
-        try await store.renameFolder(relativePath: "Daily", to: "Renamed")
+        _ = try await store.renameFolder(relativePath: "Daily", to: "Renamed")
         XCTAssertEqual(
             try String(contentsOf: root.appendingPathComponent("Renamed/Existing.md"), encoding: .utf8),
             "# Existing content\n"

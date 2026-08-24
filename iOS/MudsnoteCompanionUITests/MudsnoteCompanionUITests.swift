@@ -437,6 +437,35 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertFalse(editor.exists)
     }
 
+    func testHierarchicalCaptureTagStaysWholeAndOutOfTitle() {
+        let app = launchApp(
+            reset: true,
+            fixtureFolder: true,
+            captureRoute: true,
+            openDirectory: false
+        )
+        let editor = app.textViews["capture-body-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 8))
+        editor.tap()
+        editor.typeText("Plan #area/topic.")
+
+        let save = app.buttons["save-memo-button"]
+        XCTAssertTrue(save.isEnabled)
+        save.tap()
+        XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
+
+        let note = app.buttons["markdown-file-row-Plan.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        note.tap()
+        XCTAssertTrue(app.staticTexts["area/topic"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Plan -topic"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Hierarchical capture tag preserved"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testCaptureDestinationsDoNotOfferDaily() {
         let app = launchApp(
             reset: true,
@@ -2611,6 +2640,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         for control in controls.dropFirst() {
             XCTAssertEqual(control.frame.midY, centerY, accuracy: 2)
         }
+        XCTAssertGreaterThanOrEqual(
+            app.buttons["capture-target-menu"].frame.width,
+            84
+        )
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Single-row capture console"
