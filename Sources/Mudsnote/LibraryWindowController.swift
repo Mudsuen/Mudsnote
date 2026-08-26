@@ -4476,7 +4476,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func notesForSelectedScope(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
-        guard noteListSortOrder != .dateEdited else {
+        let pinnedPaths = selectedScope == .trash
+            ? Set<String>()
+            : Set(noteStore.libraryPinnedNotePaths)
+        if noteListSortOrder == .dateEdited, pinnedPaths.isEmpty {
             return notesForSelectedScopeByModifiedDate(limit: limit, allNotes: allNotes)
         }
 
@@ -4518,7 +4521,7 @@ final class LibraryWindowController: NSWindowController,
             sortOrder: noteListSortOrder,
             groupsByDate: groupsNoteListByDate,
             includesPinnedGroup: selectedScope != .trash,
-            pinnedPaths: Set(noteStore.libraryPinnedNotePaths),
+            pinnedPaths: pinnedPaths,
             where: predicate
         )
     }

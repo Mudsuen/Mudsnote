@@ -3982,6 +3982,66 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryOldPinnedNoteSurvivesModifiedDateSnapshotLimit() throws {
+        let suiteName = "mudsnote-old-pinned-note-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-old-pinned-note-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.notesDirectory = notesDirectory
+        try FileManager.default.createDirectory(at: notesDirectory, withIntermediateDirectories: true)
+
+        let now = Date()
+        for index in 0..<240 {
+            let url = notesDirectory.appendingPathComponent(String(format: "Recent %03d.md", index))
+            try "# Recent \(index)\n".write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(TimeInterval(-index))],
+                ofItemAtPath: url.path
+            )
+        }
+        let pinnedURL = notesDirectory.appendingPathComponent("Pinned Old.md")
+        try "# Pinned Old\n".write(to: pinnedURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-86_400)],
+            ofItemAtPath: pinnedURL.path
+        )
+        store.setLibraryNotePinned(true, at: pinnedURL)
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        #expect(controller.noteListSearchResultsForLibrary().count == 240)
+        #expect(
+            controller.noteListSearchResultsForLibrary().first?.url.standardizedFileURL
+                == pinnedURL.standardizedFileURL
+        )
+        let pinnedHeader = try #require(
+            controller.tableView(controller.tableView, viewFor: nil, row: 0)
+                as? LibraryGroupHeaderCellView
+        )
+        #expect(pinnedHeader.titleLabel.stringValue == "置顶")
+    }
+
+    @MainActor
+    @Test
     func libraryNoteListAvoidsDuplicatingWeekdayPrefixInSnippet() throws {
         let suiteName = "mudsnote-note-list-weekday-snippet-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
