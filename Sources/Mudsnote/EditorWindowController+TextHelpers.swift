@@ -184,8 +184,11 @@ extension EditorWindowController {
                     dismissInlineSuggestions()
                     return true
                 }
-                suggestionController.acceptSelection()
-                return true
+                if suggestionController.acceptSelection() {
+                    return true
+                }
+                dismissInlineSuggestions()
+                return false
             case 53:
                 dismissInlineSuggestions()
                 return true

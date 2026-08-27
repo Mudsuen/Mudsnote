@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-24, this prototype records 274 implementation iterations, including the initial MVP.
+As of 2026-08-27, this prototype records 275 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 275. Immediate macOS tag and note-link guidance
+- Problem: Typing a bare `#` or `@` started an asynchronous tag or note lookup while simultaneously hiding the suggestion panel, so cold indexes and empty result sets looked like the feature did nothing.
+- Fix: The macOS editor now opens the suggestion panel immediately with non-selectable typing guidance, replaces that guidance as indexed tags or related notes arrive, and lets Return continue normal editing when only guidance is visible.
+- Lesson: Trigger characters need immediate, stable feedback; asynchronous enrichment should update an already-visible interaction instead of controlling whether the interaction exists.
 
 ### 274. Compact macOS tag layout and reversible library migration
 - Problem: The macOS metadata tag bar depended on an empty editor paragraph for vertical clearance, so the body sat one line too low; deleting that paragraph could instead place the first body line underneath the tag chips. Historical notes also retained inline `#tags` in their prose even after front matter became the canonical tag location.

@@ -2125,6 +2125,73 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func bareTagAndMentionTriggersShowImmediateGuidanceInTheLiveEditor() async throws {
+        let harness = try makeEditorControllerHarness(
+            draftID: "quick-capture",
+            showsSaveButton: true
+        )
+        defer { harness.tearDown() }
+        let controller = harness.controller
+        controller.window?.makeFirstResponder(controller.editorTextView)
+
+        controller.editorTextView.string = "#"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        NotificationCenter.default.post(
+            name: NSText.didChangeNotification,
+            object: controller.editorTextView
+        )
+        await Task.yield()
+        await Task.yield()
+
+        guard case .tags(let tagQuery, _, let tagItems) = controller.inlineSuggestionContext else {
+            Issue.record("Expected immediate tag guidance after typing #")
+            return
+        }
+        #expect(tagQuery.isEmpty)
+        #expect(tagItems.isEmpty)
+        #expect(!controller.suggestionController.view.isHidden)
+
+        let scrollView = try #require(
+            controller.suggestionController.view.subviews.compactMap { $0 as? NSScrollView }.first
+        )
+        let listView = try #require(scrollView.documentView as? SuggestionListView)
+        #expect(listView.items == [
+            SuggestionItem(
+                title: "输入标签名称",
+                subtitle: "继续输入，空格或回车确认",
+                symbolName: "number",
+                isSelectable: false
+            )
+        ])
+
+        controller.editorTextView.string = "@"
+        controller.editorTextView.setSelectedRange(NSRange(location: 1, length: 0))
+        NotificationCenter.default.post(
+            name: NSText.didChangeNotification,
+            object: controller.editorTextView
+        )
+        await Task.yield()
+        await Task.yield()
+
+        guard case .notes(let noteQuery, _, let noteItems) = controller.inlineSuggestionContext else {
+            Issue.record("Expected immediate note guidance after typing @")
+            return
+        }
+        #expect(noteQuery.isEmpty)
+        #expect(noteItems.isEmpty)
+        #expect(!controller.suggestionController.view.isHidden)
+        #expect(listView.items == [
+            SuggestionItem(
+                title: "输入笔记标题",
+                subtitle: "相关笔记会随输入更新",
+                symbolName: "note.text",
+                isSelectable: false
+            )
+        ])
+    }
+
+    @MainActor
+    @Test
     func quickEntryPanelRoutesCommandCommaToPreferences() throws {
         let panel = QuickEntryPanel(size: NSSize(width: 320, height: 260))
         var didRequestPreferences = false
@@ -10189,7 +10256,12 @@ struct MarkdownRichEditorTests {
         #expect(commands.isEmpty)
         #expect(!controller.suggestionController.view.isHidden)
         #expect(listView.items == [
-            SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)
+            SuggestionItem(
+                title: "无匹配命令",
+                subtitle: nil,
+                symbolName: nil,
+                isSelectable: false
+            )
         ])
     }
 

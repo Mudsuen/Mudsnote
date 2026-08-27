@@ -131,14 +131,10 @@ extension EditorWindowController {
         }
         if currentTagToken() != nil, knownTagsForSuggestions == nil {
             scheduleKnownTagsSuggestionLoad()
-            dismissInlineSuggestions()
-            return
         }
         if let token = currentNoteMentionToken(),
            noteSuggestionQuery != token.query {
             scheduleNoteSuggestionLoad(for: token.query)
-            dismissInlineSuggestions()
-            return
         }
         guard let context = currentInlineSuggestionContext() else {
             dismissInlineSuggestions()
@@ -149,27 +145,52 @@ extension EditorWindowController {
         let items: [SuggestionItem]
         switch context {
         case .tags(_, _, let tags):
-            items = tags.map { tag in
-                let exists = knownTagsForSuggestions?.contains(where: {
-                    $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
-                }) == true
-                return SuggestionItem(
-                    title: "#\(tag)",
-                    subtitle: exists ? "标签" : "新建标签",
-                    symbolName: "number"
-                )
-            }
+            items = tags.isEmpty
+                ? [
+                    SuggestionItem(
+                        title: "输入标签名称",
+                        subtitle: "继续输入，空格或回车确认",
+                        symbolName: "number",
+                        isSelectable: false
+                    )
+                ]
+                : tags.map { tag in
+                    let exists = knownTagsForSuggestions?.contains(where: {
+                        $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
+                    }) == true
+                    return SuggestionItem(
+                        title: "#\(tag)",
+                        subtitle: exists ? "标签" : "新建标签",
+                        symbolName: "number"
+                    )
+                }
         case .notes(_, _, let notes):
-            items = notes.map {
-                SuggestionItem(
-                    title: $0.title,
-                    subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
-                    symbolName: "note.text"
-                )
-            }
+            items = notes.isEmpty
+                ? [
+                    SuggestionItem(
+                        title: "输入笔记标题",
+                        subtitle: "相关笔记会随输入更新",
+                        symbolName: "note.text",
+                        isSelectable: false
+                    )
+                ]
+                : notes.map {
+                    SuggestionItem(
+                        title: $0.title,
+                        subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
+                        symbolName: "note.text"
+                    )
+                }
         case .slash(_, _, let commands):
             items = commands.isEmpty
-                ? [SuggestionItem(title: "无匹配命令", subtitle: nil, symbolName: nil)]
+                ? [
+                    SuggestionItem(
+                        title: "无匹配命令",
+                        subtitle: nil,
+                        symbolName: nil,
+                        isSelectable: false
+                    )
+                ]
                 : commands.map { SuggestionItem(title: $0.title, subtitle: nil, symbolName: nil) }
         }
 
@@ -206,14 +227,15 @@ extension EditorWindowController {
 
         if let tagToken = currentTagToken() {
             let items = rankedMatchingTags(for: tagToken.query)
-            if !items.isEmpty {
-                return .tags(query: tagToken.query, replacementRange: tagToken.replacementRange, items: items)
-            }
+            return .tags(
+                query: tagToken.query,
+                replacementRange: tagToken.replacementRange,
+                items: items
+            )
         }
 
         if let noteToken = currentNoteMentionToken(),
-           noteSuggestionQuery == noteToken.query,
-           !noteSuggestions.isEmpty {
+           noteSuggestionQuery == noteToken.query {
             return .notes(
                 query: noteToken.query,
                 replacementRange: noteToken.replacementRange,

@@ -4,6 +4,19 @@ struct SuggestionItem: Equatable {
     let title: String
     let subtitle: String?
     let symbolName: String?
+    let isSelectable: Bool
+
+    init(
+        title: String,
+        subtitle: String?,
+        symbolName: String?,
+        isSelectable: Bool = true
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.symbolName = symbolName
+        self.isSelectable = isSelectable
+    }
 }
 
 @MainActor
@@ -86,7 +99,11 @@ final class SuggestionListView: NSView {
         for index in items.indices {
             let rowRect = rectForRow(at: index)
             guard dirtyRect.intersects(rowRect) else { continue }
-            draw(item: items[index], in: rowRect, selected: index == selectedIndex)
+            draw(
+                item: items[index],
+                in: rowRect,
+                selected: itemIsSelectable(at: index) && index == selectedIndex
+            )
         }
     }
 
@@ -114,7 +131,11 @@ final class SuggestionListView: NSView {
     private func rowIndex(for event: NSEvent) -> Int? {
         let point = convert(event.locationInWindow, from: nil)
         let index = Int(floor(point.y / max(rowHeight, 1)))
-        return items.indices.contains(index) ? index : nil
+        return itemIsSelectable(at: index) ? index : nil
+    }
+
+    private func itemIsSelectable(at index: Int) -> Bool {
+        items.indices.contains(index) && items[index].isSelectable
     }
 
     private func draw(item: SuggestionItem, in rowRect: NSRect, selected: Bool) {
@@ -150,7 +171,9 @@ final class SuggestionListView: NSView {
         paragraphStyle.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: panelPrimaryTextColor(),
+            .foregroundColor: item.isSelectable
+                ? panelPrimaryTextColor()
+                : panelSecondaryTextColor(),
             .paragraphStyle: paragraphStyle
         ]
         let titleHeight = ceil(titleFont.boundingRectForFont.height) + 2
@@ -247,7 +270,9 @@ final class SuggestionPopoverController: NSViewController {
 
     func updateItems(_ items: [SuggestionItem]) {
         self.items = items
-        selectedIndex = min(selectedIndex, max(items.count - 1, 0))
+        selectedIndex = items.indices.contains(selectedIndex) && items[selectedIndex].isSelectable
+            ? selectedIndex
+            : (items.firstIndex(where: \.isSelectable) ?? -1)
         let rowHeight = items.contains { $0.subtitle?.isEmpty == false }
             ? Metrics.detailedRowHeight
             : Metrics.rowHeight
@@ -286,18 +311,24 @@ final class SuggestionPopoverController: NSViewController {
     }
 
     func moveSelection(delta: Int) {
-        guard !items.isEmpty else { return }
-        selectedIndex = min(max(selectedIndex + delta, 0), items.count - 1)
-        selectRow(at: selectedIndex)
+        let selectableIndices = items.indices.filter { items[$0].isSelectable }
+        guard !selectableIndices.isEmpty else { return }
+        let currentPosition = selectableIndices.firstIndex(of: selectedIndex)
+            ?? (delta >= 0 ? -1 : selectableIndices.count)
+        let nextPosition = min(max(currentPosition + delta, 0), selectableIndices.count - 1)
+        selectRow(at: selectableIndices[nextPosition])
     }
 
-    func acceptSelection() {
-        guard items.indices.contains(selectedIndex) else { return }
+    @discardableResult
+    func acceptSelection() -> Bool {
+        guard items.indices.contains(selectedIndex),
+              items[selectedIndex].isSelectable else { return false }
         onSelect?(selectedIndex)
+        return true
     }
 
     private func selectRow(at index: Int) {
-        guard items.indices.contains(index) else { return }
+        guard items.indices.contains(index), items[index].isSelectable else { return }
         selectedIndex = index
         listView.setSelectedIndex(index)
         listView.scrollToVisible(listView.rectForRow(at: index))
