@@ -24,8 +24,10 @@ enum FolderAccessError: LocalizedError, Equatable {
 final class FolderAccessService {
     enum DefaultsKey {
         static let bookmarkData = "mudsnote.ios.folderBookmarkData"
+        static let bookmarkFormatVersion = "mudsnote.ios.folderBookmarkFormatVersion"
     }
 
+    private static let currentBookmarkFormatVersion = 1
     private(set) var currentRoot: URL?
     private let defaults: UserDefaults
 
@@ -34,13 +36,18 @@ final class FolderAccessService {
     }
 
     func persistFolder(_ url: URL) throws {
-        try validateFolder(url)
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
+        let bookmark = try withValidatedAccess(to: url) {
+            try url.bookmarkData(
+                options: [.minimalBookmark],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
         }
-        let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         defaults.set(bookmark, forKey: DefaultsKey.bookmarkData)
+        defaults.set(
+            Self.currentBookmarkFormatVersion,
+            forKey: DefaultsKey.bookmarkFormatVersion
+        )
         currentRoot = url
     }
 
@@ -62,12 +69,14 @@ final class FolderAccessService {
             throw FolderAccessError.bookmarkResolutionFailed
         }
         do {
-            try validateFolder(url)
+            try withValidatedAccess(to: url) {}
         } catch {
             currentRoot = nil
             throw error
         }
-        if isStale {
+        if isStale
+            || defaults.integer(forKey: DefaultsKey.bookmarkFormatVersion)
+                != Self.currentBookmarkFormatVersion {
             try persistFolder(url)
         }
         currentRoot = url
@@ -75,29 +84,60 @@ final class FolderAccessService {
     }
 
     func withAccess<T>(to url: URL, _ work: () throws -> T) throws -> T {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessed { url.stopAccessingSecurityScopedResource() }
-        }
-        return try work()
+        try withValidatedAccess(to: url, validateFolder: false, work)
+    }
+
+    func validateCurrentFolder() throws {
+        guard let currentRoot else { throw FolderAccessError.missingFolder }
+        try withValidatedAccess(to: currentRoot) {}
     }
 
     func forgetPersistedFolder() {
         defaults.removeObject(forKey: DefaultsKey.bookmarkData)
+        defaults.removeObject(forKey: DefaultsKey.bookmarkFormatVersion)
         currentRoot = nil
     }
 
-    private func validateFolder(_ url: URL) throws {
-        guard url.isFileURL else { throw FolderAccessError.folderUnavailable }
+    private func withValidatedAccess<T>(
+        to url: URL,
+        validateFolder: Bool = true,
+        _ work: () throws -> T
+    ) throws -> T {
         let accessed = url.startAccessingSecurityScopedResource()
+        guard accessed || Self.isAppOwnedURL(url) else {
+            throw FolderAccessError.bookmarkResolutionFailed
+        }
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
+        if validateFolder {
+            try validateFolderWithinAccess(url)
+        }
+        return try work()
+    }
+
+    private func validateFolderWithinAccess(_ url: URL) throws {
+        guard url.isFileURL else { throw FolderAccessError.folderUnavailable }
         guard (try? url.checkResourceIsReachable()) == true else {
             throw FolderAccessError.folderUnavailable
         }
         let values = try url.resourceValues(forKeys: [.isDirectoryKey])
         guard values.isDirectory == true else { throw FolderAccessError.notDirectory }
+    }
+
+    private static func isAppOwnedURL(_ url: URL) -> Bool {
+        let candidate = url.standardizedFileURL.path
+        let fileManager = FileManager.default
+        let ownedRoots = [
+            fileManager.urls(for: .documentDirectory, in: .userDomainMask).first,
+            fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
+            fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first,
+            fileManager.temporaryDirectory,
+        ].compactMap { $0?.standardizedFileURL.path }
+
+        return ownedRoots.contains { root in
+            candidate == root || candidate.hasPrefix(root + "/")
+        }
     }
 }
 

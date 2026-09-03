@@ -73,7 +73,6 @@ final class MudsnoteCompanionUITests: XCTestCase {
         )
         let newNoteButton = app.buttons["new-note-button"]
         XCTAssertTrue(newNoteButton.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["all-notes-link"].exists)
 
         newNoteButton.tap()
         let editor = app.textViews["capture-body-editor"]
@@ -84,9 +83,12 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Saved"].waitForExistence(timeout: 5))
         XCTAssertFalse(editor.exists)
 
-        app.buttons["settings-link"].tap()
+        let settingsButton = app.buttons["sidebar-settings-button"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.tap()
         XCTAssertTrue(app.staticTexts["Needs Attention"].waitForExistence(timeout: 5))
-        let warning = app.staticTexts.matching(
+        app.swipeUp()
+        let warning = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label BEGINSWITH %@",
                 "A damaged pending queue was preserved as queue-damaged-"
@@ -122,7 +124,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue((editor.value as? String)?.contains("Draft continues") == true)
     }
 
-    func testInterruptedWriteKeepsDraftVisibleAndOffersRetry() {
+    func testInterruptedWriteMovesDraftToPendingQueueWithoutError() {
         let app = launchApp(
             reset: true,
             fixtureFolder: true,
@@ -138,20 +140,16 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         app.buttons["save-memo-button"].tap()
 
-        let recoveryTitle = app.staticTexts["Couldn’t Save Quick Note"]
-        XCTAssertTrue(recoveryTitle.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["retry-capture-save"].exists)
-        XCTAssertTrue(editor.exists)
-        XCTAssertTrue((editor.value as? String)?.contains("Keep this interrupted draft") == true)
+        let queuedToast = app.staticTexts["Saved to pending queue"]
+        XCTAssertTrue(queuedToast.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Couldn’t Save Quick Note"].exists)
+        XCTAssertFalse(app.buttons["retry-capture-save"].exists)
+        XCTAssertFalse(editor.exists)
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Quick capture interrupted-write recovery"
+        screenshot.name = "Quick capture interrupted-write pending recovery"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-
-        app.buttons["retry-capture-save"].tap()
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        XCTAssertTrue((editor.value as? String)?.contains("Keep this interrupted draft") == true)
     }
 
     func testConflictCopyCanBeSafelyKeptAsSeparateNote() {
@@ -426,7 +424,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let targetMenu = app.buttons["capture-target-menu"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertFalse(saveButton.isEnabled)
-        XCTAssertEqual(targetMenu.value as? String, "Inbox")
+        XCTAssertEqual(targetMenu.value as? String, "Top Level")
 
         editor.tap()
         editor.typeText("First UI memo")

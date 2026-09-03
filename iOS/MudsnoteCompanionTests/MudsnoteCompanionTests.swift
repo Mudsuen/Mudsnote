@@ -1933,6 +1933,79 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testTransientForegroundCaptureFailureMovesDraftToDurableQueue() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-fallback.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            draftRecoveryStore: CaptureDraftRecoveryStore(
+                directory: root.appendingPathComponent(".test-draft", isDirectory: true)
+            ),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            foregroundCaptureWriter: { _, _, _ in
+                throw CocoaError(.fileWriteUnknown)
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case .ready = model.folderStatus else {
+            return XCTFail("Fixture library did not become ready")
+        }
+
+        model.draft.body = "Keep this capture durable"
+        model.sendDraft(continueCapturing: false)
+        let saveDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < saveDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertNil(model.captureSubmissionIssue)
+        XCTAssertFalse(model.draft.canSend)
+        XCTAssertEqual(model.syncStatus, .pending)
+        XCTAssertEqual(
+            model.statusToast?.message,
+            String(localized: "Saved to pending queue")
+        )
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let pendingCount = await verificationQueue.pendingCount()
+        let pendingItems = await verificationQueue.allItems()
+        XCTAssertEqual(pendingCount, 1)
+        XCTAssertEqual(
+            pendingItems.first?.targetRelativePath
+                .contains("Keep this capture durable"),
+            true
+        )
+
+        model.replayQueue()
+        let replayDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < replayDeadline, model.syncStatus != .idle {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let replayedQueue = PendingWriteQueue(root: root)
+        try await replayedQueue.load()
+        let replayedPendingCount = await replayedQueue.pendingCount()
+        XCTAssertEqual(replayedPendingCount, 0)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(
+                    try XCTUnwrap(pendingItems.first?.targetRelativePath)
+                ).path
+            )
+        )
+    }
+
+    @MainActor
     func testCaptureOpenedFromFolderSavesAndRefreshesInsideThatFolder() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -2069,6 +2142,31 @@ final class MudsnoteCompanionTests: XCTestCase {
             1
         )
         XCTAssertFalse(createdMarkdown.contains("mudsnote-write:"))
+    }
+
+    func testCaptureFilenameIsBoundedByUTF8BytesForEmojiTitle() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let title = String(repeating: "📝", count: 80)
+
+        let created = try await store.createCapturedMarkdown(
+            from: CaptureDraft(body: "\(title)\nBody"),
+            root: root
+        )
+
+        XCTAssertLessThanOrEqual(
+            created.relativePath.utf8.count,
+            184,
+            "The Markdown extension must remain below common 255-byte File Provider limits"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(created.relativePath).path
+            )
+        )
     }
 
     func testDistinctPendingCapturesWithSameTargetAndContentCreateDistinctNotes() async throws {
@@ -2573,6 +2671,49 @@ final class MudsnoteCompanionTests: XCTestCase {
             XCTAssertEqual(error as? FolderAccessError, .notDirectory)
         }
         XCTAssertNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
+    }
+
+    func testFolderBookmarkUsesCurrentMinimalFormatAndClearsItsVersion() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.folder-format.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let service = FolderAccessService(defaults: defaults)
+
+        try service.persistFolder(root)
+
+        XCTAssertNotNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
+        XCTAssertEqual(
+            defaults.integer(forKey: FolderAccessService.DefaultsKey.bookmarkFormatVersion),
+            1
+        )
+        service.forgetPersistedFolder()
+        XCTAssertNil(defaults.object(forKey: FolderAccessService.DefaultsKey.bookmarkFormatVersion))
+    }
+
+    func testLegacyFolderBookmarkMigratesToCurrentFormat() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.folder-migration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try root.bookmarkData(
+                options: [],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ),
+            forKey: FolderAccessService.DefaultsKey.bookmarkData
+        )
+        let service = FolderAccessService(defaults: defaults)
+
+        XCTAssertEqual(try service.resolvePersistedFolder(), root)
+        XCTAssertEqual(
+            defaults.integer(forKey: FolderAccessService.DefaultsKey.bookmarkFormatVersion),
+            1
+        )
+        XCTAssertNotNil(defaults.data(forKey: FolderAccessService.DefaultsKey.bookmarkData))
     }
 
     func testSimplifiedChineseCatalogIsEmbeddedAndFormatsDynamicCopy() throws {

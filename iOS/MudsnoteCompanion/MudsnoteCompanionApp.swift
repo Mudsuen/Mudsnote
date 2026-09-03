@@ -11,7 +11,21 @@ struct MudsnoteCompanionApp: App {
 
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-interrupted-write") {
+            _appModel = StateObject(
+                wrappedValue: AppModel(
+                    foregroundCaptureWriter: { _, _, _ in
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                )
+            )
+        } else {
+            _appModel = StateObject(wrappedValue: AppModel())
+        }
+        #else
         _appModel = StateObject(wrappedValue: AppModel())
+        #endif
     }
 
     var body: some Scene {
@@ -382,21 +396,6 @@ private enum MudsnoteUITestLaunchConfiguration {
 
                 if arguments.contains(damagedQueueArgument) {
                     try Data("damaged pending queue".utf8).write(
-                        to: root.appendingPathComponent(".mudsnote/queue.json"),
-                        options: .atomic
-                    )
-                }
-                if arguments.contains(interruptedWriteArgument) {
-                    let interruptedWrites = (0..<PendingWriteQueuePolicy.maximumItemCount).map { index in
-                        PendingWrite(
-                            id: UUID(),
-                            createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
-                            targetRelativePath: "../blocked-\(index).md",
-                            markdownBlock: "Interrupted write fixture",
-                            attachments: []
-                        )
-                    }
-                    try JSONEncoder.pretty.encode(interruptedWrites).write(
                         to: root.appendingPathComponent(".mudsnote/queue.json"),
                         options: .atomic
                     )

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -29,8 +30,26 @@ enum SystemEntryRequest {
     static let pendingSearchKey = "MudsnotePendingSystemSearch"
 }
 
+typealias ForegroundCaptureWriter = @Sendable (
+    MarkdownFileStore,
+    CaptureDraft,
+    URL
+) async throws -> RecentMarkdownFile
+
+private let defaultForegroundCaptureWriter: ForegroundCaptureWriter = {
+    store,
+    draft,
+    root in
+    try await store.createCapturedMarkdown(from: draft, root: root)
+}
+
 @MainActor
 final class AppModel: ObservableObject {
+    private static let captureSaveLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "app.mudsnote.companion",
+        category: "CaptureSave"
+    )
+
     @Published var folderStatus: FolderStatus = .loading
     @Published var inboxItems: [MemoBlock] = []
     @Published var libraryFiles: [RecentMarkdownFile] = []
@@ -102,6 +121,7 @@ final class AppModel: ObservableObject {
     private var discoveredQueueRecoveryThisRun = false
     private let attachmentPresentationPreferences: AttachmentPresentationPreferences
     private let captureFolderPreferences: CaptureFolderPreferences
+    private let foregroundCaptureWriter: ForegroundCaptureWriter
     private let libraryRefreshBarrier: @Sendable () async -> Void
     private let initialLibraryLoadBarrier: @Sendable () async -> Void
     private var captureTargetWasExplicitlySelected = false
@@ -157,6 +177,7 @@ final class AppModel: ObservableObject {
         draftRecoveryStore: CaptureDraftRecoveryStore = CaptureDraftRecoveryStore(),
         restoreDraftImmediately: Bool? = nil,
         defaults: UserDefaults = .standard,
+        foregroundCaptureWriter: @escaping ForegroundCaptureWriter = defaultForegroundCaptureWriter,
         libraryRefreshBarrier: @escaping @Sendable () async -> Void = {},
         initialLibraryLoadBarrier: @escaping @Sendable () async -> Void = {
             await Task.yield()
@@ -165,6 +186,7 @@ final class AppModel: ObservableObject {
         self.folderAccess = folderAccess
         self.fileStore = fileStore
         self.draftRecoveryStore = draftRecoveryStore
+        self.foregroundCaptureWriter = foregroundCaptureWriter
         self.libraryRefreshBarrier = libraryRefreshBarrier
         self.initialLibraryLoadBarrier = initialLibraryLoadBarrier
         attachmentPresentationPreferences = AttachmentPresentationPreferences(defaults: defaults)
@@ -424,6 +446,17 @@ final class AppModel: ObservableObject {
                 )
                 await refreshAfterWrite(canUseInboxDelta: canUseInboxDelta)
             } catch {
+                if let draftSaveError = error as? DraftSaveError,
+                   case .queuedForReplay = draftSaveError {
+                    captureSubmissionIssue = nil
+                    _ = finishSubmission(
+                        submittedDraft,
+                        continueCapturing: continueCapturing
+                    )
+                    syncStatus = .pending
+                    statusToast = .pending(String(localized: "Saved to pending queue"))
+                    return
+                }
                 if let draftSaveError = error as? DraftSaveError {
                     captureSubmissionIssue = draftSaveError.localizedDescription
                     return
@@ -2247,16 +2280,48 @@ final class AppModel: ObservableObject {
     }
 
     private func appendDraft(_ draft: CaptureDraft) async throws -> RecentMarkdownFile {
-        guard let root = folderAccess.currentRoot else {
+        guard let root = folderAccess.currentRoot, let queue else {
             throw FolderAccessError.missingFolder
         }
 
         do {
-            let createdFile = try await fileStore.createCapturedMarkdown(from: draft, root: root)
+            try folderAccess.validateCurrentFolder()
+            let createdFile = try await foregroundCaptureWriter(fileStore, draft, root)
             recordSuccessfulCaptureFolder(for: draft.target)
             return createdFile
-        } catch {
-            throw DraftSaveError.directWriteFailed(error.localizedDescription)
+        } catch let directWriteError {
+            let directNSError = directWriteError as NSError
+            Self.captureSaveLogger.error(
+                "Direct capture failed domain=\(directNSError.domain, privacy: .public) code=\(directNSError.code, privacy: .public)"
+            )
+
+            do {
+                let pending = try await fileStore.preparePendingWrite(
+                    for: draft,
+                    root: root
+                )
+                do {
+                    try await queue.enqueue(pending)
+                } catch {
+                    await fileStore.releasePendingReservation(pending, root: root)
+                    throw error
+                }
+                Self.captureSaveLogger.notice(
+                    "Capture moved to durable replay queue after direct write failure"
+                )
+                throw DraftSaveError.queuedForReplay
+            } catch let queuedError as DraftSaveError {
+                throw queuedError
+            } catch let recoveryError {
+                let recoveryNSError = recoveryError as NSError
+                Self.captureSaveLogger.error(
+                    "Capture recovery failed domain=\(recoveryNSError.domain, privacy: .public) code=\(recoveryNSError.code, privacy: .public)"
+                )
+                throw DraftSaveError.directAndRecoveryWriteFailed(
+                    direct: directWriteError.localizedDescription,
+                    recovery: recoveryError.localizedDescription
+                )
+            }
         }
     }
 
@@ -2395,11 +2460,15 @@ final class AppModel: ObservableObject {
 }
 
 enum DraftSaveError: LocalizedError {
-    case directWriteFailed(String)
+    case queuedForReplay
+    case directAndRecoveryWriteFailed(direct: String, recovery: String)
 
     var errorDescription: String? {
         switch self {
-        case .directWriteFailed(let reason):
+        case .queuedForReplay:
+            return String(localized: "Saved to pending queue")
+        case .directAndRecoveryWriteFailed(let direct, let recovery):
+            let reason = "\(direct) \(recovery)"
             return String(
                 format: String(localized: "draft.kept_open.format"),
                 locale: .current,

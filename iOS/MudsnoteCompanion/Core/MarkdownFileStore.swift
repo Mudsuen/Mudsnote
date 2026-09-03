@@ -106,7 +106,9 @@ actor MarkdownFileStore {
         defer {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
-        try FolderInitializer.initialize(root)
+        try coordinatedDirectoryWrite(at: root) { coordinatedRoot in
+            try FolderInitializer.initialize(coordinatedRoot)
+        }
     }
 
     func loadLibrarySnapshot() throws -> MarkdownLibrarySnapshot {
@@ -1102,86 +1104,21 @@ actor MarkdownFileStore {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
 
-        let directory = try userFolderURL(
-            relativePath: draft.target.relativeFolderPath,
-            root: root,
-            allowRoot: true
-        )
-        let operationID = UUID()
-        let attachmentWrites = try attachmentWrites(
-            for: draft.attachments,
-            root: root,
-            now: now,
-            operationID: operationID
-        )
-        let markdownBlock = Self.markdownBlock(
-            body: Self.captureBodyExcludingTitle(from: draft.body),
-            tags: draft.tags,
-            attachmentReferences: zip(attachmentWrites, draft.attachments).map {
-                MarkdownAttachmentReference(relativePath: $0.0.relativePath, kind: $0.1.referenceKind)
-            },
-            attachmentTags: draft.attachments.map(\.markdownTag),
-            now: now,
-            createdAt: draft.createdAt,
-            locationStamp: draft.locationStamp,
-            weatherStamp: draft.weatherStamp
-        )
-        let preferredStem = Self.captureNoteFilenameStem(for: draft)
-        var createdAttachmentURLs: [URL] = []
-
-        do {
-            for attachment in attachmentWrites {
-                guard let attachmentURL = AuthorizedLibraryPath.resolve(
-                    attachment.relativePath,
-                    within: root,
-                    constrainedTo: "Attachments"
-                ) else {
-                    throw MarkdownDocumentError.invalidPath
-                }
-                try fileManager.createDirectory(
-                    at: attachmentURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try attachment.data.write(to: attachmentURL, options: .withoutOverwriting)
-                createdAttachmentURLs.append(attachmentURL)
-            }
-
-            let body = markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
-            let (destination, note) = try createCapturedNoteExclusively(
-                in: directory,
-                preferredStem: preferredStem,
-                body: body
+        return try coordinatedDirectoryWrite(at: root) { coordinatedRoot in
+            try createCapturedMarkdownWithinAccess(
+                from: draft,
+                root: coordinatedRoot,
+                now: now
             )
-
-            let relativePath = Self.relativeNotePath(
-                filename: destination.lastPathComponent,
-                targetFolder: draft.target.relativeFolderPath
-            )
-            let metadata = MarkdownListMetadata.extract(
-                from: note,
-                fallbackTitle: destination.deletingPathExtension().lastPathComponent
-            )
-            invalidateAfterMutation(relativePaths: [relativePath])
-            return RecentMarkdownFile(
-                id: relativePath,
-                relativePath: relativePath,
-                title: metadata.title,
-                modifiedAt: now,
-                createdAt: now,
-                preview: metadata.preview,
-                galleryImagePath: metadata.galleryImagePath,
-                galleryChecklistItems: metadata.galleryChecklistItems,
-                hasAttachments: metadata.hasAttachments,
-                hasChecklist: metadata.hasChecklist,
-                hasUncheckedChecklist: metadata.hasUncheckedChecklist,
-                tags: metadata.tags
-            )
-        } catch {
-            for attachmentURL in createdAttachmentURLs.reversed() {
-                try? fileManager.removeItem(at: attachmentURL)
-            }
-            throw error
         }
+    }
+
+    func releasePendingReservation(_ pending: PendingWrite, root: URL) {
+        guard let target = AuthorizedLibraryPath.resolve(
+            pending.targetRelativePath,
+            within: root
+        ) else { return }
+        reservedPendingTargets.remove(target.standardizedFileURL.path)
     }
 
     func saveMarkdownDocument(
@@ -2148,6 +2085,29 @@ actor MarkdownFileStore {
         if let moveError { throw moveError }
     }
 
+    private func coordinatedDirectoryWrite<T>(
+        at directory: URL,
+        _ operation: (URL) throws -> T
+    ) throws -> T {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var operationResult: Result<T, Error>?
+        coordinator.coordinate(
+            writingItemAt: directory,
+            options: .forMerging,
+            error: &coordinationError
+        ) { coordinatedDirectory in
+            operationResult = Result {
+                try operation(coordinatedDirectory)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let operationResult else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return try operationResult.get()
+    }
+
     private func coordinatedReplaceTagData(
         at url: URL,
         relativePath: String,
@@ -2680,8 +2640,24 @@ actor MarkdownFileStore {
         )
         value = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
         if value.hasPrefix(".") { value.removeFirst() }
-        let bounded = String(value.prefix(80)).trimmingCharacters(in: .whitespacesAndNewlines)
+        let bounded = byteBoundedFilenameStem(value, maximumUTF8Bytes: 180)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return bounded.isEmpty ? "Untitled Note" : bounded
+    }
+
+    private static func byteBoundedFilenameStem(
+        _ value: String,
+        maximumUTF8Bytes: Int
+    ) -> String {
+        var result = ""
+        var byteCount = 0
+        for character in value {
+            let characterBytes = String(character).utf8.count
+            guard byteCount + characterBytes <= maximumUTF8Bytes else { break }
+            result.append(character)
+            byteCount += characterBytes
+        }
+        return result
     }
 
     private static func isPinnableNotePath(_ relativePath: String) -> Bool {
@@ -3152,6 +3128,98 @@ actor MarkdownFileStore {
             } catch where Self.isFileAlreadyExists(error) {
                 suffix += 1
             }
+        }
+    }
+
+    private func createCapturedMarkdownWithinAccess(
+        from draft: CaptureDraft,
+        root: URL,
+        now: Date
+    ) throws -> RecentMarkdownFile {
+        let directory = try userFolderURL(
+            relativePath: draft.target.relativeFolderPath,
+            root: root,
+            allowRoot: true
+        )
+        let operationID = UUID()
+        let attachmentWrites = try attachmentWrites(
+            for: draft.attachments,
+            root: root,
+            now: now,
+            operationID: operationID
+        )
+        let markdownBlock = Self.markdownBlock(
+            body: Self.captureBodyExcludingTitle(from: draft.body),
+            tags: draft.tags,
+            attachmentReferences: zip(attachmentWrites, draft.attachments).map {
+                MarkdownAttachmentReference(
+                    relativePath: $0.0.relativePath,
+                    kind: $0.1.referenceKind
+                )
+            },
+            attachmentTags: draft.attachments.map(\.markdownTag),
+            now: now,
+            createdAt: draft.createdAt,
+            locationStamp: draft.locationStamp,
+            weatherStamp: draft.weatherStamp
+        )
+        let preferredStem = Self.captureNoteFilenameStem(for: draft)
+        var createdAttachmentURLs: [URL] = []
+
+        do {
+            for attachment in attachmentWrites {
+                guard let attachmentURL = AuthorizedLibraryPath.resolve(
+                    attachment.relativePath,
+                    within: root,
+                    constrainedTo: "Attachments"
+                ) else {
+                    throw MarkdownDocumentError.invalidPath
+                }
+                try fileManager.createDirectory(
+                    at: attachmentURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try attachment.data.write(
+                    to: attachmentURL,
+                    options: .withoutOverwriting
+                )
+                createdAttachmentURLs.append(attachmentURL)
+            }
+
+            let body = markdownBlock.trimmingCharacters(in: .whitespacesAndNewlines)
+            let (destination, note) = try createCapturedNoteExclusively(
+                in: directory,
+                preferredStem: preferredStem,
+                body: body
+            )
+            let relativePath = Self.relativeNotePath(
+                filename: destination.lastPathComponent,
+                targetFolder: draft.target.relativeFolderPath
+            )
+            let metadata = MarkdownListMetadata.extract(
+                from: note,
+                fallbackTitle: destination.deletingPathExtension().lastPathComponent
+            )
+            invalidateAfterMutation(relativePaths: [relativePath])
+            return RecentMarkdownFile(
+                id: relativePath,
+                relativePath: relativePath,
+                title: metadata.title,
+                modifiedAt: now,
+                createdAt: now,
+                preview: metadata.preview,
+                galleryImagePath: metadata.galleryImagePath,
+                galleryChecklistItems: metadata.galleryChecklistItems,
+                hasAttachments: metadata.hasAttachments,
+                hasChecklist: metadata.hasChecklist,
+                hasUncheckedChecklist: metadata.hasUncheckedChecklist,
+                tags: metadata.tags
+            )
+        } catch {
+            for attachmentURL in createdAttachmentURLs.reversed() {
+                try? fileManager.removeItem(at: attachmentURL)
+            }
+            throw error
         }
     }
 

@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-08-27, this prototype records 275 implementation iterations, including the initial MVP.
+As of 2026-09-04, this prototype records 276 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 276. Durable File Provider quick-note saves
+- Problem: iOS foreground capture bypassed both File Provider coordination and the durable replay queue, persisted directory bookmarks without the documented minimal format, and bounded filenames by characters instead of bytes. A transient provider write or a multibyte title could therefore surface “Couldn’t Save Quick Note,” while the interrupted-save UI fixture no longer exercised the real foreground path.
+- Fix: Directory bookmarks now use and migrate to the minimal iOS format, reject lost external-folder scope before the library is treated as writable, and clear their format metadata with the authorization. Foreground capture coordinates the existing selected directory while creating attachments and the Markdown note, limits filename components by UTF-8 bytes, and moves an otherwise valid draft into the existing durable replay queue if the direct provider write fails. Diagnostics record only the failing domain/code, and the recovery tests now inject a fault at the real foreground-write boundary instead of filling an unrelated queue.
+- Lesson: File Provider success requires a valid security scope, coordinated access to an existing directory, byte-safe child names, and a durable second path whose tests fail at the same boundary as production.
 
 ### 275. Immediate macOS tag and note-link guidance
 - Problem: Typing a bare `#` or `@` started an asynchronous tag or note lookup while simultaneously hiding the suggestion panel, so cold indexes and empty result sets looked like the feature did nothing.
