@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-04, this prototype records 276 implementation iterations, including the initial MVP.
+As of 2026-09-04, this prototype records 277 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 277. Measured iOS capture and recovery latency
+- Problem: A durable foreground save still kept the composer in its sending state until a full File Provider inventory completed, cold launch replayed every queued attachment before revealing the library shell, and replay removed items one at a time by coordinating, decoding, encoding, and replacing the entire queue file after each success.
+- Fix: Successful captures now publish their exact in-memory projection immediately and finish the save interaction without rescanning the library; attachment captures reconcile their additional inventory in one silent debounced refresh, with rapid captures coalesced together. Startup validates and loads the durable queue, reveals the interactive shell with pending status, then performs replay and indexing. Replay batches completed IDs into one merge-safe queue commit while retaining idempotent crash recovery, transient-failure progress, irrecoverable-item preservation, and entries concurrently added by another process.
+- Lesson: Durability boundaries should remain synchronous, but derived inventory work can follow the interaction; idempotent recovery journals make batched cleanup both faster and crash-safe when the final commit removes only known completed IDs from freshly loaded state.
 
 ### 276. Durable File Provider quick-note saves
 - Problem: iOS foreground capture bypassed both File Provider coordination and the durable replay queue, persisted directory bookmarks without the documented minimal format, and bounded filenames by characters instead of bytes. A transient provider write or a multibyte title could therefore surface “Couldn’t Save Quick Note,” while the interrupted-save UI fixture no longer exercised the real foreground path.

@@ -49,17 +49,30 @@ struct PendingAttachment: Codable, Equatable {
     var base64Data: String
 }
 
+enum PendingWriteReplayPersistenceMode: Equatable {
+    case afterEachItem
+    case afterBatch
+}
+
 actor PendingWriteQueue {
     private static let maximumQueueFileBytes = 128 * 1_024 * 1_024
     private let root: URL
     private let queueURL: URL
     private let libraryID: String
+    private let replayPersistenceMode: PendingWriteReplayPersistenceMode
+    private let persistenceObserver: (@Sendable (URL) -> Void)?
     private var items: [PendingWrite] = []
 
-    init(root: URL) {
+    init(
+        root: URL,
+        replayPersistenceMode: PendingWriteReplayPersistenceMode = .afterBatch,
+        persistenceObserver: (@Sendable (URL) -> Void)? = nil
+    ) {
         self.root = root
         self.queueURL = root.appendingPathComponent(".mudsnote/queue.json")
         self.libraryID = LibraryIdentity.identifier(for: root)
+        self.replayPersistenceMode = replayPersistenceMode
+        self.persistenceObserver = persistenceObserver
     }
 
     @discardableResult
@@ -187,28 +200,44 @@ actor PendingWriteQueue {
         _ writer: (PendingWrite) async throws -> Void
     ) async throws -> PendingWriteReplayResult {
         var result = PendingWriteReplayResult()
-        for item in items {
-            do {
-                try await writer(item)
-                result.replayedCount += 1
-            } catch {
-                guard let validationError = error as? any IrrecoverablePendingWriteError,
-                      validationError.shouldPreserveOutsideActiveQueue else {
-                    throw error
+        var completedIDs: Set<UUID> = []
+
+        do {
+            for item in items {
+                do {
+                    try await writer(item)
+                    result.replayedCount += 1
+                } catch {
+                    guard let validationError = error as? any IrrecoverablePendingWriteError,
+                          validationError.shouldPreserveOutsideActiveQueue else {
+                        throw error
+                    }
+                    let filename = try preserveIrrecoverable(item)
+                    result.preservedFailureFilenames.append(filename)
                 }
-                let filename = try preserveIrrecoverable(item)
-                result.preservedFailureFilenames.append(filename)
+                completedIDs.insert(item.id)
+                if replayPersistenceMode == .afterEachItem {
+                    try await removeAfterReplay(ids: [item.id])
+                    completedIDs.remove(item.id)
+                }
             }
-            try await removeAfterReplay(id: item.id)
+        } catch {
+            try await removeAfterReplay(ids: completedIDs)
+            throw error
         }
+
+        try await removeAfterReplay(ids: completedIDs)
         return result
     }
 
-    private func removeAfterReplay(id: UUID) async throws {
+    private func removeAfterReplay(ids: Set<UUID>) async throws {
+        guard !ids.isEmpty else { return }
         var lastError: Error?
         for attempt in 0..<3 {
             do {
-                try remove(id: id)
+                try mutatePersistedItems { persisted in
+                    persisted.removeAll { ids.contains($0.id) }
+                }
                 return
             } catch {
                 lastError = error
@@ -276,6 +305,7 @@ actor PendingWriteQueue {
     private func persistUnlocked(_ items: [PendingWrite], to url: URL) throws {
         let data = try JSONEncoder.pretty.encode(items)
         try data.write(to: url, options: .atomic)
+        persistenceObserver?(url)
     }
 
     private func uniqueQuarantineURL(now: Date) -> URL {

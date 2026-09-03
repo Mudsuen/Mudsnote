@@ -107,6 +107,9 @@ final class AppModel: ObservableObject {
     private var searchGeneration = 0
     private var libraryConfigurationID = UUID()
     private var draftPersistenceTask: Task<Void, Never>?
+    private var postWriteRefreshTask: Task<Void, Never>?
+    private var postWriteRefreshRequested = false
+    private var postWriteRefreshGeneration = 0
     private var audioStartTask: Task<Void, Never>?
     private var audioStopTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
@@ -428,7 +431,6 @@ final class AppModel: ObservableObject {
         cancelTranscription()
         captureSubmissionIssue = nil
         let submittedDraft = draft
-        let canUseInboxDelta = false
         isSendingDraft = true
         Task {
             defer { isSendingDraft = false }
@@ -444,7 +446,9 @@ final class AppModel: ObservableObject {
                             : String(localized: "Saved"))
                         : String(localized: "Saved. New changes kept")
                 )
-                await refreshAfterWrite(canUseInboxDelta: canUseInboxDelta)
+                if submittedDraft.attachments.isEmpty == false {
+                    schedulePostWriteRefresh()
+                }
             } catch {
                 if let draftSaveError = error as? DraftSaveError,
                    case .queuedForReplay = draftSaveError {
@@ -2033,14 +2037,27 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refreshInbox() async {
+    func refreshInbox(reportFailure: Bool = true) async {
         guard folderAccess.currentRoot != nil else { return }
+        let configurationID = libraryConfigurationID
+        let activeQueue = queue
         do {
             await libraryRefreshBarrier()
+            guard libraryConfigurationID == configurationID else { return }
             let snapshot = try await fileStore.loadLibrarySnapshot()
-            await apply(snapshot)
+            let pendingCount = await activeQueue?.pendingCount() ?? 0
+            guard libraryConfigurationID == configurationID else { return }
+            apply(snapshot, pendingCount: pendingCount)
         } catch {
-            statusToast = .error(String(localized: "Inbox refresh failed"))
+            guard libraryConfigurationID == configurationID else { return }
+            if reportFailure {
+                statusToast = .error(String(localized: "Inbox refresh failed"))
+            } else {
+                let refreshError = error as NSError
+                Self.captureSaveLogger.error(
+                    "Post-save refresh failed domain=\(refreshError.domain, privacy: .public) code=\(refreshError.code, privacy: .public)"
+                )
+            }
         }
     }
 
@@ -2076,21 +2093,45 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func refreshAfterWrite(canUseInboxDelta: Bool) async {
-        if canUseInboxDelta {
-            await refreshInboxDelta()
-        } else {
-            await refreshInbox()
+    private func schedulePostWriteRefresh() {
+        postWriteRefreshRequested = true
+        guard postWriteRefreshTask == nil else { return }
+        let configurationID = libraryConfigurationID
+        let refreshGeneration = postWriteRefreshGeneration
+        postWriteRefreshTask = Task { [weak self] in
+            defer {
+                if self?.postWriteRefreshGeneration == refreshGeneration {
+                    self?.postWriteRefreshTask = nil
+                }
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+
+            while let self,
+                  self.libraryConfigurationID == configurationID,
+                  self.postWriteRefreshRequested {
+                self.postWriteRefreshRequested = false
+                await self.refreshInbox(reportFailure: false)
+                await Task.yield()
+            }
         }
     }
 
-    private func refreshInboxDelta() async {
+    private func refreshInboxDelta(reportFailure: Bool = true) async {
         guard folderAccess.currentRoot != nil else { return }
+        let configurationID = libraryConfigurationID
+        let activeQueue = queue
         do {
             let snapshot = try await fileStore.loadInboxDeltaSnapshot()
-            await apply(snapshot)
+            let pendingCount = await activeQueue?.pendingCount() ?? 0
+            guard libraryConfigurationID == configurationID else { return }
+            apply(snapshot, pendingCount: pendingCount)
         } catch {
-            await refreshInbox()
+            guard libraryConfigurationID == configurationID else { return }
+            await refreshInbox(reportFailure: reportFailure)
         }
     }
 
@@ -2175,6 +2216,10 @@ final class AppModel: ObservableObject {
     }
 
     private func beginLibraryConfiguration() -> UUID {
+        postWriteRefreshGeneration += 1
+        postWriteRefreshTask?.cancel()
+        postWriteRefreshTask = nil
+        postWriteRefreshRequested = false
         let configurationID = UUID()
         libraryConfigurationID = configurationID
         folderStatus = .loading
@@ -2219,6 +2264,20 @@ final class AppModel: ObservableObject {
             discoveredQueueRecoveryThisRun = true
         }
         guard libraryConfigurationID == configurationID else { return false }
+        queue = nextQueue
+        let pendingCountBeforeReplay = await nextQueue.pendingCount()
+        // Queue loading has already validated or quarantined its durable state.
+        // Reveal the interactive shell before potentially expensive attachment
+        // replay and the full iCloud-backed Markdown inventory.
+        folderStatus = .ready(root)
+        if pendingCountBeforeReplay > 0 {
+            syncStatus = .pending
+        }
+        announceRecoveredDraftIfPossible()
+        presentPendingCaptureIfPossible()
+        await initialLibraryLoadBarrier()
+        guard libraryConfigurationID == configurationID else { return false }
+
         var replayFailed = false
         do {
             let replayResult = try await nextQueue.replay { [fileStore, weak self] item in
@@ -2230,15 +2289,6 @@ final class AppModel: ObservableObject {
         } catch {
             replayFailed = true
         }
-        guard libraryConfigurationID == configurationID else { return false }
-        queue = nextQueue
-        // A full iCloud-backed Markdown inventory can take seconds on a cold
-        // launch. Folder access and queue recovery are already safe here, so
-        // reveal the interactive shell before scanning and parsing every note.
-        folderStatus = .ready(root)
-        announceRecoveredDraftIfPossible()
-        presentPendingCaptureIfPossible()
-        await initialLibraryLoadBarrier()
         guard libraryConfigurationID == configurationID else { return false }
         let snapshot = try await fileStore.loadLibrarySnapshot()
         let pendingCount = await nextQueue.pendingCount()

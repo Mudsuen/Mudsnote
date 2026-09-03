@@ -1239,6 +1239,73 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testAblationPendingReplayDoesNotBlockInteractiveShell() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let pending = try await store.preparePendingWrite(
+            for: CaptureDraft(body: "Replay after shell"),
+            root: root
+        )
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        try await queue.enqueue(pending)
+
+        let suiteName = "MudsnoteCompanionTests.replay-shell.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (barrier, releaseBarrier) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            initialLibraryLoadBarrier: {
+                for await _ in barrier { break }
+            }
+        )
+
+        model.selectFolder(root)
+
+        let shellDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < shellDeadline {
+            if case .ready = model.folderStatus { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .ready = model.folderStatus else {
+            return XCTFail("The interactive shell was blocked by pending replay")
+        }
+        XCTAssertTrue(model.isInitialLibraryLoading)
+        XCTAssertEqual(model.syncStatus, .pending)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(pending.targetRelativePath).path
+            ),
+            "The control barrier must still be holding replay while the shell is visible"
+        )
+
+        releaseBarrier.yield()
+        releaseBarrier.finish()
+        let replayDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < replayDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(pending.targetRelativePath).path
+            )
+        )
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let remainingCount = await verificationQueue.pendingCount()
+        XCTAssertEqual(remainingCount, 0)
+    }
+
+    @MainActor
     func testSceneActivationReloadsSharedQueueAndExternalMarkdownChanges() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1596,7 +1663,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(created.preview, "Book the train\nPack a charger")
     }
 
-    func testTwoConcurrentDirectCapturesWithSameTitleAndContentCreateTwoFiles() async throws {
+    func testAblationCoordinatedExclusiveCapturePreservesSameTitleWrites() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -1933,7 +2000,7 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
-    func testTransientForegroundCaptureFailureMovesDraftToDurableQueue() async throws {
+    func testAblationDurableFallbackRetainsTransientForegroundFailure() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let suiteName = "MudsnoteCompanionTests.capture-fallback.\(UUID().uuidString)"
@@ -2002,6 +2069,153 @@ final class MudsnoteCompanionTests: XCTestCase {
                     try XCTUnwrap(pendingItems.first?.targetRelativePath)
                 ).path
             )
+        )
+    }
+
+    @MainActor
+    func testAblationFullRefreshDoesNotExtendCaptureSubmissionLatency() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-refresh.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let (refreshBarrier, releaseRefresh) = AsyncStream<Void>.makeStream()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            libraryRefreshBarrier: {
+                for await _ in refreshBarrier { break }
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+
+        let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        model.draft = CaptureDraft(
+            body: "Refresh must not hold save",
+            attachments: [.image(data: imageData, preferredExtension: "png")]
+        )
+        model.sendDraft(continueCapturing: false)
+        let saveDeadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < saveDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertFalse(
+            model.isSendingDraft,
+            "A successful durable write must finish before the background inventory refresh"
+        )
+        XCTAssertNil(model.captureSubmissionIssue)
+        XCTAssertTrue(
+            model.libraryFiles.contains {
+                $0.relativePath == "Refresh must not hold save.md"
+            }
+        )
+
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertFalse(model.isSendingDraft)
+        releaseRefresh.yield()
+        releaseRefresh.finish()
+    }
+
+    @MainActor
+    func testPostWriteRefreshCoalescesRapidCaptureBurst() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-refresh-burst.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let refreshCounter = LockedCounter()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            libraryRefreshBarrier: {
+                refreshCounter.increment()
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+
+        let imageData = try XCTUnwrap(Data(base64Encoded: Self.onePixelPNG))
+        for title in ["Burst one", "Burst two"] {
+            model.draft = CaptureDraft(
+                body: title,
+                attachments: [.image(data: imageData, preferredExtension: "png")]
+            )
+            model.sendDraft(continueCapturing: true)
+            let saveDeadline = ContinuousClock.now + .seconds(2)
+            while ContinuousClock.now < saveDeadline, model.isSendingDraft {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            XCTAssertFalse(model.isSendingDraft)
+        }
+
+        let refreshDeadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < refreshDeadline, refreshCounter.value == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(250))
+
+        XCTAssertEqual(refreshCounter.value, 1)
+        XCTAssertEqual(
+            Set(model.libraryFiles.map(\.relativePath)),
+            ["Burst one.md", "Burst two.md"]
+        )
+    }
+
+    @MainActor
+    func testTextCaptureSkipsRedundantLibraryRefresh() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-refresh-text.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let refreshCounter = LockedCounter()
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults,
+            libraryRefreshBarrier: {
+                refreshCounter.increment()
+            }
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+
+        model.draft.body = "Projection is complete"
+        model.sendDraft(continueCapturing: false)
+        let saveDeadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < saveDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertFalse(model.isSendingDraft)
+        XCTAssertEqual(refreshCounter.value, 0)
+        XCTAssertTrue(
+            model.libraryFiles.contains {
+                $0.relativePath == "Projection is complete.md"
+            }
         )
     }
 
@@ -2144,13 +2358,18 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertFalse(createdMarkdown.contains("mudsnote-write:"))
     }
 
-    func testCaptureFilenameIsBoundedByUTF8BytesForEmojiTitle() async throws {
+    func testAblationUTF8ByteBoundPreventsEmojiFilenameFailure() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
         let store = MarkdownFileStore()
         await store.configure(root: root)
         let title = String(repeating: "📝", count: 80)
+        XCTAssertGreaterThan(
+            "\(title).md".utf8.count,
+            255,
+            "The character-count control exceeds common File Provider byte limits"
+        )
 
         let created = try await store.createCapturedMarkdown(
             from: CaptureDraft(body: "\(title)\nBody"),
@@ -2859,6 +3078,136 @@ final class MudsnoteCompanionTests: XCTestCase {
             atPath: root.appendingPathComponent(".mudsnote", isDirectory: true).path
         )
         XCTAssertFalse(recoveryFiles.contains { $0.hasPrefix("queue-failed-") })
+    }
+
+    func testAblationBatchedReplayCollapsesQueuePersistenceToOneWrite() async throws {
+        let legacyRoot = try temporaryRoot()
+        let optimizedRoot = try temporaryRoot()
+        defer {
+            try? FileManager.default.removeItem(at: legacyRoot)
+            try? FileManager.default.removeItem(at: optimizedRoot)
+        }
+        try FolderInitializer.initialize(legacyRoot)
+        try FolderInitializer.initialize(optimizedRoot)
+        let legacyCounter = LockedCounter()
+        let optimizedCounter = LockedCounter()
+        let legacyQueue = PendingWriteQueue(
+            root: legacyRoot,
+            replayPersistenceMode: .afterEachItem,
+            persistenceObserver: { _ in legacyCounter.increment() }
+        )
+        let optimizedQueue = PendingWriteQueue(
+            root: optimizedRoot,
+            replayPersistenceMode: .afterBatch,
+            persistenceObserver: { _ in optimizedCounter.increment() }
+        )
+        try await legacyQueue.load()
+        try await optimizedQueue.load()
+
+        let itemCount = 20
+        for index in 0..<itemCount {
+            let id = UUID()
+            let item = PendingWrite(
+                id: id,
+                createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                targetRelativePath: "Ablation-\(index).md",
+                markdownBlock: String(repeating: "x", count: 4_096),
+                attachments: []
+            )
+            try await legacyQueue.enqueue(item)
+            try await optimizedQueue.enqueue(item)
+        }
+        legacyCounter.reset()
+        optimizedCounter.reset()
+
+        _ = try await legacyQueue.replay { _ in }
+        _ = try await optimizedQueue.replay { _ in }
+
+        XCTAssertEqual(legacyCounter.value, itemCount)
+        XCTAssertEqual(optimizedCounter.value, 1)
+        let legacyRemainingCount = await legacyQueue.pendingCount()
+        let optimizedRemainingCount = await optimizedQueue.pendingCount()
+        XCTAssertEqual(legacyRemainingCount, 0)
+        XCTAssertEqual(optimizedRemainingCount, 0)
+    }
+
+    func testBatchedReplayCommitsProgressBeforeReturningTransientFailure() async throws {
+        enum TransientReplayError: Error {
+            case unavailable
+        }
+
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let queue = PendingWriteQueue(root: root)
+        try await queue.load()
+        let completed = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Completed.md",
+            markdownBlock: "Completed",
+            attachments: []
+        )
+        let retry = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Retry.md",
+            markdownBlock: "Retry",
+            attachments: []
+        )
+        try await queue.enqueue(completed)
+        try await queue.enqueue(retry)
+
+        await XCTAssertThrowsErrorAsync(
+            try await queue.replay { item in
+                if item.id == retry.id {
+                    throw TransientReplayError.unavailable
+                }
+            }
+        ) { error in
+            XCTAssertTrue(error is TransientReplayError)
+        }
+
+        let remaining = await queue.allItems()
+        XCTAssertEqual(remaining.map(\.id), [retry.id])
+        let restoredQueue = PendingWriteQueue(root: root)
+        try await restoredQueue.load()
+        let restored = await restoredQueue.allItems()
+        XCTAssertEqual(restored.map(\.id), [retry.id])
+    }
+
+    func testBatchedReplayPreservesConcurrentlyEnqueuedItems() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let replayQueue = PendingWriteQueue(root: root)
+        let externalQueue = PendingWriteQueue(root: root)
+        try await replayQueue.load()
+        try await externalQueue.load()
+        let replayed = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "Replayed.md",
+            markdownBlock: "Replayed",
+            attachments: []
+        )
+        let concurrentlyEnqueued = PendingWrite(
+            id: UUID(),
+            createdAt: .now,
+            targetRelativePath: "New.md",
+            markdownBlock: "New",
+            attachments: []
+        )
+        try await replayQueue.enqueue(replayed)
+
+        _ = try await replayQueue.replay { _ in
+            try await externalQueue.enqueue(concurrentlyEnqueued)
+        }
+
+        let verificationQueue = PendingWriteQueue(root: root)
+        try await verificationQueue.load()
+        let remaining = await verificationQueue.allItems()
+        XCTAssertEqual(remaining.map(\.id), [concurrentlyEnqueued.id])
     }
 
     func testConcurrentQueueInstancesMergeInsteadOfClobberingPendingWrites() async throws {
@@ -5966,6 +6315,29 @@ final class MudsnoteCompanionTests: XCTestCase {
 
     private static let onePixelPNG =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        count = 0
+        lock.unlock()
+    }
 }
 
 private actor StubAttachmentTextRecognizer: AttachmentTextRecognizing {
