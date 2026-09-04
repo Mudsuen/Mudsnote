@@ -13,7 +13,7 @@ The ablation suite keeps each protection independently observable:
 | Boundary | Control condition | Protected result |
 | --- | --- | --- |
 | UTF-8 filename bound | An 80-emoji title produces a filename component above 255 bytes | The generated Markdown relative path stays at or below 184 UTF-8 bytes and writes successfully |
-| Coordinated exclusive creation | Two captures have identical title, content, and timestamp | Both writes survive at distinct paths |
+| Directory coordination handshake | A registered file presenter observes an uncoordinated control write and the production coordinated write | The control receives no relinquish request while the coordinated path notifies the presenter before writing |
 | Durable fallback | The foreground writer injects a transient Cocoa write failure | The composer finishes with one replayable queue item, then replay creates the Markdown file |
 | Post-save inventory | The full-library refresh is held behind a test barrier | The durable save and exact list projection finish without waiting for the refresh |
 | Startup replay | A pending capture exists and replay is held behind the initial-load barrier | The library shell becomes interactive with pending status before replay or indexing |
@@ -31,6 +31,9 @@ The ablation suite keeps each protection independently observable:
   records.
 - Irrecoverable items are still preserved outside the active queue before their
   IDs enter the completed batch.
+- Two captures with identical title, content, and timestamp still survive at
+  distinct paths through exclusive creation. This is a regression invariant,
+  not evidence attributable to directory coordination.
 
 ## Interaction policy
 

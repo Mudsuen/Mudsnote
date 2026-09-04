@@ -137,7 +137,7 @@ enum LibraryNoteListProjection {
         guard limit > 0 else { return [] }
 
         var matches: [Notes.Element] = []
-        matches.reserveCapacity(limit)
+        matches.reserveCapacity(min(limit, 256))
         for note in notes where predicate(note) {
             matches.append(note)
             if matches.count == limit {
@@ -162,7 +162,7 @@ enum LibraryNoteListProjection {
 
         let batchLimit = limit > Int.max / 2 ? Int.max : limit * 2
         var candidates: [RankedNote] = []
-        candidates.reserveCapacity(batchLimit)
+        candidates.reserveCapacity(min(batchLimit, 256))
 
         let orderedBefore: (RankedNote, RankedNote) -> Bool = { lhs, rhs in
             if lhs.isPinned != rhs.isPinned {

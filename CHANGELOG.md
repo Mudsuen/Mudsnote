@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-04, this prototype records 277 implementation iterations, including the initial MVP.
+As of 2026-09-04, this prototype records 278 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 278. Consistent capture projection and full-library performance
+- Problem: A text-only iOS capture updated the visible list without invalidating the store's in-progress metadata page, so loading the next page could replace the new projection with stale inventory; the Recent list could also grow beyond 24 items. The macOS full-library path returned every requested result but still maintained a bounded-result heap before its final sort.
+- Fix: Filesystem mutations now invalidate in-progress iOS inventory state, immediate capture projections preserve pinned/modified ordering and the 24-item Recent bound, and a large-library regression covers saving across a pending metadata page. Directory coordination now has a real file-presenter control instead of attributing existing exclusive-create behavior to the coordinator. Full-result macOS search appends matches directly before one final sort, with production-limit projection and 1,500-result search performance gates.
+- Lesson: An immediate UI projection and a deferred inventory must share one invalidation contract; ablation evidence must change only the mechanism being measured, and an intentional unbounded result contract should avoid bounded-selection work it no longer needs.
 
 ### 277. Measured iOS capture and recovery latency
 - Problem: A durable foreground save still kept the composer in its sending state until a full File Provider inventory completed, cold launch replayed every queued attachment before revealing the library shell, and replay removed items one at a time by coordinating, decoding, encoding, and replacing the entire queue file after each success.

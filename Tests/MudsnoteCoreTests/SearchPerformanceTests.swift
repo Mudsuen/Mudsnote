@@ -466,7 +466,7 @@ struct SearchPerformanceTests {
     }
 
     @Test
-    func largeLibraryColdWarmAndRelaunchLatencyStayWithinBaseline() throws {
+    func largeLibraryFullResultSearchStaysInteractiveAtSnapshotLimit() throws {
         let suiteName = "mudsnote.large-search-baseline-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -501,6 +501,12 @@ struct SearchPerformanceTests {
         let coldLatency = coldStarted.duration(to: clock.now)
         #expect(coldLatency < .seconds(6))
 
+        let fullResultStarted = clock.now
+        let fullResults = session.searchNotes(query: "searchable", limit: .max)
+        let fullResultLatency = fullResultStarted.duration(to: clock.now)
+        #expect(fullResults.count == 1_500)
+        #expect(fullResultLatency < .milliseconds(500))
+
         let warmStarted = clock.now
         for index in 0..<40 {
             let query = index.isMultiple(of: 2) ? "lighthouse" : "海风"
@@ -519,7 +525,7 @@ struct SearchPerformanceTests {
         #expect(relaunchedStore.searchNotes(query: "海风", limit: 30).count == 30)
         let relaunchLatency = relaunchStarted.duration(to: clock.now)
         emitSearchPerformanceEvidence(
-            "large-library files=1500 cold=\(coldLatency) warm40=\(warmLatency) relaunch=\(relaunchLatency)"
+            "large-library files=1500 cold=\(coldLatency) full=\(fullResultLatency) warm40=\(warmLatency) relaunch=\(relaunchLatency)"
         )
         #expect(relaunchLatency < .seconds(3))
     }

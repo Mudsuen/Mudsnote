@@ -359,6 +359,39 @@ struct MarkdownRichEditorTests {
         #expect(results.first?.url == notes[9_000].url)
     }
 
+    @Test func fullLibraryProductionProjectionStaysInteractiveAtSnapshotLimit() {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-full-projection-performance", isDirectory: true)
+        let now = Date()
+        let notes = (0..<10_000).map { index in
+            NoteSearchResult(
+                url: root.appendingPathComponent("note-\(index).md"),
+                title: String(format: "Note %05d", 10_000 - index),
+                snippet: "",
+                modifiedAt: now.addingTimeInterval(TimeInterval(-index)),
+                createdAt: now.addingTimeInterval(TimeInterval(index))
+            )
+        }
+
+        let clock = ContinuousClock()
+        var results: [NoteSearchResult] = []
+        let elapsed = clock.measure {
+            results = LibraryNoteListProjection.rankedPrefix(
+                notes,
+                limit: LibraryWindowController.noteListResultLimit,
+                sortOrder: .title,
+                groupsByDate: true,
+                includesPinnedGroup: true,
+                pinnedPaths: [notes[9_000].url.standardizedFileURL.path],
+                now: now
+            ) { _ in true }
+        }
+
+        #expect(elapsed < .milliseconds(500))
+        #expect(results.count == notes.count)
+        #expect(results.first?.url == notes[9_000].url)
+    }
+
     @Test
     func noteSnapshotUpsertKeepsModifiedOrderAndReplacesPaths() throws {
         let root = FileManager.default.temporaryDirectory
@@ -3925,7 +3958,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryCustomSortReprojectsBeyondTheModifiedDateWindow() throws {
+    func libraryShowsAndCountsNotesBeyondTheFormerDisplayLimit() throws {
         let suiteName = "mudsnote-global-sort-window-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -3971,11 +4004,17 @@ struct MarkdownRichEditorTests {
         }
 
         controller.setNoteListGroupingForLibrary(false)
-        #expect(!listedNoteTitles().contains("Alpha Global"))
+        #expect(listedNoteTitles().count == 241)
+        #expect(listedNoteTitles().contains("Alpha Global"))
+        #expect(controller.noteListCountLabel.stringValue == "241 条笔记")
 
         controller.setNoteListSortOrderForLibrary(.title)
-        #expect(listedNoteTitles().count == 240)
+        #expect(listedNoteTitles().count == 241)
         #expect(listedNoteTitles().first == "Alpha Global")
+
+        controller.searchForLibrary(query: "Body", allNotes: true)
+        #expect(controller.noteListSearchResultsForLibrary().count == 241)
+        #expect(controller.noteListCountLabel.stringValue == "241 条结果")
     }
 
     @MainActor
@@ -4095,7 +4134,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        #expect(controller.noteListSearchResultsForLibrary().count == 240)
+        #expect(controller.noteListSearchResultsForLibrary().count == 241)
         #expect(
             controller.noteListSearchResultsForLibrary().first?.url.standardizedFileURL
                 == pinnedURL.standardizedFileURL

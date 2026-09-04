@@ -1474,6 +1474,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var editorStackView: NSStackView?
     private weak var galleryScrollView: NSScrollView?
     static let sourceCountSnapshotLimit = Int.max
+    nonisolated static let noteListResultLimit = Int.max
 
     let theme = MarkdownEditorTheme(
         textColor: panelPrimaryTextColor(),
@@ -1579,7 +1580,7 @@ final class LibraryWindowController: NSWindowController,
             reloadNotes(
                 loadFirstIfNeeded: false,
                 allNotesSnapshot: cachedPresentation.isEmpty
-                    ? recentShellNoteResults(limit: 240)
+                    ? recentShellNoteResults(limit: Self.noteListResultLimit)
                     : cachedPresentation,
                 refreshCounts: true
             )
@@ -4304,8 +4305,8 @@ final class LibraryWindowController: NSWindowController,
         searchScopeControl.isHidden = query.isEmpty
         let previousRows = listRows
         notes = query.isEmpty
-            ? notesForSelectedScope(limit: 240, allNotes: allNotes)
-            : searchResultsForSelectedScope(query: query, limit: 240)
+            ? notesForSelectedScope(limit: Self.noteListResultLimit, allNotes: allNotes)
+            : searchResultsForSelectedScope(query: query, limit: Self.noteListResultLimit)
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
         updateNoteListHeader(query: query)
 
@@ -4420,7 +4421,10 @@ final class LibraryWindowController: NSWindowController,
 
                 let selectedURL = self.selectedURL
                 let selectedPath = selectedURL?.standardizedFileURL.path
-                let nextNotes = self.notesForSelectedScope(limit: 240, allNotes: mergedAllNotes)
+                let nextNotes = self.notesForSelectedScope(
+                    limit: Self.noteListResultLimit,
+                    allNotes: mergedAllNotes
+                )
                 let selectionStillExists = selectedPath.map { path in
                     nextNotes.contains { $0.url.standardizedFileURL.path == path }
                 } ?? false
@@ -4787,7 +4791,10 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousRows = listRows
         if query.isEmpty {
-            notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
+            notes = notesForSelectedScope(
+                limit: Self.noteListResultLimit,
+                allNotes: sourceCountSnapshot
+            )
         }
         listRows = buildGroupedRows(for: notes, preservesInputOrder: !query.isEmpty)
 
@@ -6402,7 +6409,10 @@ final class LibraryWindowController: NSWindowController,
             applyEditorSearchHighlightsForCurrentQuery()
         } else if synchronously {
             if activeSearchSession == nil || (selectedScope == .trash && searchScopeControl.selectedSegment != 1) {
-                let provisionalResults = cachedSearchResultsForSelectedScope(query: query, limit: 240)
+                let provisionalResults = cachedSearchResultsForSelectedScope(
+                    query: query,
+                    limit: Self.noteListResultLimit
+                )
                 applySearchResults(provisionalResults, query: query, selecting: selectedURL)
                 scheduleSearchResultReload(query: query, selecting: selectedURL)
             } else {
@@ -6447,7 +6457,7 @@ final class LibraryWindowController: NSWindowController,
                 searchSession: searchSession,
                 scope: scope,
                 query: query,
-                limit: 240,
+                limit: Self.noteListResultLimit,
                 searchesAllNotes: searchesAllNotes,
                 includesSubfolderNotes: includesSubfolderNotes
             )
@@ -8307,7 +8317,10 @@ final class LibraryWindowController: NSWindowController,
             return
         }
 
-        notes = notesForSelectedScope(limit: 240, allNotes: sourceCountSnapshot)
+        notes = notesForSelectedScope(
+            limit: Self.noteListResultLimit,
+            allNotes: sourceCountSnapshot
+        )
         let refreshedPaths = isNewNote
             ? Set<String>()
             : Set([previousURL, savedURL].compactMap { $0?.path })
@@ -9710,7 +9723,7 @@ final class LibraryWindowController: NSWindowController,
             movedURLBySourcePath[$0] ?? selectedURL
         }
         let visibleNotesAfterMove = notesForSelectedScope(
-            limit: 240,
+            limit: Self.noteListResultLimit,
             allNotes: sourceCountSnapshot
         )
         let visiblePathsAfterMove = Set(visibleNotesAfterMove.map { $0.url.standardizedFileURL.path })

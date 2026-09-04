@@ -432,6 +432,7 @@ extension NoteStore {
     ) -> [NoteSearchResult]? {
         guard limit > 0, !cancellationCheck() else { return [] }
         let loweredQuery = query.lowercased()
+        let retainsEveryEntry = limit >= entries.count
         var candidates: [RankedSearchCandidate] = []
         candidates.reserveCapacity(min(limit, entries.count))
 
@@ -443,7 +444,9 @@ extension NoteStore {
                 continue
             }
             let candidate = RankedSearchCandidate(entry: entry, score: score)
-            if candidates.count < limit {
+            if retainsEveryEntry {
+                candidates.append(candidate)
+            } else if candidates.count < limit {
                 candidates.append(candidate)
                 siftWorstCandidateUp(in: &candidates, from: candidates.count - 1)
             } else if isHigherRanked(candidate, than: candidates[0]) {

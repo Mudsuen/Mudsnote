@@ -1,6 +1,11 @@
 import CryptoKit
 import Foundation
 
+enum DirectoryWriteCoordinationMode: Equatable {
+    case coordinated
+    case uncoordinatedForTesting
+}
+
 actor MarkdownFileStore {
     private struct PendingWriteReceipt: Codable {
         var version: Int
@@ -86,9 +91,14 @@ actor MarkdownFileStore {
     private var reservedPendingTargets = Set<String>()
     private let fileManager = FileManager.default
     private let attachmentTextIndex: AttachmentTextIndex
+    private let directoryWriteCoordinationMode: DirectoryWriteCoordinationMode
 
-    init(attachmentTextIndex: AttachmentTextIndex = AttachmentTextIndex()) {
+    init(
+        attachmentTextIndex: AttachmentTextIndex = AttachmentTextIndex(),
+        directoryWriteCoordinationMode: DirectoryWriteCoordinationMode = .coordinated
+    ) {
         self.attachmentTextIndex = attachmentTextIndex
+        self.directoryWriteCoordinationMode = directoryWriteCoordinationMode
     }
 
     func configure(root: URL) {
@@ -2089,6 +2099,9 @@ actor MarkdownFileStore {
         at directory: URL,
         _ operation: (URL) throws -> T
     ) throws -> T {
+        if directoryWriteCoordinationMode == .uncoordinatedForTesting {
+            return try operation(directory)
+        }
         let coordinator = NSFileCoordinator()
         var coordinationError: NSError?
         var operationResult: Result<T, Error>?
@@ -2563,6 +2576,7 @@ actor MarkdownFileStore {
 
     private func invalidateAfterMutation(relativePaths: [String]) {
         cachedLibrarySnapshot = nil
+        libraryInventoryState = nil
         for path in relativePaths {
             searchCache.removeValue(forKey: path)
             listMetadataCache.removeValue(forKey: path)

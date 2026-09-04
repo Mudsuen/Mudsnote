@@ -2203,9 +2203,8 @@ final class AppModel: ObservableObject {
     private func applyCreatedProjection(_ file: RecentMarkdownFile) {
         libraryFiles.removeAll { $0.relativePath == file.relativePath }
         libraryFiles.append(file)
-        recentFiles.removeAll { $0.relativePath == file.relativePath }
-        recentFiles.append(file)
-        recentFiles.sort { $0.modifiedAt > $1.modifiedAt }
+        libraryFiles.sort(by: Self.libraryFileOrder)
+        recentFiles = Array(libraryFiles.prefix(24))
         folders = LibraryFolderNode.makeTree(
             directoryPaths: allFolders.map(\.relativePath),
             files: libraryFiles
@@ -2505,6 +2504,15 @@ final class AppModel: ObservableObject {
                 }
                 return $0.count > $1.count
             }
+    }
+
+    private static func libraryFileOrder(
+        _ lhs: RecentMarkdownFile,
+        _ rhs: RecentMarkdownFile
+    ) -> Bool {
+        if lhs.isPinned != rhs.isPinned { return lhs.isPinned }
+        if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+        return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
     }
 
 }

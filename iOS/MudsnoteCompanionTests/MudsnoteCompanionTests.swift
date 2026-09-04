@@ -1,3 +1,4 @@
+@preconcurrency import Foundation
 import XCTest
 import PencilKit
 import UIKit
@@ -1663,7 +1664,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(created.preview, "Book the train\nPack a charger")
     }
 
-    func testAblationCoordinatedExclusiveCapturePreservesSameTitleWrites() async throws {
+    func testConcurrentDirectCapturesWithSameTitleAndContentCreateTwoFiles() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         try FolderInitializer.initialize(root)
@@ -1682,6 +1683,45 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertTrue(files.allSatisfy {
             FileManager.default.fileExists(atPath: root.appendingPathComponent($0.relativePath).path)
         })
+    }
+
+    func testAblationDirectoryCoordinationNotifiesRegisteredFilePresenter() async throws {
+        let controlRoot = try temporaryRoot()
+        let coordinatedRoot = try temporaryRoot()
+        defer {
+            try? FileManager.default.removeItem(at: controlRoot)
+            try? FileManager.default.removeItem(at: coordinatedRoot)
+        }
+        try FolderInitializer.initialize(controlRoot)
+        try FolderInitializer.initialize(coordinatedRoot)
+
+        let controlPresenter = DirectoryWriteFilePresenterProbe(url: controlRoot)
+        let coordinatedPresenter = DirectoryWriteFilePresenterProbe(url: coordinatedRoot)
+        NSFileCoordinator.addFilePresenter(controlPresenter)
+        NSFileCoordinator.addFilePresenter(coordinatedPresenter)
+        defer {
+            NSFileCoordinator.removeFilePresenter(controlPresenter)
+            NSFileCoordinator.removeFilePresenter(coordinatedPresenter)
+        }
+
+        let controlStore = MarkdownFileStore(
+            directoryWriteCoordinationMode: .uncoordinatedForTesting
+        )
+        await controlStore.configure(root: controlRoot)
+        _ = try await controlStore.createCapturedMarkdown(
+            from: CaptureDraft(body: "Uncoordinated control"),
+            root: controlRoot
+        )
+
+        let coordinatedStore = MarkdownFileStore()
+        await coordinatedStore.configure(root: coordinatedRoot)
+        _ = try await coordinatedStore.createCapturedMarkdown(
+            from: CaptureDraft(body: "Coordinated protected path"),
+            root: coordinatedRoot
+        )
+
+        XCTAssertEqual(controlPresenter.relinquishCount, 0)
+        XCTAssertGreaterThan(coordinatedPresenter.relinquishCount, 0)
     }
 
     @MainActor
@@ -2217,6 +2257,61 @@ final class MudsnoteCompanionTests: XCTestCase {
                 $0.relativePath == "Projection is complete.md"
             }
         )
+    }
+
+    @MainActor
+    func testTextCaptureSurvivesPendingMetadataPageAndKeepsRecentBounded() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.capture-pagination.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let now = Date()
+        for index in 0..<41 {
+            let url = root.appendingPathComponent("Existing \(index).md")
+            try "# Existing \(index)\n\nBody".write(
+                to: url,
+                atomically: true,
+                encoding: .utf8
+            )
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(TimeInterval(-index - 1))],
+                ofItemAtPath: url.path
+            )
+        }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectFolder(root)
+
+        let readyDeadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < readyDeadline, model.isInitialLibraryLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(model.isInitialLibraryLoading)
+        XCTAssertTrue(model.hasMoreLibraryFiles)
+        XCTAssertEqual(model.recentFiles.count, 24)
+
+        model.draft.body = "Captured during pagination"
+        model.sendDraft(continueCapturing: false)
+        let saveDeadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < saveDeadline, model.isSendingDraft {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(
+            model.libraryFiles.contains { $0.relativePath == "Captured during pagination.md" }
+        )
+        XCTAssertEqual(model.recentFiles.count, 24)
+        XCTAssertEqual(model.recentFiles.first?.relativePath, "Captured during pagination.md")
+
+        await model.loadNextLibraryPage()
+        XCTAssertTrue(
+            model.libraryFiles.contains { $0.relativePath == "Captured during pagination.md" }
+        )
+        XCTAssertEqual(model.recentFiles.count, 24)
     }
 
     @MainActor
@@ -6337,6 +6432,30 @@ private final class LockedCounter: @unchecked Sendable {
         lock.lock()
         count = 0
         lock.unlock()
+    }
+}
+
+private final class DirectoryWriteFilePresenterProbe: NSObject, NSFilePresenter,
+    @unchecked Sendable
+{
+    let presentedItemURL: URL?
+    let presentedItemOperationQueue: OperationQueue
+    private let counter = LockedCounter()
+
+    init(url: URL) {
+        presentedItemURL = url
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        presentedItemOperationQueue = queue
+    }
+
+    var relinquishCount: Int {
+        counter.value
+    }
+
+    func relinquishPresentedItem(toWriter writer: @escaping ((() -> Void)?) -> Void) {
+        counter.increment()
+        writer({})
     }
 }
 
