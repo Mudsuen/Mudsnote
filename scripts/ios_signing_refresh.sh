@@ -34,6 +34,7 @@ AUTO_LAUNCH=0
 ALLOW_DEVICE_REGISTRATION=0
 DRY_RUN=0
 BUILD_OUTPUT_PATH=""
+FAILURE_REASON=""
 
 usage() {
   cat >&2 <<'EOF'
@@ -80,13 +81,23 @@ notify_failure() {
   if ! command -v "$OSASCRIPT_BIN" >/dev/null 2>&1; then
     return
   fi
-  "$OSASCRIPT_BIN" -e \
-    'display notification "Open Xcode Apple Accounts, sign in, then run the Mudsnote signing refresh." with title "Mudsnote signing refresh failed" sound name "Basso"' \
-    >/dev/null 2>&1 || true
+  local message
+  case "$FAILURE_REASON" in
+    xcode-account-authentication)
+      message="Sign in in Xcode Apple Accounts, then run the Mudsnote signing refresh manually."
+      ;;
+    *)
+      message="Signing refresh failed. Check ~/Library/Logs/Mudsnote/ios-signing-refresh.log for the cause."
+      ;;
+  esac
+  "$OSASCRIPT_BIN" -e 'on run argv' \
+    -e 'display notification (item 1 of argv) with title "Mudsnote signing refresh failed" sound name "Basso"' \
+    -e 'end run' "$message" >/dev/null 2>&1 || true
 }
 
 record_attention() {
   local reason="$1"
+  FAILURE_REASON="$reason"
   mkdir -p "$STATE_DIR"
   printf '%s\t%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$reason" >"$ATTENTION_PATH"
   chmod 600 "$ATTENTION_PATH"
@@ -176,8 +187,18 @@ available_iphone_id() {
 
 available_xcode_iphone_id() {
   xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
-    | sed -nE 's/.*platform:iOS,.*id:([^,}]+).*/\1/p' \
-    | head -n 1
+    | awk '
+        /Available destinations/ { available = 1; next }
+        /Ineligible destinations/ { available = 0 }
+        available && /platform:iOS,/ && !/placeholder/ && !/error:/ {
+          if (!found) {
+            sub(/^.*id:/, "")
+            sub(/[,}].*$/, "")
+            print
+            found = 1
+          }
+        }
+      '
 }
 
 iphone_state_summary() {
@@ -424,6 +445,14 @@ run_refresh() {
     if [[ "$AUTO_INSTALL" == "1" ]]; then
       log "Dry run: would overwrite-install only after renewal or a pending retry."
     fi
+    return 0
+  fi
+
+  # Background checks must not keep invoking Apple authentication after a
+  # confirmed failure. An explicit manual --run retries after reauthentication.
+  if [[ "$AUTO_INSTALL" == "1" && -f "$ATTENTION_PATH" ]] \
+    && grep -q $'\txcode-account-authentication$' "$ATTENTION_PATH"; then
+    log "Background renewal paused after an account authentication failure; sign in and run --run manually."
     return 0
   fi
 

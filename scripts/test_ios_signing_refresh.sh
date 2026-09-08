@@ -72,4 +72,54 @@ plist="$test_root/home/Library/LaunchAgents/com.mudsnote.ios-signing-refresh.pli
 [[ "$(stat -f '%Lp' "$plist")" == "600" ]] \
   || fail "LaunchAgent plist must use least-privilege file permissions"
 
+# Exercise the actual functions against synthetic tools and state only.
+sed '/^while \[\[ \$# -gt 0 \]\]; do/,$d' "$SCRIPT" > "$test_root/functions.sh"
+(
+  source "$test_root/functions.sh"
+  PROJECT=synthetic
+  ATTENTION_PATH="$test_root/attention"
+  fixture=""
+  xcodebuild() { printf '%s\n' "$fixture"; }
+  fixture='Available destinations for the "Test" scheme:
+{ platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
+Ineligible destinations for the "Test" scheme:
+{ platform:iOS, id:unavailable-phone, name:iPhone, error:Locked }'
+  [[ -z "$(available_xcode_iphone_id)" ]] || fail "placeholder and ineligible devices must use the generic fallback"
+  fixture='Available destinations for the "Test" scheme:
+{ platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device }
+{ platform:iOS Simulator, id:simulator, name:iPhone }
+{ platform:iOS, arch:arm64, id:real-phone, name:Test phone }'
+  [[ "$(available_xcode_iphone_id)" == real-phone ]] || fail "must select a concrete available iOS device"
+
+  cat > "$test_root/bin/notify" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$@"
+MOCK
+  chmod +x "$test_root/bin/notify"
+  # Capture notification arguments without launching AppleScript.
+  OSASCRIPT_BIN="$test_root/bin/notify"
+  FAILURE_REASON=signing-build-failed
+  # Override the stub with a private output file, never the real notification tool.
+  printf '\nprintf "%%s\n" "$@" > "%s"\n' "$test_root/notification" >> "$OSASCRIPT_BIN"
+  notify_failure
+  ! grep -q 'Sign in in Xcode' "$test_root/notification" || fail "build errors must not request reauthentication"
+  FAILURE_REASON=xcode-account-authentication
+  notify_failure
+  grep -q 'Sign in in Xcode' "$test_root/notification" || fail "authentication errors must explain recovery"
+
+  configure_logging() { :; }
+  acquire_lock() { :; }
+  resolve_paths() { :; }
+  print_configuration() { :; }
+  signing_refresh_required() { return 0; }
+  refresh_signing() { touch "$test_root/refreshed"; }
+  printf '2026-09-08T00:00:00Z\txcode-account-authentication\n' > "$ATTENTION_PATH"
+  AUTO_INSTALL=1
+  run_refresh
+  [[ ! -e "$test_root/refreshed" ]] || fail "background auth failures must wait for manual recovery"
+  AUTO_INSTALL=0
+  run_refresh
+  [[ -e "$test_root/refreshed" ]] || fail "manual refresh must be able to recover from an auth failure"
+)
+
 printf 'iOS signing refresh contract tests passed.\n'
