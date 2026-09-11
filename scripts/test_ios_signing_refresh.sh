@@ -65,6 +65,8 @@ plist="$test_root/home/Library/LaunchAgents/com.mudsnote.ios-signing-refresh.pli
   || fail "LaunchAgent must check at the configured six-hour interval"
 [[ "$(plutil -extract RunAtLoad raw -o - "$plist")" == "true" ]] \
   || fail "LaunchAgent must check once after login/load"
+[[ "$(plutil -extract ProgramArguments.0 raw -o - "$plist")" == "$ROOT_DIR/scripts/ios_apps_signing_refresh.sh" ]] \
+  || fail "LaunchAgent must use the unified iOS app signing entry point"
 [[ "$(plutil -extract ProgramArguments.2 raw -o - "$plist")" == "--auto-install" ]] \
   || fail "LaunchAgent must request a safe overwrite install"
 [[ "$(plutil -extract ProgramArguments.3 raw -o - "$plist")" == "--auto-launch" ]] \

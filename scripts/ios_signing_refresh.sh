@@ -463,6 +463,9 @@ run_refresh() {
     renewed=1
   else
     log "Cached signing remains outside the renewal threshold; rebuild skipped."
+    # A previously recorded failure is stale once the cached app and all of its
+    # embedded profiles are valid beyond the threshold.
+    rm -f "$ATTENTION_PATH"
   fi
   if [[ "$AUTO_INSTALL" == "1" && ( "$renewed" == "1" || -f "$NEEDS_INSTALL_PATH" ) ]]; then
     install_on_available_iphone
@@ -481,7 +484,7 @@ write_agent_plist() {
   plutil -create xml1 "$temp_plist"
   plutil -insert Label -string "$LABEL" "$temp_plist"
   plutil -insert ProgramArguments -xml '<array/>' "$temp_plist"
-  plutil -insert ProgramArguments.0 -string "$ROOT_DIR/scripts/ios_signing_refresh.sh" "$temp_plist"
+  plutil -insert ProgramArguments.0 -string "$ROOT_DIR/scripts/ios_apps_signing_refresh.sh" "$temp_plist"
   plutil -insert ProgramArguments.1 -string '--run' "$temp_plist"
   plutil -insert ProgramArguments.2 -string '--auto-install' "$temp_plist"
   plutil -insert ProgramArguments.3 -string '--auto-launch' "$temp_plist"
