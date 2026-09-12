@@ -1413,7 +1413,11 @@ final class MudsnoteCompanionUITests: XCTestCase {
             "The reader timestamp must remain fixed while note content scrolls"
         )
 
-        rendered.swipeDown()
+        // The short fixture has no downward scroll range; pulling down can
+        // dismiss the native sheet. Reopen at the top before testing Copy.
+        background.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        XCTAssertTrue(waitForNonexistence(rendered))
+        note.tap()
         XCTAssertTrue(bodyText.waitForExistence(timeout: 3))
         bodyText.press(forDuration: 1)
         let halfScreenCopy = copyMenuItem(in: app)
@@ -1458,8 +1462,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
         let rendered = app.descendants(matching: .any)["rendered-markdown"]
         XCTAssertTrue(rendered.waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["note-tag-bar"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["#project"].exists)
-        XCTAssertTrue(app.staticTexts["#work"].exists)
+        XCTAssertTrue(app.staticTexts["project"].exists)
+        XCTAssertTrue(app.staticTexts["work"].exists)
         let background = app.otherElements["note-reader-background-dismiss"]
         XCTAssertTrue(background.waitForExistence(timeout: 3))
         background.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
@@ -1490,8 +1494,8 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["note-title-editor"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["#project"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["#work"].exists)
+        XCTAssertTrue(app.staticTexts["project"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["work"].exists)
         XCTAssertTrue(waitForNonexistence(background))
 
         app.buttons["save-markdown-button"].tap()
