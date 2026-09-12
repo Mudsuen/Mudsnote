@@ -22,6 +22,12 @@ public struct NoteLinkRelations: Equatable, Sendable {
     public static let empty = NoteLinkRelations(incoming: [], outgoing: [])
 }
 
+public struct SmartNoteLinkRelations: Sendable {
+    public let links: NoteLinkRelations
+    public let suggestions: [KnowledgeRelationItem]
+    public static let empty = SmartNoteLinkRelations(links: .empty, suggestions: [])
+}
+
 public enum MarkdownLocalLinkResolver {
     public static func fileURL(for rawValue: String, relativeTo sourceURL: URL) -> URL? {
         var target = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,12 +88,12 @@ extension NoteStore {
         var orderedPaths: [String] = []
 
         if trimmedQuery.isEmpty, let currentURL {
-            let relations = knowledgeRelations(
+            let relations = smartLinkRelations(
                 for: currentURL,
                 currentBody: currentBody,
                 suggestionLimit: limit
             )
-            for relation in relations.suggested {
+            for relation in relations.suggestions {
                 let path = relation.url.standardizedFileURL.path
                 itemsByPath[path] = NoteLinkItem(
                     url: relation.url.standardizedFileURL,

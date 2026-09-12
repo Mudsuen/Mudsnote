@@ -50,7 +50,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private var results: [NoteSearchResult] = []
     private lazy var searchController = DebouncedNoteSearchController(noteStore: noteStore, limit: 60)
     private var currentPanelOpacity: Double
-    private weak var backdropView: GradientBackdropView?
+    private weak var backdropView: MaterialBackdropView?
     private weak var searchSurfaceView: NSView?
     private weak var resultSurfaceView: NSView?
 
@@ -97,7 +97,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private func buildUI() {
         guard let contentView = window?.contentView else { return }
 
-        let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
+        let backdrop = MaterialBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         contentView.addSubview(backdrop)
         pin(backdrop, to: contentView)
         backdropView = backdrop

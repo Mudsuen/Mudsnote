@@ -8,7 +8,7 @@ extension EditorWindowController {
     func buildUI() {
         guard let contentView = window?.contentView else { return }
 
-        let backdrop = GradientBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
+        let backdrop = MaterialBackdropView(frame: contentView.bounds, panelOpacity: currentPanelOpacity)
         backdrop.chromeStyle = isQuickCaptureMode ? .minimal : .standard
         contentView.addSubview(backdrop)
         pin(backdrop, to: contentView)
@@ -130,7 +130,7 @@ extension EditorWindowController {
 
     func buildStandardEditorUI(
         in shellContent: NSView,
-        backdrop: GradientBackdropView,
+        backdrop: MaterialBackdropView,
         scrollView: NSScrollView,
         overlayScrollIndicator: ScrollIndicatorOverlay,
         toolbarStack: NSStackView
@@ -311,7 +311,7 @@ extension EditorWindowController {
 
     func buildQuickCaptureUI(
         in shellContent: NSView,
-        backdrop: GradientBackdropView,
+        backdrop: MaterialBackdropView,
         scrollView: NSScrollView,
         overlayScrollIndicator: ScrollIndicatorOverlay
     ) {

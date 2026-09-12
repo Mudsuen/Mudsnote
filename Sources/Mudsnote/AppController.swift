@@ -412,20 +412,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         findItem.keyEquivalentModifierMask = [.command]
         viewMenu.addItem(findItem)
 
-        let sidebarItem = NSMenuItem(title: "显示或隐藏资料库", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
+        let sidebarItem = NSMenuItem(title: "文件夹与标签", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
 
-        let knowledgeGraphItem = NSMenuItem(
-            title: "显示知识图谱",
-            action: #selector(showKnowledgeGraphFromMainMenu),
-            keyEquivalent: "g"
-        )
-        knowledgeGraphItem.target = self
-        knowledgeGraphItem.keyEquivalentModifierMask = [.command, .option]
-        viewMenu.addItem(knowledgeGraphItem)
-        viewMenu.addItem(.separator())
+        let quickMenu = NSMenuItem(title: "快速菜单", action: #selector(showLibraryQuickMenu), keyEquivalent: "p")
+        quickMenu.target = self
+        quickMenu.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(quickMenu)
+        let links = NSMenuItem(title: "展开或收起双链", action: #selector(toggleLibraryLinks), keyEquivalent: "l")
+        links.target = self
+        links.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(links)
+
+        let sourceMode = NSMenuItem(title: "切换 Markdown 源码", action: #selector(toggleLibrarySourceMode), keyEquivalent: "m")
+        sourceMode.target = self
+        sourceMode.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(sourceMode)
 
         let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
         let sortMenu = NSMenu(title: "排序方式")
@@ -849,6 +853,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         showLibraryWindow()
         libraryWindowController?.toggleSourceListForLibrary()
     }
+
+    @objc private func showLibraryQuickMenu() { libraryWindowController?.showQuickMenu(nil) }
+    @objc private func toggleLibrarySourceMode() { libraryWindowController?.toggleEditorSourceModePressed() }
+    @objc private func toggleLibraryLinks() { libraryWindowController?.toggleLinksPanel() }
 
     @objc
     func showKnowledgeGraphFromMainMenu() {

@@ -346,6 +346,73 @@ extension NoteStore {
         )
     }
 
+    public func smartLinkRelations(
+        for noteURL: URL,
+        currentBody: String? = nil,
+        roots: [URL]? = nil,
+        suggestionLimit: Int = 5,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> SmartNoteLinkRelations {
+        guard !cancellationCheck() else { return .empty }
+        guard let indexedEntries = indexedEntries(
+            roots: roots,
+            cancellationCheck: cancellationCheck
+        ) else {
+            return .empty
+        }
+        let entries = knowledgeEligibleEntries(indexedEntries)
+        let currentURL = noteURL.standardizedFileURL
+        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.url.standardizedFileURL.path, $0)
+        })
+        let entriesByBasename = Dictionary(grouping: entries) {
+            $0.url.deletingPathExtension().lastPathComponent.lowercased()
+        }
+        let entriesBySuffix = knowledgeEntriesBySuffix(entries)
+        let currentEntry = entriesByPath[currentURL.path]
+        let body = currentBody
+            ?? currentEntry?.body
+            ?? (try? loadNote(at: currentURL).body)
+            ?? ""
+
+        let outgoingEntries = resolvedKnowledgeLinkEntries(
+            knowledgeLinkTargets(in: body, cancellationCheck: cancellationCheck),
+            sourceURL: currentURL,
+            entriesByPath: entriesByPath,
+            entriesByBasename: entriesByBasename,
+            entriesBySuffix: entriesBySuffix,
+            excluding: currentURL
+        )
+        var incomingEntriesByPath: [String: NoteSearchIndexEntry] = [:]
+        for entry in entries where entry.url.standardizedFileURL.path != currentURL.path {
+            guard !cancellationCheck() else { return .empty }
+            let targets = resolvedKnowledgeLinkEntries(
+                entry.knowledgeLinkTargets,
+                sourceURL: entry.url,
+                entriesByPath: entriesByPath,
+                entriesByBasename: entriesByBasename,
+                entriesBySuffix: entriesBySuffix,
+                excluding: entry.url
+            )
+            if targets.contains(where: { $0.url.standardizedFileURL.path == currentURL.path }) {
+                incomingEntriesByPath[entry.url.standardizedFileURL.path] = entry
+            }
+        }
+
+        let excluded = Set(outgoingEntries.map { $0.url.standardizedFileURL.path })
+            .union(incomingEntriesByPath.keys).union([currentURL.path])
+        let suggestions = suggestedKnowledgeRelations(for: currentEntry, body: body,
+            among: entries, excluding: excluded, limit: max(0, suggestionLimit),
+            cancellationCheck: cancellationCheck)
+        let links = NoteLinkRelations(
+            incoming: incomingEntriesByPath.values.map { NoteLinkItem(url: $0.url, title: $0.title) }
+                .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending },
+            outgoing: outgoingEntries.map { NoteLinkItem(url: $0.url, title: $0.title) }
+                .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        )
+        return SmartNoteLinkRelations(links: links, suggestions: suggestions)
+    }
+
     public func knowledgeRelations(
         for noteURL: URL,
         currentBody: String? = nil,

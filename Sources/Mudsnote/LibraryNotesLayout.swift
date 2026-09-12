@@ -12,11 +12,11 @@ enum LibraryNotesLayout {
         NSSize(width: 1080, height: 720)
     ]
     static let sourceColumnWidth: CGFloat = 200
-    static let noteColumnWidth: CGFloat = 200
+    static let noteColumnWidth: CGFloat = 280
     static let sourceColumnMinimumWidth: CGFloat = 200
     static let sourceColumnMaximumWidth: CGFloat = 320
-    static let noteColumnMinimumWidth: CGFloat = 200
-    static let noteColumnMaximumWidth: CGFloat = 320
+    static let noteColumnMinimumWidth: CGFloat = 250
+    static let noteColumnMaximumWidth: CGFloat = 380
     static let editorColumnMinimumWidth: CGFloat = 480
     static let noteTableInitialWidth: CGFloat = 174
     static let noteTableMinimumWidth: CGFloat = 174
