@@ -120,7 +120,7 @@ struct StatusToastView: View {
             Spacer()
         }
         .font(.system(.callout, design: .rounded, weight: .semibold))
-        .foregroundStyle(toast.style == .saved ? MudsnoteColors.onPrimary : MudsnoteColors.text)
+        .foregroundStyle(toast.style == .saved ? .black : MudsnoteColors.text)
         .padding(.horizontal, 16)
         .frame(minHeight: 48)
         .background(background, in: Capsule())

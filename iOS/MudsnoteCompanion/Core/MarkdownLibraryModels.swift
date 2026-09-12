@@ -1,32 +1,5 @@
 import Foundation
 
-struct MarkdownFrontMatterProjection: Equatable {
-    var metadata: String?
-    var body: String
-
-    init(_ markdown: String) {
-        let lines = markdown.components(separatedBy: .newlines)
-        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
-              let closingIndex = lines.indices.dropFirst().first(where: {
-                  let marker = lines[$0].trimmingCharacters(in: .whitespacesAndNewlines)
-                  return marker == "---" || marker == "..."
-              })
-        else {
-            metadata = nil
-            body = markdown
-            return
-        }
-
-        metadata = lines[...closingIndex].joined(separator: "\n")
-        body = lines.dropFirst(closingIndex + 1).joined(separator: "\n")
-    }
-
-    func replacingBody(with updatedBody: String) -> String {
-        guard let metadata else { return updatedBody }
-        return "\(metadata)\n\(updatedBody)"
-    }
-}
-
 struct RecentMarkdownFile: Identifiable, Equatable {
     var id: String
     var relativePath: String

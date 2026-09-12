@@ -8,6 +8,7 @@ enum ReaderPresentationPolicy {
 
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isFolderImporterPresented = false
     @State private var readerDetent: PresentationDetent = .large
     @State private var isReaderEditing = false
@@ -65,7 +66,7 @@ struct RootView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
         }
-        .sheet(item: $appModel.selectedMemo) { memo in
+        .sheet(item: Binding(get: { horizontalSizeClass == .regular ? nil : appModel.selectedMemo }, set: { appModel.selectedMemo = $0 })) { memo in
             MarkdownPreviewView(
                 memo: memo,
                 startsEditing: appModel.noteOpenMode == .edit,
@@ -80,7 +81,7 @@ struct RootView: View {
                     MudsnoteReaderSheetBackground()
                 }
         }
-        .sheet(item: $appModel.selectedDocument) { document in
+        .sheet(item: Binding(get: { horizontalSizeClass == .regular ? nil : appModel.selectedDocument }, set: { appModel.selectedDocument = $0 })) { document in
             MarkdownPreviewView(
                 document: document,
                 startsEditing: appModel.noteOpenMode == .edit,
@@ -120,8 +121,27 @@ struct RootView: View {
         }
     }
 
+    @ViewBuilder
     private var tabShell: some View {
-        LibraryHomeView { isFolderImporterPresented = true }
+        if horizontalSizeClass == .regular {
+            NavigationSplitView {
+                LibraryHomeView { isFolderImporterPresented = true }
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
+            } detail: {
+                if let document = appModel.selectedDocument {
+                    MarkdownPreviewView(document: document, startsEditing: document.isNew || appModel.noteOpenMode == .edit)
+                        .id(document.id)
+                } else if let memo = appModel.selectedMemo {
+                    MarkdownPreviewView(memo: memo, startsEditing: appModel.noteOpenMode == .edit)
+                        .id(memo.id)
+                } else {
+                    ContentUnavailableView("Notes", systemImage: "note.text")
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            LibraryHomeView { isFolderImporterPresented = true }
+        }
     }
 
     private var readerDetents: Set<PresentationDetent> {

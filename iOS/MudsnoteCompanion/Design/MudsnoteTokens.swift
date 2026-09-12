@@ -50,7 +50,6 @@ enum MudsnoteColors {
     static let text = Color(uiColor: .label)
     static let muted = Color(uiColor: .secondaryLabel)
     static let primary = adaptive(light: 0x17171A, dark: 0xF7F7F7)
-    static let onPrimary = adaptive(light: 0xFFFFFF, dark: 0x17171A)
     static let captureAccent = Color(uiColor: .systemBlue)
 
     private static func adaptive(
@@ -121,7 +120,8 @@ struct MudsnoteReaderSheetBackground: View {
     var body: some View {
         Rectangle().fill(.regularMaterial)
         .ignoresSafeArea()
-        .accessibilityHidden(true)
+        .accessibilityElement()
+        .accessibilityIdentifier("note-reader-surface")
     }
 }
 
@@ -131,7 +131,7 @@ struct CapsuleCommandButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.subheadline, design: .rounded, weight: .semibold))
-            .foregroundStyle(isPrimary ? MudsnoteColors.onPrimary : MudsnoteColors.text)
+            .foregroundStyle(isPrimary ? .black : MudsnoteColors.text)
             .frame(minHeight: MudsnoteSpacing.tapTargetMin)
             .padding(.horizontal, 16)
             .background(isPrimary ? MudsnoteColors.primary : MudsnoteColors.card)
@@ -150,7 +150,7 @@ struct IconCircleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(isActive ? MudsnoteColors.onPrimary : MudsnoteColors.text)
+            .foregroundStyle(isActive ? .black : MudsnoteColors.text)
             .frame(width: 48, height: 48)
             .background(isActive ? MudsnoteColors.primary : MudsnoteColors.card)
             .clipShape(Circle())
@@ -171,7 +171,7 @@ struct CompactCaptureButtonStyle: ButtonStyle {
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(
                 isActive
-                    ? (fillsActiveBackground ? MudsnoteColors.onPrimary : Color.red)
+                    ? (fillsActiveBackground ? Color.black : Color.red)
                     : MudsnoteColors.text
             )
             .frame(width: 36, height: 36)
@@ -198,7 +198,7 @@ struct CaptureSaveButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(isActive ? MudsnoteColors.onPrimary : MudsnoteColors.muted)
+            .foregroundStyle(isActive ? Color.black : MudsnoteColors.muted)
             .frame(
                 width: CaptureCommandMetrics.saveVisualWidth,
                 height: CaptureCommandMetrics.saveVisualHeight

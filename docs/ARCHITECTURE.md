@@ -51,8 +51,6 @@ boundaries are:
 - `App/`: composition, routing, and observable application state.
 - `Core/`: security-scoped folder access, Markdown persistence, lifecycle
   mutations, drafts, attachments, search support, and background-safe actors.
-  Foundation-only front-matter projection and parsed note-link metadata live
-  here so indexing does not depend on reader view implementation.
 - `Features/`: capture, library/search, reader/editor, and shared native bridges.
 - `SystemIntegrations/`: App Intents and OS entrypoints.
 - `Design/`: visual tokens and reusable styles.

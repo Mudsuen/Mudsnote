@@ -23,6 +23,33 @@ enum NoteMetadataPresentation {
     }
 }
 
+struct MarkdownFrontMatterProjection: Equatable {
+    var metadata: String?
+    var body: String
+
+    init(_ markdown: String) {
+        let lines = markdown.components(separatedBy: .newlines)
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---",
+              let closingIndex = lines.indices.dropFirst().first(where: {
+                  let marker = lines[$0].trimmingCharacters(in: .whitespacesAndNewlines)
+                  return marker == "---" || marker == "..."
+              })
+        else {
+            metadata = nil
+            body = markdown
+            return
+        }
+
+        metadata = lines[...closingIndex].joined(separator: "\n")
+        body = lines.dropFirst(closingIndex + 1).joined(separator: "\n")
+    }
+
+    func replacingBody(with updatedBody: String) -> String {
+        guard let metadata else { return updatedBody }
+        return "\(metadata)\n\(updatedBody)"
+    }
+}
+
 struct MarkdownTitleBodyProjection: Equatable {
     var title: String?
     var body: String
@@ -205,8 +232,6 @@ struct MarkdownPreviewView: View {
     @State private var isLoadingFindAttachments = false
     @State private var linkedSourceHistory: [Source] = []
     @State private var showsNoteLinks = false
-    @State private var isNavigatingLinks = false
-    @State private var isLinkNavigationFailurePresented = false
     @State private var exportedPDF: ExportedNotePDF?
     @State private var isExportingPDF = false
     @State private var pdfExportErrorMessage: String?
@@ -251,7 +276,7 @@ struct MarkdownPreviewView: View {
         self.editingChanged = editingChanged
     }
 
-    private var readerSurface: some View {
+    var body: some View {
         NavigationStack {
             Group {
                 if isEditing {
@@ -311,7 +336,10 @@ struct MarkdownPreviewView: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
-                        readerNavigationBar
+                        metadataLabel
+                            .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
+                            .padding(.top, MudsnoteSpacing.safeHorizontal)
+                            .padding(.bottom, 8)
 
                         ScrollViewReader { proxy in
                             ScrollView {
@@ -343,16 +371,6 @@ struct MarkdownPreviewView: View {
                                 )
                                 scrollToActiveFindMatch(using: proxy)
                             }
-                            .id(currentSourceRelativePath)
-                            .simultaneousGesture(
-                                DragGesture(minimumDistance: 24).onEnded { value in
-                                    guard value.startLocation.x < 24,
-                                          value.translation.width > 80,
-                                          abs(value.translation.height) < 60,
-                                          !linkedSourceHistory.isEmpty else { return }
-                                    Task { await returnToPreviousLinkedNote() }
-                                }
-                            )
                             .simultaneousGesture(
                                 TapGesture(count: 2).onEnded {
                                     beginEditingFromReader()
@@ -363,7 +381,7 @@ struct MarkdownPreviewView: View {
                 }
             }
             .background {
-                MudsnoteColors.panel
+                MudsnoteColors.panel.opacity(0.78)
                     .ignoresSafeArea(.container, edges: .bottom)
             }
             .navigationTitle("")
@@ -426,15 +444,6 @@ struct MarkdownPreviewView: View {
             includesAttachments: includesAttachmentsInFind
         )) {
             await loadFindAttachmentDocumentsIfNeeded()
-        }
-    }
-
-    var body: some View {
-        readerSurface
-        .alert("Couldn’t Open Linked Note", isPresented: $isLinkNavigationFailurePresented) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The note may have moved or become unavailable.")
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
             Button("Keep Editing", role: .cancel) {
@@ -620,54 +629,12 @@ struct MarkdownPreviewView: View {
         focusEditorAfterPresentation()
     }
 
-    private var readerNavigationBar: some View {
-        HStack(spacing: 4) {
-            if !linkedSourceHistory.isEmpty {
-                Button {
-                    Task { await returnToPreviousLinkedNote() }
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Previous Note")
-                .accessibilityIdentifier("previous-linked-note")
-                .disabled(isNavigatingLinks)
-            } else {
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Close Note")
-                .accessibilityIdentifier("close-note-reader")
-            }
-
-            metadataLabel
-
-            Menu {
-                Button("Edit", systemImage: "pencil") { beginEditingFromReader() }
-                readerContextMenuContent
-                if !linkedSourceHistory.isEmpty {
-                    Button("Close Note", systemImage: "xmark") { dismiss() }
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Note Actions")
-            .accessibilityIdentifier("reader-note-actions")
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(MudsnoteColors.text)
-        .padding(.horizontal, 12)
-        .background(.regularMaterial)
-    }
-
     private var metadataLabel: some View {
-        VStack(spacing: 4) {
+        ZStack(alignment: .trailing) {
             Text(metadata)
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.muted)
-                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .accessibilityIdentifier("note-modified-date")
 
             if noteAudioRecorder.isRecording {
@@ -689,9 +656,11 @@ struct MarkdownPreviewView: View {
                     .accessibilityIdentifier("markdown-save-status")
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 18)
+        .frame(minHeight: 18)
         .contextMenu {
-            if !isEditing { readerContextMenuContent }
+            if !isEditing {
+                readerContextMenuContent
+            }
         }
     }
 
@@ -741,21 +710,13 @@ struct MarkdownPreviewView: View {
                 if !suggestions.isEmpty {
                     Text("Suggested links").font(.caption).foregroundStyle(.secondary)
                     ForEach(Array(suggestions)) { note in
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack {
                             Button { Task { await openLinkedNote(note) } } label: {
                                 Label(note.title, systemImage: "doc.text")
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("suggested-note-\(note.relativePath)")
-                            Button { addSuggestedLink(note) } label: {
-                                Image(systemName: "plus")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Text("Link to \(note.title)"))
-                            .accessibilityIdentifier("add-note-link-\(note.relativePath)")
+                            Spacer()
+                            Button("Link") { addSuggestedLink(note) }
+                                .buttonStyle(.bordered)
                         }
                     }
                 }
@@ -764,14 +725,10 @@ struct MarkdownPreviewView: View {
         } label: {
             Label("Links · \(linkedPaths.count)", systemImage: "link")
                 .font(.subheadline)
-                .foregroundStyle(MudsnoteColors.muted)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("note-bidirectional-links")
+                .foregroundStyle(.secondary)
         }
-        .tint(Color(uiColor: .systemBlue))
-        .padding(.top, 20)
-        .padding(.bottom, 8)
-        .disabled(isNavigatingLinks)
+        .padding(.top, 24)
+        .accessibilityIdentifier("note-bidirectional-links")
     }
 
     private func addSuggestedLink(_ note: RecentMarkdownFile) {
@@ -788,11 +745,10 @@ struct MarkdownPreviewView: View {
                 ForEach(notes) { note in
                     Button { Task { await openLinkedNote(note) } } label: {
                         Label(note.title, systemImage: "doc.text")
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)
-                    .accessibilityIdentifier("linked-note-\(note.relativePath)")
                 }
             }
         }
@@ -953,7 +909,7 @@ struct MarkdownPreviewView: View {
                         }
                     }
                 }
-                .frame(minHeight: 34)
+                .frame(height: 34)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("note-tag-bar")
             }
@@ -1546,7 +1502,7 @@ struct MarkdownPreviewView: View {
         guard let target = appModel.libraryFiles.first(where: {
             $0.relativePath == relativePath
         }) else {
-            isLinkNavigationFailurePresented = true
+            appModel.statusToast = .error(String(localized: "Linked note not found"))
             return .handled
         }
         Task { await openLinkedNote(target) }
@@ -1565,43 +1521,19 @@ struct MarkdownPreviewView: View {
     }
 
     private func openLinkedNote(_ file: RecentMarkdownFile) async {
-        guard !isNavigatingLinks, file.relativePath != currentSourceRelativePath else { return }
-        isNavigatingLinks = true
-        defer { isNavigatingLinks = false }
-        guard let target = await appModel.loadDocument(relativePath: file.relativePath) else {
-            isLinkNavigationFailurePresented = true
-            return
-        }
+        guard file.relativePath != currentSourceRelativePath,
+              let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
         linkedSourceHistory.append(source)
         showLinkedSource(.document(target))
     }
 
-    private func returnToPreviousLinkedNote() async {
-        guard !isNavigatingLinks, let previous = linkedSourceHistory.last else { return }
-        isNavigatingLinks = true
-        defer { isNavigatingLinks = false }
-        let refreshed: Source
-        switch previous {
-        case .document(let document):
-            guard let current = await appModel.loadDocument(relativePath: document.relativePath) else {
-                isLinkNavigationFailurePresented = true
-                return
-            }
-            refreshed = .document(current)
-        case .memo(let memo):
-            guard let current = await appModel.reloadMemo(memo) else {
-                isLinkNavigationFailurePresented = true
-                return
-            }
-            refreshed = .memo(current)
-        }
-        linkedSourceHistory.removeLast()
-        showLinkedSource(refreshed)
+    private func returnToPreviousLinkedNote() {
+        guard let previous = linkedSourceHistory.popLast() else { return }
+        showLinkedSource(previous)
     }
 
     private func showLinkedSource(_ linkedSource: Source) {
         closeFindInNote()
-        showsNoteLinks = false
         isEditing = false
         editorFocused = false
         source = linkedSource
@@ -3760,7 +3692,7 @@ enum MarkdownInlineRendering {
             guard value != nil else { return }
             attributed.addAttribute(
                 .foregroundColor,
-                value: UIColor.link,
+                value: UIColor.systemYellow,
                 range: range
             )
         }

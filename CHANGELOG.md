@@ -15,20 +15,6 @@ Known open issue:
 
 As of 2026-09-04, this prototype records 278 implementation iterations, including the initial MVP.
 
-## iPhone review — 2026-09-12
-
-- Problem: Similar glass surfaces obscured visual hierarchy; the folder sheet
-  could compete with note presentation, and linked-note navigation lacked an
-  exposed return action.
-- Fix: Default to the compact list while respecting saved preferences, use a
-  native folder sheet and deferred secondary navigation, and give the large
-  reader a quiet action header above a solid reading surface. Collapsed links
-  use indexed Markdown relationships and shared tags; returning reloads the
-  saved note. Large-text status and tag layouts adapt to content.
-- Lesson: Keep navigation ownership explicit and verify link edits through
-  close/reopen and return journeys, not only a visible link label. The app's
-  existing iPhone-only support is retained.
-
 ## Iterations
 
 ### 278. Consistent capture projection and full-library performance
