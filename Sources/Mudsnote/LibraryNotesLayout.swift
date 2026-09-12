@@ -73,7 +73,7 @@ enum LibraryNotesLayout {
     static let sourceGroupContentLeadingInset: CGFloat = 5
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
-    static let noteGroupRowHeight: CGFloat = 45
+    static let noteGroupRowHeight: CGFloat = 34
     static let noteRowHeight: CGFloat = 76
     static let sourceGroupFontSize: CGFloat = 12
     static let sourceButtonFontSize: CGFloat = 13.5
@@ -82,8 +82,8 @@ enum LibraryNotesLayout {
     static let sourceButtonFontWeight: NSFont.Weight = sourceSelectedButtonFontWeight
     static let sourceCountFontSize: CGFloat = 13
     static let sourceSymbolWeight: NSFont.Weight = .medium
-    static let noteGroupFontSize: CGFloat = 15
-    static let noteGroupFontWeight: NSFont.Weight = .bold
+    static let noteGroupFontSize: CGFloat = 11
+    static let noteGroupFontWeight: NSFont.Weight = .medium
     static let noteTitleFontSize: CGFloat = 14
     static let noteTitleFontWeight: NSFont.Weight = .bold
     static let noteSnippetFontSize: CGFloat = 12
@@ -97,7 +97,7 @@ enum LibraryNotesLayout {
     static let galleryHorizontalInset: CGFloat = 18
     static let galleryVerticalInset: CGFloat = 14
     static let gallerySectionHeaderHeight: CGFloat = 32
-    static let noteListHeaderTitleFontSize: CGFloat = 13
+    static let noteListHeaderTitleFontSize: CGFloat = 15
     static let noteListHeaderCountFontSize: CGFloat = 12
     static let noteListLeadingInset: CGFloat = 14
     static let noteListTrailingInset: CGFloat = 12
@@ -105,7 +105,7 @@ enum LibraryNotesLayout {
     static let noteListStackTopOffset: CGFloat = -1
     static let noteListBottomInset: CGFloat = 14
     static let editorTopInset: CGFloat = 6.25
-    static let editorHorizontalInset: CGFloat = 23
+    static let editorHorizontalInset: CGFloat = 36
     static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
     static let editorDateRowHeight: CGFloat = 20
@@ -113,7 +113,7 @@ enum LibraryNotesLayout {
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusHorizontalOffset: CGFloat = -8.5
     static let editorStatusBottomGap: CGFloat = 6
-    static let editorStatusFontSize: CGFloat = 13
+    static let editorStatusFontSize: CGFloat = 11
     static let editorTitleFontSize: CGFloat = 24
     static let editorBodyFontSize: CGFloat = 15
     static let editorCodeFontSize: CGFloat = 14

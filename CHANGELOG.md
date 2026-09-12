@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-04, this prototype records 278 implementation iterations, including the initial MVP.
+As of 2026-09-12, this prototype records 279 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 279. macOS two-pane writing workspace
+- Problem: Three persistent columns, dense toolbar controls, and knowledge layers competed with writing; the initial two-pane preview gave navigation and content nearly identical materials.
+- Fix: The Mac library now uses a darker native-material list and brighter document, calmer spacing and metadata, a folder/tag popover, and a keyboard quick menu. Incoming/outgoing smart links replace visible knowledge hierarchy while preserving existing note data. Popovers honor Reduce Motion; auxiliary transitions can be replaced without delayed focus changes. Obsolete toolbar construction and higher-layer generation UI were removed.
+- Lesson: Separate navigation from content through contrast and spacing, and keep rich-text geometry synchronous while animating auxiliary UI. Verify Swift Testing completion summaries as well as process exit codes.
 
 ### 278. Consistent capture projection and full-library performance
 - Problem: A text-only iOS capture updated the visible list without invalidating the store's in-progress metadata page, so loading the next page could replace the new projection with stale inventory; the Recent list could also grow beyond 24 items. The macOS full-library path returned every requested result but still maintained a bounded-result heap before its final sort.

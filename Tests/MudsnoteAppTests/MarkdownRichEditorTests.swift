@@ -177,6 +177,21 @@ private final class BlockingAutosaveRecorder: @unchecked Sendable {
     }
 }
 
+@MainActor
+private func libraryEditorBody(_ controller: LibraryWindowController) -> String {
+    MarkdownEditorDocument.parse(editorText: MarkdownRichTextCodec.serialize(
+        controller.editorTextView.attributedString(), theme: controller.theme
+    )).body
+}
+
+@MainActor
+private func setLibraryEditorDocument(_ controller: LibraryWindowController, title: String? = nil, body: String) {
+    controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
+        markdown: MarkdownEditorDocument.composeEditorText(title: title ?? controller.titleField.stringValue, body: body),
+        theme: controller.theme
+    ))
+}
+
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
@@ -2691,6 +2706,13 @@ struct MarkdownRichEditorTests {
         #expect(views.contains { $0.identifier?.rawValue == "LibraryFolderPicker" })
         #expect(views.contains { $0.identifier?.rawValue == "LibraryQuickMenu" })
         #expect(controller.searchField.window === window)
+        // The only divider resizes the note list, including widths that the
+        // former three-column delegate incorrectly rejected.
+        #expect(controller.splitView(split.splitView, constrainMinCoordinate: 0, ofSubviewAt: 0) == 250)
+        #expect(controller.splitView(split.splitView, constrainMaxCoordinate: 900, ofSubviewAt: 0) == 380)
+        split.splitView.setPosition(360, ofDividerAt: 0)
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(abs(split.splitView.arrangedSubviews[0].frame.width - 360) < 1)
         let originalWidths = split.splitView.arrangedSubviews.map { $0.frame.width }
         #expect(controller.setSourceListVisibleForLibrary(true))
         #expect(controller.sourceOutlineView.window !== window)
@@ -2755,6 +2777,21 @@ struct MarkdownRichEditorTests {
         controller.markdownTextViewInsertNewline(controller.editorTextView)
         #expect(controller.editorTextView.string == "Return Target\n")
         #expect(controller.editorTextView.selectedRange().location == titleRange.length + 1)
+    }
+
+    @MainActor
+    @Test
+    func unifiedTitlePlainTextPasteStartsNormalBodyParagraphs() {
+        let editor = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        editor.markdownPasteTheme = theme
+        editor.usesUnifiedTitleLine = true
+        editor.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("交互验证\n\n正文保持普通段落。", forType: .string)
+        #expect(editor.pasteContents(from: pasteboard))
+        #expect(MarkdownRichTextCodec.serialize(editor.attributedString(), theme: theme)
+            == "# 交互验证\n\n正文保持普通段落。")
     }
 
     @MainActor
@@ -4745,12 +4782,21 @@ struct MarkdownRichEditorTests {
         #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "删除线" } == nil)
         #expect(refreshedSelectionPanelButtons.first { $0.toolTip == "添加链接" } != nil)
 
-        controller.editorTextView.undoManager?.removeAllActions()
+        let keyboardUndoManager = try #require(controller.editorTextView.undoManager)
+        while keyboardUndoManager.groupingLevel > 0 { keyboardUndoManager.endUndoGrouping() }
+        keyboardUndoManager.removeAllActions()
+        keyboardUndoManager.groupsByEvent = false
+        defer { keyboardUndoManager.groupsByEvent = true }
+        func performGroupedKey(_ event: NSEvent) -> Bool {
+            keyboardUndoManager.beginUndoGrouping()
+            defer { keyboardUndoManager.endUndoGrouping() }
+            return controller.editorTextView.performKeyEquivalent(with: event)
+        }
         let boldShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_B), modifiers: [.command], characters: "b")
-        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
+        #expect(performGroupedKey(boldShortcut))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
-        #expect(controller.editorTextView.performKeyEquivalent(with: boldShortcut))
+        #expect(performGroupedKey(boldShortcut))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n**plain**")
         RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         let undoShortcut = try keyEvent(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command], characters: "z")
@@ -4759,6 +4805,7 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.undoManager?.redo()
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\n**plain**")
 
+        keyboardUndoManager.groupsByEvent = true
         controller.editorTextView.setSelectedRange(NSRange(location: controller.editorTextView.attributedString().length, length: 0))
         let checklistAction = try #require(controller.makeFormatMenuForLibrary().items.first { $0.title == "待办列表" })
         #expect(NSApp.sendAction(try #require(checklistAction.action), to: checklistAction.target, from: checklistAction))
@@ -5569,7 +5616,8 @@ struct MarkdownRichEditorTests {
         controller.insertTableForLibrary()
 
         var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Editing")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "| Alpha | Todo |",
@@ -5578,6 +5626,8 @@ struct MarkdownRichEditorTests {
 
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
             markdown: """
+            # Table Editing
+
             | Name | Status |
             | --- | --- |
             | Alpha | Todo |
@@ -5590,7 +5640,8 @@ struct MarkdownRichEditorTests {
         controller.insertTableForLibrary()
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Editing")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "|  |  |",
@@ -5663,7 +5714,8 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.setSelectedRange(NSRange(location: todoLocation, length: 0))
         #expect(controller.textView(controller.editorTextView, doCommandBy: #selector(NSResponder.insertTab(_:))))
         let tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Tabs")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "| Alpha | Todo |",
@@ -5731,7 +5783,8 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.keyDown(with: deleteEvent)
 
         var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Delete")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "| Beta | Done |"
@@ -5747,7 +5800,8 @@ struct MarkdownRichEditorTests {
         controller.editorTextView.keyDown(with: deleteEvent)
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Delete")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |"
         ])
@@ -5826,7 +5880,8 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(headerInsertColumnItem.action), to: headerInsertColumnItem.target, from: headerInsertColumnItem))
 
         var tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Menu")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name |  | Status |",
             "| --- | --- | --- |",
             "| Alpha |  | Todo |"
@@ -5840,7 +5895,8 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(deleteColumnItem.action), to: deleteColumnItem.target, from: deleteColumnItem))
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Menu")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "| Alpha | Todo |"
@@ -5849,7 +5905,8 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(headerInsertRowItem.action), to: headerInsertRowItem.target, from: headerInsertRowItem))
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Menu")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "|  |  |",
@@ -5870,7 +5927,8 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(dataDeleteRowItem.action), to: dataDeleteRowItem.target, from: dataDeleteRowItem))
 
         tableMarkdown = MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme)
-        #expect(tableMarkdown.components(separatedBy: "\n") == [
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).title == "Table Menu")
+        #expect(MarkdownEditorDocument.parse(editorText: tableMarkdown).body.components(separatedBy: "\n") == [
             "| Name | Status |",
             "| --- | --- |",
             "|  |  |"
@@ -5981,7 +6039,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        controller.editorTextView.string = "First revision"
+        setLibraryEditorDocument(controller, body: "First revision")
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         controller.triggerBackgroundAutosaveForTesting()
         let firstStarted = await withCheckedContinuation { continuation in
@@ -5993,7 +6051,7 @@ struct MarkdownRichEditorTests {
         }
         #expect(firstStarted == .success)
 
-        controller.editorTextView.string = "Latest revision"
+        setLibraryEditorDocument(controller, body: "Latest revision")
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         controller.triggerBackgroundAutosaveForTesting()
         recorder.releaseFirstWrite.signal()
@@ -6043,7 +6101,7 @@ struct MarkdownRichEditorTests {
 
         let editedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
         let displayedTimeBeforeEdit = controller.statusLabel.stringValue
-        controller.editorTextView.string = "Edited without blocking navigation"
+        setLibraryEditorDocument(controller, body: "Edited without blocking navigation")
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         controller.triggerBackgroundAutosaveForTesting()
         let firstStarted = await withCheckedContinuation { continuation in
@@ -6115,7 +6173,7 @@ struct MarkdownRichEditorTests {
 
         controller.searchForLibrary(query: "Existing", allNotes: true)
         let activeSession = try #require(controller.activeSearchSessionForLibrary())
-        controller.editorTextView.string = "Existing updated body"
+        setLibraryEditorDocument(controller, body: "Existing updated body")
         controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         controller.triggerBackgroundAutosaveForTesting()
         let firstStarted = await withCheckedContinuation { continuation in
@@ -6358,7 +6416,7 @@ struct MarkdownRichEditorTests {
             stop.pointee = true
         }
         #expect(editorHasImagePreview)
-        #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "![Preview](Attachments/thumb.png)")
+        #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "# Image Attachment\n\n![Preview](Attachments/thumb.png)")
     }
 
     @MainActor
@@ -6455,6 +6513,7 @@ struct MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        store.includesArchivedNotesInSearchAndKnowledge = true
         let projectsFolder = try store.createFolder(named: "Projects")
         let archiveFolder = try store.createFolder(named: "Archive")
         _ = try store.saveNewNote(title: "Alpha Project", body: "current folder alpha body", in: projectsFolder)
@@ -6470,9 +6529,7 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
-        let scopeControl = try #require((window.toolbar?.items ?? []).flatMap { item in
-            item.view?.allSubviews.compactMap { $0 as? NSSegmentedControl } ?? []
-        }.first {
+        let scopeControl = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSegmentedControl }.first {
             $0.identifier?.rawValue == "LibrarySearchScopeControl"
         })
         #expect(scopeControl.selectedSegment == 0)
@@ -6511,7 +6568,7 @@ struct MarkdownRichEditorTests {
         #expect(editorMatchRange.location != NSNotFound)
         #expect(editorText.attribute(.qmSearchHighlight, at: editorMatchRange.location, effectiveRange: nil) != nil)
         #expect(editorText.attribute(.backgroundColor, at: editorMatchRange.location, effectiveRange: nil) != nil)
-        #expect(MarkdownRichTextCodec.serialize(editorText, theme: controller.theme) == "current folder alpha body")
+        #expect(MarkdownRichTextCodec.serialize(editorText, theme: controller.theme) == "# Alpha Project\n\ncurrent folder alpha body")
 
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)
@@ -6606,7 +6663,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(controller.searchField.stringValue.isEmpty)
         #expect(controller.searchScopeControl.isHidden)
-        #expect(controller.noteListTitleLabel.stringValue == "Notes")
+        #expect(controller.noteListTitleLabel.stringValue == "首页")
     }
 
     @MainActor
@@ -7354,7 +7411,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryWindowCreatesMovesRenamesAndDeletesFolders() throws {
+    func libraryWindowCreatesMovesRenamesAndDeletesFolders() async throws {
         let suiteName = "mudsnote.library-folder-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -7388,10 +7445,9 @@ struct MarkdownRichEditorTests {
         #expect(controller.selectSourceForLibrary(titled: "Projects"))
         #expect(controller.selectedSourceTitleForLibrary == "Projects")
 
-        let newItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.new-note"
+        let newButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.action == Selector(("newNotePressed"))
         })
-        let newButton = try #require(newItem.view?.allSubviews.compactMap { $0 as? NSButton }.first)
         newButton.performClick(nil)
         controller.editorTextView.textStorage?.setAttributedString(NSAttributedString(
             string: "Folder Seed\nFolder body",
@@ -7452,6 +7508,7 @@ struct MarkdownRichEditorTests {
         let trashedTitles = store.listTrashedNotes(limit: 10).map(\.title)
         #expect(trashedTitles.contains("Folder Seed"))
         #expect(trashedTitles.contains("Second Drag Seed"))
+        await controller.waitForSourceCountRefreshForLibrary()
         #expect(controller.sourceCountTextForLibrary(titled: "最近删除") == "2")
     }
 
@@ -7557,14 +7614,15 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
         let window = try #require(controller.window)
+        controller.showWindowAndFocus()
         controller.loadSourceFoldersForLibrary()
 
         controller.beginInlineFolderCreationForLibrary()
-        let field = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        let field = try #require(controller.sourceOutlineView.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         #expect(field.stringValue == "新建文件夹")
-        #expect(window.contentView?.allSubviews.contains {
+        #expect(controller.sourceOutlineView.window?.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == true)
         #expect(field.isEditable)
@@ -7576,7 +7634,7 @@ struct MarkdownRichEditorTests {
         #expect(field.constraints.first { $0.firstAttribute == .height }?.constant == 20)
 
         controller.beginInlineFolderCreationForLibrary()
-        #expect(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.filter {
+        #expect(controller.sourceOutlineView.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.filter {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         }.count == 1)
 
@@ -7586,12 +7644,12 @@ struct MarkdownRichEditorTests {
         let createdURL = store.notesDirectory.appendingPathComponent("中文文件夹", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: createdURL.path))
         #expect(controller.sourceTitlesForLibrary().contains("中文文件夹"))
-        #expect(window.contentView?.allSubviews.contains {
+        #expect(controller.sourceOutlineView.window?.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
 
         controller.beginInlineFolderRenameForLibrary(at: createdURL)
-        let renameField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        let renameField = try #require(controller.sourceOutlineView.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         #expect(renameField.stringValue == "中文文件夹")
@@ -7605,13 +7663,13 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceTitlesForLibrary().contains("Renamed Inline Folder"))
 
         controller.beginInlineFolderCreationForLibrary()
-        let cancelledField = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        let cancelledField = try #require(controller.sourceOutlineView.window?.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryInlineFolderEditField"
         })
         cancelledField.stringValue = "Cancelled Folder"
         #expect(controller.control(cancelledField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect(!FileManager.default.fileExists(atPath: renamedURL.appendingPathComponent("Cancelled Folder").path))
-        #expect(window.contentView?.allSubviews.contains {
+        #expect(controller.sourceOutlineView.window?.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryInlineFolderEditRow"
         } == false)
     }
@@ -7659,7 +7717,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.sourceTitlesForLibrary().contains("External Library"))
         #expect(controller.selectSourceForLibrary(titled: "External Library"))
         let externalMenu = try #require(controller.sourceContextMenuForLibrary(row: controller.sourceOutlineView.selectedRow))
-        #expect(externalMenu.items.map(\.title) == ["在 Finder 中显示", "从资料库移除"])
+        #expect(externalMenu.items.map(\.title) == ["在 Finder 中显示", "", "更改图标", "", "从资料库移除"])
 
         #expect(throws: (any Error).self) {
             try controller.addExistingLibraryFolderForLibrary(at: externalDirectory)
@@ -7721,12 +7779,12 @@ struct MarkdownRichEditorTests {
         ])
         controller.showWindowAndFocus()
         let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.editorTextView.string != "Library body" {
+        while Date() < deadline, libraryEditorBody(controller) != "Library body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == managedNote.standardizedFileURL.path)
         #expect(controller.titleField.stringValue == "Managed")
-        #expect(controller.editorTextView.string == "Library body")
+        #expect(libraryEditorBody(controller) == "Library body")
         try await Task.sleep(nanoseconds: 300_000_000)
         #expect(controller.noteListSearchResultsForLibrary().map(\.url.standardizedFileURL.path) == [
             managedNote.standardizedFileURL.path
@@ -7800,7 +7858,7 @@ struct MarkdownRichEditorTests {
         #expect(exportedMarkdown.contains("Trash Seed"))
         #expect(exportedMarkdown.contains("Body line"))
         controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(
-            markdown: "Updated body",
+            markdown: "# Trash Seed\n\nUpdated body",
             theme: controller.theme,
             baseURL: noteURL
         ))
@@ -8058,7 +8116,7 @@ struct MarkdownRichEditorTests {
                 .titleLabel.stringValue == "Cache Older"
         })
         controller.tableView.selectRowIndexes(IndexSet(integer: olderRow), byExtendingSelection: false)
-        #expect(controller.editorTextView.string == "Old body")
+        #expect(libraryEditorBody(controller) == "Old body")
         #expect(controller.hasCachedLoadedNoteForLibrary(at: olderURL))
 
         try "Cache Older\n\nExternally changed body".write(to: olderURL, atomically: true, encoding: .utf8)
@@ -8206,12 +8264,12 @@ struct MarkdownRichEditorTests {
         let delayedRow = try #require(row(for: delayedURL))
         let targetRow = try #require(row(for: targetURL))
         let initialTitle = controller.titleField.stringValue
-        let initialBody = controller.editorTextView.string
+        let initialBody = libraryEditorBody(controller)
         let selectionStart = Date()
         controller.tableView.selectRowIndexes(IndexSet(integer: delayedRow), byExtendingSelection: false)
         #expect(Date().timeIntervalSince(selectionStart) < 0.2)
         #expect(controller.titleField.stringValue == initialTitle)
-        #expect(controller.editorTextView.string == initialBody)
+        #expect(libraryEditorBody(controller) == initialBody)
         #expect(!controller.editorTextView.isEditable)
 
         controller.tableView.selectRowIndexes(IndexSet(integer: targetRow), byExtendingSelection: false)
@@ -8220,7 +8278,7 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL)
         #expect(controller.titleField.stringValue == "Async Note 4")
-        #expect(controller.editorTextView.string == "Async body 4")
+        #expect(libraryEditorBody(controller) == "Async body 4")
         #expect(controller.hasCachedLoadedNoteForLibrary(at: targetURL))
     }
 
@@ -8272,7 +8330,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func externalMarkdownOpensAndSavesInPlaceInLibraryWindow() throws {
+    func externalMarkdownOpensAndSavesInPlaceInLibraryWindow() async throws {
         let suiteName = "mudsnote.external-library-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -8304,10 +8362,11 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        controller.titleField.stringValue = "Managed Updated"
-        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.titleField))
+        setLibraryEditorDocument(controller, title: "Managed Updated", body: "Managed body")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
         try controller.openMarkdownDocumentForLibrary(at: externalURL)
 
+        await controller.waitForBackgroundAutosaveForTesting()
         let managedSavedURL = try #require(savedURL)
         #expect(!FileManager.default.fileExists(atPath: managedURL.path))
         #expect(FileManager.default.fileExists(atPath: managedSavedURL.path))
@@ -8315,7 +8374,7 @@ struct MarkdownRichEditorTests {
         #expect(!(controller.window is NSPanel))
         #expect(controller.selectedMarkdownFileURLForLibrary() == externalURL.standardizedFileURL)
         #expect(controller.titleField.stringValue == "Original Heading")
-        #expect(controller.editorTextView.string == "Original body")
+        #expect(libraryEditorBody(controller) == "Original body")
         #expect(controller.noteListSearchResultsForLibrary().contains {
             $0.url.standardizedFileURL == externalURL.standardizedFileURL
         })
@@ -8329,8 +8388,7 @@ struct MarkdownRichEditorTests {
         ))
         #expect(previewFolderMenu.items.map(\.title) == ["在 Finder 中显示"])
 
-        let updated = MarkdownRichTextCodec.render(markdown: "Updated body", theme: controller.theme)
-        controller.titleField.stringValue = "Changed Heading"
+        let updated = MarkdownRichTextCodec.render(markdown: "# Changed Heading\n\nUpdated body", theme: controller.theme)
         controller.editorTextView.textStorage?.setAttributedString(updated)
         _ = try controller.saveCurrentNoteForLibrary()
 
@@ -8384,7 +8442,7 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.selectedMarkdownFileURLForLibrary() == externalURL.standardizedFileURL)
         #expect(controller.titleField.stringValue == "Outside")
-        #expect(controller.editorTextView.string == "Visible external body")
+        #expect(libraryEditorBody(controller) == "Visible external body")
         #expect(controller.editorTextView.isEditable)
     }
 
@@ -8598,7 +8656,7 @@ struct MarkdownRichEditorTests {
         #expect(searchItem.action == #selector(AppController.focusLibrarySearchFromMainMenu))
         #expect(searchItem.keyEquivalent == "f")
         #expect(searchItem.keyEquivalentModifierMask == [.command])
-        #expect(viewMenu.items.first { $0.title == "显示或隐藏资料库" }?.keyEquivalentModifierMask == [.command, .control])
+        #expect(viewMenu.items.first { $0.title == "文件夹与标签" }?.keyEquivalentModifierMask == [.command, .control])
         let sortMenu = try #require(viewMenu.items.first { $0.title == "排序方式" }?.submenu)
         #expect(sortMenu.items.map(\.title) == ["编辑日期", "创建日期", "标题"])
         #expect(sortMenu.items.allSatisfy {
@@ -8716,7 +8774,7 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == contentURL.standardizedFileURL)
         #expect(controller.titleField.stringValue == "Content Visual")
-        #expect(controller.editorTextView.string == "Visible editor body")
+        #expect(libraryEditorBody(controller) == "Visible editor body")
         #expect(controller.window?.firstResponder === controller.tableView)
 
         controller.selectNoteForVisualQA(at: emptyURL)
@@ -8793,21 +8851,21 @@ struct MarkdownRichEditorTests {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
-        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "")
+        #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
         controller.showWindowAndFocus()
         #expect(controller.noteListCountLabel.stringValue == "1 条笔记")
         let initialListTitle = try #require(controller.noteListSearchResultsForLibrary().first?.title)
         #expect(controller.titleField.stringValue == initialListTitle)
         let deadline = Date().addingTimeInterval(6)
         while Date() < deadline,
-              controller.editorTextView.string != "Deferred body"
+              libraryEditorBody(controller) != "Deferred body"
                 || controller.sourceCountTextForLibrary(titled: "Notes") != "1" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "Deferred Seed")
-        #expect(controller.editorTextView.string == "Deferred body")
+        #expect(libraryEditorBody(controller) == "Deferred body")
         #expect(controller.sourceCountTextForLibrary(titled: "Notes") == "1")
     }
 
@@ -8863,15 +8921,15 @@ struct MarkdownRichEditorTests {
 
         #expect(controller.selectedMarkdownFileURLForLibrary() == cachedURL.standardizedFileURL)
         #expect(controller.titleField.stringValue == "Cached Selection")
-        #expect(controller.editorTextView.string == "Cached body is immediate")
+        #expect(libraryEditorBody(controller) == "Cached body is immediate")
         #expect(!controller.editorTextView.isEditable)
         #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
 
         let deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, controller.editorTextView.string != "Fresh source body" {
+        while Date() < deadline, libraryEditorBody(controller) != "Fresh source body" {
             try await Task.sleep(for: .milliseconds(25))
         }
-        #expect(controller.editorTextView.string == "Fresh source body")
+        #expect(libraryEditorBody(controller) == "Fresh source body")
         #expect(controller.editorTextView.isEditable)
         #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
     }
@@ -8913,10 +8971,10 @@ struct MarkdownRichEditorTests {
 
         #expect(!controller.hasReleasedDeferredLaunchWorkForLibrary)
         let deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, controller.editorTextView.string != "First body wins" {
+        while Date() < deadline, libraryEditorBody(controller) != "First body wins" {
             try await Task.sleep(for: .milliseconds(25))
         }
-        #expect(controller.editorTextView.string == "First body wins")
+        #expect(libraryEditorBody(controller) == "First body wins")
         #expect(controller.hasReleasedDeferredLaunchWorkForLibrary)
     }
 
@@ -9054,12 +9112,12 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.editorTextView.string != "Existing body" {
+        while Date() < deadline, libraryEditorBody(controller) != "Existing body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
         #expect(controller.titleField.stringValue == "Existing Recent")
-        #expect(controller.editorTextView.string == "Existing body")
+        #expect(libraryEditorBody(controller) == "Existing body")
         #expect(!store.listRecentFiles(limit: 5).contains { $0.url.standardizedFileURL == missingURL.standardizedFileURL })
         #expect(NSApp.modalWindow == nil)
     }
@@ -9102,7 +9160,7 @@ struct MarkdownRichEditorTests {
 
         controller.showWindowAndFocus()
         let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.editorTextView.string != "External body" {
+        while Date() < deadline, libraryEditorBody(controller) != "External body" {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
@@ -9110,7 +9168,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.tableView.selectedRow >= 0)
         #expect(controller.searchField.currentEditor() == nil)
         #expect(controller.titleField.stringValue == "External Deferred")
-        #expect(controller.editorTextView.string == "External body")
+        #expect(libraryEditorBody(controller) == "External body")
     }
 
     @Test
@@ -9140,6 +9198,8 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        controller.showWindowAndFocus()
+        await controller.waitForSourceSnapshotValidationForLibrary()
 
         try "# Background Refresh\n\nLoaded off the navigation path.\n".write(
             to: notesDirectory.appendingPathComponent("Background Refresh.md"),
@@ -9183,6 +9243,8 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        controller.showWindowAndFocus()
+        await controller.waitForSourceSnapshotValidationForLibrary()
 
         let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
         _ = try store.trashNote(at: noteURL)
@@ -9736,7 +9798,7 @@ struct MarkdownRichEditorTests {
                 with: .leftMouseDown,
                 location: location,
                 modifierFlags: [],
-                timestamp: 0,
+                timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: windowNumber,
                 context: nil,
                 eventNumber: 1,
@@ -9747,15 +9809,15 @@ struct MarkdownRichEditorTests {
                 with: .leftMouseUp,
                 location: location,
                 modifierFlags: [],
-                timestamp: 0.01,
+                timestamp: ProcessInfo.processInfo.systemUptime + 0.01,
                 windowNumber: windowNumber,
                 context: nil,
                 eventNumber: 2,
                 clickCount: 1,
                 pressure: 0
             ))
-            NSApp.postEvent(mouseDown, atStart: false)
-            NSApp.postEvent(mouseUp, atStart: false)
+            NSApp.postEvent(mouseUp, atStart: true)
+            controller.window?.sendEvent(mouseDown)
 
             let deadline = Date().addingTimeInterval(1)
             while (controller.floatingNoteBrowserController?.presentationCount ?? 0) < expectedPresentationCount,

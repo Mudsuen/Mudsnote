@@ -641,13 +641,6 @@ final class LibrarySourceScrollView: NSScrollView {
     }
 }
 
-private enum LibraryNotesPalette {
-    static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let sourceBackground = NSColor(calibratedWhite: 0.045, alpha: 1)
-    static let noteListBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-}
-
 @MainActor
 enum LibrarySourceSelectionPalette {
     static let backgroundColor = NSColor(calibratedWhite: 0.20, alpha: 0.86)
@@ -1067,7 +1060,9 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.selectionCornerRadius,
             yRadius: Self.selectionCornerRadius
         )
-        Self.selectionFillColor.setFill()
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // AppKit uses white text for emphasized rows and dark text for inactive light rows.
+        (isDark || isEmphasized ? Self.selectionFillColor : Self.selectionFillColor.withAlphaComponent(0.18)).setFill()
         path.fill()
     }
 
@@ -1291,7 +1286,6 @@ final class LibraryWindowController: NSWindowController,
     let statusLabel = NSTextField(labelWithString: "")
     let wordCountLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
-    private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1379,8 +1373,6 @@ final class LibraryWindowController: NSWindowController,
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshGeneration = 0
-    private var knowledgeSynthesisTask: Task<Void, Never>?
-    private var knowledgeSynthesisGeneration = 0
     private var knowledgeBackStack: [URL] = []
     private var knowledgeForwardStack: [URL] = []
     private var searchResultsGeneration = 0
@@ -1468,7 +1460,6 @@ final class LibraryWindowController: NSWindowController,
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
-    private weak var sourceSplitViewItem: NSSplitViewItem?
     private let sourcePopover = NSPopover()
     private let sourceButton = NSButton()
     private let commandButton = NSButton()
@@ -1977,8 +1968,6 @@ final class LibraryWindowController: NSWindowController,
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil
-        knowledgeGraphWindowController?.close()
-        knowledgeGraphWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -1987,9 +1976,6 @@ final class LibraryWindowController: NSWindowController,
         searchReloadWorkItem = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisTask = nil
-        knowledgeSynthesisGeneration += 1
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
@@ -2098,7 +2084,6 @@ final class LibraryWindowController: NSWindowController,
                 URL(fileURLWithPath: $0)
             })
         }
-        knowledgeGraphWindowController?.reload()
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -2188,11 +2173,11 @@ final class LibraryWindowController: NSWindowController,
         let editorController = NSViewController()
         editorController.view = editor
 
-        sourceController.preferredContentSize = NSSize(width: 300, height: 480)
+        sourceController.preferredContentSize = NSSize(width: 280, height: 420)
         sourcePopover.contentViewController = sourceController
-        sourcePopover.contentSize = NSSize(width: 300, height: 480)
+        sourcePopover.contentSize = NSSize(width: 280, height: 420)
         sourcePopover.behavior = .transient
-        sourcePopover.animates = false
+        sourcePopover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         let noteListItem = NSSplitViewItem(contentListWithViewController: noteListController)
         noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
@@ -2302,10 +2287,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildSidebar() -> NSView {
-        let sidebar = NSVisualEffectView()
-        sidebar.material = .sidebar
-        sidebar.blendingMode = .behindWindow
-        sidebar.state = .followsWindowActiveState
+        let sidebar = LibraryPaneSurface(role: .navigation)
+        sidebar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSurface")
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         configureNoteListHeaderLabels()
@@ -2390,11 +2373,30 @@ final class LibraryWindowController: NSWindowController,
         configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
         configureCompactButton(commandButton, symbol: "ellipsis", label: "快速菜单（⇧⌘P）", action: #selector(showQuickMenu(_:)))
         commandButton.identifier = NSUserInterfaceItemIdentifier("LibraryQuickMenu")
-        let heading = NSStackView(views: [sourceButton, noteListTitleLabel, newButton, commandButton])
-        heading.spacing = 6
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        noteListTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let heading = NSStackView(views: [sourceButton, noteListTitleLabel, spacer, newButton, commandButton])
+        heading.spacing = 4
         heading.alignment = .centerY
         noteListTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let stack = NSStackView(views: [heading, searchField, searchScopeControl, listContainer])
+        let searchContainer = NSBox()
+        searchContainer.boxType = .custom
+        searchContainer.borderWidth = 0
+        searchContainer.cornerRadius = 8
+        searchContainer.fillColor = .quaternaryLabelColor
+        searchContainer.contentViewMargins = .zero
+        let searchContent = NSView()
+        searchContainer.contentView = searchContent
+        searchContent.addSubview(searchField)
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            searchContainer.heightAnchor.constraint(equalToConstant: 34),
+            searchField.leadingAnchor.constraint(equalTo: searchContent.leadingAnchor, constant: 8),
+            searchField.trailingAnchor.constraint(equalTo: searchContent.trailingAnchor, constant: -6),
+            searchField.centerYAnchor.constraint(equalTo: searchContent.centerYAnchor)
+        ])
+        let stack = NSStackView(views: [heading, searchContainer, searchScopeControl, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2406,8 +2408,7 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.noteListTrailingInset
         )
         sidebar.addSubview(stack)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNoteListTitlebarSeparator")
-        sidebar.addSubview(titlebarSeparator)
+
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
@@ -2417,10 +2418,7 @@ final class LibraryWindowController: NSWindowController,
                 constant: LibraryNotesLayout.noteListStackTopOffset
             ),
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+
         ])
         listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -26).isActive = true
 
@@ -2471,10 +2469,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildEditor() -> NSView {
-        let editor = NSVisualEffectView()
-        editor.material = .contentBackground
-        editor.blendingMode = .behindWindow
-        editor.state = .followsWindowActiveState
+        let editor = LibraryPaneSurface(role: .document)
+        editor.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentSurface")
         editor.translatesAutoresizingMaskIntoConstraints = false
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
@@ -2494,7 +2490,7 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
         statusLabel.setAccessibilityLabel("编辑时间或保存状态")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
-        statusLabel.textColor = panelTertiaryTextColor()
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
         wordCountLabel.setAccessibilityLabel("字数")
@@ -2502,7 +2498,7 @@ final class LibraryWindowController: NSWindowController,
             ofSize: LibraryNotesLayout.editorStatusFontSize,
             weight: .medium
         )
-        wordCountLabel.textColor = panelTertiaryTextColor()
+        wordCountLabel.textColor = .secondaryLabelColor
         wordCountLabel.alignment = .right
 
         configureEditorTextView()
@@ -2512,7 +2508,7 @@ final class LibraryWindowController: NSWindowController,
             ofSize: LibraryNotesLayout.editorStatusFontSize,
             weight: .semibold
         )
-        createdDateLabel.textColor = panelTertiaryTextColor()
+        createdDateLabel.textColor = .secondaryLabelColor
         createdDateLabel.alignment = .center
         createdDateLabel.lineBreakMode = .byTruncatingTail
         createdDateLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -2589,7 +2585,7 @@ final class LibraryWindowController: NSWindowController,
         stack.spacing = 0
         stack.setCustomSpacing(8, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
-            top: 0,
+            top: 16,
             left: LibraryNotesLayout.editorHorizontalInset,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
@@ -2617,8 +2613,7 @@ final class LibraryWindowController: NSWindowController,
         editor.addSubview(stack)
         editor.addSubview(galleryScrollView)
         editor.addSubview(galleryEmptyLabel)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryEditorTitlebarSeparator")
-        editor.addSubview(titlebarSeparator)
+
         stack.translatesAutoresizingMaskIntoConstraints = false
         galleryScrollView.translatesAutoresizingMaskIntoConstraints = false
         galleryEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -2635,10 +2630,7 @@ final class LibraryWindowController: NSWindowController,
             galleryEmptyLabel.centerYAnchor.constraint(equalTo: editor.centerYAnchor, constant: -20),
             galleryEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: editor.leadingAnchor, constant: 24),
             galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
@@ -2671,18 +2663,20 @@ final class LibraryWindowController: NSWindowController,
         searchField.placeholderString = LibraryCopy.search
         searchField.toolTip = LibraryCopy.searchNotes
         searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
-        searchField.font = .systemFont(ofSize: 14)
+        searchField.font = .systemFont(ofSize: 13)
         searchField.delegate = self
-        searchField.isBordered = true
+        searchField.isBordered = false
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
         window?.toolbar = nil
     }
 
     private func configureCompactButton(_ button: NSButton, symbol: String, label: String, action: Selector) {
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        button.contentTintColor = .secondaryLabelColor
         button.target = self
         button.action = action
         button.bezelStyle = .inline
@@ -2742,236 +2736,6 @@ final class LibraryWindowController: NSWindowController,
         noteListCountLabel.lineBreakMode = .byTruncatingTail
     }
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [
-            Self.addFolderToolbarItemIdentifier,
-            Self.toggleSidebarToolbarItemIdentifier,
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.noteListTitleToolbarItemIdentifier,
-            Self.noteTrackingSeparatorToolbarItemIdentifier,
-            Self.newNoteToolbarItemIdentifier,
-            .space,
-            Self.editorToolsToolbarItemIdentifier,
-            .flexibleSpace,
-            Self.searchToolbarItemIdentifier
-        ]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar) + [
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.noteTrackingSeparatorToolbarItemIdentifier,
-            Self.openSeparateToolbarItemIdentifier,
-            Self.moveToolbarItemIdentifier,
-            Self.saveToolbarItemIdentifier,
-            Self.deleteToolbarItemIdentifier,
-            Self.restoreToolbarItemIdentifier,
-            Self.formatToolbarItemIdentifier,
-            Self.checklistToolbarItemIdentifier,
-            Self.linkToolbarItemIdentifier,
-            Self.sourceModeToolbarItemIdentifier
-        ]
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag: Bool
-    ) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case Self.sourceTrackingSeparatorToolbarItemIdentifier:
-            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 0)
-        case Self.noteTrackingSeparatorToolbarItemIdentifier:
-            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
-        case Self.noteListTitleToolbarItemIdentifier:
-            return toolbarNoteListTitleItem(identifier: itemIdentifier)
-        case Self.addFolderToolbarItemIdentifier:
-            return toolbarAddFolderItem(
-                identifier: itemIdentifier,
-                label: "添加文件夹",
-                symbolName: "folder.badge.plus",
-                action: #selector(addFolderPressed)
-            )
-        case Self.toggleSidebarToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "隐藏资料库",
-                symbolName: "sidebar.left",
-                action: #selector(toggleSourceListPressed),
-                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-            )
-        case Self.newNoteToolbarItemIdentifier:
-            return toolbarCircularButtonItem(
-                identifier: itemIdentifier,
-                label: "新建笔记",
-                symbolName: "square.and.pencil",
-                action: #selector(newNotePressed)
-            )
-        case Self.openSeparateToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "独立窗口打开",
-                symbolName: "rectangle.on.rectangle",
-                action: #selector(openSelectedInSeparateWindow),
-                visibilityPriority: .low
-            )
-        case Self.editorToolsToolbarItemIdentifier:
-            return toolbarEditorToolsItem(identifier: itemIdentifier)
-        case Self.formatToolbarItemIdentifier:
-            let item = toolbarImageItem(
-                identifier: itemIdentifier,
-                label: "格式",
-                image: makeFormatToolbarImage(),
-                action: #selector(formatPressed(_:))
-            )
-            return item
-        case Self.checklistToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "待办列表",
-                symbolName: "checklist",
-                action: #selector(checklistPressed)
-            )
-        case Self.revealToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "打开文件位置",
-                symbolName: "folder",
-                action: #selector(revealSelectedNoteInFinderPressed)
-            )
-        case Self.linkToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "插入链接",
-                symbolName: "link",
-                action: #selector(linkPressed)
-            )
-        case Self.sourceModeToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "显示 Markdown 源码",
-                symbolName: "chevron.left.forwardslash.chevron.right",
-                action: #selector(toggleEditorSourceModePressed)
-            )
-        case Self.moveToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "移动到文件夹",
-                symbolName: "folder",
-                action: #selector(moveSelectedNotePressed(_:)),
-                visibilityPriority: .low
-            )
-        case Self.saveToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "保存",
-                symbolName: "checkmark.circle",
-                action: #selector(savePressed),
-                visibilityPriority: .low
-            )
-        case Self.deleteToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "删除",
-                symbolName: "trash",
-                action: #selector(deleteSelectedNotePressed),
-                visibilityPriority: .low
-            )
-        case Self.restoreToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "恢复",
-                symbolName: "arrow.uturn.backward",
-                action: #selector(restoreSelectedNotePressed),
-                visibilityPriority: .low
-            )
-        case Self.searchToolbarItemIdentifier:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = LibraryCopy.search
-            item.paletteLabel = LibraryCopy.search
-            item.toolTip = LibraryCopy.searchNotes
-            item.visibilityPriority = .high
-            let wrapper = NSView(frame: NSRect(
-                x: 0,
-                y: 0,
-                width: LibraryNotesLayout.toolbarSearchWrapperWidth,
-                height: LibraryNotesLayout.toolbarSearchWrapperHeight
-            ))
-            wrapper.addSubview(searchField)
-            NSLayoutConstraint.activate([
-                searchField.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
-                searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-            ])
-            item.view = wrapper
-            return item
-        default:
-            return nil
-        }
-    }
-
-    private func toolbarTrackingSeparatorItem(
-        identifier: NSToolbarItem.Identifier,
-        dividerIndex: Int
-    ) -> NSToolbarItem {
-        guard let librarySplitView else {
-            return NSToolbarItem(itemIdentifier: identifier)
-        }
-        return NSTrackingSeparatorToolbarItem(
-            identifier: identifier,
-            splitView: librarySplitView,
-            dividerIndex: dividerIndex
-        )
-    }
-
-    private func toolbarNoteListTitleItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "笔记列表标题"
-        item.paletteLabel = "笔记列表标题"
-        item.visibilityPriority = .high
-        item.isBordered = false
-
-        let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
-        titleStack.orientation = .vertical
-        titleStack.alignment = .leading
-        titleStack.spacing = 0
-        titleStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let headerStack = NSStackView(views: [titleStack, searchScopeControl])
-        headerStack.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListHeaderStack")
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 8
-        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
-        searchScopeControl.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarNoteListTitleWidth,
-            height: LibraryNotesLayout.toolbarNoteListTitleHeight
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListTitle")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(headerStack)
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-        let titleLeadingConstraint = headerStack.leadingAnchor.constraint(
-            equalTo: wrapper.leadingAnchor,
-            constant: LibraryNotesLayout.toolbarExpandedTitleLeadingOffset
-        )
-        noteListToolbarTitleLeadingConstraint = titleLeadingConstraint
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight),
-            titleLeadingConstraint,
-            headerStack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
-            headerStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-        ])
-
-        item.view = wrapper
-        return item
-    }
-
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
         case Self.moreToolbarItemIdentifier:
@@ -3000,294 +2764,6 @@ final class LibraryWindowController: NSWindowController,
         default:
             return true
         }
-    }
-
-    private func toolbarButtonItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard,
-        symbolPointSize: CGFloat = LibraryNotesLayout.toolbarSymbolPointSize
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.image = toolbarSymbolImage(
-            symbolName: symbolName,
-            label: label,
-            pointSize: symbolPointSize
-        )
-        item.target = self
-        item.action = action
-        item.visibilityPriority = visibilityPriority
-        item.isBordered = false
-        return item
-    }
-
-    private func toolbarAddFolderItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSToolbarItem {
-        let item = toolbarButtonItem(
-            identifier: identifier,
-            label: label,
-            symbolName: symbolName,
-            action: action,
-            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-        )
-        let button = NSButton(
-            image: item.image ?? NSImage(),
-            target: self,
-            action: action
-        )
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = true
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        updateToolbarEditorTextButtonAppearance(button, isEnabled: true, isWindowFocused: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarAddFolderWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarAddFolderWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarAddFolderWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
-        ])
-        item.view = wrapper
-        return item
-    }
-
-    private func toolbarEditorToolsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "编辑工具"
-        item.paletteLabel = "编辑工具"
-        item.toolTip = "编辑工具"
-        item.visibilityPriority = .high
-        item.isBordered = false
-
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.distribution = .fillEqually
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let capsule = toolbarGlassSurface(
-            identifier: "LibraryToolbarEditorTools",
-            content: stack,
-            size: NSSize(
-                width: LibraryNotesLayout.toolbarEditorToolsWidth,
-                height: LibraryNotesLayout.toolbarEditorToolsHeight
-            ),
-            cornerRadius: LibraryNotesLayout.toolbarEditorToolsHeight / 2
-        )
-        let buttons = [
-            toolbarEditorFormatButton(
-                identifier: Self.formatToolbarItemIdentifier,
-                label: "格式",
-                action: #selector(formatPressed(_:))
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.checklistToolbarItemIdentifier,
-                label: "待办列表",
-                symbolName: "checklist",
-                action: #selector(checklistPressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.linkToolbarItemIdentifier,
-                label: "插入链接",
-                symbolName: "link",
-                action: #selector(linkPressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.sourceModeToolbarItemIdentifier,
-                label: "显示 Markdown 源码",
-                symbolName: "chevron.left.forwardslash.chevron.right",
-                action: #selector(toggleEditorSourceModePressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.revealToolbarItemIdentifier,
-                label: "打开文件位置",
-                symbolName: "folder",
-                action: #selector(revealSelectedNoteInFinderPressed)
-            )
-        ]
-        buttons.forEach { stack.addArrangedSubview($0) }
-
-        NSLayoutConstraint.activate([
-            stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight)
-        ])
-
-        let slot = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarEditorToolsSlotWidth,
-            height: LibraryNotesLayout.toolbarEditorToolsHeight
-        ))
-        slot.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorToolsSlot")
-        slot.translatesAutoresizingMaskIntoConstraints = false
-        slot.addSubview(capsule)
-        NSLayoutConstraint.activate([
-            slot.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsSlotWidth),
-            slot.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsHeight),
-            capsule.trailingAnchor.constraint(equalTo: slot.trailingAnchor),
-            capsule.centerYAnchor.constraint(equalTo: slot.centerYAnchor)
-        ])
-
-        item.view = slot
-        updateEditorToolsToolbarGroupState(in: item)
-        return item
-    }
-
-    private func toolbarEditorFormatButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        action: Selector
-    ) -> NSButton {
-        let button = NSButton(title: "Aa", target: self, action: action)
-        button.font = .systemFont(ofSize: LibraryNotesLayout.toolbarEditorFormatFontSize, weight: .regular)
-        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
-    }
-
-    private func toolbarEditorToolButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSButton {
-        let image = toolbarEditorToolSymbolImage(symbolName: symbolName, label: label)
-        image?.isTemplate = true
-        return toolbarEditorToolButton(identifier: identifier, label: label, image: image, action: action)
-    }
-
-    private func toolbarEditorToolButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        image: NSImage?,
-        action: Selector
-    ) -> NSButton {
-        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
-    }
-
-    private func configureToolbarEditorToolButton(
-        _ button: NSButton,
-        identifier: NSToolbarItem.Identifier,
-        label: String
-    ) -> NSButton {
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = true
-        button.focusRingType = .none
-        button.imagePosition = button.image == nil ? .noImage : .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonWidth).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight).isActive = true
-        return button
-    }
-
-    private func toolbarImageItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        image: NSImage,
-        action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.image = image
-        item.target = self
-        item.action = action
-        item.visibilityPriority = visibilityPriority
-        return item
-    }
-
-    private func toolbarCircularButtonItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.target = self
-        item.action = action
-        item.isBordered = false
-
-        let configuredImage = toolbarCompactGlassSymbolImage(
-            symbolName: symbolName,
-            label: label,
-            pointSize: LibraryNotesLayout.toolbarNewNoteSymbolPointSize
-        )
-        configuredImage?.isTemplate = true
-
-        let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .glass
-        button.isBordered = true
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleNone
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarNewNoteWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNewNoteWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNewNoteWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-        ])
-
-        item.image = configuredImage
-        item.view = wrapper
-        return item
     }
 
     private func toolbarSymbolImage(
@@ -3335,43 +2811,8 @@ final class LibraryWindowController: NSWindowController,
             : LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha
         )
     }
-
-    private func toolbarGlassSurface(
-        identifier: String,
-        content: NSView,
-        size: NSSize,
-        cornerRadius: CGFloat
-    ) -> NSGlassEffectView {
-        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.identifier = NSUserInterfaceItemIdentifier(identifier)
-        glass.style = .regular
-        glass.cornerRadius = cornerRadius
-        glass.contentView = content
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.setContentHuggingPriority(.required, for: .horizontal)
-        glass.setContentCompressionResistancePriority(.required, for: .horizontal)
-        NSLayoutConstraint.activate([
-            glass.widthAnchor.constraint(equalToConstant: size.width),
-            glass.heightAnchor.constraint(equalToConstant: size.height)
-        ])
-        return glass
-    }
-
-    private func makeFormatToolbarImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 21, height: 16))
-        image.lockFocus()
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ]
-        ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
-        image.unlockFocus()
-        image.isTemplate = true
-        image.accessibilityDescription = "格式"
-        return image
-    }
-
     private func configureEditorTextView() {
+        editorTextView.usesUnifiedTitleLine = true
         editorTextView.setAccessibilityLabel("笔记内容")
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
@@ -7107,7 +6548,6 @@ final class LibraryWindowController: NSWindowController,
         body: String
     ) {
         refreshNoteLinks(for: noteURL, body: body)
-        knowledgeGraphWindowController?.reload()
     }
 
     private func acceptKnowledgeSuggestion(_ item: KnowledgeRelationItem) {
@@ -7153,36 +6593,6 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
         }
-    }
-
-    var canShowKnowledgeGraphForLibrary: Bool {
-        selectedURL != nil
-    }
-
-    func showKnowledgeGraphForLibrary() {
-        guard let selectedURL else { return }
-        let controller: KnowledgeGraphWindowController
-        if let existing = knowledgeGraphWindowController {
-            controller = existing
-        } else {
-            let noteStore = noteStore
-            let created = KnowledgeGraphWindowController(
-                noteStore: noteStore,
-                rootsProvider: {
-                    noteStore.preferredDirectories
-                }
-            )
-            created.onOpenNode = { [weak self] url in
-                self?.openKnowledgeRelation(at: url)
-            }
-            created.onClose = { [weak self, weak created] in
-                guard self?.knowledgeGraphWindowController === created else { return }
-                self?.knowledgeGraphWindowController = nil
-            }
-            knowledgeGraphWindowController = created
-            controller = created
-        }
-        controller.show(rootURL: selectedURL)
     }
 
     private func goBackInKnowledgeRelations() {
@@ -7235,218 +6645,8 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private func cancelKnowledgeSynthesisForSelectionChange(to nextURL: URL?) {
-        let currentPath = selectedURL?.standardizedFileURL.path
-        let nextPath = nextURL?.standardizedFileURL.path
-        guard currentPath != nextPath, knowledgeSynthesisTask != nil else { return }
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisTask = nil
-        knowledgeSynthesisGeneration += 1
-        noteLinksView.setSynthesisInProgress(false)
-    }
-
     private func setSelectedURLForLibrary(_ nextURL: URL?) {
-        cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
         selectedURL = nextURL
-        knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
-    }
-
-    private func generateHigherLayerDraft(targetLayer: KnowledgeLayer) {
-        guard selectedScope != .trash,
-              targetLayer == .line || targetLayer == .plane else {
-            return
-        }
-        guard noteStore.aiEnabled else {
-            presentErrorAlert(message: "AI 功能未启用", details: AIError.disabled.localizedDescription)
-            return
-        }
-        guard let executableURL = CodexRuntimeLocator.resolve(
-            configuredPath: noteStore.aiCodexExecutablePath
-        ) else {
-            presentErrorAlert(
-                message: "未找到本机 Codex",
-                details: AIError.providerNotConfigured.localizedDescription
-            )
-            return
-        }
-
-        do {
-            try saveCurrentNoteIfNeeded()
-        } catch {
-            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
-            return
-        }
-        guard let currentURL = selectedURL?.standardizedFileURL else { return }
-
-        let currentBody: String
-        do {
-            currentBody = try noteStore.loadNote(at: currentURL).body
-        } catch {
-            presentErrorAlert(message: "无法读取当前笔记", details: error.localizedDescription)
-            return
-        }
-        let roots = noteStore.preferredDirectories + [currentURL.deletingLastPathComponent()]
-        let relations = noteStore.knowledgeRelations(
-            for: currentURL,
-            currentBody: currentBody,
-            roots: roots,
-            suggestionLimit: 0
-        )
-        let relationItems = relations.related
-            + relations.children
-        var sourceURLs = [currentURL]
-        var seenPaths = Set([currentURL.path])
-        for item in relationItems where seenPaths.insert(item.url.standardizedFileURL.path).inserted {
-            sourceURLs.append(item.url.standardizedFileURL)
-            if sourceURLs.count == 6 { break }
-        }
-        let synthesisSourceURLs = sourceURLs
-        let sourceNames = synthesisSourceURLs.map {
-            $0.deletingPathExtension().lastPathComponent
-        }.joined(separator: "、")
-        let confirmation = NSAlert()
-        confirmation.messageText = "将 \(synthesisSourceURLs.count) 篇笔记交给 Codex 生成草案？"
-        confirmation.informativeText = "发送范围：\(sourceNames)。只包含当前笔记和已明确关联的下层/同层笔记；Codex 进程会被系统限制在临时目录，不能读取知识库中的其他文件。"
-        confirmation.addButton(withTitle: "开始生成")
-        confirmation.addButton(withTitle: "取消")
-        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
-
-        let noteStore = noteStore
-        let provider = CodexAIProvider(executableURL: executableURL)
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisGeneration += 1
-        let generation = knowledgeSynthesisGeneration
-        let previousStatus = statusLabel.stringValue
-        noteLinksView.setSynthesisInProgress(true)
-        updateEditorStatus("正在生成\(targetLayer.displayName)层草案…")
-        knowledgeSynthesisTask = Task { [weak self] in
-            do {
-                let sources = try await Task.detached(priority: .userInitiated) {
-                    try synthesisSourceURLs.map { url -> KnowledgeSynthesisSource in
-                        let note = try noteStore.loadNote(at: url)
-                        return KnowledgeSynthesisSource(
-                            title: note.title.isEmpty
-                                ? url.deletingPathExtension().lastPathComponent
-                                : note.title,
-                            markdown: note.body
-                        )
-                    }
-                }.value
-                try Task.checkCancellation()
-                let output = try await provider.generate(request: KnowledgeSynthesisRequest(
-                    targetLayer: targetLayer,
-                    sources: sources
-                ))
-                try Task.checkCancellation()
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration,
-                          self.selectedURL?.standardizedFileURL == currentURL else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus(previousStatus)
-                    self.presentKnowledgeSynthesis(
-                        output,
-                        targetLayer: targetLayer,
-                        sourceURLs: synthesisSourceURLs
-                    )
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus(previousStatus)
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration,
-                          self.selectedURL?.standardizedFileURL == currentURL else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus("草案生成失败", kind: .failure)
-                    self.presentErrorAlert(message: "无法生成上层草案", details: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    private func presentKnowledgeSynthesis(
-        _ output: String,
-        targetLayer: KnowledgeLayer,
-        sourceURLs: [URL]
-    ) {
-        let document = MarkdownEditorDocument.parse(editorText: output)
-        guard !document.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !document.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            presentErrorAlert(message: "无法创建草案", details: AIError.invalidResponse.localizedDescription)
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "生成\(targetLayer.displayName)层草案"
-        alert.informativeText = "AI 基于 \(sourceURLs.count) 篇笔记生成。只有点击“创建草案”后才会写入，原笔记不会被改动。"
-        alert.alertStyle = .informational
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 280))
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.string = output
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        alert.accessoryView = scrollView
-        alert.addButton(withTitle: "创建草案")
-        alert.addButton(withTitle: "取消")
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            window?.makeFirstResponder(editorTextView)
-            return
-        }
-
-        let referenceSourceURL = noteStore.notesDirectory
-            .appendingPathComponent("Knowledge-Synthesis.md")
-        let sourceLinks = sourceURLs.enumerated().map { index, url in
-            let title = (try? noteStore.loadNote(at: url).title)
-                .flatMap {
-                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                }
-                ?? url.deletingPathExtension().lastPathComponent
-            let link = noteStore.markdownKnowledgeLink(
-                from: referenceSourceURL,
-                to: url,
-                title: title
-            )
-            return "- S\(index + 1): \(link)"
-        }.joined(separator: "\n")
-        let body = """
-        \(document.body)
-
-        ## 来源笔记
-
-        \(sourceLinks)
-        """
-        do {
-            let savedURL = try noteStore.saveNewNote(
-                title: document.title,
-                body: body,
-                tags: ["层级/\(targetLayer.displayName)", "AI草案", "待审核"],
-                in: noteStore.notesDirectory
-            )
-            recordInternalFileSystemChanges(for: [savedURL])
-            onSave(savedURL)
-            try openMarkdownDocumentForLibrary(at: savedURL)
-            announceKnowledgeNavigation(title: document.title)
-        } catch {
-            presentErrorAlert(message: "无法创建草案", details: error.localizedDescription)
-        }
     }
 
     private func applyDocument(
@@ -8111,7 +7311,7 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.setAccessibilityValue(text)
         switch kind {
         case .normal:
-            statusLabel.textColor = panelTertiaryTextColor()
+            statusLabel.textColor = .secondaryLabelColor
         case .failure:
             statusLabel.textColor = .systemRed
         }
@@ -9103,15 +8303,7 @@ final class LibraryWindowController: NSWindowController,
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        switch dividerIndex {
-        case 0:
-            return LibraryNotesLayout.sourceColumnMinimumWidth
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return noteList.frame.minX + LibraryNotesLayout.noteColumnMinimumWidth
-        default:
-            return proposedMinimumPosition
-        }
+        dividerIndex == 0 ? LibraryNotesLayout.noteColumnMinimumWidth : proposedMinimumPosition
     }
 
     func splitView(
@@ -9119,25 +8311,9 @@ final class LibraryWindowController: NSWindowController,
         constrainMaxCoordinate proposedMaximumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        let editorLimit = splitView.bounds.width
-            - LibraryNotesLayout.editorColumnMinimumWidth
-            - splitView.dividerThickness
-        switch dividerIndex {
-        case 0:
-            let remainingColumnsLimit = splitView.bounds.width
-                - LibraryNotesLayout.noteColumnMinimumWidth
-                - LibraryNotesLayout.editorColumnMinimumWidth
-                - (splitView.dividerThickness * 2)
-            return min(LibraryNotesLayout.sourceColumnMaximumWidth, remainingColumnsLimit)
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return min(
-                noteList.frame.minX + LibraryNotesLayout.noteColumnMaximumWidth,
-                editorLimit
-            )
-        default:
-            return proposedMaximumPosition
-        }
+        guard dividerIndex == 0 else { return proposedMaximumPosition }
+        return min(LibraryNotesLayout.noteColumnMaximumWidth,
+                   splitView.bounds.width - LibraryNotesLayout.editorColumnMinimumWidth - splitView.dividerThickness)
     }
 
     @discardableResult
@@ -9147,17 +8323,20 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
-        setSourceListVisibleForLibrary(isVisible, animated: false)
+        setSourceListVisibleForLibrary(isVisible, animated: window?.isVisible == true)
     }
 
     @discardableResult
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
-        if isVisible, sourceButton.window != nil {
-            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxY)
-        } else {
+        sourcePopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if isVisible, sourceButton.window != nil, !sourcePopover.isShown {
+            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxX)
+            sourceOutlineView.window?.makeFirstResponder(sourceOutlineView)
+        } else if !isVisible {
             sourcePopover.performClose(nil)
+            window?.makeFirstResponder(sourceButton)
         }
-        return sourcePopover.isShown
+        return isVisible && sourcePopover.isShown
     }
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
@@ -9240,25 +8419,21 @@ final class LibraryWindowController: NSWindowController,
         }
         updateNoteListEmptyState(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
 
-        if animated {
-            isApplyingStoredSplitLayout = true
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
-                noteListSplitViewItem.animator().isCollapsed = false
-            } completionHandler: { [weak self] in
-                Task { @MainActor in
-                    self?.isApplyingStoredSplitLayout = false
-                    self?.completeNoteListViewModeTransition(showingGallery: showsGallery)
-                }
-            }
-        } else {
-            isApplyingStoredSplitLayout = true
-            noteListSplitViewItem.isCollapsed = false
-            librarySplitView?.adjustSubviews()
-            isApplyingStoredSplitLayout = false
-            completeNoteListViewModeTransition(showingGallery: showsGallery)
+        isApplyingStoredSplitLayout = true
+        noteListSplitViewItem.isCollapsed = false
+        librarySplitView?.adjustSubviews()
+        isApplyingStoredSplitLayout = false
+        completeNoteListViewModeTransition(showingGallery: showsGallery)
+        if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let visibleView: NSView = showsGallery ? galleryScrollView : editorStackView
+            visibleView.wantsLayer = true
+            // Replaces the previous transition in place, with no deferred focus changes.
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = visibleView.layer?.presentation()?.opacity ?? 0.65
+            fade.toValue = 1
+            fade.duration = 0.16
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            visibleView.layer?.add(fade, forKey: "library.modeTransition")
         }
         applyNoteListViewModeToolbarChrome()
     }
@@ -9543,10 +8718,9 @@ final class LibraryWindowController: NSWindowController,
             return (notePath, note)
         })
         recordInternalFileSystemChanges(for: [folderURL], includingDescendants: true)
-        let trashResult = try noteStore.trashFolderWithNoteURLs(
-            at: folderURL,
-            knownNoteURLs: notesInFolderByPath.values.map(\.url)
-        )
+        // A navigation snapshot can omit externally added or recently moved
+        // notes. Let the store enumerate the moved folder for the trash result.
+        let trashResult = try noteStore.trashFolderWithNoteURLs(at: folderURL)
         let trashedFolderURL = trashResult.directory
         let deletedAt = Date()
         trashedNotesSnapshot.append(contentsOf: trashResult.noteURLs.map { trashedURL in

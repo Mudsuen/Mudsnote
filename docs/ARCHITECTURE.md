@@ -95,7 +95,7 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 Several mature files are still deliberate hotspots. Do not read them from top to
 bottom by default:
 
-- `LibraryWindowController.swift` owns the macOS three-pane orchestration.
+- `LibraryWindowController.swift` owns the macOS two-pane orchestration and transient folder/tag picker.
 - `MarkdownRichEditorTests.swift` contains the serialized macOS integration suite.
 - `MarkdownFileStore.swift` owns the iOS filesystem transaction boundary.
 - `MarkdownPreviewView.swift` owns iOS rendering/editing helpers and presentation.

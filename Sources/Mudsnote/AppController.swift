@@ -42,6 +42,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if launchArguments.contains("--visual-qa-notes-dir"),
+           launchArguments.contains("--visual-qa-light-appearance") {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }
         let opensExternalMarkdown = !pendingExternalMarkdownURLs.isEmpty
         let opensLibrary = Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) && !opensExternalMarkdown
         NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
@@ -859,12 +863,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     @objc private func toggleLibraryLinks() { libraryWindowController?.toggleLinksPanel() }
 
     @objc
-    func showKnowledgeGraphFromMainMenu() {
-        showLibraryWindow()
-        libraryWindowController?.showKnowledgeGraphForLibrary()
-    }
-
-    @objc
     func setLibraryNoteViewModeFromMainMenu(_ sender: NSMenuItem) {
         guard let mode = LibraryNoteViewMode(rawValue: sender.tag) else { return }
         showLibraryWindow()
@@ -895,8 +893,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
         case #selector(restoreSelectedNotesFromMainMenu):
             return libraryWindowController?.canRestoreSelectedNotesFromMenuForLibrary ?? false
-        case #selector(showKnowledgeGraphFromMainMenu):
-            return libraryWindowController?.canShowKnowledgeGraphForLibrary ?? false
         case #selector(sortLibraryNotesFromMainMenu(_:)):
             let currentOrder = libraryWindowController?.noteListSortOrder
                 ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)

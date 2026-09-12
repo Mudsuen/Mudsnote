@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import MudsnoteCore
 
 final class NoteLinksView: NSView {
@@ -90,10 +91,6 @@ final class NoteLinksView: NSView {
     var onAcceptSuggestion: ((KnowledgeRelationItem) -> Void)?
     var onGoBack: (() -> Void)?
     var onGoForward: (() -> Void)?
-    // Legacy callbacks remain source-compatible while stored notes keep their original metadata.
-    var onGenerateHigherLayer: ((KnowledgeLayer) -> Void)?
-    var onShowGraph: (() -> Void)?
-    private var synthesisTargetLayer: KnowledgeLayer?
     private(set) var knowledgeRelations = KnowledgeRelations.empty
     private(set) var isExpanded = false
     private let disclosure = NSButton()
@@ -101,6 +98,8 @@ final class NoteLinksView: NSView {
     private let childrenContent = NSStackView()
     private let suggestedContent = NSStackView()
     private let details = NSStackView()
+    private let detailsClip = NSView()
+    private var detailsHeight: NSLayoutConstraint!
     private lazy var backButton = navigationButton(title: "‹", accessibilityLabel: "返回上一条笔记", action: #selector(backPressed(_:)))
     private lazy var forwardButton = navigationButton(title: "›", accessibilityLabel: "前进到下一条笔记", action: #selector(forwardPressed(_:)))
     private lazy var incomingRow = relationRow(title: "被引用", accessibilityPrefix: "引用当前笔记", content: parentsContent)
@@ -125,8 +124,19 @@ final class NoteLinksView: NSView {
         details.spacing = 8
         [parentsContent, childrenContent, suggestedContent].forEach(configureContentStack)
         [incomingRow, outgoingRow, suggestedRow].forEach(details.addArrangedSubview)
+        detailsClip.wantsLayer = true
+        detailsClip.layer?.masksToBounds = true
+        detailsClip.addSubview(details)
+        details.translatesAutoresizingMaskIntoConstraints = false
+        detailsHeight = detailsClip.heightAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            detailsHeight,
+            details.topAnchor.constraint(equalTo: detailsClip.topAnchor),
+            details.leadingAnchor.constraint(equalTo: detailsClip.leadingAnchor),
+            details.trailingAnchor.constraint(equalTo: detailsClip.trailingAnchor)
+        ])
         details.isHidden = true
-        let stack = NSStackView(views: [header, details])
+        let stack = NSStackView(views: [header, detailsClip])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -138,7 +148,7 @@ final class NoteLinksView: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             header.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            details.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            detailsClip.widthAnchor.constraint(equalTo: stack.widthAnchor),
             incomingRow.widthAnchor.constraint(equalTo: details.widthAnchor),
             outgoingRow.widthAnchor.constraint(equalTo: details.widthAnchor),
             suggestedRow.widthAnchor.constraint(equalTo: details.widthAnchor)
@@ -167,13 +177,50 @@ final class NoteLinksView: NSView {
         let count = Set((links.incoming + links.outgoing).map { $0.url.standardizedFileURL }).count
         disclosure.title = "双链 · \(count)  \(isExpanded ? "⌃" : "⌄")"
         disclosure.setAccessibilityValue(isExpanded ? "已展开" : "已收起")
+        updateExpansion(animated: false)
     }
 
     @objc func toggleExpanded() {
         isExpanded.toggle()
-        details.isHidden = !isExpanded
+        updateExpansion(animated: true)
         disclosure.title = disclosure.title.replacingOccurrences(of: isExpanded ? "⌄" : "⌃", with: isExpanded ? "⌃" : "⌄")
         disclosure.setAccessibilityValue(isExpanded ? "已展开" : "已收起")
+    }
+
+    private func updateExpansion(animated: Bool) {
+        if !isExpanded, let responder = window?.firstResponder as? NSView,
+           responder.isDescendant(of: details) {
+            window?.makeFirstResponder(disclosure)
+        }
+        details.isHidden = false
+        details.layoutSubtreeIfNeeded()
+        let targetHeight = isExpanded ? details.fittingSize.height : 0
+        let shouldAnimate = animated && window?.isVisible == true
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldAnimate else {
+            detailsHeight.constant = targetHeight
+            details.alphaValue = isExpanded ? 1 : 0
+            details.isHidden = !isExpanded
+            superview?.layoutSubtreeIfNeeded()
+            return
+        }
+        // Keep NSTextView's layout synchronous: animating its clip geometry can
+        // blank glyph tiles during live edits. Only the auxiliary links fade.
+        detailsHeight.constant = targetHeight
+        superview?.layoutSubtreeIfNeeded()
+        details.wantsLayer = true
+        if isExpanded {
+            details.alphaValue = 1
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = 0.18
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            details.layer?.add(fade, forKey: "links.disclosure")
+        } else {
+            details.layer?.removeAnimation(forKey: "links.disclosure")
+            details.isHidden = true
+        }
     }
 
     func updateNavigation(canGoBack: Bool, canGoForward: Bool) {
@@ -183,7 +230,6 @@ final class NoteLinksView: NSView {
         forwardButton.isHidden = !canGoBack && !canGoForward
     }
 
-    func setSynthesisInProgress(_ isInProgress: Bool) {}
 
     private func navigationButton(
         title: String,
@@ -207,17 +253,6 @@ final class NoteLinksView: NSView {
     @objc
     private func forwardPressed(_ sender: NSButton) {
         onGoForward?()
-    }
-
-    @objc
-    private func generateHigherLayerPressed(_ sender: NSButton) {
-        guard let targetLayer = synthesisTargetLayer else { return }
-        onGenerateHigherLayer?(targetLayer)
-    }
-
-    @objc
-    private func showGraphPressed(_ sender: NSButton) {
-        onShowGraph?()
     }
 
     private func configureContentStack(_ stack: NSStackView) {
