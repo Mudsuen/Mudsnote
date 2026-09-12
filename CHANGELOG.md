@@ -17,6 +17,11 @@ As of 2026-09-04, this prototype records 278 implementation iterations, includin
 
 ## Iterations
 
+### iPhone contrast polish — 2026-09-12
+- Problem: Primary controls and saved-state toasts used black text on dark backgrounds in light appearance.
+- Fix: Use white foregrounds in light appearance and retain black foregrounds in dark appearance.
+- Lesson: Preserve the existing side drawer, half-screen reader, layout, and interaction model during small UI polish.
+
 ### 278. Consistent capture projection and full-library performance
 - Problem: A text-only iOS capture updated the visible list without invalidating the store's in-progress metadata page, so loading the next page could replace the new projection with stale inventory; the Recent list could also grow beyond 24 items. The macOS full-library path returned every requested result but still maintained a bounded-result heap before its final sort.
 - Fix: Filesystem mutations now invalidate in-progress iOS inventory state, immediate capture projections preserve pinned/modified ordering and the 24-item Recent bound, and a large-library regression covers saving across a pending metadata page. Directory coordination now has a real file-presenter control instead of attributing existing exclusive-create behavior to the coordinator. Full-result macOS search appends matches directly before one final sort, with production-limit projection and 1,500-result search performance gates.
