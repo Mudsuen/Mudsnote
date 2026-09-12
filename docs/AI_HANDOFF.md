@@ -16,8 +16,8 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### macOS
 
-- Native three-pane library with source outline, bounded note projection,
-  list/gallery modes, and rich editor.
+- Native two-column library: material note list plus rich editor; folders and
+  flat tags live in a transient native picker. Commands live in menus/shortcuts.
 - Finder/Open Markdown routes into the library without registering an external
   file's parent. Registered roots are never moved or deleted on removal.
 - Quick capture remains a separate compact title/body flow.
@@ -33,7 +33,10 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### iPhone
 
-- Notes-style library and reader retain capture-first entry and local Markdown.
+- A plain note list opens folders in a native material sheet. iPhone reading
+  uses one large sheet; regular-width iPad keeps list and editor side by side.
+- Bidirectional links show outgoing references, backlinks, and local suggestions
+  on demand. Legacy layer metadata stays readable without hierarchy controls.
 - Folder access, lifecycle mutations, pending writes, attachments, search,
   intents, and widget converge on the same validated filesystem state.
 - Product/parity work may consult `docs/ios-apple-notes-parity-roadmap.md`.

@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-04, this prototype records 278 implementation iterations, including the initial MVP.
+As of 2026-09-12, this prototype records 279 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 279. Native two-column library and simpler note links
+- Problem: A permanent folder column, editing toolbar, and knowledge hierarchy competed with the writing surface; iPhone list cards and half-height reading layers looked too similar.
+- Fix: macOS now uses a native material list and editor with folders in a popover, quick commands in menus, and collapsed directional note links. iPhone uses a plain list, native folder sheet, and a large reader; iPad shows list and editor together. Note links remain portable Markdown, with local recommendations and backlinks derived from the existing index. Markdown note links render as navigable text instead of attachment cards.
+- Lesson: Material belongs to a meaningful navigation layer; repeating glass containers around content increases visual competition. Removing visible controls requires preserving context menus, keyboard access, and save-backed navigation.
 
 ### 278. Consistent capture projection and full-library performance
 - Problem: A text-only iOS capture updated the visible list without invalidating the store's in-progress metadata page, so loading the next page could replace the new projection with stale inventory; the Recent list could also grow beyond 24 items. The macOS full-library path returned every requested result but still maintained a bounded-result heap before its final sort.
