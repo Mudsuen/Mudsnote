@@ -458,7 +458,7 @@ struct LibraryHomeView: View {
     @State private var homeTimelineProjection = HomeTimelineProjection()
     @State private var homePageWindow = NoteListPageWindow()
     @State private var homeTitleCollapseProgress: CGFloat = 0
-    @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.gallery.rawValue
+    @AppStorage("mudsnote.ios.homeNoteViewStyle") private var viewStyleRawValue = NoteViewStyle.list.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortOrder") private var sortOrderRawValue = NoteSortOrder.modified.rawValue
     @AppStorage("mudsnote.ios.homeNoteSortDirection") private var sortDirectionRawValue = NoteSortDirection.standard.rawValue
     @AppStorage("mudsnote.ios.homeGroupNotesByDate") private var groupByDate = true
@@ -579,7 +579,7 @@ struct LibraryHomeView: View {
                                 settleDirectory(open: true, emitsHaptic: true)
                             }
                         } label: {
-                            Image(systemName: "sidebar.left")
+                            Image(systemName: "folder")
                         }
                         .accessibilityLabel(
                             isDirectoryPresented ? "Close Folders" : "Open Folders"
@@ -592,57 +592,7 @@ struct LibraryHomeView: View {
                     }
                 }
 
-                if isDirectoryPresented {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        if isManagingFolders {
-                            Button {
-                                newFolderName = ""
-                                isCreatingFolder = true
-                            } label: {
-                                Image(systemName: "folder.badge.plus")
-                            }
-                            .accessibilityLabel("New Folder")
-                            .accessibilityIdentifier("new-folder-button")
-                        } else {
-                            NavigationLink {
-                                SettingsRulesView(chooseFolder: chooseFolder)
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                            .accessibilityLabel("Settings")
-                            .accessibilityIdentifier("sidebar-settings-button")
-                        }
-                    }
-
-                    if #available(iOS 26.0, *) {
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                    }
-
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            isSearchFocused = false
-                            searchQuery = ""
-                            searchSuggestion = nil
-                            withAnimation(.snappy(duration: 0.28, extraBounce: 0.08)) {
-                                isManagingFolders.toggle()
-                            }
-                        } label: {
-                            Group {
-                                if isManagingFolders {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .accessibilityIdentifier("finish-folder-editing-icon")
-                                } else {
-                                    Text("Edit")
-                                }
-                            }
-                            .frame(minWidth: 34, minHeight: 24)
-                            .transition(.blurReplace)
-                        }
-                        .accessibilityLabel(isManagingFolders ? "Done" : "Edit")
-                        .accessibilityIdentifier("edit-folders-button")
-                    }
-                } else if isSelectingNotes {
+                if isSelectingNotes {
                     ToolbarItem(placement: .principal) {
                         VStack(spacing: 1) {
                             Text(
@@ -685,39 +635,6 @@ struct LibraryHomeView: View {
                     }
 
                 }
-            }
-            .alert("New Folder", isPresented: $isCreatingFolder) {
-                TextField("Folder Name", text: $newFolderName)
-                Button("Cancel", role: .cancel) {}
-                Button("Make Into Smart Folder") {
-                    smartFolderEditor = SmartFolderDefinition(name: newFolderName)
-                }
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Create") {
-                    let name = newFolderName
-                    Task { _ = await appModel.createFolder(named: name) }
-                }
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .sheet(item: $smartFolderEditor) { definition in
-                SmartFolderEditorView(
-                    definition: definition,
-                    isNew: !appModel.smartFolders.contains(where: { $0.id == definition.id })
-                )
-                .environmentObject(appModel)
-            }
-            .confirmationDialog(
-                "Delete Smart Folder?",
-                isPresented: smartFolderDeletePresented,
-                titleVisibility: .visible
-            ) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete Smart Folder", role: .destructive) {
-                    guard let smartFolderToDelete else { return }
-                    Task { _ = await appModel.deleteSmartFolder(smartFolderToDelete) }
-                }
-            } message: {
-                Text("Notes stay in their original folders.")
             }
             .toolbar {
                 if !isSelectingNotes {
@@ -768,6 +685,9 @@ struct LibraryHomeView: View {
         )
         .notesTranslucentTopToolbar()
         .notesGlassBottomToolbar()
+        .onChange(of: appModel.isCapturePresented) { _, presented in
+            if presented { closeDirectory() }
+        }
         .onChange(of: appModel.currentLibraryID, initial: true) {
             restoreLibraryFolderSelection()
         }
@@ -939,64 +859,89 @@ struct LibraryHomeView: View {
     }
 
     private func directoryStage(width: CGFloat) -> some View {
-        let presentation = directoryPresentation(width: width)
-        let alignment: Alignment = layoutDirection == .leftToRight ? .leading : .trailing
-        let physicalDirection: CGFloat = layoutDirection == .leftToRight ? 1 : -1
-        return ZStack(alignment: alignment) {
-            directoryPanel(width: width)
-                .offset(x: presentation.drawerOffset * physicalDirection)
-                .overlay(alignment: layoutDirection == .leftToRight ? .trailing : .leading) {
-                    Color.clear
-                        .frame(width: 32)
-                        .contentShape(Rectangle())
-                        .gesture(directoryDragGesture(width: width))
+        homeContent
+            .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+                let direction: CGFloat = layoutDirection == .leftToRight ? 1 : -1
+                if value.translation.width * direction > 70,
+                   abs(value.translation.width) > abs(value.translation.height) * 2 {
+                    isDirectoryPresented = true
                 }
-                .allowsHitTesting(presentation.reveal > 0)
-                .accessibilityHidden(presentation.reveal <= 0)
-
-            homeContent
-                .background(NotesCloneColors.background)
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: presentation.cornerRadius,
-                        style: .continuous
-                    )
-                )
-                .shadow(
-                    color: .black.opacity(presentation.shadowOpacity),
-                    radius: 14,
-                    x: -4 * physicalDirection
-                )
-                .offset(x: presentation.contentOffset * physicalDirection)
-                .allowsHitTesting(presentation.reveal <= 0)
-
-            Color.black
-                .opacity(presentation.scrimOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .offset(x: presentation.contentOffset * physicalDirection)
-                .onTapGesture(perform: closeDirectory)
-                .gesture(directoryDragGesture(width: width))
-                .allowsHitTesting(presentation.reveal > 0)
-                .accessibilityLabel("Close Folders")
-                .accessibilityIdentifier("directory-backdrop")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHidden(presentation.reveal <= 0)
-
-            if !isDirectoryPresented {
-                Color.clear
-                    .frame(width: 32)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        directoryDragGesture(width: width, minimumDistance: 4)
-                    )
-                    .accessibilityElement()
-                    .accessibilityLabel("Swipe right for folders")
-                    .accessibilityIdentifier("directory-swipe-edge")
+            })
+            .sheet(isPresented: Binding(
+                get: { isDirectoryPresented && !appModel.isCapturePresented },
+                set: { isDirectoryPresented = $0 }
+            )) {
+                NavigationStack {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 24) {
+                            accountSection
+                            if !appModel.smartFolders.isEmpty { smartFoldersSection }
+                            if !appModel.tagSummaries.isEmpty { tagsSection }
+                        }
+                        .padding(20)
+                    }
+                    .navigationTitle("Folders")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { closeDirectory() }
+                        }
+                        ToolbarItem(placement: .topBarLeading) {
+                            Menu {
+                                Button("New Folder", systemImage: "folder.badge.plus") {
+                                    newFolderName = ""
+                                    isCreatingFolder = true
+                                }
+                                Button(isManagingFolders ? "Done" : "Edit", systemImage: "pencil") {
+                                    isManagingFolders.toggle()
+                                }
+                                NavigationLink {
+                                    SettingsRulesView(chooseFolder: chooseFolder)
+                                } label: { Label("Settings", systemImage: "gearshape") }
+                            } label: { Image(systemName: "ellipsis") }
+                            .accessibilityLabel("Folder actions")
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+                .accessibilityIdentifier("directory-drawer")
+            .alert("New Folder", isPresented: $isCreatingFolder) {
+                TextField("Folder Name", text: $newFolderName)
+                Button("Cancel", role: .cancel) {}
+                Button("Make Into Smart Folder") {
+                    smartFolderEditor = SmartFolderDefinition(name: newFolderName)
+                }
+                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Create") {
+                    let name = newFolderName
+                    Task { _ = await appModel.createFolder(named: name) }
+                }
+                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            .sheet(item: $smartFolderEditor) { definition in
+                SmartFolderEditorView(
+                    definition: definition,
+                    isNew: !appModel.smartFolders.contains(where: { $0.id == definition.id })
+                )
+                .environmentObject(appModel)
+            }
+            .confirmationDialog(
+                "Delete Smart Folder?",
+                isPresented: smartFolderDeletePresented,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete Smart Folder", role: .destructive) {
+                    guard let smartFolderToDelete else { return }
+                    Task { _ = await appModel.deleteSmartFolder(smartFolderToDelete) }
+                }
+            } message: {
+                Text("Notes stay in their original folders.")
+            }
+
+            }
     }
 
     private var navigationTitle: String {
@@ -1012,12 +957,7 @@ struct LibraryHomeView: View {
 
     private var homePrincipalTitle: some View {
         ZStack {
-            if isDirectoryPresented {
-                Color.clear
-            } else {
-                homeCompactTitle
-                    .transition(.opacity)
-            }
+            homeCompactTitle
         }
         .frame(minWidth: 92, minHeight: 36)
         .animation(
@@ -1808,14 +1748,7 @@ struct LibraryHomeView: View {
     }
 
     private func notesCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
-        }
-        .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: MudsnoteRadius.card))
-        .overlay {
-            RoundedRectangle(cornerRadius: MudsnoteRadius.card)
-                .stroke(MudsnoteColors.line, lineWidth: 1)
-        }
+        VStack(spacing: 0) { content() }
     }
 
 }
@@ -3737,13 +3670,9 @@ private struct HomeTimelineListSection: View {
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
                     )
-                    .padding(.horizontal, 14)
-                    .mudsnoteGlassSurface(
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(MudsnoteColors.line, lineWidth: 1)
+                    .padding(.horizontal, 4)
+                    .overlay(alignment: .bottom) {
+                        Divider().accessibilityHidden(true)
                     }
                     .task(id: entry.fileNeedingContent?.relativePath) {
                         guard let file = entry.fileNeedingContent else { return }
@@ -3818,7 +3747,11 @@ private struct HomeTimelineListEntryButton: View {
     var toggleSelection: () -> Void
 
     var body: some View {
-        Button {
+        Group {
+            if !isSelecting, case .file(let file) = entry {
+                NoteFileButton(file: file, dateBasis: .modified)
+            } else {
+                Button {
             if isSelecting {
                 toggleSelection()
             } else {
@@ -3840,8 +3773,17 @@ private struct HomeTimelineListEntryButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(
-            isSelecting ? "selectable-home-note-\(entry.id)" : "home-list-note-\(entry.id)"
+            isSelecting ? "selectable-home-note-\(entry.id)" : noteAccessibilityID
         )
+        }
+        }
+    }
+
+    private var noteAccessibilityID: String {
+        switch entry {
+        case .file(let file): "markdown-file-row-\(file.id)"
+        case .memo(let memo): "memo-row-\(memo.id)"
+        }
     }
 
     @ViewBuilder
@@ -4206,6 +4148,11 @@ struct NoteFileButton: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .buttonStyle(.plain)
+        .background(
+            appModel.selectedDocument?.relativePath == file.relativePath ? Color.accentColor.opacity(0.14) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .accessibilityAddTraits(appModel.selectedDocument?.relativePath == file.relativePath ? .isSelected : [])
         .accessibilityIdentifier("markdown-file-row-\(file.id)")
         .modifier(NoteLifecycleActions(file: file))
     }
@@ -4784,8 +4731,7 @@ struct NotesFolderRow: View {
                 .font(.system(size: 20, weight: .semibold))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(iconTint)
-                .frame(width: 36, height: 36)
-                .background(iconTint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                .frame(width: 28, height: 36)
 
             Text(title)
                 .font(.system(.body, design: .rounded, weight: .medium))
@@ -6380,7 +6326,7 @@ struct NotesListRowContent: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 7) {
                 Text(title)
-                    .font(.system(.body, design: .rounded, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(MudsnoteColors.text)
                     .lineLimit(2)
 
@@ -6442,7 +6388,7 @@ struct NotesListRowContent: View {
             Text(preview)
                 .font(.subheadline)
                 .foregroundStyle(MudsnoteColors.muted)
-                .lineLimit(3)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -2142,193 +2142,25 @@ final class MudsnoteCompanionUITests: XCTestCase {
     }
 
     func testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory() {
-        let app = launchApp(
-            reset: true,
-            fixtureFolder: true,
-            batchNotes: true,
-            homeScrollNotes: true,
-            openDirectory: false
-        )
-
-        let navigationBar = app.navigationBars.firstMatch
-        let largeTitle = app.otherElements["home-large-title"]
-        let compactTitle = app.otherElements["home-compact-title"]
-        XCTAssertTrue(largeTitle.waitForExistence(timeout: 8))
-        XCTAssertTrue(navigationBar.exists)
-        let expandedTitleFrame = largeTitle.frame
-        XCTAssertGreaterThan(expandedTitleFrame.height, 30)
-        XCTAssertTrue(app.scrollViews["home-note-gallery"].exists)
-        XCTAssertTrue(app.buttons["directory-button"].exists)
-        let options = app.buttons["home-note-options"]
-        XCTAssertTrue(options.exists)
-        let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-        let second = app.buttons["markdown-file-row-Projects/Second UI Note.md"]
-        XCTAssertTrue(first.waitForExistence(timeout: 5))
-        XCTAssertTrue(second.exists)
-        let expandedTitleScreenshot = XCTAttachment(screenshot: app.screenshot())
-        expandedTitleScreenshot.name = "Home native expanded Notes title"
-        expandedTitleScreenshot.lifetime = .keepAlways
-        add(expandedTitleScreenshot)
-        XCTAssertTrue(
-            first.frame.maxX < second.frame.minX
-                || second.frame.maxX < first.frame.minX
-        )
-        XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 2)
-        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
-
-        XCTAssertTrue(
-            openMenu(options, expecting: app.buttons["View as List"])
-        )
-        XCTAssertTrue(app.buttons["Select Notes"].exists)
-        XCTAssertTrue(
-            app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label BEGINSWITH %@", "Sort By"))
-                .firstMatch.exists
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)
-                .matching(NSPredicate(format: "label BEGINSWITH %@", "Group By Date"))
-                .firstMatch.exists
-        )
-        XCTAssertTrue(app.buttons["View Attachments"].exists)
-        let menuScreenshot = XCTAttachment(screenshot: app.screenshot())
-        menuScreenshot.name = "Home Notes-style more menu"
-        menuScreenshot.lifetime = .keepAlways
-        add(menuScreenshot)
-
-        app.buttons["View Attachments"].tap()
-        XCTAssertTrue(app.navigationBars["Attachments"].waitForExistence(timeout: 5))
-        app.navigationBars["Attachments"].buttons.firstMatch.tap()
-        XCTAssertTrue(largeTitle.waitForExistence(timeout: 5))
-
-        XCTAssertTrue(
-            openMenu(options, expecting: app.buttons["View as List"])
-        )
-        app.buttons["View as List"].tap()
-
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true, openDirectory: false)
         let list = app.scrollViews["home-note-list"]
-        XCTAssertTrue(list.waitForExistence(timeout: 5))
-        let listFirst = app.buttons["home-list-note-file:Projects/UI Lifecycle.md"]
-        XCTAssertTrue(listFirst.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(listFirst.frame.width, app.frame.width * 0.78)
-        let listScreenshot = XCTAttachment(screenshot: app.screenshot())
-        listScreenshot.name = "Home single-column detailed list"
-        listScreenshot.lifetime = .keepAlways
-        add(listScreenshot)
-
-        XCTAssertTrue(
-            openMenu(options, expecting: app.buttons["View as Cards"])
-        )
-        app.buttons["View as Cards"].tap()
-        XCTAssertTrue(app.scrollViews["home-note-gallery"].waitForExistence(timeout: 5))
-
-        let gallery = app.scrollViews["home-note-gallery"]
-        let firstCardBeforeScroll = first.frame.minY
-        gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-            .press(
-                forDuration: 0.05,
-                thenDragTo: gallery.coordinate(
-                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
-                )
-        )
-        XCTAssertTrue(app.staticTexts["Today"].exists)
-        XCTAssertTrue(compactTitle.waitForExistence(timeout: 3))
-        XCTAssertTrue(navigationBar.frame.intersects(compactTitle.frame))
-        XCTAssertFalse(largeTitle.isHittable)
-        XCTAssertLessThan(
-            first.frame.minY,
-            firstCardBeforeScroll - 20,
-            "The home gallery should move vertically when the user scrolls"
-        )
-        let scrolledScreenshot = XCTAttachment(screenshot: app.screenshot())
-        scrolledScreenshot.name = "Home cards scroll without opaque pinned overlay"
-        scrolledScreenshot.lifetime = .keepAlways
-        add(scrolledScreenshot)
-        gallery.swipeDown()
-        XCTAssertTrue(largeTitle.waitForExistence(timeout: 3))
-        XCTAssertTrue(largeTitle.isHittable)
-        XCTAssertTrue(
-            compactTitle.waitForNonExistence(timeout: 3),
-            "The compact title should leave the accessibility tree after the large title returns"
-        )
-
-        app.terminate()
-        app.launchArguments.append("-ui-testing-open-directory")
-        app.launch()
-
-        let appWindow = app.windows.firstMatch
-        XCTAssertTrue(appWindow.exists)
-        let projectsFolder = app.buttons["folder-row-Projects"]
-        XCTAssertTrue(projectsFolder.waitForExistence(timeout: 8))
-        XCTAssertTrue(projectsFolder.isHittable)
-        XCTAssertTrue(app.staticTexts["Folders"].exists)
-        XCTAssertFalse(app.staticTexts["Library"].exists)
-        XCTAssertTrue(app.buttons["sidebar-settings-button"].exists)
-
-        let attachments = app.buttons["attachments-link"]
-        let recentlyDeleted = app.buttons["recently-deleted-link"]
-        XCTAssertTrue(attachments.exists)
-        XCTAssertTrue(recentlyDeleted.exists)
-        XCTAssertEqual(attachments.frame.midY, recentlyDeleted.frame.midY, accuracy: 2)
-        XCTAssertFalse(app.staticTexts["Attachments"].exists)
-        XCTAssertFalse(app.staticTexts["Recently Deleted"].exists)
-        XCTAssertFalse(app.staticTexts["All Tags"].exists)
-
-        let projectsCount = app.staticTexts["folder-count-Projects"]
-        XCTAssertFalse(app.buttons["folder-row-000-inbox"].exists)
-        XCTAssertTrue(projectsCount.exists)
-
+        XCTAssertTrue(list.waitForExistence(timeout: 8))
+        let first = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(first.exists)
+        XCTAssertGreaterThan(first.frame.width, app.frame.width * 0.78)
+        let folderButton = app.buttons["directory-button"]
+        XCTAssertTrue(folderButton.isHittable)
+        folderButton.tap()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        projects.tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["note-bidirectional-links"].waitForExistence(timeout: 5))
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Home cards with left directory drawer"
+        screenshot.name = "Native reader and collapsed bidirectional links"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-
-        projectsFolder.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
-        ).tap()
-        XCTAssertTrue(
-            app.scrollViews["home-note-gallery-folder:Projects"]
-                .waitForExistence(timeout: 3)
-        )
-        XCTAssertTrue(
-            app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertFalse(app.navigationBars["Projects"].exists)
-
-        app.terminate()
-        app.launch()
-        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 8))
-
-        let editFolders = app.buttons["edit-folders-button"]
-        XCTAssertTrue(editFolders.isHittable)
-        editFolders.tap()
-        XCTAssertEqual(editFolders.label, "Done")
-
-        let closeSwipeStart = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.94, dy: 0.45)
-        )
-        let closeSwipeEnd = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.04, dy: 0.45)
-        )
-        closeSwipeStart.press(
-            forDuration: 0.15,
-            thenDragTo: closeSwipeEnd,
-            withVelocity: .slow,
-            thenHoldForDuration: 0.1
-        )
-        XCTAssertTrue(app.otherElements["home-large-title"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["folder-row-Projects"].isHittable)
-
-        app.terminate()
-        app.launch()
-        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["folder-row-Projects"].isHittable)
-        XCTAssertEqual(
-            app.buttons["edit-folders-button"].label,
-            "Edit",
-            "Closing by drag should leave folder editing mode"
-        )
     }
 
     func testDirectoryDrawerRespondsToOppositeFingerTrackedGestures() {
@@ -2406,45 +2238,43 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(closedScreenshot)
     }
 
+    func testRegularWidthLibraryKeepsNotesBesideEditor() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launchApp(reset: true, fixtureFolder: true, openDirectory: false)
+        let note = app.buttons["markdown-file-row-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(note.waitForExistence(timeout: 8))
+        note.press(forDuration: 1)
+        let edit = app.buttons["edit-note-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 4))
+        edit.tap()
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertTrue(note.isHittable)
+        XCTAssertGreaterThan(editor.frame.minX, note.frame.maxX)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "iPad two-column native library"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testNotesTopBarMaterialAcrossHomeAndDirectoryStates() {
-        let app = launchApp(
-            reset: true,
-            fixtureFolder: true,
-            batchNotes: true,
-            homeScrollNotes: true,
-            openDirectory: false
-        )
-        let gallery = app.scrollViews["home-note-gallery"]
-        XCTAssertTrue(gallery.waitForExistence(timeout: 8))
-
-        let expandedScreenshot = XCTAttachment(screenshot: app.screenshot())
-        expandedScreenshot.name = "Notes translucent top bar expanded"
-        expandedScreenshot.lifetime = .keepAlways
-        add(expandedScreenshot)
-
-        gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-            .press(
-                forDuration: 0.05,
-                thenDragTo: gallery.coordinate(
-                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)
-                )
-            )
-        XCTAssertTrue(app.otherElements["home-compact-title"].waitForExistence(timeout: 3))
-        let compactScreenshot = XCTAttachment(screenshot: app.screenshot())
-        compactScreenshot.name = "Notes translucent top bar compact"
-        compactScreenshot.lifetime = .keepAlways
-        add(compactScreenshot)
-
-        app.terminate()
-        app.launchArguments.append("-ui-testing-open-directory")
-        app.launch()
-        XCTAssertTrue(
-            app.staticTexts["Folders"].waitForExistence(timeout: 8)
-        )
-        let directoryScreenshot = XCTAttachment(screenshot: app.screenshot())
-        directoryScreenshot.name = "Notes translucent top bar directory"
-        directoryScreenshot.lifetime = .keepAlways
-        add(directoryScreenshot)
+        let app = launchApp(reset: true, fixtureFolder: true, batchNotes: true, openDirectory: false)
+        XCTAssertTrue(app.scrollViews["home-note-list"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["directory-button"].isHittable)
+        let home = XCTAttachment(screenshot: app.screenshot())
+        home.name = "Native list and navigation material"
+        home.lifetime = .keepAlways
+        add(home)
+        app.buttons["directory-button"].tap()
+        XCTAssertTrue(app.buttons["folder-row-Projects"].waitForExistence(timeout: 5))
+        let folders = XCTAttachment(screenshot: app.screenshot())
+        folders.name = "Native material folder picker"
+        folders.lifetime = .keepAlways
+        add(folders)
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["new-note-button"].waitForExistence(timeout: 5))
     }
 
     func testNotesAndFoldersShareOneRestrainedPrincipalTitleSlot() {
@@ -3012,7 +2842,7 @@ final class MudsnoteCompanionUITests: XCTestCase {
             captureRoute ? "-ui-testing-capture-route" : nil,
             markdownStyles ? "-ui-testing-markdown-styles" : nil,
             inboxFolder ? "-ui-testing-inbox-folder" : nil,
-            fixtureFolder && openDirectory ? "-ui-testing-open-directory" : nil
+            fixtureFolder && openDirectory && !captureRoute && !searchRoute ? "-ui-testing-open-directory" : nil
         ].compactMap { $0 }
         if accessibilityText {
             app.launchArguments += [

@@ -344,6 +344,9 @@ actor MarkdownFileStore {
                 state.markdownFiles[pending.fileIndex].hasUncheckedChecklist =
                     listMetadata.hasUncheckedChecklist
                 state.markdownFiles[pending.fileIndex].tags = listMetadata.tags
+                state.markdownFiles[pending.fileIndex].linkedNotePaths = Set(listMetadata.noteLinkDestinations.compactMap {
+                    MarkdownNoteLink.resolvedRelativePath(for: $0, from: pending.relativePath)
+                })
                 state.markdownFiles[pending.fileIndex].isContentLoaded = true
             }
             state.pendingListMetadata.removeSubrange(contentStartIndex..<contentEndIndex)
@@ -2855,7 +2858,10 @@ actor MarkdownFileStore {
             hasAttachments: metadata.hasAttachments,
             hasChecklist: metadata.hasChecklist,
             hasUncheckedChecklist: metadata.hasUncheckedChecklist,
-            tags: metadata.tags
+            tags: metadata.tags,
+            linkedNotePaths: Set(metadata.noteLinkDestinations.compactMap {
+                MarkdownNoteLink.resolvedRelativePath(for: $0, from: relativePath)
+            })
         )
     }
 
@@ -3227,7 +3233,10 @@ actor MarkdownFileStore {
                 hasAttachments: metadata.hasAttachments,
                 hasChecklist: metadata.hasChecklist,
                 hasUncheckedChecklist: metadata.hasUncheckedChecklist,
-                tags: metadata.tags
+                tags: metadata.tags,
+            linkedNotePaths: Set(metadata.noteLinkDestinations.compactMap {
+                MarkdownNoteLink.resolvedRelativePath(for: $0, from: relativePath)
+            })
             )
         } catch {
             for attachmentURL in createdAttachmentURLs.reversed() {
