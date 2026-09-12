@@ -408,7 +408,7 @@ final class MudsnoteCompanionTests: XCTestCase {
         )
         XCTAssertEqual(
             ReaderPresentationPolicy.detents(isEditing: false),
-            [.medium, .large]
+            [.large]
         )
     }
 
@@ -5617,6 +5617,15 @@ final class MudsnoteCompanionTests: XCTestCase {
             "mailto:hello@example.com"
         )
         XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
+    }
+
+    func testBacklinkMetadataExcludesImagesExternalLinksAndTraversal() {
+        let markdown = "[Note](../Reference/Next.md) ![Image](./Picture.md) [Web](https://example.com) [Escape](../../outside.md)"
+        let metadata = MarkdownListMetadata.extract(from: markdown, fallbackTitle: "Current")
+        let targets = Set(metadata.noteLinkDestinations.compactMap {
+            MarkdownNoteLink.resolvedRelativePath(for: $0, from: "Projects/Current.md")
+        })
+        XCTAssertEqual(targets, ["Reference/Next.md"])
     }
 
     func testMarkdownNoteLinksArePortableRelativeAndTraversalSafe() throws {
