@@ -231,7 +231,6 @@ struct MarkdownPreviewView: View {
     @State private var findAttachmentDocuments: [AttachmentSearchDocument] = []
     @State private var isLoadingFindAttachments = false
     @State private var linkedSourceHistory: [Source] = []
-    @State private var showsNoteLinks = false
     @State private var exportedPDF: ExportedNotePDF?
     @State private var isExportingPDF = false
     @State private var pdfExportErrorMessage: String?
@@ -351,7 +350,6 @@ struct MarkdownPreviewView: View {
                                         })
                                         .accessibilityElement(children: .contain)
                                         .accessibilityIdentifier("rendered-markdown")
-                                    noteLinksSection
                                 }
                                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
                                     .padding(.top, MudsnoteSpacing.safeHorizontal)
@@ -687,70 +685,6 @@ struct MarkdownPreviewView: View {
             "Inbox.md"
         case .document(let document):
             document.relativePath
-        }
-    }
-
-    private var noteLinksSection: some View {
-        let path = currentSourceRelativePath
-        let outgoingPaths = MarkdownNoteLink.linkedPaths(in: draftMarkdown, from: path)
-        let outgoing = linkableNotes.filter { outgoingPaths.contains($0.relativePath) }
-        let incoming = linkableNotes.filter { $0.linkedNotePaths.contains(path) }
-        let linkedPaths = Set((outgoing + incoming).map(\.relativePath))
-        let tags = Set((noteTags + MarkdownTagSyntax.tags(in: draftMarkdown)).map(MarkdownTagSyntax.key))
-        let suggestions = linkableNotes.filter {
-            !linkedPaths.contains($0.relativePath) && !tags.isDisjoint(with: $0.tags.map(MarkdownTagSyntax.key))
-        }.prefix(3)
-        return DisclosureGroup(isExpanded: $showsNoteLinks) {
-            VStack(alignment: .leading, spacing: 12) {
-                noteLinkRows("Links to", notes: outgoing)
-                noteLinkRows("Referenced by", notes: incoming)
-                if !appModel.libraryFiles.allSatisfy(\.isContentLoaded) {
-                    ProgressView("Indexing links…").font(.caption)
-                }
-                if !suggestions.isEmpty {
-                    Text("Suggested links").font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(suggestions)) { note in
-                        HStack {
-                            Button { Task { await openLinkedNote(note) } } label: {
-                                Label(note.title, systemImage: "doc.text")
-                            }
-                            Spacer()
-                            Button("Link") { addSuggestedLink(note) }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                }
-            }
-            .padding(.top, 8)
-        } label: {
-            Label("Links · \(linkedPaths.count)", systemImage: "link")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.top, 24)
-        .accessibilityIdentifier("note-bidirectional-links")
-    }
-
-    private func addSuggestedLink(_ note: RecentMarkdownFile) {
-        guard let destination = MarkdownNoteLink.relativeDestination(from: currentSourceRelativePath, to: note.relativePath) else { return }
-        let label = note.title.replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
-        beginEditingFromReader()
-        draftMarkdown += "\n\n[\(label)](\(destination))\n"
-    }
-
-    private func noteLinkRows(_ title: LocalizedStringKey, notes: [RecentMarkdownFile]) -> some View {
-        Group {
-            if !notes.isEmpty {
-                Text(title).font(.caption).foregroundStyle(.secondary)
-                ForEach(notes) { note in
-                    Button { Task { await openLinkedNote(note) } } label: {
-                        Label(note.title, systemImage: "doc.text")
-                            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                }
-            }
         }
     }
 

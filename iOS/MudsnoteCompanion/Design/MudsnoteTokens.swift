@@ -33,8 +33,8 @@ enum MudsnoteAppearance: String, CaseIterable, Identifiable {
 }
 
 enum MudsnoteColors {
-    static let canvas = Color(uiColor: .systemGroupedBackground)
-    static let panel = Color(uiColor: .systemBackground)
+    static let canvas = adaptive(light: 0xF4F4F7, dark: 0x000000)
+    static let panel = adaptive(light: 0xFBFBFD, dark: 0x080808)
     static let card = adaptive(
         light: 0x000000,
         dark: 0xFFFFFF,
@@ -47,8 +47,8 @@ enum MudsnoteColors {
         lightAlpha: 0.13,
         darkAlpha: 0.22
     )
-    static let text = Color(uiColor: .label)
-    static let muted = Color(uiColor: .secondaryLabel)
+    static let text = adaptive(light: 0x17171A, dark: 0xF7F7F7)
+    static let muted = adaptive(light: 0x68686F, dark: 0xB8B8BD)
     static let primary = adaptive(light: 0x17171A, dark: 0xF7F7F7)
     static let captureAccent = Color(uiColor: .systemBlue)
 
@@ -118,7 +118,17 @@ extension View {
 
 struct MudsnoteReaderSheetBackground: View {
     var body: some View {
-        Rectangle().fill(.regularMaterial)
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.055),
+                    MudsnoteColors.panel.opacity(0.96),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
         .ignoresSafeArea()
         .accessibilityElement()
         .accessibilityIdentifier("note-reader-surface")

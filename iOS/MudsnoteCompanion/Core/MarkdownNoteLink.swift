@@ -5,17 +5,6 @@ enum MarkdownNoteLink {
         pattern: #"(?<!!)\[[^\]\n]+\]\(([^)\n]+)\)"#
     )
 
-    static func destinations(in markdown: String) -> [String] {
-        let text = markdown as NSString
-        return linkExpression.matches(in: markdown, range: NSRange(location: 0, length: text.length))
-            .map { text.substring(with: $0.range(at: 1)) }
-    }
-
-    static func linkedPaths(in markdown: String, from sourcePath: String) -> Set<String> {
-        Set(destinations(in: markdown).compactMap { resolvedRelativePath(for: $0, from: sourcePath) })
-            .subtracting([sourcePath])
-    }
-
     static func relativeDestination(
         from sourceRelativePath: String,
         to targetRelativePath: String

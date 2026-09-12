@@ -2,16 +2,19 @@ import SwiftUI
 
 enum ReaderPresentationPolicy {
     static func detents(isEditing: Bool) -> Set<PresentationDetent> {
-        [.large]
+        isEditing ? [.large] : [.medium, .large]
     }
 }
 
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isFolderImporterPresented = false
-    @State private var readerDetent: PresentationDetent = .large
+    @State private var readerDetent: PresentationDetent = .medium
     @State private var isReaderEditing = false
+
+    private var usesFullReaderForUITests: Bool {
+        ProcessInfo.processInfo.arguments.contains("-ui-testing-full-reader")
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -36,6 +39,26 @@ struct RootView: View {
                         forgetFolder: { appModel.forgetFolderAndChooseAgain() }
                     )
                 }
+            }
+
+            if isHalfReaderPresented {
+                MudsnoteColors.panel
+                    .frame(height: 72)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        appModel.selectedMemo = nil
+                        appModel.selectedDocument = nil
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("Close note")
+                    .accessibilityIdentifier("note-reader-background-dismiss")
             }
 
             if let toast = appModel.statusToast {
@@ -64,9 +87,9 @@ struct RootView: View {
             CaptureConsoleView(initialRoute: appModel.captureRoute)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
+                .presentationBackground(MudsnoteColors.panel.opacity(0.96))
         }
-        .sheet(item: Binding(get: { horizontalSizeClass == .regular ? nil : appModel.selectedMemo }, set: { appModel.selectedMemo = $0 })) { memo in
+        .sheet(item: $appModel.selectedMemo) { memo in
             MarkdownPreviewView(
                 memo: memo,
                 startsEditing: appModel.noteOpenMode == .edit,
@@ -75,13 +98,13 @@ struct RootView: View {
             )
                 .presentationDetents(readerDetents, selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
-                .presentationBackgroundInteraction(.disabled)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground {
                     MudsnoteReaderSheetBackground()
                 }
         }
-        .sheet(item: Binding(get: { horizontalSizeClass == .regular ? nil : appModel.selectedDocument }, set: { appModel.selectedDocument = $0 })) { document in
+        .sheet(item: $appModel.selectedDocument) { document in
             MarkdownPreviewView(
                 document: document,
                 startsEditing: appModel.noteOpenMode == .edit,
@@ -90,7 +113,7 @@ struct RootView: View {
             )
                 .presentationDetents(readerDetents, selection: $readerDetent)
                 .presentationContentInteraction(.scrolls)
-                .presentationBackgroundInteraction(.disabled)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationDragIndicator(.visible)
                 .presentationBackground {
                     MudsnoteReaderSheetBackground()
@@ -98,7 +121,9 @@ struct RootView: View {
         }
         .onChange(of: appModel.selectedMemo?.id) { _, id in
             if id != nil {
-                readerDetent = .large
+                readerDetent = usesFullReaderForUITests || appModel.noteOpenMode == .edit
+                    ? .large
+                    : .medium
                 appModel.isReaderExpanded = readerDetent == .large
             } else {
                 appModel.noteOpenMode = .read
@@ -107,8 +132,12 @@ struct RootView: View {
             }
         }
         .onChange(of: appModel.selectedDocument?.id) { _, id in
-            if id != nil {
-                readerDetent = .large
+            if let document = appModel.selectedDocument, id != nil {
+                readerDetent = usesFullReaderForUITests
+                    || document.isNew
+                    || appModel.noteOpenMode == .edit
+                    ? .large
+                    : .medium
                 appModel.isReaderExpanded = readerDetent == .large
             } else {
                 appModel.noteOpenMode = .read
@@ -121,27 +150,15 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
     private var tabShell: some View {
-        if horizontalSizeClass == .regular {
-            NavigationSplitView {
-                LibraryHomeView { isFolderImporterPresented = true }
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
-            } detail: {
-                if let document = appModel.selectedDocument {
-                    MarkdownPreviewView(document: document, startsEditing: document.isNew || appModel.noteOpenMode == .edit)
-                        .id(document.id)
-                } else if let memo = appModel.selectedMemo {
-                    MarkdownPreviewView(memo: memo, startsEditing: appModel.noteOpenMode == .edit)
-                        .id(memo.id)
-                } else {
-                    ContentUnavailableView("Notes", systemImage: "note.text")
-                }
-            }
-            .navigationSplitViewStyle(.balanced)
-        } else {
-            LibraryHomeView { isFolderImporterPresented = true }
+        LibraryHomeView {
+            isFolderImporterPresented = true
         }
+    }
+
+    private var isHalfReaderPresented: Bool {
+        !appModel.isReaderExpanded
+            && (appModel.selectedMemo != nil || appModel.selectedDocument != nil)
     }
 
     private var readerDetents: Set<PresentationDetent> {
@@ -160,8 +177,8 @@ struct RootView: View {
             expandReaderForEditing()
         } else if appModel.selectedMemo != nil || appModel.selectedDocument != nil {
             appModel.noteOpenMode = .read
-            readerDetent = .large
-            appModel.isReaderExpanded = true
+            readerDetent = .medium
+            appModel.isReaderExpanded = false
         }
     }
 }

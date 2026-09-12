@@ -14,7 +14,6 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var hasUncheckedChecklist = false
     var isPinned = false
     var tags: [String] = []
-    var linkedNotePaths: Set<String> = []
     var isContentLoaded = true
 }
 
@@ -33,7 +32,6 @@ struct MarkdownListMetadata: Equatable {
     var hasUncheckedChecklist: Bool
     var tags: [String] = []
     var attachmentPaths: [String] = []
-    var noteLinkDestinations: [String] = []
 
     static func extract(from markdown: String, fallbackTitle: String) -> MarkdownListMetadata {
         let lines = visibleMarkdownLines(from: markdown)
@@ -100,8 +98,7 @@ struct MarkdownListMetadata: Equatable {
                 ) != nil
             },
             tags: MarkdownTagSyntax.tags(in: markdown),
-            attachmentPaths: MarkdownAttachmentSearch.relativePaths(in: markdown),
-            noteLinkDestinations: MarkdownNoteLink.destinations(in: markdown)
+            attachmentPaths: MarkdownAttachmentSearch.relativePaths(in: markdown)
         )
     }
 
