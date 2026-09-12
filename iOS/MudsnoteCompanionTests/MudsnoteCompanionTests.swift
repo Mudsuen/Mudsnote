@@ -5,141 +5,6 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
-    func testDirectoryDrawerMotionTracksOneContinuousPresentation() {
-        let presentation = DirectoryDrawerMotion.presentation(
-            isOpen: false,
-            translation: 160,
-            width: 320
-        )
-
-        XCTAssertEqual(presentation.reveal, 160)
-        XCTAssertEqual(presentation.progress, 0.5)
-        XCTAssertEqual(presentation.contentOffset, 160, accuracy: 0.001)
-        XCTAssertEqual(presentation.drawerOffset, -160, accuracy: 0.001)
-        XCTAssertEqual(presentation.cornerRadius, 14, accuracy: 0.001)
-        XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
-        XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
-    }
-
-    func testDirectoryDrawerMotionUsesSymmetricOpenAndClosePresentations() {
-        let opening = DirectoryDrawerMotion.presentation(
-            isOpen: false,
-            translation: 160,
-            width: 320
-        )
-        let closing = DirectoryDrawerMotion.presentation(
-            isOpen: true,
-            translation: -160,
-            width: 320
-        )
-
-        XCTAssertEqual(opening, closing)
-        XCTAssertEqual(
-            DirectoryDrawerMotion.reveal(isOpen: false, translation: -80, width: 320),
-            0
-        )
-        XCTAssertEqual(
-            DirectoryDrawerMotion.reveal(isOpen: true, translation: 80, width: 320),
-            320
-        )
-    }
-
-    func testDirectoryDrawerMotionSeparatesHorizontalIntentFromVerticalScrolling() {
-        XCTAssertEqual(
-            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 3, height: 1)),
-            .undecided
-        )
-        XCTAssertEqual(
-            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 7, height: 6.5)),
-            .horizontal
-        )
-        XCTAssertEqual(
-            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 9, height: 6)),
-            .horizontal
-        )
-        XCTAssertEqual(
-            DirectoryDrawerMotion.dragAxis(for: CGSize(width: 5, height: 9)),
-            .vertical
-        )
-    }
-
-    func testDirectoryDrawerMotionUsesDistanceAndProjectedMomentum() {
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldOpen(
-                isOpen: false,
-                translation: 120,
-                projectedTranslation: 130,
-                width: 320
-            )
-        )
-        XCTAssertTrue(
-            DirectoryDrawerMotion.shouldOpen(
-                isOpen: false,
-                translation: 80,
-                projectedTranslation: 210,
-                width: 320
-            )
-        )
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldOpen(
-                isOpen: true,
-                translation: -80,
-                projectedTranslation: -210,
-                width: 320
-            )
-        )
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldOpen(
-                isOpen: false,
-                translation: 16,
-                projectedTranslation: 210,
-                width: 320
-            ),
-            "Projected momentum must not complete an opening from an incidental short drag"
-        )
-        XCTAssertTrue(
-            DirectoryDrawerMotion.shouldOpen(
-                isOpen: true,
-                translation: -16,
-                projectedTranslation: -210,
-                width: 320
-            ),
-            "Projected momentum must not complete a closing from an incidental short drag"
-        )
-    }
-
-    func testDirectoryDrawerHapticStartsWithSettlement() {
-        XCTAssertEqual(
-            DirectoryDrawerMotion.hapticTiming(wasOpen: false, willOpen: true),
-            .atSettlementStart
-        )
-        XCTAssertNil(DirectoryDrawerMotion.hapticTiming(wasOpen: true, willOpen: true))
-    }
-
-    func testDirectoryDrawerKeepsUnchangedTopChromeStatic() {
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldAnimateTopChrome(
-                previous: "sidebar.left",
-                next: "sidebar.left"
-            ),
-            "The unchanged leading directory icon must not be reanimated"
-        )
-        XCTAssertFalse(
-            DirectoryDrawerMotion.shouldAnimateTopChrome(
-                previous: "Notes",
-                next: "Notes"
-            ),
-            "The unchanged centered Notes title must not be reanimated"
-        )
-        XCTAssertTrue(
-            DirectoryDrawerMotion.shouldAnimateTopChrome(
-                previous: "Notes",
-                next: "Folders"
-            ),
-            "A real title change may still use its native transition"
-        )
-    }
-
     func testHomeChromeUsesOneRestrainedBidirectionalTitleTransition() {
         XCTAssertEqual(HomeChromeMotion.titleTransition, .opacity)
         XCTAssertEqual(HomeChromeMotion.titleDuration, 0.12)
@@ -212,6 +77,27 @@ final class MudsnoteCompanionTests: XCTestCase {
                 folderRelativePath: "Projects"
             )
         )
+    }
+
+    func testHomeCreationSortAndDateGroupsUseCreationTime() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let older = now.addingTimeInterval(-10 * 86_400)
+        let recentlyEdited = HomeTimelineEntry.file(RecentMarkdownFile(
+            id: "Edited.md", relativePath: "Edited.md", title: "Edited",
+            modifiedAt: now, createdAt: older
+        ))
+        let recentlyCreated = HomeTimelineEntry.file(RecentMarkdownFile(
+            id: "Created.md", relativePath: "Created.md", title: "Created",
+            modifiedAt: older, createdAt: now
+        ))
+        let entries = [recentlyEdited, recentlyCreated]
+        XCTAssertEqual(HomeTimelinePresentation.sorted(entries, by: .created, direction: .standard).map(\.id), [recentlyCreated.id, recentlyEdited.id])
+        XCTAssertEqual(HomeTimelinePresentation.sorted(entries, by: .modified, direction: .standard).map(\.id), [recentlyEdited.id, recentlyCreated.id])
+        XCTAssertEqual(HomeTimelinePresentation.sorted(entries, by: .created, direction: .reversed).map(\.id), [recentlyEdited.id, recentlyCreated.id])
+        let sections = HomeTimelinePresentation.sections(for: [recentlyCreated, recentlyEdited], sortedBy: .created, groupByDate: true, now: now)
+        XCTAssertEqual(sections.count, 2)
+        XCTAssertEqual(sections.first?.entries.first?.id, recentlyCreated.id)
+        XCTAssertNotEqual(sections.first?.id, sections.last?.id)
     }
 
     func testHomeTimelineKeepsPinnedNotesInASectionBesideDateSections() throws {
@@ -5626,6 +5512,28 @@ final class MudsnoteCompanionTests: XCTestCase {
             MarkdownNoteLink.resolvedRelativePath(for: $0, from: "Projects/Current.md")
         })
         XCTAssertEqual(targets, ["Reference/Next.md"])
+    }
+
+    func testBacklinksUseRenderedLinksAndIgnoreCodeExamples() {
+        let markdown = #"""
+        ---
+        example: "[Metadata](./Metadata.md)"
+        ---
+        [Real](./Real.md "Note title")
+        [Escaped \[label\]](<./Escaped.md>)
+        `[Inline code](./Inline.md)`
+        ```md
+        [Fenced example](./Fenced.md)
+        ```
+        ![Image](./Image.md)
+        [Reference][note]
+
+        [note]: ./Reference.md
+        """#
+        XCTAssertEqual(
+            MarkdownNoteLink.linkedPaths(in: markdown, from: "Current.md"),
+            ["Real.md", "Escaped.md", "Reference.md"]
+        )
     }
 
     func testMarkdownNoteLinksArePortableRelativeAndTraversalSafe() throws {

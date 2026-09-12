@@ -33,7 +33,11 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### iPhone
 
-- Notes-style library and reader retain capture-first entry and local Markdown.
+- Compact list defaults preserve saved gallery preferences; a native folder
+  sheet routes secondary pages after dismissal. The large reader exposes
+  Close, a native action menu, and collapsed indexed note links.
+- iPhone-only device family remains `1`; no native iPad layout is claimed.
+- See `docs/ios-visual-functional-review.md` for this platform's review evidence.
 - Folder access, lifecycle mutations, pending writes, attachments, search,
   intents, and widget converge on the same validated filesystem state.
 - Product/parity work may consult `docs/ios-apple-notes-parity-roadmap.md`.

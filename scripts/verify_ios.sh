@@ -124,7 +124,7 @@ changed_paths_against_base() {
 }
 
 focused_ui_tests_from_paths() {
-  local needs_directory_drawer_test=0
+  local needs_library_test=0
   local needs_capture_test=0
   local needs_editor_test=0
   local path
@@ -132,7 +132,7 @@ focused_ui_tests_from_paths() {
   while IFS= read -r path; do
     case "$path" in
       iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift)
-        needs_directory_drawer_test=1
+        needs_library_test=1
         ;;
       iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift|\
       iOS/MudsnoteCompanion/Features/Capture/TargetMenuView.swift|\
@@ -146,12 +146,16 @@ focused_ui_tests_from_paths() {
     esac
   done
 
-  if [[ "$needs_directory_drawer_test" == "1" ]]; then
+  if [[ "$needs_library_test" == "1" ]]; then
     printf '%s\n' \
-      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeOpensAsChronologicalCardsAndRightSwipeRevealsDirectory' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testHomeDefaultsToListAndOpensFoldersAndReader' \
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNewNoteFromSelectedFolderAppearsOnCurrentPage' \
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testSelectedFolderIncludesNotesFromChildFoldersAndExposesSelection' \
-      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNotesTopBarMaterialAcrossHomeAndDirectoryStates'
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testNotesTopBarMaterialAcrossHomeAndDirectoryStates' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testReviewTagRouteOpensReaderAndReturnsWithoutStackedSheets' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testReviewSortingSelectionAndGalleryPreference' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testAppearanceCanFollowSystemOrStayLightOrDark' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testReviewReaderAccessibilityTextAndLandscape'
   fi
   if [[ "$needs_capture_test" == "1" ]]; then
     printf '%s\n' \
@@ -161,7 +165,9 @@ focused_ui_tests_from_paths() {
   if [[ "$needs_editor_test" == "1" ]]; then
     printf '%s\n' \
       'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorToolbarAndHeaderScrollMatchTheUnifiedEditingModel' \
-      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorMentionLinksToAnotherNote'
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testEditorMentionLinksToAnotherNote' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testReviewSuggestedLinkPersistsDirectionsAndHistory' \
+      'MudsnoteCompanionUITests/MudsnoteCompanionUITests/testLargeReaderClosesBackToSelectedFolder'
   fi
 }
 

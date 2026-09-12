@@ -6,9 +6,13 @@ enum MarkdownNoteLink {
     )
 
     static func destinations(in markdown: String) -> [String] {
-        let text = markdown as NSString
-        return linkExpression.matches(in: markdown, range: NSRange(location: 0, length: text.length))
-            .map { text.substring(with: $0.range(at: 1)) }
+        // Use the same Markdown semantics as rendered text: code examples and
+        // images are not note links; titles, escaped labels and reference links are.
+        guard let rendered = try? AttributedString(
+            markdown: MarkdownFrontMatterProjection(markdown).body,
+            options: .init(interpretedSyntax: .full)
+        ) else { return [] }
+        return rendered.runs.compactMap { $0.link?.relativeString }
     }
 
     static func linkedPaths(in markdown: String, from sourcePath: String) -> Set<String> {

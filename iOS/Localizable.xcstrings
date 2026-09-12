@@ -1,6 +1,36 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Close Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭笔记" } } }
+    },
+    "Note Actions": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记操作" } } }
+    },
+    "Links to": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接到" } } }
+    },
+    "Referenced by": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "引用自" } } }
+    },
+    "Suggested links": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "建议链接" } } }
+    },
+    "Indexing links…": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在索引链接…" } } }
+    },
+    "Links · %lld": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接 · %lld" } } }
+    },
+    "Link to %@": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "链接到 %@" } } }
+    },
+    "Couldn’t Open Linked Note": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法打开链接的笔记" } } }
+    },
+    "The note may have moved or become unavailable.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记可能已移动或暂时无法访问。" } } }
+    },
     "Only PDF attachments can be marked up here.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这里只能标注 PDF 附件。" } } }
     },

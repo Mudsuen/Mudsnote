@@ -48,9 +48,11 @@ enum HomeTimelineEntry: Identifiable {
         }
     }
 
-    var date: Date {
+    var date: Date { date(for: .modified) }
+
+    func date(for basis: NoteDateBasis) -> Date {
         switch self {
-        case .file(let file): file.modifiedAt
+        case .file(let file): basis.date(for: file)
         case .memo(let memo):
             Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
         }
@@ -97,6 +99,34 @@ private struct HomeTimelineProjection {
 }
 
 enum HomeTimelinePresentation {
+    static func sorted(
+        _ entries: [HomeTimelineEntry],
+        by order: NoteSortOrder,
+        direction: NoteSortDirection
+    ) -> [HomeTimelineEntry] {
+        entries.sorted { lhs, rhs in
+            let standard: Bool
+            switch order {
+            case .modified, .created:
+                let lhsDate = lhs.date(for: order.dateBasis)
+                let rhsDate = rhs.date(for: order.dateBasis)
+                if lhsDate != rhsDate {
+                    standard = lhsDate > rhsDate
+                    return direction == .standard ? standard : !standard
+                }
+            case .title:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame {
+                    standard = comparison == .orderedAscending
+                    return direction == .standard ? standard : !standard
+                }
+            }
+            standard = lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
+            return direction == .standard ? standard : !standard
+        }
+
+    }
+
     static func sections(
         for entries: [HomeTimelineEntry],
         sortedBy order: NoteSortOrder,
@@ -130,7 +160,7 @@ enum HomeTimelinePresentation {
 
         for entry in otherEntries {
             let bucket = NoteListPresentation.dateBucket(
-                for: entry.date,
+                for: entry.date(for: order.dateBasis),
                 now: now,
                 calendar: calendar
             )
@@ -221,141 +251,6 @@ struct HomeChromeMotion {
     }
 }
 
-struct DirectoryDrawerMotion {
-    enum DragAxis: Equatable {
-        case undecided
-        case horizontal
-        case vertical
-    }
-
-    struct Presentation: Equatable {
-        var reveal: CGFloat
-        var progress: CGFloat
-        var contentOffset: CGFloat
-        var drawerOffset: CGFloat
-        var cornerRadius: CGFloat
-        var scrimOpacity: CGFloat
-        var shadowOpacity: CGFloat
-    }
-
-    enum HapticTiming: Equatable {
-        case atSettlementStart
-    }
-
-    static func settlingAnimation(reduceMotion: Bool) -> Animation {
-        if reduceMotion {
-            return .easeOut(duration: 0.16)
-        }
-        return .interactiveSpring(
-            response: 0.28,
-            dampingFraction: 0.88,
-            blendDuration: 0.08
-        )
-    }
-
-    static func reveal(
-        isOpen: Bool,
-        translation: CGFloat,
-        width: CGFloat
-    ) -> CGFloat {
-        guard width > 0 else { return 0 }
-        let restingReveal = isOpen ? width : 0
-        return min(width, max(0, restingReveal + translation))
-    }
-
-    static func presentation(
-        isOpen: Bool,
-        translation: CGFloat,
-        width: CGFloat
-    ) -> Presentation {
-        let reveal = reveal(
-            isOpen: isOpen,
-            translation: translation,
-            width: width
-        )
-        let progress = reveal / max(width, 1)
-        return Presentation(
-            reveal: reveal,
-            progress: progress,
-            contentOffset: reveal,
-            drawerOffset: reveal - width,
-            cornerRadius: 28 * progress,
-            scrimOpacity: 0.06 * progress,
-            shadowOpacity: 0.18 * progress
-        )
-    }
-
-    static func dragAxis(
-        for translation: CGSize,
-        activationDistance: CGFloat = 6
-    ) -> DragAxis {
-        let horizontal = abs(translation.width)
-        let vertical = abs(translation.height)
-        guard max(horizontal, vertical) >= activationDistance else {
-            return .undecided
-        }
-        return horizontal >= vertical ? .horizontal : .vertical
-    }
-
-    static func shouldOpen(
-        isOpen: Bool,
-        translation: CGFloat,
-        projectedTranslation: CGFloat,
-        width: CGFloat
-    ) -> Bool {
-        guard width > 0 else { return false }
-        let currentReveal = reveal(
-            isOpen: isOpen,
-            translation: translation,
-            width: width
-        )
-        let projectedReveal = reveal(
-            isOpen: isOpen,
-            translation: projectedTranslation,
-            width: width
-        )
-        let projectedTravel = projectedReveal - currentReveal
-        let minimumMomentumTravel = width * 0.08
-
-        if abs(translation) >= minimumMomentumTravel,
-           abs(projectedTravel) >= width * 0.12 {
-            return projectedTravel > 0
-        }
-        return currentReveal >= width * 0.5
-    }
-
-    static func hapticTiming(wasOpen: Bool, willOpen: Bool) -> HapticTiming? {
-        wasOpen == willOpen ? nil : .atSettlementStart
-    }
-
-    static func shouldAnimateTopChrome<Value: Equatable>(
-        previous: Value,
-        next: Value
-    ) -> Bool {
-        previous != next
-    }
-}
-
-private final class DirectoryHapticFeedback {
-    private let generator = UIImpactFeedbackGenerator(style: .light)
-    private var isPrepared = false
-
-    func prepare() {
-        guard !isPrepared else { return }
-        generator.prepare()
-        isPrepared = true
-    }
-
-    func impact() {
-        generator.impactOccurred()
-        isPrepared = false
-    }
-
-    func cancel() {
-        isPrepared = false
-    }
-}
-
 private extension View {
     func notesTranslucentTopToolbar() -> some View {
         toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -390,10 +285,7 @@ private extension View {
         next: Value
     ) -> some View {
         transaction { transaction in
-            guard !DirectoryDrawerMotion.shouldAnimateTopChrome(
-                previous: previous,
-                next: next
-            ) else { return }
+            guard previous == next else { return }
             transaction.animation = nil
         }
     }
@@ -447,11 +339,16 @@ struct LibraryHomeView: View {
     @State private var isManagingFolders = false
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
+    private enum DirectoryDestination: Hashable {
+        case settings, attachments, recentlyDeleted, tags
+        case tag(String)
+        case smartFolder(UUID)
+    }
+
+    @State private var directoryDestination: DirectoryDestination?
+    @State private var pendingDirectoryDestination: DirectoryDestination?
     @State private var isDirectoryPresented = false
-    @State private var directoryDragOffset: CGFloat = 0
-    @State private var directoryDragAxis = DirectoryDrawerMotion.DragAxis.undecided
-    @State private var directoryHapticFeedback = DirectoryHapticFeedback()
-    @State private var directoryPanelWidth: CGFloat = 360
+    @State private var didApplyInitialDirectoryPresentation = false
     @State private var topChromeContentInset: CGFloat = 116
     @State private var expandedDirectoryPaths = Set<String>()
     @State private var selectedHomeFolderPath = ""
@@ -469,7 +366,7 @@ struct LibraryHomeView: View {
     var chooseFolder: () -> Void
 
     private var viewStyle: NoteViewStyle {
-        NoteViewStyle(rawValue: viewStyleRawValue) ?? .gallery
+        NoteViewStyle(rawValue: viewStyleRawValue) ?? .list
     }
 
     private var sortOrder: NoteSortOrder {
@@ -482,22 +379,23 @@ struct LibraryHomeView: View {
 
     var body: some View {
         NavigationStack {
-            directoryStage(width: directoryPanelWidth)
+            directoryStage
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onAppear { updateDirectoryWidth(proxy.size.width) }
-                            .onChange(of: proxy.size.width) { _, width in
-                                updateDirectoryWidth(width)
-                            }
-                    }
-            }
             .background(NotesCloneColors.background)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $isShowingAttachments) {
                 AttachmentLibraryView()
+            }
+            .navigationDestination(item: $directoryDestination) { destination in
+                switch destination {
+                case .settings: SettingsRulesView(chooseFolder: chooseFolder)
+                case .attachments: AttachmentLibraryView()
+                case .recentlyDeleted: RecentlyDeletedView()
+                case .tags: TagsBrowserView()
+                case .tag(let tag): TagNotesListView(tag: tag)
+                case .smartFolder(let id): SmartFolderNotesView(smartFolderID: id)
+                }
             }
             .onChange(of: searchQuery) { _, value in
                 if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -512,8 +410,11 @@ struct LibraryHomeView: View {
             .onAppear {
                 refreshHomeTimelineProjection(resetPagination: true)
                 presentRequestedSearchIfNeeded()
-                if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
-                    isDirectoryPresented = true
+                if !didApplyInitialDirectoryPresentation {
+                    didApplyInitialDirectoryPresentation = true
+                    if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
+                        isDirectoryPresented = true
+                    }
                 }
             }
             .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
@@ -576,7 +477,7 @@ struct LibraryHomeView: View {
                             if isDirectoryPresented {
                                 closeDirectory()
                             } else {
-                                settleDirectory(open: true, emitsHaptic: true)
+                                openDirectory()
                             }
                         } label: {
                             Image(systemName: "folder")
@@ -750,6 +651,7 @@ struct LibraryHomeView: View {
                             if viewStyle == .gallery {
                                 HomeTimelineCardSection(
                                     section: section,
+                                    dateBasis: sortOrder.dateBasis,
                                     isSelecting: isSelectingNotes,
                                     selectedIDs: selectedHomeEntryIDs,
                                     toggleSelection: toggleHomeSelection
@@ -757,6 +659,7 @@ struct LibraryHomeView: View {
                             } else {
                                 HomeTimelineListSection(
                                     section: section,
+                                    dateBasis: sortOrder.dateBasis,
                                     isSelecting: isSelectingNotes,
                                     selectedIDs: selectedHomeEntryIDs,
                                     toggleSelection: toggleHomeSelection
@@ -794,24 +697,9 @@ struct LibraryHomeView: View {
             visibleFiles.map(HomeTimelineEntry.file)
                 + (folderPath.isEmpty ? appModel.inboxItems.map(HomeTimelineEntry.memo) : [])
         )
-        let entries = unsortedEntries.sorted { lhs, rhs in
-            let standard: Bool
-            switch sortOrder {
-            case .modified, .created:
-                if lhs.date != rhs.date {
-                    standard = lhs.date > rhs.date
-                    return sortDirection == .standard ? standard : !standard
-                }
-            case .title:
-                let comparison = lhs.title.localizedStandardCompare(rhs.title)
-                if comparison != .orderedSame {
-                    standard = comparison == .orderedAscending
-                    return sortDirection == .standard ? standard : !standard
-                }
-            }
-            standard = lhs.id.localizedStandardCompare(rhs.id) == .orderedAscending
-            return sortDirection == .standard ? standard : !standard
-        }
+        let entries = HomeTimelinePresentation.sorted(
+            unsortedEntries, by: sortOrder, direction: sortDirection
+        )
 
         let orderedEntries = entries.filter(\.isPinned) + entries.filter { !$0.isPinned }
         let visibleEntries = homePageWindow.visibleItems(from: orderedEntries)
@@ -851,26 +739,23 @@ struct LibraryHomeView: View {
         homeTimelineProjection = makeHomeTimelineProjection()
     }
 
-    private func updateDirectoryWidth(_ availableWidth: CGFloat) {
-        let minimumWidth = min(320, availableWidth)
-        let width = min(max(availableWidth * 0.90, minimumWidth), 360)
-        guard abs(width - directoryPanelWidth) > 0.5 else { return }
-        directoryPanelWidth = width
-    }
-
-    private func directoryStage(width: CGFloat) -> some View {
+    private var directoryStage: some View {
         homeContent
             .simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
                 let direction: CGFloat = layoutDirection == .leftToRight ? 1 : -1
                 if value.translation.width * direction > 70,
                    abs(value.translation.width) > abs(value.translation.height) * 2 {
-                    isDirectoryPresented = true
+                    openDirectory()
                 }
             })
             .sheet(isPresented: Binding(
                 get: { isDirectoryPresented && !appModel.isCapturePresented },
                 set: { isDirectoryPresented = $0 }
-            )) {
+            ), onDismiss: {
+                isManagingFolders = false
+                directoryDestination = pendingDirectoryDestination
+                pendingDirectoryDestination = nil
+            }) {
                 NavigationStack {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 24) {
@@ -895,11 +780,10 @@ struct LibraryHomeView: View {
                                 Button(isManagingFolders ? "Done" : "Edit", systemImage: "pencil") {
                                     isManagingFolders.toggle()
                                 }
-                                NavigationLink {
-                                    SettingsRulesView(chooseFolder: chooseFolder)
-                                } label: { Label("Settings", systemImage: "gearshape") }
+                                directoryLink(.settings) { Label("Settings", systemImage: "gearshape") }
                             } label: { Image(systemName: "ellipsis") }
-                            .accessibilityLabel("Folder actions")
+                            .accessibilityLabel("Folder Actions")
+                            .accessibilityIdentifier("folder-actions")
                         }
                     }
                 }
@@ -907,39 +791,39 @@ struct LibraryHomeView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
                 .accessibilityIdentifier("directory-drawer")
-            .alert("New Folder", isPresented: $isCreatingFolder) {
-                TextField("Folder Name", text: $newFolderName)
-                Button("Cancel", role: .cancel) {}
-                Button("Make Into Smart Folder") {
-                    smartFolderEditor = SmartFolderDefinition(name: newFolderName)
+                .alert("New Folder", isPresented: $isCreatingFolder) {
+                    TextField("Folder Name", text: $newFolderName)
+                    Button("Cancel", role: .cancel) {}
+                    Button("Make Into Smart Folder") {
+                        smartFolderEditor = SmartFolderDefinition(name: newFolderName)
+                    }
+                    .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Create") {
+                        let name = newFolderName
+                        Task { _ = await appModel.createFolder(named: name) }
+                    }
+                    .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Create") {
-                    let name = newFolderName
-                    Task { _ = await appModel.createFolder(named: name) }
+                .sheet(item: $smartFolderEditor) { definition in
+                    SmartFolderEditorView(
+                        definition: definition,
+                        isNew: !appModel.smartFolders.contains(where: { $0.id == definition.id })
+                    )
+                    .environmentObject(appModel)
                 }
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .sheet(item: $smartFolderEditor) { definition in
-                SmartFolderEditorView(
-                    definition: definition,
-                    isNew: !appModel.smartFolders.contains(where: { $0.id == definition.id })
-                )
-                .environmentObject(appModel)
-            }
-            .confirmationDialog(
-                "Delete Smart Folder?",
-                isPresented: smartFolderDeletePresented,
-                titleVisibility: .visible
-            ) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete Smart Folder", role: .destructive) {
-                    guard let smartFolderToDelete else { return }
-                    Task { _ = await appModel.deleteSmartFolder(smartFolderToDelete) }
+                .confirmationDialog(
+                    "Delete Smart Folder?",
+                    isPresented: smartFolderDeletePresented,
+                    titleVisibility: .visible
+                ) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Delete Smart Folder", role: .destructive) {
+                        guard let smartFolderToDelete else { return }
+                        Task { _ = await appModel.deleteSmartFolder(smartFolderToDelete) }
+                    }
+                } message: {
+                    Text("Notes stay in their original folders.")
                 }
-            } message: {
-                Text("Notes stay in their original folders.")
-            }
 
             }
     }
@@ -975,7 +859,7 @@ struct LibraryHomeView: View {
     private var homeLargeTitleHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(homeDisplayTitle)
-                .font(.system(size: 34, weight: .bold))
+                .font(.largeTitle.bold())
                 .foregroundStyle(MudsnoteColors.text)
             Text(homeNoteCountText)
                 .font(.caption)
@@ -1104,109 +988,28 @@ struct LibraryHomeView: View {
         finishSelectingHomeNotes()
     }
 
-    private func directoryPanel(width: CGFloat) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                accountSection
-                if !appModel.smartFolders.isEmpty {
-                    smartFoldersSection
-                }
-                if !appModel.tagSummaries.isEmpty {
-                    tagsSection
-                }
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, topContentPadding + 8)
-            .padding(.bottom, 110)
-        }
-        .scrollClipDisabled()
-        .notesTopScrollEdgeBlur(isEnabled: isDirectoryPresented)
-        .frame(width: width)
-        .frame(maxHeight: .infinity)
-        .background(MudsnoteColors.canvas)
-        .overlay(alignment: .topLeading) {
-            Text(String(localized: "Folders"))
-                .font(.headline)
-                .foregroundStyle(MudsnoteColors.text)
-                .frame(width: width, height: 36)
-                .padding(.top, max(0, topChromeContentInset - 48))
-                .accessibilityIdentifier("folders-compact-title")
-                .allowsHitTesting(false)
-        }
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(MudsnoteColors.line)
-                .frame(width: 1)
-        }
-        .shadow(color: .black.opacity(0.22), radius: 12, x: 5)
-        .accessibilityIdentifier("directory-drawer")
-    }
-
-    private func directoryPresentation(width: CGFloat) -> DirectoryDrawerMotion.Presentation {
-        DirectoryDrawerMotion.presentation(
-            isOpen: isDirectoryPresented,
-            translation: directoryDragOffset,
-            width: width
-        )
-    }
-
-    private func directoryDragGesture(
-        width: CGFloat,
-        minimumDistance: CGFloat = 6
-    ) -> some Gesture {
-        DragGesture(minimumDistance: minimumDistance, coordinateSpace: .local)
-            .onChanged { value in
-                if directoryDragAxis == .undecided {
-                    let resolvedAxis = DirectoryDrawerMotion.dragAxis(
-                        for: value.translation
-                    )
-                    guard resolvedAxis != .undecided else { return }
-                    directoryDragAxis = resolvedAxis
-                    if resolvedAxis == .horizontal {
-                        directoryHapticFeedback.cancel()
-                        directoryHapticFeedback.prepare()
-                    }
-                }
-                guard directoryDragAxis == .horizontal else { return }
-
-                var transaction = Transaction(animation: nil)
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    let logicalTranslation = value.translation.width * directoryPhysicalDirection
-                    if isDirectoryPresented {
-                        directoryDragOffset = min(0, logicalTranslation)
-                    } else {
-                        directoryDragOffset = max(0, logicalTranslation)
-                    }
-                }
-            }
-            .onEnded { value in
-                guard directoryDragAxis == .horizontal else {
-                    directoryDragAxis = .undecided
-                    directoryDragOffset = 0
-                    directoryHapticFeedback.cancel()
-                    return
-                }
-                directoryDragAxis = .undecided
-                let horizontal = value.translation.width * directoryPhysicalDirection
-                let predicted = value.predictedEndTranslation.width * directoryPhysicalDirection
-                let wasPresented = isDirectoryPresented
-                let shouldOpen = DirectoryDrawerMotion.shouldOpen(
-                    isOpen: isDirectoryPresented,
-                    translation: horizontal,
-                    projectedTranslation: predicted,
-                    width: width
-                )
-                settleDirectory(
-                    open: shouldOpen,
-                    emitsHaptic: shouldOpen != wasPresented
-                )
-            }
+    private func openDirectory() {
+        isSearchFocused = false
+        finishSelectingHomeNotes()
+        isDirectoryPresented = true
     }
 
     private func closeDirectory() {
-        guard isDirectoryPresented else { return }
-        settleDirectory(open: false, emitsHaptic: true)
+        isDirectoryPresented = false
+        isManagingFolders = false
+    }
+
+    private func directoryLink<Label: View>(
+        _ destination: DirectoryDestination,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        Button {
+            pendingDirectoryDestination = destination
+            closeDirectory()
+        } label: {
+            label().contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func selectAllNotes() {
@@ -1273,44 +1076,9 @@ struct LibraryHomeView: View {
         }
     }
 
-    private func settleDirectory(open: Bool, emitsHaptic: Bool) {
-        if open {
-            isSearchFocused = false
-            finishSelectingHomeNotes()
-        } else {
-            isManagingFolders = false
-        }
-
-        let hapticTiming = emitsHaptic
-            ? DirectoryDrawerMotion.hapticTiming(
-                wasOpen: isDirectoryPresented,
-                willOpen: open
-            )
-            : nil
-
-        if hapticTiming != nil {
-            directoryHapticFeedback.prepare()
-            directoryHapticFeedback.impact()
-        } else {
-            directoryHapticFeedback.cancel()
-        }
-
-        withAnimation(DirectoryDrawerMotion.settlingAnimation(reduceMotion: reduceMotion)) {
-            isDirectoryPresented = open
-            directoryDragOffset = 0
-        }
-    }
-
-    private var directoryPhysicalDirection: CGFloat {
-        layoutDirection == .leftToRight ? 1 : -1
-    }
-
     private func resetDirectoryState() {
         isDirectoryPresented = false
-        directoryDragOffset = 0
-        directoryDragAxis = .undecided
         isManagingFolders = false
-        directoryHapticFeedback.cancel()
     }
 
     private func presentRequestedSearchIfNeeded() {
@@ -1363,9 +1131,7 @@ struct LibraryHomeView: View {
 
             notesCard {
                 HStack(spacing: 0) {
-                    NavigationLink {
-                        AttachmentLibraryView()
-                    } label: {
+                    directoryLink(.attachments) {
                         LibraryUtilityButton(
                             systemImage: "paperclip",
                             count: appModel.librarySummary.attachmentCount
@@ -1380,9 +1146,7 @@ struct LibraryHomeView: View {
                         .frame(width: 1, height: 30)
                         .accessibilityHidden(true)
 
-                    NavigationLink {
-                        RecentlyDeletedView()
-                    } label: {
+                    directoryLink(.recentlyDeleted) {
                         LibraryUtilityButton(
                             systemImage: "trash",
                             count: appModel.librarySummary.recentlyDeletedCount
@@ -1454,9 +1218,7 @@ struct LibraryHomeView: View {
                             .padding(.trailing, 10)
                         }
                     } else {
-                        NavigationLink {
-                            SmartFolderNotesView(smartFolderID: definition.id)
-                        } label: {
+                        directoryLink(.smartFolder(definition.id)) {
                             NotesFolderRow(
                                 title: definition.name,
                                 systemImage: "folder.badge.gearshape",
@@ -1495,9 +1257,7 @@ struct LibraryHomeView: View {
 
                 Spacer()
 
-                NavigationLink {
-                    TagsBrowserView()
-                } label: {
+                directoryLink(.tags) {
                     HStack(spacing: 6) {
                         Text("\(appModel.tagSummaries.count)")
                             .font(.system(.subheadline, design: .rounded))
@@ -1517,9 +1277,7 @@ struct LibraryHomeView: View {
 
             notesCard {
                 ForEach(appModel.tagSummaries) { tag in
-                    NavigationLink {
-                        TagNotesListView(tag: tag.name)
-                    } label: {
+                    directoryLink(.tag(tag.name)) {
                         TagDirectoryRow(tag: tag)
                     }
                     .buttonStyle(.plain)
@@ -2198,7 +1956,7 @@ private struct HomeNoteOptionsButton: UIViewRepresentable {
         }
 
         private func makeMenu(for state: MenuState) -> UIMenu {
-            let viewStyle = NoteViewStyle(rawValue: state.viewStyleRawValue) ?? .gallery
+            let viewStyle = NoteViewStyle(rawValue: state.viewStyleRawValue) ?? .list
             let sortOrder = NoteSortOrder(rawValue: state.sortOrderRawValue) ?? .modified
             let sortDirection = NoteSortDirection(rawValue: state.sortDirectionRawValue) ?? .standard
 
@@ -3611,6 +3369,7 @@ private struct NoteGallerySection: View {
 private struct HomeTimelineCardSection: View {
     @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
+    var dateBasis: NoteDateBasis
     var isSelecting: Bool
     var selectedIDs: Set<String>
     var toggleSelection: (HomeTimelineEntry) -> Void
@@ -3626,6 +3385,7 @@ private struct HomeTimelineCardSection: View {
                 ForEach(section.entries) { entry in
                     HomeTimelineGalleryEntryButton(
                         entry: entry,
+                        dateBasis: dateBasis,
                         isSelecting: isSelecting,
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
@@ -3656,6 +3416,7 @@ private struct HomeTimelineCardSection: View {
 private struct HomeTimelineListSection: View {
     @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
+    var dateBasis: NoteDateBasis
     var isSelecting: Bool
     var selectedIDs: Set<String>
     var toggleSelection: (HomeTimelineEntry) -> Void
@@ -3666,6 +3427,7 @@ private struct HomeTimelineListSection: View {
                 ForEach(section.entries) { entry in
                     HomeTimelineListEntryButton(
                         entry: entry,
+                        dateBasis: dateBasis,
                         isSelecting: isSelecting,
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
@@ -3698,6 +3460,7 @@ private struct HomeTimelineListSection: View {
 
 private struct HomeTimelineGalleryEntryButton: View {
     var entry: HomeTimelineEntry
+    var dateBasis: NoteDateBasis
     var isSelecting: Bool
     var isSelected: Bool
     var toggleSelection: () -> Void
@@ -3715,7 +3478,7 @@ private struct HomeTimelineGalleryEntryButton: View {
         } else {
             switch entry {
             case .file(let file):
-                NoteGalleryFileButton(file: file, dateBasis: .modified)
+                NoteGalleryFileButton(file: file, dateBasis: dateBasis)
             case .memo(let memo):
                 HomeMemoCardButton(memo: memo)
             }
@@ -3726,7 +3489,7 @@ private struct HomeTimelineGalleryEntryButton: View {
     private var galleryContent: some View {
         switch entry {
         case .file(let file):
-            NoteGalleryCard(file: file, dateBasis: .modified)
+            NoteGalleryCard(file: file, dateBasis: dateBasis)
         case .memo(let memo):
             HomeMemoCard(memo: memo)
         }
@@ -3742,6 +3505,7 @@ private struct HomeTimelineGalleryEntryButton: View {
 private struct HomeTimelineListEntryButton: View {
     @EnvironmentObject private var appModel: AppModel
     var entry: HomeTimelineEntry
+    var dateBasis: NoteDateBasis
     var isSelecting: Bool
     var isSelected: Bool
     var toggleSelection: () -> Void
@@ -3749,33 +3513,33 @@ private struct HomeTimelineListEntryButton: View {
     var body: some View {
         Group {
             if !isSelecting, case .file(let file) = entry {
-                NoteFileButton(file: file, dateBasis: .modified)
+                NoteFileButton(file: file, dateBasis: dateBasis)
             } else {
                 Button {
-            if isSelecting {
-                toggleSelection()
-            } else {
-                openEntry()
-            }
-        } label: {
-            HStack(alignment: .top, spacing: 12) {
-                if isSelecting {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(
-                            isSelected ? MudsnoteColors.primary : MudsnoteColors.muted
-                        )
-                        .padding(.top, 12)
+                    if isSelecting {
+                        toggleSelection()
+                    } else {
+                        openEntry()
+                    }
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        if isSelecting {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(
+                                    isSelected ? MudsnoteColors.primary : MudsnoteColors.muted
+                                )
+                                .padding(.top, 12)
+                        }
+                        listContent
+                    }
+                    .contentShape(Rectangle())
                 }
-                listContent
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(
+                    isSelecting ? "selectable-home-note-\(entry.id)" : noteAccessibilityID
+                )
             }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(
-            isSelecting ? "selectable-home-note-\(entry.id)" : noteAccessibilityID
-        )
-        }
         }
     }
 
@@ -3790,7 +3554,7 @@ private struct HomeTimelineListEntryButton: View {
     private var listContent: some View {
         switch entry {
         case .file(let file):
-            RecentFileRow(file: file, dateBasis: .modified)
+            RecentFileRow(file: file, dateBasis: dateBasis)
         case .memo(let memo):
             HomeMemoListRow(memo: memo)
         }
@@ -4698,7 +4462,7 @@ private enum NotesCloneColors {
     static let background = MudsnoteColors.canvas
     static let separator = MudsnoteColors.line
     static let folderYellow = Color(hex: 0xD7BD68)
-    static let chip = Color(hex: 0x22262F)
+    static let chip = MudsnoteColors.card
 }
 
 struct NotesSectionHeader: View {
@@ -4761,7 +4525,7 @@ struct NotesFolderRow: View {
         }
         .padding(.leading, 10 + indentation)
         .padding(.trailing, 10)
-        .frame(height: 50)
+        .frame(minHeight: 50)
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
