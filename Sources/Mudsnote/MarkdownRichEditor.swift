@@ -3232,7 +3232,8 @@ enum MarkdownRichTextCodec {
     ) -> NSAttributedString? {
         guard let fileURL = localFileURL(path: path, baseURL: baseURL),
               FileManager.default.fileExists(atPath: fileURL.path),
-              !isImageFile(fileURL) else {
+              !isImageFile(fileURL),
+              !["md", "markdown"].contains(fileURL.pathExtension.lowercased()) else {
             return nil
         }
         let metadata = attachmentMetadataText(for: fileURL)

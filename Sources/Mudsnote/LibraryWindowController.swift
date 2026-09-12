@@ -1469,6 +1469,9 @@ final class LibraryWindowController: NSWindowController,
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
     private weak var sourceSplitViewItem: NSSplitViewItem?
+    private let sourcePopover = NSPopover()
+    private let sourceButton = NSButton()
+    private let commandButton = NSButton()
     private weak var noteListSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
     private weak var editorStackView: NSStackView?
@@ -1554,6 +1557,8 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
@@ -2183,13 +2188,11 @@ final class LibraryWindowController: NSWindowController,
         let editorController = NSViewController()
         editorController.view = editor
 
-        let sourceItem = NSSplitViewItem(sidebarWithViewController: sourceController)
-        sourceItem.minimumThickness = LibraryNotesLayout.sourceColumnMinimumWidth
-        sourceItem.maximumThickness = LibraryNotesLayout.sourceColumnMaximumWidth
-        sourceItem.canCollapse = true
-        sourceItem.allowsFullHeightLayout = true
-        sourceItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
-        sourceItem.isCollapsed = !noteStore.librarySourceListVisible
+        sourceController.preferredContentSize = NSSize(width: 300, height: 480)
+        sourcePopover.contentViewController = sourceController
+        sourcePopover.contentSize = NSSize(width: 300, height: 480)
+        sourcePopover.behavior = .transient
+        sourcePopover.animates = false
 
         let noteListItem = NSSplitViewItem(contentListWithViewController: noteListController)
         noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
@@ -2202,16 +2205,14 @@ final class LibraryWindowController: NSWindowController,
         editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
 
         let splitController = NSSplitViewController()
-        splitController.addSplitViewItem(sourceItem)
         splitController.addSplitViewItem(noteListItem)
         splitController.addSplitViewItem(editorItem)
         splitController.splitView.isVertical = true
         splitController.splitView.dividerStyle = .thin
         splitController.view.wantsLayer = true
-        splitController.view.layer?.backgroundColor = LibraryNotesPalette.windowBackground.cgColor
+        splitController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         librarySplitViewController = splitController
-        sourceSplitViewItem = sourceItem
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         window?.contentViewController = splitController
@@ -2234,24 +2235,10 @@ final class LibraryWindowController: NSWindowController,
         sourceList.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSurface")
         sourceList.setAccessibilityLabel("资料库")
         sourceList.material = .sidebar
-        sourceList.blendingMode = .withinWindow
-        sourceList.state = .active
+        sourceList.blendingMode = .behindWindow
+        sourceList.state = .followsWindowActiveState
         sourceList.wantsLayer = true
-        sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground
-            .withAlphaComponent(0.86)
-            .cgColor
-        sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
-        sourceList.layer?.masksToBounds = true
         sourceListView = sourceList
-
-        let darkeningView = NSView()
-        darkeningView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceDarkeningTint")
-        darkeningView.wantsLayer = true
-        darkeningView.layer?.backgroundColor = NSColor.black.withAlphaComponent(
-            LibraryNotesLayout.sourceSurfaceDarkeningAlpha
-        ).cgColor
-        sourceList.addSubview(darkeningView)
-        pin(darkeningView, to: sourceList)
         sourceFolderTreeRows = rootFolderRowsForSourceList()
         sourceFolderRows = sourceFolderTreeRows
 
@@ -2315,9 +2302,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildSidebar() -> NSView {
-        let sidebar = NSView()
-        sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = LibraryNotesPalette.noteListBackground.cgColor
+        let sidebar = NSVisualEffectView()
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .behindWindow
+        sidebar.state = .followsWindowActiveState
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         configureNoteListHeaderLabels()
@@ -2396,13 +2384,23 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [listContainer])
+        configureCompactButton(sourceButton, symbol: "folder", label: "文件夹与标签（⌃⌘S）", action: #selector(toggleSourceListPressed))
+        sourceButton.identifier = NSUserInterfaceItemIdentifier("LibraryFolderPicker")
+        let newButton = NSButton()
+        configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
+        configureCompactButton(commandButton, symbol: "ellipsis", label: "快速菜单（⇧⌘P）", action: #selector(showQuickMenu(_:)))
+        commandButton.identifier = NSUserInterfaceItemIdentifier("LibraryQuickMenu")
+        let heading = NSStackView(views: [sourceButton, noteListTitleLabel, newButton, commandButton])
+        heading.spacing = 6
+        heading.alignment = .centerY
+        noteListTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let stack = NSStackView(views: [heading, searchField, searchScopeControl, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 0
+        stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(
-            top: LibraryNotesLayout.noteListTopInset,
+            top: 12,
             left: LibraryNotesLayout.noteListLeadingInset,
             bottom: LibraryNotesLayout.noteListBottomInset,
             right: LibraryNotesLayout.noteListTrailingInset
@@ -2424,7 +2422,7 @@ final class LibraryWindowController: NSWindowController,
             titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
             titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
-        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -26).isActive = true
 
         return sidebar
     }
@@ -2473,10 +2471,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildEditor() -> NSView {
-        let editor = NSView()
+        let editor = NSVisualEffectView()
+        editor.material = .contentBackground
+        editor.blendingMode = .behindWindow
+        editor.state = .followsWindowActiveState
         editor.translatesAutoresizingMaskIntoConstraints = false
-        editor.wantsLayer = true
-        editor.layer?.backgroundColor = LibraryNotesPalette.editorBackground.cgColor
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
         titleField.setAccessibilityLabel("笔记标题")
@@ -2547,8 +2546,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
         scrollView.automaticallyAdjustsContentInsets = false
-        clipView.drawsBackground = true
-        clipView.backgroundColor = LibraryNotesPalette.editorBackground
+        clipView.drawsBackground = false
+        clipView.backgroundColor = .clear
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
         scrollView.contentInsets = NSEdgeInsets(
@@ -2582,13 +2581,6 @@ final class LibraryWindowController: NSWindowController,
         noteLinksView.onGoForward = { [weak self] in
             self?.goForwardInKnowledgeRelations()
         }
-        noteLinksView.onGenerateHigherLayer = { [weak self] layer in
-            self?.generateHigherLayerDraft(targetLayer: layer)
-        }
-        noteLinksView.onShowGraph = { [weak self] in
-            self?.showKnowledgeGraphForLibrary()
-        }
-
         let stack = NSStackView(views: [bodyContainer, noteLinksView])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
@@ -2685,23 +2677,43 @@ final class LibraryWindowController: NSWindowController,
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarSearchWidth,
-            height: LibraryNotesLayout.toolbarSearchHeight
-        )
-        searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
-        searchField.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchHeight).isActive = true
-
-        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        toolbar.autosavesConfiguration = false
-        window?.toolbar = toolbar
-        applyNoteListViewModeToolbarChrome()
+        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        window?.toolbar = nil
     }
+
+    private func configureCompactButton(_ button: NSButton, symbol: String, label: String, action: Selector) {
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        button.target = self
+        button.action = action
+        button.bezelStyle = .inline
+        button.isBordered = false
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    }
+
+    @objc func showQuickMenu(_ sender: Any?) {
+        let menu = makeMoreActionsMenuForLibrary()
+        let format = NSMenuItem(title: "格式", action: nil, keyEquivalent: "")
+        format.submenu = makeFormatMenuForLibrary()
+        menu.insertItem(format, at: 0)
+        let links = NSMenuItem(title: "展开或收起双链", action: #selector(toggleLinksPanel), keyEquivalent: "l")
+        links.keyEquivalentModifierMask = [.command, .shift]
+        links.target = self
+        menu.insertItem(links, at: 1)
+        let source = NSMenuItem(title: "切换 Markdown 源码", action: #selector(toggleEditorSourceModePressed), keyEquivalent: "m")
+        source.keyEquivalentModifierMask = [.command, .shift]
+        source.target = self
+        menu.insertItem(source, at: 2)
+        let listActions = NSMenuItem(title: "列表与排序", action: nil, keyEquivalent: "")
+        listActions.submenu = makeNoteListActionsMenuForLibrary()
+        menu.insertItem(listActions, at: 3)
+        menu.insertItem(.separator(), at: 4)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: commandButton.bounds.maxY), in: commandButton)
+    }
+
+    @objc func toggleLinksPanel() { noteLinksView.toggleExpanded() }
 
     private func configureSearchScopeControl() {
         searchScopeControl.identifier = NSUserInterfaceItemIdentifier("LibrarySearchScopeControl")
@@ -5157,8 +5169,9 @@ final class LibraryWindowController: NSWindowController,
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             selectedScope = scope
+            if NSApp.currentEvent?.type != .keyDown { sourcePopover.performClose(nil) }
             reloadNotesForNavigation(loadFirstIfNeeded: true)
-            refreshVisibleSourceOutlinePresentation()
+            refreshSourceSelection()
             return true
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -6673,7 +6686,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func toggleEditorSourceModePressed() {
+    func toggleEditorSourceModePressed() {
         guard canEditCurrentDocument, let storage = editorTextView.textStorage else { return }
         let selection = editorTextView.selectedRange()
         suppressEditorChanges = true
@@ -7066,7 +7079,7 @@ final class LibraryWindowController: NSWindowController,
         let noteStore = noteStore
         let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
         let task = Task.detached(priority: .utility) { [weak self] in
-            let relations = noteStore.knowledgeRelations(
+            let relations = noteStore.smartLinkRelations(
                 for: noteURL,
                 currentBody: body,
                 roots: roots,
@@ -7081,7 +7094,7 @@ final class LibraryWindowController: NSWindowController,
                     return
                 }
                 self.noteLinksRefreshTask = nil
-                self.noteLinksView.update(relations)
+                self.noteLinksView.update(links: relations.links, suggestions: relations.suggestions)
                 self.updateKnowledgeNavigationControls()
             }
         }
@@ -9036,12 +9049,7 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession
     }
 
-    var isSourceListVisibleForLibrary: Bool {
-        if let sourceSplitViewItem {
-            return !sourceSplitViewItem.isCollapsed
-        }
-        return sourceListView?.isHidden == false
-    }
+    var isSourceListVisibleForLibrary: Bool { sourcePopover.isShown }
 
     private var storedSourceColumnWidthForLibrary: CGFloat {
         LibraryNotesLayout.clampedSourceColumnWidth(
@@ -9056,51 +9064,17 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func applyStoredLibrarySplitLayoutForLibrary() {
-        guard let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3,
-              splitView.bounds.width > 0 else {
-            return
-        }
-
+        guard let splitView = librarySplitView, splitView.arrangedSubviews.count == 2,
+              splitView.bounds.width > 0 else { return }
         isApplyingStoredSplitLayout = true
         defer { isApplyingStoredSplitLayout = false }
-
-        let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
-        sourceSplitViewItem?.isCollapsed = !noteStore.librarySourceListVisible
-        noteListSplitViewItem?.isCollapsed = noteListViewMode == .gallery
-        splitView.adjustSubviews()
-
-        if !sourceList.isHidden {
-            splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
-            splitView.layoutSubtreeIfNeeded()
-        }
-        if noteListViewMode == .list {
-            let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
-            splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
-            splitView.layoutSubtreeIfNeeded()
-        }
+        splitView.setPosition(storedNoteColumnWidthForLibrary, ofDividerAt: 0)
     }
 
     func persistLibrarySplitLayoutForLibrary() {
-        guard !isApplyingStoredSplitLayout,
-              let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3 else {
-            return
-        }
-
-        let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
-        if !sourceList.isHidden, sourceList.frame.width > 0 {
-            noteStore.librarySourceColumnWidth = Double(
-                LibraryNotesLayout.clampedSourceColumnWidth(sourceList.frame.width)
-            )
-        }
-        if noteListViewMode == .list, noteList.frame.width > 0 {
-            noteStore.libraryNoteColumnWidth = Double(
-                LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width)
-            )
-        }
+        guard !isApplyingStoredSplitLayout, let splitView = librarySplitView,
+              let noteList = splitView.arrangedSubviews.first, noteList.frame.width > 0 else { return }
+        noteStore.libraryNoteColumnWidth = Double(LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width))
     }
 
     @objc
@@ -9178,34 +9152,12 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
-        guard let sourceListView else { return false }
-        noteStore.librarySourceListVisible = isVisible
-        applySourceVisibilityChrome(isVisible)
-        if let sourceSplitViewItem {
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    context.allowsImplicitAnimation = true
-                    sourceSplitViewItem.animator().isCollapsed = !isVisible
-                    if let titleView = noteListToolbarTitleLeadingConstraint?.firstItem as? NSView {
-                        titleView.superview?.animator().layoutSubtreeIfNeeded()
-                    }
-                } completionHandler: { [weak self] in
-                    Task { @MainActor [weak self] in
-                        self?.restoreStoredPaneWidthsAfterSourceVisibilityChange()
-                        self?.updateToolbarActionState()
-                    }
-                }
-            } else {
-                sourceSplitViewItem.isCollapsed = !isVisible
-                restoreStoredPaneWidthsAfterSourceVisibilityChange()
-            }
+        if isVisible, sourceButton.window != nil {
+            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxY)
         } else {
-            sourceListView.isHidden = !isVisible
+            sourcePopover.performClose(nil)
         }
-        updateToolbarActionState()
-        return isSourceListVisibleForLibrary
+        return sourcePopover.isShown
     }
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
@@ -9294,7 +9246,7 @@ final class LibraryWindowController: NSWindowController,
                 context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 context.allowsImplicitAnimation = true
-                noteListSplitViewItem.animator().isCollapsed = showsGallery
+                noteListSplitViewItem.animator().isCollapsed = false
             } completionHandler: { [weak self] in
                 Task { @MainActor in
                     self?.isApplyingStoredSplitLayout = false
@@ -9303,7 +9255,7 @@ final class LibraryWindowController: NSWindowController,
             }
         } else {
             isApplyingStoredSplitLayout = true
-            noteListSplitViewItem.isCollapsed = showsGallery
+            noteListSplitViewItem.isCollapsed = false
             librarySplitView?.adjustSubviews()
             isApplyingStoredSplitLayout = false
             completeNoteListViewModeTransition(showingGallery: showsGallery)
