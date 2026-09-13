@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-12, this prototype records 279 implementation iterations, including the initial MVP.
+As of 2026-09-13, this prototype records 280 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 280. Continuous material and compact Mac navigation
+- Problem: Opaque tints masked the native material; a permanent search field, duplicated dates, and broad panel padding consumed writing space.
+- Fix: Both panes now use Board-style active popover material with minimal tint. A single compact top row exposes the library root, first-level folders, and a search icon; folder overflow scrolls horizontally. Search opens on demand with scope selection and keyboard dismissal. Dates moved into note information, list separators disappeared, and the footer keeps only links, word count, and actionable save failures.
+- Lesson: Judge material against a real native reference and inspect open popovers and keyboard focus as well as the resting screen. Keep labels and tooltips for icon-only navigation.
 
 ### 279. macOS two-pane writing workspace
 - Problem: Three persistent columns, dense toolbar controls, and knowledge layers competed with writing; the initial two-pane preview gave navigation and content nearly identical materials.

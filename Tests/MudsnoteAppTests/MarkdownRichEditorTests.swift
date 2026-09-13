@@ -2697,7 +2697,7 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
         controller.showWindowAndFocus()
         let window = try #require(controller.window)
-        let split = try #require(window.contentViewController as? NSSplitViewController)
+        let split = try #require(window.contentViewController?.children.compactMap { $0 as? NSSplitViewController }.first)
         #expect(split.splitViewItems.count == 2)
         #expect(window.toolbar == nil)
         #expect(controller.selectedMarkdownFileURLForLibrary() == noteURL)
@@ -2705,7 +2705,11 @@ struct MarkdownRichEditorTests {
         let views = try #require(window.contentView).allSubviews
         #expect(views.contains { $0.identifier?.rawValue == "LibraryFolderPicker" })
         #expect(views.contains { $0.identifier?.rawValue == "LibraryQuickMenu" })
-        #expect(controller.searchField.window === window)
+        #expect(controller.searchField.window == nil)
+        controller.focusSearchForLibrary()
+        #expect(controller.searchField.window != nil)
+        #expect(controller.searchField.window !== window)
+        controller.searchField.window?.close()
         // The only divider resizes the note list, including widths that the
         // former three-column delegate incorrectly rejected.
         #expect(controller.splitView(split.splitView, constrainMinCoordinate: 0, ofSubviewAt: 0) == 250)
@@ -2777,6 +2781,55 @@ struct MarkdownRichEditorTests {
         controller.markdownTextViewInsertNewline(controller.editorTextView)
         #expect(controller.editorTextView.string == "Return Target\n")
         #expect(controller.editorTextView.selectedRange().location == titleRange.length + 1)
+    }
+
+    @MainActor
+    @Test
+    func folderShortcutNavigationSupportsOverflowAndSearchDismissal() async throws {
+        let suite = "mudsnote-folder-shortcuts.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        _ = try store.saveNewNote(title: "Home", body: "Home body")
+        for index in 0..<28 {
+            try FileManager.default.createDirectory(at: store.notesDirectory.appendingPathComponent("Folder \(index)"), withIntermediateDirectories: true)
+        }
+        let folder = store.notesDirectory.appendingPathComponent("Folder 0")
+        let noteURL = try store.saveNewNote(title: "Target", body: "Target body", in: folder)
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Nested"), withIntermediateDirectories: true)
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+        controller.loadSourceFoldersForLibrary()
+        let window = try #require(controller.window)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let shortcuts = try #require(window.contentView?.allSubviews.first {
+            $0.identifier?.rawValue == "LibraryFolderShortcuts"
+        } as? NSScrollView)
+        let buttons = try #require(shortcuts.documentView).allSubviews.compactMap { $0 as? LibraryFolderShortcutButton }
+        #expect(buttons.count == 30) // Home, library root, and 28 immediate folders.
+        #expect(!buttons.contains { $0.folderURL?.lastPathComponent == "Nested" })
+        let documentWidth = try #require(shortcuts.documentView).frame.width
+        let viewportWidth = shortcuts.contentView.bounds.width
+        #expect(documentWidth > viewportWidth)
+        let target = try #require(buttons.first { $0.folderURL == folder })
+        target.performClick(nil)
+        await controller.waitForExternalLibraryRefreshForTesting()
+        #expect(controller.selectedSourceTitleForLibrary == "Folder 0")
+        #expect(controller.selectedMarkdownFileURLForLibrary() == noteURL)
+        #expect(target.state == .on)
+        controller.focusSearchForLibrary()
+        let fieldEditor = try #require(controller.searchField.currentEditor() as? NSTextView)
+        #expect(controller.searchField.window !== window)
+        #expect(controller.control(controller.searchField, textView: fieldEditor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        #expect((window.firstResponder as? NSView)?.identifier?.rawValue == "LibrarySearchButton")
     }
 
     @MainActor
@@ -2911,7 +2964,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
         let window = try #require(controller.window)
-        let splitController = try #require(window.contentViewController as? NSSplitViewController)
+        let splitController = try #require(window.contentViewController?.children.compactMap { $0 as? NSSplitViewController }.first)
         let editorStack = try #require(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibraryEditorStack"
         })
@@ -6529,9 +6582,8 @@ struct MarkdownRichEditorTests {
 
         let window = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
-        let scopeControl = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSegmentedControl }.first {
-            $0.identifier?.rawValue == "LibrarySearchScopeControl"
-        })
+        let scopeControl = controller.searchScopeControl
+        #expect(scopeControl.identifier?.rawValue == "LibrarySearchScopeControl")
         #expect(scopeControl.selectedSegment == 0)
         #expect(scopeControl.isHidden)
 

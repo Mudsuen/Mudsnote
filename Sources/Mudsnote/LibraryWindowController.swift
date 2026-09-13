@@ -787,7 +787,7 @@ private struct LibraryFormattingUndoSnapshot {
 final class LibraryGroupHeaderCellView: NSTableCellView {
     static let titleLeadingInset: CGFloat = 16
     static let titleTrailingInset: CGFloat = 10
-    static let firstTitleBottomInset: CGFloat = 15
+    static let firstTitleBottomInset: CGFloat = 5
     static let followingTitleBottomInset: CGFloat = 2
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -835,9 +835,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 4.5
-    static let contentLeadingInset: CGFloat = 35
+    static let contentLeadingInset: CGFloat = 16
     static let contentBottomInset: CGFloat = 7.5
-    static let contentTrailingInset: CGFloat = 39
+    static let contentTrailingInset: CGFloat = 16
     static let selectionTextTrailingPadding: CGFloat = 10
     static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
@@ -949,17 +949,17 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 10
-    static let selectionTrailingInset: CGFloat = 27
-    static let selectionTopInset: CGFloat = 6
-    static let selectionBottomInset: CGFloat = 4
+    static let selectionLeadingInset: CGFloat = 4
+    static let selectionTrailingInset: CGFloat = 4
+    static let selectionTopInset: CGFloat = 2
+    static let selectionBottomInset: CGFloat = 2
     static let selectionCornerRadius: CGFloat = 8
     static var selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
-    static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
+    static let hoverFillColor = NSColor.labelColor.withAlphaComponent(0.045)
     static let separatorLeadingInset: CGFloat = 37
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
@@ -1017,19 +1017,6 @@ final class LibraryNoteRowView: NSTableRowView {
         super.drawBackground(in: dirtyRect)
         guard !isGroupRow else { return }
 
-        if !isSelected {
-            let y = bounds.minY + 0.5
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: Self.separatorLeadingInset, y: y))
-            path.line(to: NSPoint(
-                x: max(Self.separatorLeadingInset, bounds.maxX - Self.separatorTrailingInset),
-                y: y
-            ))
-            panelSeparatorColor(alpha: Self.separatorAlpha).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-        }
-
         guard isPointerHovered, !isSelected else { return }
 
         let hoverRect = insetRect(
@@ -1047,6 +1034,8 @@ final class LibraryNoteRowView: NSTableRowView {
         path.fill()
     }
 
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
         let selectionRect = insetRect(
@@ -1061,8 +1050,7 @@ final class LibraryNoteRowView: NSTableRowView {
             yRadius: Self.selectionCornerRadius
         )
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        // AppKit uses white text for emphasized rows and dark text for inactive light rows.
-        (isDark || isEmphasized ? Self.selectionFillColor : Self.selectionFillColor.withAlphaComponent(0.18)).setFill()
+        Self.selectionFillColor.withAlphaComponent(isDark ? 0.30 : 0.18).setFill()
         path.fill()
     }
 
@@ -1460,6 +1448,10 @@ final class LibraryWindowController: NSWindowController,
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
+    private let folderShortcutStack = NSStackView()
+    private var folderShortcutWidthConstraint: NSLayoutConstraint?
+    private let searchPopover = NSPopover()
+    private let searchButton = NSButton()
     private let sourcePopover = NSPopover()
     private let sourceButton = NSButton()
     private let commandButton = NSButton()
@@ -1550,6 +1542,7 @@ final class LibraryWindowController: NSWindowController,
         window.titlebarAppearsTransparent = true
         window.isOpaque = false
         window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
@@ -2200,8 +2193,27 @@ final class LibraryWindowController: NSWindowController,
         librarySplitViewController = splitController
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
-        window?.contentViewController = splitController
-        hostEditorSuggestionView(in: splitController.view)
+        let rootController = NSViewController()
+        let root = LibraryPaneSurface(role: .document)
+        rootController.view = root
+        rootController.addChild(splitController)
+        let navigation = buildNavigationBar()
+        root.addSubview(splitController.view)
+        root.addSubview(navigation)
+        splitController.view.translatesAutoresizingMaskIntoConstraints = false
+        navigation.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            navigation.topAnchor.constraint(equalTo: root.topAnchor),
+            navigation.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 80),
+            navigation.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            navigation.heightAnchor.constraint(equalToConstant: 40),
+            splitController.view.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
+            splitController.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            splitController.view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            splitController.view.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        window?.contentViewController = rootController
+        hostEditorSuggestionView(in: root)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(librarySplitViewDidResize(_:)),
@@ -2286,6 +2298,111 @@ final class LibraryWindowController: NSWindowController,
         return sourceList
     }
 
+    private func buildNavigationBar() -> NSView {
+        configureCompactButton(sourceButton, symbol: "sidebar.left", label: "文件夹与标签（⌃⌘S）", action: #selector(toggleSourceListPressed))
+        sourceButton.identifier = NSUserInterfaceItemIdentifier("LibraryFolderPicker")
+        configureCompactButton(searchButton, symbol: "magnifyingglass", label: "搜索笔记（⌘F）", action: #selector(searchPressed))
+        searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySearchButton")
+        let newButton = NSButton()
+        configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
+        configureCompactButton(commandButton, symbol: "ellipsis", label: "快速菜单（⇧⌘P）", action: #selector(showQuickMenu(_:)))
+        commandButton.identifier = NSUserInterfaceItemIdentifier("LibraryQuickMenu")
+
+        folderShortcutStack.orientation = .horizontal
+        folderShortcutStack.spacing = 4
+        folderShortcutStack.alignment = .centerY
+        let folderScroll = NSScrollView()
+        folderScroll.identifier = NSUserInterfaceItemIdentifier("LibraryFolderShortcuts")
+        folderScroll.setAccessibilityLabel("一级文件夹")
+        folderScroll.drawsBackground = false
+        folderScroll.contentView.drawsBackground = false
+        folderScroll.hasHorizontalScroller = true
+        folderScroll.autohidesScrollers = true
+        folderScroll.scrollerStyle = .overlay
+        folderScroll.documentView = folderShortcutStack
+        folderShortcutStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            folderShortcutStack.leadingAnchor.constraint(equalTo: folderScroll.contentView.leadingAnchor),
+            folderShortcutStack.topAnchor.constraint(equalTo: folderScroll.contentView.topAnchor),
+            folderShortcutStack.heightAnchor.constraint(equalTo: folderScroll.heightAnchor),
+            folderScroll.heightAnchor.constraint(equalToConstant: 32)
+        ])
+        rebuildFolderShortcuts()
+        let dragHandle = LibraryWindowDragHandle()
+        dragHandle.identifier = NSUserInterfaceItemIdentifier("LibraryWindowDragHandle")
+        dragHandle.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        dragHandle.widthAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        dragHandle.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let preferredFolderWidth = folderScroll.widthAnchor.constraint(equalToConstant: CGFloat(folderShortcutStack.arrangedSubviews.count * 34 - 4))
+        preferredFolderWidth.priority = .defaultLow
+        preferredFolderWidth.isActive = true
+        folderShortcutWidthConstraint = preferredFolderWidth
+        let bar = NSStackView(views: [sourceButton, folderScroll, searchButton, dragHandle, newButton, commandButton])
+        bar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationBar")
+        bar.spacing = 8
+        bar.alignment = .centerY
+        bar.distribution = .fill
+        folderScroll.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
+        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: bar.widthAnchor, constant: -208).isActive = true
+
+        let searchStack = NSStackView(views: [searchField, searchScopeControl])
+        searchStack.orientation = .vertical
+        searchStack.alignment = .leading
+        searchStack.spacing = 8
+        searchStack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        searchField.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        let searchController = NSViewController()
+        searchController.view = searchStack
+        searchPopover.contentViewController = searchController
+        searchPopover.contentSize = NSSize(width: 304, height: 76)
+        searchPopover.behavior = .semitransient
+        return bar
+    }
+
+    private func rebuildFolderShortcuts() {
+        let previous = folderShortcutStack.arrangedSubviews.compactMap { ($0 as? LibraryFolderShortcutButton)?.folderURL }
+        // The library root plus its immediate folders, and separately added roots.
+        let mainRoot = noteStore.notesDirectory.standardizedFileURL
+        var seen = Set<String>()
+        let folders = (sourceFolderTreeRows.filter {
+            $0.depth == 0 || $0.url.deletingLastPathComponent().standardizedFileURL == mainRoot
+        }.map(\.url) + externalPreviewFolderURLs()).filter {
+            seen.insert($0.standardizedFileURL.path).inserted
+        }
+        if previous != folders || folderShortcutStack.arrangedSubviews.isEmpty {
+            folderShortcutStack.arrangedSubviews.forEach { folderShortcutStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+            folderShortcutStack.addArrangedSubview(LibraryFolderShortcutButton(
+                folderURL: nil, symbol: "house", label: "首页", target: self, action: #selector(folderShortcutPressed(_:))))
+            for folder in folders {
+                folderShortcutStack.addArrangedSubview(LibraryFolderShortcutButton(
+                    folderURL: folder, symbol: sourceSymbolName(for: .folder(folder)),
+                    label: folderTitle(for: folder), target: self, action: #selector(folderShortcutPressed(_:))))
+            }
+        }
+        folderShortcutWidthConstraint?.constant = CGFloat(folderShortcutStack.arrangedSubviews.count * 34 - 4)
+        refreshFolderShortcutSelection()
+    }
+
+    private func refreshFolderShortcutSelection() {
+        for case let button as LibraryFolderShortcutButton in folderShortcutStack.arrangedSubviews {
+            let selected: Bool
+            if let folder = button.folderURL, case .folder(let current) = selectedScope {
+                selected = current.standardizedFileURL == folder.standardizedFileURL
+                    || (current.path.hasPrefix(folder.path + "/") && folder.standardizedFileURL != noteStore.notesDirectory.standardizedFileURL)
+            } else {
+                selected = button.folderURL == nil && selectedScope == .all
+            }
+            button.state = selected ? .on : .off
+            button.contentTintColor = selected ? .controlAccentColor : .secondaryLabelColor
+        }
+    }
+
+    @objc private func folderShortcutPressed(_ sender: LibraryFolderShortcutButton) {
+        _ = activateSourceScope(sender.folderURL.map(LibraryScope.folder) ?? .all)
+        refreshFolderShortcutSelection()
+        window?.makeFirstResponder(tableView)
+    }
+
     private func buildSidebar() -> NSView {
         let sidebar = LibraryPaneSurface(role: .navigation)
         sidebar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSurface")
@@ -2367,42 +2484,13 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        configureCompactButton(sourceButton, symbol: "folder", label: "文件夹与标签（⌃⌘S）", action: #selector(toggleSourceListPressed))
-        sourceButton.identifier = NSUserInterfaceItemIdentifier("LibraryFolderPicker")
-        let newButton = NSButton()
-        configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
-        configureCompactButton(commandButton, symbol: "ellipsis", label: "快速菜单（⇧⌘P）", action: #selector(showQuickMenu(_:)))
-        commandButton.identifier = NSUserInterfaceItemIdentifier("LibraryQuickMenu")
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        noteListTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let heading = NSStackView(views: [sourceButton, noteListTitleLabel, spacer, newButton, commandButton])
-        heading.spacing = 4
-        heading.alignment = .centerY
-        noteListTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let searchContainer = NSBox()
-        searchContainer.boxType = .custom
-        searchContainer.borderWidth = 0
-        searchContainer.cornerRadius = 8
-        searchContainer.fillColor = .quaternaryLabelColor
-        searchContainer.contentViewMargins = .zero
-        let searchContent = NSView()
-        searchContainer.contentView = searchContent
-        searchContent.addSubview(searchField)
-        searchField.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            searchContainer.heightAnchor.constraint(equalToConstant: 34),
-            searchField.leadingAnchor.constraint(equalTo: searchContent.leadingAnchor, constant: 8),
-            searchField.trailingAnchor.constraint(equalTo: searchContent.trailingAnchor, constant: -6),
-            searchField.centerYAnchor.constraint(equalTo: searchContent.centerYAnchor)
-        ])
-        let stack = NSStackView(views: [heading, searchContainer, searchScopeControl, listContainer])
+        let stack = NSStackView(views: [listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 10
+        stack.spacing = 0
         stack.edgeInsets = NSEdgeInsets(
-            top: 12,
+            top: 0,
             left: LibraryNotesLayout.noteListLeadingInset,
             bottom: LibraryNotesLayout.noteListBottomInset,
             right: LibraryNotesLayout.noteListTrailingInset
@@ -2414,13 +2502,13 @@ final class LibraryWindowController: NSWindowController,
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             stack.topAnchor.constraint(
-                equalTo: sidebar.safeAreaLayoutGuide.topAnchor,
+                equalTo: sidebar.topAnchor,
                 constant: LibraryNotesLayout.noteListStackTopOffset
             ),
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
 
         ])
-        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -26).isActive = true
+        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -(LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset)).isActive = true
 
         return sidebar
     }
@@ -2512,27 +2600,9 @@ final class LibraryWindowController: NSWindowController,
         createdDateLabel.alignment = .center
         createdDateLabel.lineBreakMode = .byTruncatingTail
         createdDateLabel.translatesAutoresizingMaskIntoConstraints = false
-        editorTextView.addSubview(createdDateLabel)
-        NSLayoutConstraint.activate([
-            createdDateLabel.topAnchor.constraint(equalTo: editorTextView.topAnchor, constant: 4),
-            createdDateLabel.centerXAnchor.constraint(
-                equalTo: editorTextView.centerXAnchor,
-                constant: LibraryNotesLayout.editorStatusHorizontalOffset
-            ),
-            createdDateLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: editorTextView.leadingAnchor,
-                constant: 20
-            ),
-            createdDateLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: editorTextView.trailingAnchor,
-                constant: -20
-            ),
-            createdDateLabel.heightAnchor.constraint(
-                equalToConstant: LibraryNotesLayout.editorDateRowHeight
-            )
-        ])
-        editorTextView.addSubview(statusLabel)
-        editorTextView.addSubview(wordCountLabel)
+        // Dates remain available in note information, without reserving editor chrome.
+        createdDateLabel.isHidden = true
+        statusLabel.isHidden = true
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -2577,15 +2647,23 @@ final class LibraryWindowController: NSWindowController,
         noteLinksView.onGoForward = { [weak self] in
             self?.goForwardInKnowledgeRelations()
         }
-        let stack = NSStackView(views: [bodyContainer, noteLinksView])
+        let footer = NSStackView(views: [noteLinksView, statusLabel, wordCountLabel])
+        footer.alignment = .top
+        footer.distribution = .fill
+        footer.spacing = 8
+        noteLinksView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        wordCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+        wordCountLabel.trailingAnchor.constraint(equalTo: footer.trailingAnchor).isActive = true
+        let stack = NSStackView(views: [bodyContainer, footer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
         stack.spacing = 0
-        stack.setCustomSpacing(8, after: bodyContainer)
+        stack.setCustomSpacing(2, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
-            top: 16,
+            top: 4,
             left: LibraryNotesLayout.editorHorizontalInset,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
@@ -2620,11 +2698,11 @@ final class LibraryWindowController: NSWindowController,
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            stack.topAnchor.constraint(equalTo: editor.topAnchor),
             stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
             galleryScrollView.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             galleryScrollView.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            galleryScrollView.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            galleryScrollView.topAnchor.constraint(equalTo: editor.topAnchor),
             galleryScrollView.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
             galleryEmptyLabel.centerXAnchor.constraint(equalTo: editor.centerXAnchor),
             galleryEmptyLabel.centerYAnchor.constraint(equalTo: editor.centerYAnchor, constant: -20),
@@ -2638,7 +2716,7 @@ final class LibraryWindowController: NSWindowController,
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
             ),
-            noteLinksView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
@@ -2665,7 +2743,7 @@ final class LibraryWindowController: NSWindowController,
         searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
         searchField.font = .systemFont(ofSize: 13)
         searchField.delegate = self
-        searchField.isBordered = false
+        searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -2704,6 +2782,15 @@ final class LibraryWindowController: NSWindowController,
         listActions.submenu = makeNoteListActionsMenuForLibrary()
         menu.insertItem(listActions, at: 3)
         menu.insertItem(.separator(), at: 4)
+        let information = NSMenuItem(title: "笔记信息", action: nil, keyEquivalent: "")
+        let details = NSMenu()
+        for value in [createdDateLabel.stringValue, statusLabel.stringValue, wordCountLabel.stringValue] where !value.isEmpty {
+            let item = NSMenuItem(title: value, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            details.addItem(item)
+        }
+        information.submenu = details
+        menu.addItem(information)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: commandButton.bounds.maxY), in: commandButton)
     }
 
@@ -2856,9 +2943,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isHorizontallyResizable = false
         editorTextView.textContainerInset = NSSize(
             width: LibraryNotesLayout.editorTextContainerHorizontalInset,
-            height: LibraryNotesLayout.editorDateRowHeight
-                + LibraryNotesLayout.editorDateToTitleSpacing
-                + 4
+            height: 4
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
@@ -2937,6 +3022,7 @@ final class LibraryWindowController: NSWindowController,
 
         sourceOutlineRootItems = roots
         sourceOutlineView.reloadData()
+        rebuildFolderShortcuts()
         restoreSourceOutlineExpansion()
         if hasLoadedSourceCounts {
             refreshSourceCounts(using: sourceCountSnapshot)
@@ -3428,6 +3514,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceSelection() {
+        refreshFolderShortcutSelection()
         guard let item = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: selectedScope)] else {
             return
         }
@@ -3899,6 +3986,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateNoteListHeader(query: String) {
+        searchButton.contentTintColor = query.isEmpty ? .secondaryLabelColor : .controlAccentColor
+        searchButton.toolTip = query.isEmpty ? "搜索笔记（⌘F）" : "搜索：\(query)"
+        refreshFolderShortcutSelection()
         let title = query.isEmpty
             ? noteListTitle(for: selectedScope)
             : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
@@ -5536,7 +5626,10 @@ final class LibraryWindowController: NSWindowController,
         flushPendingSearchReload()
 
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            return clearSearchFromKeyboard()
+            _ = clearSearchFromKeyboard()
+            searchPopover.performClose(nil)
+            window?.makeFirstResponder(searchButton)
+            return true
         }
 
         if commandSelector == #selector(NSResponder.moveDown(_:)) {
@@ -5755,12 +5848,15 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func focusSearchForLibrary() {
-        window?.makeFirstResponder(searchField)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(self.searchField)
+        guard searchButton.window != nil else { return }
+        searchPopover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if !searchPopover.isShown {
+            searchPopover.show(relativeTo: searchButton.bounds, of: searchButton, preferredEdge: .maxY)
         }
+        searchField.window?.makeFirstResponder(searchField)
     }
+
+    @objc private func searchPressed() { focusSearchForLibrary() }
 
     @objc
     private func savePressed() {
@@ -6004,6 +6100,7 @@ final class LibraryWindowController: NSWindowController,
     private func loadFocusedNoteListResultFromSearch() -> Bool {
         guard selectNoteListRowIfNeeded() else { return false }
         loadSelectedRow()
+        searchPopover.performClose(nil)
         editorTextView.window?.makeFirstResponder(editorTextView)
         return true
     }
@@ -7312,8 +7409,10 @@ final class LibraryWindowController: NSWindowController,
         switch kind {
         case .normal:
             statusLabel.textColor = .secondaryLabelColor
+            statusLabel.isHidden = true
         case .failure:
             statusLabel.textColor = .systemRed
+            statusLabel.isHidden = false
         }
         if announcesChange {
             NSAccessibility.post(element: statusLabel, notification: .valueChanged)
@@ -7326,24 +7425,9 @@ final class LibraryWindowController: NSWindowController,
               let textContainer = editorTextView.textContainer else { return }
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let horizontalInset: CGFloat = 20
         let contentBottom = editorTextView.textContainerInset.height + usedRect.maxY
         let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
-        let rowHeight = LibraryNotesLayout.editorDateRowHeight
-        let topGap = LibraryNotesLayout.editorBottomInset
-        let bottomGap = LibraryNotesLayout.editorStatusBottomGap
-        // Pin the label to the bottom of the visible editor area when the
-        // content is short; otherwise let the label flow after the content.
-        let pinToBottom = viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
-        let statusTop: CGFloat
-        let documentHeight: CGFloat
-        if pinToBottom {
-            statusTop = viewportHeight - rowHeight - bottomGap
-            documentHeight = viewportHeight
-        } else {
-            statusTop = contentBottom + topGap
-            documentHeight = statusTop + rowHeight + bottomGap
-        }
+        let documentHeight = max(viewportHeight, contentBottom + 4)
         editorTextView.minimumScrollableContentHeight = documentHeight
         editorTextView.minSize = NSSize(width: 0, height: documentHeight)
         if abs(editorTextView.frame.height - documentHeight) > 0.5 {
@@ -7351,18 +7435,6 @@ final class LibraryWindowController: NSWindowController,
             frame.size.height = documentHeight
             editorTextView.frame = frame
         }
-        statusLabel.frame = NSRect(
-            x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
-            y: statusTop,
-            width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
-            height: rowHeight
-        )
-        wordCountLabel.frame = NSRect(
-            x: max(horizontalInset, editorTextView.bounds.width - 112),
-            y: statusTop,
-            width: 88,
-            height: rowHeight
-        )
     }
 
     @discardableResult
@@ -8330,7 +8402,7 @@ final class LibraryWindowController: NSWindowController,
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
         sourcePopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if isVisible, sourceButton.window != nil, !sourcePopover.isShown {
-            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxX)
+            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxY)
             sourceOutlineView.window?.makeFirstResponder(sourceOutlineView)
         } else if !isVisible {
             sourcePopover.performClose(nil)

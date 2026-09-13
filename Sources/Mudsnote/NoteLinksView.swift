@@ -145,7 +145,7 @@ final class NoteLinksView: NSView {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             header.widthAnchor.constraint(equalTo: stack.widthAnchor),
             detailsClip.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -188,6 +188,7 @@ final class NoteLinksView: NSView {
     }
 
     private func updateExpansion(animated: Bool) {
+        detailsClip.isHidden = !isExpanded
         if !isExpanded, let responder = window?.firstResponder as? NSView,
            responder.isDescendant(of: details) {
             window?.makeFirstResponder(disclosure)

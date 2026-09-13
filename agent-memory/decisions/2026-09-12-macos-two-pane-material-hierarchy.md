@@ -2,6 +2,9 @@
 
 Scope: macos only; checkpoint 57081ab was an unfinished starting point.
 
+The pane tint and spacing choices below were superseded by the user's
+2026-09-13 feedback; see 2026-09-13-macos-continuous-material-icon-navigation.md.
+
 The user requested a slightly darker list, brighter document, professional
 spacing, and smooth motion. The inspected checkpoint used two native materials
 whose active/inactive behavior inverted that hierarchy in dark appearance.
