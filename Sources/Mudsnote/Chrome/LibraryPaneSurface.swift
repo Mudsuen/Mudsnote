@@ -34,7 +34,7 @@ final class LibraryPaneSurface: NSView {
         let opaque = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
         materialView.alphaValue = 1
         let white: CGFloat = opaque ? (dark ? 0.17 : 0.96) : 0
-        let alpha: CGFloat = opaque ? 1 : (role == .navigation ? 0.035 : 0)
+        let alpha: CGFloat = opaque ? 1 : (role == .navigation ? 0.018 : 0)
         tintView.layer?.backgroundColor = NSColor(calibratedWhite: white, alpha: alpha).cgColor
     }
 

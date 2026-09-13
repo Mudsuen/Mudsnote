@@ -47,3 +47,8 @@ a compact row above the list. This supersedes the layered popover description.
 
 Final follow-up verification: 315 tests passed with `./scripts/verify macos pr`
 (19.374s); actual folder/title synchronization and search dismissal checked.
+
+The subsequent Flodo reference confirms a frosted, background-tinted surface
+and restrained chrome. Navigation tint is now 1.8%; folder button borders are
+hover/selection only. Preserve Obsidian pane alignment. Final macOS PR run
+passed all 315 tests (19.357s); final visual comparison recorded in design-qa.md.

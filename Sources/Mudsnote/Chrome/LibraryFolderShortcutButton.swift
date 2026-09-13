@@ -23,6 +23,7 @@ final class LibraryFolderShortcutButton: NSButton {
         bezelStyle = .recessed
         setButtonType(.pushOnPushOff)
         isBordered = true
+        showsBorderOnlyWhileMouseInside = true
         self.target = target
         self.action = action
         toolTip = label

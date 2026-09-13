@@ -17,7 +17,9 @@ relative attachments are canonical across separate macOS and iPhone apps.
 ### macOS
 
 - Native two-pane library shares a single native sidebar material, with subtle list
-  shading. A compact icon row exposes first-level folders and search; nested
+  shading and restrained Flodo-inspired icon chrome. Pane-aligned navigation and
+  document title sit above the editor/list; first-level folder icons stay in the
+  compact list action row, while search opens from its icon. Nested
   folders/tags remain in a keyboard-accessible popover. List/gallery
   share bounded projection and selection. Shift-Command-P opens the quick menu.
 - Smart backlinks expose incoming/outgoing references and suggestions without
