@@ -8,12 +8,13 @@ final class LibraryPaneSurface: NSView {
     private let materialView = NSVisualEffectView()
     private let tintView = NSView()
 
-    init(role: Role) {
+    init(role: Role, providesMaterial: Bool = false) {
         self.role = role
         super.init(frame: .zero)
-        materialView.material = .popover
+        materialView.material = .sidebar
         materialView.blendingMode = .behindWindow
         materialView.state = .active
+        materialView.isHidden = !providesMaterial
         tintView.wantsLayer = true
         for view in [materialView, tintView] {
             addSubview(view)
@@ -31,8 +32,9 @@ final class LibraryPaneSurface: NSView {
     @objc private func refreshAppearance() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let opaque = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        let white: CGFloat = opaque ? (dark ? 0.17 : 0.96) : (role == .navigation ? 0 : 1)
-        let alpha: CGFloat = opaque ? 1 : (role == .navigation ? 0.045 : 0.015)
+        materialView.alphaValue = 1
+        let white: CGFloat = opaque ? (dark ? 0.17 : 0.96) : 0
+        let alpha: CGFloat = opaque ? 1 : (role == .navigation ? 0.035 : 0)
         tintView.layer?.backgroundColor = NSColor(calibratedWhite: white, alpha: alpha).cgColor
     }
 

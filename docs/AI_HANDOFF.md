@@ -16,7 +16,7 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### macOS
 
-- Native two-pane library shares Board-style popover material, with subtle list
+- Native two-pane library shares a single native sidebar material, with subtle list
   shading. A compact icon row exposes first-level folders and search; nested
   folders/tags remain in a keyboard-accessible popover. List/gallery
   share bounded projection and selection. Shift-Command-P opens the quick menu.

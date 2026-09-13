@@ -37,3 +37,13 @@ Real-window review covered dark/light appearance, folder selection, search
 input and Return/Escape. Screenshots and review are persisted in the task's
 visualization material-review directory. Native window dragging was attempted
 but frame movement was not observed, so it is not a passed interaction check.
+
+Follow-up: the user supplied Obsidian header structure and rejected excessive
+transparency during preview. The latest version uses one root sidebar effect
+at full opacity; child panes supply only tint. Do not fade the effect itself,
+which exposes distracting background detail. Navigation aligns with the list,
+the document title chip aligns with the editor, and folder shortcuts remain in
+a compact row above the list. This supersedes the layered popover description.
+
+Final follow-up verification: 315 tests passed with `./scripts/verify macos pr`
+(19.374s); actual folder/title synchronization and search dismissal checked.

@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-13, this prototype records 280 implementation iterations, including the initial MVP.
+As of 2026-09-13, this prototype records 281 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 281. Balanced translucent material and pane-aligned Mac header
+- Problem: Light material felt white, while reducing effect opacity exposed distracting background detail. A global icon strip lacked the pane-aligned structure of the supplied Obsidian reference.
+- Fix: Use one full-strength native sidebar material behind the window, with transparent child panes and subtle navigation tint. Align navigation to the list and a current-document title chip to the editor; keep first-level folder shortcuts on a compact list action row.
+- Lesson: Preserve native blur instead of fading the effect view. Judge desktop compositing and user feedback separately from isolated window captures.
 
 ### 280. Continuous material and compact Mac navigation
 - Problem: Opaque tints masked the native material; a permanent search field, duplicated dates, and broad panel padding consumed writing space.

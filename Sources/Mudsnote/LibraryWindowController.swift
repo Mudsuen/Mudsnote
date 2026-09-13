@@ -1449,6 +1449,8 @@ final class LibraryWindowController: NSWindowController,
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
     private let folderShortcutStack = NSStackView()
+    private let folderNavigationRow = NSStackView()
+    private let documentTabTitle = NSTextField(labelWithString: "新笔记")
     private var folderShortcutWidthConstraint: NSLayoutConstraint?
     private let searchPopover = NSPopover()
     private let searchButton = NSButton()
@@ -2156,6 +2158,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func buildUI() {
         let sourceList = buildSourceList()
+        let navigation = buildNavigationBar()
         let sidebar = buildSidebar()
         let editor = buildEditor()
 
@@ -2194,18 +2197,24 @@ final class LibraryWindowController: NSWindowController,
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         let rootController = NSViewController()
-        let root = LibraryPaneSurface(role: .document)
+        let root = LibraryPaneSurface(role: .document, providesMaterial: true)
         rootController.view = root
         rootController.addChild(splitController)
-        let navigation = buildNavigationBar()
         root.addSubview(splitController.view)
         root.addSubview(navigation)
+        let documentHeader = buildDocumentHeader()
+        root.addSubview(documentHeader)
+        documentHeader.translatesAutoresizingMaskIntoConstraints = false
         splitController.view.translatesAutoresizingMaskIntoConstraints = false
         navigation.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             navigation.topAnchor.constraint(equalTo: root.topAnchor),
             navigation.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 80),
-            navigation.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
+            documentHeader.leadingAnchor.constraint(equalTo: editor.leadingAnchor, constant: 8),
+            documentHeader.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
+            documentHeader.topAnchor.constraint(equalTo: root.topAnchor, constant: 5),
+            documentHeader.heightAnchor.constraint(equalToConstant: 35),
             navigation.heightAnchor.constraint(equalToConstant: 40),
             splitController.view.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
             splitController.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -2337,13 +2346,17 @@ final class LibraryWindowController: NSWindowController,
         preferredFolderWidth.priority = .defaultLow
         preferredFolderWidth.isActive = true
         folderShortcutWidthConstraint = preferredFolderWidth
-        let bar = NSStackView(views: [sourceButton, folderScroll, searchButton, dragHandle, newButton, commandButton])
+        folderNavigationRow.setViews([folderScroll, newButton], in: .leading)
+        folderNavigationRow.spacing = 4
+        folderNavigationRow.alignment = .centerY
+        folderNavigationRow.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        let bar = NSStackView(views: [sourceButton, searchButton, dragHandle])
         bar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationBar")
         bar.spacing = 8
         bar.alignment = .centerY
         bar.distribution = .fill
         folderScroll.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
-        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: bar.widthAnchor, constant: -208).isActive = true
+        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: folderNavigationRow.widthAnchor, constant: -38).isActive = true
 
         let searchStack = NSStackView(views: [searchField, searchScopeControl])
         searchStack.orientation = .vertical
@@ -2357,6 +2370,30 @@ final class LibraryWindowController: NSWindowController,
         searchPopover.contentSize = NSSize(width: 304, height: 76)
         searchPopover.behavior = .semitransient
         return bar
+    }
+
+    private func buildDocumentHeader() -> NSView {
+        documentTabTitle.font = .systemFont(ofSize: 13, weight: .medium)
+        documentTabTitle.lineBreakMode = .byTruncatingTail
+        documentTabTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        documentTabTitle.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabTitle")
+        let icon = NSImageView(image: NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)!)
+        let tab = NSStackView(views: [icon, documentTabTitle])
+        tab.spacing = 8
+        tab.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        tab.wantsLayer = true
+        tab.layer?.cornerRadius = 9
+        tab.layer?.borderWidth = 0.5
+        tab.layer?.borderColor = NSColor.secondaryLabelColor.withAlphaComponent(0.25).cgColor
+        let add = NSButton()
+        configureCompactButton(add, symbol: "plus", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
+        let spacer = LibraryWindowDragHandle()
+        let header = NSStackView(views: [tab, add, spacer, commandButton])
+        header.spacing = 6
+        header.alignment = .centerY
+        tab.widthAnchor.constraint(lessThanOrEqualTo: header.widthAnchor, multiplier: 0.7).isActive = true
+        spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 4).isActive = true
+        return header
     }
 
     private func rebuildFolderShortcuts() {
@@ -2484,7 +2521,7 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [listContainer])
+        let stack = NSStackView(views: [folderNavigationRow, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -5666,6 +5703,7 @@ final class LibraryWindowController: NSWindowController,
             normalizeUnifiedTitleLineFormatting()
             let metadata = visibleEditorMetadata()
             titleField.stringValue = metadata.title
+            documentTabTitle.stringValue = metadata.title.isEmpty ? "新笔记" : metadata.title
             updateWordCount(in: metadata.body)
             layoutEditorStatusLabel()
             libraryUserDidEdit()
@@ -6760,6 +6798,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isRichText = true
         editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
+        documentTabTitle.stringValue = title.isEmpty ? "新笔记" : title
         selectedTags = tags
         let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(
             title: title,
