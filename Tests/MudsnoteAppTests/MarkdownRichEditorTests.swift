@@ -2716,6 +2716,24 @@ struct MarkdownRichEditorTests {
         let listPresentationButton = try #require(listFilesHeader.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
+        window.contentView?.layoutSubtreeIfNeeded()
+        let listStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibraryNoteListStack"
+        })
+        let smartNavigation = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibraryListSmartNavigation"
+        })
+        let smartControls = smartNavigation.arrangedSubviews.compactMap { $0 as? LibraryListSmartScopeControl }
+        let firstSmartControl = try #require(smartControls.first)
+        let smartTitle = try #require(smartNavigation.arrangedSubviews.first as? NSTextField)
+        #expect(abs(smartNavigation.frame.minX - listStack.edgeInsets.left) < 0.5)
+        #expect(abs(smartNavigation.frame.width
+            - (listStack.bounds.width - listStack.edgeInsets.left - listStack.edgeInsets.right)) < 0.5)
+        #expect(abs(firstSmartControl.frame.minX - smartNavigation.edgeInsets.left) < 0.5)
+        #expect(abs(firstSmartControl.frame.width
+            - (smartNavigation.bounds.width - smartNavigation.edgeInsets.left - smartNavigation.edgeInsets.right)) < 0.5)
+        #expect(abs(smartTitle.frame.midX - firstSmartControl.frame.midX) < 0.5)
+        #expect(smartTitle.frame.width >= firstSmartControl.frame.width - 4.5)
         #expect(listPresentationButton.toolTip == "切换到文件树")
         #expect(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"

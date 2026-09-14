@@ -2628,11 +2628,13 @@ final class LibraryWindowController: NSWindowController,
             titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
             titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
-        smartNavigation.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        filesHeader.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        listHeader.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-
+        let stackHorizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
+        [smartNavigation, filesHeader, listHeader, listContainer].forEach {
+            $0.widthAnchor.constraint(
+                equalTo: stack.widthAnchor,
+                constant: -stackHorizontalInsets
+            ).isActive = true
+        }
         return sidebar
     }
 
@@ -2662,8 +2664,9 @@ final class LibraryWindowController: NSWindowController,
         stack.alignment = .width
         stack.spacing = 0
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
-        if let firstControl = controls.first {
-            title.widthAnchor.constraint(equalTo: firstControl.widthAnchor).isActive = true
+        let horizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
+        ([title] + controls).forEach {
+            $0.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -horizontalInsets).isActive = true
         }
         updateListSmartScopeButtons()
         return stack
