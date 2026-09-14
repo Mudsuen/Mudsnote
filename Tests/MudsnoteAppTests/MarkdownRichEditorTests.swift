@@ -195,6 +195,40 @@ private func setLibraryEditorDocument(_ controller: LibraryWindowController, tit
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
+    @Test func emptyTabCreatesNoteInPlaceAndSidebarSearchFillsItsPane() throws {
+        let suite = "workspace-empty-tab-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        _ = try store.saveNewNote(title: "Seed", body: "Existing content")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus()
+        controller.newDocumentTabForLibrary()
+        let count = controller.documentTabCountForLibrary
+        let content = try #require(controller.window?.contentView)
+        let actions = try #require(content.allSubviews.first { $0.identifier?.rawValue == "LibraryEmptyTabActions" })
+        #expect(!actions.isHidden)
+        let create = try #require(actions.allSubviews.compactMap { $0 as? NSButton }.first { $0.title == "新建笔记" })
+        create.performClick(nil)
+        controller.flushBackgroundAutosaveForTesting()
+        #expect(controller.documentTabCountForLibrary == count)
+        #expect(controller.activeDocumentURLForLibrary != nil)
+        #expect(actions.isHidden)
+        controller.focusSearchForLibrary()
+        content.layoutSubtreeIfNeeded()
+        let sidebar = try #require(content.allSubviews.first { $0.identifier?.rawValue == "LibraryNavigationSurface" })
+        #expect(controller.searchField.frame.width > sidebar.frame.width - 40)
+        #expect(!controller.toggleSidebarForLibrary())
+        let search = try #require(content.allSubviews.first { $0.identifier?.rawValue == "LibrarySearchButton" } as? NSButton)
+        #expect(!search.isHidden)
+        search.performClick(nil)
+        content.layoutSubtreeIfNeeded()
+        #expect(!sidebar.isHiddenOrHasHiddenAncestor)
+        #expect(controller.searchField.currentEditor() != nil)
+    }
+
     @Test func documentTabsKeepEditsSeparateAcrossSwitchSaveAndClose() throws {
         let suite = "workspace-tabs-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

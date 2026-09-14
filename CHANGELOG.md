@@ -17,6 +17,11 @@ As of 2026-09-14, this prototype records 282 implementation iterations, includin
 
 ## Iterations
 
+### 283. Aligned Mac header and usable empty tabs
+- Problem: Traffic lights and custom controls used different vertical centers, sidebar search compressed to the trailing edge, and creating a note from an empty tab left an extra empty tab behind.
+- Fix: Align header controls on the native 32-point titlebar row, give sidebar rows explicit available widths, and keep search reachable while the sidebar is collapsed. Place the plus next to the tabs and offer create/search actions in empty tabs; creating a note fills that tab.
+- Lesson: Validate expanded, collapsed, search and empty-tab states in a real window, including the transition from an empty tab to a saved note.
+
 ### 282. Mac document tabs and corrected sidebar interactions
 - Problem: The sidebar toggle opened a folder picker, search used a transient popover, and the document title looked like a tab without supporting multiple documents. Background saves, undo and read-only state needed independent document ownership.
 - Fix: Separate sidebar collapse, file browsing and inline search; add real tabs, right-click foreground/background opening, empty tabs, close actions, per-document undo and asynchronous save ownership. Capture context-menu targets, preserve failed saves, isolate trash permissions, and separate document find from library search. Use one full-strength window-backdrop material with clear child panes and opaque text and controls.

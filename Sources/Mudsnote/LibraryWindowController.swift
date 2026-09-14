@@ -1460,6 +1460,8 @@ final class LibraryWindowController: NSWindowController,
     private var retainedSavingTabs: [UUID: LibraryDocumentTab] = [:]
     private var backgroundSavingTab: LibraryDocumentTab?
     private let documentTabsStack = NSStackView()
+    private var documentTabsWidthConstraint: NSLayoutConstraint?
+    private let emptyTabActions = NSStackView()
     private var tabBarSignature = ""
     private var isActivatingDocumentTab = false
     private var activeDocumentTab: LibraryDocumentTab {
@@ -2230,9 +2232,9 @@ final class LibraryWindowController: NSWindowController,
             navigation.trailingAnchor.constraint(equalTo: documentHeader.leadingAnchor, constant: -8),
             documentHeader.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 124),
             documentHeader.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
-            documentHeader.topAnchor.constraint(equalTo: root.topAnchor, constant: 5),
-            documentHeader.heightAnchor.constraint(equalToConstant: 35),
-            navigation.heightAnchor.constraint(equalToConstant: 40),
+            documentHeader.topAnchor.constraint(equalTo: root.topAnchor),
+            documentHeader.heightAnchor.constraint(equalToConstant: 32),
+            navigation.heightAnchor.constraint(equalToConstant: 32),
             splitController.view.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
             splitController.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             splitController.view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -2382,14 +2384,14 @@ final class LibraryWindowController: NSWindowController,
         folderScroll.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
         folderScroll.widthAnchor.constraint(lessThanOrEqualTo: folderNavigationRow.widthAnchor, constant: -76).isActive = true
 
-        sidebarSearchPanel.setViews([searchField, searchScopeControl], in: .leading)
         sidebarSearchPanel.orientation = .vertical
+        sidebarSearchPanel.setViews([searchField, searchScopeControl], in: .top)
         sidebarSearchPanel.alignment = .leading
         sidebarSearchPanel.spacing = 6
         sidebarSearchPanel.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 8, right: 6)
         sidebarSearchPanel.isHidden = true
         searchField.widthAnchor.constraint(equalTo: sidebarSearchPanel.widthAnchor, constant: -12).isActive = true
-        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
         filesModeButton.contentTintColor = .controlAccentColor
         return bar
     }
@@ -2416,7 +2418,14 @@ final class LibraryWindowController: NSWindowController,
         let add = NSButton()
         configureCompactButton(add, symbol: "plus", label: "新标签页（⌘T）", action: #selector(newDocumentTabPressed))
         add.identifier = NSUserInterfaceItemIdentifier("LibraryNewTab")
-        let header = NSStackView(views: [scroll, add, commandButton])
+        let preferredWidth = scroll.widthAnchor.constraint(equalToConstant: 170)
+        preferredWidth.priority = .defaultHigh
+        preferredWidth.isActive = true
+        documentTabsWidthConstraint = preferredWidth
+        let spacer = LibraryWindowDragHandle()
+        spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 0).isActive = true
+        let header = NSStackView(views: [scroll, add, spacer, commandButton])
         header.spacing = 6
         header.alignment = .centerY
         header.distribution = .fill
@@ -2429,6 +2438,7 @@ final class LibraryWindowController: NSWindowController,
         let signature = documentTabs.map { "\($0.id):\($0.title):\($0.isDirty):\($0.saveFailed):\($0.id == active)" }.joined(separator: "|")
         guard signature != tabBarSignature else { return }
         tabBarSignature = signature
+        documentTabsWidthConstraint?.constant = CGFloat(documentTabs.count * 173 - 3)
         documentTabsStack.arrangedSubviews.forEach { documentTabsStack.removeArrangedSubview($0); $0.removeFromSuperview() }
         for tab in documentTabs {
             let view = LibraryDocumentTabView(tab: tab, selected: tab.id == active)
@@ -2768,7 +2778,9 @@ final class LibraryWindowController: NSWindowController,
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
 
         ])
-        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -(LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset)).isActive = true
+        for view in [listContainer, sidebarSearchPanel, folderNavigationRow] {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -(LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset)).isActive = true
+        }
 
         return sidebar
     }
@@ -2887,6 +2899,20 @@ final class LibraryWindowController: NSWindowController,
         let bodyContainer = NSView()
         bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
         bodyContainer.addSubview(scrollView)
+        let create = NSButton(title: "新建笔记", target: self, action: #selector(newNotePressed))
+        let open = NSButton(title: "搜索笔记", target: self, action: #selector(searchPressed))
+        create.bezelStyle = .rounded
+        open.bezelStyle = .rounded
+        emptyTabActions.setViews([create, open], in: .leading)
+        emptyTabActions.spacing = 12
+        emptyTabActions.identifier = NSUserInterfaceItemIdentifier("LibraryEmptyTabActions")
+        emptyTabActions.isHidden = true
+        bodyContainer.addSubview(emptyTabActions)
+        emptyTabActions.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyTabActions.centerXAnchor.constraint(equalTo: bodyContainer.centerXAnchor),
+            emptyTabActions.centerYAnchor.constraint(equalTo: bodyContainer.centerYAnchor)
+        ])
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
@@ -5929,6 +5955,7 @@ final class LibraryWindowController: NSWindowController,
 
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
+            emptyTabActions.isHidden = selectedURL != nil || !editorTextView.string.isEmpty
             normalizeUnifiedTitleLineFormatting()
             let metadata = visibleEditorMetadata()
             titleField.stringValue = metadata.title
@@ -6051,9 +6078,12 @@ final class LibraryWindowController: NSWindowController,
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             captureActiveDocumentTab()
-            let tab = LibraryDocumentTab()
-            documentTabs.append(tab)
-            activateDocumentTab(tab.id)
+            // An empty tab is already a destination; creating a note fills it.
+            if selectedURL != nil || !editorTextView.string.isEmpty || isDirty {
+                let tab = LibraryDocumentTab()
+                documentTabs.append(tab)
+                activateDocumentTab(tab.id)
+            }
             if noteListViewMode == .gallery {
                 noteListViewMode = .list
                 noteStore.libraryNoteViewModeRawValue = LibraryNoteViewMode.list.rawValue
@@ -6074,6 +6104,7 @@ final class LibraryWindowController: NSWindowController,
             suppressSelectionChanges = false
             setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
+            emptyTabActions.isHidden = true
             isDirty = true
             updateEditorCreatedDate(Date())
             if backgroundAutosaveIsActive {
@@ -6172,7 +6203,7 @@ final class LibraryWindowController: NSWindowController,
         guard let item = noteListSplitViewItem else { return }
         item.isCollapsed = !visible
         filesModeButton.isHidden = !visible
-        searchButton.isHidden = !visible
+        searchButton.isHidden = false
         sidebarToggleButton.toolTip = visible ? "收起侧栏（⌃⌘S）" : "展开侧栏（⌃⌘S）"
         sidebarToggleButton.setAccessibilityLabel(sidebarToggleButton.toolTip)
         librarySplitView?.adjustSubviews()
@@ -7116,6 +7147,7 @@ final class LibraryWindowController: NSWindowController,
         let length = min(requestedSelection.length, max(contentLength - location, 0))
         editorTextView.setSelectedRange(NSRange(location: location, length: length))
         suppressEditorChanges = false
+        emptyTabActions.isHidden = selectedURL != nil || !editorTextView.string.isEmpty
         updateWordCount()
         layoutEditorStatusLabel()
     }
