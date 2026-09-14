@@ -2709,11 +2709,11 @@ struct MarkdownRichEditorTests {
         #expect(treePresentationButton.toolTip == "切换到列表")
         treePresentationButton.performClick(nil)
         #expect(store.librarySidebarPresentationRawValue == 1)
-        #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
-        let listHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySidebarListHeader"
+        #expect(controller.selectedSourceTitleForLibrary == "首页")
+        let listFilesHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySidebarFilesHeader"
         })
-        let listPresentationButton = try #require(listHeader.allSubviews.compactMap { $0 as? NSButton }.first {
+        let listPresentationButton = try #require(listFilesHeader.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
         #expect(listPresentationButton.toolTip == "切换到文件树")
@@ -2724,6 +2724,26 @@ struct MarkdownRichEditorTests {
         #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(treePresentationButton.toolTip == "切换到列表")
+        let recentLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceLabel-1"
+        })
+        let recentRow = controller.sourceOutlineView.row(for: try #require(recentLabel.superview))
+        controller.sourceOutlineView.selectRowIndexes(IndexSet(integer: recentRow), byExtendingSelection: false)
+        #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
+        #expect(store.librarySidebarPresentationRawValue == 1)
+        #expect(window.contentView?.allSubviews.filter {
+            $0.identifier?.rawValue.hasPrefix("LibraryListSmartScope-") == true
+        }.count == 3)
+        listPresentationButton.performClick(nil)
+        #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
+        #expect(store.librarySidebarPresentationRawValue == 0)
+        let homeLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceLabel-0"
+        })
+        let homeRow = controller.sourceOutlineView.row(for: try #require(homeLabel.superview))
+        controller.sourceOutlineView.selectRowIndexes(IndexSet(integer: homeRow), byExtendingSelection: false)
+        #expect(controller.selectedSourceTitleForLibrary == "首页")
+        #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(window.toolbarStyle == .unified)
         #expect(window.styleMask.contains(.resizable))
         let titlebarSeparators = window.contentView?.allSubviews.compactMap { $0 as? NSBox }.filter {
@@ -2797,19 +2817,19 @@ struct MarkdownRichEditorTests {
         let newNoteIndex = try #require(toolbarItemOrder.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(newNoteIndex < sourceSeparatorIndex)
+        #expect(sourceSeparatorIndex < newNoteIndex)
         let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
         let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
         #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.toggle-sidebar")
         let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.navigation-back")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.navigation-forward")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.document-tabs")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 5] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 6] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 3] == "mudsnote.library.toolbar.navigation-back")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 2] == "mudsnote.library.toolbar.navigation-forward")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 1] == "mudsnote.library.toolbar.source-separator")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.document-tabs")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 2] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.toggle-sidebar",
             "mudsnote.library.toolbar.navigation-back",
@@ -3413,10 +3433,21 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorHorizontalInset == 23)
         #expect(LibraryNotesLayout.editorTextContainerHorizontalInset == 2)
         let editorPane = try #require(editorStack.superview)
-        let documentTabHeader = try #require(window.toolbar?.items.first {
+        let documentTabToolbarItem = try #require(window.toolbar?.items.first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.document-tabs"
-        }?.view as? NSStackView)
+        })
+        let documentTabHeader = try #require(documentTabToolbarItem.view as? NSStackView)
         #expect(documentTabHeader.identifier?.rawValue == "LibraryDocumentTabHeader")
+        #expect(!documentTabToolbarItem.isBordered)
+        #expect(documentTabHeader.arrangedSubviews.count == 2)
+        let documentTabScrollView = try #require(documentTabHeader.arrangedSubviews.first as? NSScrollView)
+        #expect(documentTabScrollView.borderType == .noBorder)
+        let documentTab = try #require(documentTabHeader.allSubviews.first {
+            $0.identifier?.rawValue.hasPrefix("LibraryDocumentTab-") == true
+        } as? LibraryDocumentTabView)
+        #expect(documentTab.frame.height == LibraryDocumentTabView.height)
+        #expect(documentTab.frame.width >= LibraryDocumentTabView.minimumWidth)
+        #expect(documentTab.frame.width <= LibraryDocumentTabView.maximumWidth)
         #expect(editorPane.constraints.contains {
             $0.firstItem === editorStack
                 && $0.firstAttribute == .top
