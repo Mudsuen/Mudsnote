@@ -3014,7 +3014,6 @@ final class LibraryWindowController: NSWindowController,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
-            Self.editorToolsToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }

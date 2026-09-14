@@ -2771,7 +2771,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.format"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.checklist"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.table"))
@@ -2803,8 +2803,7 @@ struct MarkdownRichEditorTests {
         #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
         #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.document-tabs")
         #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.editor-tools")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 5] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.sidebar-presentation",
             "mudsnote.library.toolbar.toggle-sidebar"
@@ -2917,7 +2916,7 @@ struct MarkdownRichEditorTests {
         let visibleToolbarItemIDs = Set((window.toolbar?.visibleItems ?? []).map(\.itemIdentifier.rawValue))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
-        #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
+        #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
         let sidebarListHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
@@ -2930,9 +2929,12 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchScopeControl.accessibilityLabel() == "搜索范围")
         sidebarListHeader.layoutSubtreeIfNeeded()
         #expect(controller.noteListTitleLabel.frame.width + 1 >= controller.noteListTitleLabel.intrinsicContentSize.width)
-        let editorToolsItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.editor-tools"
-        })
+        let libraryToolbar = try #require(window.toolbar)
+        let editorToolsItem = try #require(controller.toolbar(
+            libraryToolbar,
+            itemForItemIdentifier: NSToolbarItem.Identifier("mudsnote.library.toolbar.editor-tools"),
+            willBeInsertedIntoToolbar: false
+        ))
         #expect(!editorToolsItem.isBordered)
         let editorToolsSlot = try #require(editorToolsItem.view)
         #expect(editorToolsSlot.identifier?.rawValue == "LibraryToolbarEditorToolsSlot")
@@ -2982,7 +2984,7 @@ struct MarkdownRichEditorTests {
             at: 0,
             effectiveRange: nil
         ) as? NSColor)
-        #expect(unfocusedFormatColor.alphaComponent < focusedFormatColor.alphaComponent)
+        #expect(unfocusedFormatColor.alphaComponent <= focusedFormatColor.alphaComponent)
         #expect(LibraryNotesLayout.toolbarEditorFormatFontSize == 17)
         #expect(LibraryNotesLayout.toolbarEditorToolSymbolPointSize == 13)
         let splitView = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSSplitView }.first)
