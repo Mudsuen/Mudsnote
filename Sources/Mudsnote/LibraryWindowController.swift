@@ -1315,8 +1315,9 @@ final class LibraryWindowController: NSWindowController,
     private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
-    private static let sidebarPresentationToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.sidebar-presentation")
     private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
+    private static let navigationBackToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-back")
+    private static let navigationForwardToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-forward")
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
     private static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
@@ -1405,6 +1406,7 @@ final class LibraryWindowController: NSWindowController,
     private var knowledgeSynthesisGeneration = 0
     private var knowledgeBackStack: [URL] = []
     private var knowledgeForwardStack: [URL] = []
+    private var sidebarPresentationButtons: [NSButton] = []
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
@@ -2334,7 +2336,7 @@ final class LibraryWindowController: NSWindowController,
         } else {
             window?.makeFirstResponder(tableView)
         }
-        applySidebarPresentationToolbarChrome()
+        applySidebarPresentationChrome()
     }
 
     private func buildSourceList() -> NSView {
@@ -2360,6 +2362,7 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.indentationPerLevel = LibraryNotesLayout.sourceFolderIndentStep
         sourceOutlineView.rowSizeStyle = .custom
         sourceOutlineView.intercellSpacing = .zero
+        sourceOutlineView.floatsGroupRows = true
         sourceOutlineView.delegate = self
         sourceOutlineView.dataSource = self
         sourceOutlineView.registerForDraggedTypes([.fileURL])
@@ -2484,7 +2487,16 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let listHeader = NSStackView(views: [noteListTitleLabel, noteListCountLabel, searchScopeControl])
+        let sidebarPresentationButton = NSButton()
+        sidebarPresentationButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
+        configureSidebarPresentationButton(sidebarPresentationButton)
+        sidebarPresentationButtons.append(sidebarPresentationButton)
+        let listHeader = NSStackView(views: [
+            noteListTitleLabel,
+            noteListCountLabel,
+            searchScopeControl,
+            sidebarPresentationButton
+        ])
         listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
         listHeader.orientation = .horizontal
         listHeader.alignment = .centerY
@@ -2975,7 +2987,7 @@ final class LibraryWindowController: NSWindowController,
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         window?.toolbar = toolbar
-        applySidebarPresentationToolbarChrome()
+        applySidebarPresentationChrome()
         applyNoteListViewModeToolbarChrome()
     }
 
@@ -3008,10 +3020,11 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.sidebarPresentationToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.navigationBackToolbarItemIdentifier,
+            Self.navigationForwardToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
             Self.searchToolbarItemIdentifier
@@ -3054,14 +3067,6 @@ final class LibraryWindowController: NSWindowController,
             item.visibilityPriority = .high
             item.view = buildDocumentTabHeader()
             return item
-        case Self.sidebarPresentationToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: sidebarPresentation == .tree ? "切换到列表" : "切换到文件树",
-                symbolName: sidebarPresentation == .tree ? "list.bullet" : "list.bullet.indent",
-                action: #selector(toggleSidebarPresentationPressed),
-                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-            )
         case Self.toggleSidebarToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -3069,6 +3074,20 @@ final class LibraryWindowController: NSWindowController,
                 symbolName: "sidebar.left",
                 action: #selector(toggleSourceListPressed),
                 symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+            )
+        case Self.navigationBackToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "后退",
+                symbolName: "chevron.left",
+                action: #selector(goBackInKnowledgeRelations)
+            )
+        case Self.navigationForwardToolbarItemIdentifier:
+            return toolbarButtonItem(
+                identifier: itemIdentifier,
+                label: "前进",
+                symbolName: "chevron.right",
+                action: #selector(goForwardInKnowledgeRelations)
             )
         case Self.newNoteToolbarItemIdentifier:
             return toolbarCircularButtonItem(
@@ -3244,6 +3263,10 @@ final class LibraryWindowController: NSWindowController,
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
+        case Self.navigationBackToolbarItemIdentifier:
+            return !knowledgeBackStack.isEmpty
+        case Self.navigationForwardToolbarItemIdentifier:
+            return !knowledgeForwardStack.isEmpty
         case Self.moreToolbarItemIdentifier:
             return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:
@@ -5143,18 +5166,56 @@ final class LibraryWindowController: NSWindowController,
             cell.identifier = identifier
             let label = cell.textField ?? NSTextField(labelWithString: "")
             if label.superview == nil {
+                let background = NSVisualEffectView()
+                background.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFloatingGroupBackground")
+                background.material = .sidebar
+                background.blendingMode = .withinWindow
+                background.state = .followsWindowActiveState
+                cell.addSubview(background)
+                background.translatesAutoresizingMaskIntoConstraints = false
                 cell.textField = label
                 cell.addSubview(label)
                 label.translatesAutoresizingMaskIntoConstraints = false
                 NSLayoutConstraint.activate([
-                    label.leadingAnchor.constraint(
-                        equalTo: cell.leadingAnchor,
-                        constant: LibraryNotesLayout.sourceGroupContentLeadingInset
-                            + (section == .tags ? 0 : 4)
-                    ),
-                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                    background.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
+                    background.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
+                    background.topAnchor.constraint(equalTo: cell.topAnchor),
+                    background.bottomAnchor.constraint(equalTo: cell.bottomAnchor)
                 ])
+                let leading = label.leadingAnchor.constraint(
+                    equalTo: cell.leadingAnchor,
+                    constant: LibraryNotesLayout.sourceGroupContentLeadingInset
+                        + (section == .tags ? 0 : 4)
+                )
+                if section == .folders {
+                    let toggle = NSButton()
+                    toggle.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
+                    configureSidebarPresentationButton(toggle)
+                    sidebarPresentationButtons.append(toggle)
+                    cell.addSubview(toggle)
+                    toggle.translatesAutoresizingMaskIntoConstraints = false
+                    NSLayoutConstraint.activate([
+                        leading,
+                        label.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -6),
+                        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        toggle.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+                        toggle.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        toggle.widthAnchor.constraint(equalToConstant: 24),
+                        toggle.heightAnchor.constraint(equalToConstant: 24)
+                    ])
+                } else {
+                    NSLayoutConstraint.activate([
+                        leading,
+                        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                    ])
+                }
+            }
+            if section == .folders,
+               let toggle = cell.subviews.compactMap({ $0 as? NSButton }).first(where: {
+                   $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
+               }) {
+                configureSidebarPresentationButton(toggle)
             }
             label.stringValue = title
             label.identifier = identifier
@@ -7238,6 +7299,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func load(note: NoteSearchResult) {
         if prepareDocumentTab(for: note) { return }
+        recordNoteNavigation(to: note.url)
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
@@ -7551,7 +7613,7 @@ final class LibraryWindowController: NSWindowController,
         controller.show(rootURL: selectedURL)
     }
 
-    private func goBackInKnowledgeRelations() {
+    @objc private func goBackInKnowledgeRelations() {
         guard let targetURL = knowledgeBackStack.last,
               let currentURL = selectedURL?.standardizedFileURL else {
             return
@@ -7567,7 +7629,7 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func goForwardInKnowledgeRelations() {
+    @objc private func goForwardInKnowledgeRelations() {
         guard let targetURL = knowledgeForwardStack.last,
               let currentURL = selectedURL?.standardizedFileURL else {
             return
@@ -7588,6 +7650,18 @@ final class LibraryWindowController: NSWindowController,
             canGoBack: !knowledgeBackStack.isEmpty,
             canGoForward: !knowledgeForwardStack.isEmpty
         )
+        window?.toolbar?.validateVisibleItems()
+    }
+
+    private func recordNoteNavigation(to nextURL: URL) {
+        guard let currentURL = selectedURL?.standardizedFileURL,
+              currentURL != nextURL.standardizedFileURL else { return }
+        knowledgeBackStack.append(currentURL)
+        if knowledgeBackStack.count > 100 {
+            knowledgeBackStack.removeFirst(knowledgeBackStack.count - 100)
+        }
+        knowledgeForwardStack.removeAll()
+        updateKnowledgeNavigationControls()
     }
 
     private func announceKnowledgeNavigation(title: String) {
@@ -9580,8 +9654,7 @@ final class LibraryWindowController: NSWindowController,
             : LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case Self.sidebarPresentationToolbarItemIdentifier,
-                 Self.sourceTrackingSeparatorToolbarItemIdentifier:
+            case Self.sourceTrackingSeparatorToolbarItemIdentifier:
                 item.isHidden = !isVisible
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isVisible ? "隐藏资料库" : "显示资料库"
@@ -9600,17 +9673,27 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func applySidebarPresentationToolbarChrome() {
-        guard let item = window?.toolbar?.items.first(where: {
-            $0.itemIdentifier == Self.sidebarPresentationToolbarItemIdentifier
-        }) else { return }
+    private func applySidebarPresentationChrome() {
+        for button in sidebarPresentationButtons {
+            configureSidebarPresentationButton(button)
+        }
+    }
+
+    private func configureSidebarPresentationButton(_ button: NSButton) {
         let showsTree = sidebarPresentation == .tree
-        updateToolbarItemPresentation(
-            item,
-            label: showsTree ? "切换到列表" : "切换到文件树",
+        let label = showsTree ? "切换到列表" : "切换到文件树"
+        button.image = toolbarSymbolImage(
             symbolName: showsTree ? "list.bullet" : "list.bullet.indent",
-            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+            label: label,
+            pointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
         )
+        button.imagePosition = .imageOnly
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.target = self
+        button.action = #selector(toggleSidebarPresentationPressed)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
     }
 
     private func restoreStoredPaneWidthsAfterSourceVisibilityChange() {

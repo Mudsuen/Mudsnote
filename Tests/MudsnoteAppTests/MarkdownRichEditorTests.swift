@@ -2700,29 +2700,30 @@ struct MarkdownRichEditorTests {
         #expect(splitController.splitViewItems.count == 2)
         #expect(controller.sourceOutlineView.numberOfRows >= 3)
         #expect(controller.sourceTreeNoteTitlesForLibrary().contains("Library Seed"))
-        let sidebarPresentationItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.sidebar-presentation"
+        let filesGroupLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Files"
         })
-        #expect(sidebarPresentationItem.label == "切换到列表")
-        _ = NSApp.sendAction(
-            try #require(sidebarPresentationItem.action),
-            to: sidebarPresentationItem.target,
-            from: sidebarPresentationItem
-        )
+        let treePresentationButton = try #require(filesGroupLabel.superview?.subviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
+        })
+        #expect(treePresentationButton.toolTip == "切换到列表")
+        treePresentationButton.performClick(nil)
         #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
-        #expect(sidebarPresentationItem.label == "切换到文件树")
+        let listHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+            $0.identifier?.rawValue == "LibrarySidebarListHeader"
+        })
+        let listPresentationButton = try #require(listHeader.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
+        })
+        #expect(listPresentationButton.toolTip == "切换到文件树")
         #expect(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"
         }?.isHidden == true)
-        _ = NSApp.sendAction(
-            try #require(sidebarPresentationItem.action),
-            to: sidebarPresentationItem.target,
-            from: sidebarPresentationItem
-        )
+        listPresentationButton.performClick(nil)
         #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
-        #expect(sidebarPresentationItem.label == "切换到列表")
+        #expect(treePresentationButton.toolTip == "切换到列表")
         #expect(window.toolbarStyle == .unified)
         #expect(window.styleMask.contains(.resizable))
         let titlebarSeparators = window.contentView?.allSubviews.compactMap { $0 as? NSBox }.filter {
@@ -2734,6 +2735,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.minimumWindowSize.width == 896)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(!controller.tableView.floatsGroupRows)
+        #expect(controller.sourceOutlineView.floatsGroupRows)
         #expect(LibraryNotesLayout.storedLayoutScaleVersion == 9)
         #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 921, height: 613))
         #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 921, height: 613))
@@ -2762,13 +2764,15 @@ struct MarkdownRichEditorTests {
         ) == clampedSize)
         #expect(window.toolbar?.displayMode == .iconOnly)
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.sidebar-presentation"))
+        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.sidebar-presentation"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.navigation-back"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.navigation-forward"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
@@ -2796,17 +2800,20 @@ struct MarkdownRichEditorTests {
         #expect(newNoteIndex < sourceSeparatorIndex)
         let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
         let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
-        #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.sidebar-presentation")
+        #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.toggle-sidebar")
         let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
         #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.document-tabs")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.navigation-back")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.navigation-forward")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.document-tabs")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 5] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 6] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
-            "mudsnote.library.toolbar.sidebar-presentation",
-            "mudsnote.library.toolbar.toggle-sidebar"
+            "mudsnote.library.toolbar.toggle-sidebar",
+            "mudsnote.library.toolbar.navigation-back",
+            "mudsnote.library.toolbar.navigation-forward"
         ] {
             let item = try #require((window.toolbar?.items ?? []).first {
                 $0.itemIdentifier.rawValue == toolbarButtonID
@@ -3023,20 +3030,16 @@ struct MarkdownRichEditorTests {
         let toggleSourceItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.toggle-sidebar"
         })
-        let sidebarModeToolbarItem = try #require((window.toolbar?.items ?? []).first {
-            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.sidebar-presentation"
-        })
         let sourceTrackingSeparatorItem = try #require((window.toolbar?.items ?? []).first {
             $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.source-separator"
         })
         #expect(controller.isSourceListVisibleForLibrary)
-        #expect(!sidebarModeToolbarItem.isHidden)
         #expect(!sourceTrackingSeparatorItem.isHidden)
         #expect(toggleSourceItem.isBordered)
         let expandedToggleButton = try #require(toggleSourceItem.view as? NSButton)
         #expect(expandedToggleButton.image != nil)
-        #expect(sidebarModeToolbarItem.image != nil)
-        #expect(sidebarModeToolbarItem.label == "切换到列表")
+        #expect(treePresentationButton.image != nil)
+        #expect(treePresentationButton.toolTip == "切换到列表")
         #expect(expandedToggleButton.image?.size.height == 14)
         #expect((18...19).contains(expandedToggleButton.image?.size.width ?? 0))
         #expect(toggleSourceItem.label == "隐藏资料库")
@@ -3044,7 +3047,6 @@ struct MarkdownRichEditorTests {
         expandedToggleButton.performClick(nil)
         #expect(!controller.isSourceListVisibleForLibrary)
         #expect(sourceList.isHidden)
-        #expect(sidebarModeToolbarItem.isHidden)
         #expect(sourceTrackingSeparatorItem.isHidden)
         #expect(!toggleSourceItem.isBordered)
         let collapsedToggleWrapper = try #require(toggleSourceItem.view)
@@ -3068,7 +3070,6 @@ struct MarkdownRichEditorTests {
         collapsedToggleButton.performClick(nil)
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(!sourceList.isHidden)
-        #expect(!sidebarModeToolbarItem.isHidden)
         #expect(!sourceTrackingSeparatorItem.isHidden)
         #expect(toggleSourceItem.isBordered)
         #expect(toggleSourceItem.view is NSButton)
@@ -3095,6 +3096,9 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceGroup-Files"
         })
         #expect(libraryGroup.stringValue == "FILES")
+        #expect(libraryGroup.superview?.subviews.contains {
+            $0.identifier?.rawValue == "LibrarySourceFloatingGroupBackground"
+        } == true)
         let smartGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
         })
