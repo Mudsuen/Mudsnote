@@ -2769,6 +2769,7 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.format"))
@@ -2792,17 +2793,18 @@ struct MarkdownRichEditorTests {
         let newNoteIndex = try #require(toolbarItemOrder.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(sourceSeparatorIndex < newNoteIndex)
+        #expect(newNoteIndex < sourceSeparatorIndex)
         let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
         let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
         #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.sidebar-presentation")
         let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 1] == .space)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.editor-tools")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.document-tabs")
         #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.editor-tools")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 5] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.sidebar-presentation",
             "mudsnote.library.toolbar.toggle-sidebar"
@@ -2914,6 +2916,7 @@ struct MarkdownRichEditorTests {
         #expect(toolbarSearchWrapper.bounds.maxX - toolbarSearchField.frame.maxX >= LibraryNotesLayout.toolbarSearchHorizontalFocusRingInset)
         let visibleToolbarItemIDs = Set((window.toolbar?.visibleItems ?? []).map(\.itemIdentifier.rawValue))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
+        #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
@@ -3087,9 +3090,25 @@ struct MarkdownRichEditorTests {
         })
         #expect(LibraryNotesLayout.noteListStackTopOffset == -1)
         let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-iCloud"
+            $0.identifier?.rawValue == "LibrarySourceGroup-Files"
         })
-        #expect(libraryGroup.stringValue == "iCloud")
+        #expect(libraryGroup.stringValue == "FILES")
+        let smartGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
+        })
+        #expect(smartGroup.stringValue == "Mudsnote")
+        let recentScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceLabel-1"
+        })
+        let favoritesScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceLabel-4"
+        })
+        let allNotesScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+            $0.identifier?.rawValue == "LibrarySourceLabel-0"
+        })
+        #expect(recentScope.stringValue == "最近编辑")
+        #expect(favoritesScope.stringValue == "收藏")
+        #expect(allNotesScope.stringValue == LibraryCopy.home)
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         #expect(LibraryNotesLayout.sourceGroupFontSize == 12)
         #expect(LibraryNotesLayout.sourceRowHeight == 32)
@@ -3377,9 +3396,8 @@ struct MarkdownRichEditorTests {
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
-        // The date label now lives inside the text view, so the surrounding
-        // stack must start at the safe-area edge without adding a second top
-        // inset.
+        // The date label lives inside the text view, while document tabs occupy
+        // the editor side of the native toolbar.
         #expect(editorStack.edgeInsets.top == 0)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
         #expect(LibraryNotesLayout.editorTopInset + LibraryNotesLayout.editorDateToTitleSpacing == 17)
@@ -3389,11 +3407,21 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.editorHorizontalInset == 23)
         #expect(LibraryNotesLayout.editorTextContainerHorizontalInset == 2)
         let editorPane = try #require(editorStack.superview)
+        let documentTabHeader = try #require(window.toolbar?.items.first {
+            $0.itemIdentifier.rawValue == "mudsnote.library.toolbar.document-tabs"
+        }?.view as? NSStackView)
+        #expect(documentTabHeader.identifier?.rawValue == "LibraryDocumentTabHeader")
         #expect(editorPane.constraints.contains {
             $0.firstItem === editorStack
                 && $0.firstAttribute == .top
                 && $0.secondItem === editorPane.safeAreaLayoutGuide
                 && $0.secondAttribute == .top
+        })
+        #expect(documentTabHeader.allSubviews.contains {
+            $0.identifier?.rawValue == "LibraryDocumentTabTitle"
+        })
+        #expect(documentTabHeader.allSubviews.contains {
+            $0.identifier?.rawValue == "LibraryNewDocumentTab"
         })
         #expect(controller.titleField.superview == nil)
         #expect(

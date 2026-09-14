@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 private enum LibraryScope: Equatable, Sendable {
     case all
     case recent
+    case favorites
     case inbox
     case folder(URL)
     case tag(String)
@@ -19,6 +20,8 @@ private enum LibraryScope: Equatable, Sendable {
             return LibraryCopy.home
         case .recent:
             return "最近编辑"
+        case .favorites:
+            return "收藏"
         case .inbox:
             return LibraryCopy.inbox
         case .folder(let url):
@@ -45,6 +48,8 @@ private enum LibraryScope: Equatable, Sendable {
             return "house"
         case .recent:
             return "clock"
+        case .favorites:
+            return "star"
         case .inbox:
             return "tray"
         case .folder:
@@ -93,6 +98,13 @@ private func librarySearchResults(
             limit: limit,
             cancellationCheck: cancellationCheck
         )
+    case .favorites:
+        let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
+        return searchSession.searchNotes(
+            query: query,
+            limit: limit,
+            cancellationCheck: cancellationCheck
+        ).filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }
     case .inbox:
         return searchSession.searchInboxNotes(
             query: query,
@@ -1308,6 +1320,7 @@ final class LibraryWindowController: NSWindowController,
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
     private static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
+    private static let documentTabsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.document-tabs")
     private static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
     private static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
     private static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
@@ -1424,6 +1437,15 @@ final class LibraryWindowController: NSWindowController,
     private var lastTreeScope: LibraryScope = .all
     private var lastListScope: LibraryScope = .recent
     private var selectedTreeNoteURL: URL?
+    private var documentTabs = [LibraryDocumentTab()]
+    private var activeDocumentTabID: UUID?
+    private let documentTabsStack = NSStackView()
+    private var documentTabsWidthConstraint: NSLayoutConstraint?
+    private var documentTabBarSignature = ""
+    private var isActivatingDocumentTab = false
+    private var activeDocumentTab: LibraryDocumentTab {
+        documentTabs.first { $0.id == activeDocumentTabID } ?? documentTabs[0]
+    }
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
     private var sourceOutlineItemsByScopeIdentifier: [String: LibrarySourceOutlineItem] = [:]
@@ -2742,6 +2764,183 @@ final class LibraryWindowController: NSWindowController,
         return editor
     }
 
+    private func buildDocumentTabHeader() -> NSView {
+        documentTabsStack.orientation = .horizontal
+        documentTabsStack.alignment = .centerY
+        documentTabsStack.spacing = 3
+
+        let scrollView = NSScrollView()
+        scrollView.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabs")
+        scrollView.drawsBackground = false
+        scrollView.contentView.drawsBackground = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.documentView = documentTabsStack
+        documentTabsStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            documentTabsStack.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentTabsStack.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentTabsStack.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+        let preferredWidth = scrollView.widthAnchor.constraint(equalToConstant: 168)
+        preferredWidth.priority = .defaultHigh
+        preferredWidth.isActive = true
+        documentTabsWidthConstraint = preferredWidth
+
+        let addButton = NSButton(
+            image: NSImage(systemSymbolName: "plus", accessibilityDescription: "新标签页")!,
+            target: self,
+            action: #selector(newDocumentTabPressed)
+        )
+        addButton.identifier = NSUserInterfaceItemIdentifier("LibraryNewDocumentTab")
+        addButton.isBordered = false
+        addButton.contentTintColor = .secondaryLabelColor
+        addButton.toolTip = "新标签页"
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let header = NSStackView(views: [scrollView, addButton, spacer])
+        header.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabHeader")
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 6
+        NSLayoutConstraint.activate([
+            header.widthAnchor.constraint(greaterThanOrEqualToConstant: 180),
+            header.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
+            header.heightAnchor.constraint(equalToConstant: 34)
+        ])
+        updateDocumentTabBar()
+        return header
+    }
+
+    private func updateDocumentTabBar() {
+        guard !documentTabs.isEmpty else { return }
+        let activeID = activeDocumentTab.id
+        let signature = documentTabs.map {
+            "\($0.id):\($0.title):\($0.isDirty):\($0.id == activeID)"
+        }.joined(separator: "|")
+        guard signature != documentTabBarSignature else { return }
+        documentTabBarSignature = signature
+        documentTabsWidthConstraint?.constant = CGFloat(documentTabs.count * 171 - 3)
+        documentTabsStack.arrangedSubviews.forEach {
+            documentTabsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for tab in documentTabs {
+            let tabView = LibraryDocumentTabView(tab: tab, selected: tab.id == activeID)
+            tabView.onSelect = { [weak self] in self?.activateDocumentTab(tab.id) }
+            tabView.onClose = { [weak self] in self?.closeDocumentTab(tab.id) }
+            documentTabsStack.addArrangedSubview(tabView)
+        }
+        documentTabsStack.layoutSubtreeIfNeeded()
+        if let selectedView = documentTabsStack.arrangedSubviews.first(where: {
+            ($0 as? LibraryDocumentTabView)?.tabID == activeID
+        }) {
+            selectedView.scrollToVisible(selectedView.bounds)
+        }
+    }
+
+    @objc private func newDocumentTabPressed() {
+        do {
+            drainBackgroundAutosaves()
+            try saveCurrentNoteIfNeeded()
+            activeDocumentTab.url = selectedURL
+            activeDocumentTab.isDirty = false
+            let tab = LibraryDocumentTab()
+            documentTabs.append(tab)
+            activateDocumentTab(tab.id)
+        } catch {
+            presentErrorAlert(message: "无法新建标签页", details: error.localizedDescription)
+        }
+    }
+
+    private func activateDocumentTab(_ id: UUID, capturesCurrentDocument: Bool = true) {
+        guard let tab = documentTabs.first(where: { $0.id == id }),
+              activeDocumentTabID != tab.id else { return }
+        if capturesCurrentDocument {
+            do {
+                drainBackgroundAutosaves()
+                try saveCurrentNoteIfNeeded()
+            } catch {
+                presentErrorAlert(message: "无法切换标签页", details: error.localizedDescription)
+                return
+            }
+            activeDocumentTab.url = selectedURL
+            activeDocumentTab.isDirty = false
+        }
+        activeDocumentTabID = tab.id
+        cancelActiveNoteLoad()
+        if let url = tab.url {
+            let note = sourceCountSnapshot.first {
+                $0.url.standardizedFileURL == url.standardizedFileURL
+            } ?? NoteSearchResult(
+                url: url,
+                title: tab.title,
+                snippet: "",
+                modifiedAt: Date()
+            )
+            isActivatingDocumentTab = true
+            load(note: note)
+            isActivatingDocumentTab = false
+        } else {
+            isCreatingNewNote = true
+            setSelectedURLForLibrary(nil)
+            selectedSourceContents = nil
+            selectedTags = []
+            noteLinksView.update(.empty)
+            setEditorEditable(true)
+            applyDocument(title: "", body: "", tags: [])
+            isDirty = false
+            updateEditorStatus("")
+        }
+        updateDocumentTabBar()
+        window?.makeFirstResponder(editorTextView)
+    }
+
+    private func prepareDocumentTab(for note: NoteSearchResult) -> Bool {
+        guard !isActivatingDocumentTab else { return false }
+        if let existing = documentTabs.first(where: {
+            $0.url?.standardizedFileURL == note.url.standardizedFileURL
+        }), existing.id != activeDocumentTab.id {
+            activateDocumentTab(existing.id)
+            return true
+        }
+        activeDocumentTab.url = note.url
+        activeDocumentTab.title = note.title.isEmpty
+            ? note.url.deletingPathExtension().lastPathComponent
+            : note.title
+        activeDocumentTab.isDirty = false
+        updateDocumentTabBar()
+        return false
+    }
+
+    private func closeDocumentTab(_ id: UUID) {
+        guard let index = documentTabs.firstIndex(where: { $0.id == id }) else { return }
+        if documentTabs[index].id == activeDocumentTab.id {
+            do {
+                drainBackgroundAutosaves()
+                try saveCurrentNoteIfNeeded()
+            } catch {
+                presentErrorAlert(message: "无法关闭标签页", details: error.localizedDescription)
+                return
+            }
+        }
+        let wasActive = documentTabs[index].id == activeDocumentTab.id
+        if documentTabs.count == 1 {
+            documentTabs.append(LibraryDocumentTab())
+        }
+        let nextID = wasActive
+            ? documentTabs[index + 1 < documentTabs.count ? index + 1 : index - 1].id
+            : nil
+        documentTabs.remove(at: index)
+        if let nextID {
+            activateDocumentTab(nextID, capturesCurrentDocument: false)
+        } else {
+            updateDocumentTabBar()
+        }
+    }
+
     private func makeLibraryTitlebarSeparator(identifier: String) -> NSBox {
         let separator = NSBox()
         separator.identifier = NSUserInterfaceItemIdentifier(identifier)
@@ -2811,11 +3010,11 @@ final class LibraryWindowController: NSWindowController,
         [
             Self.sidebarPresentationToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
-            .space,
-            Self.editorToolsToolbarItemIdentifier,
+            Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
+            Self.editorToolsToolbarItemIdentifier,
             Self.searchToolbarItemIdentifier
         ]
     }
@@ -2823,6 +3022,7 @@ final class LibraryWindowController: NSWindowController,
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar) + [
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.documentTabsToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
             Self.openSeparateToolbarItemIdentifier,
             Self.moveToolbarItemIdentifier,
@@ -2848,6 +3048,13 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
+        case Self.documentTabsToolbarItemIdentifier:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "标签页"
+            item.paletteLabel = "标签页"
+            item.visibilityPriority = .high
+            item.view = buildDocumentTabHeader()
+            return item
         case Self.sidebarPresentationToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
@@ -3467,35 +3674,43 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
-        let previewFolders = externalPreviewFolderURLs()
-        let iCloudGroup = makeSourceOutlineItem(
-            identifier: "group:icloud",
-            kind: .group(title: "iCloud", section: .folders)
+        let smartGroup = makeSourceOutlineItem(
+            identifier: "group:mudsnote",
+            kind: .group(title: "Mudsnote", section: nil)
         )
-        iCloudGroup.append(makeSourceOutlineScopeItem(.all))
+        smartGroup.append(makeSourceOutlineScopeItem(.recent))
+        smartGroup.append(makeSourceOutlineScopeItem(.favorites))
+        smartGroup.append(makeSourceOutlineScopeItem(.all))
+        roots.append(smartGroup)
+
+        let previewFolders = externalPreviewFolderURLs()
+        let filesGroup = makeSourceOutlineItem(
+            identifier: "group:files",
+            kind: .group(title: "FILES", section: .folders)
+        )
         for folderRoot in makeSourceFolderOutlineRoots() {
-            iCloudGroup.append(folderRoot)
+            filesGroup.append(folderRoot)
         }
         for previewFolder in previewFolders where !sourceFolderTreeRows.contains(where: {
             $0.url.standardizedFileURL.path == previewFolder.standardizedFileURL.path
         }) {
-            iCloudGroup.append(makeSourceOutlineScopeItem(.folder(previewFolder)))
+            filesGroup.append(makeSourceOutlineScopeItem(.folder(previewFolder)))
         }
         if inlineFolderEditOperation == nil {
             if !sourceFoldersLoaded && sourceFolderTreeRows.isEmpty {
-                iCloudGroup.append(makeSourceOutlineItem(
+                filesGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:loading",
                     kind: .status(LibraryCopy.loadingFolders)
                 ))
             } else if sourceFolderTreeRows.isEmpty {
-                iCloudGroup.append(makeSourceOutlineItem(
+                filesGroup.append(makeSourceOutlineItem(
                     identifier: "status:folders:empty",
                     kind: .status(LibraryCopy.noFolders)
                 ))
             }
         }
-        iCloudGroup.append(makeSourceOutlineScopeItem(.trash))
-        roots.append(iCloudGroup)
+        filesGroup.append(makeSourceOutlineScopeItem(.trash))
+        roots.append(filesGroup)
 
         let tagsGroup = makeSourceOutlineItem(
             identifier: "group:tags",
@@ -3548,6 +3763,8 @@ final class LibraryWindowController: NSWindowController,
             return "scope:all"
         case .recent:
             return "scope:recent"
+        case .favorites:
+            return "scope:favorites"
         case .inbox:
             return "scope:inbox"
         case .folder(let url):
@@ -3635,9 +3852,12 @@ final class LibraryWindowController: NSWindowController,
         let wasRestoringExpansion = isRestoringSourceOutlineExpansion
         isRestoringSourceOutlineExpansion = true
         defer { isRestoringSourceOutlineExpansion = wasRestoringExpansion }
+        if let smartGroup = sourceOutlineItemsByIdentifier["group:mudsnote"] {
+            sourceOutlineView.expandItem(smartGroup, expandChildren: false)
+        }
         if !sourceFoldersSectionCollapsed,
-           let iCloudGroup = sourceOutlineItemsByIdentifier["group:icloud"] {
-            sourceOutlineView.expandItem(iCloudGroup, expandChildren: false)
+           let filesGroup = sourceOutlineItemsByIdentifier["group:files"] {
+            sourceOutlineView.expandItem(filesGroup, expandChildren: false)
         }
         if !sourceTagsSectionCollapsed,
            let tagsGroup = sourceOutlineItemsByIdentifier["group:tags"] {
@@ -4312,6 +4532,10 @@ final class LibraryWindowController: NSWindowController,
                 count = allNotesCount
             case .recent:
                 count = recentCount
+            case .favorites:
+                count = sourceCountSnapshot.lazy.filter {
+                    self.noteStore.libraryPinnedNotePaths.contains($0.url.standardizedFileURL.path)
+                }.count
             case .inbox:
                 count = countIndex.inboxCount
             case .trash:
@@ -4547,6 +4771,9 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             candidates = recentNoteResults(limit: 80, allNotes: allNotes)
             predicate = { _ in true }
+        case .favorites:
+            candidates = allNotes
+            predicate = { pinnedPaths.contains($0.url.standardizedFileURL.path) }
         case .inbox:
             candidates = allNotes
             let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
@@ -4590,6 +4817,10 @@ final class LibraryWindowController: NSWindowController,
             return Array(allNotes.prefix(limit))
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
+        case .favorites:
+            return Array(allNotes.lazy.filter {
+                self.noteStore.libraryPinnedNotePaths.contains($0.url.standardizedFileURL.path)
+            }.prefix(limit))
         case .inbox:
             let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
             return LibraryNoteListProjection.prefix(allNotes, limit: limit) { note in
@@ -4650,6 +4881,11 @@ final class LibraryWindowController: NSWindowController,
                 candidates = sourceCountSnapshot
             case .recent:
                 candidates = recentNoteResults(limit: 80, allNotes: sourceCountSnapshot)
+            case .favorites:
+                let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
+                candidates = sourceCountSnapshot.filter {
+                    pinnedPaths.contains($0.url.standardizedFileURL.path)
+                }
             case .inbox:
                 let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
                 candidates = sourceCountSnapshot.filter {
@@ -4895,9 +5131,14 @@ final class LibraryWindowController: NSWindowController,
 
         switch item.kind {
         case .group(let title, let section):
-            let identifier = NSUserInterfaceItemIdentifier(
-                section == .tags ? "LibrarySourceGroup-Tags" : "LibrarySourceGroup-iCloud"
-            )
+            let identifier: NSUserInterfaceItemIdentifier
+            if section == .tags {
+                identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-Tags")
+            } else if section == .folders {
+                identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-Files")
+            } else {
+                identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-Mudsnote")
+            }
             let cell = (outlineView.makeView(withIdentifier: identifier, owner: nil) as? NSTableCellView)
                 ?? NSTableCellView()
             cell.identifier = identifier
@@ -4996,8 +5237,22 @@ final class LibraryWindowController: NSWindowController,
         label.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .regular)
         label.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
         label.lineBreakMode = .byTruncatingMiddle
-        icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "笔记")
-        icon.contentTintColor = panelTertiaryTextColor()
+        let isSelected = sourceOutlineView.row(forItem: item) == sourceOutlineView.selectedRow
+        let foregroundColor = isSelected
+            ? selectedThemeColor.foregroundColor
+            : LibrarySourceSelectionPalette.unselectedForegroundColor
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+            weight: LibraryNotesLayout.sourceSymbolWeight
+        ).applying(NSImage.SymbolConfiguration(paletteColors: [foregroundColor]))
+        let noteImage = NSImage(
+            systemSymbolName: "doc.text",
+            accessibilityDescription: "笔记"
+        )?.withSymbolConfiguration(configuration)
+        noteImage?.isTemplate = false
+        icon.identifier = NSUserInterfaceItemIdentifier("LibrarySourceNoteIcon")
+        icon.image = noteImage
+        icon.contentTintColor = nil
         cell.setAccessibilityLabel(label.stringValue)
         cell.setAccessibilityValue("笔记")
         return cell
@@ -5090,6 +5345,8 @@ final class LibraryWindowController: NSWindowController,
             return 0
         case .recent:
             return 1
+        case .favorites:
+            return 4
         case .inbox:
             return 2
         case .trash:
@@ -6260,7 +6517,7 @@ final class LibraryWindowController: NSWindowController,
         let shouldExpand = isSourceSectionCollapsed(section)
         setSourceSection(section, collapsed: !shouldExpand)
         guard let item = sourceOutlineItemsByIdentifier[
-            section == .folders ? "group:icloud" : "group:tags"
+            section == .folders ? "group:files" : "group:tags"
         ] else { return }
         if shouldExpand {
             sourceOutlineView.expandItem(item, expandChildren: false)
@@ -6981,6 +7238,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func load(note: NoteSearchResult) {
+        if prepareDocumentTab(for: note) { return }
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
@@ -7123,6 +7381,12 @@ final class LibraryWindowController: NSWindowController,
         preservingEditorSelection: Bool
     ) {
         setSelectedURLForLibrary(note.url)
+        activeDocumentTab.url = note.url
+        activeDocumentTab.title = note.title.isEmpty
+            ? note.url.deletingPathExtension().lastPathComponent
+            : note.title
+        activeDocumentTab.isDirty = false
+        updateDocumentTabBar()
         selectedSourceContents = cached.loaded.sourceContents
         setEditorEditable(selectedScope != .trash)
 
@@ -7930,6 +8194,7 @@ final class LibraryWindowController: NSWindowController,
         editorContentRevision &+= 1
         let becameDirty = !isDirty
         isDirty = true
+        activeDocumentTab.isDirty = true
         if becameDirty {
             updateToolbarActionState()
         }
@@ -8130,10 +8395,16 @@ final class LibraryWindowController: NSWindowController,
         }
 
         setSelectedURLForLibrary(success.savedURL)
+        activeDocumentTab.url = success.savedURL
+        activeDocumentTab.title = snapshot.title.isEmpty
+            ? success.savedURL.deletingPathExtension().lastPathComponent
+            : snapshot.title
         selectedSourceContents = success.sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = editorContentRevision != snapshot.editorRevision
+        activeDocumentTab.isDirty = isDirty
+        updateDocumentTabBar()
         refreshVisibleNoteListAfterSave(
             selecting: success.savedURL,
             replacing: snapshot.previousURL,
@@ -8318,6 +8589,12 @@ final class LibraryWindowController: NSWindowController,
         let changedURLs = [previousURL, savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
         setSelectedURLForLibrary(savedURL)
+        activeDocumentTab.url = savedURL
+        activeDocumentTab.title = title.isEmpty
+            ? savedURL.deletingPathExtension().lastPathComponent
+            : title
+        activeDocumentTab.isDirty = false
+        updateDocumentTabBar()
         selectedSourceContents = sourceContents
         activeSearchSession = nil
         isCreatingNewNote = false
